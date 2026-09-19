@@ -1,0 +1,52 @@
+// `==` on `[N]T`, `[N:X]T`, `[]T` and `[:X]T` compares CONTENT: the lengths,
+// then every element by its own type's rule. Two views over distinct backings
+// holding the same elements are equal, a float element is an ordered compare
+// (`nan != nan`, `0.0 == -0.0`) rather than a byte compare, two terminated
+// arrays compare the N elements their terminators do not belong to, and a
+// `[*:0]u8` is a pointer that compares its address.
+
+@import "modules/std.sx";
+
+Pad :: struct { tag: i8; n: i64; }
+
+check :: () {
+    a : [3]i64 = .[1, 2, 3];
+    b : [3]i64 = .[1, 2, 3];
+    c : [3]i64 = .[1, 2, 4];
+    print("arrays: {} {} {}\n", a == b, a == c, a != c);
+
+    va : []i64 = a[0..3];
+    vb : []i64 = b[0..3];
+    print("views: {} {}\n", va == vb, va.ptr == vb.ptr);
+
+    ta : [3:0]i64 = .[4, 5, 6];
+    tb : [3:0]i64 = .[4, 5, 6];
+    tc : [3:7]i64 = .[4, 5, 6];
+    sa : [:0]i64 = ta;
+    sb : [:0]i64 = tb;
+    print("terminated: {} {} {}\n", sa == sb, ta == tc, sa.len);
+
+    z := 0.0;
+    nan := z / z;
+    na : [1]f64 = .[nan];
+    nb : [1]f64 = .[nan];
+    za : [1]f64 = .[0.0];
+    zb : [1]f64 = .[-0.0];
+    print("floats: {} {}\n", na == nb, za == zb);
+
+    pa : [2]Pad = .[.{ tag = 1, n = 2 }, .{ tag = 3, n = 4 }];
+    pb : [2]Pad = .[.{ tag = 1, n = 2 }, .{ tag = 3, n = 4 }];
+    print("padded: {}\n", pa[0..2] == pb[0..2]);
+
+    ka : [3:0]u8 = "abc";
+    kb : [3:0]u8 = "abc";
+    ca : [*:0]u8 = ka;
+    cb : [*:0]u8 = kb;
+    print("thin: {} {}\n", ca == ca, ca == cb);
+}
+@run check();
+
+main :: () -> i32 {
+    check();
+    0
+}

@@ -53,6 +53,7 @@ pub const Type = union(enum) {
     pub const SliceTypeInfo = struct {
         element_name: []const u8,
         is_raw: bool,
+        sentinel: ?i64 = null,
     };
 
     pub const PointerTypeInfo = struct {
@@ -63,6 +64,7 @@ pub const Type = union(enum) {
     pub const ManyPointerTypeInfo = struct {
         element_name: []const u8,
         is_raw: bool,
+        sentinel: ?i64 = null,
     };
 
     pub const FunctionTypeInfo = struct {
@@ -90,6 +92,7 @@ pub const Type = union(enum) {
         /// concrete length — this is hover/metadata, not codegen.
         length: ?u32,
         is_raw: bool,
+        sentinel: ?i64 = null,
     };
 
     pub const VectorTypeInfo = struct {
@@ -140,16 +143,6 @@ pub const Type = union(enum) {
             'a' => if (std.mem.eql(u8, name, "any")) .any_type else null,
             'v' => if (std.mem.eql(u8, name, "void")) .void_type else null,
             '[' => {
-                // Sentinel-terminated slice: [:0]u8 → string_type
-                if (name.len >= 5 and name[1] == ':') {
-                    if (std.mem.indexOfScalar(u8, name, ']')) |close| {
-                        const sentinel = name[2..close];
-                        const elem = name[close + 1 ..];
-                        if (std.mem.eql(u8, sentinel, "0") and std.mem.eql(u8, elem, "u8")) {
-                            return .string_type;
-                        }
-                    }
-                }
                 // Many-pointer: [*]T
                 if (name.len >= 4 and name[1] == '*' and name[2] == ']') {
                     return .{ .many_pointer_type = .{ .element_name = name[3..], .is_raw = false } };
@@ -294,12 +287,19 @@ pub const Type = union(enum) {
             .enum_type => |name| name,
             .struct_type => |name| name,
             .union_type => |name| name,
-            .slice_type => |info| return fmtAlloc(allocator, "[]{s}", .{info.element_name}),
+            .slice_type => |info| {
+                if (info.sentinel) |x| return fmtAlloc(allocator, "[:{d}]{s}", .{ x, info.element_name });
+                return fmtAlloc(allocator, "[]{s}", .{info.element_name});
+            },
             .pointer_type => |info| return fmtAlloc(allocator, "*{s}", .{info.pointee_name}),
-            .many_pointer_type => |info| return fmtAlloc(allocator, "[*]{s}", .{info.element_name}),
+            .many_pointer_type => |info| {
+                if (info.sentinel) |x| return fmtAlloc(allocator, "[*:{d}]{s}", .{ x, info.element_name });
+                return fmtAlloc(allocator, "[*]{s}", .{info.element_name});
+            },
             .array_type => |info| {
-                if (info.length) |n| return fmtAlloc(allocator, "[{d}]{s}", .{ n, info.element_name });
-                return fmtAlloc(allocator, "[_]{s}", .{info.element_name});
+                const n = info.length orelse return fmtAlloc(allocator, "[_]{s}", .{info.element_name});
+                if (info.sentinel) |x| return fmtAlloc(allocator, "[{d}:{d}]{s}", .{ n, x, info.element_name });
+                return fmtAlloc(allocator, "[{d}]{s}", .{ n, info.element_name });
             },
             .vector_type => |info| return fmtAlloc(allocator, "@Vector({d},{s})", .{ info.length, info.element_name }),
             .function_type => |info| {

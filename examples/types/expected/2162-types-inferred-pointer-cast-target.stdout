@@ -4,4 +4,3 @@ ann=42
 implicit=*i64 42
 byte=*u8 42
 many=[*]i64 42 back=*i64 42
-head=*u8 104 round=cstring

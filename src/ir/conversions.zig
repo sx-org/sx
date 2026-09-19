@@ -50,32 +50,84 @@ pub const CoercionResolver = struct {
         int_to_enum, // int → payload-less enum (through the enum's backing type)
         enum_to_int, // payload-less enum → int (through the enum's backing type)
         ptr_int_bitcast, // ptr ↔ int
-        ptr_to_void, // *T / [*]T / cstring → *void
+        ptr_to_void, // *T / [*]T → *void
         widen, // same kind, dst wider
         narrow, // same kind, dst narrower
         array_to_slice, // [N]T → []T (materialize backing storage + header)
+        array_drop_terminator, // [N:X]T → [N]T (the N elements, terminator dropped)
+        array_to_many_ptr, // [N:X]T → [*:X]T (the array's storage, as a pointer)
+        slice_to_many_ptr, // [:X]T → [*:X]T (the fat pointer's data word)
         slice_len_convert, // @Slice(T,A) → @Slice(T,B) (rebuild the header on B's length word)
         many_to_slice_reject, // [*]T → []T (no length — needs ptr[0..len]; diagnostic)
-        string_to_cstring, // literal-only implicit; other strings need toCstring
-        cstring_to_string_reject, // explicit fromCstring required (diagnostic)
+        adds_terminator_reject, // an unterminated view → a terminated shape (diagnostic)
         error_set_retype, // error set → error set, tags legal in the destination
         none, // nothing applies — pass the value through
+
+        /// A plan that REFUSES the conversion. The value does not reach the
+        /// destination; the emitter reports the refusal and passes the operand
+        /// through so lowering can continue.
+        pub fn refuses(self: CoercionPlan) bool {
+            return switch (self) {
+                .closure_to_fn_reject,
+                .unique_to_closure_reject,
+                .lambda_ptr_to_closure_reject,
+                .optional_to_bool_reject,
+                .many_to_slice_reject,
+                .adds_terminator_reject,
+                => true,
+                else => false,
+            };
+        }
     };
+
+    /// The element a thin element pointer destination names.
+    pub fn pointerDestElement(self: CoercionResolver, dst_ty: TypeId) ?TypeId {
+        if (dst_ty.isBuiltin()) return null;
+        const di = self.l.module.types.get(dst_ty);
+        return if (di == .many_pointer) di.many_pointer.element else null;
+    }
+
+    /// The terminator a thin element pointer destination guarantees, or null
+    /// for the unterminated `[*]T`.
+    pub fn pointerDestSentinel(self: CoercionResolver, dst_ty: TypeId) ?i64 {
+        if (dst_ty.isBuiltin()) return null;
+        const di = self.l.module.types.get(dst_ty);
+        return if (di == .many_pointer) di.many_pointer.sentinel else null;
+    }
+
+    /// The terminator `dst_ty` guarantees, over every shape that names one.
+    pub fn destSentinel(self: CoercionResolver, dst_ty: TypeId) ?i64 {
+        if (self.l.module.types.sliceInfoOf(dst_ty)) |s| return s.sentinel;
+        if (!dst_ty.isBuiltin()) {
+            const di = self.l.module.types.get(dst_ty);
+            if (di == .array) return di.array.sentinel;
+        }
+        return self.pointerDestSentinel(dst_ty);
+    }
+
+    fn byteSized(elem: TypeId) bool {
+        return elem == .u8 or elem == .i8;
+    }
+
+    /// Whether a terminated container of `src_elem` ending in `src_sentinel`
+    /// satisfies the pointer `dst_ty` names. Dropping the guarantee (`[*]T`)
+    /// is free; keeping it demands the same terminator.
+    fn terminatorReaches(self: CoercionResolver, src_elem: TypeId, src_sentinel: ?i64, dst_ty: TypeId, dst_elem: TypeId) bool {
+        const term = src_sentinel orelse return false;
+        if (src_elem != dst_elem and !(byteSized(src_elem) and byteSized(dst_elem))) return false;
+        const want = self.pointerDestSentinel(dst_ty) orelse return true;
+        return want == term;
+    }
 
     pub fn classify(self: CoercionResolver, src_ty: TypeId, dst_ty: TypeId) CoercionPlan {
         if (src_ty == dst_ty) return .no_op;
-        if (src_ty == .string and dst_ty == .cstring) return .string_to_cstring;
-        // string → `[*]u8`/`[*]i8`: the C-import synthesizes `char const *`
-        // params as byte many-pointers, so a string LITERAL argument gets the
-        // same literal-only blessing as `cstring` (its bytes are a terminated
-        // constant; the emitted value is the DATA POINTER). A non-literal
-        // string may be an unterminated view — same rejection as cstring.
-        // The pair needs this modeled arm: the `.none`-weld guard rejects a
-        // `.none` weld of the 16-byte {ptr,len} header into a pointer.
-        if (src_ty == .string and !dst_ty.isBuiltin()) {
-            const di = self.l.module.types.get(dst_ty);
-            if (di == .many_pointer and (di.many_pointer.element == .u8 or di.many_pointer.element == .i8)) {
-                return .string_to_cstring;
+        // A terminated value reaches a pointer that names the same terminator
+        // or names none.
+        if (self.pointerDestElement(dst_ty)) |dst_elem| {
+            switch (self.l.module.types.get(src_ty)) {
+                .array => |a| if (self.terminatorReaches(a.element, a.sentinel, dst_ty, dst_elem)) return .array_to_many_ptr,
+                .slice => |sl| if (self.terminatorReaches(sl.element, sl.sentinel, dst_ty, dst_elem)) return .slice_to_many_ptr,
+                else => {},
             }
         }
         // A member of an open set, where the set is expected: the value goes INTO
@@ -87,7 +139,6 @@ pub const CoercionResolver = struct {
                 if (self.l.openSetDeclaresMembership(src_ty, set.decl)) return .member_to_open_set;
             }
         }
-        if (src_ty == .cstring and dst_ty == .string) return .cstring_to_string_reject;
         if (src_ty == .any and dst_ty != .any) return .unbox_any;
         if (dst_ty == .any and src_ty != .any) return .box_any;
 
@@ -125,6 +176,13 @@ pub const CoercionResolver = struct {
             }
         }
 
+        if (!src_ty.isBuiltin() and !dst_ty.isBuiltin()) {
+            const si = self.l.module.types.get(src_ty);
+            const di = self.l.module.types.get(dst_ty);
+            if (si == .array and di == .array and si.array.sentinel != null and di.array.sentinel == null and
+                si.array.element == di.array.element and si.array.length == di.array.length) return .array_drop_terminator;
+        }
+
         // Fixed array → slice of the same element: an aggregate array value
         // (e.g. a `.[...]` literal passed directly as a call arg) needs to be
         // materialized into addressable storage and wrapped in a {ptr,len}
@@ -134,7 +192,8 @@ pub const CoercionResolver = struct {
         if (self.l.module.types.sliceInfoOf(dst_ty)) |ds| {
             if (!src_ty.isBuiltin()) {
                 const si = self.l.module.types.get(src_ty);
-                if (si == .array and si.array.element == ds.element) return .array_to_slice;
+                if (si == .array and si.array.element == ds.element and
+                    (ds.sentinel == null or ds.sentinel == si.array.sentinel)) return .array_to_slice;
                 // `[*]T → []T`: a many-pointer carries NO length, so it cannot form a
                 // `{ptr,len}` slice header implicitly. Silently passing the bare 8-byte
                 // pointer where a 16-byte fat pointer is expected corrupts the callee's
@@ -145,9 +204,10 @@ pub const CoercionResolver = struct {
             }
             // Two slices over the same element differing only in the width of
             // their length word: the fat pointer is rebuilt on the destination's
-            // `Len`, the view unchanged.
+            // `Len`, the view unchanged. A destination naming a terminator takes
+            // only a source that already carries it.
             if (self.l.module.types.sliceInfoOf(src_ty)) |ss| {
-                if (ss.element == ds.element) return .slice_len_convert;
+                if (ss.element == ds.element and (ds.sentinel == null or ds.sentinel == ss.sentinel)) return .slice_len_convert;
             }
         }
 
@@ -225,8 +285,8 @@ pub const CoercionResolver = struct {
 
         if (src_int and dst_float) return .int_to_float;
         if (src_float and dst_int) return .float_to_int;
-        // Losing a pointee is the destination's request: a single-pointer,
-        // many-pointer, or `cstring` stores into `*void` without a glyph.
+        // Losing a pointee is the destination's request: a single-pointer or
+        // many-pointer stores into `*void` without a glyph.
         // The reverse (`*void` → `*T`) is a pointer↔pointer `.none`
         // (explicit `raw.(*T)` / `xx raw`).
         if (self.isVoidPointer(dst_ty) and self.isTypedAddress(src_ty)) return .ptr_to_void;
@@ -245,6 +305,12 @@ pub const CoercionResolver = struct {
         // implicit gate, and `unifyValueArmTypes` reads a modeled plan as a
         // safe join.
         if (lower_error.errorSetValueRetypeIsLegal(self.l, src_ty, dst_ty)) return .error_set_retype;
+        // A terminated type's guarantee comes only from an arm above that reads
+        // the source's own terminator: the passthrough below would hand any
+        // same-width address or aggregate a guarantee its bytes do not carry.
+        // `void` (the null literal), `noreturn` and `unresolved` are not values.
+        if (self.destSentinel(dst_ty) != null and
+            src_ty != .void and src_ty != .noreturn and src_ty != .unresolved) return .adds_terminator_reject;
         return .none;
     }
 
@@ -398,7 +464,6 @@ pub const CoercionResolver = struct {
     }
 
     fn isTypedAddress(self: CoercionResolver, ty: TypeId) bool {
-        if (ty == .cstring) return true;
         if (ty.isBuiltin()) return false;
         return switch (self.l.module.types.get(ty)) {
             .pointer, .many_pointer => true,
@@ -407,7 +472,6 @@ pub const CoercionResolver = struct {
     }
 
     fn isAddressType(self: CoercionResolver, ty: TypeId) bool {
-        if (ty == .cstring) return true;
         if (ty.isBuiltin()) return false;
         return switch (self.l.module.types.get(ty)) {
             .pointer, .many_pointer, .function => true,

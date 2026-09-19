@@ -1,10 +1,10 @@
-error: match arms have incompatible types: 'i64' vs 'string'
+error: match arms have incompatible types: 'i64' vs 'cstring'
   --> examples/diagnostics/1224-diagnostics-match-arm-type-mismatch.sx:18:50
    |
 18 |     r := match c { case .red: { 1 } case .green: { "hi" } };
    |                                                  ^^^^^^^^
 
-error: match arms have incompatible types: 'f64' vs 'string'
+error: match arms have incompatible types: 'f64' vs 'cstring'
   --> examples/diagnostics/1224-diagnostics-match-arm-type-mismatch.sx:23:54
    |
 23 |     s := match v { case .num: |x| { x } case .other: { "nope" } };

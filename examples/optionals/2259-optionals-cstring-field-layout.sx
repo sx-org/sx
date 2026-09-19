@@ -1,5 +1,5 @@
-// A `?cstring` is one pointer word — null IS the pointer's null state — so a
-// struct field costs no flag byte, and the same presence test answers alike
+// A `?cstring` is the cstring's own 16 bytes — a null `ptr` IS absent — so a
+// struct field costs no flag word, and the same presence test answers alike
 // at runtime and in the comptime VM.
 
 @import "modules/std.sx";

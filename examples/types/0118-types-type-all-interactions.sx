@@ -32,7 +32,7 @@ describe :: ($T: Type) -> string {
 // Pack-fn collecting per-position types (bare path).
 typeList :: (..$args) -> string {
     list := $args;
-    s := "[";
+    s : string = "[";
     i : i64 = 0;
     while i < list.len {
         if i > 0 { s = concat(s, ", "); }

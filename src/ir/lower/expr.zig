@@ -523,10 +523,8 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         return self.coerceToType(arr, self.builder.getRefType(arr), ty);
     }
 
-    const aggregate_ok = if (ty.isBuiltin())
-        ty == .string
-    else switch (self.module.types.get(ty)) {
-        .@"struct", .array, .vector, .slice, .closure, .failable => true,
+    const aggregate_ok = switch (self.module.types.get(ty)) {
+        .string, .@"struct", .array, .vector, .slice, .closure, .failable => true,
         else => false,
     };
     if (!aggregate_ok) {
@@ -940,7 +938,7 @@ fn isSliceHeaderLiteral(sl: *const ast.StructLiteral) bool {
 /// keyed by field name or by position. `getStructFields` is empty for these.
 fn fatPointerSlotType(self: *Lowering, ty: TypeId, name: ?[]const u8, index: usize) ?TypeId {
     const is_string = ty == .string;
-    const is_slice = !ty.isBuiltin() and self.module.types.get(ty) == .slice;
+    const is_slice = self.module.types.get(ty) == .slice;
     const is_closure = !ty.isBuiltin() and self.module.types.get(ty) == .closure;
     if (is_string or is_slice) {
         const is_ptr = if (name) |n| std.mem.eql(u8, n, "ptr") else index == 0;
@@ -1114,6 +1112,7 @@ pub fn builtinTypeName(ty: TypeId) ?[]const u8 {
         .f64 => "f64",
         .bool => "bool",
         .string => "string",
+        .cstring => "cstring",
         else => null,
     };
 }
@@ -1127,10 +1126,10 @@ pub fn builtinTypeName(ty: TypeId) ?[]const u8 {
 /// kept as a FALLBACK — `@get len` accessors (e.g. `List.len`) have no
 /// field entry and type through it.
 pub fn resolveFieldType(self: *Lowering, ty: TypeId, field: []const u8) TypeId {
-    const is_special_container = ty == .string or (!ty.isBuiltin() and switch (self.module.types.get(ty)) {
-        .slice, .array, .vector => true,
+    const is_special_container = switch (self.module.types.get(ty)) {
+        .string, .slice, .array, .vector => true,
         else => false,
-    });
+    };
     if (is_special_container) {
         if (std.mem.eql(u8, field, "len")) return self.module.types.lenTypeOf(ty);
         if (std.mem.eql(u8, field, "ptr")) {
@@ -1543,14 +1542,14 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
     // Special fields on slices/strings (NOT structs with .len/.ptr fields)
     if (std.mem.eql(u8, fa.field, "len") or std.mem.eql(u8, fa.field, "ptr")) {
         // Only use length/data_ptr for slice, string, array, vector types
-        const is_special = obj_ty == .string or (if (!obj_ty.isBuiltin()) blk: {
-            const info = self.module.types.get(obj_ty);
-            break :blk info == .slice or info == .array or info == .vector;
-        } else false);
+        const is_special = switch (self.module.types.get(obj_ty)) {
+            .string, .slice, .array, .vector => true,
+            else => false,
+        };
 
         if (is_special) {
             if (std.mem.eql(u8, fa.field, "len")) {
-                return self.builder.emit(.{ .length = .{ .operand = obj } }, self.module.types.lenTypeOf(obj_ty));
+                return self.emitLength(obj, obj_ty);
             }
             {
                 const elem_ty = self.getElementType(obj_ty);
@@ -1672,6 +1671,43 @@ pub fn typeLimitInt(self: *Lowering, receiver: *const Node, field: []const u8) ?
     return self.module.types.integerLimit(ty, std.mem.eql(u8, field, "max"));
 }
 
+/// The bytes a string literal denotes, escapes resolved.
+pub fn stringLiteralBytes(self: *Lowering, lit: ast.StringLiteral) []const u8 {
+    if (lit.form != .quoted) return lit.raw;
+    return unescape.unescapeString(self.alloc, lit.raw) catch lit.raw;
+}
+
+/// A string literal's own type: `[N:0]u8` over its bytes.
+pub fn stringLiteralType(self: *Lowering, lit: ast.StringLiteral) TypeId {
+    return self.module.types.arrayOfSentinel(.u8, @intCast(self.stringLiteralBytes(lit).len), 0);
+}
+
+/// A string literal is `[N:0]u8`. It keeps that array where the destination
+/// names a shape only a terminated value reaches, and decays to the `[:0]u8`
+/// view everywhere else.
+pub fn lowerStringLiteral(self: *Lowering, lit: ast.StringLiteral) Ref {
+    const str = self.stringLiteralBytes(lit);
+    const sid = self.module.types.internString(str);
+    const ty = if (self.literalKeepsArray(self.target_type))
+        self.module.types.arrayOfSentinel(.u8, @intCast(str.len), 0)
+    else
+        .cstring;
+    return self.builder.emit(.{ .const_string = sid }, ty);
+}
+
+/// Whether the destination names a shape the decayed view cannot reach: the
+/// terminated array itself, or a byte pointer that wants the terminator.
+pub fn literalKeepsArray(self: *Lowering, target: ?TypeId) bool {
+    const t = target orelse return false;
+    if (t.isBuiltin()) return false;
+    return switch (self.module.types.get(t)) {
+        .array => |a| a.element == .u8,
+        .many_pointer => |mp| mp.element == .u8 or mp.element == .i8,
+        .optional => |o| self.literalKeepsArray(o.child),
+        else => false,
+    };
+}
+
 /// Lower a struct-level constant value (e.g., Phys.GRAVITY).
 pub fn lowerStructConstant(self: *Lowering, info: StructConstInfo) Ref {
     const val_node = info.value;
@@ -1686,7 +1722,7 @@ pub fn lowerStructConstant(self: *Lowering, info: StructConstInfo) Ref {
         },
         .float_literal => |lit| self.builder.constFloat(lit.value, info.ty orelse .f64),
         .bool_literal => |lit| self.builder.constBool(lit.value),
-        .string_literal => |lit| self.builder.constString(self.module.types.internString(lit.raw)),
+        .string_literal => |lit| self.lowerStringLiteral(lit),
         else => self.lowerExpr(val_node),
     };
 }
@@ -2583,6 +2619,8 @@ pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
     var elem_ty: TypeId = .unresolved;
     var from_target = false;
     var is_vector = false;
+    // The destination's terminator, written past the last element.
+    var sentinel: ?i64 = null;
 
     // First, check explicit type annotation on the literal (e.g. `@Vector(3,f32).[1,2,3]`).
     // The prefix slot names the AGGREGATE type; a prefix that resolves to
@@ -2601,6 +2639,7 @@ pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
                 switch (info) {
                     .array => |a| {
                         elem_ty = a.element;
+                        sentinel = a.sentinel;
                         from_target = true;
                     },
                     .vector => |v| {
@@ -2631,6 +2670,7 @@ pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
                 switch (info) {
                     .array => |a| {
                         elem_ty = a.element;
+                        sentinel = a.sentinel;
                         from_target = true;
                     },
                     .vector => |v| {
@@ -2675,10 +2715,12 @@ pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
         elems.append(self.alloc, val) catch unreachable;
     }
 
+    if (sentinel) |x| elems.append(self.alloc, self.sentinelValue(x, elem_ty)) catch unreachable;
+
     const result_ty = if (is_vector)
         self.module.types.vectorOf(elem_ty, @intCast(al.elements.len))
     else
-        self.module.types.arrayOf(elem_ty, @intCast(al.elements.len));
+        self.module.types.arrayOfSentinel(elem_ty, @intCast(al.elements.len), sentinel);
     return self.builder.structInit(elems.items, result_ty);
 }
 
@@ -3052,16 +3094,8 @@ pub fn lowerSliceExpr(self: *Lowering, se: *const ast.SliceExpr) Ref {
     }
     var lo = if (se.start) |s| self.lowerExpr(s) else self.builder.constInt(0, .i64);
     if (se.start_exclusive) lo = self.builder.add(lo, self.builder.constInt(1, .i64), .i64);
-    // Open-ended `hi`: for a fixed-size array the length is a compile-time
-    // constant — emit it directly rather than a runtime `.length` op. Runtime
-    // codegen folds the identical constant for an array (`emitLength`), so the
-    // result is unchanged; the win is the comptime interp, which can't
-    // disambiguate a 2-element array from a `{ptr,len}` fat pointer by Value
-    // shape and so would misread a `.length` op on an array.
     var hi = if (se.end) |e|
         self.lowerExpr(e)
-    else if (!obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .array)
-        self.builder.constInt(@intCast(self.module.types.get(obj_ty).array.length), .i64)
     else if (!obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .many_pointer) blk: {
         // A many-pointer `[*]T` carries no length, so an open-ended slice
         // `mp[lo..]` has no upper bound to resolve — a `.length` op on it would
@@ -3655,14 +3689,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             return self.builder.constFloat(lit.value, fty);
         },
         .bool_literal => |lit| self.builder.constBool(lit.value),
-        .string_literal => |lit| blk: {
-            const str = if (lit.is_raw)
-                lit.raw
-            else
-                unescape.unescapeString(self.alloc, lit.raw) catch lit.raw;
-            const sid = self.module.types.internString(str);
-            break :blk self.builder.constString(sid);
-        },
+        .string_literal => |lit| self.lowerStringLiteral(lit),
         // A bare `null` / `---` with no surrounding type expectation is a
         // legitimate typeless literal, not a failed lookup: `.void` is its
         // intentional default (emitConstNull/emitConstUndef handle void as
@@ -4996,7 +5023,7 @@ pub fn refCapturePointee(self: *Lowering, node: *const Node) ?TypeId {
 ///   • bool / integers (signed/unsigned/usize/isize)
 ///   • integer-backed nominals: `enum` (incl. `enum flags`, e.g. `if p & .read`)
 ///     and an error (a u32 tag) — both reach condBr as a plain integer
-///   • pointers: `*T` / `[*]T` / `cstring` (compared against null)
+///   • pointers: `*T` / `[*]T` (compared against null)
 ///   • `optional` — the caller emits `optional_has_value`
 /// Everything else (float, void, string, any, type_value, struct/union/tuple/
 /// array/slice/vector/function/closure/protocol/pack) reaches condBr as a
@@ -5007,7 +5034,7 @@ fn isValidConditionType(self: *Lowering, ty: TypeId) bool {
     if (ty == .unresolved) return true; // already-diagnosed elsewhere; don't double-report
     return switch (self.module.types.get(ty)) {
         .bool, .signed, .unsigned, .usize, .isize => true,
-        .pointer, .many_pointer, .cstring => true,
+        .pointer, .many_pointer => true,
         .@"enum", .@"error" => true,
         .optional => true,
         else => false,
@@ -5050,7 +5077,7 @@ pub fn lowerBoolCondition(self: *Lowering, node: *const Node) Ref {
             .lhs = v,
             .rhs = self.builder.constInt(0, ty),
         } }, .bool),
-        .pointer, .many_pointer, .cstring => self.builder.emit(.{ .cmp_ne = .{
+        .pointer, .many_pointer => self.builder.emit(.{ .cmp_ne = .{
             .lhs = v,
             .rhs = self.builder.constNull(ty),
         } }, .bool),
@@ -5439,39 +5466,37 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     }
     if (self.unwrapOptionalOperand(rhs, rhs_ty, bop.rhs.span)) |payload| rhs = payload;
 
-    // String comparison: use str_eq/str_ne (memcmp-based) instead of pointer comparison
-    if (ty == .string and (bop.op == .eq or bop.op == .neq)) {
-        return if (bop.op == .eq)
-            self.builder.emit(.{ .str_eq = .{ .lhs = lhs, .rhs = rhs } }, .bool)
-        else
-            self.builder.emit(.{ .str_ne = .{ .lhs = lhs, .rhs = rhs } }, .bool);
+    // Sequence value equality: `[N]T`, `[N:X]T`, `[]T`, `[:X]T` and `string`
+    // compare CONTENT. The operands need one element type; an array meets the
+    // slice, and the lengths answer at run time. A sequence has no comparison
+    // with a non-sequence peer.
+    if (bop.op == .eq or bop.op == .neq) {
+        const l_ty = refTypeOr(self, lhs, ty);
+        const r_ty = refTypeOr(self, rhs, rhs_ty);
+        const l_elem = sequenceElement(self, l_ty);
+        const r_elem = sequenceElement(self, r_ty);
+        if (l_elem != null and l_elem == r_elem) {
+            return lowerSequenceEquality(self, lhs, rhs, l_elem.?, bop.op == .eq, bop.lhs.span);
+        }
+        if (l_elem != null or r_elem != null) {
+            if (self.diagnostics) |d| d.addFmt(.err, bop.rhs.span, "cannot compare values of distinct types '{s}' and '{s}'", .{
+                self.formatTypeName(l_ty), self.formatTypeName(r_ty),
+            });
+            return self.emitPlaceholder("distinct-sequence-equality");
+        }
     }
 
-    // Non-comparable aggregate `==` / `!=` guard.
-    //
-    // A `union { ... }` and a fixed `[N]T` array are raw byte /
-    // element aggregates with NO defined value-equality: a union's inactive-
-    // variant + padding bytes are unspecified, so a byte-wise `icmp` over the
-    // `[N x i8]` union storage (or `[N x T]` array storage) is both semantically
-    // wrong AND rejected by the LLVM verifier ("Invalid operand types for ICmp").
-    // Reject at lower time — where the span and the named type are available —
-    // with a located diagnostic + a hint to compare a specific variant/element
-    // instead, rather than emitting invalid IR downstream. Payload enums (compare
-    // by tag), payload-less enums, tuples, strings, slices, and optionals all have
-    // their own valid compare paths and are unaffected.
+    // A `union`'s inactive-variant and padding bytes are unspecified, so it has
+    // no value-equality: a byte-wise `icmp` over its `[N x i8]` storage is both
+    // wrong and rejected by the LLVM verifier. Reject at lower time, where the
+    // span and the named type are available.
     if ((bop.op == .eq or bop.op == .neq) and !ty.isBuiltin()) {
-        const agg_info = self.module.types.get(ty);
-        const hint: ?[]const u8 = switch (agg_info) {
-            .@"union" => "compare a specific variant field (e.g. `a.field == b.field`)",
-            .array => "compare elements individually, or loop over the elements",
-            else => null,
-        };
-        if (hint) |h| {
+        if (self.module.types.get(ty) == .@"union") {
             if (self.diagnostics) |d| {
                 const pid = d.addFmtId(.err, bop.lhs.span, "cannot compare '{s}' values with '{s}'", .{
                     self.formatTypeName(ty), binOpSymbol(bop.op),
                 });
-                d.addNote(pid, bop.lhs.span, h);
+                d.addNote(pid, bop.lhs.span, "compare a specific variant field (e.g. `a.field == b.field`)");
             }
             return self.emitPlaceholder("uncomparable-aggregate-eq");
         }
@@ -5585,13 +5610,10 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
 /// natural "two structs are equal iff every field is equal" semantics. Padding
 /// bytes are never read (that is exactly why field-wise beats a byte-compare).
 ///
-/// A field that is not itself comparable — a `union`, a fixed `[N]T`
-/// array, or an `?T` optional — is rejected with a located diagnostic, mirroring
-/// how those shapes are rejected as bare `==` operands (and by the
-/// optional-operand guard). The reduced per-field comparisons that DO get built
-/// are scalar / pointer / string / slice / payload enum / nested-struct — each
-/// with its own valid lowering — so `emit_llvm`'s narrow struct arm never sees a
-/// user struct.
+/// A field with no value-equality of its own — a `union` — is rejected with a
+/// located diagnostic, mirroring how that shape is rejected as a bare `==`
+/// operand. Every field comparison that DOES get built has its own valid
+/// lowering, so `emit_llvm`'s narrow struct arm never sees a user struct.
 pub fn lowerStructEquality(self: *Lowering, bop: *const ast.BinaryOp, lhs: Ref, rhs: Ref, ty: TypeId) Ref {
     const info = self.module.types.get(ty);
     const fields = info.@"struct".fields;
@@ -5669,23 +5691,86 @@ pub fn lowerOptionalMixedEquality(self: *Lowering, opt: Ref, conc: Ref, inner_ty
     return self.builder.blockParam(merge_bb, 0, .bool);
 }
 
+fn refTypeOr(self: *Lowering, r: Ref, fallback: TypeId) TypeId {
+    const t = self.builder.getRefType(r);
+    return if (t == .unresolved) fallback else t;
+}
+
+/// The element type of a sequence whose `==` compares content — `[N]T`,
+/// `[N:X]T`, `[]T`, `[:X]T`, `string` — or null for every other type.
+fn sequenceElement(self: *Lowering, ty: TypeId) ?TypeId {
+    if (ty == .string) return .u8;
+    return switch (self.module.types.get(ty)) {
+        .array => |a| a.element,
+        .slice => |sl| sl.element,
+        else => null,
+    };
+}
+
+/// The `{ptr, len}` reading of a sequence operand: a slice already is one, an
+/// array meets it. `[N:X]T` lands on its written N — the terminator is the
+/// type's guarantee, not part of the value.
+fn sequenceAsSlice(self: *Lowering, v: Ref, elem: TypeId) Ref {
+    const ty = self.builder.getRefType(v);
+    if (ty.isBuiltin() or self.module.types.get(ty) != .array) return v;
+    return self.builder.emit(.{ .array_to_slice = .{ .operand = v } }, self.module.types.sliceOf(elem));
+}
+
+/// Build a `bool` Ref for `lhs == rhs` (or `!=`) over two sequences of `elem`:
+/// the lengths, then every element through `lowerFieldEquality`. `memcmp`
+/// stands in for the loop where an element's bytes are its value.
+fn lowerSequenceEquality(self: *Lowering, lhs: Ref, rhs: Ref, elem: TypeId, want_eq: bool, span: ast.Span) Ref {
+    const l = sequenceAsSlice(self, lhs, elem);
+    const r = sequenceAsSlice(self, rhs, elem);
+    if (self.module.types.bytesAreValue(elem)) {
+        const size: u32 = @intCast(self.module.types.typeSizeBytes(elem));
+        const cmp: inst_mod.SeqCmp = .{ .lhs = l, .rhs = r, .elem_size = size };
+        return if (want_eq)
+            self.builder.emit(.{ .str_eq = cmp }, .bool)
+        else
+            self.builder.emit(.{ .str_ne = cmp }, .bool);
+    }
+
+    const l_len = self.builder.emit(.{ .length = .{ .operand = l } }, self.module.types.lenTypeOf(self.builder.getRefType(l)));
+    const r_len = self.builder.emit(.{ .length = .{ .operand = r } }, self.module.types.lenTypeOf(self.builder.getRefType(r)));
+    const len_eq = self.builder.cmpEq(l_len, r_len);
+
+    const head_bb = self.freshBlockWithParams("seqeq.head", &.{.i64});
+    const body_bb = self.freshBlock("seqeq.body");
+    const merge_bb = self.freshBlockWithParams("seqeq.merge", &.{.bool});
+    const zero = self.builder.constInt(0, .i64);
+    self.builder.condBr(len_eq, head_bb, &.{zero}, merge_bb, &.{self.builder.constBool(false)});
+
+    self.builder.switchToBlock(head_bb);
+    const i = self.builder.blockParam(head_bb, 0, .i64);
+    const done = self.builder.cmpEq(i, l_len);
+    self.builder.condBr(done, merge_bb, &.{self.builder.constBool(true)}, body_bb, &.{});
+
+    self.builder.switchToBlock(body_bb);
+    const le = self.builder.emit(.{ .index_get = .{ .lhs = l, .rhs = i } }, elem);
+    const re = self.builder.emit(.{ .index_get = .{ .lhs = r, .rhs = i } }, elem);
+    // A rejected element has diagnosed; closing the loop anyway keeps the CFG
+    // well-formed until `hasErrors()` aborts.
+    const elem_eq = self.lowerFieldEquality(le, re, elem, span) orelse self.builder.constBool(false);
+    const next = self.builder.add(i, self.builder.constInt(1, .i64), .i64);
+    self.builder.condBr(elem_eq, head_bb, &.{next}, merge_bb, &.{self.builder.constBool(false)});
+
+    self.builder.switchToBlock(merge_bb);
+    const all_eq = self.builder.blockParam(merge_bb, 0, .bool);
+    return if (want_eq) all_eq else self.builder.emit(.{ .bool_not = .{ .operand = all_eq } }, .bool);
+}
+
 /// Build a `bool` Ref for `lf == rf` where both are values of `field_ty`, the
 /// per-field step of `lowerStructEquality`. Returns null (after emitting a
 /// located diagnostic) for a field type that has no defined value-equality.
 pub fn lowerFieldEquality(self: *Lowering, lf: Ref, rf: Ref, field_ty: TypeId, span: ast.Span) ?Ref {
-    // Builtins (ints, floats, bool, pointers, enums-as-int, usize/isize,
-    // cstring): a plain `cmp_eq`. The LLVM emitter picks fcmp for a float
-    // operand and icmp otherwise off the operand's own type, so f32/f64 fields
-    // get the correct ordered-equal compare with no special-casing here.
-    if (field_ty.isBuiltin()) {
-        // `string` is a fat `{ptr,len}` — a byte-wise `icmp` on it is invalid
-        // IR; route to memcmp-based `str_eq` (the same path top-level string
-        // `==` takes).
-        if (field_ty == .string) {
-            return self.builder.emit(.{ .str_eq = .{ .lhs = lf, .rhs = rf } }, .bool);
-        }
-        return self.builder.cmpEq(lf, rf);
-    }
+    if (sequenceElement(self, field_ty)) |elem| return lowerSequenceEquality(self, lf, rf, elem, true, span);
+
+    // Builtins (ints, floats, bool, pointers, enums-as-int, usize/isize): a
+    // plain `cmp_eq`. The LLVM emitter picks fcmp for a float operand and icmp
+    // otherwise off the operand's own type, so f32/f64 fields get the correct
+    // ordered-equal compare with no special-casing here.
+    if (field_ty.isBuiltin()) return self.builder.cmpEq(lf, rf);
 
     const fi = self.module.types.get(field_ty);
     return switch (fi) {
@@ -5709,30 +5794,18 @@ pub fn lowerFieldEquality(self: *Lowering, lf: Ref, rf: Ref, field_ty: TypeId, s
             if (bad) break :blk null;
             break :blk acc.?;
         },
-        // Slice (`{ptr,len}` fat pointer): pointer+len identity, same as bare
-        // slice `==`. emit_llvm's 2-scalar-field arm handles it.
-        .slice => self.builder.cmpEq(lf, rf),
         // Enum and pointers-by-info: scalar identity; a payload-carrying enum
         // compares its tag only (emit_llvm's tag-only arm).
         .@"enum", .pointer, .many_pointer => self.builder.cmpEq(lf, rf),
         // Optional field: both-null equal, one-null unequal, both-present →
         // payload compare — the same rule as bare `?T == ?T`.
         .optional => self.lowerOptionalEquality(lf, rf, fi.optional.child, span),
-        // Non-comparable field types — rejected. An
-        // union's inactive bytes are unspecified; a fixed array has no
-        // defined value-equality (compare elements). Each mirrors how the bare
-        // shape is rejected as a top-level `==` operand.
-        .@"union", .array => blk: {
-            const hint: []const u8 = switch (fi) {
-                .@"union" => "compare a specific variant sub-field",
-                .array => "compare elements individually, or loop over the elements",
-                else => unreachable,
-            };
+        .@"union" => blk: {
             if (self.diagnostics) |d| {
-                const pid = d.addFmtId(.err, span, "cannot compare: field of type '{s}' has no value-equality", .{
+                const pid = d.addFmtId(.err, span, "cannot compare: '{s}' has no value-equality", .{
                     self.formatTypeName(field_ty),
                 });
-                d.addNote(pid, span, hint);
+                d.addNote(pid, span, "compare a specific variant field");
             }
             break :blk null;
         },
@@ -5744,7 +5817,7 @@ pub fn lowerFieldEquality(self: *Lowering, lf: Ref, rf: Ref, field_ty: TypeId, s
         // ill-defined.)
         else => blk: {
             if (self.diagnostics) |d| {
-                d.addFmt(.err, span, "cannot compare: field of type '{s}' has no value-equality", .{
+                d.addFmt(.err, span, "cannot compare: '{s}' has no value-equality", .{
                     self.formatTypeName(field_ty),
                 });
             }
@@ -5818,7 +5891,7 @@ fn isComptimeIntExpr(node: *const Node) bool {
 }
 
 fn isCompareNumericPeer(self: *Lowering, ty: TypeId) bool {
-    if (self.isIntEx(ty) or Lowering.isFloat(ty) or ty == .cstring) return true;
+    if (self.isIntEx(ty) or Lowering.isFloat(ty)) return true;
     if (ty.isBuiltin()) return false;
     return switch (self.module.types.get(ty)) {
         .pointer, .many_pointer, .function => true,

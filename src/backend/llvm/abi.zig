@@ -47,13 +47,10 @@ pub const AbiLowering = struct {
         // instead, and land on `byval` where clang passes a plain pointer.
         if (self.e.ir_mod.types.isCVariadicCursor(ir_ty)) return self.e.cached_ptr;
 
-        if (is_extern_c_api) {
-            if (ir_ty == .string) return self.e.cached_ptr;
-            if (!ir_ty.isBuiltin()) {
-                const info = self.e.ir_mod.types.get(ir_ty);
-                if (info == .slice) return self.e.cached_ptr;
-            }
-        }
+        if (is_extern_c_api) switch (self.e.ir_mod.types.get(ir_ty)) {
+            .string, .slice => return self.e.cached_ptr,
+            else => {},
+        };
 
         // WASM32: usize/isize are pointer-sized (i32 on wasm32).
         // Other integer types (i64, u64) keep their declared size — they represent
@@ -95,10 +92,9 @@ pub const AbiLowering = struct {
     /// paths are already correct without C-style register packing.
     pub fn abiCoerceDefaultParamType(self: AbiLowering, ir_ty: TypeId, llvm_ty: c.LLVMTypeRef) c.LLVMTypeRef {
         if (self.e.target_config.isWasm32()) return llvm_ty;
-        if (ir_ty == .string) return llvm_ty;
-        if (!ir_ty.isBuiltin()) {
-            const info = self.e.ir_mod.types.get(ir_ty);
-            if (info == .slice) return llvm_ty;
+        switch (self.e.ir_mod.types.get(ir_ty)) {
+            .string, .slice => return llvm_ty,
+            else => {},
         }
         if (c.LLVMGetTypeKind(llvm_ty) != c.LLVMStructTypeKind) return llvm_ty;
         if (self.isHfa(llvm_ty)) return llvm_ty;
@@ -129,10 +125,9 @@ pub const AbiLowering = struct {
     pub fn needsByval(self: AbiLowering, ir_ty: TypeId, raw_llvm_ty: c.LLVMTypeRef) bool {
         if (self.e.target_config.isWasm32()) return false;
         if (self.e.ir_mod.types.isCVariadicCursor(ir_ty)) return false;
-        if (ir_ty == .string) return false;
-        if (!ir_ty.isBuiltin()) {
-            const info = self.e.ir_mod.types.get(ir_ty);
-            if (info == .slice) return false;
+        switch (self.e.ir_mod.types.get(ir_ty)) {
+            .string, .slice => return false,
+            else => {},
         }
         if (c.LLVMGetTypeKind(raw_llvm_ty) != c.LLVMStructTypeKind) return false;
         if (self.isHfa(raw_llvm_ty)) return false;

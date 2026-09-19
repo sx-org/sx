@@ -1,0 +1,66 @@
+// Every optional slice is the slice's own 16 bytes: a null `ptr` IS the absent
+// state, so `?string`, `?[]T` and `?[:X]T` carry no has_value flag, a struct
+// field costs nothing beside the slice, and every presence reading — `if x :=`,
+// `??`, `== null`, `@inner` — answers alike at runtime and in the comptime VM.
+
+@import "modules/std.sx";
+
+Tag :: [:1]u8;
+// A `{ptr, i1}` header — presence is the pointer word, never the length word.
+Bits :: @Slice(u8, @int(1, .unsigned));
+Row :: struct { xs: ?[]i64; n: i64; }
+
+Nums  : [3]i64 = .[1, 2, 3];
+Bytes : [4:1]u8 = .[97, 98, 99, 100];
+
+textLen :: (want: bool) -> i64 {
+    o : ?string = if want { "hi" } else { null };
+    if s := o { s.len } else { -1 }
+}
+
+sliceLen :: (want: bool) -> i64 {
+    o : ?[]i64 = if want { Nums[0..3] } else { null };
+    (o ?? Nums[0..1]).len
+}
+
+tagLen :: (want: bool) -> i64 {
+    o : ?Tag = if want { Bytes } else { null };
+    if t := o { t.len } else { -1 }
+}
+
+bitsLen :: (want: bool) -> i64 {
+    raw : [1]u8 = .[97];
+    v : Bits = raw[0..1];
+    o : ?Bits = if want { v } else { null };
+    if b := o { b.len } else { -1 }
+}
+
+rowEmpty :: (want: bool) -> bool {
+    r : Row = .{ xs = if want { Nums[0..2] } else { null }, n = 7 };
+    r.xs == null
+}
+
+boxedLen :: (v: any) -> i64 {
+    if p := @inner(v) { @unbox(string, p).len } else { -1 }
+}
+
+CT_TEXT  :: @run textLen(true);
+CT_NONE  :: @run textLen(false);
+CT_SLICE :: @run sliceLen(true);
+CT_ROW   :: @run rowEmpty(false);
+
+main :: () -> i32 {
+    print("sizes {} {} {} {}\n", @sizeOf(?string), @sizeOf(?[]i64), @sizeOf(?Tag), @sizeOf(Row));
+    print("text {} {}\n", textLen(true), textLen(false));
+    print("slice {} {}\n", sliceLen(true), sliceLen(false));
+    print("tag {} {}\n", tagLen(true), tagLen(false));
+    print("bits {} {}\n", bitsLen(true), bitsLen(false));
+    print("row {} {}\n", rowEmpty(true), rowEmpty(false));
+
+    some : ?string = "hey";
+    none : ?string = null;
+    print("inner {} {}\n", boxedLen(some), boxedLen(none));
+
+    print("comptime {} {} {} {}\n", CT_TEXT, CT_NONE, CT_SLICE, CT_ROW);
+    return 0;
+}

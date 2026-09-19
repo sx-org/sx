@@ -4,7 +4,6 @@ const ast = @import("../../ast.zig");
 const Node = ast.Node;
 const types = @import("../types.zig");
 const inst_mod = @import("../inst.zig");
-const unescape = @import("../../unescape.zig");
 const parser_mod = @import("../../parser.zig");
 const comptime_vm = @import("../comptime_vm.zig");
 const program_index_mod = @import("../program_index.zig");
@@ -29,21 +28,49 @@ const resolveBuiltin = Lowering.resolveBuiltin;
 const isFloat = Lowering.isFloat;
 
 /// Try to convert an array literal's elements into a compile-time
-/// ConstantValue.aggregate. `array_ty` is the array's resolved TypeId; its
-/// element type drives type-aware serialization of struct-literal and
-/// nested-array elements. Returns null if `array_ty` is not an array type or
-/// any element is not a compile-time constant.
+/// ConstantValue.aggregate, a `[N:X]T`'s terminator included. `array_ty` is the
+/// array's resolved TypeId; its element type drives type-aware serialization of
+/// struct-literal and nested-array elements. Returns null if `array_ty` is not
+/// an array type or any element is not a compile-time constant.
 pub fn constArrayLiteral(self: *Lowering, elements: []const *const Node, array_ty: TypeId) ?inst_mod.ConstantValue {
     if (array_ty.isBuiltin()) return null;
-    const elem_ty: TypeId = switch (self.module.types.get(array_ty)) {
-        .array => |a| a.element,
+    const info: types.TypeInfo.ArrayInfo = switch (self.module.types.get(array_ty)) {
+        .array => |a| a,
         else => return null,
     };
-    const vals = self.alloc.alloc(inst_mod.ConstantValue, elements.len) catch return null;
+    const vals = self.alloc.alloc(inst_mod.ConstantValue, elements.len + @intFromBool(info.sentinel != null)) catch return null;
     for (elements, 0..) |elem, i| {
-        vals[i] = self.constExprValue(elem, elem_ty) orelse return null;
+        vals[i] = self.constExprValue(elem, info.element) orelse return null;
     }
+    if (info.sentinel) |x| vals[elements.len] = sentinelConstant(x, info.element);
     return .{ .aggregate = vals };
+}
+
+/// A `[N:X]T` terminator as a constant of the element type.
+fn sentinelConstant(sentinel: i64, elem_ty: TypeId) inst_mod.ConstantValue {
+    if (isFloat(elem_ty)) return .{ .float = @floatFromInt(sentinel) };
+    return .{ .int = sentinel };
+}
+
+/// The constant a value left to its default carries: zeroed storage, plus the
+/// terminator of every `[N:X]T` it holds. Null when zeroed storage already IS
+/// that value.
+pub fn defaultConstant(self: *Lowering, ty: TypeId) ?inst_mod.ConstantValue {
+    if (!self.module.types.writesTerminator(ty)) return null;
+    switch (self.module.types.get(ty)) {
+        .array => |a| {
+            const vals = self.alloc.alloc(inst_mod.ConstantValue, a.storageLen()) catch return null;
+            @memset(vals, self.defaultConstant(a.element) orelse .zeroinit);
+            if (a.sentinel) |x| vals[a.length] = sentinelConstant(x, a.element);
+            return .{ .aggregate = vals };
+        },
+        .@"struct" => |st| {
+            const vals = self.alloc.alloc(inst_mod.ConstantValue, st.fields.len) catch return null;
+            for (st.fields, 0..) |f, i| vals[i] = self.defaultConstant(f.ty) orelse .zeroinit;
+            return .{ .aggregate = vals };
+        },
+        else => return null,
+    }
 }
 
 /// Try to convert a single AST expression into a compile-time ConstantValue.
@@ -196,7 +223,7 @@ pub fn constStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, ty: Typ
         if (init_expr) |e| {
             vals[fi] = self.constExprValue(e, sf.ty) orelse return null;
         } else {
-            vals[fi] = .zeroinit;
+            vals[fi] = self.defaultConstant(sf.ty) orelse .zeroinit;
         }
     }
     return .{ .aggregate = vals };
@@ -951,18 +978,14 @@ fn annotationIsTypeArray(self: *Lowering, annotation: ?*Node) bool {
 pub fn evalComptimeString(self: *Lowering, expr: *const Node) ?[:0]const u8 {
     // Case 1: String literal — return it directly (no need for interpreter)
     if (expr.data == .string_literal) {
-        const lit = expr.data.string_literal;
-        const str = if (lit.is_raw)
-            lit.raw
-        else
-            unescape.unescapeString(self.alloc, lit.raw) catch lit.raw;
+        const str = self.stringLiteralBytes(expr.data.string_literal);
         return self.alloc.dupeZ(u8, str) catch null;
     }
 
     // A non-string expression never reaches the VM: wrapping it as
     // `-> string` would hand `regToValue` a fat-pointer load of an integer.
     const expr_ty = self.inferExprType(expr);
-    if (expr_ty != .string) {
+    if (expr_ty != .string and expr_ty != .cstring) {
         if (self.diagnostics) |d| {
             if (!d.hasErrors())
                 d.addFmt(.err, expr.span, "`@insert` requires a string", .{});

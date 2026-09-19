@@ -1,6 +1,6 @@
 // Generic `??` preserves the optional's presence across monomorphization: a
-// null `?i32` arriving as a `?T` arg coerces to the monomorphized `?i64` with
-// its has-bit intact, so `x ?? d` inside the generic returns `d`.
+// null `?T` argument reaches `x ?? d` absent, so the generic returns `d`,
+// whatever payload `T` carries.
 @import "modules/std.sx";
 
 Pt :: struct { x: i64 = 0; y: i64 = 0; }

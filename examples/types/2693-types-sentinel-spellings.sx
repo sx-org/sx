@@ -1,0 +1,54 @@
+// `[N:X]T`, `[:X]T` and `[*:X]T` — the terminated spellings of the array,
+// slice and many-pointer shapes. A terminated array's `.len` is the written
+// N while its storage carries the terminator at index N; a terminated slice
+// keeps the `{ptr, len}` fat pointer and a terminated many-pointer stays one
+// word. `[:0]u8` is `cstring`. A value the program leaves to the type is
+// zeroed storage plus the terminator of every `[N:X]T` it holds.
+
+@import "modules/std.sx";
+
+Key   :: [4:0]u8;
+Tag   :: [:1]u8;
+Nums  :: [:0]i64;
+Chars :: [*:0]i8;
+
+Row :: struct { key: Key; tag: Tag; chars: Chars; }
+
+Pair  :: struct { n: [2:7]i64; }
+Color :: enum { red; green; blue; }
+Cell  :: struct { c: Color; s: string; n: [2:7]i64; }
+
+Table : [2:7]i64 = .[10, 20];
+Blank : Pair = .{};
+
+atComptime :: () {
+    k : Key = .[65, 66, 67, 68];
+    print("comptime: len {} term {} size {}\n", k.len, k[4], @sizeOf(Key));
+}
+@run atComptime();
+
+main :: () -> i32 {
+    print("names: {} {} {} {}\n", @typeName(Key), @typeName(Tag), @typeName(Nums), @typeName(Chars));
+    print("sizes: {} {} {} {}\n", @sizeOf(Key), @sizeOf(Tag), @sizeOf(Nums), @sizeOf(Chars));
+    print("struct: {}\n", @sizeOf(Row));
+
+    print("sizeOf [3:0]u8: {}\n", @sizeOf([3:0]u8));
+    print("[:1]u8 vs []u8: {} {}\n", @typeName([:1]u8), @typeName([]u8));
+    print("[:0]u8 vs [*:0]u8: {} {}\n", @typeName([:0]u8), @typeName([*:0]u8));
+
+    k : Key = .[65, 66, 67, 68];
+    print("k.len {} k[0] {} k[3] {} k[4] {}\n", k.len, k[0], k[3], k[4]);
+
+    n : [2:7]i64 = .[10, 20];
+    print("n.len {} n[1] {} n[2] {}\n", n.len, n[1], n[2]);
+
+    f : [2:1]f64 = .[1.5, 2.5];
+    nested : [2]Pair = .[.{}, .{}];
+    print("terminators: {} {} {} {}\n", Table[2], f[2], Blank.n[2], nested[1].n[2]);
+
+    cell : Cell = .{};
+    cells : [2]Cell = .[.{}, .{}];
+    print("cell: {} {} {}\n", cell.c.(i64), cell.s.len, cell.n[2]);
+    print("cells[1]: {} {} {}\n", cells[1].c.(i64), cells[1].s.len, cells[1].n[2]);
+    0
+}

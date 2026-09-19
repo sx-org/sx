@@ -6,7 +6,6 @@ const types = @import("../types.zig");
 const inst_mod = @import("../inst.zig");
 const intrinsics = @import("../intrinsics.zig");
 const type_bridge = @import("../type_bridge.zig");
-const unescape = @import("../../unescape.zig");
 const errors = @import("../../errors.zig");
 const program_index_mod = @import("../program_index.zig");
 const ProtocolMethodInfo = program_index_mod.ProtocolMethodInfo;
@@ -565,7 +564,7 @@ fn coerceGlobalFnPointerArgs(self: *Lowering, args: []Ref, info: types.TypeInfo.
     for (args, 0..) |*arg, ai| {
         if (ai >= info.params.len) break;
         const dst_ty = info.params[ai];
-        const src_ty = if (ai < c.args.len) self.inferExprType(c.args[ai]) else self.builder.getRefType(arg.*);
+        const src_ty = self.builder.getRefType(arg.*);
         if (!dst_ty.isBuiltin()) {
             const dti = self.module.types.get(dst_ty);
             if (dti == .pointer and dti.pointer.pointee == src_ty and src_ty != .void) {
@@ -3143,7 +3142,7 @@ pub fn tryLowerAtomicIntrinsic(self: *Lowering, name: []const u8, c: *const ast.
     // kind check a same-sized aggregate (`[8]u8`, an 8-byte struct) slips through
     // and the user gets a raw LLVM verifier error instead of a clean diagnostic.
     const scalar_ok = switch (self.module.types.get(elem_ty)) {
-        .signed, .unsigned, .f32, .f64, .bool, .pointer, .many_pointer, .cstring, .@"enum", .vector => true,
+        .signed, .unsigned, .f32, .f64, .bool, .pointer, .many_pointer, .@"enum", .vector => true,
         else => false,
     };
     const size = self.typeSizeBytes(elem_ty);
@@ -3414,7 +3413,7 @@ const PrintfKind = enum {
 /// The kind that renders a value of `ty`, or null when nothing does.
 fn printfKind(self: *Lowering, ty: TypeId) ?PrintfKind {
     switch (ty) {
-        .string => return .str,
+        .string, .cstring => return .str,
         .bool => return .boolean,
         .i8, .i16, .i32, .i64, .isize => return .signed,
         .u8, .u16, .u32, .u64, .usize => return .unsigned,
@@ -3522,8 +3521,7 @@ pub fn tryLowerPrintfIntrinsic(self: *Lowering, name: []const u8, c: *const ast.
         if (self.diagnostics) |d| d.addFmt(.err, span, "@printf writes through modules/std/core.sx, which is not in the program", .{});
         return Ref.none;
     };
-    const lit = fmt_node.data.string_literal;
-    const fmt = if (lit.is_raw) lit.raw else unescape.unescapeString(self.alloc, lit.raw) catch lit.raw;
+    const fmt = self.stringLiteralBytes(fmt_node.data.string_literal);
 
     var seg: std.ArrayList(u8) = .empty;
     defer seg.deinit(self.alloc);
@@ -3931,7 +3929,7 @@ fn lowerAsIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
     switch (self.coercionResolver().classify(src_ty, dst)) {
         .no_op => return val,
         .unbox_any => unreachable,
-        .closure_to_fn_reject, .unique_to_closure_reject, .lambda_ptr_to_closure_reject, .optional_to_bool_reject, .many_to_slice_reject, .cstring_to_string_reject => return refuseAs(self, src_ty, dst, c.callee.span),
+        .closure_to_fn_reject, .unique_to_closure_reject, .lambda_ptr_to_closure_reject, .optional_to_bool_reject, .many_to_slice_reject => return refuseAs(self, src_ty, dst, c.callee.span),
         else => {
             // The explicit ladder carries the modeled puns (same-width integer
             // signedness, pointer words); a value it passes through untyped has
@@ -4496,10 +4494,10 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         // word (or worse, a 16-byte `any`) into the data slot is never
         // meaningful, and the runtime contract can't catch it.
         const data_ty = self.builder.getRefType(data);
-        const data_is_ptr = data_ty == .cstring or (!data_ty.isBuiltin() and switch (self.module.types.get(data_ty)) {
+        const data_is_ptr = switch (self.module.types.get(data_ty)) {
             .pointer, .many_pointer => true,
             else => false,
-        });
+        };
         if (!data_is_ptr) {
             if (self.diagnostics) |d| {
                 d.addFmt(.err, c.args[1].span, "@rawMakeAny expects a pointer for 'data' (got '{s}') — pass the value's address (`*v`, or a @rawAnyData result)", .{self.formatTypeName(data_ty)});
@@ -5597,6 +5595,16 @@ fn astCalleeParamTypes(self: *Lowering, fd: *const ast.FnDecl, args: []const *co
     for (fd.params, 0..) |_, param_idx| {
         demands.append(self.alloc, lower_bound.paramDemand(self, fd, param_idx)) catch unreachable;
     }
+    // `..name: []U` asserts every tail argument is a `U`, so each tail slot
+    // demands the ELEMENT, not the slice the parameter is written as.
+    if (fd.params.len > 0 and fd.params[fd.params.len - 1].is_variadic) {
+        const declared = self.resolveTypeWithBindings(fd.params[fd.params.len - 1].type_expr);
+        if (self.module.types.sliceInfoOf(declared)) |slice| {
+            const tail = ParamDemand{ .coerce = slice.element };
+            demands.items[fd.params.len - 1] = tail;
+            while (demands.items.len < args.len) demands.append(self.alloc, tail) catch unreachable;
+        }
+    }
     return demands.items;
 }
 
@@ -5957,6 +5965,12 @@ pub fn resolveCallParamTypes(
     // the name-keyed maps must not type its arguments — the same gate dispatch
     // applies, or the args coerce to a function the call never reaches.
     if (!author_declines) {
+        // A named variadic tail's slots demand its ELEMENT type, which only the
+        // declaration spells — the lowered signature carries the packed slice.
+        if (self.program_index.lookup(.function, name)) |fd| {
+            if (fd.params.len > 0 and fd.params[fd.params.len - 1].is_variadic)
+                return astCalleeParamTypes(self, fd, c.args);
+        }
         // Check declared functions
         if (self.resolveFuncByName(name)) |fid| {
             const func = &self.module.functions.items[@intFromEnum(fid)];

@@ -164,8 +164,8 @@ pub const Op = union(enum) {
     cmp_le: BinOp,
     cmp_gt: BinOp,
     cmp_ge: BinOp,
-    str_eq: BinOp, // string/slice equality via memcmp
-    str_ne: BinOp, // string/slice inequality via memcmp
+    str_eq: SeqCmp, // sequence content equality via memcmp
+    str_ne: SeqCmp, // sequence content inequality via memcmp
 
     // ── Logical ─────────────────────────────────────────────────────
     bool_and: BinOp, // short-circuit &&
@@ -226,7 +226,7 @@ pub const Op = union(enum) {
     index_get: BinOp, // arr[idx] → value
     index_gep: BinOp, // &arr[idx] → pointer
     length: UnaryOp, // .len on slice/string/array
-    data_ptr: UnaryOp, // .ptr on slice/string
+    data_ptr: UnaryOp, // .ptr on slice/string/array
     subslice: Subslice, // arr[lo..hi]
     array_to_slice: UnaryOp, // [N]T → []T
 
@@ -362,6 +362,14 @@ pub const UnaryOp = struct {
 pub const BinOp = struct {
     lhs: Ref,
     rhs: Ref,
+};
+
+/// Two `{ptr, len}` sequences compared over `len * elem_size` bytes, taken
+/// only where an element's bytes are its value.
+pub const SeqCmp = struct {
+    lhs: Ref,
+    rhs: Ref,
+    elem_size: u32,
 };
 
 pub const TriOp = struct {

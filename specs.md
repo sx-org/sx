@@ -200,11 +200,26 @@ hand-written sx code.
 |-----------|---------------------|---------|
 | Integer   | `0`, `42`, `0xFF`, `0o755`, `0b1010` | `i64`   |
 | Float     | `0.3`, `0.9`        | `f64`   |
-| String    | `"Hello"`, `"z: {z}"` | `string` (may span multiple lines) |
-| Heredoc String | `@string END`...`END` | `string` |
+| String    | `"Hello"`, `"z: {z}"` | `[N:0]u8` (may span multiple lines) |
+| Heredoc String | `@string END`...`END` | `[N:0]u8` |
+| Line String | `\\raw line` | `[N:0]u8` |
 | Boolean   | `true`, `false`     | `bool`  |
 | Enum      | `.variant1`         | inferred from context |
 | Undefined | `---`               | context-dependent |
+
+**String literals.** A string literal is `[N:0]u8` — its bytes plus the
+terminator, by value. It keeps that array where the destination names a shape
+only a terminated value reaches, and decays to the `[:0]u8` view everywhere
+else:
+```sx
+b : [3:0]u8 = "abc";   // a writable 4-byte copy; b.len is 3, b[3] is 0
+s := "abc";            // cstring — a view of the constant bytes
+X :: "abc";            // [3:0]u8
+y := X;                // a copy of the array
+f(X);                  // decays where `f` takes a string
+```
+A literal view owns nothing: writing through it is undefined behavior. Copies
+are explicit (`b : [3:0]u8 = "abc"`, `clone`).
 
 **Integer bases.** Integers are written in four bases: decimal (`1000`), hex
 `0x`/`0X` (`0xFF`), octal `0o`/`0O` (`0o755` == 493), and binary `0b`/`0B`
@@ -233,6 +248,16 @@ void main() {
     gl_Position = vec4(aPos, 1.0);
 }
 GLSL;
+```
+
+**`\\` line strings.** A `\\` starts a raw line: its content runs to the end of
+the line with no escape processing — a `//` there is content — and every
+following line whose first non-blank text is `\\` joins it with a `\n`. There is
+no trailing newline, so the statement terminator sits on the next line.
+```sx
+usage := \\usage: sx <file>
+         \\  --time  report stage timings
+;
 ```
 
 ### Keywords
@@ -806,21 +831,21 @@ v1.x = 3.0; // assign to field x of struct v1
 every field is equal (the same element-wise policy as tuples, which share the
 struct layout). Each field is compared against its own type — an `f64` field uses
 the ordered IEEE compare (NaN semantics per §Operators — consequently a struct
-containing a NaN field is NOT equal to itself), a `string` field uses
-content equality (`strEq`), a nested struct/tuple field recurses, a payload enum
-field compares by tag only (matching a bare payload enum `==`), a slice /
-pointer / cstring field compares by identity, and an `?T` field compares by the
-optional value-equality rule (§Optional Types — both-null equal, one-null
-unequal, both-present → payload compare). Because the comparison walks named
+containing a NaN field is NOT equal to itself), an array, slice or `string`
+field uses content equality (§Array Types), a nested struct/tuple field
+recurses, a payload enum field compares by tag only (matching a bare payload
+enum `==`), a pointer field compares by identity, and an `?T` field
+compares by the optional value-equality rule (§Optional Types — both-null
+equal, one-null unequal, both-present → payload compare). Because the comparison walks named
 fields, **padding bytes are never read** — a byte-wise compare would be
 non-deterministic for a struct with alignment gaps, which is precisely why the
 compare is field-wise.
 
 A struct is **not comparable** — the whole `==` / `!=` is a compile error — when
-any field has no defined value-equality: a `union` field (inactive-
-variant bytes are unspecified) or a fixed `[N]T` array field (compare elements
-individually). These mirror the rejection of the same shapes as bare top-level
-`==` operands. `<`, `<=`, `>`, `>=` are not defined on structs.
+any field has no defined value-equality: a `union` field, whose
+inactive-variant bytes are unspecified. That mirrors the rejection of a bare
+`union` top-level `==` operand. `<`, `<=`, `>`, `>=` are not defined on
+structs.
 
 #### `@using` — Struct Composition
 `@using StructName;` inside a struct declaration embeds all fields from `StructName` at that position. The embedded fields are accessed directly, as if declared inline.
@@ -1673,6 +1698,38 @@ val := buffer[2];  // 3.5
 buffer.len         // 5 (compile-time constant, i64)
 ```
 
+`[N:X]T` is a **terminated** array: N elements followed by the terminator `X`.
+Its `.len` is N and its storage is N+1 elements, the last holding `X`, which
+index N reads.
+```sx
+key : [3:0]u8 = .[65, 66, 67];
+key.len            // 3
+key[3]             // 0 — the terminator
+@sizeOf([3:0]u8)   // 4
+```
+`X` is a value of the element type, so the element is an integer or float
+type and `X` lies in its range; `[2:300]u8` and `[2:1]Point` are compile
+errors.
+
+A terminated value converts wherever the destination names the same terminator
+or drops it — `[N:X]T` → `[:X]T` / `[*:X]T` / `[]T` / `[N]T`, `[:X]T` →
+`[*:X]T` / `[]T`, `[*:X]T` → `[*]T`. Nothing implicitly ADDS one.
+
+`==` / `!=` on two arrays or two slices compares **content**: the lengths,
+then every element by its own type's rule — an `f64` element is the ordered
+IEEE compare, so `nan != nan` and `0.0 == -0.0` where the bytes say otherwise.
+An element type with no value-equality — a `union` — refuses the whole
+comparison. `[N:X]T` compares its N elements; the terminator is the type's
+guarantee, not part of the value. The two operands need one element type, and
+an array meets the slice, so `[3]i64` and `[]i64` compare. A thin pointer
+carries no length and compares its address instead.
+```sx
+a : [3]i64 = .[1, 2, 3];
+b : [3]i64 = .[1, 2, 3];
+a == b             // true — distinct storage, equal elements
+a[0..3] == b[0..2] // false — lengths differ
+```
+
 A `.[ … ]` literal takes its element type from the annotation or target
 (`x : [3]i16 = .[1, 2, 3]`), or infers it from the elements when bare
 (`.[1, 2, 3]` is `[3]i64`). A type prefix on the literal names the
@@ -1716,6 +1773,17 @@ iterations rather than being an error.
 
 ### Slice Types
 A slice `[]T` is a fat pointer `{ptr, i64}` referencing a contiguous sequence of `T` elements. Same runtime layout as `string`.
+
+`[:X]T` is a **terminated** slice: the same `{ptr, i64}` fat pointer, whose
+element one past `.len` is `X`. `[:0]u8` is `cstring`; every other terminated
+slice is a type of its own, distinct from `[]T`.
+```sx
+@typeName([:1]u8)  // "[:1]u8"
+@typeName([]u8)    // "string"
+@typeName([:0]u8)  // "cstring"
+```
+
+`==` on two slices compares content (§Array Types).
 ```sx
 // Arrays implicitly coerce to slices at call sites
 arr : [5]i32 = .[3, 1, 4, 1, 5];
@@ -1829,6 +1897,7 @@ are arbitrary expressions (`arr[x-1..=x+1]`).
 |--------|---------|--------|-------|
 | `*T` | pointer to one T | no | no |
 | `[*]T` | many-pointer (buffer) | no | yes |
+| `[*:X]T` | many-pointer whose buffer ends with `X` | no | yes |
 | `*[N]T` | pointer to array of N T | yes | yes |
 | `*[]T` | pointer to slice | yes | yes |
 
@@ -1890,7 +1959,7 @@ val := mp[2];             // 30
 - `[]T` → `[*]T` (slice decays to many-pointer, extracts `.ptr`)
 - `T` → `*T` at call sites (implicit address-of)
 - `null` (`*void`) → any `*T`
-- `*T` / `[*]T` / `cstring` → `*void` (losing the pointee). `[]T.ptr` is a
+- `*T` / `[*]T` → `*void` (losing the pointee). `[]T.ptr` is a
   many-pointer, so it takes this arm. Gaining a pointee (`*void` → `*T`) is
   explicit: `raw.(*T)` or `xx raw` at a `*T` slot.
 
@@ -1906,29 +1975,37 @@ chain is rooted at a constant is rejected (see
 [Constant-Write Rejection](#constant-write-rejection)); a dereference in
 the chain leaves the checked zone.
 
-**Fat pointer layout**: `[:0]u8`, `string`, and `[]T` are `{ptr, i64}` structs. The raw pointer is always the first field at offset 0. This means `*[:0]u8` works as C's `char**` — a C function dereferences through the outer pointer and reads the raw `char*` from offset 0.
+**Fat pointer layout**: `string`, `cstring`, `[]T` and `[:X]T` are `{ptr, i64}` structs. The raw pointer is always the first field at offset 0.
 
 ### cstring
 
-`cstring` is the C-boundary string: ONE pointer to a null-terminated u8
-buffer — exactly C's `char *`. It is thin (8 bytes, no length field;
-`cstringLen` walks to the terminator, O(n)) and crosses `extern`
-boundaries verbatim in BOTH directions. `?cstring` is the nullable case
-and lowers to the same bare pointer (null = absent) — the natural type
-for `getenv`-style returns and optional `char *` parameters.
+`cstring` is `[:0]u8`: the `{ptr, i64}` slice whose bytes end in a
+terminator. `.len` counts the bytes before it, indexing, iteration and
+content `==` are the slice's own (§Slice Types, §Array Types), and
+`?cstring` is the slice's 16 bytes with a null `ptr` meaning absent.
 
-Conversion discipline (Odin's model):
+C's `char *` is `[*:0]u8`: ONE pointer to a null-terminated u8 buffer,
+carrying no length (`cstringLen` walks to the terminator, O(n)) and
+crossing `extern` boundaries verbatim in BOTH directions. `?[*:0]u8` is
+the nullable case and lowers to the same bare pointer (null = absent) —
+the type for `getenv`-style returns and optional `char *` parameters.
+`*[*:0]u8` is C's `char**`.
 
-- A string **literal** coerces to `cstring` implicitly — literal bytes
-  are terminated constants in the binary, so the conversion is free.
-- Any **other** `string` does NOT coerce: it may be an unterminated view
-  (`string{ptr, len}` windows, writer output). Materialize an owned,
-  terminated copy with `toCstring(s)`.
-- `cstring` does not coerce to `string` implicitly — the length is an
+Conversion discipline:
+
+- The terminator is the TYPE's, so a terminated value reaches `cstring`
+  and `[*:0]u8` on its own — a string literal is `[N:0]u8` and passes
+  straight through.
+- A value whose type carries no terminator does NOT coerce to either,
+  whatever its bytes hold — a `string` window, a plain `[N]T`, a `[*]T`.
+  Materialize an owned, terminated copy with `toCstring(s)`.
+- Dropping the guarantee is implicit: `cstring` → `string` is the
+  `[:X]T` → `[]T` arm, so `string` methods take a `cstring` receiver.
+- `[*:0]u8` does not coerce to `cstring` implicitly — the length is an
   O(n) strlen the code must ask for. `fromCstring(c)` is the zero-copy
   view (shares C's buffer); a copy must be made for it to outlive C's
   buffer.
-- `xx` bit-casts `cstring` ↔ `*u8` / `[*]u8` / integer-pointer values
+- `xx` bit-casts `[*:0]u8` ↔ `*u8` / `[*]u8` / integer-pointer values
   for low-level interop.
 
 ### Optional Types
@@ -1944,8 +2021,10 @@ y: ?i32 = null;      // optional i32, no value
 Any type `T` can be made optional: `?i32`, `?string`, `?Point`, `?*T`, `?[]T`.
 
 #### LLVM Representation
-- Non-pointer optionals (`?i32`, `?Point`): `{ T, i1 }` struct — payload + presence flag
-- Pointer optionals (`?*T`): bare pointer — null represents absence
+An optional takes one of three shapes:
+- `{ T, i1 }` — payload plus a presence flag, for a `T` with no spare null state (`?i32`, `?Point`).
+- One pointer word, null when absent (`?*T`, `?[*:X]T`, `?((i64) -> i64)`).
+- The child's own bytes, whose LEADING pointer word is null when absent (`?[]T`, `?string`, `?[:X]T`, `?Closure`, `?I`). `@sizeOf(?[]T)` is `@sizeOf([]T)`, so an optional slice costs nothing beside the slice.
 
 #### Implicit Wrapping
 A value of type `T` implicitly converts to `?T`:
@@ -1982,7 +2061,7 @@ and arithmetic / ordering on un-narrowed optionals stay rejected.
 - `?T == null` keeps its meaning as the presence test (subsumed by the
   general rule).
 - Two distinct optional types (`?f32` vs `?f64`) do not compare, and a payload
-  without value-equality (e.g. a fixed array) keeps the usual rejection.
+  without value-equality (a `union`) keeps the usual rejection.
 
 ```sx
 a : ?f32 = 1.5;
@@ -2133,12 +2212,10 @@ SxFoo     :: @ObjcClass("SxFoo")    export { counter: i32; bump :: (self: *Self)
 
 | C type | sx type | Notes |
 |--------|---------|-------|
-| `const char*` (input) | `cstring` | the pointer, verbatim; literals coerce |
-| `const char*` (input, sentinel slice) | `[:0]u8` | compiler extracts `.ptr` at call site |
-| `const char*` (return) | `cstring` | the pointer, verbatim; `fromCstring` to view |
-| nullable `const char*` (both directions) | `?cstring` | null pointer = `null` |
+| `const char*` (input) | `[*:0]u8` | the pointer, verbatim; a terminated value reaches it |
+| `const char*` (return) | `[*:0]u8` | the pointer, verbatim; `fromCstring` to view |
+| nullable `const char*` (both directions) | `?[*:0]u8` | null pointer = `null` |
 | `char*` (output buffer) | `[*]u8` | raw buffer, no length |
-| `const char**` | `*[:0]u8` | address of `[:0]u8` — `.ptr` at offset 0 |
 | `int*` (single out) | `*i32` | |
 | `unsigned*` (single out) | `*u32` | |
 | `float*` (buffer) | `[*]f32` | |
@@ -2260,8 +2337,18 @@ sum :: (a: $T, b: T) -> T {
 - Bare `T` (without `$`) **references** the introduced type parameter
 - A binder introduced in a parameter type is **inferred** at each call site from the actual argument:
   ```sx
-  sum(40, 2)       // T = i32
+  sum(40, 2)       // T = i64
   sum(1.5, 2.5)    // T = f64
+  ```
+- An integer, float or string literal argument carries no type of its own: the
+  arguments that do bind the binder first, whichever order they are written in,
+  and the literal fits itself to what they bound. A binder only literals speak
+  for takes their defaults — `i64`, `f64`, `[:0]u8`.
+  ```sx
+  x : i32 = 7;
+  sum(1, x)        // T = i32
+  sum(x, 1)        // T = i32
+  sum(1, 2)        // T = i64
   ```
 - A function-type bound written as the function's **return** type introduces the binder there:
   `makeAdder :: (n: i64) -> $F/(i64) -> i64`. The body fixes F — F is the returned value's
@@ -2443,7 +2530,7 @@ pathJoin :: (..parts: []string) -> string { ... }
 A parameter list may end in a bare `..`, the C `...`:
 
 ```sx
-printf :: (fmt: cstring, ..) -> i32 extern;
+printf :: (fmt: [*:0]u8, ..) -> i32 extern;
 tally  :: (n: i32, ..) -> i64 abi(.c) { ... }
 ```
 
@@ -2474,7 +2561,7 @@ An `extern` declaration may instead end in `..name: []T`, the **homogeneous
 constraint** over the tail: the author asserts every tail argument is a `T`.
 Each argument at or past the fixed count takes the ordinary implicit conversion
 to `T` — the one any typed parameter of `T` performs, so a string literal reaches
-a `[]cstring` tail as its data pointer — and then the promotions above. The
+a `[][*:0]u8` tail as its data pointer — and then the promotions above. The
 emitted operand carries `T`'s width rather than the argument's written one, and
 each crosses its own C variadic slot; nothing is packed into an sx slice.
 
@@ -2569,7 +2656,7 @@ only in an effective-C signature. The rule is independent of a bare `..` tail �
 a signature that takes a list needs none of its own:
 
 ```sx
-vmprintf :: (fmt: cstring, ap: @VaList) -> ?cstring extern;
+vmprintf :: (fmt: [*:0]u8, ap: @VaList) -> ?[*:0]u8 extern;
 
 sx_vsum :: (n: i32, ap: @VaList) -> i64 export {
     total: i64 = 0;
@@ -2592,14 +2679,14 @@ from an `ap: @VaList` local or parameter, `f(fmt, ap.*)` from an internal
 value copy:
 
 ```sx
-relay :: (fmt: cstring, ..) -> i32 abi(.c) {
+relay :: (fmt: [*:0]u8, ..) -> i32 abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     defer @vaEnd(*ap);
     return c_vformat(fmt, ap);
 }
 
-forward :: (fmt: cstring, ap: *@VaList) -> i32 {
+forward :: (fmt: [*:0]u8, ap: *@VaList) -> i32 {
     return c_vformat(fmt, ap.*);
 }
 ```
@@ -2785,7 +2872,7 @@ isReady : ValueListenable(bool) = map(
 - Any integer to any float (`u8` → `f32`, `i32` → `f64`)
 - Float to wider float (`f32` → `f64`)
 - Integer literals can convert to any numeric type implicitly
-- `*T` / `[*]T` / `cstring` → `*void`
+- `*T` / `[*]T` → `*void`
 
 **Implicit float → integer** — a float flowing into an integer-typed slot
 without `xx` / `.(T)`:
@@ -2830,12 +2917,14 @@ are not written onward.
 |---|---|
 | Both numeric, same signedness or int↔float | the arithmetic common type (widen; int+float → float) |
 | Signed vs unsigned, same width | error — write `a.(u64) < b` |
-| Two pointers, any pointees (`*T`, `*void`, `[*]T`, fn-ptr, `cstring`) | address bits / address order |
+| Two sequences of one element type (`[N]T`, `[N:X]T`, `[]T`, `[:X]T`, `string`) | their content (§Array Types); an array meets the slice |
+| Two pointers, any pointees (`*T`, `*void`, `[*]T`, `[*:X]T`, fn-ptr) | address bits / address order |
 | Pointer vs integer | the integer is an address-sized bit pattern: `region == -1`, `p != 0` |
 | `?T == T` / `?T == null` | unchanged |
 | Two error values, or an error against a `.Member` | no conversion — comparable iff one channel ⊆ the other ([§12 Comparison](#comparison)) |
 
-`any`, interface handles against a foreign type, and distinct structs are refused.
+`any`, interface handles against a foreign type, distinct structs, and a
+sequence against a non-sequence are refused.
 
 An explicit `xx` in a comparison still takes its target from the OTHER operand:
 `a == xx b` converts `b` to `a`'s type, reading exactly as the hoisted
@@ -2987,7 +3076,7 @@ and is not reserved — it is an ordinary identifier.
 Examples:
 ```sx
 SOME_INT    :: 0;           // i64
-SOME_STR    :: "Hello";     // string
+SOME_STR    :: "Hello";     // [5:0]u8
 SOME_FLOAT  :: 0.3;         // f64
 SOME_DOUBLE : f64 : 0.9;   // f64 (explicit)
 SOME_FUNC   :: () => 42;    // () -> i64
@@ -3004,9 +3093,10 @@ diagnoses at the use site.
 With an explicit annotation, the initializer must be compatible with the
 annotated type, or the declaration is a compile-time `type mismatch` error: an
 integer fits any integer or float type (`W : f32 : 800`), a float a float type, a
-boolean `bool`, a string `string`, `null` a pointer or optional, and `---` any
-type. The check is type-based: `N : string : M + 2` (with `M :: 2`) is rejected
-at the declaration and registers no usable constant. A constant expression's
+boolean `bool`, a string literal `string`, `cstring` or a terminated byte
+array, `null` a pointer or optional, and `---` any type. The check is
+type-based: `N : string : M + 2` (with `M :: 2`) is rejected at the
+declaration and registers no usable constant. A constant expression's
 type is its promoted result type (see [Arithmetic](#arithmetic)): `C : i64 : M +
 0.5` is rejected and `F : f64 : M + 0.5` folds to `2.5`.
 

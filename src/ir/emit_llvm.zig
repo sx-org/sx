@@ -1213,7 +1213,7 @@ pub const LLVMEmitter = struct {
                     .int => |v| c.LLVMConstInt(llvm_ty, @bitCast(v), 1),
                     .float => |v| c.LLVMConstReal(llvm_ty, v),
                     .boolean => |v| c.LLVMConstInt(llvm_ty, @intFromBool(v), 0),
-                    .string => |sid| self.emitConstStringGlobal(self.ir_mod.types.getString(sid)),
+                    .string => |sid| self.constStringAt(llvm_ty, self.ir_mod.types.getString(sid)),
                     .aggregate => |agg| self.emitConstAggregate(agg, llvm_ty, false),
                     .vtable => c.LLVMConstNull(llvm_ty), // placeholder — initialized in initVtableGlobals after function declarations
                     // A top-level null-pointer global (`p : *i64 = null;`) and a
@@ -1408,7 +1408,7 @@ pub const LLVMEmitter = struct {
                 },
                 .object => |obj| self.imageObjectGlobal(obj, global_name),
             },
-            .string => |s| self.emitConstStringGlobal(s),
+            .string => |s| self.constStringAt(llvm_ty, s),
             .aggregate => |fields| self.serializeAggregateValue(fields, ty, global_name),
             // The remaining Value variants cannot become static binary
             // constants outside of a fat-pointer aggregate. Bail loudly.
@@ -1447,9 +1447,11 @@ pub const LLVMEmitter = struct {
 
         // Fat-pointer types: extract len, then read bytes from the data
         // field's address (whatever flavour the interp produced for it).
-        const is_string = (ty == .string);
-        const is_slice = !ty.isBuiltin() and self.ir_mod.types.get(ty) == .slice;
-        if ((is_string or is_slice) and fields.len == 2) {
+        const is_fat_pointer = switch (self.ir_mod.types.get(ty)) {
+            .string, .slice => true,
+            else => false,
+        };
+        if (is_fat_pointer and fields.len == 2) {
             const data = fields[0];
             const len_i = fields[1].asInt() orelse {
                 std.debug.print(
@@ -1521,12 +1523,9 @@ pub const LLVMEmitter = struct {
                 }
                 return c.LLVMConstArray2(llvm_elem_ty, elem_vals.items.ptr, @intCast(elem_vals.items.len));
             }
-            // Present optional `?T` → `{ <payload>, i1 1 }`, matching the
-            // anonymous-struct layout `toLLVMType` builds for a non-pointer
-            // optional (the absent case is a `.null_val`, serialized at the
-            // `valueToLLVMConst` top level as `LLVMConstNull` of `{T,i1}`).
-            // The VM's reg→value optional arm only produces this 2-field
-            // `[payload, bool]` aggregate for present, non-pointer optionals.
+            // Only a non-sentinel optional reaches here as an aggregate: the
+            // VM bridges a sentinel-shaped one as the child's own Value. The
+            // `{ payload, i1 }` `toLLVMType` builds for it is anonymous.
             if (info == .optional) {
                 if (fields.len != 2) {
                     std.debug.print(
@@ -1586,18 +1585,13 @@ pub const LLVMEmitter = struct {
         // main always returns i32 at the LLVM level (JIT expects it)
         const raw_ret_ty = self.toLLVMType(func.ret);
         const needs_c_abi = func.is_extern or func.call_conv == .c;
-        // An extern `-> string` / `-> ?string` receives ONE `char *` from C;
-        // the fat sx value is synthesized at the call site (emitCall's
-        // cstrReturnToSx). Never sret — the C callee knows nothing about an
-        // out-pointer.
-        const cstr_ret = self.cstrRetKind(func);
         // sret return: C-ABI functions returning a >16 B non-HFA struct
         // use the indirect-return convention (caller allocates space,
         // passes its pointer as a hidden first arg with `sret(<T>)`,
         // function writes through and returns void). Distinct from
         // small-struct register coercion (i64 / [2 x i64]) and HFA.
-        const uses_sret = needs_c_abi and !is_main and cstr_ret == .none and self.needsByval(func.ret, raw_ret_ty);
-        const ret_ty = if (is_main) self.cached_i32 else if (cstr_ret != .none) self.cached_ptr else if (uses_sret) self.cached_void else if (needs_c_abi) self.abiCoerceParamTypeEx(func.ret, raw_ret_ty, func.is_extern) else raw_ret_ty;
+        const uses_sret = needs_c_abi and !is_main and self.needsByval(func.ret, raw_ret_ty);
+        const ret_ty = if (is_main) self.cached_i32 else if (uses_sret) self.cached_void else if (needs_c_abi) self.abiCoerceParamTypeEx(func.ret, raw_ret_ty, func.is_extern) else raw_ret_ty;
 
         // Build parameter types.
         // C ABI (extern / abi(.c)): full size-bucket coercion (string→ptr, ≤8→i64, …).
@@ -1719,7 +1713,6 @@ pub const LLVMEmitter = struct {
         // classification exactly.
         const needs_c_abi_sig = func.is_extern or func.call_conv == .c;
         const fn_uses_sret = needs_c_abi_sig and !self.current_func_is_main and
-            self.cstrRetKind(func) == .none and
             self.needsByval(func.ret, self.toLLVMType(func.ret));
         const param_sret_offset: usize = if (fn_uses_sret) 1 else 0;
         for (0..func.params.len) |pi| {
@@ -1923,7 +1916,7 @@ pub const LLVMEmitter = struct {
             .interp_print_frames => self.ops().emitInterpPrintFrames(),
             .trace_frame => self.ops().emitTraceFrame(instruction),
             .trace_resolve => |u| self.ops().emitTraceResolve(u),
-            .const_string => |str_id| self.ops().emitConstString(str_id),
+            .const_string => |str_id| self.ops().emitConstString(instruction, str_id),
             .const_null => self.ops().emitConstNull(instruction),
             .const_undef => self.ops().emitConstUndef(instruction),
             .const_type => |tid| self.ops().emitConstType(tid),
@@ -2341,7 +2334,7 @@ pub const LLVMEmitter = struct {
             }
         }
 
-        // Struct types (strings, slices, payload enums): compare fields individually
+        // Struct types (protocol handles, payload enums): compare fields individually
         if (kind == c.LLVMStructTypeKind and rhs_kind == c.LLVMStructTypeKind) {
             const n_fields = c.LLVMCountStructElementTypes(lhs_ty);
             if (n_fields >= 2) {
@@ -2419,10 +2412,11 @@ pub const LLVMEmitter = struct {
         self.mapRef(result);
     }
 
-    /// String comparison via memcmp: compare length first, then content.
-    pub fn emitStrCmp(self: *LLVMEmitter, bin: ir_inst.BinOp, is_eq: bool) void {
-        const lhs = self.resolveRef(bin.lhs);
-        const rhs = self.resolveRef(bin.rhs);
+    /// Sequence comparison via memcmp: the lengths, then `len * elem_size`
+    /// bytes of content.
+    pub fn emitStrCmp(self: *LLVMEmitter, cmp: ir_inst.SeqCmp, is_eq: bool) void {
+        const lhs = self.resolveRef(cmp.lhs);
+        const rhs = self.resolveRef(cmp.rhs);
         const b = self.builder;
         const i32_ty = c.LLVMInt32TypeInContext(self.context);
         const i1_ty = c.LLVMInt1TypeInContext(self.context);
@@ -2434,8 +2428,12 @@ pub const LLVMEmitter = struct {
         const rhs_ptr = c.LLVMBuildExtractValue(b, rhs, 0, "str.rp");
         const rhs_len = c.LLVMBuildExtractValue(b, rhs, 1, "str.rl");
 
-        // Compare lengths first
-        const len_eq = c.LLVMBuildICmp(b, c.LLVMIntEQ, lhs_len, rhs_len, "str.len_eq");
+        // Two headers can spell their length word at different widths; both
+        // meet the memcmp size type first.
+        const size_ty = self.sizeType();
+        const lhs_n = self.coerceArg(lhs_len, size_ty);
+        const rhs_n = self.coerceArg(rhs_len, size_ty);
+        const len_eq = c.LLVMBuildICmp(b, c.LLVMIntEQ, lhs_n, rhs_n, "str.len_eq");
 
         // Set up basic blocks
         const cur_fn = c.LLVMGetBasicBlockParent(c.LLVMGetInsertBlock(b));
@@ -2447,13 +2445,15 @@ pub const LLVMEmitter = struct {
 
         // memcmp block
         c.LLVMPositionBuilderAtEnd(b, memcmp_bb);
-        const size_ty = self.sizeType();
         const memcmp_fn = c.LLVMGetNamedFunction(self.llvm_module, "memcmp") orelse blk: {
             var params = [_]c.LLVMTypeRef{ ptr_ty, ptr_ty, size_ty };
             const fn_type = c.LLVMFunctionType(i32_ty, &params, 3, 0);
             break :blk c.LLVMAddFunction(self.llvm_module, "memcmp", fn_type);
         };
-        const cmp_len = self.coerceArg(lhs_len, size_ty);
+        const cmp_len = if (cmp.elem_size == 1)
+            lhs_n
+        else
+            c.LLVMBuildMul(b, lhs_n, c.LLVMConstInt(size_ty, cmp.elem_size, 0), "str.bytes");
         var args = [_]c.LLVMValueRef{ lhs_ptr, rhs_ptr, cmp_len };
         const fn_ty = c.LLVMGlobalGetValueType(memcmp_fn);
         const cmp_result = c.LLVMBuildCall2(b, fn_ty, memcmp_fn, &args, 3, "memcmp");
@@ -2692,69 +2692,6 @@ pub const LLVMEmitter = struct {
     }
 
     // ── Value coercion helpers ──────────────────────────────────────
-
-    /// How an EXTERN function's declared sx return maps onto a C `char *`:
-    /// `-> string` (.plain) and `-> ?string` (.optional) both receive one
-    /// pointer from C; everything else is `.none`. Keep `declareFunction`'s
-    /// signature building and `emitCall`'s result synthesis keyed on the
-    /// SAME classification or the ABI splits.
-    pub const CstrRet = enum { none, plain, optional };
-
-    pub fn cstrRetKind(self: *LLVMEmitter, func: *const Function) CstrRet {
-        if (!func.is_extern) return .none;
-        if (func.ret == .string) return .plain;
-        if (!func.ret.isBuiltin()) {
-            const info = self.ir_mod.types.get(func.ret);
-            if (info == .optional and info.optional.child == .string) return .optional;
-        }
-        return .none;
-    }
-
-    /// Build the sx-level value for a extern call that returned a `char *`:
-    /// `{ptr, strlen(ptr)}` for `string` (NULL → `{null, 0}`), wrapped in
-    /// `{string, i1}` with `has = ptr != null` for `?string`. The strlen call
-    /// is branch-guarded — `select` would evaluate `strlen(NULL)`.
-    pub fn cstrReturnToSx(self: *LLVMEmitter, p: c.LLVMValueRef, optional: bool) c.LLVMValueRef {
-        const strlen_fn = c.LLVMGetNamedFunction(self.llvm_module, "strlen") orelse blk: {
-            var pt = [_]c.LLVMTypeRef{self.cached_ptr};
-            const ft = c.LLVMFunctionType(self.cached_i64, &pt, 1, 0);
-            break :blk c.LLVMAddFunction(self.llvm_module, "strlen", ft);
-        };
-        const strlen_ty = c.LLVMGlobalGetValueType(strlen_fn);
-
-        const cur_fn = c.LLVMGetBasicBlockParent(c.LLVMGetInsertBlock(self.builder));
-        const entry_bb = c.LLVMGetInsertBlock(self.builder);
-        const len_bb = c.LLVMAppendBasicBlockInContext(self.context, cur_fn, "cstr.len");
-        const join_bb = c.LLVMAppendBasicBlockInContext(self.context, cur_fn, "cstr.join");
-
-        const is_null = c.LLVMBuildICmp(self.builder, c.LLVMIntEQ, p, c.LLVMConstNull(self.cached_ptr), "cstr.isnull");
-        _ = c.LLVMBuildCondBr(self.builder, is_null, join_bb, len_bb);
-
-        c.LLVMPositionBuilderAtEnd(self.builder, len_bb);
-        var sargs = [_]c.LLVMValueRef{p};
-        const n = c.LLVMBuildCall2(self.builder, strlen_ty, strlen_fn, &sargs, 1, "cstr.n");
-        _ = c.LLVMBuildBr(self.builder, join_bb);
-
-        c.LLVMPositionBuilderAtEnd(self.builder, join_bb);
-        const len_phi = c.LLVMBuildPhi(self.builder, self.cached_i64, "cstr.lenphi");
-        var ivals = [_]c.LLVMValueRef{ c.LLVMConstInt(self.cached_i64, 0, 0), n };
-        var ibbs = [_]c.LLVMBasicBlockRef{ entry_bb, len_bb };
-        c.LLVMAddIncoming(len_phi, &ivals, &ibbs, 2);
-
-        const str_ty = self.getStringStructType();
-        var s = c.LLVMGetUndef(str_ty);
-        s = c.LLVMBuildInsertValue(self.builder, s, p, 0, "cstr.sp");
-        s = c.LLVMBuildInsertValue(self.builder, s, len_phi, 1, "cstr.sv");
-        if (!optional) return s;
-
-        var ofields = [_]c.LLVMTypeRef{ str_ty, self.cached_i1 };
-        const opt_ty = c.LLVMStructTypeInContext(self.context, &ofields, 2, 0);
-        const has = c.LLVMBuildNot(self.builder, is_null, "cstr.has");
-        var o = c.LLVMGetUndef(opt_ty);
-        o = c.LLVMBuildInsertValue(self.builder, o, s, 0, "cstr.ov");
-        o = c.LLVMBuildInsertValue(self.builder, o, has, 1, "cstr.opt");
-        return o;
-    }
 
     pub fn coerceArg(self: *LLVMEmitter, val: c.LLVMValueRef, param_ty: c.LLVMTypeRef) c.LLVMValueRef {
         const val_ty = c.LLVMTypeOf(val);
@@ -3038,17 +2975,46 @@ pub const LLVMEmitter = struct {
 
     /// The private NUL-terminated byte array a fat-pointer constant points at.
     fn emitConstBytesGlobal(self: *LLVMEmitter, str: []const u8) c.LLVMValueRef {
-        const str_z = self.alloc.dupeZ(u8, str) catch unreachable;
-        defer self.alloc.free(str_z);
-        const len: c_uint = @intCast(str.len + 1); // include null terminator
-        const str_const = c.LLVMConstStringInContext(self.context, str_z.ptr, len - 1, 0);
-        const arr_ty = c.LLVMArrayType2(self.cached_i8, len);
+        const str_const = self.emitTerminatedBytes(str);
+        const arr_ty = c.LLVMArrayType2(self.cached_i8, @intCast(str.len + 1));
         const str_global_val = c.LLVMAddGlobal(self.llvm_module, arr_ty, "str.data");
         c.LLVMSetInitializer(str_global_val, str_const);
         c.LLVMSetGlobalConstant(str_global_val, 1);
         c.LLVMSetLinkage(str_global_val, c.LLVMPrivateLinkage);
         c.LLVMSetUnnamedAddress(str_global_val, c.LLVMGlobalUnnamedAddr);
         return str_global_val;
+    }
+
+    /// The `[N+1 x i8]` constant a `[N:0]u8` literal IS — N bytes then the
+    /// terminator.
+    pub fn emitTerminatedBytes(self: *LLVMEmitter, str: []const u8) c.LLVMValueRef {
+        const str_z = self.alloc.dupeZ(u8, str) catch unreachable;
+        defer self.alloc.free(str_z);
+        return c.LLVMConstStringInContext(self.context, str_z.ptr, @intCast(str.len), 0);
+    }
+
+    /// The address of an array VALUE's storage. A constant array lives in a
+    /// private constant global, so the pointer outlives every frame; anything
+    /// else is spilled to a frame slot.
+    pub fn arrayStorageAddress(self: *LLVMEmitter, val: c.LLVMValueRef, arr_ty: c.LLVMTypeRef) c.LLVMValueRef {
+        if (c.LLVMIsConstant(val) != 0) {
+            const g = c.LLVMAddGlobal(self.llvm_module, arr_ty, "arr.data");
+            c.LLVMSetInitializer(g, val);
+            c.LLVMSetGlobalConstant(g, 1);
+            c.LLVMSetLinkage(g, c.LLVMPrivateLinkage);
+            c.LLVMSetUnnamedAddress(g, c.LLVMGlobalUnnamedAddr);
+            return g;
+        }
+        const tmp = self.buildEntryAlloca(arr_ty, "arr.slot");
+        _ = c.LLVMBuildStore(self.builder, val, tmp);
+        return tmp;
+    }
+
+    /// A string constant at the shape its slot names: the `[N:0]u8` bytes, or
+    /// the `{ptr, len}` view.
+    fn constStringAt(self: *LLVMEmitter, llvm_ty: c.LLVMTypeRef, str: []const u8) c.LLVMValueRef {
+        if (c.LLVMGetTypeKind(llvm_ty) == c.LLVMArrayTypeKind) return self.emitTerminatedBytes(str);
+        return self.emitConstStringGlobal(str);
     }
 
     /// Build a constant string { ptr, i64 } value without using the builder
@@ -3079,7 +3045,7 @@ pub const LLVMEmitter = struct {
                 .int => |v| c.LLVMConstInt(elem_ty, @bitCast(v), 1),
                 .float => |v| c.LLVMConstReal(elem_ty, v),
                 .boolean => |v| c.LLVMConstInt(elem_ty, @intFromBool(v), 0),
-                .string => |sid| self.emitConstStringGlobal(self.ir_mod.types.getString(sid)),
+                .string => |sid| self.constStringAt(elem_ty, self.ir_mod.types.getString(sid)),
                 .aggregate => |inner| self.emitConstAggregate(inner, elem_ty, require_resolved),
                 .func_ref => |fid| self.func_map.get(fid.index()) orelse blk: {
                     if (require_resolved) {

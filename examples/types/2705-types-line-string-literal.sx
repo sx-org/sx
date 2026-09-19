@@ -1,0 +1,26 @@
+// `\\` starts a raw line: its content runs to the end of the line with no
+// escape processing — a `//` there is content — and every following line whose
+// first non-blank text is `\\` joins it with a `\n`, leaving no trailing
+// newline. The value is `[N:0]u8`, so it keeps the array where a destination
+// names it and decays to the `[:0]u8` view everywhere else.
+
+@import "modules/std.sx";
+
+BANNER :: \\usage: sx <file>
+          \\  --time  report stage timings
+;
+
+takesString :: (s: string) -> i64 { s.len }
+
+main :: () -> i32 {
+    print("kept: {} size {}\n", @typeName(@typeOf(BANNER)), @sizeOf(@typeOf(BANNER)));
+    print("at a string slot: {}\n", takesString(BANNER));
+
+    s := \\a\tb // content
+         \\
+         \\c
+    ;
+    print("decayed: {} len {}\n", @typeName(@typeOf(s)), s.len);
+    print("[{}]\n", s);
+    0
+}

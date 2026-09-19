@@ -5,7 +5,7 @@
 @import "modules/std.sx";
 
 names :: (types: []Type) -> string {
-    out := "";
+    out : string = "";
     i : i64 = 0;
     while i < types.len {
         if i > 0 { out = concat(out, " "); }

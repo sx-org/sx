@@ -8,6 +8,31 @@ const Node = ast.Node;
 const TypeId = types.TypeId;
 const Lowering = lower.Lowering;
 
+/// An argument whose type is its default, not its meaning: an integer, float
+/// or string literal, and a negated numeric one. Generic binding lets the
+/// other arguments decide `$T` first and fits the literal to it.
+fn flexibleLiteral(node: *const Node) bool {
+    return switch (node.data) {
+        .int_literal, .float_literal, .string_literal => true,
+        .unary_op => |uo| uo.op == .negate and switch (uo.operand.data) {
+            .int_literal, .float_literal => true,
+            else => false,
+        },
+        else => false,
+    };
+}
+
+/// Whether a flexible literal converts to the type the other arguments bound.
+fn literalFits(l: *Lowering, node: *const Node, ty: TypeId) bool {
+    return switch (node.data) {
+        .int_literal => l.isIntEx(ty) or Lowering.isFloat(ty),
+        .float_literal => Lowering.isFloat(ty),
+        .string_literal => ty == .string or ty == .cstring or l.literalKeepsArray(ty),
+        .unary_op => |uo| literalFits(l, uo.operand, ty),
+        else => false,
+    };
+}
+
 /// Generic substitution + monomorphization-key construction. Owns:
 ///   - the type-name mangler (`mangleTypeName` / `mangleParamList`) — the leaf
 ///     fragment every mono key is built from,
@@ -65,15 +90,24 @@ pub const GenericResolver = struct {
             },
             .many_pointer => |p| blk: {
                 const inner = self.mangleTypeName(p.element);
-                break :blk std.fmt.allocPrint(self.l.alloc, "mptr_{s}", .{inner}) catch @panic("out of memory while mangling type");
+                break :blk if (p.sentinel) |x|
+                    std.fmt.allocPrint(self.l.alloc, "mptrs{d}_{s}", .{ x, inner }) catch @panic("out of memory while mangling type")
+                else
+                    std.fmt.allocPrint(self.l.alloc, "mptr_{s}", .{inner}) catch @panic("out of memory while mangling type");
             },
             .slice => |s| blk: {
                 const inner = self.mangleTypeName(s.element);
-                break :blk std.fmt.allocPrint(self.l.alloc, "SL_{s}", .{inner}) catch @panic("out of memory while mangling type");
+                break :blk if (s.sentinel) |x|
+                    std.fmt.allocPrint(self.l.alloc, "SLs{d}_{s}", .{ x, inner }) catch @panic("out of memory while mangling type")
+                else
+                    std.fmt.allocPrint(self.l.alloc, "SL_{s}", .{inner}) catch @panic("out of memory while mangling type");
             },
             .array => |a| blk: {
                 const inner = self.mangleTypeName(a.element);
-                break :blk std.fmt.allocPrint(self.l.alloc, "AR_{d}_{s}", .{ a.length, inner }) catch @panic("out of memory while mangling type");
+                break :blk if (a.sentinel) |x|
+                    std.fmt.allocPrint(self.l.alloc, "ARs{d}_{d}_{s}", .{ x, a.length, inner }) catch @panic("out of memory while mangling type")
+                else
+                    std.fmt.allocPrint(self.l.alloc, "AR_{d}_{s}", .{ a.length, inner }) catch @panic("out of memory while mangling type");
             },
             // A width the aliases do not name is an ordinary identifier, so a
             // formed int takes a shape fragment like every other formed type —
@@ -319,63 +353,71 @@ pub const GenericResolver = struct {
             // Strategy 2: infer from value params that USE the type param
             // (e.g. a: $T, b: T, items: []$T). Pick widest type across matches.
             var inferred_ty: ?TypeId = null;
-            var s2_arg_idx: usize = 0;
-            for (fd.params) |param| {
-                const is_type_decl = Lowering.isTypeParamDecl(&param, fd.type_params);
-                defer if (!is_type_decl) {
-                    s2_arg_idx += 1;
-                };
-                if (is_type_decl) {
-                    if (types_passed_explicitly) s2_arg_idx += 1;
-                    continue;
-                }
-                const matched = self.l.matchTypeParam(param.type_expr, tp.name);
-                if (matched) {
-                    if (s2_arg_idx < args_ast.len) {
-                        // A written lambda literal IS its env struct; the
-                        // binder takes that type before the literal lowers.
-                        const arg_node = args_ast[s2_arg_idx];
-                        if (Lowering.boundOnBinder(param.type_expr, tp.name) and arg_node.data == .lambda and arg_node.data.lambda.has_env) {
-                            if (self.l.lambdaEnvType(&arg_node.data.lambda)) |env_ty| {
-                                if (inferred_ty == null) inferred_ty = env_ty;
-                                continue;
+            // Two rounds over the value parameters: the arguments that carry a
+            // type of their own bind `$T` first; a literal then takes what they
+            // bound whenever it converts to it, and contributes its own default
+            // only when nothing bound `$T`.
+            for ([2]bool{ false, true }) |literal_round| {
+                var s2_arg_idx: usize = 0;
+                for (fd.params) |param| {
+                    const is_type_decl = Lowering.isTypeParamDecl(&param, fd.type_params);
+                    defer if (!is_type_decl) {
+                        s2_arg_idx += 1;
+                    };
+                    if (is_type_decl) {
+                        if (types_passed_explicitly) s2_arg_idx += 1;
+                        continue;
+                    }
+                    const matched = self.l.matchTypeParam(param.type_expr, tp.name);
+                    if (matched) {
+                        if (s2_arg_idx < args_ast.len) {
+                            const arg_node = args_ast[s2_arg_idx];
+                            if (flexibleLiteral(arg_node) != literal_round) continue;
+                            if (literal_round and inferred_ty != null and literalFits(self.l, arg_node, inferred_ty.?)) continue;
+                            // A written lambda literal IS its env struct; the
+                            // binder takes that type before the literal lowers.
+                            if (Lowering.boundOnBinder(param.type_expr, tp.name) and arg_node.data == .lambda and arg_node.data.lambda.has_env) {
+                                if (self.l.lambdaEnvType(&arg_node.data.lambda)) |env_ty| {
+                                    if (inferred_ty == null) inferred_ty = env_ty;
+                                    continue;
+                                }
                             }
-                        }
-                        // A guard-narrowed container argument binds through its
-                        // payload — `[]$T` against `[]i64`, not `?[]i64`.
-                        const inferred = self.l.narrowedContainerChild(args_ast[s2_arg_idx]) orelse
-                            self.l.inferExprType(args_ast[s2_arg_idx]);
-                        // A bare fn NAME has no inferable expression type — it
-                        // is a value whose type lives in its declaration. Bind
-                        // `$F` to that signature so the instance's param is a
-                        // callable, not a bare integer word.
-                        const arg_ty = if (inferred == .unresolved)
-                            self.l.bareFnNameSignature(args_ast[s2_arg_idx]) orelse inferred
-                        else
-                            inferred;
-                        // An `@Init`-bounded binder binds to the IMPLEMENTOR the
-                        // argument forms into, not to the argument's own type
-                        // (§5.2); the init's type argument still binds from the
-                        // ordinary type through `extractTypeParam` below.
-                        const extracted = self.l.initBinderType(param.type_expr, tp.name, args_ast[s2_arg_idx], arg_ty) orelse
-                            self.l.blockBinderType(param.type_expr, tp.name, args_ast[s2_arg_idx], arg_ty) orelse
-                            self.l.extractTypeParam(param.type_expr, arg_ty, tp.name);
-                        // The binder a function-type bound is written on is
-                        // answered by the argument's own SHAPE, which an
-                        // unlowered `|x|` does not have yet. Committing what
-                        // the annotation guessed would key the instance on
-                        // slots nothing has decided.
-                        if (extracted != null and Lowering.boundOnBinder(param.type_expr, tp.name) and
-                            carriesUnresolved(self.l, extracted.?)) continue;
-                        if (extracted) |ety| {
-                            if (inferred_ty) |prev| {
-                                if (ety == .f64 and prev != .f64) {
-                                    inferred_ty = ety;
-                                } else if (ety == .f32 and prev != .f64 and prev != .f32) {
+                            // A guard-narrowed container argument binds through its
+                            // payload — `[]$T` against `[]i64`, not `?[]i64`.
+                            const inferred = self.l.narrowedContainerChild(args_ast[s2_arg_idx]) orelse
+                                self.l.inferExprType(args_ast[s2_arg_idx]);
+                            // A bare fn NAME has no inferable expression type — it
+                            // is a value whose type lives in its declaration. Bind
+                            // `$F` to that signature so the instance's param is a
+                            // callable, not a bare integer word.
+                            const arg_ty = if (inferred == .unresolved)
+                                self.l.bareFnNameSignature(args_ast[s2_arg_idx]) orelse inferred
+                            else
+                                inferred;
+                            // An `@Init`-bounded binder binds to the IMPLEMENTOR the
+                            // argument forms into, not to the argument's own type
+                            // (§5.2); the init's type argument still binds from the
+                            // ordinary type through `extractTypeParam` below.
+                            const extracted = self.l.initBinderType(param.type_expr, tp.name, args_ast[s2_arg_idx], arg_ty) orelse
+                                self.l.blockBinderType(param.type_expr, tp.name, args_ast[s2_arg_idx], arg_ty) orelse
+                                self.l.extractTypeParam(param.type_expr, arg_ty, tp.name);
+                            // The binder a function-type bound is written on is
+                            // answered by the argument's own SHAPE, which an
+                            // unlowered `|x|` does not have yet. Committing what
+                            // the annotation guessed would key the instance on
+                            // slots nothing has decided.
+                            if (extracted != null and Lowering.boundOnBinder(param.type_expr, tp.name) and
+                                carriesUnresolved(self.l, extracted.?)) continue;
+                            if (extracted) |ety| {
+                                if (inferred_ty) |prev| {
+                                    if (ety == .f64 and prev != .f64) {
+                                        inferred_ty = ety;
+                                    } else if (ety == .f32 and prev != .f64 and prev != .f32) {
+                                        inferred_ty = ety;
+                                    }
+                                } else {
                                     inferred_ty = ety;
                                 }
-                            } else {
-                                inferred_ty = ety;
                             }
                         }
                     }

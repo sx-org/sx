@@ -3,7 +3,7 @@
 
 @import "modules/std.sx";
 
-PLAIN :: "fixed fixed fixed fixed fixed fixed!";
+PLAIN : string : "fixed fixed fixed fixed fixed fixed!";
 
 RAW : [12]u8 = .[
     75, 203, 172, 72, 77, 81, 72, 195, 71, 42, 2, 0,

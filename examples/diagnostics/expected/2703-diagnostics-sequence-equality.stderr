@@ -1,0 +1,23 @@
+error: cannot compare: 'Shape2703' has no value-equality
+  --> examples/diagnostics/2703-diagnostics-sequence-equality.sx:11:10
+   |
+11 |     _ := u == v;           // error: a union element has no value-equality
+   |          ^
+
+note: compare a specific variant field
+  --> examples/diagnostics/2703-diagnostics-sequence-equality.sx:11:10
+   |
+11 |     _ := u == v;           // error: a union element has no value-equality
+   |          ^
+
+error: cannot compare values of distinct types '[]i64' and '[]f64'
+  --> examples/diagnostics/2703-diagnostics-sequence-equality.sx:15:22
+   |
+15 |     _ := xs[0..2] == ys[0..2];   // error: distinct element types
+   |                      ^^^^^^^^
+
+error: cannot compare values of distinct types '[2]i64' and 'i64'
+  --> examples/diagnostics/2703-diagnostics-sequence-equality.sx:18:16
+   |
+18 |     _ := xs == n;          // error: the peer is not a sequence
+   |                ^

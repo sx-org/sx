@@ -26,7 +26,7 @@ boom :: (n: i64) -> (i64, !Both) {
 }
 
 named :: (v: any) -> string {
-    name := "<?>";
+    name : string = "<?>";
     match @typeOf(v) {
         case error: name = concat(v.set.name, concat(".", v.name));
     }

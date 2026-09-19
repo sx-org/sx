@@ -190,6 +190,10 @@ pub const Lexer = struct {
             return self.lexChar(start);
         }
 
+        if (c == '\\' and self.peekAt(1) == '\\') {
+            return self.lexMultilineString(start);
+        }
+
         // Raw-identifier escape: `ident — a leading backtick forces the
         // following identifier to be RAW (never type-classified, never
         // reserved-checked). The emitted token's span excludes the backtick, so
@@ -622,6 +626,27 @@ pub const Lexer = struct {
 
         // Unterminated heredoc
         return self.makeToken(.invalid, directive_start, self.index);
+    }
+
+    /// Lex a `\\` literal. The span covers every consecutive line whose first
+    /// non-blank text is `\\`, ending at the last line's content.
+    fn lexMultilineString(self: *Lexer, start: u32) Token {
+        var end = start;
+        while (true) {
+            self.index += 2; // skip the `\\`
+            while (self.index < self.source.len and self.source[self.index] != '\n') {
+                self.index += 1;
+            }
+            end = self.index;
+            if (self.index >= self.source.len) break;
+            var next_line = self.index + 1;
+            while (next_line < self.source.len and (self.source[next_line] == ' ' or self.source[next_line] == '\t')) {
+                next_line += 1;
+            }
+            if (next_line + 1 >= self.source.len or self.source[next_line] != '\\' or self.source[next_line + 1] != '\\') break;
+            self.index = next_line;
+        }
+        return self.makeToken(.multiline_string_literal, start, end);
     }
 
     fn peek(self: *const Lexer) u8 {

@@ -1,13 +1,15 @@
-// Optional equality requires the PAYLOAD to have value-equality — `?[2]i64`
-// still rejects (a fixed array has none), and two distinct optional types
-// never compare. Optional equality defines `?T == ?T` / `?T == T`; it does
-// not widen what T itself may be.
+// Optional equality requires the PAYLOAD to have value-equality — a `union`
+// payload has none — and two distinct optional types never compare. Optional
+// equality defines `?T == ?T` / `?T == T`; it does not widen what T itself
+// may be.
 @import "modules/std.sx";
 
+Shape0927 :: union { circle: i64; rect: i64; }
+
 main :: () {
-    a : ?[2]i64 = null;
-    b : ?[2]i64 = null;
-    ok := a == b;          // error: array payload has no value-equality
+    a : ?Shape0927 = null;
+    b : ?Shape0927 = null;
+    ok := a == b;          // error: union payload has no value-equality
     x : ?f32 = null;
     y : ?f64 = null;
     ok2 := x == y;         // error: distinct types

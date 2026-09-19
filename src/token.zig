@@ -4,6 +4,7 @@ pub const Tag = enum(u8) {
     float_literal,
     string_literal,
     raw_string_literal,
+    multiline_string_literal,
     char_literal,
 
     // Identifiers and keywords
@@ -237,7 +238,7 @@ pub const Tag = enum(u8) {
     pub fn family(tag: Tag) Family {
         return switch (tag) {
             .int_literal, .float_literal, .char_literal => .number,
-            .string_literal, .raw_string_literal => .string,
+            .string_literal, .raw_string_literal, .multiline_string_literal => .string,
             .identifier => .identifier,
             .at_identifier, .kw_f32, .kw_f64, .kw_Type, .kw_Self => .type_keyword,
             .kw_if,
@@ -405,6 +406,7 @@ pub const Tag = enum(u8) {
             .float_literal,
             .string_literal,
             .raw_string_literal,
+            .multiline_string_literal,
             .char_literal,
             .identifier,
             .at_identifier,

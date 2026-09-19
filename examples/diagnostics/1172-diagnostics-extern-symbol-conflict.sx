@@ -9,14 +9,15 @@
 @import "modules/std.sx";
 
 libc :: @library "c";
-// std/process.sx already binds getenv as `-> *u8`; this view disagrees.
-getenvOpt :: (name: [:0]u8) -> ?[:0]u8 extern libc "getenv";
+// std/process.sx already binds getenv's parameter as `[*:0]u8`; a pointer
+// without the terminator is a different type, so this view disagrees.
+getenvOpt :: (name: [*]u8) -> ?[*:0]u8 extern libc "getenv";
 
-fixedView    :: (fmt: cstring) -> i32 extern libc "printf";
-variadicView :: (fmt: cstring, ..) -> i32 extern libc "printf";
+fixedView    :: (fmt: [*:0]u8) -> i32 extern libc "printf";
+variadicView :: (fmt: [*:0]u8, ..) -> i32 extern libc "printf";
 
-tailView   :: (fmt: cstring, ..) -> i32 extern libc "fprintf";
-sameTail   :: (fmt: cstring, ..) -> i32 extern libc "fprintf";
+tailView   :: (fmt: [*:0]u8, ..) -> i32 extern libc "fprintf";
+sameTail   :: (fmt: [*:0]u8, ..) -> i32 extern libc "fprintf";
 
 main :: () -> i32 {
     p := getenvOpt("PATH");

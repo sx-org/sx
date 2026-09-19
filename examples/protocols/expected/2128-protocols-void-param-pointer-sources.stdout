@@ -2,5 +2,4 @@ plain true
 many true
 single true
 void true
-cstring true
 scalar true

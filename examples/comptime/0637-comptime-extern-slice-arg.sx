@@ -1,10 +1,10 @@
 // Comptime host-FFI with a SLICE argument: a `@run` calling a libc function whose
-// parameter is a `[:0]u8` (a `{ptr,len}` fat pointer), not a bare `cstring`. The VM
+// parameter is a `string` (a `{ptr,len}` fat pointer), not a bare `[*:0]u8`. The VM
 // marshals the fat pointer to a NUL-terminated `char*` before the call.
-// (A bare `cstring` arg passes as a word.)
+// (A bare `[*:0]u8` arg passes as a word.)
 @import "modules/std.sx";
 
-strlen :: (s: [:0]u8) -> usize extern libc;
+strlen :: (s: string) -> usize extern libc;
 
 LEN :: @run strlen("hello, world");
 

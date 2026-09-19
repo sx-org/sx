@@ -11,17 +11,17 @@ S :: struct { a: i32; b: i32; }
 main :: () -> i64 {
     s : S = ---;
     s.a = 1; s.b = 2;
-    s.a = "field";          // error: struct field, string ↛ i32
+    s.a = "field";          // error: struct field, cstring ↛ i32
 
     arr : [3]i32 = .[1, 2, 3];
-    arr[0] = "elem";        // error: array element, string ↛ i32
+    arr[0] = "elem";        // error: array element, cstring ↛ i32
 
     n : i32 = 0;
     p : *i32 = *n;
-    p.* = "deref";          // error: pointer deref, string ↛ i32
+    p.* = "deref";          // error: pointer deref, cstring ↛ i32
 
     u : i32 = 0; v : i32 = 0;
-    u, v = "multi", 9;      // error: multi-assign target, string ↛ i32
+    u, v = "multi", 9;      // error: multi-assign target, cstring ↛ i32
 
     return 0;
 }

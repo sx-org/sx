@@ -1,0 +1,11 @@
+error: terminator 300 does not fit in 'u8' (range 0..255)
+  --> examples/diagnostics/2695-diagnostics-terminator-outside-the-element-type.sx:10:9
+   |
+10 |     a : [2:300]u8 = .[1, 2];
+   |         ^^^^^^^^^
+
+error: 'P' has no terminator value; a terminated type's element is an integer or float type
+  --> examples/diagnostics/2695-diagnostics-terminator-outside-the-element-type.sx:11:9
+   |
+11 |     s : [2:1]P = .[P{x = 1}, P{x = 2}];
+   |         ^^^^^^

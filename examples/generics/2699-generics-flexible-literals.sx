@@ -1,0 +1,21 @@
+// A literal argument carries no type of its own at a generic call site: the
+// arguments that do bind `$T` first, whichever order they are written in, and
+// the literal fits itself to what they bound. A call whose arguments are all
+// literals falls back to their defaults — `i64`, `f64`, `[:0]u8`.
+
+@import "modules/std.sx";
+
+pick :: (a: $T, b: T) -> T { a }
+
+main :: () -> i32 {
+    x : i32 = 7;
+    f : f32 = 1.5;
+    s : string = "run";
+
+    print("int:   {} {}\n", @typeName(@typeOf(pick(1, x))), @typeName(@typeOf(pick(x, 1))));
+    print("float: {} {}\n", @typeName(@typeOf(pick(1.0, f))), @typeName(@typeOf(pick(f, 1.0))));
+    print("str:   {} {}\n", @typeName(@typeOf(pick("lit", s))), @typeName(@typeOf(pick(s, "lit"))));
+    print("bare:  {} {} {}\n", @typeName(@typeOf(pick(1, 2))), @typeName(@typeOf(pick(1.0, 2.0))), @typeName(@typeOf(pick("a", "b"))));
+    print("neg:   {} {}\n", @typeName(@typeOf(pick(-1, x))), @typeName(@typeOf(pick(-1.0, f))));
+    0
+}

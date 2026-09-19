@@ -50,7 +50,7 @@ main :: () {
     }
 
     // @typeOf — string
-    ts := "hello";
+    ts : string = concat("hel", "lo");
     match @typeOf(ts) {
         case string: print("typeof-string: string\n");
         else: print("typeof-string: other\n");

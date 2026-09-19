@@ -13,7 +13,7 @@ report :: (w: Writer, label: string, parts: []string) {
 }
 
 main :: () -> i32 {
-    names := .["ash", "birch", "cedar"];
+    names : []string = .["ash", "birch", "cedar"];
 
     sb := StringBuilder.init();
     report(sb, "built", names);

@@ -42,14 +42,14 @@
 // FFI type choices: handles cross as `usize` (`sqlite3*`,
 // `sqlite3_stmt*`, `sqlite3_blob*`, `sqlite3_backup*` are opaque and
 // never dereferenced; `usize` keeps out-params single-level `*usize`
-// instead of `**void`). Whole C strings cross as `cstring` — IN via
-// `toCstring` (literals coerce), OUT as `?cstring` copied through
+// instead of `**void`). Whole C strings cross as `[*:0]u8` — IN via
+// `toCstring` (literals coerce), OUT as `?[*:0]u8` copied through
 // `sqFromCstr` before sqlite's buffer dies on the next
 // step/finalize/close. `sqlite3_prepare_v2/v3` and
 // `sqlite3_bind_text/blob` take `[*]u8` + explicit byte length
 // instead, so un-terminated sx string views pass without copying —
 // and `sqlite3_column_text`/`sqlite3_column_blob`/`sqlite3_serialize`
-// return `?*u8` + explicit byte counts, never `cstring`:
+// return `?*u8` + explicit byte counts, never a C string:
 // their payloads may carry interior NULs that a strlen would truncate.
 // Integer widths are SQLite's own, on the wrappers too: `i32` where
 // the C API says `int` (result codes, counts, indexes, byte sizes),
@@ -82,16 +82,16 @@ sqlib :: @import c {
 };
 
 // ── FFI: connection lifecycle ─────────────────────────────────────────
-sqlite3_open        :: (path: cstring, outDb: *usize) -> i32 extern sqlib "sqlite3_open";
-sqlite3_open_v2     :: (path: cstring, outDb: *usize, flags: i32, vfs: usize) -> i32 extern sqlib "sqlite3_open_v2";
+sqlite3_open        :: (path: [*:0]u8, outDb: *usize) -> i32 extern sqlib "sqlite3_open";
+sqlite3_open_v2     :: (path: [*:0]u8, outDb: *usize, flags: i32, vfs: usize) -> i32 extern sqlib "sqlite3_open_v2";
 sqlite3_close       :: (db: usize) -> i32 extern sqlib "sqlite3_close";
 sqlite3_close_v2    :: (db: usize) -> i32 extern sqlib "sqlite3_close_v2";
 
 // ── FFI: errors ───────────────────────────────────────────────────────
 sqlite3_errcode            :: (db: usize) -> i32 extern sqlib "sqlite3_errcode";
 sqlite3_extended_errcode   :: (db: usize) -> i32 extern sqlib "sqlite3_extended_errcode";
-sqlite3_errmsg             :: (db: usize) -> ?cstring extern sqlib "sqlite3_errmsg";
-sqlite3_errstr             :: (code: i32) -> ?cstring extern sqlib "sqlite3_errstr";
+sqlite3_errmsg             :: (db: usize) -> ?[*:0]u8 extern sqlib "sqlite3_errmsg";
+sqlite3_errstr             :: (code: i32) -> ?[*:0]u8 extern sqlib "sqlite3_errstr";
 sqlite3_error_offset       :: (db: usize) -> i32 extern sqlib "sqlite3_error_offset";
 sqlite3_extended_result_codes :: (db: usize, onoff: i32) -> i32 extern sqlib "sqlite3_extended_result_codes";
 
@@ -100,9 +100,9 @@ sqlite3_busy_timeout       :: (db: usize, ms: i32) -> i32 extern sqlib "sqlite3_
 sqlite3_interrupt          :: (db: usize) extern sqlib "sqlite3_interrupt";
 sqlite3_is_interrupted     :: (db: usize) -> i32 extern sqlib "sqlite3_is_interrupted";
 sqlite3_get_autocommit     :: (db: usize) -> i32 extern sqlib "sqlite3_get_autocommit";
-sqlite3_txn_state          :: (db: usize, schema: cstring) -> i32 extern sqlib "sqlite3_txn_state";
-sqlite3_db_filename        :: (db: usize, dbName: cstring) -> ?cstring extern sqlib "sqlite3_db_filename";
-sqlite3_db_readonly        :: (db: usize, dbName: cstring) -> i32 extern sqlib "sqlite3_db_readonly";
+sqlite3_txn_state          :: (db: usize, schema: [*:0]u8) -> i32 extern sqlib "sqlite3_txn_state";
+sqlite3_db_filename        :: (db: usize, dbName: [*:0]u8) -> ?[*:0]u8 extern sqlib "sqlite3_db_filename";
+sqlite3_db_readonly        :: (db: usize, dbName: [*:0]u8) -> i32 extern sqlib "sqlite3_db_readonly";
 sqlite3_db_cacheflush      :: (db: usize) -> i32 extern sqlib "sqlite3_db_cacheflush";
 sqlite3_db_release_memory  :: (db: usize) -> i32 extern sqlib "sqlite3_db_release_memory";
 sqlite3_last_insert_rowid  :: (db: usize) -> i64 extern sqlib "sqlite3_last_insert_rowid";
@@ -110,8 +110,8 @@ sqlite3_set_last_insert_rowid :: (db: usize, rowid: i64) extern sqlib "sqlite3_s
 sqlite3_changes64          :: (db: usize) -> i64 extern sqlib "sqlite3_changes64";
 sqlite3_total_changes64    :: (db: usize) -> i64 extern sqlib "sqlite3_total_changes64";
 sqlite3_limit              :: (db: usize, id: i32, newVal: i32) -> i32 extern sqlib "sqlite3_limit";
-sqlite3_exec               :: (db: usize, sql: cstring, cb: usize, arg: usize, errmsg: usize) -> i32 extern sqlib "sqlite3_exec";
-sqlite3_table_column_metadata :: (db: usize, dbName: cstring, table: cstring, column: cstring, outDataType: *usize, outCollSeq: *usize, outNotNull: *i32, outPrimaryKey: *i32, outAutoinc: *i32) -> i32 extern sqlib "sqlite3_table_column_metadata";
+sqlite3_exec               :: (db: usize, sql: [*:0]u8, cb: usize, arg: usize, errmsg: usize) -> i32 extern sqlib "sqlite3_exec";
+sqlite3_table_column_metadata :: (db: usize, dbName: [*:0]u8, table: [*:0]u8, column: [*:0]u8, outDataType: *usize, outCollSeq: *usize, outNotNull: *i32, outPrimaryKey: *i32, outAutoinc: *i32) -> i32 extern sqlib "sqlite3_table_column_metadata";
 
 // ── FFI: statements ───────────────────────────────────────────────────
 sqlite3_prepare_v2   :: (db: usize, sql: [*]u8, nbyte: i32, outStmt: *usize, outTail: usize) -> i32 extern sqlib "sqlite3_prepare_v2";
@@ -120,8 +120,8 @@ sqlite3_step         :: (stmt: usize) -> i32 extern sqlib "sqlite3_step";
 sqlite3_reset        :: (stmt: usize) -> i32 extern sqlib "sqlite3_reset";
 sqlite3_finalize     :: (stmt: usize) -> i32 extern sqlib "sqlite3_finalize";
 sqlite3_clear_bindings :: (stmt: usize) -> i32 extern sqlib "sqlite3_clear_bindings";
-sqlite3_sql          :: (stmt: usize) -> ?cstring extern sqlib "sqlite3_sql";
-sqlite3_expanded_sql :: (stmt: usize) -> ?cstring extern sqlib "sqlite3_expanded_sql";
+sqlite3_sql          :: (stmt: usize) -> ?[*:0]u8 extern sqlib "sqlite3_sql";
+sqlite3_expanded_sql :: (stmt: usize) -> ?[*:0]u8 extern sqlib "sqlite3_expanded_sql";
 sqlite3_stmt_busy    :: (stmt: usize) -> i32 extern sqlib "sqlite3_stmt_busy";
 sqlite3_stmt_readonly :: (stmt: usize) -> i32 extern sqlib "sqlite3_stmt_readonly";
 sqlite3_stmt_isexplain :: (stmt: usize) -> i32 extern sqlib "sqlite3_stmt_isexplain";
@@ -132,8 +132,8 @@ sqlite3_next_stmt    :: (db: usize, stmt: usize) -> usize extern sqlib "sqlite3_
 
 // ── FFI: binding ──────────────────────────────────────────────────────
 sqlite3_bind_parameter_count :: (stmt: usize) -> i32 extern sqlib "sqlite3_bind_parameter_count";
-sqlite3_bind_parameter_index :: (stmt: usize, name: cstring) -> i32 extern sqlib "sqlite3_bind_parameter_index";
-sqlite3_bind_parameter_name  :: (stmt: usize, idx: i32) -> ?cstring extern sqlib "sqlite3_bind_parameter_name";
+sqlite3_bind_parameter_index :: (stmt: usize, name: [*:0]u8) -> i32 extern sqlib "sqlite3_bind_parameter_index";
+sqlite3_bind_parameter_name  :: (stmt: usize, idx: i32) -> ?[*:0]u8 extern sqlib "sqlite3_bind_parameter_name";
 sqlite3_bind_text    :: (stmt: usize, idx: i32, text: [*]u8, n: i32, destructor: isize) -> i32 extern sqlib "sqlite3_bind_text";
 sqlite3_bind_blob    :: (stmt: usize, idx: i32, data: [*]u8, n: i32, destructor: isize) -> i32 extern sqlib "sqlite3_bind_blob";
 sqlite3_bind_double  :: (stmt: usize, idx: i32, v: f64) -> i32 extern sqlib "sqlite3_bind_double";
@@ -149,15 +149,15 @@ sqlite3_column_text   :: (stmt: usize, icol: i32) -> ?*u8 extern sqlib "sqlite3_
 sqlite3_column_bytes  :: (stmt: usize, icol: i32) -> i32 extern sqlib "sqlite3_column_bytes";
 sqlite3_column_type   :: (stmt: usize, icol: i32) -> i32 extern sqlib "sqlite3_column_type";
 sqlite3_column_count  :: (stmt: usize) -> i32 extern sqlib "sqlite3_column_count";
-sqlite3_column_name   :: (stmt: usize, icol: i32) -> ?cstring extern sqlib "sqlite3_column_name";
-sqlite3_column_decltype :: (stmt: usize, icol: i32) -> ?cstring extern sqlib "sqlite3_column_decltype";
-sqlite3_column_database_name :: (stmt: usize, icol: i32) -> ?cstring extern sqlib "sqlite3_column_database_name";
-sqlite3_column_table_name    :: (stmt: usize, icol: i32) -> ?cstring extern sqlib "sqlite3_column_table_name";
-sqlite3_column_origin_name   :: (stmt: usize, icol: i32) -> ?cstring extern sqlib "sqlite3_column_origin_name";
+sqlite3_column_name   :: (stmt: usize, icol: i32) -> ?[*:0]u8 extern sqlib "sqlite3_column_name";
+sqlite3_column_decltype :: (stmt: usize, icol: i32) -> ?[*:0]u8 extern sqlib "sqlite3_column_decltype";
+sqlite3_column_database_name :: (stmt: usize, icol: i32) -> ?[*:0]u8 extern sqlib "sqlite3_column_database_name";
+sqlite3_column_table_name    :: (stmt: usize, icol: i32) -> ?[*:0]u8 extern sqlib "sqlite3_column_table_name";
+sqlite3_column_origin_name   :: (stmt: usize, icol: i32) -> ?[*:0]u8 extern sqlib "sqlite3_column_origin_name";
 sqlite3_data_count    :: (stmt: usize) -> i32 extern sqlib "sqlite3_data_count";
 
 // ── FFI: incremental blob I/O ─────────────────────────────────────────
-sqlite3_blob_open   :: (db: usize, dbName: cstring, table: cstring, column: cstring, rowid: i64, flags: i32, outBlob: *usize) -> i32 extern sqlib "sqlite3_blob_open";
+sqlite3_blob_open   :: (db: usize, dbName: [*:0]u8, table: [*:0]u8, column: [*:0]u8, rowid: i64, flags: i32, outBlob: *usize) -> i32 extern sqlib "sqlite3_blob_open";
 sqlite3_blob_reopen :: (blob: usize, rowid: i64) -> i32 extern sqlib "sqlite3_blob_reopen";
 sqlite3_blob_close  :: (blob: usize) -> i32 extern sqlib "sqlite3_blob_close";
 sqlite3_blob_bytes  :: (blob: usize) -> i32 extern sqlib "sqlite3_blob_bytes";
@@ -165,24 +165,24 @@ sqlite3_blob_read   :: (blob: usize, buf: [*]u8, n: i32, offset: i32) -> i32 ext
 sqlite3_blob_write  :: (blob: usize, buf: [*]u8, n: i32, offset: i32) -> i32 extern sqlib "sqlite3_blob_write";
 
 // ── FFI: online backup ────────────────────────────────────────────────
-sqlite3_backup_init      :: (dst: usize, dstName: cstring, src: usize, srcName: cstring) -> usize extern sqlib "sqlite3_backup_init";
+sqlite3_backup_init      :: (dst: usize, dstName: [*:0]u8, src: usize, srcName: [*:0]u8) -> usize extern sqlib "sqlite3_backup_init";
 sqlite3_backup_step      :: (bk: usize, nPage: i32) -> i32 extern sqlib "sqlite3_backup_step";
 sqlite3_backup_finish    :: (bk: usize) -> i32 extern sqlib "sqlite3_backup_finish";
 sqlite3_backup_remaining :: (bk: usize) -> i32 extern sqlib "sqlite3_backup_remaining";
 sqlite3_backup_pagecount :: (bk: usize) -> i32 extern sqlib "sqlite3_backup_pagecount";
 
 // ── FFI: serialization ────────────────────────────────────────────────
-sqlite3_serialize   :: (db: usize, schema: cstring, outSize: *i64, flags: u32) -> ?*u8 extern sqlib "sqlite3_serialize";
-sqlite3_deserialize :: (db: usize, schema: cstring, data: usize, szDb: i64, szBuf: i64, flags: u32) -> i32 extern sqlib "sqlite3_deserialize";
+sqlite3_serialize   :: (db: usize, schema: [*:0]u8, outSize: *i64, flags: u32) -> ?*u8 extern sqlib "sqlite3_serialize";
+sqlite3_deserialize :: (db: usize, schema: [*:0]u8, data: usize, szDb: i64, szBuf: i64, flags: u32) -> i32 extern sqlib "sqlite3_deserialize";
 
 // ── FFI: library utilities ────────────────────────────────────────────
-sqlite3_libversion        :: () -> ?cstring extern sqlib "sqlite3_libversion";
+sqlite3_libversion        :: () -> ?[*:0]u8 extern sqlib "sqlite3_libversion";
 sqlite3_libversion_number :: () -> i32 extern sqlib "sqlite3_libversion_number";
-sqlite3_sourceid          :: () -> ?cstring extern sqlib "sqlite3_sourceid";
+sqlite3_sourceid          :: () -> ?[*:0]u8 extern sqlib "sqlite3_sourceid";
 sqlite3_threadsafe        :: () -> i32 extern sqlib "sqlite3_threadsafe";
-sqlite3_compileoption_used :: (name: cstring) -> i32 extern sqlib "sqlite3_compileoption_used";
-sqlite3_compileoption_get  :: (n: i32) -> ?cstring extern sqlib "sqlite3_compileoption_get";
-sqlite3_complete          :: (sql: cstring) -> i32 extern sqlib "sqlite3_complete";
+sqlite3_compileoption_used :: (name: [*:0]u8) -> i32 extern sqlib "sqlite3_compileoption_used";
+sqlite3_compileoption_get  :: (n: i32) -> ?[*:0]u8 extern sqlib "sqlite3_compileoption_get";
+sqlite3_complete          :: (sql: [*:0]u8) -> i32 extern sqlib "sqlite3_complete";
 sqlite3_free              :: (p: *void) extern sqlib "sqlite3_free";
 sqlite3_malloc64          :: (n: u64) -> usize extern sqlib "sqlite3_malloc64";
 sqlite3_msize             :: (p: usize) -> u64 extern sqlib "sqlite3_msize";
@@ -193,10 +193,10 @@ sqlite3_soft_heap_limit64 :: (n: i64) -> i64 extern sqlib "sqlite3_soft_heap_lim
 sqlite3_hard_heap_limit64 :: (n: i64) -> i64 extern sqlib "sqlite3_hard_heap_limit64";
 sqlite3_randomness        :: (n: i32, buf: [*]u8) extern sqlib "sqlite3_randomness";
 sqlite3_sleep             :: (ms: i32) -> i32 extern sqlib "sqlite3_sleep";
-sqlite3_stricmp           :: (a: cstring, b: cstring) -> i32 extern sqlib "sqlite3_stricmp";
-sqlite3_strnicmp          :: (a: cstring, b: cstring, n: i32) -> i32 extern sqlib "sqlite3_strnicmp";
-sqlite3_strglob           :: (glob: cstring, s: cstring) -> i32 extern sqlib "sqlite3_strglob";
-sqlite3_strlike           :: (like: cstring, s: cstring, esc: u32) -> i32 extern sqlib "sqlite3_strlike";
+sqlite3_stricmp           :: (a: [*:0]u8, b: [*:0]u8) -> i32 extern sqlib "sqlite3_stricmp";
+sqlite3_strnicmp          :: (a: [*:0]u8, b: [*:0]u8, n: i32) -> i32 extern sqlib "sqlite3_strnicmp";
+sqlite3_strglob           :: (glob: [*:0]u8, s: [*:0]u8) -> i32 extern sqlib "sqlite3_strglob";
+sqlite3_strlike           :: (like: [*:0]u8, s: [*:0]u8, esc: u32) -> i32 extern sqlib "sqlite3_strlike";
 
 // ── Result codes (primary; full set) ──────────────────────────────────
 SQLITE_OK         ::   0;
@@ -333,7 +333,7 @@ SqliteErr :: error {
 // Copy the C string at `p` (null = empty) into context.allocator —
 // sqlite's buffer dies on the next step/finalize/close, so the view from
 // `fromCstring` must not escape.
-sqFromCstr :: (p: ?cstring) -> string {
+sqFromCstr :: (p: ?[*:0]u8) -> string {
     if p == null { return ""; }
     return fromCstring(p).clone();
 }

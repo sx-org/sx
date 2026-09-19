@@ -217,7 +217,7 @@ impl Platform for SdlPlatform {
             windowFlags |= SDL_WINDOW_METAL;
         }
 
-        self.window = SDL_CreateWindow(title, initW, initH, windowFlags);
+        self.window = SDL_CreateWindow(title.ptr.([*:0]u8), initW, initH, windowFlags);
         if self.window == null { return false; }
 
         if self.gpuMode == .opengl {

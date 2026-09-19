@@ -22,7 +22,7 @@
 
 @import "modules/std.sx";
 
-printf :: (fmt: cstring, ..) -> i32 extern;
+printf :: (fmt: [*:0]u8, ..) -> i32 extern;
 c_reader :: (n: i32, ap: @VaList) -> i64 extern;
 
 // `..name: []U` is the homogeneous constraint: every tail argument takes the
@@ -31,7 +31,6 @@ c_reader :: (n: i32, ap: @VaList) -> i64 extern;
 libc :: @library "c";
 sum_ints :: (n: i32, ..args: []i32) -> i64 extern libc;
 flags :: (n: i32, ..args: []bool) -> i64 extern libc;
-texts :: (n: i32, ..args: []string) -> i64 extern libc;
 
 Pair :: struct {
     a: i64;
@@ -144,10 +143,8 @@ main :: () -> i32 {
     pair: Pair = .{1, 2};
     nums: [2]i32 = .[1, 2];
     absent: ?*i32 = null;
-    held: cstring = "de";
 
     flags(1, absent);            // the element type's own refusal, on the tail
-    texts(1, held);
 
     printf("%d\n", wide);        // a width no C variadic slot holds
     printf("%s\n", "sx string"); // two words: pointer and length

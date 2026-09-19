@@ -182,8 +182,8 @@ fn printInst(instruction: *const Inst, ref_idx: u32, tt: *const TypeTable, write
         .cmp_le => |b| try writer.print("cmp_le %{d}, %{d} : ", .{ b.lhs.index(), b.rhs.index() }),
         .cmp_gt => |b| try writer.print("cmp_gt %{d}, %{d} : ", .{ b.lhs.index(), b.rhs.index() }),
         .cmp_ge => |b| try writer.print("cmp_ge %{d}, %{d} : ", .{ b.lhs.index(), b.rhs.index() }),
-        .str_eq => |b| try writer.print("str_eq %{d}, %{d} : ", .{ b.lhs.index(), b.rhs.index() }),
-        .str_ne => |b| try writer.print("str_ne %{d}, %{d} : ", .{ b.lhs.index(), b.rhs.index() }),
+        .str_eq => |c| try writer.print("str_eq %{d}, %{d} x{d} : ", .{ c.lhs.index(), c.rhs.index(), c.elem_size }),
+        .str_ne => |c| try writer.print("str_ne %{d}, %{d} x{d} : ", .{ c.lhs.index(), c.rhs.index(), c.elem_size }),
 
         // ── Logical ─────────────────────────────────────────────
         .bool_and => |b| try writer.print("bool_and %{d}, %{d} : ", .{ b.lhs.index(), b.rhs.index() }),
@@ -483,12 +483,12 @@ fn writeType(id: TypeId, tt: *const TypeTable, writer: Writer) !void {
             try writeType(p.pointee, tt, writer);
         },
         .many_pointer => |p| {
-            try writer.writeAll("[*]");
+            if (p.sentinel) |x| try writer.print("[*:{d}]", .{x}) else try writer.writeAll("[*]");
             try writeType(p.element, tt, writer);
         },
         .slice => |s| {
             if (s.len_type == .i64) {
-                try writer.writeAll("[]");
+                if (s.sentinel) |x| try writer.print("[:{d}]", .{x}) else try writer.writeAll("[]");
                 try writeType(s.element, tt, writer);
             } else {
                 try writer.writeAll("@Slice(");
@@ -499,7 +499,7 @@ fn writeType(id: TypeId, tt: *const TypeTable, writer: Writer) !void {
             }
         },
         .array => |a| {
-            try writer.print("[{d}]", .{a.length});
+            if (a.sentinel) |x| try writer.print("[{d}:{d}]", .{ a.length, x }) else try writer.print("[{d}]", .{a.length});
             try writeType(a.element, tt, writer);
         },
         .optional => |o| {

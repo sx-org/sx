@@ -1210,7 +1210,7 @@ test "parser: a bare `..` tail sets the signature flag and binds no parameter" {
     var parser = try Parser.init(arena.allocator(),
         \\one :: (n: i32, ..) -> i64 abi(.c) { 0 }
         \\zero :: (..) -> i64 abi(.c) { 0 }
-        \\imported :: (fmt: cstring, ..) -> i32 extern;
+        \\imported :: (fmt: [*:0]u8, ..) -> i32 extern;
     );
     const root = try parser.parse();
     const decls = root.data.root.decls;

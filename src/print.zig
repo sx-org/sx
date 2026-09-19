@@ -51,10 +51,24 @@ pub fn printExpr(node: *const Node, writer: Writer) anyerror!void {
             try writer.writeAll(l.raw);
             try writer.writeByte('\'');
         },
-        .string_literal => |l| {
-            try writer.writeByte('"');
-            try writer.writeAll(l.raw);
-            try writer.writeByte('"');
+        .string_literal => |l| switch (l.form) {
+            .quoted => {
+                try writer.writeByte('"');
+                try writer.writeAll(l.raw);
+                try writer.writeByte('"');
+            },
+            .lines => {
+                var lines = std.mem.splitScalar(u8, l.raw, '\n');
+                var first = true;
+                while (lines.next()) |line| {
+                    if (!first) try writer.writeByte('\n');
+                    first = false;
+                    try writer.writeAll("\\\\");
+                    try writer.writeAll(line);
+                }
+            },
+            // A heredoc's delimiter has no node to print from.
+            .heredoc => return error.UnsupportedNode,
         },
         .call => |c| {
             try printExpr(c.callee, writer);
@@ -134,6 +148,10 @@ pub fn printExpr(node: *const Node, writer: Writer) anyerror!void {
     }
 }
 
+fn printSentinel(sentinel: ?i64, writer: Writer) anyerror!void {
+    if (sentinel) |s| try writer.print(":{d}", .{s});
+}
+
 /// Print a type-expression node back to source text.
 pub fn printType(node: *const Node, writer: Writer) anyerror!void {
     switch (node.data) {
@@ -156,16 +174,21 @@ pub fn printType(node: *const Node, writer: Writer) anyerror!void {
             try printType(o.inner_type, writer);
         },
         .slice_type_expr => |s| {
-            try writer.writeAll("[]");
+            try writer.writeByte('[');
+            try printSentinel(s.sentinel, writer);
+            try writer.writeByte(']');
             try printType(s.element_type, writer);
         },
         .many_pointer_type_expr => |m| {
-            try writer.writeAll("[*]");
+            try writer.writeAll("[*");
+            try printSentinel(m.sentinel, writer);
+            try writer.writeByte(']');
             try printType(m.element_type, writer);
         },
         .array_type_expr => |a| {
             try writer.writeByte('[');
             try printExpr(a.length, writer);
+            try printSentinel(a.sentinel, writer);
             try writer.writeByte(']');
             try printType(a.element_type, writer);
         },

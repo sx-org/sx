@@ -10,6 +10,7 @@ const Reflection = @import("reflection.zig").Reflection;
 const LLVMEmitter = emit.LLVMEmitter;
 const Inst = ir_inst.Inst;
 const BinOp = ir_inst.BinOp;
+const SeqCmp = ir_inst.SeqCmp;
 const UnaryOp = ir_inst.UnaryOp;
 const Aggregate = ir_inst.Aggregate;
 const FieldAccess = ir_inst.FieldAccess;
@@ -124,10 +125,15 @@ pub const Ops = struct {
         self.e.mapRef(c.LLVMBuildLoad2(self.e.builder, frame_ty, ptr, "frame.val"));
     }
 
-    pub fn emitConstString(self: Ops, str_id: StringId) void {
+    /// A string literal's bytes at the type the destination decided: the
+    /// `[N:0]u8` array value, or the `{ptr, len}` view it decays to.
+    pub fn emitConstString(self: Ops, instruction: *const Inst, str_id: StringId) void {
         const str = self.e.ir_mod.types.getString(str_id);
-        const llvm_val = self.e.emitStringConstant(str);
-        self.e.mapRef(llvm_val);
+        if (!instruction.ty.isBuiltin() and self.e.ir_mod.types.get(instruction.ty) == .array) {
+            self.e.mapRef(self.e.emitTerminatedBytes(str));
+            return;
+        }
+        self.e.mapRef(self.e.emitStringConstant(str));
     }
 
     pub fn emitConstNull(self: Ops, instruction: *const Inst) void {
@@ -373,12 +379,12 @@ pub const Ops = struct {
         self.e.emitCmpOrdered(bin, instruction.ty, c.LLVMIntSGE, c.LLVMIntUGE, c.LLVMRealOGE);
     }
 
-    pub fn emitStrEq(self: Ops, bin: BinOp) void {
-        self.e.emitStrCmp(bin, true);
+    pub fn emitStrEq(self: Ops, cmp: SeqCmp) void {
+        self.e.emitStrCmp(cmp, true);
     }
 
-    pub fn emitStrNe(self: Ops, bin: BinOp) void {
-        self.e.emitStrCmp(bin, false);
+    pub fn emitStrNe(self: Ops, cmp: SeqCmp) void {
+        self.e.emitStrCmp(cmp, false);
     }
 
     // ── Logical ───────────────────────────────────────────
@@ -1535,10 +1541,7 @@ pub const Ops = struct {
         };
         const callee_needs_c_abi = callee_func.is_extern or callee_func.call_conv == .c;
         const callee_raw_ret = self.e.toLLVMType(callee_func.ret);
-        // Extern string/?string returns receive one `char *` — never sret
-        // (must mirror declareFunction's signature classification).
-        const cstr_ret = self.e.cstrRetKind(callee_func);
-        const callee_uses_sret = callee_needs_c_abi and cstr_ret == .none and self.e.needsByval(callee_func.ret, callee_raw_ret);
+        const callee_uses_sret = callee_needs_c_abi and self.e.needsByval(callee_func.ret, callee_raw_ret);
 
         // When the callee uses sret, prepend an alloca for the result.
         // Index alignment: actual_args[0] = sret_slot; actual_args[i+1] = sx arg i.
@@ -1593,10 +1596,6 @@ pub const Ops = struct {
             c.LLVMAddCallSiteAttribute(result, param1_idx, sret_attr);
             // Load the actual struct value the callee wrote into the slot.
             result = c.LLVMBuildLoad2(self.e.builder, callee_raw_ret, sret_slot, "sret.load");
-        } else if (!call_is_void_like and cstr_ret != .none) {
-            // The C side returned `char *`; build the fat sx string (and the
-            // optional wrapper) from it.
-            result = self.e.cstrReturnToSx(result, cstr_ret == .optional);
         } else if (!call_is_void_like and callee_func.is_extern) {
             // Coerce ABI return value (e.g. i64 / [2 x i64]) back to IR struct type if needed
             const expected_ty = self.e.toLLVMType(instruction.ty);
@@ -2477,12 +2476,22 @@ pub const Ops = struct {
         }
     }
 
+    /// The written N of an array-typed ref, which `[N:X]T`'s storage exceeds by
+    /// the terminator. Null when the ref's IR type is not an array — a union
+    /// and a payload-carrying error set also lower to LLVM array shapes.
+    fn writtenArrayLen(self: Ops, operand: Ref) ?u64 {
+        const ty = self.e.getRefIRType(operand) orelse return null;
+        if (ty.isBuiltin()) return null;
+        const info = self.e.ir_mod.types.get(ty);
+        return if (info == .array) info.array.length else null;
+    }
+
     pub fn emitLength(self: Ops, un: UnaryOp) void {
         const val = self.e.resolveRef(un.operand);
         const val_ty = c.LLVMTypeOf(val);
         const kind = c.LLVMGetTypeKind(val_ty);
         if (kind == c.LLVMArrayTypeKind) {
-            const len = c.LLVMGetArrayLength2(val_ty);
+            const len = self.writtenArrayLen(un.operand) orelse c.LLVMGetArrayLength2(val_ty);
             self.e.mapRef(c.LLVMConstInt(self.e.cached_i64, len, 0));
         } else if (kind == c.LLVMVectorTypeKind or kind == c.LLVMScalableVectorTypeKind) {
             // SIMD vector: .len is the lane count, a compile-time constant.
@@ -2502,6 +2511,8 @@ pub const Ops = struct {
         const kind = c.LLVMGetTypeKind(val_ty);
         if (kind == c.LLVMStructTypeKind) {
             self.e.mapRef(c.LLVMBuildExtractValue(self.e.builder, val, 0, "dptr"));
+        } else if (kind == c.LLVMArrayTypeKind) {
+            self.e.mapRef(self.e.arrayStorageAddress(val, val_ty));
         } else {
             self.e.mapRef(c.LLVMGetUndef(self.e.cached_ptr));
         }
@@ -2585,7 +2596,7 @@ pub const Ops = struct {
         const arr_ty = c.LLVMTypeOf(arr);
         const arr_kind = c.LLVMGetTypeKind(arr_ty);
         if (arr_kind == c.LLVMArrayTypeKind) {
-            const len = c.LLVMGetArrayLength2(arr_ty);
+            const len = self.writtenArrayLen(un.operand) orelse c.LLVMGetArrayLength2(arr_ty);
             const tmp = self.e.buildEntryAlloca(arr_ty, "a2s.tmp");
             _ = c.LLVMBuildStore(self.e.builder, arr, tmp);
             var indices = [_]c.LLVMValueRef{ c.LLVMConstInt(self.e.cached_i64, 0, 0), c.LLVMConstInt(self.e.cached_i64, 0, 0) };
@@ -2603,110 +2614,64 @@ pub const Ops = struct {
     }
 
     // ── Optional ops ─────────────────────────────────────────
+
+    /// True when the `?T` at `opt_ty` carries no has_value flag: the child's own
+    /// leading pointer word is its null state. The LLVM shape cannot answer —
+    /// a narrow-length slice header is itself a `{ptr, i1}`.
+    fn isSentinelOptional(self: Ops, opt_ty: ?TypeId) bool {
+        const ty = opt_ty orelse return false;
+        if (ty.isBuiltin()) return false;
+        const info = self.e.ir_mod.types.get(ty);
+        return info == .optional and self.e.ir_mod.types.optionalIsSentinel(info.optional.child);
+    }
+
+    /// The presence test of a sentinel-shaped optional: its leading pointer
+    /// word, which is the whole value when the child is one word wide.
+    fn sentinelPresent(self: Ops, val: c.LLVMValueRef, name: [*c]const u8) c.LLVMValueRef {
+        const lead = if (c.LLVMGetTypeKind(c.LLVMTypeOf(val)) == c.LLVMStructTypeKind)
+            c.LLVMBuildExtractValue(self.e.builder, val, 0, "os.lead")
+        else
+            val;
+        return c.LLVMBuildICmp(self.e.builder, c.LLVMIntNE, lead, c.LLVMConstNull(c.LLVMTypeOf(lead)), name);
+    }
+
     pub fn emitOptionalWrap(self: Ops, instruction: *const Inst, un: UnaryOp) void {
-        var val = self.e.resolveRef(un.operand);
+        const val = self.e.resolveRef(un.operand);
+        if (self.isSentinelOptional(instruction.ty)) return self.e.mapRef(val);
         const opt_ty = self.e.toLLVMType(instruction.ty);
-        const opt_kind = c.LLVMGetTypeKind(opt_ty);
-        if (opt_kind == c.LLVMPointerTypeKind) {
-            // ?*T — pointer is the optional itself (null = none)
-            self.e.mapRef(val);
-        } else if (opt_kind == c.LLVMStructTypeKind) {
-            // Distinguish {T, i1} (real optional) from {ptr, ptr} (?Closure)
-            const num_fields = c.LLVMCountStructElementTypes(opt_ty);
-            const last_field_ty = if (num_fields > 0) c.LLVMStructGetTypeAtIndex(opt_ty, num_fields - 1) else self.e.cached_i1;
-            if (last_field_ty == self.e.cached_i1) {
-                // ?T → { T, i1 } — wrap value + true flag
-                const inner_ty = c.LLVMStructGetTypeAtIndex(opt_ty, 0);
-                val = self.e.coerceArg(val, inner_ty);
-                var result = c.LLVMGetUndef(opt_ty);
-                result = c.LLVMBuildInsertValue(self.e.builder, result, val, 0, "ow.val");
-                result = c.LLVMBuildInsertValue(self.e.builder, result, c.LLVMConstInt(self.e.cached_i1, 1, 0), 1, "ow.has");
-                self.e.mapRef(result);
-            } else {
-                // ?Closure → closure struct IS the optional, just pass through
-                self.e.mapRef(val);
-            }
-        } else {
-            self.e.mapRef(val);
-        }
+        const inner_ty = c.LLVMStructGetTypeAtIndex(opt_ty, 0);
+        var result = c.LLVMGetUndef(opt_ty);
+        result = c.LLVMBuildInsertValue(self.e.builder, result, self.e.coerceArg(val, inner_ty), 0, "ow.val");
+        result = c.LLVMBuildInsertValue(self.e.builder, result, c.LLVMConstInt(self.e.cached_i1, 1, 0), 1, "ow.has");
+        self.e.mapRef(result);
     }
 
     pub fn emitOptionalUnwrap(self: Ops, un: UnaryOp) void {
         const val = self.e.resolveRef(un.operand);
-        const val_ty = c.LLVMTypeOf(val);
-        const kind = c.LLVMGetTypeKind(val_ty);
-        if (kind == c.LLVMStructTypeKind) {
-            // Distinguish {T, i1} (real optional) from {ptr, ptr} (?Closure)
-            const num_fields = c.LLVMCountStructElementTypes(val_ty);
-            const last_field_ty = if (num_fields > 0) c.LLVMStructGetTypeAtIndex(val_ty, num_fields - 1) else self.e.cached_i1;
-            if (last_field_ty == self.e.cached_i1) {
-                // { T, i1 } → extract field 0
-                self.e.mapRef(c.LLVMBuildExtractValue(self.e.builder, val, 0, "ou.val"));
-            } else {
-                // ?Closure → the struct itself is the value
-                self.e.mapRef(val);
-            }
-        } else {
-            // ?*T → pointer is the value itself
-            self.e.mapRef(val);
-        }
+        if (self.isSentinelOptional(self.e.getRefIRType(un.operand))) return self.e.mapRef(val);
+        self.e.mapRef(c.LLVMBuildExtractValue(self.e.builder, val, 0, "ou.val"));
     }
 
     pub fn emitOptionalHasValue(self: Ops, un: UnaryOp) void {
         const val = self.e.resolveRef(un.operand);
-        const val_ty = c.LLVMTypeOf(val);
-        const kind = c.LLVMGetTypeKind(val_ty);
-        if (kind == c.LLVMStructTypeKind) {
-            // Distinguish {T, i1} (real optional) from {ptr, ptr} (?Closure)
-            const num_fields = c.LLVMCountStructElementTypes(val_ty);
-            const last_field_ty = if (num_fields > 0) c.LLVMStructGetTypeAtIndex(val_ty, num_fields - 1) else self.e.cached_i1;
-            if (last_field_ty == self.e.cached_i1) {
-                // { T, i1 } → extract has_value flag
-                self.e.mapRef(c.LLVMBuildExtractValue(self.e.builder, val, num_fields - 1, "oh.has"));
-            } else {
-                // ?Closure {fnPtr, env} → check if fnPtr is null
-                const fn_ptr = c.LLVMBuildExtractValue(self.e.builder, val, 0, "oh.fn");
-                self.e.mapRef(c.LLVMBuildICmp(self.e.builder, c.LLVMIntNE, fn_ptr, c.LLVMConstNull(c.LLVMTypeOf(fn_ptr)), "oh.nn"));
-            }
-        } else {
-            // ?*T → compare with null
-            const is_nonnull = c.LLVMBuildICmp(self.e.builder, c.LLVMIntNE, val, c.LLVMConstNull(val_ty), "oh.nn");
-            self.e.mapRef(is_nonnull);
-        }
+        if (self.isSentinelOptional(self.e.getRefIRType(un.operand)))
+            return self.e.mapRef(self.sentinelPresent(val, "oh.nn"));
+        self.e.mapRef(c.LLVMBuildExtractValue(self.e.builder, val, 1, "oh.has"));
     }
 
     pub fn emitOptionalCoalesce(self: Ops, bin: BinOp) void {
         // a ?? b — if a has value, use a's value; otherwise use b
         const a = self.e.resolveRef(bin.lhs);
         var b_val = self.e.resolveRef(bin.rhs);
-        const a_ty = c.LLVMTypeOf(a);
-        const kind = c.LLVMGetTypeKind(a_ty);
-        if (kind == c.LLVMStructTypeKind) {
-            const n_fields = c.LLVMCountStructElementTypes(a_ty);
-            const f1_ty = if (n_fields >= 2) c.LLVMStructGetTypeAtIndex(a_ty, 1) else null;
-            const is_ti1 = if (f1_ty) |ft| c.LLVMGetTypeKind(ft) == c.LLVMIntegerTypeKind and c.LLVMGetIntTypeWidth(ft) == 1 else false;
-            if (is_ti1) {
-                // Standard optional {T, i1}: extract has_value and unwrap
-                const has = c.LLVMBuildExtractValue(self.e.builder, a, 1, "oc.has");
-                const unwrapped = c.LLVMBuildExtractValue(self.e.builder, a, 0, "oc.val");
-                const uw_ty = c.LLVMTypeOf(unwrapped);
-                const b_ty = c.LLVMTypeOf(b_val);
-                if (uw_ty != b_ty) {
-                    b_val = self.e.coerceArg(b_val, uw_ty);
-                }
-                self.e.mapRef(c.LLVMBuildSelect(self.e.builder, has, unwrapped, b_val, "oc.sel"));
-            } else {
-                // ?Closure {fnPtr, env}: check if fnPtr is null
-                const fn_ptr = c.LLVMBuildExtractValue(self.e.builder, a, 0, "oc.fn");
-                const is_nonnull = c.LLVMBuildICmp(self.e.builder, c.LLVMIntNE, fn_ptr, c.LLVMConstNull(c.LLVMTypeOf(fn_ptr)), "oc.nn");
-                // Select the full closure struct, not just the fnPtr
-                self.e.mapRef(c.LLVMBuildSelect(self.e.builder, is_nonnull, a, b_val, "oc.sel"));
-            }
-        } else {
-            // ?*T — select on null
-            const is_nonnull = c.LLVMBuildICmp(self.e.builder, c.LLVMIntNE, a, c.LLVMConstNull(a_ty), "oc.nn");
-            self.e.mapRef(c.LLVMBuildSelect(self.e.builder, is_nonnull, a, b_val, "oc.sel"));
+        if (self.isSentinelOptional(self.e.getRefIRType(bin.lhs))) {
+            const present = self.sentinelPresent(a, "oc.nn");
+            return self.e.mapRef(c.LLVMBuildSelect(self.e.builder, present, a, b_val, "oc.sel"));
         }
+        const has = c.LLVMBuildExtractValue(self.e.builder, a, 1, "oc.has");
+        const unwrapped = c.LLVMBuildExtractValue(self.e.builder, a, 0, "oc.val");
+        const uw_ty = c.LLVMTypeOf(unwrapped);
+        if (uw_ty != c.LLVMTypeOf(b_val)) b_val = self.e.coerceArg(b_val, uw_ty);
+        self.e.mapRef(c.LLVMBuildSelect(self.e.builder, has, unwrapped, b_val, "oc.sel"));
     }
 
     // ── Terminators ────────────────────────────────────────

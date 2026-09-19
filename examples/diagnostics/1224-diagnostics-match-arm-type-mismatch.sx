@@ -14,7 +14,7 @@ gs :: () -> string { return "s"; }
 main :: () {
     c : Color = .red;
 
-    // Value position, literal arms: i64 vs string.
+    // Value position, literal arms: i64 vs cstring.
     r := match c { case .red: { 1 } case .green: { "hi" } };
     print("{}\n", r);
 

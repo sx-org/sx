@@ -26,12 +26,12 @@ libc :: c.libc;
 
 // ── Low-level libc bindings ─────────────────────────────────────────
 
-popen  :: (cmd: [:0]u8, mode: [:0]u8) -> *void extern libc;
+popen  :: (cmd: [*:0]u8, mode: [*:0]u8) -> *void extern libc;
 pclose :: (stream: *void) -> i32 extern libc;
 fread  :: (ptr: [*]u8, size: i64, nmemb: i64, stream: *void) -> usize extern libc;
 feof   :: (stream: *void) -> i32 extern libc;
-getenv :: (name: cstring) -> ?cstring extern libc;
-system :: (cmd: [:0]u8) -> i32 extern libc;
+getenv :: (name: [*:0]u8) -> ?[*:0]u8 extern libc;
+system :: (cmd: [*:0]u8) -> i32 extern libc;
 
 // ── Public types ─────────────────────────────────────────────────────
 
@@ -53,10 +53,10 @@ ProcessResult :: struct {
 // containing spaces or shell metacharacters. To capture stderr along
 // with stdout, append " 2>&1" to the command.
 run :: (cmd: [:0]u8) -> ?ProcessResult {
-    f := popen(cmd, "r");
+    f := popen(cmd.ptr.([*:0]u8), "r");
     if f.(i64) == 0 { return null; }
 
-    out := "";
+    out : string = "";
     buf := allocString(4096);
     loop := true;
     while loop {
@@ -101,10 +101,7 @@ findExecutable :: (name: [:0]u8) -> ?string {
     // Compose `command -v <name>` — name is assumed shell-safe
     // (executable names like `codesign`, `javac`, `aapt2`).
     cmd := concat("command -v ", name);
-    // Need null-terminated for popen.
-    cmdZ := allocString(cmd.len);
-    c.memcpy(cmdZ.ptr, cmd.ptr, cmd.len);
-    if r := run(cmdZ) {
+    if r := run(toCstring(cmd)) {
         if r.exitCode != 0 { return null; }
         // Strip the trailing newline that `command -v` emits.
         out := r.stdout;
@@ -252,7 +249,7 @@ spawn :: (argv: []string, opts: SpawnOpts = .{}) -> (Child, !SpawnErr) {
     if argv.len == 0 { raise .EmptyArgv; }
 
     // Marshalling happens HERE, in the parent — see THE FORK WINDOW below.
-    vec : [*]?cstring = context.allocator.alloc(?cstring, argv.len + 1).ptr;
+    vec : [*]?[*:0]u8 = context.allocator.alloc(?[*:0]u8, argv.len + 1).ptr;
     i := 0;
     while i < argv.len {
         vec[i] = toCstring(argv[i]);
@@ -364,7 +361,7 @@ setCloexec :: (fd: i32) -> bool {
     return c.fcntl(fd, F_SETFD, FD_CLOEXEC) >= 0;
 }
 
-freeArgv :: (vec: [*]?cstring, n: i64) {
+freeArgv :: (vec: [*]?[*:0]u8, n: i64) {
     i := 0;
     while i < n {
         if p := vec[i] { context.allocator.deallocBytes(p); }

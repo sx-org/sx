@@ -348,7 +348,7 @@ writeHex :: ufcs (w: Writer, n: u64) {
 // or `export` definition, an `extern` declaration, or an `abi(.c)` function
 // type:
 //
-//     vmprintf :: (fmt: cstring, ap: @VaList) -> ?cstring extern;
+//     vmprintf :: (fmt: [*:0]u8, ap: @VaList) -> ?[*:0]u8 extern;
 //
 // It is place-only: a call names a live list, `f(fmt, ap)` from a `@VaList`
 // local or parameter and `f(fmt, ap.*)` from a `*@VaList` borrow. An incoming
@@ -452,7 +452,6 @@ TypeInfo :: enum {
     float: FloatInfo;
     bool;
     string;
-    cstring;
     void;
     array: ArrayInfo;
     vector: VectorInfo;

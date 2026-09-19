@@ -2,7 +2,7 @@
 @import "modules/std.sx";
 
 pcaplib :: @library "pcap";
-pcapLibVersion :: () -> ?cstring extern pcaplib "pcap_lib_version";
+pcapLibVersion :: () -> ?[*:0]u8 extern pcaplib "pcap_lib_version";
 
 pcapVersion :: () -> string {
     p := pcapLibVersion();

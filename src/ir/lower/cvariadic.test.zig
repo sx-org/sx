@@ -338,23 +338,18 @@ test "a named tail refuses what its element type refuses" {
     try std.testing.expectEqual(@as(usize, 1), lowered.diagnostics.errorCount());
 }
 
-test "a named tail refuses a conversion that turns on the value" {
+test "a named tail refuses a string where its element names a terminator" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var lowered: Lowered = undefined;
     try lower(arena.allocator(),
-        \\joins :: (n: i32, ..args: []cstring) -> i64 extern;
-        \\texts :: (n: i32, ..args: []string) -> i64 extern;
+        \\joins :: (n: i32, ..args: [][*:0]u8) -> i64 extern;
         \\relay :: (s: string) -> i64 { return joins(1, s); }
-        \\main :: () -> i64 {
-        \\    held: cstring = "de";
-        \\    return relay("ab") + texts(1, held);
-        \\}
+        \\main :: () -> i64 { return relay("ab"); }
     , &lowered);
     defer lowered.module.deinit();
 
-    try std.testing.expectEqual(@as(usize, 1), countMessages(&lowered, "only a string LITERAL coerces"));
-    try std.testing.expectEqual(@as(usize, 1), countMessages(&lowered, "does not coerce to 'string' implicitly"));
+    try std.testing.expectEqual(@as(usize, 1), countMessages(&lowered, "nothing implicitly adds a terminator"));
 }
 
 test "an unwrapped C boundary and an internal borrow stay legal" {
@@ -400,10 +395,10 @@ test "a named tail converts each argument to its element type" {
     defer arena.deinit();
     var lowered: Lowered = undefined;
     try lower(arena.allocator(),
-        \\joins :: (n: i32, ..args: []cstring) -> i64 extern;
+        \\joins :: (n: i32, ..args: [][*:0]u8) -> i64 extern;
         \\sums  :: (n: i32, ..args: []i32) -> i64 extern;
         \\main :: () -> i64 {
-        \\    held: cstring = "de";
+        \\    held: [*:0]u8 = "de";
         \\    return joins(2, "abc", held) + sums(2, 1, 2);
         \\}
     , &lowered);
@@ -422,7 +417,7 @@ test "a named tail converts each argument to its element type" {
             if (call.callee != joins) continue;
             for (call.args[1..]) |arg| {
                 const producer = defOf(main, arg) orelse return error.TailArgumentHasNoProducer;
-                try std.testing.expectEqual(TypeId.cstring, producer.ty);
+                try std.testing.expectEqual(lowered.module.types.manyPtrToSentinel(.u8, 0), producer.ty);
                 tail_args += 1;
             }
         }

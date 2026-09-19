@@ -6,7 +6,7 @@ fsPosixC :: @import "modules/std/c.sx";
 fsPosixLibc :: @library "c";
 
 FsPosixTimespec :: fsPosixC.Timespec;
-fsPosixUtimensat :: (directory: i32, path: [:0]u8, times: *void, flags: i32) -> i32 extern fsPosixLibc "utimensat";
+fsPosixUtimensat :: (directory: i32, path: [*:0]u8, times: *void, flags: i32) -> i32 extern fsPosixLibc "utimensat";
 fsPosixFtruncate :: (fd: i32, len: i64) -> i32 extern fsPosixLibc "ftruncate";
 
 // Linux, Android, and Emscripten use the Linux asm-generic open flag values;

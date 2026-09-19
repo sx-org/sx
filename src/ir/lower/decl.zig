@@ -788,13 +788,15 @@ pub fn registerLiteralModuleConsts(self: *Lowering, decls: []const *const Node) 
             // Bool/string literal consts carry their real type — registering
             // them here (not just in declaration-ordered pass 1) lets a
             // const ALIAS chain below resolve through them regardless of
-            // declaration order.
-            .bool_literal => {
+            // declaration order. An ANNOTATED one waits for pass 2: only the
+            // resolved annotation says what it is, and an alias that copied
+            // the literal's own type here would keep it.
+            .bool_literal => if (cd.type_annotation == null) {
                 const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = .bool };
                 self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), decl.source_file, cd.name, info);
             },
-            .string_literal => {
-                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = .string };
+            .string_literal => |lit| if (cd.type_annotation == null) {
+                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = self.stringLiteralType(lit) };
                 self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), decl.source_file, cd.name, info);
             },
             else => {},
@@ -1163,7 +1165,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                     // An aggregate-valued one registers in pass 1c' instead —
                     // its value node is final only once the brace front runs.
                     const lit_ty: ?TypeId = switch (cd.value.data) {
-                        .string_literal => .string,
+                        .string_literal => |lit| self.stringLiteralType(lit),
                         .int_literal => .i64,
                         .float_literal => .f64,
                         .bool_literal => .bool,
@@ -1470,7 +1472,7 @@ pub fn typedConstInitFits(self: *Lowering, value: *const Node, dst_ty: TypeId) b
         // Float literal → a float type only (the float arm emits `constFloat`).
         .float_literal => isFloat(dst_ty),
         .bool_literal => dst_ty == .bool,
-        .string_literal => dst_ty == .string,
+        .string_literal => dst_ty == .string or dst_ty == .cstring or self.literalKeepsArray(dst_ty),
         // `null` → a pointer or optional.
         .null_literal => !dst_ty.isBuiltin() and switch (self.module.types.get(dst_ty)) {
             .pointer, .many_pointer, .optional => true,
@@ -1498,6 +1500,7 @@ pub fn constExprInitFits(self: *Lowering, init_ty: TypeId, dst_ty: TypeId) bool 
     if (isFloat(init_ty)) return isFloat(dst_ty);
     if (init_ty == .bool) return dst_ty == .bool;
     if (init_ty == .string) return dst_ty == .string;
+    if (init_ty == .cstring) return dst_ty == .cstring or dst_ty == .string;
     // Any other concrete initializer type must match the annotation exactly.
     return init_ty == dst_ty;
 }
@@ -1686,17 +1689,9 @@ pub fn globalInitValue(self: *Lowering, vd: *const ast.VarDecl, var_ty: TypeId) 
     if (vd.is_extern) return null;
     const v = vd.value.?;
 
-    // An optional-typed global (`g : ?T = <present>;`) must carry the
-    // 2-field `{ payload, has_value }` aggregate the optional's LLVM
-    // layout expects — NOT the raw payload constant. The
-    // absent forms (`= null` / `= ---`) already zero the whole `{T,i1}`
-    // struct via `.null_val` / `.zeroinit` at the emit top level, which is
-    // exactly `{ zeroinit, false }`, so they flow through unwrapped. Any
-    // other (present) initializer is serialized against the CHILD type and
-    // wrapped here into `{ <payload>, true }`. Recursing on the child type
-    // also handles nested optionals (`?(?i64)`) and optional aggregates
-    // (`?S = S{...}`), whose payloads are themselves structs/optionals.
     if (!var_ty.isBuiltin() and self.module.types.get(var_ty) == .optional) {
+        // `.null_val` / `.zeroinit` emit as all-zero bytes of the optional's
+        // own LLVM type, which is the absent encoding of both shapes.
         switch (v.data) {
             .null_literal => return .null_val,
             .undef_literal => return .zeroinit,
@@ -1704,15 +1699,10 @@ pub fn globalInitValue(self: *Lowering, vd: *const ast.VarDecl, var_ty: TypeId) 
         }
         const child = self.module.types.get(var_ty).optional.child;
         const payload = self.globalInitValuePayload(vd, v, child) orelse return null;
-        // Sentinel-shaped optionals (`?*T`, `?fn`, `?Closure`, `?Protocol`)
-        // reuse the payload's null representation and therefore have no
-        // `{payload, has_value}` wrapper in LLVM. A present global address is
-        // already the complete initializer for `?*T`.
-        const child_info = self.module.types.get(child);
-        const sentinel_optional = child_info == .pointer or child_info == .many_pointer or
-            child_info == .function or child_info == .cstring or child_info == .closure or
-            (child_info == .@"struct" and child_info.@"struct".is_protocol);
-        if (sentinel_optional) return payload;
+        // A sentinel-shaped optional reuses the payload's own null
+        // representation, so the payload IS the whole initializer — there is no
+        // `{payload, has_value}` wrapper in LLVM.
+        if (self.module.types.optionalIsSentinel(child)) return payload;
         const fields = self.alloc.alloc(inst_mod.ConstantValue, 2) catch return null;
         fields[0] = payload;
         fields[1] = .{ .boolean = true };
@@ -2875,7 +2865,7 @@ pub fn selectNominalLeaf(self: *Lowering, name: []const u8, from: []const u8, ra
         if (TypeResolver.resolvePrimitive(name)) |id| return .{ .resolved = id };
     }
     // Structural string-forms that reach the leaf as a literal type-expr
-    // name (`[:0]u8` → string, `[*]T`, `*T`, `?T`) carry NO nominal author —
+    // name (`[:0]u8` → cstring, `[*]T`, `*T`, `?T`) carry NO nominal author —
     // they are wrappers, not declarations, so source-keying does not apply.
     // Resolve them through the stateless namer; only the bare nominal name
     // below goes through the collector.
@@ -4204,9 +4194,10 @@ pub fn emitModuleConst(self: *Lowering, ci: ModuleConstInfo, author_source: ?[]c
         .float_literal => |lit| return self.builder.constFloat(lit.value, ci.ty),
         .bool_literal => |lit| return self.builder.emit(.{ .const_bool = lit.value }, .bool),
         .string_literal => |lit| {
-            const str = if (lit.is_raw) lit.raw else unescape.unescapeString(self.alloc, lit.raw) catch lit.raw;
-            const sid = self.module.types.internString(str);
-            return self.builder.constString(sid);
+            const saved_target = self.target_type;
+            defer self.target_type = saved_target;
+            self.target_type = self.target_type orelse ci.ty;
+            return self.lowerStringLiteral(lit);
         },
         .undef_literal => return self.builder.constUndef(ci.ty),
         .null_literal => {

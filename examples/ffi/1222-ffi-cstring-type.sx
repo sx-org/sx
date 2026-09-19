@@ -1,23 +1,23 @@
-// The `cstring` type: ONE pointer to a null-terminated u8 buffer — C's
-// `char *`. Crosses extern boundaries verbatim in both directions;
-// `?cstring` is the nullable case (null pointer = absent); string
-// LITERALS coerce implicitly (terminated constants); arbitrary strings
-// materialize via toCstring; fromCstring is the zero-copy view back.
+// C's `char *` is `[*:0]u8`: ONE pointer to a null-terminated u8 buffer.
+// It crosses extern boundaries verbatim in both directions; `?[*:0]u8` is
+// the nullable case (null pointer = absent); a terminated value reaches it
+// through the type, while an arbitrary string materializes via toCstring;
+// fromCstring is the zero-copy view back.
 @import "modules/std.sx";
 
 libc :: @library "c";
-strerrorC :: (code: i32) -> cstring extern libc "strerror";
-getenvC   :: (name: cstring) -> ?cstring extern libc "getenv";
-dlerrorC  :: () -> ?cstring extern libc "dlerror";
+strerrorC :: (code: i32) -> [*:0]u8 extern libc "strerror";
+getenvC   :: (name: [*:0]u8) -> ?[*:0]u8 extern libc "getenv";
+dlerrorC  :: () -> ?[*:0]u8 extern libc "dlerror";
 
 main :: () -> i32 {
-    // literal -> cstring param; cstring return -> view
+    // literal -> C param; C pointer return -> view
     e := strerrorC(2);
     v := fromCstring(e);
     if v.len < 5 { print("BUG: strerror short\n"); return 1; }
     print("strerror ok\n");
 
-    // ?cstring: present, absent, and null-returning C call
+    // ?[*:0]u8: present, absent, and null-returning C call
     p := getenvC("PATH");
     if p == null { print("BUG: PATH null\n"); return 2; }
     if cstringLen(p?!) < 1 { print("BUG: PATH empty\n"); return 3; }
@@ -25,9 +25,9 @@ main :: () -> i32 {
     if q != null { print("BUG: missing not null\n"); return 4; }
     d := dlerrorC();
     if d != null { print("BUG: dlerror non-null\n"); return 5; }
-    print("?cstring ok\n");
+    print("optional ok\n");
 
-    // round trip: built string -> owned cstring -> view -> equality
+    // round trip: built string -> owned C string -> view -> equality
     s := concat("hi-", "there");
     c := toCstring(s);
     r := fromCstring(c);

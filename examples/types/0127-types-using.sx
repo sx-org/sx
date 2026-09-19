@@ -36,7 +36,7 @@ main :: () {
 
     // --- Comptime format ---
     {
-        ctBody :: "hello";
+        ctBody : string : "hello";
         ctMsg :: format("say: {} (len={})", ctBody, ctBody.len);
         print("{}\n", ctMsg);
 

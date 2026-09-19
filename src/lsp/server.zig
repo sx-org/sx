@@ -1322,7 +1322,7 @@ pub const Server = struct {
             const e = doc.tokens.end(i);
 
             switch (doc.tokens.tag(i)) {
-                .string_literal, .raw_string_literal => {
+                .string_literal, .raw_string_literal, .multiline_string_literal => {
                     try emitStringParts(&data, self.allocator, doc.source, s, e, &prev_line, &prev_char);
                     continue;
                 },

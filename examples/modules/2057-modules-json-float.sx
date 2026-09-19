@@ -71,7 +71,7 @@ farOverflowRaises :: (alloc: Allocator) -> bool {
     e == .BadNumber
 }
 
-MIXED :: "{\"n\":-7,\"ratio\":1.5,\"xs\":[0.1,-0.5,3.0],\"scale\":1e-7,\"big\":1000000000.0}";
+MIXED : string : "{\"n\":-7,\"ratio\":1.5,\"xs\":[0.1,-0.5,3.0],\"scale\":1e-7,\"big\":1000000000.0}";
 
 main :: () -> ! {
     gpa := GPA.init();
