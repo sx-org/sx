@@ -64,6 +64,9 @@
 // The ladder the cast sugars enter: `@as`, then `@convert` from the context
 // allocator when the compiler's conversions make no progress.
 @coerce :: ($T: Type, v: $S) -> T;
+// `v`'s bytes, read as a `T`: no conversion runs, the storage is the result.
+// `T` and `S` must be the same size; any other pair is a compile-time error.
+@reinterpret :: ($T: Type, v: $S) -> T;
 
 // ── Raw `any` access (the view's two words) ─────────────────────────────────
 // The `{data, typeId}` layout is private; these two are the stable contract

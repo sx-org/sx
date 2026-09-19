@@ -1,0 +1,14 @@
+// `@reinterpret` admits exactly one pairing: two types of the same, non-zero
+// size. It reads the bytes that are there, so it neither pads nor truncates,
+// and `T` names the result's type at compile time.
+
+@import "modules/std.sx";
+
+main :: () -> i32 {
+    x : i32 = 7;
+    wide := @reinterpret(i64, x);       // error: 8 bytes out of a 4-byte value
+    tp : Type = @typeOf(x);
+    late := @reinterpret(tp, x);        // error: the type is a runtime value
+    print("{} {}\n", wide, late);
+    0
+}

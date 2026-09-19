@@ -1,0 +1,25 @@
+// `@reinterpret(T, v)` reads `v`'s bytes as a `T`. No conversion runs on
+// either side — the value's storage IS the result — so the two types have only
+// to agree on size.
+
+@import "modules/std.sx";
+
+Pair :: struct { a: i32; b: i32; }
+
+bits :: (x: f32) -> u32 { @reinterpret(u32, x) }
+
+main :: () -> i32 {
+    f : f32 = 1.5;
+    print("{}\n", bits(f));
+    print("{}\n", @reinterpret(f32, bits(f)));
+
+    p := Pair{ a = 7, b = 9 };
+    word := @reinterpret(i64, p);
+    back := @reinterpret(Pair, word);
+    print("{} {} {}\n", word, back.a, back.b);
+
+    // The evaluator reads the bytes compiled code reads.
+    FOLDED :: @run bits(1.5);
+    print("{}\n", FOLDED);
+    0
+}

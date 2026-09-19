@@ -1,0 +1,11 @@
+error: @reinterpret needs two types of the same, non-zero size: 'i64' is 8 bytes, the value's 'i32' is 4
+  --> examples/diagnostics/2707-diagnostics-reinterpret-refusals.sx:9:13
+   |
+ 9 |     wide := @reinterpret(i64, x);       // error: 8 bytes out of a 4-byte value
+   |             ^^^^^^^^^^^^
+
+error: @reinterpret expects a type known at compile time
+  --> examples/diagnostics/2707-diagnostics-reinterpret-refusals.sx:11:26
+   |
+11 |     late := @reinterpret(tp, x);        // error: the type is a runtime value
+   |                          ^^
