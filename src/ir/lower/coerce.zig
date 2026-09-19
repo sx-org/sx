@@ -1843,7 +1843,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             }
             if (self.diagnostics) |d| {
                 const cs = self.builder.current_span;
-                const fix = if (src_ty == .string and self.coercionResolver().destSentinel(dst_ty) == 0)
+                const fix = if (src_ty == .string and !self.coercionResolver().classify(.cstring, dst_ty).refuses())
                     " — materialize one with toCstring(s)"
                 else
                     "";

@@ -11,5 +11,6 @@ main :: () -> i32 {
     _ = takesTermPtr(plain);
     raw : [*]u8 = *plain[0];
     _ = takesTermPtr(raw);
+    _ = takesTermPtr(*plain[0]);
     0
 }

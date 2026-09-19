@@ -15,3 +15,9 @@ error: a value of type '[*]u8' does not coerce to '[*:1]u8': nothing implicitly 
    |
 13 |     _ = takesTermPtr(raw);
    |         ^^^^^^^^^^^^^^^^^
+
+error: a value of type '*u8' does not coerce to '[*:1]u8': nothing implicitly adds a terminator
+  --> examples/diagnostics/2701-diagnostics-terminator-is-never-added.sx:14:9
+   |
+14 |     _ = takesTermPtr(*plain[0]);
+   |         ^^^^^^^^^^^^^^^^^^^^^^^

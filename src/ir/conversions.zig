@@ -95,26 +95,18 @@ pub const CoercionResolver = struct {
         return if (di == .many_pointer) di.many_pointer.sentinel else null;
     }
 
-    /// The terminator `dst_ty` guarantees, over both the thin pointers and the
-    /// sequences that carry a length.
+    /// The terminator `dst_ty` guarantees, over every shape that names one.
     pub fn destSentinel(self: CoercionResolver, dst_ty: TypeId) ?i64 {
         if (self.l.module.types.sliceInfoOf(dst_ty)) |s| return s.sentinel;
+        if (!dst_ty.isBuiltin()) {
+            const di = self.l.module.types.get(dst_ty);
+            if (di == .array) return di.array.sentinel;
+        }
         return self.pointerDestSentinel(dst_ty);
     }
 
     fn byteSized(elem: TypeId) bool {
         return elem == .u8 or elem == .i8;
-    }
-
-    /// The element a source sequence runs over: an array, a slice and a
-    /// many-pointer each denote a run of elements.
-    fn sequenceElement(self: CoercionResolver, src_ty: TypeId) ?TypeId {
-        if (self.l.module.types.sliceInfoOf(src_ty)) |s| return s.element;
-        return switch (self.l.module.types.get(src_ty)) {
-            .array => |a| a.element,
-            .many_pointer => |p| p.element,
-            else => null,
-        };
     }
 
     /// Whether a terminated container of `src_elem` ending in `src_sentinel`
@@ -130,18 +122,12 @@ pub const CoercionResolver = struct {
     pub fn classify(self: CoercionResolver, src_ty: TypeId, dst_ty: TypeId) CoercionPlan {
         if (src_ty == dst_ty) return .no_op;
         // A terminated value reaches a pointer that names the same terminator
-        // or names none; a sequence whose type carries no terminator is
-        // refused where one is named.
+        // or names none.
         if (self.pointerDestElement(dst_ty)) |dst_elem| {
             switch (self.l.module.types.get(src_ty)) {
                 .array => |a| if (self.terminatorReaches(a.element, a.sentinel, dst_ty, dst_elem)) return .array_to_many_ptr,
                 .slice => |sl| if (self.terminatorReaches(sl.element, sl.sentinel, dst_ty, dst_elem)) return .slice_to_many_ptr,
                 else => {},
-            }
-            if (self.pointerDestSentinel(dst_ty) != null) {
-                if (self.sequenceElement(src_ty)) |se| {
-                    if (se == dst_elem or (byteSized(se) and byteSized(dst_elem))) return .adds_terminator_reject;
-                }
             }
         }
         // A member of an open set, where the set is expected: the value goes INTO
@@ -221,10 +207,7 @@ pub const CoercionResolver = struct {
             // `Len`, the view unchanged. A destination naming a terminator takes
             // only a source that already carries it.
             if (self.l.module.types.sliceInfoOf(src_ty)) |ss| {
-                if (ss.element == ds.element) {
-                    if (ds.sentinel == null or ds.sentinel == ss.sentinel) return .slice_len_convert;
-                    return .adds_terminator_reject;
-                }
+                if (ss.element == ds.element and (ds.sentinel == null or ds.sentinel == ss.sentinel)) return .slice_len_convert;
             }
         }
 
@@ -322,6 +305,12 @@ pub const CoercionResolver = struct {
         // implicit gate, and `unifyValueArmTypes` reads a modeled plan as a
         // safe join.
         if (lower_error.errorSetValueRetypeIsLegal(self.l, src_ty, dst_ty)) return .error_set_retype;
+        // A terminated type's guarantee comes only from an arm above that reads
+        // the source's own terminator: the passthrough below would hand any
+        // same-width address or aggregate a guarantee its bytes do not carry.
+        // `void` (the null literal), `noreturn` and `unresolved` are not values.
+        if (self.destSentinel(dst_ty) != null and
+            src_ty != .void and src_ty != .noreturn and src_ty != .unresolved) return .adds_terminator_reject;
         return .none;
     }
 
