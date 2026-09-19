@@ -1,0 +1,3 @@
+A :: struct { ..B; }
+B :: struct { ..A; }
+main :: () {}

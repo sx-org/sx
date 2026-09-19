@@ -1,0 +1,14 @@
+@import "modules/std.sx";
+
+Spread :: struct ($T: Type) { ..Base; }
+Holder :: struct { value: Spread(i64); }
+Derived :: struct { ..Base; z: i32 = 7; }
+Base :: struct { x: T; y: i64 = 91; }
+T :: i32;
+
+main :: () {
+    v := Derived{ x = 1 };
+    print("{} {} {}\n", v.x, v.y, v.z);
+    h := Holder{};
+    print("{} {}\n", @sizeOf(@typeOf(h.value.x)), @sizeOf(@typeOf(v.x)));
+}

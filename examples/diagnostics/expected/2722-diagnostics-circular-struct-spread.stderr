@@ -1,0 +1,5 @@
+error: struct member spread has a circular layout dependency
+  --> examples/diagnostics/2722-diagnostics-circular-struct-spread.sx:2:15
+   |
+ 2 | B :: struct { ..A; }
+   |               ^^^

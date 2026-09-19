@@ -477,6 +477,13 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     // and named-against-tuple-names resolution.
     if (sl.struct_name == null and sl.type_expr == null and !ty.isBuiltin()) {
         const tgt = self.module.types.get(ty);
+        const positional_anon = self.module.types.isAnonStruct(ty) and blk: {
+            for (tgt.@"struct".fields, 0..) |field, i| {
+                const position = std.fmt.parseInt(usize, self.module.types.getString(field.name), 10) catch break :blk false;
+                if (position != i) break :blk false;
+            }
+            break :blk true;
+        };
         const route_len: ?usize = if (self.module.types.isAnonStruct(ty))
             tgt.@"struct".fields.len
         else if (tgt == .failable)
@@ -488,7 +495,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
             if (fi.value.data == .spread_expr) has_spread = true;
         }
         if (route_len) |n| {
-            if (has_spread or sl.field_inits.len != n) {
+            if (has_spread or ((positional_anon or tgt == .failable) and sl.field_inits.len != n)) {
                 var elems = std.ArrayList(ast.TupleElement).empty;
                 defer elems.deinit(self.alloc);
                 for (sl.field_inits) |fi| {
