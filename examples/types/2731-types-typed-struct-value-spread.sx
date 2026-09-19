@@ -1,0 +1,48 @@
+@import "modules/std.sx";
+shapes :: @import "2731-types-typed-struct-value-spread/shapes.sx";
+
+Pos :: struct { px: i32; py: i32; }
+Reverse :: struct { py: i32; px: i32; }
+Sprite :: struct { px: i32; py: i32; r: i32 = 7; scale: i32; }
+Wide :: struct { small: i16; real: f64; address: *void; }
+Narrow :: struct { small: u8; real: f32; address: *u8; }
+
+mark :: (log: *i32, n: i32) -> i32 {
+    log.* = log.* * 10 + n;
+    n
+}
+make :: (log: *i32, n: i32) -> Sprite {
+    mark(log, n);
+    Sprite{px = n, py = n, r = n, scale = n}
+}
+from_pack :: (..xs: any) -> Sprite { Sprite{..xs, scale = 9} }
+
+main :: () {
+    pos := Pos{px = 3, py = 4};
+    rev := Reverse{py = 8, px = 6};
+    partial := Sprite{..pos};
+    contextual: Sprite = .{..rev, ..pos, scale = 2};
+    print("partial: {} {} {} {}\n", partial.px, partial.py, partial.r, partial.scale);
+    print("contextual: {} {} {} {}\n", contextual.px, contextual.py, contextual.r, contextual.scale);
+    log: i32 = 0;
+    ordered := Sprite{scale = mark(*log, 1), ..make(*log, 2), px = mark(*log, 3), ..make(*log, 4)};
+    print("ordered: {} {} {} {} {}\n", log, ordered.px, ordered.py, ordered.r, ordered.scale);
+    tuple := .{3.(i32), 4.(i32)};
+    product := Sprite{..tuple, scale = 5};
+    packed := from_pack(3.(i32), 4.(i32));
+    array: [2]i32 = .[6, 7];
+    array_copy := Sprite{..array, scale = 8};
+    rows: [1][2]i32 = .[.[1, 2]];
+    view: struct { part: []i32; } = .{..rows};
+    view.part[0] = 9;
+    print("array borrow: {}\n", rows[0][0]);
+    mixed := Pos{1, py = 2};
+    print("positional: {} {} {} {} {} {}\n", product.py, product.scale, packed.scale, array_copy.py, mixed.px, mixed.py);
+    generic := shapes.Box(i32){..pos, extra = 9};
+    qualified := shapes.Point{..rev};
+    print("heads: {} {} {} {}\n", generic.px, generic.extra, qualified.px, qualified.py);
+    byte: u8 = 255;
+    narrow := Narrow{small = byte, real = 1.5, address = *byte};
+    wide := Wide{..narrow};
+    print("widen: {} {} {}\n", wide.small, wide.real, wide.address == *byte);
+}

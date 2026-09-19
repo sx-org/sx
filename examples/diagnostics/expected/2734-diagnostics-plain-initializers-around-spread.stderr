@@ -1,0 +1,5 @@
+error: field 'x' initialized twice
+  --> examples/diagnostics/2734-diagnostics-plain-initializers-around-spread.sx:5:28
+   |
+ 5 |     duplicate := P{x, ..p, x = 2};
+   |                            ^

@@ -758,6 +758,27 @@ type 'T'`) — it is never silently dropped, so a typo or a field removed by an
 `inline if @host.os` branch is caught. (Bare-identifier shorthand that happens
 to match no field is instead read as a *positional* element, not an error.)
 
+`..value` contributes a struct value's fields as initializers. Every contributed
+field must exist in the target and fit through ordinary implicit initialization,
+even if a later initializer overwrites it. Overlap involving a spread is
+last-wins; two plain named initializers for one field are an error. Expressions
+and spread operands evaluate once, left to right. Uncovered fields take their
+ordinary default or zero value. A struct containing a private field cannot be
+spread, including in its declaring file.
+
+```sx
+Position :: struct { x: i32; y: i32; }
+Sprite :: struct { x: i32; y: i32; scale: i32 = 1; }
+pos := Position{x = 3, y = 4};
+a := Sprite{..pos, scale = 2};
+b: Sprite = .{scale = 5, ..a};
+```
+
+The operand's fields determine named versus positional contributions. Packs,
+positional products and fixed-length arrays contribute positionally, so
+`Sprite{..coords, scale = 2}` fills the leading fields from `coords`.
+Contextual `.{…}` uses the target's struct-initialization rules.
+
 Named aggregates place `{` directly after the type designator: `Point{ x = 1 }`,
 `List(i64){}`, `mod.Config{ port = 80 }`. The separator-dot form `Type.{…}`
 is a hard error with a fix-it to the compact spelling. Contextual `.{…}` keeps
