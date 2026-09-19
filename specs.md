@@ -3326,7 +3326,7 @@ An arm's last expression is the arm's value:
 classify :: (n: i32) -> i32 {
   match n {
     case 0: 100;            // arm value is 100
-    case 1: { x := 5; x*2 } // braced block → value 10
+    case 1: { x: i32 = 5; x*2 } // braced block → value 10
     else:   7
   }
 }
