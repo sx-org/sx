@@ -1672,6 +1672,44 @@ pub fn typeLimitInt(self: *Lowering, receiver: *const Node, field: []const u8) ?
     return self.module.types.integerLimit(ty, std.mem.eql(u8, field, "max"));
 }
 
+/// The bytes a string literal denotes, escapes resolved.
+pub fn stringLiteralBytes(self: *Lowering, lit: ast.StringLiteral) []const u8 {
+    if (lit.is_raw) return lit.raw;
+    return unescape.unescapeString(self.alloc, lit.raw) catch lit.raw;
+}
+
+/// A string literal's own type: `[N:0]u8` over its bytes.
+pub fn stringLiteralType(self: *Lowering, lit: ast.StringLiteral) TypeId {
+    return self.module.types.arrayOfSentinel(.u8, @intCast(self.stringLiteralBytes(lit).len), 0);
+}
+
+/// A string literal is `[N:0]u8`. It keeps that array where the destination
+/// names a shape only a terminated value reaches, and decays to the `[:0]u8`
+/// view everywhere else.
+pub fn lowerStringLiteral(self: *Lowering, lit: ast.StringLiteral) Ref {
+    const str = self.stringLiteralBytes(lit);
+    const sid = self.module.types.internString(str);
+    const ty = if (self.literalKeepsArray(self.target_type))
+        self.module.types.arrayOfSentinel(.u8, @intCast(str.len), 0)
+    else
+        .string;
+    return self.builder.emit(.{ .const_string = sid }, ty);
+}
+
+/// Whether the destination names a shape the decayed view cannot reach: the
+/// terminated array itself, or a byte pointer that wants the terminator.
+pub fn literalKeepsArray(self: *Lowering, target: ?TypeId) bool {
+    const t = target orelse return false;
+    if (t == .cstring) return true;
+    if (t.isBuiltin()) return false;
+    return switch (self.module.types.get(t)) {
+        .array => |a| a.element == .u8,
+        .many_pointer => |mp| mp.element == .u8 or mp.element == .i8,
+        .optional => |o| self.literalKeepsArray(o.child),
+        else => false,
+    };
+}
+
 /// Lower a struct-level constant value (e.g., Phys.GRAVITY).
 pub fn lowerStructConstant(self: *Lowering, info: StructConstInfo) Ref {
     const val_node = info.value;
@@ -1686,7 +1724,7 @@ pub fn lowerStructConstant(self: *Lowering, info: StructConstInfo) Ref {
         },
         .float_literal => |lit| self.builder.constFloat(lit.value, info.ty orelse .f64),
         .bool_literal => |lit| self.builder.constBool(lit.value),
-        .string_literal => |lit| self.builder.constString(self.module.types.internString(lit.raw)),
+        .string_literal => |lit| self.lowerStringLiteral(lit),
         else => self.lowerExpr(val_node),
     };
 }
@@ -3653,14 +3691,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             return self.builder.constFloat(lit.value, fty);
         },
         .bool_literal => |lit| self.builder.constBool(lit.value),
-        .string_literal => |lit| blk: {
-            const str = if (lit.is_raw)
-                lit.raw
-            else
-                unescape.unescapeString(self.alloc, lit.raw) catch lit.raw;
-            const sid = self.module.types.internString(str);
-            break :blk self.builder.constString(sid);
-        },
+        .string_literal => |lit| self.lowerStringLiteral(lit),
         // A bare `null` / `---` with no surrounding type expectation is a
         // legitimate typeless literal, not a failed lookup: `.void` is its
         // intentional default (emitConstNull/emitConstUndef handle void as
@@ -5436,6 +5467,15 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         ty = self.builder.getRefType(payload);
     }
     if (self.unwrapOptionalOperand(rhs, rhs_ty, bop.rhs.span)) |payload| rhs = payload;
+
+    // `str_eq` reads two {ptr, len} headers; an array operand carries none, so
+    // the aggregate guard below answers for it.
+    if (ty == .string and (bop.op == .eq or bop.op == .neq)) {
+        for ([2]Ref{ lhs, rhs }) |operand| {
+            const oty = self.builder.getRefType(operand);
+            if (!oty.isBuiltin() and self.module.types.get(oty) == .array) ty = oty;
+        }
+    }
 
     // String comparison: use str_eq/str_ne (memcmp-based) instead of pointer comparison
     if (ty == .string and (bop.op == .eq or bop.op == .neq)) {

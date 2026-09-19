@@ -29,9 +29,8 @@ last :: ufcs (s: []$T) -> ?$T {
 // C's `char *` is ONE pointer to a null-terminated u8 buffer. It carries
 // no length (`cstringLen` walks to the terminator) and crosses `extern`
 // boundaries verbatim in both directions; `?[*:0]u8` is the nullable case
-// (null pointer = absent). String LITERALS coerce to it implicitly — their
-// bytes are terminated constants; every other `string` must materialize
-// through `toCstring`.
+// (null pointer = absent). The terminator is the TYPE's: a terminated value
+// reaches it on its own, while a `string` materializes through `toCstring`.
 
 // Byte length of `c` (strlen — O(n), walks to the terminator).
 cstringLen :: (c: [*:0]u8) -> i64 {

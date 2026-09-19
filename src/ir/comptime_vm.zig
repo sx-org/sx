@@ -1164,6 +1164,9 @@ pub const Vm = struct {
                 const text = table.getString(sid);
                 const data = self.machine.allocBytes(text.len + 1, 1); // +1: NUL (zero-init)
                 if (text.len > 0) @memcpy(try self.machine.bytes(data, text.len), text);
+                // An array-typed literal IS its storage; the decayed form is
+                // the {ptr, len} view over the same bytes.
+                if (!ins.ty.isBuiltin() and table.get(ins.ty) == .array) return .{ .value = data };
                 return .{ .value = try self.makeSlice(table, .string, data, text.len) };
             },
             .data_ptr => |u| {
@@ -1171,7 +1174,9 @@ pub const Vm = struct {
                 const oty = (try self.refTy(ref_types, u.operand));
                 if (oty == .string or (!oty.isBuiltin() and table.get(oty) == .slice))
                     return .{ .value = try self.sliceData(table, frame.get(u.operand.index())) };
-                self.detail = "comptime VM: .ptr (data_ptr) on a non-slice/string operand";
+                // An array value IS the address of its storage.
+                if (!oty.isBuiltin() and table.get(oty) == .array) return .{ .value = frame.get(u.operand.index()) };
+                self.detail = "comptime VM: .ptr (data_ptr) on a non-slice/string/array operand";
                 return error.Unsupported;
             },
             .array_to_slice => |u| {

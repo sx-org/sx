@@ -25,7 +25,7 @@
 
 // Canonical document: no insignificant whitespace, escapes in the writer's
 // own form — so re-serializing the parse must reproduce it exactly.
-DOC :: "{\"name\":\"plain\",\"esc\":\"a\\nb\",\"xs\":[10,-20],\"yes\":true,\"nil\":null,\"sub\":{\"k\":\"v\"}}";
+DOC : string : "{\"name\":\"plain\",\"esc\":\"a\\nb\",\"xs\":[10,-20],\"yes\":true,\"nil\":null,\"sub\":{\"k\":\"v\"}}";
 
 report :: (label: string, ok: bool) {
     if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }

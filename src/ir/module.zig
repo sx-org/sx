@@ -450,24 +450,6 @@ pub const Builder = struct {
     /// value and the span it was emitted with; else null. The implicit
     /// float→int coercion rule reads this to fold an integral literal to its
     /// int (and to locate a non-integral one for its diagnostic).
-    /// True iff `ref` is a `const_string` instruction — a string LITERAL
-    /// value (terminated constant data), the only string shape that may
-    /// implicitly coerce to `cstring`.
-    pub fn isConstString(self: *Builder, ref: Ref) bool {
-        if (self.func == null) return false;
-        const func = self.currentFunc();
-        const ref_idx = @intFromEnum(ref);
-        if (ref_idx < func.params.len) return false;
-        for (func.blocks.items) |*block| {
-            const first = block.first_ref;
-            if (ref_idx >= first and ref_idx < first + @as(u32, @intCast(block.insts.items.len))) {
-                const i = block.insts.items[ref_idx - first];
-                return i.op == .const_string;
-            }
-        }
-        return false;
-    }
-
     pub fn constFloatInfo(self: *Builder, ref: Ref) ?ConstFloatInfo {
         if (self.func == null) return null;
         const func = self.currentFunc();

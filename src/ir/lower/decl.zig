@@ -788,13 +788,15 @@ pub fn registerLiteralModuleConsts(self: *Lowering, decls: []const *const Node) 
             // Bool/string literal consts carry their real type — registering
             // them here (not just in declaration-ordered pass 1) lets a
             // const ALIAS chain below resolve through them regardless of
-            // declaration order.
-            .bool_literal => {
+            // declaration order. An ANNOTATED one waits for pass 2: only the
+            // resolved annotation says what it is, and an alias that copied
+            // the literal's own type here would keep it.
+            .bool_literal => if (cd.type_annotation == null) {
                 const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = .bool };
                 self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), decl.source_file, cd.name, info);
             },
-            .string_literal => {
-                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = .string };
+            .string_literal => |lit| if (cd.type_annotation == null) {
+                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = self.stringLiteralType(lit) };
                 self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), decl.source_file, cd.name, info);
             },
             else => {},
@@ -1163,7 +1165,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                     // An aggregate-valued one registers in pass 1c' instead —
                     // its value node is final only once the brace front runs.
                     const lit_ty: ?TypeId = switch (cd.value.data) {
-                        .string_literal => .string,
+                        .string_literal => |lit| self.stringLiteralType(lit),
                         .int_literal => .i64,
                         .float_literal => .f64,
                         .bool_literal => .bool,
@@ -1470,7 +1472,7 @@ pub fn typedConstInitFits(self: *Lowering, value: *const Node, dst_ty: TypeId) b
         // Float literal → a float type only (the float arm emits `constFloat`).
         .float_literal => isFloat(dst_ty),
         .bool_literal => dst_ty == .bool,
-        .string_literal => dst_ty == .string,
+        .string_literal => dst_ty == .string or self.literalKeepsArray(dst_ty),
         // `null` → a pointer or optional.
         .null_literal => !dst_ty.isBuiltin() and switch (self.module.types.get(dst_ty)) {
             .pointer, .many_pointer, .optional => true,
@@ -4191,9 +4193,10 @@ pub fn emitModuleConst(self: *Lowering, ci: ModuleConstInfo, author_source: ?[]c
         .float_literal => |lit| return self.builder.constFloat(lit.value, ci.ty),
         .bool_literal => |lit| return self.builder.emit(.{ .const_bool = lit.value }, .bool),
         .string_literal => |lit| {
-            const str = if (lit.is_raw) lit.raw else unescape.unescapeString(self.alloc, lit.raw) catch lit.raw;
-            const sid = self.module.types.internString(str);
-            return self.builder.constString(sid);
+            const saved_target = self.target_type;
+            defer self.target_type = saved_target;
+            self.target_type = self.target_type orelse ci.ty;
+            return self.lowerStringLiteral(lit);
         },
         .undef_literal => return self.builder.constUndef(ci.ty),
         .null_literal => {

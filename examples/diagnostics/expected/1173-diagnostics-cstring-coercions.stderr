@@ -1,7 +1,7 @@
-error: only a string LITERAL coerces to 'cstring' implicitly; an arbitrary string may be an unterminated view — materialize it with toCstring(s)
+error: a value of type 'string' does not coerce to 'cstring': nothing implicitly adds a terminator — materialize one with toCstring(s)
   --> examples/diagnostics/1173-diagnostics-cstring-coercions.sx:9:5
    |
- 9 |     c : cstring = s;            // error: non-literal string -> cstring
+ 9 |     c : cstring = s;            // error: an unterminated string -> cstring
    |     ^^^^^^^^^^^^^^^^
 
 error: 'cstring' does not coerce to 'string' implicitly (the length is implicit); convert with fromCstring(c)

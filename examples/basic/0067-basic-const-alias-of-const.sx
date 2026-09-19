@@ -11,7 +11,7 @@ C :: B;             // forward chain, declared before its targets
 B :: A;
 A :: 5;
 S2 :: S1;
-S1 :: "hello";
+S1 : string : "hello";
 F2 :: F1;
 F1 :: 2.5;
 EN :: false;

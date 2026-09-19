@@ -143,7 +143,7 @@ private EXP_LIMIT :: 100000000000000000;   // 10^17
 private INTEGRAL_DIGITS :: 18;
 
 // Padding for the integral and sub-one forms; INTEGRAL_DIGITS bounds both runs.
-private ZEROS :: "000000000000000000";
+private ZEROS : string : "000000000000000000";
 
 // A significand whose emitted text ends in a literal `.0` — `12300.0`.
 private integralForm :: (k: i64, p: i64) -> bool {

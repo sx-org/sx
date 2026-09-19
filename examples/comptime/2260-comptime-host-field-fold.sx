@@ -3,14 +3,14 @@
 @import "modules/std.sx";
 
 inline if @host.isSimulator {
-    HOST_KIND :: "simulator";
+    HOST_KIND : string : "simulator";
 } else {
-    HOST_KIND :: "device";
+    HOST_KIND : string : "device";
 }
 
 inline match @host.os {
     case .wasm: @error("wasm is not a host");
-    else: HOST_WORD :: "native";
+    else: HOST_WORD : string : "native";
 }
 
 main :: () {

@@ -200,11 +200,25 @@ hand-written sx code.
 |-----------|---------------------|---------|
 | Integer   | `0`, `42`, `0xFF`, `0o755`, `0b1010` | `i64`   |
 | Float     | `0.3`, `0.9`        | `f64`   |
-| String    | `"Hello"`, `"z: {z}"` | `string` (may span multiple lines) |
-| Heredoc String | `@string END`...`END` | `string` |
+| String    | `"Hello"`, `"z: {z}"` | `[N:0]u8` (may span multiple lines) |
+| Heredoc String | `@string END`...`END` | `[N:0]u8` |
 | Boolean   | `true`, `false`     | `bool`  |
 | Enum      | `.variant1`         | inferred from context |
 | Undefined | `---`               | context-dependent |
+
+**String literals.** A string literal is `[N:0]u8` — its bytes plus the
+terminator, by value. It keeps that array where the destination names a shape
+only a terminated value reaches, and decays to the `[:0]u8` view everywhere
+else:
+```sx
+b : [3:0]u8 = "abc";   // a writable 4-byte copy; b.len is 3, b[3] is 0
+s := "abc";            // string — a view of the constant bytes
+X :: "abc";            // [3:0]u8
+y := X;                // a copy of the array
+f(X);                  // decays where `f` takes a string
+```
+A literal view owns nothing: writing through it is undefined behavior. Copies
+are explicit (`b : [3:0]u8 = "abc"`, `clone`).
 
 **Integer bases.** Integers are written in four bases: decimal (`1000`), hex
 `0x`/`0X` (`0xFF`), octal `0o`/`0O` (`0o755` == 493), and binary `0b`/`0B`
@@ -1686,6 +1700,10 @@ key[3]             // 0 — the terminator
 type and `X` lies in its range; `[2:300]u8` and `[2:1]Point` are compile
 errors.
 
+A terminated value converts wherever the destination names the same terminator
+or drops it — `[N:X]T` → `[:X]T` / `[*:X]T` / `[]T` / `[N]T`, `[:X]T` →
+`[*:X]T` / `[]T`, `[*:X]T` → `[*]T`. Nothing implicitly ADDS one.
+
 A `.[ … ]` literal takes its element type from the annotation or target
 (`x : [3]i16 = .[1, 2, 3]`), or infers it from the elements when bare
 (`.[1, 2, 3]` is `[3]i64`). A type prefix on the literal names the
@@ -1940,13 +1958,13 @@ pointer (null = absent) — the type for `getenv`-style returns and
 optional `char *` parameters. `*[*:0]u8` is C's `char**`. `cstring` names
 a thin pointer of the same shape.
 
-Conversion discipline (Odin's model):
+Conversion discipline:
 
-- A string **literal** coerces to `[*:0]u8` implicitly — literal bytes
-  are terminated constants in the binary, so the conversion is free.
-- Any **other** `string` does NOT coerce: it may be an unterminated view
-  (`string{ptr, len}` windows, writer output). Materialize an owned,
-  terminated copy with `toCstring(s)`.
+- The terminator is the TYPE's, so a terminated value reaches `[*:0]u8` on
+  its own — a string literal is `[N:0]u8` and passes straight through.
+- A `string` does NOT coerce: its bytes carry no terminator (`string{ptr,
+  len}` windows, writer output). Materialize an owned, terminated copy
+  with `toCstring(s)`.
 - `[*:0]u8` does not coerce to `string` implicitly — the length is an
   O(n) strlen the code must ask for. `fromCstring(c)` is the zero-copy
   view (shares C's buffer); a copy must be made for it to outlive C's
@@ -2158,7 +2176,7 @@ SxFoo     :: @ObjcClass("SxFoo")    export { counter: i32; bump :: (self: *Self)
 
 | C type | sx type | Notes |
 |--------|---------|-------|
-| `const char*` (input) | `[*:0]u8` | the pointer, verbatim; literals coerce |
+| `const char*` (input) | `[*:0]u8` | the pointer, verbatim; a terminated value reaches it |
 | `const char*` (return) | `[*:0]u8` | the pointer, verbatim; `fromCstring` to view |
 | nullable `const char*` (both directions) | `?[*:0]u8` | null pointer = `null` |
 | `char*` (output buffer) | `[*]u8` | raw buffer, no length |
@@ -2283,8 +2301,18 @@ sum :: (a: $T, b: T) -> T {
 - Bare `T` (without `$`) **references** the introduced type parameter
 - A binder introduced in a parameter type is **inferred** at each call site from the actual argument:
   ```sx
-  sum(40, 2)       // T = i32
+  sum(40, 2)       // T = i64
   sum(1.5, 2.5)    // T = f64
+  ```
+- An integer, float or string literal argument carries no type of its own: the
+  arguments that do bind the binder first, whichever order they are written in,
+  and the literal fits itself to what they bound. A binder only literals speak
+  for takes their defaults — `i64`, `f64`, `[:0]u8`.
+  ```sx
+  x : i32 = 7;
+  sum(1, x)        // T = i32
+  sum(x, 1)        // T = i32
+  sum(1, 2)        // T = i64
   ```
 - A function-type bound written as the function's **return** type introduces the binder there:
   `makeAdder :: (n: i64) -> $F/(i64) -> i64`. The body fixes F — F is the returned value's
