@@ -293,12 +293,12 @@ Loop :: struct {
         raw : [64]kqb.Kevent = ---;
         cap : i64 = 64;
         if out.len < cap { cap = out.len; }
-        n := kqb.kqWait(self.kq, *raw[0], cap, timeoutMs);
+        n := kqb.kqWait(self.kq, *raw[0], cap.(i32), timeoutMs);
         if n < 0 { raise .Wait; }
         i := 0;
         while i < n {
             ev := raw[i];
-            e : Event = .{ fd = ev.ident, udata = ev.udata, nbytes = ev.data };
+            e : Event = .{ fd = ev.ident.(i32), udata = ev.udata, nbytes = ev.data };
             if ev.filter == kqb.EVFILT_READ  { e.readable = true; }
             if ev.filter == kqb.EVFILT_WRITE { e.writable = true; }
             if ev.filter == kqb.EVFILT_USER  { e.user = true; }

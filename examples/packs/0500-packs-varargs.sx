@@ -1,7 +1,7 @@
 @import "modules/std.sx";
 
 sum :: (..args: []i32) -> i32 {
-    result := 0;
+    result: i32 = 0;
     for it in args {
         result = result + it;
     }

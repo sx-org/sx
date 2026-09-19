@@ -304,6 +304,16 @@ fn bindConditionPayload(self: *Lowering, cond: LoweredCondition, name: []const u
     }
 }
 
+fn contextualArmType(self: *Lowering, inferred: TypeId) TypeId {
+    // A cast converts the merged value; its operand keeps its inferred type.
+    if (self.suppress_int_fit_check) return inferred;
+    const target = self.target_type orelse return inferred;
+    if (self.isIntEx(inferred) and self.isIntEx(target)) return target;
+    if (self.module.types.isAnonStruct(inferred) and self.module.types.isAnonStruct(target) and
+        self.module.types.get(inferred).@"struct".fields.len == self.module.types.get(target).@"struct".fields.len) return target;
+    return inferred;
+}
+
 pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.TailDemand) Ref {
     // A PURE-failable body's tail `if` yields nothing: each live arm is its own
     // demanded tail, an error arm takes the function's exit where it stands,
@@ -411,6 +421,7 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.Ta
         if (t == .unresolved) {
             if (self.target_type) |tt| t = tt;
         }
+        t = contextualArmType(self, t);
 
         // Optional lift: a value `if` must produce an OPTIONAL
         // when the arms demand it — otherwise a `null` arm is coerced in a
@@ -1510,7 +1521,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
         }
     }
     const is_value = if (error_only) false else if (is_type_match) self.force_block_value else (self.force_block_value or (inferred_result != .void and inferred_result != .unresolved));
-    const result_type: TypeId = if (is_value) inferred_result else .void;
+    const result_type: TypeId = if (is_value) contextualArmType(self, inferred_result) else .void;
     // A fully-diverging match (`result_type == .noreturn` — every arm
     // `return`s / `raise`s / etc.) produces no value, so it builds no
     // merge phi; its arms terminate and the merge block is unreachable.

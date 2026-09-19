@@ -57,7 +57,7 @@ _Block_copy :: (block: *void) -> *void extern;
 _Block_release :: (block: *void) extern;
 
 // The `flags` bit that makes the runtime call the descriptor's two helpers.
-kBlockHasCopyDispose :: 1 << 25;
+kBlockHasCopyDispose :: (1 << 25).(i32);
 
 // A fresh copy inherits the source's descriptor pointer; re-point it at the
 // copy's own.

@@ -1003,7 +1003,7 @@ slashToDot :: (path: string) -> string {
     i := 0;
     while i < path.len {
         c := path[i];
-        buf[i] = if c == '/' then '.' else c;
+        buf[i] = if c == '/' then '.'.(u8) else c;
         i += 1;
     }
     buf

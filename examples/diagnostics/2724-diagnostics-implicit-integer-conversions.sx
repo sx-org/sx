@@ -1,0 +1,17 @@
+P :: struct { x: i32; }
+narrow :: (n: @int(24, .signed)) -> i16 { n }
+
+main :: () {
+    large: i64 = 5000000000;
+    local: i32 = large;
+    field := P{x = large};
+    signed: i32 = -1;
+    unsigned: u64 = signed;
+    byte: u8 = 255;
+    signed_byte: i8 = byte;
+    expression: i32 = 1 + large;
+    other_cast: i32 = large.(u64);
+    branch: i32 = if byte == 0 then 0 else large;
+    custom: @int(24, .signed) = 100000;
+    returned := narrow(custom);
+}

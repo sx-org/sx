@@ -170,7 +170,7 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
     // Dest-inferred `xx` is an error when implicit conversion already applies.
     if (!self.xx_is_postfix and target_explicit and src_ty != dst_ty) {
         const plan = self.coercionResolver().classify(src_ty, dst_ty);
-        if (isGlyphFreeImplicit(plan)) {
+        if (isGlyphFreeImplicit(plan) and (implicitIntegerConversion(self, src_ty, dst_ty) orelse true)) {
             if (self.diagnostics) |d| {
                 const cs = self.builder.current_span;
                 d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "already converts to '{s}'", .{self.formatTypeName(dst_ty)});
@@ -228,6 +228,15 @@ pub fn lowerCoerce(self: *Lowering, operand: Ref, operand_node: *const Node, src
         }
     }
     return result;
+}
+
+fn implicitIntegerConversion(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) ?bool {
+    const src = self.module.types.integerLayout(src_ty) orelse return null;
+    const dst = self.module.types.integerLayout(dst_ty) orelse return null;
+    return if (src.signed == dst.signed)
+        dst.width >= src.width
+    else
+        !src.signed and dst.width > src.width;
 }
 
 fn isGlyphFreeImplicit(plan: @import("../conversions.zig").CoercionResolver.CoercionPlan) bool {
@@ -1130,9 +1139,6 @@ pub fn lowerDefaultWithBindings(
     return self.lowerCoercedDefault(default_expr, field_ty);
 }
 
-/// How a float→int conversion is treated. An IMPLICIT coercion (a typed
-/// binding initializer) folds an integral compile-time float to its int and
-/// REJECTS a non-integral one; an EXPLICIT `xx` / `.(T)` always truncates.
 const CoerceMode = enum { implicit, explicit };
 
 /// Insert a conversion if src_ty and dst_ty differ.
@@ -1622,15 +1628,33 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             }
         }
     }
-    if (mode == .implicit and !self.xx_passthrough_refs.contains(val)) {
+    if (mode == .implicit) {
         const cs = self.builder.current_span;
         const span = ast.Span{ .start = cs.start, .end = cs.end };
-        self.checkErrorSetValueCoercion(src_ty, dst_ty, span);
-        const src_sig = valueTypeOfRef(self, val, src_ty);
-        if (self.slotReturnType(src_sig)) |src_ret| {
-            if (self.slotReturnType(dst_ty)) |dst_ret| {
-                if (!self.checkSlotChannel(src_ret, dst_ret, span)) {
+        if (implicitIntegerConversion(self, src_ty, dst_ty)) |widens| {
+            if (!widens) {
+                if (self.externalErrorsExist()) return self.builder.constUndef(dst_ty);
+                if (self.builder.getRefOp(val)) |op| {
+                    if (op == .const_int) {
+                        self.checkIntLiteralFits(op.const_int, dst_ty, span);
+                        return self.builder.constInt(op.const_int, dst_ty);
+                    }
+                }
+                if (self.diagnostics) |d| {
+                    d.addFmt(.err, span, "cannot implicitly convert '{s}' to '{s}'; use an explicit cast (`xx`/`.(T)`)", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty) });
                     self.assignability_error_count += 1;
+                }
+                return self.builder.constUndef(dst_ty);
+            }
+        }
+        if (!self.xx_passthrough_refs.contains(val)) {
+            self.checkErrorSetValueCoercion(src_ty, dst_ty, span);
+            const src_sig = valueTypeOfRef(self, val, src_ty);
+            if (self.slotReturnType(src_sig)) |src_ret| {
+                if (self.slotReturnType(dst_ty)) |dst_ret| {
+                    if (!self.checkSlotChannel(src_ret, dst_ret, span)) {
+                        self.assignability_error_count += 1;
+                    }
                 }
             }
         }

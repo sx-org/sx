@@ -38,7 +38,7 @@ SxImpBase :: @ObjcClass("SxImpBase", extends = NSObject, implements = .[NSCopyin
 
     tag :: (self: *Self) -> i32 {
         self.ticks += 1;
-        return 40 + self.ticks;
+        return 40.(i32) + self.ticks;
     }
 
     kind :: () -> i32 { return 0; }

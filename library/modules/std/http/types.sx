@@ -479,7 +479,7 @@ normalizePath :: (buf: [*]u8, len: i64) -> ?i64 {
             if d < ' ' or d == '\x7f' { return null; }      // control (incl. NUL/CR/LF)
             if d == '/' { return null; }                     // segmentation change
             if d == '?' { return null; }                     // unrepresentable
-            buf[wp] = d;
+            buf[wp] = d.(u8);
             wp += 1;
             rp += 3;
         } else {

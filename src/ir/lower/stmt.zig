@@ -336,6 +336,9 @@ pub fn lowerFunctionBody(self: *Lowering, body: *const Node, ret_ty_in: TypeId) 
             const val_ty = self.builder.getRefType(val);
             if (val_ty != .void) {
                 const span = bodyTailSpan(body);
+                const saved_span = self.builder.current_span;
+                self.builder.current_span = .{ .start = span.start, .end = span.end };
+                defer self.builder.current_span = saved_span;
                 if (self.rejectBlockReturn(val_ty, span)) return;
                 // Value-carrying failable `-> (T..., !)`: a trailing success
                 // EXPRESSION (no explicit `return`) yields just the value part —

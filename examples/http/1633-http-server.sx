@@ -161,7 +161,7 @@ main :: () -> i32 {
     bigN := 50000;
     payload : [*]u8 = (context.allocator.allocBytes(bigN)).([*]u8);
     f := 0;
-    while f < bigN { payload[f] = 97 + (f % 26).(u8); f += 1; }
+    while f < bigN { payload[f] = 97.(u8) + (f % 26).(u8); f += 1; }
     breq := concat("POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: ", concat(intToString(bigN), "\r\n\r\n"));
     breq = concat(breq, string{ ptr = payload, len = bigN });
     c2b := dial();

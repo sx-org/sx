@@ -171,7 +171,7 @@ impl GPU for Gles3Gpu {
             bonesLoc = glGetUniformLocation(prog, "uBones".ptr),
         };
         self.shaders.append(slot, self.parentAllocator);
-        self.shaders.len
+        self.shaders.len.(u32)
     }
 
     createBuffer :: (self: *Gles3Gpu, sizeBytes: i64) -> BufferHandle {
@@ -182,7 +182,7 @@ impl GPU for Gles3Gpu {
         glBindBuffer(GL_ARRAY_BUFFER, b);
         glBufferData(GL_ARRAY_BUFFER, sizeBytes, null, GL_DYNAMIC_DRAW);
         self.buffers.append(b, self.parentAllocator);
-        self.buffers.len
+        self.buffers.len.(u32)
     }
 
     createIndexBuffer :: (self: *Gles3Gpu, sizeBytes: i64) -> IndexHandle {
@@ -196,7 +196,7 @@ impl GPU for Gles3Gpu {
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, b);
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeBytes, null, GL_DYNAMIC_DRAW);
         self.indices.append(b, self.parentAllocator);
-        self.indices.len
+        self.indices.len.(u32)
     }
 
     updateIndexBuffer :: (self: *Gles3Gpu, handle: IndexHandle, data: *void, sizeBytes: i64) {
@@ -261,7 +261,7 @@ impl GPU for Gles3Gpu {
 
         slot : Gles3TextureSlot = .{ tex = t, bytesPerPixel = bpp };
         self.textures.append(slot, self.parentAllocator);
-        self.textures.len
+        self.textures.len.(u32)
     }
 
     updateTextureRegion :: (self: *Gles3Gpu, handle: TextureHandle, x: i32, y: i32, w: i32, h: i32, pixels: *void) {
@@ -474,7 +474,7 @@ impl GPU for Gles3Gpu {
 
         bonesLoc := gles3BonesLoc(self);
         if bonesLoc >= 0 {
-            glUniform4fv(bonesLoc, 3 * self.boneCount, *self.bonePalette[0]);
+            glUniform4fv(bonesLoc, 3.(i32) * self.boneCount, *self.bonePalette[0]);
         }
 
         byteOffset : i64 = (indexOffset * 4).(i64);
@@ -499,10 +499,10 @@ gles3ApplyDepthMode :: (self: *Gles3Gpu) {
 }
 
 gles3BonesLoc :: (self: *Gles3Gpu) -> i32 {
-    inline if @host.os != .android { return 0 - 1; }
-    if self.currentShader == 0 { return 0 - 1; }
+    inline if @host.os != .android { return -1; }
+    if self.currentShader == 0 { return -1; }
     cs64 : i64 = self.currentShader.(i64);
-    if cs64 > self.shaders.len { return 0 - 1; }
+    if cs64 > self.shaders.len { return -1; }
     self.shaders.items[self.currentShader - 1].bonesLoc
 }
 

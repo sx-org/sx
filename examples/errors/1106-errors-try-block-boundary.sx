@@ -40,7 +40,7 @@ caught :: (n: i32) -> (i32, !) {
         5
     } catch { -1 };
     if n == 7 { raise IoErr.Failed; }
-    return v;
+    return v.(i32);
 }
 
 narrowed :: (n: i32) -> (i32, !IoErr) {
@@ -74,7 +74,7 @@ pure :: (n: i32) -> i32 {
 
 nested :: (n: i32) -> i32 {
     return try {
-        inner := try { try g(n); 2 } catch { 3 };
+        inner: i32 = try { try g(n); 2 } catch { 3 };
         try g(n);
         inner + 10
     } catch { -1 };
@@ -86,7 +86,7 @@ parse :: (n: i32) -> (i32, i32, !FooError) {
 }
 
 raiseTail :: () -> i32 {
-    return try { raise FooError.A; 5 } catch { -1 };
+    return (try { raise FooError.A; 5 } catch { -1 }).(i32);
 }
 
 slots :: (n: i32) -> i32 {
@@ -99,7 +99,7 @@ orInside :: () -> i32 {
 }
 
 orOperand :: (n: i32) -> i32 {
-    return try { try g(n); 5 } ?? 9;
+    return (try { try g(n); 5 } ?? 9).(i32);
 }
 
 main :: () -> i32 {

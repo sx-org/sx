@@ -1,0 +1,24 @@
+@import "modules/std.sx";
+
+P :: struct { small: i16; real: f64; address: *void; }
+N :: struct { value: i32; }
+Pair :: struct { a: i32; b: i32; }
+
+main :: () {
+    byte: u8 = 255;
+    real: f32 = 1.5;
+    widened := P{small = byte, real = real, address = *byte};
+    print("{} {} {}\n", widened.small, widened.real, widened.address == *byte);
+    literal: i32 = 7;
+    optional: ?i32 = 8;
+    contextual: N = .{value = 9};
+    print("{} {} {}\n", literal, optional ?? 0, contextual.value);
+    large: i64 = 5000000000;
+    prefix: i32 = xx large;
+    postfix := N{value = large.(i32)};
+    signed: i32 = -1;
+    unsigned: u64 = xx signed;
+    print("{} {} {}\n", prefix, postfix.value, unsigned);
+    repeated := Pair{literal, literal};
+    print("{} {}\n", repeated.a, repeated.b);
+}

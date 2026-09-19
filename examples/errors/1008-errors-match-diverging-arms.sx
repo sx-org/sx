@@ -23,7 +23,7 @@ pick :: (n: i32) -> i32 {
         case 1: return 100;         // diverging arm — no fallback const after its `ret`
         else:   3;
     };
-    return v + 5;
+    return (v + 5).(i32);
 }
 
 main :: () -> i32 {

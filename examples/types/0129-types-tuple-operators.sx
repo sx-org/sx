@@ -366,7 +366,7 @@ main :: () {
     {
         guardLoop :: (v: ?i32) -> i32 {
             if v == null { return 0; }
-            sum := 0;
+            sum: i32 = 0;
             i := 0;
             while i < v {
                 sum = sum + 1;
@@ -734,7 +734,7 @@ main :: () {
         print("closure-any: {} {}\n", hasBig, has20);
 
         Widget :: struct { transform: Closure(i32) -> i32; }
-        negateFn :: (x: i32) -> i32 { return 0 - x; }
+        negateFn :: (x: i32) -> i32 { return 0.(i32) - x; }
         wE4 := Widget{ transform = negateFn };
         print("closure-struct-field: {}\n", wE4.transform(5));
 
