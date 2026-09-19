@@ -820,21 +820,21 @@ v1.x = 3.0; // assign to field x of struct v1
 every field is equal (the same element-wise policy as tuples, which share the
 struct layout). Each field is compared against its own type — an `f64` field uses
 the ordered IEEE compare (NaN semantics per §Operators — consequently a struct
-containing a NaN field is NOT equal to itself), a `string` field uses
-content equality (`strEq`), a nested struct/tuple field recurses, a payload enum
-field compares by tag only (matching a bare payload enum `==`), a slice /
-pointer / cstring field compares by identity, and an `?T` field compares by the
-optional value-equality rule (§Optional Types — both-null equal, one-null
-unequal, both-present → payload compare). Because the comparison walks named
+containing a NaN field is NOT equal to itself), an array, slice or `string`
+field uses content equality (§Array Types), a nested struct/tuple field
+recurses, a payload enum field compares by tag only (matching a bare payload
+enum `==`), a pointer / cstring field compares by identity, and an `?T` field
+compares by the optional value-equality rule (§Optional Types — both-null
+equal, one-null unequal, both-present → payload compare). Because the comparison walks named
 fields, **padding bytes are never read** — a byte-wise compare would be
 non-deterministic for a struct with alignment gaps, which is precisely why the
 compare is field-wise.
 
 A struct is **not comparable** — the whole `==` / `!=` is a compile error — when
-any field has no defined value-equality: a `union` field (inactive-
-variant bytes are unspecified) or a fixed `[N]T` array field (compare elements
-individually). These mirror the rejection of the same shapes as bare top-level
-`==` operands. `<`, `<=`, `>`, `>=` are not defined on structs.
+any field has no defined value-equality: a `union` field, whose
+inactive-variant bytes are unspecified. That mirrors the rejection of a bare
+`union` top-level `==` operand. `<`, `<=`, `>`, `>=` are not defined on
+structs.
 
 #### `@using` — Struct Composition
 `@using StructName;` inside a struct declaration embeds all fields from `StructName` at that position. The embedded fields are accessed directly, as if declared inline.
@@ -1704,6 +1704,21 @@ A terminated value converts wherever the destination names the same terminator
 or drops it — `[N:X]T` → `[:X]T` / `[*:X]T` / `[]T` / `[N]T`, `[:X]T` →
 `[*:X]T` / `[]T`, `[*:X]T` → `[*]T`. Nothing implicitly ADDS one.
 
+`==` / `!=` on two arrays or two slices compares **content**: the lengths,
+then every element by its own type's rule — an `f64` element is the ordered
+IEEE compare, so `nan != nan` and `0.0 == -0.0` where the bytes say otherwise.
+An element type with no value-equality — a `union` — refuses the whole
+comparison. `[N:X]T` compares its N elements; the terminator is the type's
+guarantee, not part of the value. The two operands need one element type, and
+an array meets the slice, so `[3]i64` and `[]i64` compare. A thin pointer
+carries no length and compares its address instead.
+```sx
+a : [3]i64 = .[1, 2, 3];
+b : [3]i64 = .[1, 2, 3];
+a == b             // true — distinct storage, equal elements
+a[0..3] == b[0..2] // false — lengths differ
+```
+
 A `.[ … ]` literal takes its element type from the annotation or target
 (`x : [3]i16 = .[1, 2, 3]`), or infers it from the elements when bare
 (`.[1, 2, 3]` is `[3]i64`). A type prefix on the literal names the
@@ -1755,6 +1770,8 @@ slice is a type of its own, distinct from `[]T`.
 @typeName([:1]u8)  // "[:1]u8"
 @typeName([]u8)    // "string"
 ```
+
+`==` on two slices compares content (§Array Types).
 ```sx
 // Arrays implicitly coerce to slices at call sites
 arr : [5]i32 = .[3, 1, 4, 1, 5];
@@ -2025,7 +2042,7 @@ and arithmetic / ordering on un-narrowed optionals stay rejected.
 - `?T == null` keeps its meaning as the presence test (subsumed by the
   general rule).
 - Two distinct optional types (`?f32` vs `?f64`) do not compare, and a payload
-  without value-equality (e.g. a fixed array) keeps the usual rejection.
+  without value-equality (a `union`) keeps the usual rejection.
 
 ```sx
 a : ?f32 = 1.5;
@@ -2881,12 +2898,14 @@ are not written onward.
 |---|---|
 | Both numeric, same signedness or int↔float | the arithmetic common type (widen; int+float → float) |
 | Signed vs unsigned, same width | error — write `a.(u64) < b` |
-| Two pointers, any pointees (`*T`, `*void`, `[*]T`, fn-ptr, `cstring`) | address bits / address order |
+| Two sequences of one element type (`[N]T`, `[N:X]T`, `[]T`, `[:X]T`, `string`) | their content (§Array Types); an array meets the slice |
+| Two pointers, any pointees (`*T`, `*void`, `[*]T`, `[*:X]T`, fn-ptr, `cstring`) | address bits / address order |
 | Pointer vs integer | the integer is an address-sized bit pattern: `region == -1`, `p != 0` |
 | `?T == T` / `?T == null` | unchanged |
 | Two error values, or an error against a `.Member` | no conversion — comparable iff one channel ⊆ the other ([§12 Comparison](#comparison)) |
 
-`any`, interface handles against a foreign type, and distinct structs are refused.
+`any`, interface handles against a foreign type, distinct structs, and a
+sequence against a non-sequence are refused.
 
 An explicit `xx` in a comparison still takes its target from the OTHER operand:
 `a == xx b` converts `b` to `a`'s type, reading exactly as the hoisted

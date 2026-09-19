@@ -2332,7 +2332,7 @@ pub const LLVMEmitter = struct {
             }
         }
 
-        // Struct types (strings, slices, payload enums): compare fields individually
+        // Struct types (protocol handles, payload enums): compare fields individually
         if (kind == c.LLVMStructTypeKind and rhs_kind == c.LLVMStructTypeKind) {
             const n_fields = c.LLVMCountStructElementTypes(lhs_ty);
             if (n_fields >= 2) {
@@ -2410,10 +2410,11 @@ pub const LLVMEmitter = struct {
         self.mapRef(result);
     }
 
-    /// String comparison via memcmp: compare length first, then content.
-    pub fn emitStrCmp(self: *LLVMEmitter, bin: ir_inst.BinOp, is_eq: bool) void {
-        const lhs = self.resolveRef(bin.lhs);
-        const rhs = self.resolveRef(bin.rhs);
+    /// Sequence comparison via memcmp: the lengths, then `len * elem_size`
+    /// bytes of content.
+    pub fn emitStrCmp(self: *LLVMEmitter, cmp: ir_inst.SeqCmp, is_eq: bool) void {
+        const lhs = self.resolveRef(cmp.lhs);
+        const rhs = self.resolveRef(cmp.rhs);
         const b = self.builder;
         const i32_ty = c.LLVMInt32TypeInContext(self.context);
         const i1_ty = c.LLVMInt1TypeInContext(self.context);
@@ -2425,8 +2426,12 @@ pub const LLVMEmitter = struct {
         const rhs_ptr = c.LLVMBuildExtractValue(b, rhs, 0, "str.rp");
         const rhs_len = c.LLVMBuildExtractValue(b, rhs, 1, "str.rl");
 
-        // Compare lengths first
-        const len_eq = c.LLVMBuildICmp(b, c.LLVMIntEQ, lhs_len, rhs_len, "str.len_eq");
+        // Two headers can spell their length word at different widths; both
+        // meet the memcmp size type first.
+        const size_ty = self.sizeType();
+        const lhs_n = self.coerceArg(lhs_len, size_ty);
+        const rhs_n = self.coerceArg(rhs_len, size_ty);
+        const len_eq = c.LLVMBuildICmp(b, c.LLVMIntEQ, lhs_n, rhs_n, "str.len_eq");
 
         // Set up basic blocks
         const cur_fn = c.LLVMGetBasicBlockParent(c.LLVMGetInsertBlock(b));
@@ -2438,13 +2443,15 @@ pub const LLVMEmitter = struct {
 
         // memcmp block
         c.LLVMPositionBuilderAtEnd(b, memcmp_bb);
-        const size_ty = self.sizeType();
         const memcmp_fn = c.LLVMGetNamedFunction(self.llvm_module, "memcmp") orelse blk: {
             var params = [_]c.LLVMTypeRef{ ptr_ty, ptr_ty, size_ty };
             const fn_type = c.LLVMFunctionType(i32_ty, &params, 3, 0);
             break :blk c.LLVMAddFunction(self.llvm_module, "memcmp", fn_type);
         };
-        const cmp_len = self.coerceArg(lhs_len, size_ty);
+        const cmp_len = if (cmp.elem_size == 1)
+            lhs_n
+        else
+            c.LLVMBuildMul(b, lhs_n, c.LLVMConstInt(size_ty, cmp.elem_size, 0), "str.bytes");
         var args = [_]c.LLVMValueRef{ lhs_ptr, rhs_ptr, cmp_len };
         const fn_ty = c.LLVMGlobalGetValueType(memcmp_fn);
         const cmp_result = c.LLVMBuildCall2(b, fn_ty, memcmp_fn, &args, 3, "memcmp");

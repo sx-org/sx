@@ -1,0 +1,13 @@
+arrays: true false true
+views: true false
+terminated: true true 3
+floats: false true
+padded: true
+thin: true false
+--- build done ---
+arrays: true false true
+views: true false
+terminated: true true 3
+floats: false true
+padded: true
+thin: true false

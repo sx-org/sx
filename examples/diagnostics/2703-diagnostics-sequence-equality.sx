@@ -1,0 +1,19 @@
+// Sequence `==` reaches every element, so an element type with no
+// value-equality refuses the whole comparison, two sequences only compare over
+// one element type, and a sequence has no comparison with a non-sequence peer.
+@import "modules/std.sx";
+
+Shape2703 :: union { circle: i64; rect: i64; }
+
+main :: () {
+    u : [2]Shape2703 = .[.{ circle = 1 }, .{ rect = 2 }];
+    v : [2]Shape2703 = .[.{ circle = 1 }, .{ rect = 2 }];
+    _ := u == v;           // error: a union element has no value-equality
+
+    xs : [2]i64 = .[1, 2];
+    ys : [2]f64 = .[1.0, 2.0];
+    _ := xs[0..2] == ys[0..2];   // error: distinct element types
+
+    n : i64 = 2;
+    _ := xs == n;          // error: the peer is not a sequence
+}
