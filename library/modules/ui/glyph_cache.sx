@@ -31,11 +31,11 @@ GlyphEntry :: struct {
 // Quantize font size to half-point increments to limit cache entries.
 // e.g., 13.0 -> 26, 13.5 -> 27, 14.0 -> 28
 quantizeSize :: (fontSize: f32) -> u16 {
-    (fontSize * 2.0 + 0.5)
+    (fontSize * 2.0 + 0.5).(u16)
 }
 
 dequantizeSize :: (q: u16) -> f32 {
-    q / 2.0
+    (q / 2.0).(f32)
 }
 
 // Pack (glyphIndex, sizeQuantized) into a single u32 for fast comparison
@@ -328,8 +328,8 @@ GlyphCache :: struct {
         y1 : i32 = 0;
         stbtt_GetGlyphBitmapBox(self.fontInfo, glyphIndex, scale, scale, *x0, *y0, *x1, *y1);
 
-        glyphW := if x1 > x0 then x1 - x0 else 0;
-        glyphH := if y1 > y0 then y1 - y0 else 0;
+        glyphW: i32 = if x1 > x0 then x1 - x0 else 0;
+        glyphH: i32 = if y1 > y0 then y1 - y0 else 0;
 
         // Get horizontal metrics
         advanceI : i32 = 0;
@@ -408,7 +408,7 @@ GlyphCache :: struct {
             slot = (slot + 1) & mask;
         }
         self.hashKeys[slot] = key;
-        self.hashVals[slot] = index;
+        self.hashVals[slot] = index.(i32);
     }
 
     // Double the hash table and rehash all entries
@@ -494,7 +494,7 @@ GlyphCache :: struct {
         }
 
         // No space
-        PackResult{ x = 0 - 1, y = 0 - 1 }
+        PackResult{ x = -1, y = -1 }
     }
 
     // Grow the atlas by doubling dimensions
@@ -556,7 +556,7 @@ GlyphCache :: struct {
 
     setDpiScale :: (self: *GlyphCache, scale: f32) {
         self.dpiScale = scale;
-        self.invDpi = 1.0 / scale;
+        self.invDpi = (1.0 / scale).(f32);
     }
 
     // Get the scale factor for a logical font size
@@ -627,7 +627,7 @@ GlyphCache :: struct {
         total : f32 = 0.0;
 
         kbts_ShapeBegin(self.shapeCtx, KBTS_DIRECTION_DONT_KNOW, KBTS_LANGUAGE_DONT_KNOW);
-        kbts_ShapeUtf8(self.shapeCtx, text.ptr.([*:0]u8), text.len, KBTS_USER_ID_GENERATION_MODE_CODEPOINT_INDEX);
+        kbts_ShapeUtf8(self.shapeCtx, text.ptr.([*:0]u8), text.len.(i32), KBTS_USER_ID_GENERATION_MODE_CODEPOINT_INDEX);
         kbts_ShapeEnd(self.shapeCtx);
 
         run : KbtsRun = ---;

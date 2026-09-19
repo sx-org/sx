@@ -455,23 +455,9 @@ pub fn reserveShadowSlot(self: *Lowering, td: ShadowTypeDecl) void {
     }
 }
 
-/// Register (or re-register) a top-level NAMED type decl under a per-source
-/// nominal identity, returning its TypeId. `decl_key` is the decl's
-/// stable pointer (the import raw-facts identity); `info` carries the full
-/// body; `nominal_id` is the slot's identity (0 for a single / first author,
-/// nonzero for a later same-name shadow) — computed once by the caller
-/// (`registerStructDecl`), which reuses the id reserved up-front in `scanDecls`
-/// for a genuine shadow (so its fields' self / forward / mutual refs already
-/// resolved against it). This stamps the id and records the `decl_key → TypeId`
-/// map (`type_decl_tids`, the `fn_decl_fids` analogue).
-///
-/// A `nominal_id == 0` author adopts any forward-reference stub (`findByName`
-/// orelse intern). For a genuinely multi-authored name, the FIRST source keeps
-/// id 0 and later sources get fresh ids → DISTINCT TypeIds, so the authors do
-/// not collapse last-wins. Idempotent per `decl_key`: a re-registration — OR an up-front
-/// shadow reservation — reuses the recorded slot, refreshing its body via
-/// `updatePreservingKey` (key-stable because a struct's intern key is its
-/// name + nominal id, not its fields).
+/// A named type declaration reuses its per-author nominal slot on re-registration.
+/// The first author (nominal_id == 0) adopts a forward stub; shadow authors keep
+/// distinct slots keyed by declaration identity.
 pub fn internNamedTypeDecl(self: *Lowering, decl_key: *const anyopaque, name_id: types.StringId, info: types.TypeInfo, nominal_id: u32) TypeId {
     const table = &self.module.types;
     // Slot already recorded (re-registration, or a reserve-before-fields shadow

@@ -1,0 +1,17 @@
+error: field 'x' initialized twice
+  --> examples/diagnostics/2725-diagnostics-duplicate-plain-initializers.sx:4:23
+   |
+ 4 |     named := P{x = 1, x = 2};
+   |                       ^
+
+error: field 'x' initialized twice
+  --> examples/diagnostics/2725-diagnostics-duplicate-plain-initializers.sx:6:26
+   |
+ 6 |     contextual: P = .{x, x = 4};
+   |                          ^
+
+error: field 'value' initialized twice
+  --> examples/diagnostics/2725-diagnostics-duplicate-plain-initializers.sx:7:30
+   |
+ 7 |     inferred := .{value = 1, value = 2};
+   |                              ^^^^^

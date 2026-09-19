@@ -19,7 +19,7 @@ Pen :: struct {
 
 Sheet :: struct {
     ground: Ink = Ink.dark();
-    margin: f32 = HAIRLINE * 4.0;
+    margin: f32 = (HAIRLINE * 4.0).(f32);
 }
 
 // An integer field taking an integral-float default narrows through the fold

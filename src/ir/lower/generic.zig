@@ -565,6 +565,9 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
             return .unresolved;
         },
         .type_expr => |te| {
+            if (!te.is_raw) {
+                if (type_bridge.resolveTypePrimitive(te.name)) |ty| return ty;
+            }
             if (self.aliasedFieldAccess(node)) |aliased| return self.resolveTypeArg(aliased);
             // Generic bindings first, mirroring the `.identifier` arm — a
             // `$T` referenced from a type-fn arg inside a parameterized

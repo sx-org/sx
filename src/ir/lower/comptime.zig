@@ -2448,20 +2448,9 @@ pub fn pinConstAuthorSource(self: *Lowering, source: ?[]const u8) ConstSourcePin
     return .{ .lowering = self, .saved = self.current_source_file, .active = false };
 }
 
-/// Apply the unified float→int narrowing rule to a typed-binding initializer
-/// EXPRESSION `node` whose declared type is `dst` (a typed local, a struct
-/// field default, or a call argument incl. an expanded param default). When
-/// `node` is a COMPILE-TIME float narrowing into an integer type:
-///   - an INTEGRAL value (`4.0`, `M + 2.0`) folds to its `constInt`;
-///   - a NON-integral value (`1.5`, `M + 0.5`) emits the narrowing
-///     diagnostic and returns a placeholder so lowering finishes.
-/// Returns null — so the caller lowers `node` normally — when the rule does
-/// not apply: `dst` is not an integer, `node` is not statically float-typed,
-/// or `node` is not a compile-time constant (a genuine runtime float keeps
-/// truncating, and `xx` / `cast` keep their explicit-truncation escape since
-/// a cast node's inferred type is the destination integer, not a float).
-/// Reuses `program_index.evalConstIntExpr` (exact integral fold) +
-/// `evalConstFloatExpr` (non-integral detection) + `floatToIntExact`.
+/// Fold integral compile-time floats into integer initializers and diagnose
+/// non-integral constants. Null leaves nonconstant expressions and other
+/// type pairs to ordinary lowering and coercion.
 pub fn foldComptimeFloatInit(self: *Lowering, node: *const Node, dst: TypeId) ?Ref {
     if (!self.isIntEx(dst)) return null;
     const author = Lowering.AuthorScope.enter(self, node);

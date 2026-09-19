@@ -1,0 +1,33 @@
+@import "modules/std.sx";
+
+P :: struct { small: i16; real: f64; address: *void; }
+N :: struct { value: i32; }
+Pair :: struct { a: i32; b: i32; }
+Floats :: struct { small: f32; whole: i32; }
+
+main :: () {
+    byte: u8 = 255;
+    real: f32 = 1.5;
+    widened := P{small = byte, real = real, address = *byte};
+    print("{} {} {}\n", widened.small, widened.real, widened.address == *byte);
+    literal: i32 = 7;
+    optional: ?i32 = 8;
+    contextual: N = .{value = 9};
+    print("{} {} {}\n", literal, optional ?? 0, contextual.value);
+    large: i64 = 5000000000;
+    prefix: i32 = xx large;
+    postfix := N{value = large.(i32)};
+    signed: i32 = -1;
+    unsigned: u64 = xx signed;
+    print("{} {} {}\n", prefix, postfix.value, unsigned);
+    repeated := Pair{literal, literal};
+    print("{} {}\n", repeated.a, repeated.b);
+    float_literals := Floats{small = 1.5, whole = 6.0 / 2.0};
+    large_float: f64 = 16777217.0;
+    fraction: f64 = 1.5;
+    float_casts := Floats{small = xx large_float, whole = fraction.(i32)};
+    print("{} {} {} {}\n", float_literals.small, float_literals.whole, float_casts.small, float_casts.whole);
+    optional_float: ?f32 = 1.5;
+    branch: f32 = if byte == 0 then 1.5 else -2.5;
+    print("{} {}\n", optional_float ?? 0.0, branch);
+}

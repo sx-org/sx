@@ -1250,13 +1250,14 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
     // initializer has been folded — so each brace group is already the
     // aggregate or the trailing block wherever a registration pass reads it.
     self.settleModuleJuxtapositions(decls);
-    // Pass 1c': untyped aggregate-valued module constants (`WHITE :: Color{ … }`,
-    // `SLOT :: p.Slot(i64){}`). Their type is inferred from the value node,
-    // which the brace front above has just settled.
     for (decls) |decl| {
         if (decl.data != .const_decl) continue;
         const cd = decl.data.const_decl;
-        if (cd.type_annotation != null or cd.value.data != .struct_literal) continue;
+        if (cd.type_annotation != null) continue;
+        switch (cd.value.data) {
+            .struct_literal, .postfix_cast => {},
+            else => continue,
+        }
         self.setCurrentSourceFile(decl.source_file);
         self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), self.current_source_file, cd.name, .{ .value = cd.value, .ty = self.inferExprType(cd.value) });
     }
@@ -1378,7 +1379,7 @@ pub fn registerTypedModuleConst(self: *Lowering, cd: *const ast.ConstDecl) void 
     // foldable / emittable const, so it cannot manifest a
     // wrong-type fold/emit; a use-site diagnostic covers it.
     switch (cd.value.data) {
-        .int_literal, .float_literal, .bool_literal, .string_literal, .char_literal, .undef_literal, .null_literal, .binary_op, .unary_op, .struct_literal => {},
+        .int_literal, .float_literal, .bool_literal, .string_literal, .char_literal, .undef_literal, .null_literal, .binary_op, .unary_op, .struct_literal, .postfix_cast => {},
         else => return,
     }
     const ty = self.resolveType(ta);
@@ -2689,7 +2690,7 @@ fn valueAuthor(self: *Lowering, author: resolver_mod.RawAuthor) bool {
     return switch (terminal.raw) {
         .var_decl => true,
         .const_decl => |cd| switch (cd.value.data) {
-            .int_literal, .float_literal, .string_literal, .bool_literal, .char_literal, .array_literal, .struct_literal, .tuple_literal, .binary_op, .unary_op => true,
+            .int_literal, .float_literal, .string_literal, .bool_literal, .char_literal, .array_literal, .struct_literal, .tuple_literal, .binary_op, .unary_op, .postfix_cast => true,
             else => false,
         },
         else => false,
@@ -4191,6 +4192,11 @@ pub fn emitModuleConst(self: *Lowering, ci: ModuleConstInfo, author_source: ?[]c
                 return self.builder.constInt(iv, ci.ty);
             },
             .non_integral, .not_const => {},
+        }
+    }
+    if (isFloat(ci.ty)) {
+        if (program_index_mod.evalConstFloatExpr(ci.value, self)) |value| {
+            return self.builder.constFloat(value, ci.ty);
         }
     }
     switch (ci.value.data) {

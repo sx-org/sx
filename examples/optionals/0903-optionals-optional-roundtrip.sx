@@ -10,8 +10,8 @@ ProposedSize :: struct {
 
 // Direct function — does it work?
 directSize :: (proposal: ProposedSize) -> f32 {
-    w := if pw := proposal.width { pw } else { 100.0 };
-    h := if ph := proposal.height { ph } else { 100.0 };
+    w : f32 = if pw := proposal.width { pw } else { 100.0 };
+    h : f32 = if ph := proposal.height { ph } else { 100.0 };
     w + h
 }
 
@@ -23,8 +23,8 @@ Widget :: struct {}
 
 impl Sizable for Widget {
     size :: (self: *Widget, proposal: ProposedSize) -> f32 {
-        w := if pw := proposal.width { pw } else { 100.0 };
-        h := if ph := proposal.height { ph } else { 100.0 };
+        w : f32 = if pw := proposal.width { pw } else { 100.0 };
+        h : f32 = if ph := proposal.height { ph } else { 100.0 };
         w + h
     }
 }

@@ -657,6 +657,7 @@ pub const OpenSetDecl = struct {
 
 pub const StructFieldInit = struct {
     name: ?[]const u8, // null for positional, non-null for named/shorthand
+    name_span: ?Span = null,
     value: *Node,
     /// True when the source wrote the bare-identifier SHORTHAND (`.{ x }`,
     /// parser-rewritten to `x = x`). The self-typing of an untyped `.{ }`

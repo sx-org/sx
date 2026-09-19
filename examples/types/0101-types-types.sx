@@ -2,7 +2,7 @@
 SPECIAL_VALUE :u8: 42;
 
 resolve :: (x: u8) -> i32 {
-    return 12 + x;
+    return 12.(i32) + x;
 }
 
 Foo :: struct {

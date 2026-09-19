@@ -29,7 +29,7 @@ printAny :: (..args: []any) {
 }
 
 count :: (..args: []any) -> i32 {
-    args.len
+    args.len.(i32)
 }
 
 main :: () -> i32 {

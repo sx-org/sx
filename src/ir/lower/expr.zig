@@ -45,6 +45,23 @@ pub fn refuseVoidElement(self: *Lowering, src_ty: TypeId, slot_ty: TypeId, field
 
 const InferredLiteral = struct { ty: TypeId, refs: []const Ref };
 
+fn checkPlainInitializerNames(self: *Lowering, sl: *const ast.StructLiteral, ty: TypeId) bool {
+    var names = std.StringHashMap(void).init(self.alloc);
+    defer names.deinit();
+    var valid = true;
+    for (sl.field_inits) |fi| {
+        const name = fi.name orelse continue;
+        if (fi.was_shorthand and ty != .unresolved and self.lookupField(ty, name) == .missing) continue;
+        const entry = names.getOrPut(name) catch unreachable;
+        if (entry.found_existing) {
+            if (self.diagnostics) |d|
+                d.addFmt(.err, fi.name_span orelse fi.value.span, "field '{s}' initialized twice", .{name});
+            valid = false;
+        }
+    }
+    return valid;
+}
+
 /// The instance a bare generic literal names, read without lowering it: each
 /// written field's initializer is typed as an expression, and a written lambda
 /// is the env its `_{ … }` names. An env-less lambda — a closure the typer
@@ -395,6 +412,8 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         return self.coerceToType(reloaded, child, ty);
     }
 
+    if (!checkPlainInitializerNames(self, sl, ty)) return self.builder.constUndef(ty);
+
     // No inferable target at all (`t := .{ 1, 2, 3 };` — `ty` stayed
     // `.unresolved`): the literal's type can never be resolved, and an
     // `.unresolved`-typed `struct_init` flows to codegen and panics LLVM
@@ -638,7 +657,12 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
                         d.addFmt(.err, fi.value.span, "field '{s}' not found on type '{s}'", .{ fname, self.formatTypeName(ty) }),
                 }
             }
-            const val = if (prelowered) |pl| pl[k] else self.lowerExpr(fi.value);
+            const val = if (prelowered) |pl|
+                pl[k]
+            else if (index) |idx|
+                self.foldComptimeFloatInit(fi.value, struct_fields[idx].ty) orelse self.lowerExpr(fi.value)
+            else
+                self.lowerExpr(fi.value);
             self.target_type = saved_tt;
             lowered.append(self.alloc, .{
                 .val = val,
@@ -744,7 +768,10 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         else
             fatPointerSlotType(self, ty, fi.name, i) orelse .unresolved;
         if (elem_target != .unresolved) self.target_type = elem_target;
-        var val = if (prelowered) |pl| pl[i] else self.lowerExpr(fi.value);
+        var val = if (prelowered) |pl|
+            pl[i]
+        else
+            self.foldComptimeFloatInit(fi.value, elem_target) orelse self.lowerExpr(fi.value);
         self.target_type = saved_tt;
         // Coerce field value to match the destination field/element type.
         // Coerce from the value's ACTUAL lowered type (`getRefType`) rather

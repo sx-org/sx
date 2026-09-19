@@ -43,7 +43,7 @@ handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
 // ── client-side BIO over a bare nonblocking fd (ctx = *i32) ──
 cliSend :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
     fd : *i32 = xx ctx;
-    n := socket.write(fd.*, buf, len);
+    n := socket.write(fd.*, buf, len.(i64));
     if n >= 0 { return xx n; }
     e := socket.errno();
     if e == posix.EINTR or socket.isWouldblock(e) { return mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE; }
@@ -51,7 +51,7 @@ cliSend :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
 }
 cliRecv :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
     fd : *i32 = xx ctx;
-    n := socket.read(fd.*, buf, len);
+    n := socket.read(fd.*, buf, len.(i64));
     if n > 0 { return xx n; }
     if n == 0 { return 0; }
     e := socket.errno();

@@ -261,7 +261,7 @@ ChainImpl :: struct { val: i32; }
 impl Chained for ChainImpl {
     base :: (self: *ChainImpl, msg: string) -> i32 {
         self.val += 1;
-        msg.len
+        msg.len.(i32)
     }
 }
 
@@ -325,7 +325,7 @@ Pair :: struct ($T: Type) {
 
 impl Summable for Pair($T) {
     sum :: (self: *Pair(T)) -> i32 {
-        self.a + self.b
+        (self.a + self.b).(i32)
     }
 }
 

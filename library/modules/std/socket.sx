@@ -134,7 +134,7 @@ connectTimed :: (fd: i32, a: *Addr, timeoutMs: i64) -> bool {
         pfd: PollFd = .{ fd = fd, events = POLLOUT };
         // poll takes an i32 — clamp instead of truncating (an i64 ≥ 2^31
         // would go negative = INFINITE poll; ≥ 2^32 would wrap to ~instant).
-        tmo: i32 = if timeoutMs > 2147483647 then 2147483647 else timeoutMs;
+        tmo: i32 = if timeoutMs > 2147483647 then 2147483647 else timeoutMs.(i32);
         pr := poll(*pfd, 1, tmo);
         if pr <= 0 { return false; }                       // timeout (0) or poll fault
         if (pfd.revents & (POLLERR | POLLHUP)) != 0 { return false; }
@@ -198,7 +198,7 @@ parseAddr :: (text: string, port: i64) -> (Addr, bool) {
 addrUnix :: (path: string) -> (Addr, bool) {
     a : Addr = .{};
     if path.len == 0 or path.len >= SUN_PATH_MAX { return a, false; }
-    unHeader(*a, (2 + path.len + 1).(u32));
+    unHeader(*a, (2 + path.len + 1).(u8));
     i : i64 = 0;
     while i < path.len {
         a.buf[2 + i] = path[i];
