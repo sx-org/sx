@@ -27,6 +27,8 @@ main :: () -> i32 {
     y := GREETING;
     y[0] = 'Z';
     print("copy: {} {} {} {}\n", @typeName(@typeOf(y)), y[0], y[2], y[3]);
+    LOCAL :: "abc";
+    print("body-local: {} {}\n", @typeName(@typeOf(LOCAL)), takesString(LOCAL));
     print("annotated: {} {}\n", @typeName(@typeOf(HEADER)), takesString(HEADER));
     print("decays at a string slot: {}\n", takesString(GREETING));
 

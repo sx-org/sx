@@ -3076,7 +3076,7 @@ and is not reserved — it is an ordinary identifier.
 Examples:
 ```sx
 SOME_INT    :: 0;           // i64
-SOME_STR    :: "Hello";     // string
+SOME_STR    :: "Hello";     // [5:0]u8
 SOME_FLOAT  :: 0.3;         // f64
 SOME_DOUBLE : f64 : 0.9;   // f64 (explicit)
 SOME_FUNC   :: () => 42;    // () -> i64
@@ -3093,9 +3093,10 @@ diagnoses at the use site.
 With an explicit annotation, the initializer must be compatible with the
 annotated type, or the declaration is a compile-time `type mismatch` error: an
 integer fits any integer or float type (`W : f32 : 800`), a float a float type, a
-boolean `bool`, a string `string`, `null` a pointer or optional, and `---` any
-type. The check is type-based: `N : string : M + 2` (with `M :: 2`) is rejected
-at the declaration and registers no usable constant. A constant expression's
+boolean `bool`, a string literal `string`, `cstring` or a terminated byte
+array, `null` a pointer or optional, and `---` any type. The check is
+type-based: `N : string : M + 2` (with `M :: 2`) is rejected at the
+declaration and registers no usable constant. A constant expression's
 type is its promoted result type (see [Arithmetic](#arithmetic)): `C : i64 : M +
 0.5` is rejected and `F : f64 : M + 0.5` folds to `2.5`.
 
