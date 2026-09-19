@@ -213,7 +213,7 @@ only a terminated value reaches, and decays to the `[:0]u8` view everywhere
 else:
 ```sx
 b : [3:0]u8 = "abc";   // a writable 4-byte copy; b.len is 3, b[3] is 0
-s := "abc";            // string — a view of the constant bytes
+s := "abc";            // cstring — a view of the constant bytes
 X :: "abc";            // [3:0]u8
 y := X;                // a copy of the array
 f(X);                  // decays where `f` takes a string
@@ -1996,9 +1996,9 @@ Conversion discipline:
 - The terminator is the TYPE's, so a terminated value reaches `cstring`
   and `[*:0]u8` on its own — a string literal is `[N:0]u8` and passes
   straight through.
-- A `string` does NOT coerce to either: its bytes carry no terminator
-  (`string{ptr, len}` windows, writer output). Materialize an owned,
-  terminated copy with `toCstring(s)`.
+- A value whose type carries no terminator does NOT coerce to either,
+  whatever its bytes hold — a `string` window, a plain `[N]T`, a `[*]T`.
+  Materialize an owned, terminated copy with `toCstring(s)`.
 - Dropping the guarantee is implicit: `cstring` → `string` is the
   `[:X]T` → `[]T` arm, so `string` methods take a `cstring` receiver.
 - `[*:0]u8` does not coerce to `cstring` implicitly — the length is an

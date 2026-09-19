@@ -2,6 +2,7 @@ kept: [3:0]u8 len 3 size 4 term 0
 decayed: cstring abc len 3
 copy: [3:0]u8 90 99 0
 body-local: [3:0]u8 3
+body-local annotated: [3:0]u8 0
 annotated: string 3
 decays at a string slot: 3
 a literal reaches C

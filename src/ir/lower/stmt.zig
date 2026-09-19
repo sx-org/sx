@@ -1129,20 +1129,20 @@ pub fn lowerConstDecl(self: *Lowering, cd: *const ast.ConstDecl) void {
     defer self.comptime_const_name = saved_ct_name;
 
     const errs_before: usize = if (self.diagnostics) |d| d.errorCount() else 0;
+    const annotated: ?TypeId = if (cd.type_annotation) |ta| self.resolveType(ta) else null;
     const saved_target = self.target_type;
-    // An unannotated constant IS its initializer's own type: a string literal
-    // there keeps its `[N:0]u8`.
-    if (cd.type_annotation == null and cd.value.data == .string_literal) {
+    // The initializer resolves against the destination the declaration names:
+    // its annotation, or — unannotated — the value's own type, where a string
+    // literal keeps its `[N:0]u8`.
+    if (annotated) |at| {
+        self.target_type = at;
+    } else if (cd.value.data == .string_literal) {
         self.target_type = self.stringLiteralType(cd.value.data.string_literal);
     }
     const ref = self.lowerExpr(cd.value);
     self.target_type = saved_target;
     const ref_ty = self.builder.getRefType(ref);
-    // If there's an explicit type annotation, use it. Otherwise, infer from the expression.
-    const ty = if (cd.type_annotation) |ta|
-        self.resolveType(ta)
-    else
-        ref_ty;
+    const ty = annotated orelse ref_ty;
 
     if (cd.type_annotation) |ta| {
         if (rejectVoidAnnotation(self, ta, cd.name, ty, "a constant binds a value")) return;

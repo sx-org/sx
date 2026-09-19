@@ -1833,6 +1833,14 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         // cannot stand where one is named. `toCstring` is the owned,
         // terminated copy a `string` reaches a C byte pointer through.
         .adds_terminator_reject => {
+            // An explicit `p.([*:X]T)` asserts the terminator the pointer's own
+            // type does not carry — the pointer pun the `.none` arm gives every
+            // other thin-pointer pair.
+            if (mode == .explicit and isPointerValueKind(self, src_ty) and isPointerValueKind(self, dst_ty)) {
+                const retyped = self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty);
+                self.xx_passthrough_refs.put(retyped, {}) catch {};
+                return retyped;
+            }
             if (self.diagnostics) |d| {
                 const cs = self.builder.current_span;
                 const fix = if (src_ty == .string and self.coercionResolver().destSentinel(dst_ty) == 0)
@@ -2138,8 +2146,12 @@ pub fn coerceCallArgs(self: *Lowering, args: []Ref, params: []const Function.Par
         if (!src_ty.isBuiltin() and !dst_ty.isBuiltin()) {
             const src_info = self.module.types.get(src_ty);
             const dst_info = self.module.types.get(dst_ty);
-            // Array → many_pointer decay: alloca the array, GEP to first element
-            if (src_info == .array and dst_info == .many_pointer) {
+            // Array → many_pointer decay: alloca the array, GEP to first
+            // element. A destination naming a terminator the array does not
+            // carry is no decay — it falls to the classifier's refusal below.
+            if (src_info == .array and dst_info == .many_pointer and
+                !self.coercionResolver().classify(src_ty, dst_ty).refuses())
+            {
                 const slot = self.builder.alloca(src_ty);
                 self.builder.store(slot, args[i]);
                 const zero = self.builder.constInt(0, .i64);

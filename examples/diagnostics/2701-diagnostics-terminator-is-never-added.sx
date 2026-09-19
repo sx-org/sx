@@ -1,11 +1,15 @@
-// Nothing implicitly adds a terminator: a view whose type carries none cannot
+// Nothing implicitly adds a terminator: a value whose type carries none cannot
 // stand where one is named, whatever its bytes happen to hold.
 @import "modules/std.sx";
 
 takesTerm :: (t: [:1]u8) -> i64 { t.len }
+takesTermPtr :: (p: [*:1]u8) -> i64 { p[0].(i64) }
 
 main :: () -> i32 {
     plain : [3]u8 = .[7, 8, 1];
     _ = takesTerm(plain[..]);
+    _ = takesTermPtr(plain);
+    raw : [*]u8 = *plain[0];
+    _ = takesTermPtr(raw);
     0
 }

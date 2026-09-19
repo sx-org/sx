@@ -1,5 +1,17 @@
 error: a value of type 'string' does not coerce to '[:1]u8': nothing implicitly adds a terminator
-  --> examples/diagnostics/2701-diagnostics-terminator-is-never-added.sx:9:9
+  --> examples/diagnostics/2701-diagnostics-terminator-is-never-added.sx:10:9
    |
- 9 |     _ = takesTerm(plain[..]);
+10 |     _ = takesTerm(plain[..]);
    |         ^^^^^^^^^^^^^^^^^^^^
+
+error: a value of type '[3]u8' does not coerce to '[*:1]u8': nothing implicitly adds a terminator
+  --> examples/diagnostics/2701-diagnostics-terminator-is-never-added.sx:11:9
+   |
+11 |     _ = takesTermPtr(plain);
+   |         ^^^^^^^^^^^^^^^^^^^
+
+error: a value of type '[*]u8' does not coerce to '[*:1]u8': nothing implicitly adds a terminator
+  --> examples/diagnostics/2701-diagnostics-terminator-is-never-added.sx:13:9
+   |
+13 |     _ = takesTermPtr(raw);
+   |         ^^^^^^^^^^^^^^^^^

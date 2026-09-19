@@ -42,9 +42,9 @@ tapFrame :: () {
 
     if !gLoaded {
         // Cache the GL fn-ptrs we use beyond what modules/ffi/opengl.sx loads.
-        glEnable_  = xx iosGlProc("glEnable".ptr);
-        glDisable_ = xx iosGlProc("glDisable".ptr);
-        glScissor_ = xx iosGlProc("glScissor".ptr);
+        glEnable_  = xx iosGlProc("glEnable");
+        glDisable_ = xx iosGlProc("glDisable");
+        glScissor_ = xx iosGlProc("glScissor");
         gLoaded = true;
     }
 
