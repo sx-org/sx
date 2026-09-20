@@ -17,6 +17,8 @@ pub const TypeLowering = struct {
     e: *LLVMEmitter,
 
     pub fn toLLVMType(self: TypeLowering, ty: TypeId) c.LLVMTypeRef {
+        const canonical = self.e.ir_mod.types.canonicalType(ty);
+        if (canonical != ty) return self.toLLVMType(canonical);
         return switch (ty) {
             .void => self.e.cached_void,
             .bool => self.e.cached_i1,

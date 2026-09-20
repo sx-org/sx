@@ -94,10 +94,11 @@ pub const Reflection = struct {
     /// `[N x i1]` for flags), tag-indexed, one row per TypeId in table order.
     /// Values come from the SAME type-table queries the comptime folds use,
     /// so the static and dynamic answers can never diverge.
-    pub const ScalarTableKind = enum { size, alignment, flags, member_count, tag_width, slice_len_info, optional_flag, member_stride };
+    pub const ScalarTableKind = enum { canonical_type, size, alignment, flags, member_count, tag_width, slice_len_info, optional_flag, member_stride };
 
     pub fn getOrBuildScalarTable(self: Reflection, kind: ScalarTableKind) c.LLVMValueRef {
         const slot: *?c.LLVMValueRef, const len_slot: *u32 = switch (kind) {
+            .canonical_type => .{ &self.e.canonical_type_array, &self.e.canonical_type_array_len },
             .size => .{ &self.e.type_size_array, &self.e.type_size_array_len },
             .alignment => .{ &self.e.type_align_array, &self.e.type_align_array_len },
             .flags => .{ &self.e.is_flags_array, &self.e.is_flags_array_len },
@@ -118,6 +119,7 @@ pub const Reflection = struct {
         while (i < n) : (i += 1) {
             const tid = TypeId.fromIndex(i);
             const v: u64 = switch (kind) {
+                .canonical_type => tt.canonicalType(tid).index(),
                 .size => @intCast(tt.typeSizeBytes(tid)),
                 .alignment => @intCast(tt.typeAlignBytes(tid)),
                 .flags => blk: {
@@ -141,6 +143,7 @@ pub const Reflection = struct {
         const arr_ty = c.LLVMArrayType(elem_ty, n);
         const arr_init = c.LLVMConstArray(elem_ty, vals.items.ptr, n);
         const gname = switch (kind) {
+            .canonical_type => "__sx_canonical_types",
             .size => "__sx_type_sizes",
             .alignment => "__sx_type_aligns",
             .flags => "__sx_type_flag_bits",

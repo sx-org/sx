@@ -773,11 +773,6 @@ pub fn buildStructLayout(sd: *const ast.StructDecl, table: *TypeTable, inner: an
 pub fn resolveInlineStruct(sd: *const ast.StructDecl, table: *TypeTable, inner: anytype) TypeId {
     const name_id = table.internString(sd.name);
 
-    // An anonymous inline decl has no name to key by — every one displays as
-    // `__anon`, so the name-keyed lookup/intern below would collapse
-    // differently-shaped annotations onto whichever shape interned first.
-    // Shape-keyed identity instead: identical shapes unify, distinct shapes
-    // separate.
     const is_anon = std.mem.eql(u8, sd.name, "__anon");
     if (!is_anon) {
         if (table.findByName(name_id)) |existing| return existing;
@@ -788,7 +783,7 @@ pub fn resolveInlineStruct(sd: *const ast.StructDecl, table: *TypeTable, inner: 
         .name = name_id,
         .fields = layout.fields,
     } };
-    const id = if (is_anon) table.internAnonShape(info) else table.internNominal(info, 0);
+    const id = if (is_anon) table.internAnonStructDefaults(info, layout.defaults) else table.internNominal(info, 0);
     if (!is_anon) table.updatePreservingKey(id, info);
     inner.recordStructDefaults(id, layout.defaults);
     return id;

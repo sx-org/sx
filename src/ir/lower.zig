@@ -812,8 +812,7 @@ pub const Lowering = struct {
     /// resolution (run in the template's source context) must NOT bind a
     /// name the CALLER declared block-local.
     local_type_names: std.StringHashMap(std.StringHashMap(void)),
-    struct_defaults_map: std.StringHashMap([]const ?*const Node), // struct name → field defaults
-    /// Defaults follow the flattened layout; spread fields have no default.
+    /// Construction-handle defaults follow the flattened layout; spread fields have none.
     struct_defaults_by_tid: std.AutoHashMap(TypeId, []const ?*const Node),
     /// (concrete TypeId, const name) → struct-level constant. TypeId-keyed
     /// twin of `struct_const_map`: the `"Struct.CONST"` string key is
@@ -1389,7 +1388,6 @@ pub const Lowering = struct {
             .protocol_ast_by_type = std.AutoHashMap(TypeId, *const ast.ProtocolDecl).init(module.alloc),
             .scanned_decls = std.AutoHashMap(*const ast.Node, void).init(module.alloc),
             .local_type_names = std.StringHashMap(std.StringHashMap(void)).init(module.alloc),
-            .struct_defaults_map = std.StringHashMap([]const ?*const Node).init(module.alloc),
             .struct_defaults_by_tid = std.AutoHashMap(TypeId, []const ?*const Node).init(module.alloc),
             .struct_const_by_tid = std.AutoHashMap(StructConstTidKey, StructConstInfo).init(module.alloc),
             .unique_lambdas = std.AutoHashMap(TypeId, lower_closure.UniqueLambda).init(module.alloc),
@@ -1739,8 +1737,6 @@ pub const Lowering = struct {
             }
         }
         self.struct_defaults_by_tid.put(ty, defaults) catch @panic("out of memory");
-        const name = self.module.types.getString(self.module.types.get(ty).@"struct".name);
-        self.struct_defaults_map.put(name, defaults) catch @panic("out of memory");
     }
 
     /// TYPE-NAME twin of `resolveInner` for callers holding a name rather than

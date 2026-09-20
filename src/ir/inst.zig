@@ -613,7 +613,7 @@ pub const BuiltinId = enum(u16) {
     // to a 64-bit word.
     read_integer,
     // Runtime-Type scalar reflection: tag-indexed table reads
-    // (sizes/aligns/flag-bits); rt_type_eq is a plain tag compare.
+    // (sizes/aligns/flag-bits and canonical type identities).
     @"rt_@sizeOf",
     @"rt_@alignOf",
     rt_is_flags,

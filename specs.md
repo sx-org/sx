@@ -847,10 +847,11 @@ including a function's return type (`make :: () -> struct { x: i64; } {
 .{ x = 3 } }`; a bodyless `F :: () -> struct { … };` stays a function-type
 alias).
 
-Anonymous type identity is by **shape**, never by name: two anonymous types
+Anonymous type equality is by **shape**, never by name: two anonymous types
 with the same canonical field sequence (names + types, in order) are the SAME
 type — across literal and annotation sites — and differently-shaped ones are
-always distinct types:
+always distinct types. Each anonymous struct annotation keeps its own field
+defaults; defaults affect construction, not type equality or assignability:
 
 ```sx
 a : struct { x: i64; } = .{ x = 1 };
@@ -5499,7 +5500,7 @@ error: 'intern' runs only at compile time — it cannot be called from the
 - `@errorName(e: $T) -> string` — `Owner.Member` for the member an error value carries (`"FooError.D"`) — the composition `e.set.name`, `"."`, and `e.name` spell out. Reads the always-linked qualified-name table at the value's member id.
 - `@errorPayload(e: $T) -> any` — the live member's payload as an `any` VIEW of the channel's payload area (same borrow rules as the boxed-view family). A payload-free member views as `void`.
 - `@isFlags($T: Type) -> bool` — returns `true` if `T` is a flags enum (declared with `@flags`)
-- `@typeEq($A: Type, $B: Type) -> bool` — structural TypeId equality (`@typeEq(i64, i64)` is `true`, distinct shapes are `false`); folds at compile time, so `inline if @typeEq(...)` is comptime-decidable
+- `@typeEq($A: Type, $B: Type) -> bool` — type equality (`@typeEq(i64, i64)` is `true`, distinct shapes are `false`); folds at compile time, so `inline if @typeEq(...)` is comptime-decidable
 - `@unbox($T: Type, v: any) -> T` — the boxed storage read AS `T`: an unchecked typed load through the view, with no tag check, so `T` must be the boxed type and a wider one overreads. The checked forms are the postfix assertions (`v.(T)` / `try v.(T)` / `v.(?T)`).
 - The boxed-view family — `@len` / `@field` / `@inner` — reads a boxed value's parts in place, dispatching on the view's runtime tag. Each result is an `any` VIEW `{the part's type, a pointer to it inside the receiver}` — an interior pointer, not a copy. An addressable receiver is borrowed (mutations of it stay visible through a live view) and an rvalue receiver spills to a frame temp first, so a view is valid only while the storage it names lives. A wrong-kind tag or an index past the count is **undefined behavior** (in-bounds GEP — the caller gates on `@len`).
 - `@len(v: any) -> i64` — the receiver's part count: struct and union fields, enum variants, array elements, vector lanes, and the count a slice's or string's header carries. A `Type` receiver — spelled, or a runtime `Type` value — answers that type's part count (`@len(@Vector(3, f32))` is `3`, the one vector length the size tables cannot answer, since a vector's ABI size is pow2-rounded); a spelled type with no parts is a compile error, a runtime tag of such a kind answers 0.

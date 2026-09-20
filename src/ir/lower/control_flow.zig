@@ -639,7 +639,7 @@ pub fn tryConstBoolCondition(self: *Lowering, node: *const Node) ?bool {
             const rhs_ty = self.resolveTypeArg(b.rhs);
             self.diagnostics = saved_diags;
             if (lhs_ty == .unresolved or rhs_ty == .unresolved) return null;
-            const matched = lhs_ty == rhs_ty;
+            const matched = self.module.types.sameType(lhs_ty, rhs_ty);
             return if (b.op == .eq) matched else !matched;
         },
         .call => |c| {
@@ -665,7 +665,7 @@ pub fn tryConstBoolCondition(self: *Lowering, node: *const Node) ?bool {
                     if (!self.isStaticTypeArg(c.args[0]) or !self.isStaticTypeArg(c.args[1])) return null;
                     const a = self.resolveTypeArg(c.args[0]);
                     const b = self.resolveTypeArg(c.args[1]);
-                    return a == b;
+                    return self.module.types.sameType(a, b);
                 }
             }
         },
@@ -813,7 +813,7 @@ const IterPrep = struct {
 fn checkElementCaptureType(self: *Lowering, cap: ast.ForCapture, elem_ty: TypeId) bool {
     const ta = cap.type_annotation orelse return true;
     const want = self.resolveType(ta);
-    if (want == elem_ty) return true;
+    if (self.module.types.sameType(want, elem_ty)) return true;
     if (self.externalErrorsExist() or want == .unresolved) return false;
     if (self.diagnostics) |d| {
         d.addFmt(.err, ta.span, "capture '{s}' is annotated '{s}' but the element type is '{s}'", .{
@@ -1659,7 +1659,8 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             // First-wins: an earlier arm's claim removes the tag here; an
             // arm whose every tag is already claimed can never run.
             var eff = std.ArrayList(u64).empty;
-            for (raw_tags) |t| {
+            for (raw_tags) |raw| {
+                const t = self.module.types.canonicalType(TypeId.fromIndex(@intCast(raw))).index();
                 if (claimed.contains(t)) continue;
                 claimed.put(t, pat.span) catch unreachable;
                 eff.append(self.alloc, t) catch unreachable;
@@ -1747,7 +1748,8 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             // and a duplicate switch case is invalid IR — before the
             // claim set, an overlap was an LLVM verifier crash.
             var eff_tv = std.ArrayList(u64).empty;
-            for (raw_tv) |t| {
+            for (raw_tv) |raw| {
+                const t = self.module.types.canonicalType(TypeId.fromIndex(@intCast(raw))).index();
                 if (claimed.contains(t)) continue;
                 claimed.put(t, pat.span) catch unreachable;
                 eff_tv.append(self.alloc, t) catch unreachable;

@@ -2394,6 +2394,31 @@ pub fn mangledInstanceName(self: *Lowering, tmpl: *const StructTemplate, tb: *co
     return name_parts.items;
 }
 
+fn recordStructInstanceShape(self: *Lowering, id: TypeId, tmpl: *const StructTemplate, tb: std.StringHashMap(TypeId), cvb: std.StringHashMap(i64), pb: std.StringHashMap([]const TypeId)) void {
+    var key = std.ArrayList(u8).empty;
+    defer key.deinit(self.alloc);
+    const author = @intFromPtr(tmpl.decl);
+    key.appendSlice(self.alloc, std.mem.asBytes(&author)) catch unreachable;
+    for (tmpl.type_params) |tp| {
+        if (tp.is_variadic) {
+            const values = pb.get(tp.name) orelse return;
+            key.appendSlice(self.alloc, std.mem.asBytes(&values.len)) catch unreachable;
+            for (values) |ty| {
+                const canonical = self.module.types.canonicalType(ty);
+                key.appendSlice(self.alloc, std.mem.asBytes(&canonical)) catch unreachable;
+            }
+        } else if (tp.is_type_param) {
+            const ty = tb.get(tp.name) orelse return;
+            const canonical = self.module.types.canonicalType(ty);
+            key.appendSlice(self.alloc, std.mem.asBytes(&canonical)) catch unreachable;
+        } else {
+            const value = cvb.get(tp.name) orelse return;
+            key.appendSlice(self.alloc, std.mem.asBytes(&value)) catch unreachable;
+        }
+    }
+    self.module.types.recordInstanceShape(id, key.items);
+}
+
 pub fn instantiateGenericStruct(self: *Lowering, tmpl: *const StructTemplate, args: []const *const Node) TypeId {
     // Build mangled name dynamically: StructName__arg1_arg2. The base carries
     // the TEMPLATE's declaration identity and every argument fragment is the
@@ -2555,6 +2580,7 @@ pub fn instantiateGenericStructBound(
     const info: types.TypeInfo = .{ .@"struct" = .{ .name = name_id, .fields = resolved_layout.fields } };
     const id = if (table.findByName(name_id)) |existing| existing else table.intern(info);
     table.updatePreservingKey(id, info);
+    recordStructInstanceShape(self, id, tmpl, tb, cvb, pb);
 
     // Bind the template name to this concrete instance so a method's
     // `self: *Combined` (the template name) resolves to `*Combined__i64_i64`
