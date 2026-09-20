@@ -1305,12 +1305,14 @@ pub const Lowering = struct {
     pub const ParamDemand = union(enum) {
         none,
         coerce: TypeId,
+        /// The type comes from the value, so anonymous fields have no contextual coercion.
+        inferred: TypeId,
         callable: lower_closure.CallableSig,
 
         /// The type the demand coerces to. A callable binder has none.
         pub fn coerceType(d: ParamDemand) ?TypeId {
             return switch (d) {
-                .coerce => |t| t,
+                .coerce, .inferred => |t| t,
                 .none, .callable => null,
             };
         }
@@ -1344,6 +1346,7 @@ pub const Lowering = struct {
                 self.target_type = null;
             },
             .coerce => |t| self.target_type = if (t == .unresolved or t == .void) null else t,
+            .inferred => |t| self.target_type = if (t == .unresolved or t == .void or self.module.types.isAnonStruct(t)) null else t,
             .none => self.target_type = null,
         }
         return scope;
@@ -1470,6 +1473,9 @@ pub const Lowering = struct {
             }
             return resolved;
         }
+        const saved_target = self.target_type;
+        self.target_type = null;
+        defer self.target_type = saved_target;
         // No explicit annotation — the type is inferred from the body, which
         // references the function's own parameters (`|x: i32| x * 2`). Those
         // params aren't pushed into `self.scope` until body lowering, so bind
@@ -4051,6 +4057,7 @@ pub const Lowering = struct {
     // --- lower/expr.zig (lower_expr) ---
     pub const lowerStructLiteral = lower_expr.lowerStructLiteral;
     pub const refuseVoidElement = lower_expr.refuseVoidElement;
+    pub const inferAnonStructType = lower_expr.inferAnonStructType;
     pub const synthesizeAnonStruct = lower_expr.synthesizeAnonStruct;
     pub const lowerInitBlock = lower_expr.lowerInitBlock;
     pub const lowerSelfBlock = lower_expr.lowerSelfBlock;

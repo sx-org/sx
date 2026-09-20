@@ -825,8 +825,22 @@ An **untyped** `.{ … }` literal — no annotation, no type prefix, no target �
 self-types as an *anonymous structural struct*: named elements become fields;
 positional elements get index names (`"0"`, `"1"`, …) readable via `.N` or a
 comptime `[i]` index; `.{x}` shorthand is a NAMED field, `.{ (x) }` is the
-positional escape; mixing named and positional elements is an error. Inline
-anonymous type **annotations** (`struct { x: i64; }`, `union { … }`,
+positional escape. A spread contributes its operand's fields; mixing named
+and positional contributions after expansion is an error. For overlapping
+named fields, the first occurrence determines position and the last determines
+value and type, with each initializer typed independently:
+
+```sx
+A :: struct { px: i16; py: i32; }
+B :: struct { py: i32; px: i64; }
+a := A{px = 3, py = 4};
+b := B{py = 8, px = 70000};
+ab := .{..a, ..b};              // struct { px: i64; py: i32; }
+ba := .{..b, ..a};              // struct { py: i32; px: i16; }
+plain := .{..a, px = 70000};     // px: i64
+```
+
+Inline anonymous type **annotations** (`struct { x: i64; }`, `union { … }`,
 `enum { S: T; … }`) produce the same kind of type, in any type position —
 including a function's return type (`make :: () -> struct { x: i64; } {
 .{ x = 3 } }`; a bodyless `F :: () -> struct { … };` stays a function-type

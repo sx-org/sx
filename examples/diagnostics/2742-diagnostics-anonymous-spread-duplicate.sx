@@ -1,0 +1,5 @@
+main :: () {
+    source := .{x = 1};
+    x := 2;
+    duplicate := .{x, ..source, x = 3};
+}

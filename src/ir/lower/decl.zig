@@ -1423,7 +1423,7 @@ pub fn registerTypedModuleConst(self: *Lowering, cd: *const ast.ConstDecl) void 
     // Reconcile the registration with the resolved annotation (pass 0 stored
     // a literal/expression placeholder type), so the const folds and emits at
     // its declared type — the same `put` the literal path always did.
-    const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = ty };
+    const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = ty, .declared_type = ty };
     self.putModuleConst(self.declId(.{ .const_decl = cd }, self.current_source_file), self.current_source_file, cd.name, info);
 }
 
@@ -1479,6 +1479,12 @@ pub fn typedConstInitFits(self: *Lowering, value: *const Node, dst_ty: TypeId) b
         .null_literal => !dst_ty.isBuiltin() and switch (self.module.types.get(dst_ty)) {
             .pointer, .many_pointer, .optional => true,
             else => false,
+        },
+        .struct_literal => blk: {
+            const saved_target = self.target_type;
+            self.target_type = dst_ty;
+            defer self.target_type = saved_target;
+            break :blk self.constExprInitFits(self.inferExprType(value), dst_ty);
         },
         // Const-EXPRESSION initializer (binary_op / unary_op — the only
         // non-literal kinds the caller admits): validate by the initializer's
@@ -4227,12 +4233,9 @@ pub fn emitModuleConst(self: *Lowering, ci: ModuleConstInfo, author_source: ?[]c
             return self.builder.constNull(ci.ty);
         },
         else => {
-            // Complex expressions (struct_literal, call, etc.) — lower on demand
-            const saved_target = self.target_type;
-            self.target_type = ci.ty;
-            const result = self.lowerExpr(ci.value);
-            self.target_type = saved_target;
-            return result;
+            var demand = self.enterDemand(if (ci.declared_type) |ty| .{ .coerce = ty } else .{ .inferred = ci.ty });
+            defer demand.restore();
+            return self.lowerExpr(ci.value);
         },
     }
 }
