@@ -734,7 +734,7 @@ pub const Server = struct {
             .{ .label = "@errorName", .detail = "(e: $T) -> string" },
             .{ .label = "@errorPayload", .detail = "(e: $T) -> any" },
             .{ .label = "@len", .detail = "(v: any) -> i64 — the boxed value's part count" },
-            .{ .label = "@field", .detail = "(v: any, idx: i64) -> any — part view" },
+            .{ .label = "@field", .detail = "(v, idx: i64) — typed struct field at a compile-time index; otherwise any view" },
             .{ .label = "@inner", .detail = "(v: any) -> ?any — the optional's payload view" },
             .{ .label = "@unbox", .detail = "($T: Type, v: any) -> T — unchecked typed read" },
             .{ .label = "@tag", .detail = "(v: $T) -> $R — an enum value's tag" },
@@ -1224,7 +1224,7 @@ pub const Server = struct {
             .{ .name = "@errorName", .label = "@errorName(e: $T) -> string", .params = &.{"e: $T"} },
             .{ .name = "@errorPayload", .label = "@errorPayload(e: $T) -> any", .params = &.{"e: $T"} },
             .{ .name = "@len", .label = "@len(v: any) -> i64", .params = &.{"v: any"} },
-            .{ .name = "@field", .label = "@field(v: any, idx: i64) -> any", .params = &.{ "v: any", "idx: i64" } },
+            .{ .name = "@field", .label = "@field(v, idx: i64) -> field type | any", .params = &.{ "v", "idx: i64" } },
             .{ .name = "@inner", .label = "@inner(v: any) -> ?any", .params = &.{"v: any"} },
             .{ .name = "@typeEq", .label = "@typeEq($A: Type, $B: Type) -> bool", .params = &.{ "$A: Type", "$B: Type" } },
             .{ .name = "@unbox", .label = "@unbox($T: Type, v: any) -> T", .params = &.{ "$T: Type", "v: any" } },
@@ -3781,6 +3781,33 @@ test "lsp/workspace: loadWorkspaceFiles analyses .sx files that were never opene
     const b = store.get(dir ++ "/b.sx") orelse return error.TestUnexpectedResult;
     try std.testing.expect(a.sema != null);
     try std.testing.expect(b.sema != null);
+}
+
+test "lsp/project: contextual literals select routing from index-named target slots" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const io = test_io();
+    var store = doc_mod.DocumentStore.init(alloc, io, &.{}, alloc);
+    _ = try store.openOrUpdate("literal-routing.sx",
+        \\main :: () {
+        \\    p: struct { x: i64; y: i64; } = .{1, 2};
+        \\    m := .{k = 5, 7};
+        \\    m = .{k = 6, 8};
+        \\    bad: struct { x: i64; y: i64; } = .{y = 2, 1};
+        \\}
+    , 1);
+    var server = Server{
+        .allocator = alloc,
+        .documents = store,
+        .transport = undefined,
+        .io = io,
+        .project_diag_uris = std.StringHashMap(void).init(alloc),
+    };
+    const diagnostics = server.collectProjectDiagnostics("literal-routing.sx");
+    try std.testing.expectEqual(@as(usize, 1), diagnostics.len);
+    try std.testing.expectEqualStrings("unnamed contribution after a named field", diagnostics[0].message);
+    try std.testing.expectEqual(@as(u32, 4), diagnostics[0].range.start.line);
 }
 
 test "lsp/project: whole-program check attributes a reachable error to its module" {

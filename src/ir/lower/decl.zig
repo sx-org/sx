@@ -1281,6 +1281,23 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
             else => {},
         }
     }
+    var fields_registered = true;
+    while (fields_registered) {
+        fields_registered = false;
+        registerConstAliases(self, decls);
+        for (decls) |decl| {
+            if (decl.data != .const_decl) continue;
+            const cd = &decl.data.const_decl;
+            if (cd.type_annotation != null) continue;
+            const c = self.fieldCall(cd.value) orelse continue;
+            self.setCurrentSourceFile(decl.source_file);
+            const source = self.current_source_file orelse self.main_file orelse continue;
+            if (self.sourceModuleConst(source, cd.name) != null) continue;
+            const field = self.fieldProjection(c) orelse continue;
+            self.putModuleConst(self.declId(.{ .const_decl = cd }, decl.source_file), self.current_source_file, cd.name, .{ .value = cd.value, .ty = field.ty });
+            fields_registered = true;
+        }
+    }
     // Every mutable-global symbol now exists, so relocatable initializers can
     // refer forward as well as backward (`p : *T = @later`). Fill payloads in
     // a separate pass without changing declaration/global ordering.
@@ -1622,7 +1639,7 @@ pub fn maybeRegisterConstStructGlobal(self: *Lowering, cd: *const ast.ConstDecl)
     const src = self.current_source_file orelse self.main_file orelse return;
     const ci = self.sourceModuleConst(src, cd.name) orelse return;
     if (ci.ty.isBuiltin() or self.module.types.get(ci.ty) != .@"struct") return;
-    const init_val = self.constStructLiteral(&cd.value.data.struct_literal, ci.ty) orelse return;
+    const init_val = self.constStructLiteral(&cd.value.data.struct_literal, ci.ty, ci.declared_type != null) orelse return;
     const name_id = self.module.types.internString(cd.name);
     const gid = self.module.addGlobal(.{
         .name = name_id,
@@ -1803,7 +1820,7 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
         },
         .string_literal => |sl| .{ .string = self.module.types.internString(sl.raw) },
         .array_literal => |al| self.constArrayLiteral(al.elements, var_ty) orelse self.diagnoseNonConstGlobal(vd, v),
-        .struct_literal => |sl| self.constStructLiteral(&sl, var_ty) orelse self.diagnoseNonConstGlobal(vd, v),
+        .struct_literal => |sl| self.constStructLiteral(&sl, var_ty, vd.type_annotation != null) orelse self.diagnoseNonConstGlobal(vd, v),
         .identifier => |id| blk: {
             // A bare identifier at a PROTOCOL-typed global is an
             // identity erasure of the named global — the declared type states
@@ -1842,7 +1859,8 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
         // An enum-literal global (`chosen : Color = .green;`) serializes to
         // the variant's tag value against the destination enum type.
         .enum_literal => |el| self.constEnumLiteral(&el, var_ty, v.span),
-        // Any other initializer shape (`.field_access` on a const, a call, an
+        .call => self.constExprValue(v, var_ty) orelse self.diagnoseNonConstGlobal(vd, v),
+        // Any other initializer shape (`.field_access` on a const, an
         // arithmetic expression, …) is not a static constant the compiler can
         // evaluate here. Diagnose loudly rather than emit a null payload that
         // silently zero-initializes the global.
@@ -3898,6 +3916,7 @@ pub fn lowerFunctionBodyInto(self: *Lowering, fd: *const ast.FnDecl, fid: FuncId
         // Already promoted (e.g., via lowerComptimeDeps) — skip.
         return;
     }
+    func.ret = ret_ty;
     func.is_extern = false; // promote from extern stub to real function
     // `export` defines force external linkage + C ABI.
     func.linkage = if (isExportedEntryName(name) or fd.extern_export == .export_) .external else .internal;

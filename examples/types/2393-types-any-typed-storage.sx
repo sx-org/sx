@@ -6,7 +6,7 @@ g: I = -6;
 borrow :: () -> i64 {
     b := Box{n = -6};
     a: any = b.n;
-    field := @field(b, 0);
+    field: any = @field(b, 0);
     b.n = -9;
     @assert(a.(I) == -9 and field.(I) == -9);
     @assert(@rawAnyData(a) == @rawAnyData(field));

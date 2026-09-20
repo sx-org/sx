@@ -1,11 +1,3 @@
-// Comptime-cursor indexing of a named-tuple VALUE: `tup[i]` where `i` is an
-// `inline for` cursor (or a literal) reads the i-th tuple field with its
-// CONCRETE type — not a type-erased `any`. This is the read side `race` needs:
-// pull the i-th `*Task(T_i)` handle out of a named-tuple param keeping its real
-// type, so `field`/method access on it resolves. A tuple's elements are
-// heterogeneous, so there is no runtime element-indexing op — a comptime index
-// lowers exactly like the `.N` field-access path (a `structGet`). A runtime
-// index into a tuple value is an error (no single element type).
 @import "modules/std.sx";
 
 Box :: struct ($R: Type) { value: R; }
@@ -13,15 +5,15 @@ Box :: struct ($R: Type) { value: R; }
 // Read each handle with its concrete type via the `inline for` cursor.
 showAll :: (tup: $T) {
     inline for i in 0..@typeInfo(T).struct.fields.len {
-        h := tup[i];                       // concrete `*Box(T_i)`, not `any`
+        h := @field(tup, i);                       // concrete `*Box(T_i)`, not `any`
         print("[{}] = {}\n", i, h.value);  // field access resolves
     }
 }
 
 // Literal-index form, positional tuple.
 firstTwo :: (tup: $T) -> i64 {
-    a := tup[0];
-    b := tup[1];
+    a := @field(tup, 0);
+    b := @field(tup, 1);
     return a.value + b.value;
 }
 

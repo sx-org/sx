@@ -34,7 +34,7 @@ captureBoth :: (dst: *string, ..args: any) {
     captured();
 }
 captureIndex :: (po: *i64, ..args: any) {
-    captured := ||_{ po = po, args = .{..args} } { po.* = args[0] + args[1]; };
+    captured := ||_{ po = po, args = .{..args} } { po.* = @field(args, 0) + @field(args, 1); };
     captured();
 }
 
@@ -59,7 +59,7 @@ main :: () -> i32 {
 
     // tuple-literal re-splice
     t2 := .{..t3};
-    print("resplice: {} {}\n", t2.0, t2.1);          // 1 two
+    print("resplice: {} {}\n", @field(t2, 0), @field(t2, 1));          // 1 two
 
     // deferred closure over a captured (materialized) pack
     thunk := makeThunk(40, 2);

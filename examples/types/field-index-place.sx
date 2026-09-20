@@ -1,0 +1,46 @@
+@import "modules/std.sx";
+storage :: @import "field-index-place/values.sx";
+
+Cell :: struct { n: i16; text: string; }
+calls: i64 = 0;
+cell: Cell = .{ n = 4, text = "cell" };
+receiver :: () -> *Cell { calls += 1; return *cell; }
+bump :: ufcs (value: *i16) { value.* += 1; }
+K :: Cell{ n = 6, text = "constant" };
+STATIC: i16 = @field(K, 0);
+CONST_FIELD :: @field(K, 0);
+INDEX :: 0;
+
+calculate :: () -> i64 {
+    t := .{ 7, 8 };
+    first := @field(t, INDEX + 0) + 1;
+    LOCAL :: 0;
+    @field(t, LOCAL) = 70;
+    @field(t, 1) += 2;
+    return first + @field(t, 0) + @field(t, 1);
+}
+
+COMPUTED :: @run calculate();
+
+main :: () -> i32 {
+    print("{} {}\n", calculate(), COMPUTED);
+    @field(receiver().*, 0) += 3;
+    @field(receiver().*, 0).bump();
+    @assert(calls == 2);
+    p := *@field(cell, 0);
+    p.* += 2;
+    print("{} {} {}\n", cell.n, calls, @typeEq(@typeOf(@field(cell, 0)), i16));
+    nested := .{ ( *cell ), .{ 11, 12 } };
+    @field(nested, 0).n += 1;
+    @field(@field(nested, 1), 0) = 20;
+    print("{} {} {}\n", cell.n, @field(@field(nested, 1), 0), @field(K, 1));
+    INDEX := 0;
+    view := @field(cell, INDEX);
+    cell.n = 30;
+    print("{} {}\n", @typeEq(@typeOf(view), i16), view.(i16));
+    bytes: [@field(K, 0)]u8 = ---;
+    print("{} {} {}\n", STATIC, bytes.len, @typeEq(@typeOf(CONST_FIELD), i16));
+    @field(storage.state, 0) = 17;
+    print("{}\n", storage.state.value);
+    return 0;
+}

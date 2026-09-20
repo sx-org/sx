@@ -29,18 +29,10 @@
 // and vector arms re-aim ONE view per index; `elem` may be a runtime Type.
 @anyElement :: (elem: Type, av: any, idx: i64) -> any;
 
-// ── Boxed-value views: a value's parts, read in place ──────────────────────
-// The receiver is boxed, so its kind is a runtime tag. `@len` counts the parts:
-// struct and union fields, enum variants, array elements,
-// vector lanes, and the count a slice's or string's header carries. `@field`
-// views the i-th of those parts: a member at its layout offset — a payload
-// enum's members share the payload offset — or an element striding from the
-// in-place storage or from the buffer a fat pointer names. `@inner` views an
-// optional's payload, null when it is absent. A `Type` receiver, spelled or a
-// runtime value, answers that type's part count. Each result borrows the boxed
-// storage, so it aliases later writes and copies nothing. An index past the
-// count is UB.
+// Dynamic part views borrow the receiver's storage. A runtime index past the
+// part count is undefined behavior; @len supplies that count.
 @len :: (v: any) -> i64;
+// A compile-time index into a concrete struct selects a typed, assignable field.
 @field :: (v: any, idx: i64) -> any;
 @inner :: (v: any) -> ?any;
 

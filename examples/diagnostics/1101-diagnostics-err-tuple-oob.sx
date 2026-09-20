@@ -1,6 +1,5 @@
-// An out-of-range positional-product index reports `field 'N' not found`.
-
 main :: () -> i32 {
     t := .{10, 20};
-    return xx t.42;
+    @field(t, 42);
+    return 0;
 }

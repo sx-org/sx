@@ -1,0 +1,5 @@
+error: field 'py' already initialized by a directly written value
+  --> examples/diagnostics/struct-direct-contribution-collision.sx:4:40
+   |
+ 4 |     value := Sprite{1, 2, ..base, py = 9};
+   |                                        ^

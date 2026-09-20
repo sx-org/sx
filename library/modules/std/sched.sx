@@ -1105,13 +1105,13 @@ race :: ufcs (io: Io, futures: $T) -> RaceResult(T) {
     winnerIdx : i64 = -1;
     while winnerIdx < 0 {
         inline for i in 0..@typeInfo(T).struct.fields.len {
-            if winnerIdx < 0 and futures[i].state == .ready { winnerIdx = i; }
+            if winnerIdx < 0 and @field(futures, i).state == .ready { winnerIdx = i; }
         }
         if winnerIdx >= 0 { break; }
         me := io.currentPark();
         anyPending := false;
         inline for i in 0..@typeInfo(T).struct.fields.len {
-            if futures[i].state == .pending { futures[i].park.handle = me.handle; anyPending = true; }
+            if @field(futures, i).state == .pending { @field(futures, i).park.handle = me.handle; anyPending = true; }
         }
         // No `.ready` winner and nothing still `.pending` → every racer settled
         // `.failed`/`.canceled` with no success. `race` is first-SUCCESS-wins and
@@ -1128,18 +1128,15 @@ race :: ufcs (io: Io, futures: $T) -> RaceResult(T) {
         pk : ParkToken = .{ handle = null };
         io.suspendRaw(*pk) catch {};
         inline for i in 0..@typeInfo(T).struct.fields.len {
-            if futures[i].park.handle == me.handle { futures[i].park.handle = null; }
+            if @field(futures, i).park.handle == me.handle { @field(futures, i).park.handle = null; }
         }
     }
 
-    // Build the winner variant. `futures[i].value` carries the CONCRETE
-    // result type of variant `i` (comptime-cursor tuple indexing), so the matching
-    // unrolled arm constructs `RaceResult(T)`'s i-th variant directly. `i` is the
-    // comptime cursor; the runtime `if i == winnerIdx` selects the one arm.
+    // The unrolled arm retains each future's concrete result type.
     result : RaceResult(T) = ---;
     inline for i in 0..@typeInfo(T).struct.fields.len {
         if i == winnerIdx {
-            result = makeVariant(RaceResult(T), i, futures[i].value);
+            result = makeVariant(RaceResult(T), i, @field(futures, i).value);
         }
     }
 
@@ -1150,7 +1147,7 @@ race :: ufcs (io: Io, futures: $T) -> RaceResult(T) {
     // already settled (`.ready`/`.failed`) is done — cancelling it would do
     // nothing useful and would stomp its real outcome label to `.canceled`.
     inline for i in 0..@typeInfo(T).struct.fields.len {
-        if i != winnerIdx and futures[i].state == .pending { futures[i].cancel(); }
+        if i != winnerIdx and @field(futures, i).state == .pending { @field(futures, i).cancel(); }
     }
 
     return result;

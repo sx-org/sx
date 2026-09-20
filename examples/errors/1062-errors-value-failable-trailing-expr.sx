@@ -30,7 +30,7 @@ main :: () -> i32 {
     print("s={}\n", s);
 
     t := mval() catch |e| { print("PHANTOM mval\n"); return 1; };
-    print("t=({},{})\n", t.0, t.1);
+    print("t=({},{})\n", @field(t, 0), @field(t, 1));
 
     ok := fval(10) catch |e| { print("PHANTOM fval-ok\n"); return 1; };
     print("ok={}\n", ok);

@@ -1,0 +1,5 @@
+error: unresolved 'multi_assign_target' (in examples/diagnostics/multi-assign-call-target.sx fn main)
+  --> examples/diagnostics/multi-assign-call-target.sx:7:5
+   |
+ 7 |     mk(), a = 1, 2;
+   |     ^^^^

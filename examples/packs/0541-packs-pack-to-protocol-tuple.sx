@@ -19,7 +19,7 @@ Combined :: struct($R: Type, ..$Ts: []Type) {
 build :: (..sources: VL) -> void {
     c : Combined(i64, ..sources.T) = ---;
     c.sources = .{..sources};                          // pack → tuple, per-element erase
-    print("{} {}\n", c.sources.0.get(), c.sources.1.get());
+    print("{} {}\n", @field(c.sources, 0).get(), @field(c.sources, 1).get());
 }
 
 main :: () -> i32 {

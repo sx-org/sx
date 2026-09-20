@@ -1,0 +1,56 @@
+@import "modules/std.sx";
+
+Sprite :: struct { px: i64; py: i64; scale: i64 = 1; }
+Coords :: .{1, 2};
+Constant :: Sprite{..Coords, py = 9};
+Mixed :: .{..Coords, k = 5};
+mark :: (log: *i64, n: i64) -> i64 { log.* = log.* * 10 + n; n }
+identity :: (x: $T) -> T { x }
+inferred :: () { return .{k = 5, ..Coords}; }
+plain_inferred :: () { return .{7, k = 5}; }
+computed :: () -> i64 {
+    local :: .{1, k = 2};
+    log: i64 = 0;
+    value := .{mark(*log, 1), k = mark(*log, 2), ..Coords};
+    sprite := Sprite{..Coords, py = 9};
+    @field(value, 1) = 7;
+    log + @field(value, 0) + @field(value, 1) + sprite.py + local.k + @field(local, 1)
+}
+Computed :: @run computed();
+Overridden :: .{k = .{true}, ..Mixed};
+Holder :: struct ($T: Type) { value: T; }
+Held :: Holder{value = .{k = 5, 7}};
+contextual :: () -> i64 {
+    xs := .{7, 8};
+    m := .{..xs, k = 5};
+    m = .{..xs, k = 5};
+    m.k * 100 + @field(m, 1) * 10 + @field(m, 2)
+}
+Contextual :: @run contextual();
+Inline: struct { x: i64; y: i64; } : .{1, 2};
+inline_decl :: () -> i64 {
+    p: struct { x: i64; y: i64; } = .{1, 2};
+    p.x * 10 + p.y
+}
+InlineRun :: @run inline_decl();
+
+main :: () {
+    plain := Sprite{1, 2, scale = 5};
+    spread: Sprite = .{..Coords, py = 9};
+    print("typed: {} {} {} / {} {} {}\n", plain.px, plain.py, plain.scale, spread.px, spread.py, spread.scale);
+    log: i64 = 0;
+    mixed := identity(.{mark(*log, 1), k = mark(*log, 2), ..Coords, tail = mark(*log, 3)});
+    print("mixed: {} {} {} {} {} {}\n", log, mixed.k, mixed.tail, @field(mixed, 2), @field(mixed, 3), @field(mixed, 4));
+    from_plain := plain_inferred();
+    print("plain return: {} {}\n", from_plain.k, @field(from_plain, 1));
+    returned := inferred();
+    roundtrip := .{0, ..returned};
+    print("inferred: {} {} {} {}\n", @field(roundtrip, 0), @field(roundtrip, 1), @field(roundtrip, 2), @field(roundtrip, 3));
+    print("vm: {} {} overwritten: {}\n", Computed, computed(), Overridden.k);
+    rows := .[ .{k = 5, 7}, .{k = 6, 8} ];
+    print("contextual: {} {} / {} {} / {} {}\n", contextual(), Contextual, rows[0].k, @field(rows[0], 1), rows[1].k, @field(rows[1], 1));
+    print("inline: {} {} / {} {}\n", inline_decl(), InlineRun, Inline.x, Inline.y);
+    print("constant field: {} {}\n", Held.value.k, @field(Held.value, 1));
+    size: [@field(Mixed, 0) + Constant.py]i64 = ---;
+    print("constant: {} {} {} / {} {} {} / {}\n", Constant.px, Constant.py, Constant.scale, @field(Mixed, 0), @field(Mixed, 1), @field(Mixed, 2), @sizeOf(@typeOf(size)));
+}

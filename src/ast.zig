@@ -1090,7 +1090,7 @@ pub const TupleTypeExpr = struct {
 /// returns MULTIPLE VALUES — interned as an anonymous structural struct, valid
 /// ONLY as a function/closure return type (the general type resolver rejects
 /// it anywhere else). The result is consumed by destructuring (`a, b := f()`)
-/// or as a positional product (`s.0`). Same AST shape as a parenthesized
+/// or as a positional product (`@field(s, 0)`). Same AST shape as a parenthesized
 /// failable `(T, !)` list so the resolver can reuse the field-resolution path.
 /// The single-value `(T, !)` (one value + error) is NOT this — it is a
 /// dedicated failable kind.

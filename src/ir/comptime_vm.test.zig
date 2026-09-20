@@ -378,7 +378,6 @@ test "comptime_vm exec: struct_init + struct_get (mixed i64/f64 product)" {
     };
     const tup = table.intern(.{ .@"struct" = .{ .name = table.internString("__anon"), .fields = &flds } });
 
-    // t := .{5, 2.5}; return t.0 + int(t.1)  → 5 + 2 = 7
     var fb = Fb.init(alloc, &.{}, .i64);
     defer fb.deinit();
     const b0 = fb.block(&.{});

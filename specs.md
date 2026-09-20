@@ -762,7 +762,8 @@ to match no field is instead read as a *positional* element, not an error.)
 field must exist in the target and fit through ordinary implicit initialization
 (see [Type Conversions](#type-conversions)),
 even if a later initializer overwrites it. Overlap involving a spread is
-last-wins; two plain named initializers for one field are an error. Expressions
+last-wins. Two plain names for one field, or a plain name for a field
+initialized by a directly written unnamed value, are errors. Expressions
 and spread operands evaluate once, left to right. Uncovered fields take their
 ordinary default or zero value. A struct containing a private field cannot be
 spread, including in its declaring file.
@@ -775,13 +776,17 @@ a := Sprite{..pos, scale = 2};
 b: Sprite = .{scale = 5, ..a};
 ```
 
-The operand's fields determine named versus positional contributions. Packs,
-positional products and fixed-length arrays contribute positionally. In a literal
-containing a spread, plain named initializers reserve their target fields;
-positional contributions fill the remaining fields in declaration order. Names
-contributed by spreads do not reserve fields. Thus
-`Sprite{..coords, scale = 2}` fills the leading fields from `coords`.
-Contextual `.{…}` uses the target's struct-initialization rules.
+The operand's fields determine named versus unnamed contributions. Packs,
+positional products and fixed-length arrays contribute unnamed values. In a
+typed literal (`T{…}` or contextual `.{…}` with a known type), unnamed
+contributions precede named ones and fill fields from the left in declaration
+order without skipping:
+
+```sx
+coords := .{3.(i32), 4.(i32)};
+c := Sprite{..coords, y = 9};  // x=3, y=9, scale=1
+d := Sprite{3, 4, scale = 2}; // x=3, y=4, scale=2
+```
 
 Named aggregates place `{` directly after the type designator: `Point{ x = 1 }`,
 `List(i64){}`, `mod.Config{ port = 80 }`. The separator-dot form `Type.{…}`
@@ -822,14 +827,16 @@ push Context{ allocator = a } { … }        // explicit Context literal
 
 #### Anonymous Structs
 
-An **untyped** `.{ … }` literal — no annotation, no type prefix, no target —
-self-types as an *anonymous structural struct*: named elements become fields;
-positional elements get index names (`"0"`, `"1"`, …) readable via `.N` or a
-comptime `[i]` index; `.{x}` shorthand is a NAMED field, `.{ (x) }` is the
-positional escape. A spread contributes its operand's fields; mixing named
-and positional contributions after expansion is an error. For overlapping
-named fields, the first occurrence determines position and the last determines
-value and type, with each initializer typed independently:
+A bare `.{ … }` literal without a target self-types as an *anonymous structural
+struct*: named contributions come first, in order of first occurrence; each
+takes the last contributed type and value, with initializers typed independently.
+Unnamed contributions follow in their contribution order, regardless of written
+order, and receive their whole-struct index as a name (`"0"`, `"1"`, …). Fields
+are accessed through `@field`.
+`.{x}` shorthand is named; `.{ (x) }` is the unnamed escape.
+For a bare literal whose anonymous target contains index-named fields, named
+contributions match fields by name, unnamed contributions fill only index-named
+slots in order, and target fields supply the initializer types.
 
 ```sx
 A :: struct { px: i16; py: i32; }
@@ -838,7 +845,7 @@ a := A{px = 3, py = 4};
 b := B{py = 8, px = 70000};
 ab := .{..a, ..b};              // struct { px: i64; py: i32; }
 ba := .{..b, ..a};              // struct { py: i32; px: i16; }
-plain := .{..a, px = 70000};     // px: i64
+mixed := .{7, ..a, px = 70000}; // struct { px: i64; py: i32; <7>; }
 ```
 
 Inline anonymous type **annotations** (`struct { x: i64; }`, `union { … }`,
@@ -1655,12 +1662,12 @@ Design notes and rejected directions: `design/protocols.md` (appendix).
 ### Anonymous products
 
 A positional anonymous product is the type of `.{1, 2}`: an anonymous
-structural struct whose fields are named `"0"`, `"1"`, …. Field access is
-`t.0` / `t.1`. `@typeInfo` on it is `.struct`. There is no writable type
-spelling for a positional product other than `struct { ..P(Ts) }` (a pack
+structural struct whose fields are named `"0"`, `"1"`, …. Fields are accessed
+through `@field` (see Reflection). `@typeInfo` on it is `.struct`. There is no
+writable type spelling for a positional product other than `struct { ..P(Ts) }` (a pack
 spread as the struct's one field — see "Variadic Heterogeneous Type Packs").
-Named products are ordinary structs: `struct { x: A; y: B }`, accessed by
-name only (`.x`, not `.0`).
+Named products are ordinary structs: `struct { x: A; y: B }`. Named fields
+also have `.name` access.
 
 `.{ … }` is the one aggregate literal. Untyped `.{1, 2}` infers the positional
 product. Named `.{x = 10, y = 20}` against `struct { x: i64; y: i64 }` is a
@@ -1669,8 +1676,8 @@ inside bare parens is a hard error.
 
 ```sx
 pair := .{40, 2};
-pair.0;              // 40
-pair.1;              // 2
+@field(pair, 0);     // 40
+@field(pair, 1) = 3;
 
 named : struct { x: i64; y: i64 } = .{x = 10, y = 20};
 named.x;             // 10
@@ -5502,9 +5509,9 @@ error: 'intern' runs only at compile time — it cannot be called from the
 - `@isFlags($T: Type) -> bool` — returns `true` if `T` is a flags enum (declared with `@flags`)
 - `@typeEq($A: Type, $B: Type) -> bool` — type equality (`@typeEq(i64, i64)` is `true`, distinct shapes are `false`); folds at compile time, so `inline if @typeEq(...)` is comptime-decidable
 - `@unbox($T: Type, v: any) -> T` — the boxed storage read AS `T`: an unchecked typed load through the view, with no tag check, so `T` must be the boxed type and a wider one overreads. The checked forms are the postfix assertions (`v.(T)` / `try v.(T)` / `v.(?T)`).
-- The boxed-view family — `@len` / `@field` / `@inner` — reads a boxed value's parts in place, dispatching on the view's runtime tag. Each result is an `any` VIEW `{the part's type, a pointer to it inside the receiver}` — an interior pointer, not a copy. An addressable receiver is borrowed (mutations of it stay visible through a live view) and an rvalue receiver spills to a frame temp first, so a view is valid only while the storage it names lives. A wrong-kind tag or an index past the count is **undefined behavior** (in-bounds GEP — the caller gates on `@len`).
+- A boxed part view is an `any` value holding `{the part's type, a pointer to it inside the receiver}`. An addressable receiver is borrowed (mutations of it stay visible through a live view) and an rvalue receiver spills to a frame temp first, so a view is valid only while the storage it names lives. A wrong-kind tag or an index past the count is **undefined behavior** (in-bounds GEP — the caller gates on `@len`).
 - `@len(v: any) -> i64` — the receiver's part count: struct and union fields, enum variants, array elements, vector lanes, and the count a slice's or string's header carries. A `Type` receiver — spelled, or a runtime `Type` value — answers that type's part count (`@len(@Vector(3, f32))` is `3`, the one vector length the size tables cannot answer, since a vector's ABI size is pow2-rounded); a spelled type with no parts is a compile error, a runtime tag of such a kind answers 0.
-- `@field(v: any, idx: i64) -> any` — the `idx`-th part `@len` counts: a member at its layout offset — a payload enum's members share the PAYLOAD offset (the header size, the same for every variant), a union's arms all sit at 0 — or an array, vector, slice, or string element, striding by the element size from the in-place storage or from the buffer a fat pointer names. Nested access chains by repeated calls with no copies. An arbitrary-width int member views under its TRUE (non-builtin) tag — dispatch consumers (`x.(f.type)`) monomorphize exactly; the `{}` formatter's builtin-width int arm does not match such a tag and prints `<?>`.
+- `@field(v, idx)` selects a field by its index in the whole struct. For a statically typed struct and a compile-time integer index, the result has the field's own type and denotes its storage when the receiver is addressable; ordinary mutability checks apply. Out-of-range constant indices diagnose. Otherwise it returns an `any` view of the `idx`-th part `@len` counts: a member at its layout offset — a payload enum's members share the PAYLOAD offset (the header size, the same for every variant), a union's arms all sit at 0 — or an array, vector, slice, or string element, striding by the element size from the in-place storage or from the buffer a fat pointer names. Nested access chains by repeated calls with no copies. An arbitrary-width int member views under its TRUE (non-builtin) tag — dispatch consumers (`x.(f.type)`) monomorphize exactly; the `{}` formatter's builtin-width int arm does not match such a tag and prints `<?>`.
 - `@inner(v: any) -> ?any` — an optional's payload, `null` when it is absent.
 
 Signedness is asked with `type is unsigned` (§The `is` Operator), which the `{}`

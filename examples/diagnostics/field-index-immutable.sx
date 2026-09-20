@@ -1,0 +1,13 @@
+@import "modules/std.sx";
+storage :: @import "../types/field-index-place/values.sx";
+
+Pair :: struct { a: i64; b: i64; }
+K :: Pair{ 1, 2 };
+
+main :: () -> i32 {
+    @field(K, 0) = 3;
+    local : Pair : .{ 4, 5 };
+    @field(local, 1) = 6;
+    @field(storage.fixed, 0) = 7;
+    return 0;
+}

@@ -1,0 +1,3 @@
+Pair :: struct { value: i16; }
+state: Pair = .{ value = 1 };
+fixed :: Pair{ value = 2 };

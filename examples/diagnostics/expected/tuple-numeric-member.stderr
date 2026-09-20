@@ -1,0 +1,5 @@
+error: expected field name after '.'
+  --> examples/diagnostics/tuple-numeric-member.sx:3:14
+   |
+ 3 |     return t.0;
+   |              ^

@@ -18,8 +18,8 @@ Combined :: struct($R: Type, ..$Ts: []Type) {
 make :: (..sources: VL) -> i64 {
     c : Combined(i64, ..sources.T) = ---;   // instantiate with the spread type-arg
     s0 := sources[0];
-    c.sources.0 = s0;
-    return c.sources.0.get();
+    @field(c.sources, 0) = s0;
+    return @field(c.sources, 0).get();
 }
 
 main :: () -> i32 {

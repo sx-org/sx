@@ -1,0 +1,9 @@
+@import "modules/std.sx";
+
+main :: () -> i32 {
+    t := .{7, 8};
+    i := 0;
+    --@field(t, i);
+    --@field(t, 2);
+    return 0;
+}

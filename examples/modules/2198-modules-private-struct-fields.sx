@@ -11,7 +11,7 @@ main :: () -> i32 {
     c := box.Box{};
     d := box.Box{ 9 };
     print("{}\n", a.get() + b.get() + c.get() + d.get() + box.sameFileSum(1));
-    print("{} {} {}\n", first(..b), b[0], b);
+    print("{} {} {}\n", first(..b), @field(b, 0), b);
     k := box.makeColl();
     print("{}\n", k.m(3));
     return 0;
