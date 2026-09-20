@@ -171,6 +171,12 @@ const DimCtx = struct {
         if (std.mem.eql(u8, name, "K")) return 4.0;
         return null;
     }
+    pub fn floatLeafType(_: DimCtx, _: *const Node) ?types.TypeId {
+        return null;
+    }
+    pub fn floatLiteralValue(_: DimCtx, lit: ast.FloatLiteral, ty: types.TypeId, _: ast.Span) f64 {
+        return if (ty == .f32) lit.asF32() else lit.value;
+    }
     // The float-typed-const predicate the division guard consults: `F`/`K` are
     // float-typed module consts, every other name is not.
     pub fn nameIsFloatTyped(_: DimCtx, name: []const u8) bool {

@@ -683,7 +683,7 @@ impl Platform for UIKitPlatform {
         // A small hop of a shown keyboard is the QuickType bar toggling:
         // the field pins to the end height while the bar animates.
         hop := overlap - from;
-        if hop < 0.0 { hop = (0.0 - hop).(f32); }
+        if hop < 0.0 { hop = 0.0 - hop; }
         if !self.kbSpring.active and self.kb.height > 0.5 and hop <= 44.1 {
             from = overlap;
             v0 = 0.0;

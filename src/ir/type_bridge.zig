@@ -143,14 +143,12 @@ const StatelessInner = struct {
         return false;
     }
 
-    /// Float-valued leaf for the shared float-expression evaluator — the FLOAT
-    /// twin of `lookupDimName`, routed through the SAME `program_index.moduleConstFloat`
-    /// the stateful body-lowering path uses, so a float-const-leaf dimension
-    /// (`Arr :: [F + 1.5]T`, `F : f64 : 2.5` → len 4) folds to the SAME count on
-    /// the registration-time alias path as on the direct form `a : [F + 1.5]T`
-    /// (unify-or-diverge). Integer / integral-float leaves are already
-    /// resolved by the `evalConstIntExpr` delegation inside `evalConstFloatExpr`;
-    /// this surfaces a non-integral float const so the unified rule rejects it.
+    pub fn floatLeafType(self: StatelessInner, node: *const Node) ?TypeId {
+        return program_index_mod.moduleFloatLeafType(self.facts orelse return null, node);
+    }
+    pub fn floatLiteralValue(_: StatelessInner, lit: ast.FloatLiteral, ty: TypeId, _: ast.Span) f64 {
+        return if (ty == .f32) lit.asF32() else lit.value;
+    }
     pub fn lookupFloatName(self: StatelessInner, name: []const u8) ?f64 {
         const facts = self.facts orelse return null;
         return program_index_mod.moduleConstFloat(facts, self.table, name);

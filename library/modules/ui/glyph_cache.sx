@@ -556,7 +556,7 @@ GlyphCache :: struct {
 
     setDpiScale :: (self: *GlyphCache, scale: f32) {
         self.dpiScale = scale;
-        self.invDpi = (1.0 / scale).(f32);
+        self.invDpi = 1.0 / scale;
     }
 
     // Get the scale factor for a logical font size

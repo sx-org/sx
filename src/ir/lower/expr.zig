@@ -1887,7 +1887,10 @@ pub fn lowerStructConstant(self: *Lowering, info: StructConstInfo) Ref {
             if (info.ty) |t| self.checkCharLiteralFits(lit, t, val_node.span);
             break :blk self.builder.constInt(lit.value, info.ty orelse .i64);
         },
-        .float_literal => |lit| self.builder.constFloat(lit.value, info.ty orelse .f64),
+        .float_literal => |lit| blk: {
+            const ty = info.ty orelse .f64;
+            break :blk self.builder.constFloat(self.floatLiteralValue(lit, ty, val_node.span), ty);
+        },
         .bool_literal => |lit| self.builder.constBool(lit.value),
         .string_literal => |lit| self.lowerStringLiteral(lit),
         else => self.lowerExpr(val_node),
@@ -3822,7 +3825,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
         },
         .float_literal => |lit| {
             const fty: TypeId = if (self.target_type) |tt| (if (tt == .f32 or tt == .f64) tt else .f64) else .f64;
-            return self.builder.constFloat(lit.value, fty);
+            return self.builder.constFloat(self.floatLiteralValue(lit, fty, node.span), fty);
         },
         .bool_literal => |lit| self.builder.constBool(lit.value),
         .string_literal => |lit| self.lowerStringLiteral(lit),
@@ -4255,7 +4258,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             if (uop.op == .negate and uop.operand.data == .float_literal) {
                 const lit = uop.operand.data.float_literal;
                 const fty: TypeId = if (self.target_type) |tt| (if (tt == .f32 or tt == .f64) tt else .f64) else .f64;
-                break :blk self.builder.constFloat(-lit.value, fty);
+                break :blk self.builder.constFloat(-self.floatLiteralValue(lit, fty, node.span), fty);
             }
             // Prefix `*` on a TYPE-valued operand is the pointer TYPE, not
             // address-of: `@sizeOf(*T)`, Type-arg positions, and nested
@@ -5461,7 +5464,11 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         const peer_ty = self.inferExprType(bop.rhs);
         if (isCompareNumericPeer(self, peer_ty)) self.target_type = peer_ty;
     }
+    const float_operands = program_index_mod.floatOperandTypes(bop.*, self.operandType(self.inferExprType(bop.lhs)), self.operandType(self.inferExprType(bop.rhs)));
+    const operand_tt = self.target_type;
+    if (ast.floatLiteral(bop.lhs) != null) self.target_type = float_operands.lhs;
     var lhs = self.lowerExpr(bop.lhs);
+    self.target_type = operand_tt;
     if (comparison) self.target_type = null;
     // A `for *x in xs` capture is a pointer; in a value position (here, an
     // operand) it auto-derefs to the element.
@@ -5472,6 +5479,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     // the lowered operand's concrete type rather than a guess.
     const lhs_ty = blk: {
         if (lhs_ref_pointee) |p| break :blk p;
+        if (ast.floatLiteral(bop.lhs) != null) break :blk self.builder.getRefType(lhs);
         const it = self.inferExprType(bop.lhs);
         break :blk if (it == .unresolved) self.builder.getRefType(lhs) else it;
     };
@@ -5513,6 +5521,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
             break :blk lhs_ty;
         };
     }
+    if (ast.floatLiteral(bop.rhs) != null) self.target_type = float_operands.rhs;
     var rhs = self.lowerExpr(bop.rhs);
     const rhs_ref_pointee = self.refCapturePointee(bop.rhs);
     if (rhs_ref_pointee) |p| rhs = self.builder.load(rhs, p);
@@ -5567,6 +5576,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     // so static typing agrees with the value produced here.
     const rhs_ty = blk: {
         if (rhs_ref_pointee) |p| break :blk p;
+        if (ast.floatLiteral(bop.rhs) != null) break :blk self.builder.getRefType(rhs);
         const it = self.inferExprType(bop.rhs);
         break :blk if (it == .unresolved) self.builder.getRefType(rhs) else it;
     };

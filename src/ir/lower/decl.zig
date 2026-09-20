@@ -745,44 +745,34 @@ pub fn bindDeclFuncId(self: *Lowering, fd: *const ast.FnDecl, fid: FuncId) void 
 /// driver: a condition may name a module constant, and a constant is a fact
 /// the expansion must already have.
 pub fn registerLiteralModuleConsts(self: *Lowering, decls: []const *const Node) void {
-    // Register every numeric-literal module const (`N :: 16` and the
-    // typed `N : i64 : 16`, plus float-valued `N :: 4.0` / `N : f64 : 4.0`)
-    // BEFORE any type alias is resolved below. A type alias whose dimension is
-    // a named const (`Arr :: [N]T`) resolves its dimension eagerly here, on
-    // the stateless registration path; that path can only read
-    // `module_const_map`. Untyped consts would otherwise be registered only in
-    // declaration order (pass 1) and typed ones only after the alias fixpoint
-    // (pass 2) — so an alias declared before its const, or any alias over a
-    // typed const, saw an empty table and miscompiled the dimension to length
-    // 0. A float-valued const resolves to a dimension only when
-    // its value is integral (`floatToIntExact`); pre-registering it keeps the
-    // forward-alias float path identical to the int path. The dimension only
-    // needs the value, so a placeholder type is fine; pass 2 overwrites typed
-    // consts with the resolved annotation type.
+    // Eager array dimensions need numeric constants before type aliases resolve.
     for (decls) |decl| {
         if (decl.data != .const_decl) continue;
         const cd = decl.data.const_decl;
+        const float_annotation: ?TypeId = if (cd.type_annotation) |ta| blk: {
+            const name = switch (ta.data) {
+                .type_expr => |te| if (te.is_raw) break :blk null else te.name,
+                .identifier => |id| if (id.is_raw) break :blk null else id.name,
+                else => break :blk null,
+            };
+            const ty = TypeResolver.resolvePrimitive(name) orelse break :blk null;
+            break :blk if (isFloat(ty)) ty else null;
+        } else null;
         switch (cd.value.data) {
             .int_literal => {
-                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = .i64 };
+                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = float_annotation orelse .i64 };
                 self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), decl.source_file, cd.name, info);
             },
             .char_literal => {
-                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = .i64 };
+                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = float_annotation orelse .i64 };
                 self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), decl.source_file, cd.name, info);
             },
             .float_literal => {
-                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = .f64 };
+                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = float_annotation orelse .f64 };
                 self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), decl.source_file, cd.name, info);
             },
-            // A const whose RHS is an integer EXPRESSION over other consts
-            // (`M :: 2; N :: M + 1`) is itself a usable count: register it so
-            // `moduleConstInt` can fold the RHS through `evalConstIntExpr`.
-            // Placeholder `.i64` type — the count consumers read
-            // only the value; if the expression doesn't fold (references a
-            // non-const), `moduleConstInt` yields null and the use diagnoses.
             .binary_op, .unary_op => {
-                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = .i64 };
+                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = float_annotation orelse .i64 };
                 self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), decl.source_file, cd.name, info);
             },
             // Bool/string literal consts carry their real type — registering
@@ -1281,6 +1271,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
             else => {},
         }
     }
+    refreshNumericConstTypes(self, decls);
     var fields_registered = true;
     while (fields_registered) {
         fields_registered = false;
@@ -1339,6 +1330,34 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
     // here closes over those. Idempotent — the fixpoint skips a name already
     // registered — so aliases resolved in pass 0a' keep their exact binding.
     registerConstAliases(self, decls);
+}
+
+fn refreshNumericConstTypes(self: *Lowering, decls: []const *const Node) void {
+    var changed = true;
+    while (changed) {
+        changed = false;
+        for (decls) |decl| {
+            if (decl.data != .const_decl) continue;
+            const cd = &decl.data.const_decl;
+            if (cd.type_annotation != null) continue;
+            switch (cd.value.data) {
+                .binary_op, .unary_op, .identifier, .field_access => {},
+                else => continue,
+            }
+            self.setCurrentSourceFile(decl.source_file);
+            const sel = switch (self.selectModuleConst(cd.name)) {
+                .resolved => |s| s,
+                else => continue,
+            };
+            if (!self.isIntEx(sel.info.ty) and !isFloat(sel.info.ty)) continue;
+            const ty = self.inferExprType(cd.value);
+            if ((!self.isIntEx(ty) and !isFloat(ty)) or ty == sel.info.ty) continue;
+            var info = sel.info;
+            info.ty = ty;
+            self.putModuleConst(self.declId(.{ .const_decl = cd }, decl.source_file), decl.source_file, cd.name, info);
+            changed = true;
+        }
+    }
 }
 
 /// Fixpoint: register every const whose RHS is a bare identifier or a
@@ -1816,7 +1835,7 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
                 self.diagNonIntegralNarrow(v.span, fl.value, var_ty);
                 break :blk null;
             }
-            break :blk inst_mod.ConstantValue{ .float = fl.value };
+            break :blk inst_mod.ConstantValue{ .float = self.floatLiteralValue(fl, var_ty, v.span) };
         },
         .string_literal => |sl| .{ .string = self.module.types.internString(sl.raw) },
         .array_literal => |al| self.constArrayLiteral(al.elements, var_ty) orelse self.diagnoseNonConstGlobal(vd, v),
@@ -4228,7 +4247,7 @@ pub fn emitModuleConst(self: *Lowering, name: []const u8, ci: ModuleConstInfo, a
         }
     }
     if (isFloat(ci.ty)) {
-        if (program_index_mod.evalConstFloatExpr(ci.value, self)) |value| {
+        if (program_index_mod.evalConstFloatInit(ci.value, self, ci.ty)) |value| {
             return self.builder.constFloat(value, ci.ty);
         }
     }

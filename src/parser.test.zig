@@ -6,6 +6,15 @@ const ast = @import("ast.zig");
 const Node = ast.Node;
 const Parser = @import("parser.zig").Parser;
 
+test "parser rejects a decimal exponent that overflows f64" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), "HUGE :: 1e309;");
+    try std.testing.expectError(error.ParseError, parser.parse());
+    try std.testing.expectEqualStrings("float literal overflow", parser.err_msg.?);
+    try std.testing.expectEqual(@as(?u32, 8), parser.err_offset);
+}
+
 // The comptime type-metaprogramming surface must PARSE — the data types as
 // struct/enum decls, and the bodyless `@` declarations.
 test "parser: comptime type-metaprogramming surface parses" {

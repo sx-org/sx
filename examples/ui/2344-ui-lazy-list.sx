@@ -17,7 +17,7 @@
 // Items are ids; a row is a box whose height its id decides: 20, 30 or 40.
 items : *List(u64) = null;
 
-rowHeight :: (id: u64) -> f32 => (20.0 + (id % 3).(f32) * 10.0).(f32);
+rowHeight :: (id: u64) -> f32 => 20.0 + (id % 3).(f32) * 10.0;
 
 show :: (tag: string, st: *ListState, root: *UiRoot) {
     print("{}: anchor {} offset {} window {}..{} built {}\n", tag, st.anchor, st.offset.(i64), st.first, st.last, st.built);

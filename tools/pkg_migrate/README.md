@@ -139,10 +139,9 @@ Positional, from token neighbors: `decl-const` (`name ::`), `decl-local`
   five malformed-literal spellings warn; an unrecognized `#word` produces a
   bare `#` and no warning.
 - Numbers terminate by the numeric grammar (`0x`/`0b`/`0o` prefixes, decimal
-  with an optional `.digits` fraction, `_` separators) — NOT by
-  identifier-continue. There is no exponent syntax, so `1e9` lexes as the
-  number `1` plus the identifier `e9`, and `1package` exposes the identifier
-  `package`.
+  with an optional `.digits` fraction and an optional `[eE][+-]?digits`
+  exponent, `_` separators) — NOT by identifier-continue. So `1e9` is one
+  float token and `1package` exposes the identifier `package`.
 - `inventory` reports *every* identifier occurrence of the four words,
   including fixtures that use `package alpha;` as future syntax. What to
   migrate and what to preserve is the caller's decision, not the tool's.
