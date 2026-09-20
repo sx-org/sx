@@ -161,7 +161,7 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
                 if (self.qualifiedTypeName(fa.object)) |path| {
                     defer self.alloc.free(path);
                     if (self.selectQualifiedConst(path, fa.field)) |sel| {
-                        break :blk constSelectedValue(self, fa.field, sel, expected_ty, frame);
+                        if (constSelectedValue(self, fa.field, sel, expected_ty, frame)) |value| break :blk value;
                     }
                 }
                 const object_ty = self.inferExprType(fa.object);
@@ -174,7 +174,7 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
                         if (constExprValueInner(self, fa.object, object_ty, frame)) |value| {
                             if (value == .aggregate) {
                                 const field_ty = self.getStructFields(object_ty)[i].ty;
-                                break :blk self.coerceConstant(value.aggregate[i], field_ty, expected_ty);
+                                if (self.coerceConstant(value.aggregate[i], field_ty, expected_ty)) |converted| break :blk converted;
                             }
                         }
                     }
@@ -2355,9 +2355,8 @@ pub fn foldComptimeStructField(self: *Lowering, name: []const u8, field: []const
     return null;
 }
 
-/// `<struct const>.field` as a compile-time integer — the SELECTED author's
-/// field initializer, matched by name (named inits) or position, folded in
-/// the author's context.
+/// `<struct const>.field` as a compile-time integer — the field's value in
+/// the selected author's literal, folded in the author's context.
 pub fn foldConstStructField(self: *Lowering, name: []const u8, field: []const u8, span: ?ast.Span, frame: ?*const ConstFoldFrame) ?i64 {
     const sel = selectShapedConst(self, name) orelse return null;
     if (sel.info.value.data != .struct_literal) return null;
