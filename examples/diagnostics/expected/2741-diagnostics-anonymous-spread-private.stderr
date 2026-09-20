@@ -1,0 +1,5 @@
+error: cannot spread a struct containing a private field
+  --> examples/diagnostics/2741-diagnostics-anonymous-spread-private.sx:4:15
+   |
+ 4 |     copy := .{..box};
+   |               ^^^^^

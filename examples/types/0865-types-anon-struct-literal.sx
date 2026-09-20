@@ -1,11 +1,3 @@
-// Untyped `.{ ... }` SELF-TYPES as an anonymous STRUCTURAL struct
-// struct: positional elements mint fields "0"/"1"/…
-// (with `.N` access and comptime `[i]` indexing, tuple parity), named
-// elements mint named fields, and the bare-identifier shorthand `.{ x }`
-// is NAMED by rule — `.{ (x) }` is the positional escape. Identical
-// shapes intern to ONE TypeId at any two sites (structural identity);
-// distinct shapes never merge. A spread splices positionally.
-
 @import "modules/std.sx";
 
 main :: () -> i64 {
@@ -27,7 +19,6 @@ main :: () -> i64 {
     q := .{ x = 99, y = 0.5 };
     print("{} {}\n", @typeEq(@typeOf(p), @typeOf(q)), @typeEq(@typeOf(t), @typeOf(p)));  // true false
 
-    // Value spread splices positionally.
     u := .{ ..t, 3 };
     print("{} {} {}\n", u.0, u.1, u.2);       // 1 2 3
 

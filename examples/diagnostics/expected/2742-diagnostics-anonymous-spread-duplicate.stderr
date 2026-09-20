@@ -1,0 +1,5 @@
+error: field 'x' initialized twice
+  --> examples/diagnostics/2742-diagnostics-anonymous-spread-duplicate.sx:4:33
+   |
+ 4 |     duplicate := .{x, ..source, x = 3};
+   |                                 ^

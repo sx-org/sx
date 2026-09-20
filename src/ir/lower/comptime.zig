@@ -190,6 +190,7 @@ pub fn constStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, ty: Typ
     const ti = self.module.types.get(ty);
     if (ti != .@"struct") return null;
     for (sl.field_inits) |fi| {
+        if (fi.value.data == .spread_expr) return null;
         const n = fi.name orelse continue;
         _ = self.mentionField(ty, n, fi.value.span);
     }

@@ -3393,76 +3393,107 @@ pub fn lowerSliceExpr(self: *Lowering, se: *const ast.SliceExpr) Ref {
     return self.builder.emit(.{ .subslice = .{ .base = obj, .lo = lo, .hi = hi, .base_ty = obj_ty } }, slice_ty);
 }
 
-/// Self-type an UNTYPED `.{ ... }` literal as an anonymous STRUCTURAL
-/// struct: every element is
-/// positional (fields "0"/"1"/…) or every element is named — the
-/// bare-identifier shorthand `.{ x }` counts as NAMED (field `x`;
-/// `.{ (x) }` is the positional escape), a spread splices positionally.
-/// Mixing the two is a compile error. The struct type interns
-/// STRUCTURALLY, so identical shapes at different sites share a TypeId.
-pub fn synthesizeAnonStruct(self: *Lowering, sl: *const ast.StructLiteral, span: ast.Span) Ref {
-    var named_n: usize = 0;
-    var pos_n: usize = 0;
-    for (sl.field_inits) |fi| {
-        if (fi.name != null) named_n += 1 else pos_n += 1;
+const AnonLiteralShape = struct {
+    fields: std.ArrayList(types.TypeInfo.StructInfo.Field) = .empty,
+    named: ?bool = null,
+
+    fn deinit(self: *AnonLiteralShape, alloc: std.mem.Allocator) void {
+        self.fields.deinit(alloc);
     }
-    if (named_n > 0 and pos_n > 0) {
-        if (self.diagnostics) |d| {
-            d.addFmt(.err, span, "an untyped '.{{ }}' literal cannot mix positional and named elements — name all elements or none", .{});
+
+    fn contribute(self: *AnonLiteralShape, l: *Lowering, name: ?[]const u8, ty: TypeId) error{MixedElements}!usize {
+        const named = name != null;
+        if (self.named) |kind| {
+            if (kind != named) return error.MixedElements;
         }
-        return self.builder.constUndef(.unresolved);
+        self.named = named;
+        var name_buf: [24]u8 = undefined;
+        const fname = name orelse (std.fmt.bufPrint(&name_buf, "{d}", .{self.fields.items.len}) catch unreachable);
+        const name_id = l.module.types.internString(fname);
+        if (named) {
+            for (self.fields.items, 0..) |*field, i| {
+                if (field.name == name_id) {
+                    field.ty = ty;
+                    return i;
+                }
+            }
+        }
+        const index = self.fields.items.len;
+        self.fields.append(l.alloc, .{ .name = name_id, .ty = ty }) catch unreachable;
+        return index;
     }
 
-    var elems = std.ArrayList(Ref).empty;
-    defer elems.deinit(self.alloc);
-    var fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
-    defer fields.deinit(self.alloc);
+    fn intern(self: *const AnonLiteralShape, l: *Lowering) TypeId {
+        return l.module.types.internAnonStruct(
+            l.module.types.slice_arena.allocator().dupe(types.TypeInfo.StructInfo.Field, self.fields.items) catch unreachable,
+        );
+    }
+};
 
+pub fn inferAnonStructType(self: *Lowering, sl: *const ast.StructLiteral) TypeId {
+    var shape = AnonLiteralShape{};
+    defer shape.deinit(self.alloc);
     const saved_target = self.target_type;
-    var out_idx: usize = 0;
+    self.target_type = null;
+    defer self.target_type = saved_target;
+    const saved_diag = self.diagnostics;
+    self.diagnostics = null;
+    defer self.diagnostics = saved_diag;
+    if (!checkPlainInitializerNames(self, sl, .unresolved)) return .unresolved;
     for (sl.field_inits) |fi| {
         if (fi.value.data == .spread_expr) {
-            const sp_operand = fi.value.data.spread_expr.operand;
-            // Pack spread (`stored := .{ ..xs };`) — splice the pack's
-            // materialized element values as positional fields.
-            if (self.packSpreadRefs(sp_operand, fi.value.span)) |refs| {
-                defer self.alloc.free(refs);
-                for (refs) |r| {
-                    elems.append(self.alloc, r) catch unreachable;
-                    const fname = std.fmt.allocPrint(self.alloc, "{d}", .{out_idx}) catch unreachable;
-                    fields.append(self.alloc, .{ .name = self.module.types.internString(fname), .ty = self.builder.getRefType(r) }) catch unreachable;
-                    out_idx += 1;
-                }
-                continue;
+            const contributions = literalSpreadTypes(self, fi.value.data.spread_expr.operand) orelse return .unresolved;
+            defer self.alloc.free(contributions);
+            for (contributions) |contribution| {
+                if (contribution.ty == .unresolved or contribution.ty == .void) return .unresolved;
+                _ = shape.contribute(self, contribution.name, contribution.ty) catch return .unresolved;
             }
-            // Value spread (`.{ ..t, 3 }` over a tuple/array/anon struct).
-            if (self.valueSpreadRefs(sp_operand, fi.value.span)) |refs| {
-                defer self.alloc.free(refs);
-                for (refs) |r| {
-                    elems.append(self.alloc, r) catch unreachable;
-                    const fname = std.fmt.allocPrint(self.alloc, "{d}", .{out_idx}) catch unreachable;
-                    fields.append(self.alloc, .{ .name = self.module.types.internString(fname), .ty = self.builder.getRefType(r) }) catch unreachable;
-                    out_idx += 1;
-                }
-                continue;
-            }
-            _ = self.lowerExpr(fi.value); // surfaces the spread_expr diagnostic
-            continue;
+        } else {
+            const ty = self.inferExprType(fi.value);
+            if (ty == .unresolved or ty == .void) return .unresolved;
+            _ = shape.contribute(self, fi.name, ty) catch return .unresolved;
         }
-        self.target_type = null;
-        const val = self.lowerExpr(fi.value);
-        self.target_type = saved_target;
-        const vty = self.builder.getRefType(val);
-        const fname = fi.name orelse (std.fmt.allocPrint(self.alloc, "{d}", .{out_idx}) catch unreachable);
-        elems.append(self.alloc, val) catch unreachable;
-        fields.append(self.alloc, .{ .name = self.module.types.internString(fname), .ty = vty }) catch unreachable;
-        out_idx += 1;
     }
+    return shape.intern(self);
+}
 
-    const sty = self.module.types.internAnonStruct(
-        self.alloc.dupe(types.TypeInfo.StructInfo.Field, fields.items) catch unreachable,
-    );
-    return self.builder.structInit(elems.items, sty);
+fn selectAnonLiteralValue(self: *Lowering, shape: *AnonLiteralShape, values: *std.ArrayList(Ref), name: ?[]const u8, value: Ref, span: ast.Span) bool {
+    const index = shape.contribute(self, name, self.builder.getRefType(value)) catch {
+        if (self.diagnostics) |d|
+            d.addFmt(.err, span, "an untyped '.{{ }}' literal cannot mix positional and named elements — name all elements or none", .{});
+        return false;
+    };
+    if (index == values.items.len) {
+        values.append(self.alloc, value) catch unreachable;
+    } else {
+        values.items[index] = value;
+    }
+    return true;
+}
+
+pub fn synthesizeAnonStruct(self: *Lowering, sl: *const ast.StructLiteral, span: ast.Span) Ref {
+    var shape = AnonLiteralShape{};
+    defer shape.deinit(self.alloc);
+    var values = std.ArrayList(Ref).empty;
+    defer values.deinit(self.alloc);
+    const saved_target = self.target_type;
+    self.target_type = null;
+    defer self.target_type = saved_target;
+    for (sl.field_inits) |fi| {
+        if (fi.value.data == .spread_expr) {
+            const contributions = lowerLiteralSpread(self, fi.value) orelse return self.builder.constUndef(.unresolved);
+            defer self.alloc.free(contributions);
+            for (contributions) |contribution| {
+                if (!selectAnonLiteralValue(self, &shape, &values, contribution.name, contribution.value, span))
+                    return self.builder.constUndef(.unresolved);
+            }
+        } else {
+            const value = self.lowerExpr(fi.value);
+            if (!selectAnonLiteralValue(self, &shape, &values, fi.name, value, span))
+                return self.builder.constUndef(.unresolved);
+        }
+    }
+    return self.builder.structInit(values.items, shape.intern(self));
 }
 
 pub fn lowerTupleLiteral(self: *Lowering, tl: *const ast.TupleLiteral) Ref {

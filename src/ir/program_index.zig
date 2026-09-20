@@ -137,6 +137,7 @@ pub const ProtocolDeclInfo = struct {
 pub const ModuleConstInfo = struct {
     value: *const Node,
     ty: TypeId,
+    declared_type: ?TypeId = null,
 };
 
 /// A finite, INTEGRAL `f64` (`4.0`) → its exact `i64` value; a non-integral

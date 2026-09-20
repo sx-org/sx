@@ -1,0 +1,43 @@
+@import "modules/std.sx";
+
+A :: struct { px: i16; py: i32; }
+B :: struct { py: i32; px: i64; }
+CA :: A{px = 3, py = 4};
+CB :: B{py = 8, px = 70000};
+Constant :: .{..CB, ..CA};
+PlainConstant :: .{px = 2, ..CA};
+TypedConstant : struct { px: i64; py: i64; } : .{..CA};
+identity :: (value: $T) -> T { value }
+mark :: (log: *i32, n: i32) -> i64 {
+    log.* = log.* * 10 + n;
+    n
+}
+make :: (log: *i32, n: i32) -> B {
+    mark(log, n);
+    B{py = n, px = n}
+}
+inferred :: (a: A, b: B) { return .{..b, ..a}; }
+
+main :: () {
+    a := A{px = 3, py = 4};
+    b := B{py = 8, px = 70000};
+    ab := .{..a, ..b};
+    ba := .{..b, ..a};
+    print("ab: {} {} {}\n", ab.px, ab.py, @typeEq(@typeOf(ab), struct { px: i64; py: i32; }));
+    print("ba: {} {} {}\n", ba.py, ba.px, @typeEq(@typeOf(ba), struct { py: i32; px: i16; }));
+    plain := .{..a, px = 70000};
+    px := 90000;
+    shorthand := .{px, ..a};
+    print("plain: {} {} shorthand: {} {}\n", plain.px, @typeEq(@typeOf(plain.px), i64), shorthand.px, @typeEq(@typeOf(shorthand.px), i16));
+    log: i32 = 0;
+    ordered := .{px = mark(*log, 1), ..make(*log, 2), py = mark(*log, 3), ..make(*log, 4)};
+    print("ordered: {} {} {}\n", log, ordered.px, ordered.py);
+    print("type only: {} {}\n", @typeEq(@typeOf(.{..make(*log, 5), ..a}), struct { py: i32; px: i16; }), log);
+    generic := identity(.{..make(*log, 5), ..a});
+    returned := inferred(a, b);
+    print("inferred: {} {} {} {} {}\n", generic.py, generic.px, log, returned.py, returned.px);
+    print("constants: {} {} {} {}\n", Constant.px, Constant.py, PlainConstant.px, @typeEq(@typeOf(TypedConstant.py), i64));
+    empty := .{};
+    filled := .{..empty, px = 9};
+    print("empty: {}\n", filled.px);
+}

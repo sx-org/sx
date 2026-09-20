@@ -109,7 +109,10 @@ pub fn boundOnBinder(node: *const Node, name: []const u8) bool {
 pub fn paramDemand(self: *Lowering, fd: *const ast.FnDecl, index: usize) Lowering.ParamDemand {
     if (index >= fd.params.len) return .none;
     if (boundCallableSig(self, fd.params[index].type_expr)) |sig| return .{ .callable = sig };
-    return .{ .coerce = self.resolveDeclParamType(fd, index) };
+    const ty = self.resolveDeclParamType(fd, index);
+    const node = fd.params[index].type_expr;
+    if (node.data == .type_expr and node.data.type_expr.is_generic) return .{ .inferred = ty };
+    return .{ .coerce = ty };
 }
 
 /// The head's written name, whatever it resolved to.
@@ -389,8 +392,7 @@ fn checkOne(
     // keyed impl question.
     if (p.params > 0) {
         if (self.computeHasImpl(bound, bound_ty)) return;
-        reportViolation(self, bound, spelledHead(self, bound, p.name), param, bound_ty,
-            "no 'impl {s} for {s}' is visible here", .{ spelledHead(self, bound, p.name), self.formatTypeName(bound_ty) });
+        reportViolation(self, bound, spelledHead(self, bound, p.name), param, bound_ty, "no 'impl {s} for {s}' is visible here", .{ spelledHead(self, bound, p.name), self.formatTypeName(bound_ty) });
         return;
     }
     const pty = p.ty orelse return;
@@ -415,8 +417,7 @@ fn checkProtocolBinding(
     // closure, tuple, function — has nowhere to hang one, so it fails the bound
     // rather than escaping the check for want of a name to look up.
     const concrete_name = self.resolveConcreteTypeName(bound_ty) orelse {
-        reportViolation(self, bound, proto_name, param, bound_ty,
-            "'{s}' is a structural type and can carry no 'impl'", .{self.formatSourceTypeName(bound_ty)});
+        reportViolation(self, bound, proto_name, param, bound_ty, "'{s}' is a structural type and can carry no 'impl'", .{self.formatSourceTypeName(bound_ty)});
         return;
     };
     const b = self.boundNonConformance(proto_ty, concrete_name, bound_ty) orelse return;
@@ -447,19 +448,15 @@ fn reportBoundNonConformance(
     }
     if (handle) {
         switch (b.nc.kind) {
-            .signature_mismatch => return reportViolation(self, bound, proto_name, param, bound_ty,
-                "method '{s}' has a mismatched signature — an impl must not introduce its own type parameters (e.g. '$T: Type'); it must match the bound's signature exactly", .{b.nc.method}),
-            .type_mismatch => return reportViolation(self, bound, proto_name, param, bound_ty,
-                "method '{s}' has a mismatched signature — {s}", .{ b.nc.method, b.nc.detail }),
-            .arity_mismatch => return reportViolation(self, bound, proto_name, param, bound_ty,
-                "method '{s}' {s}", .{ b.nc.method, b.nc.detail }),
+            .signature_mismatch => return reportViolation(self, bound, proto_name, param, bound_ty, "method '{s}' has a mismatched signature — an impl must not introduce its own type parameters (e.g. '$T: Type'); it must match the bound's signature exactly", .{b.nc.method}),
+            .type_mismatch => return reportViolation(self, bound, proto_name, param, bound_ty, "method '{s}' has a mismatched signature — {s}", .{ b.nc.method, b.nc.detail }),
+            .arity_mismatch => return reportViolation(self, bound, proto_name, param, bound_ty, "method '{s}' {s}", .{ b.nc.method, b.nc.detail }),
             // A method the bridge provides nowhere is named the way a concrete
             // conformer's missing method is.
             .missing => {},
         }
     }
-    reportViolation(self, bound, proto_name, param, bound_ty,
-        "'{s}' has no '{s}' for '{s}'", .{ self.formatSourceTypeName(bound_ty), lower_protocol.requiredMethodSignature(self, proto_ty, b.nc.method), proto_name });
+    reportViolation(self, bound, proto_name, param, bound_ty, "'{s}' has no '{s}' for '{s}'", .{ self.formatSourceTypeName(bound_ty), lower_protocol.requiredMethodSignature(self, proto_ty, b.nc.method), proto_name });
 }
 
 /// A compiler-formed bound. There is no impl to look up: the binding satisfies
