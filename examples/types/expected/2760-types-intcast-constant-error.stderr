@@ -1,0 +1,5 @@
+error: @intCast value 300 is out of range for 'u8' (0..255)
+  --> examples/types/2760-types-intcast-constant-error.sx:6:23
+   |
+ 6 |     v := @intCast(u8, TOO_BIG) catch { 7 };
+   |                       ^^^^^^^

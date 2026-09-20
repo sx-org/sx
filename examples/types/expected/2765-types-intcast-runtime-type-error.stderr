@@ -1,0 +1,5 @@
+error: @intCast expects a type known at compile time
+  --> examples/types/2765-types-intcast-runtime-type-error.sx:4:19
+   |
+ 4 |     v := @intCast(T, n) catch { 7 };
+   |                   ^

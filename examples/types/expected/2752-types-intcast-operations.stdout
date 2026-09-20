@@ -1,0 +1,4 @@
+truncate: 44
+wrap: 18446744073709551615
+bits: 1065353216
+checked: IntCastError.OutOfRange

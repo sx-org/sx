@@ -1,0 +1,10 @@
+@import "modules/std.sx";
+
+bad :: (n: i64) {
+    v := @intCast(u8, n);
+    print("{}\n", v);
+}
+
+main :: () {
+    bad(300);
+}

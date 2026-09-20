@@ -1,0 +1,11 @@
+error: condition must be a bool, integer, pointer, or optional, but has type '(u8, !IntCastError)'
+  --> examples/types/2757-types-intcast-or-error.sx:4:12
+   |
+ 4 |     return @intCast(u8, n) or 7;
+   |            ^^^^^^^^^^^^^^^
+
+error: a failable expression needs an error-path marker: `try`, `catch`, `??` with a value, a destructure binding, or a forwarded call
+  --> examples/types/2757-types-intcast-or-error.sx:4:12
+   |
+ 4 |     return @intCast(u8, n) or 7;
+   |            ^^^^^^^^^^^^^^^

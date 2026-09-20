@@ -1,0 +1,10 @@
+@import "modules/std.sx";
+
+convert :: (T: Type, n: i64) {
+    v := @intCast(T, n) catch { 7 };
+    print("{}\n", v);
+}
+
+main :: () {
+    convert(u8, 42);
+}

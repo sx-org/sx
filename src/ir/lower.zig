@@ -3955,6 +3955,7 @@ pub const Lowering = struct {
 
     // --- lower/call.zig (lower_call) ---
     pub const CaptureInfo = lower_closure.CaptureInfo;
+    pub const intCastErrorSet = lower_call.intCastErrorSet;
     pub const lowerCall = lower_call.lowerCall;
     pub const ufcsGenericBindsAll = lower_call.ufcsGenericBindsAll;
     pub const selectUfcsGenericByReceiver = lower_call.selectUfcsGenericByReceiver;

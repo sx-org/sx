@@ -1,0 +1,4 @@
+operand 300
+IntCastError.OutOfRange
+operand 42
+value 42

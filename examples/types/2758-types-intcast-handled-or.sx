@@ -1,0 +1,10 @@
+@import "modules/std.sx";
+
+allowed :: (n: i64, override: bool) -> bool {
+    v := @intCast(u8, n) ?? 7;
+    return v == 42 or override;
+}
+
+main :: () {
+    print("{} {}\n", allowed(42, false), allowed(300, false));
+}

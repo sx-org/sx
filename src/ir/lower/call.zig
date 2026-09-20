@@ -2787,6 +2787,7 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .@"@as",
         .@"@convert",
         .@"@coerce",
+        .@"@intCast",
         .@"@reinterpret",
         .@"@anyElement",
         .@"@rawAnyData",
@@ -3045,6 +3046,7 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .@"@as",
         .@"@convert",
         .@"@coerce",
+        .@"@intCast",
         .@"@reinterpret",
         .@"@anyElement",
         .@"@rawAnyData",
@@ -3289,6 +3291,7 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .@"@as",
         .@"@convert",
         .@"@coerce",
+        .@"@intCast",
         .@"@reinterpret",
         .@"@anyElement",
         .@"@rawAnyData",
@@ -3620,6 +3623,7 @@ fn isReflectionCall(name: []const u8) bool {
         .@"@as",
         .@"@convert",
         .@"@coerce",
+        .@"@intCast",
         .@"@reinterpret",
         .@"@anyElement",
         .@"@rawAnyData",
@@ -4137,6 +4141,85 @@ fn lowerReinterpretIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
     return self.builder.load(slot, dst);
 }
 
+pub fn intCastErrorSet(self: *Lowering) ?TypeId {
+    const set = self.module.types.findByName(self.module.types.internString("IntCastError")) orelse return null;
+    if (self.module.types.get(set) != .@"error") return null;
+    return if (self.module.types.errorSetMember(set, "OutOfRange") == .one) set else null;
+}
+
+fn integerValue(layout: types.IntLayout, raw: i64) i128 {
+    const bits = layout.normalize(@bitCast(raw));
+    return if (layout.signed) @as(i64, @bitCast(bits)) else bits;
+}
+
+fn lowerIntCastIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
+    if (c.args.len != 2) {
+        if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "@intCast takes 2 arguments, got {d}", .{c.args.len});
+        return self.builder.constUndef(.unresolved);
+    }
+    const dst = if (self.isStaticTypeArg(c.args[0])) self.resolveTypeArg(c.args[0]) else TypeId.unresolved;
+    if (dst == .unresolved) {
+        if (self.diagnostics) |d| d.addFmt(.err, c.args[0].span, "@intCast expects a type known at compile time", .{});
+        return self.builder.constUndef(.unresolved);
+    }
+    const dst_layout = self.module.types.integerLayout(dst) orelse {
+        if (self.diagnostics) |d| d.addFmt(.err, c.args[0].span, "@intCast expects an integer destination type, got '{s}'", .{self.formatTypeName(dst)});
+        return self.builder.constUndef(.unresolved);
+    };
+    const saved_target = self.target_type;
+    self.target_type = null;
+    const val = self.lowerExpr(c.args[1]);
+    self.target_type = saved_target;
+    const src = self.builder.getRefType(val);
+    const src_layout = self.module.types.integerLayout(src) orelse {
+        if (self.diagnostics) |d| d.addFmt(.err, c.args[1].span, "@intCast expects an integer value, got '{s}'", .{self.formatTypeName(src)});
+        return self.builder.constUndef(.unresolved);
+    };
+    const dst_min = integerValue(dst_layout, dst_layout.limit(false));
+    const dst_max = integerValue(dst_layout, dst_layout.limit(true));
+    if (self.foldedInt(val)) |raw| {
+        const value = integerValue(src_layout, raw);
+        if (value < dst_min or value > dst_max) {
+            if (self.diagnostics) |d| d.addFmt(.err, c.args[1].span, "@intCast value {d} is out of range for '{s}' ({d}..{d})", .{ value, self.formatTypeName(dst), dst_min, dst_max });
+        }
+    }
+    const set = self.intCastErrorSet() orelse {
+        if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "@intCast needs 'IntCastError' in scope — @import \"modules/std/core.sx\"", .{});
+        return self.builder.constUndef(.unresolved);
+    };
+    const result_ty = self.module.types.internFailable(dst, set);
+    var fits = self.builder.constBool(true);
+    // Only bounds inside the source range can fail; their comparisons retain the source signedness.
+    if (integerValue(src_layout, src_layout.limit(false)) < dst_min) {
+        fits = self.builder.emit(.{ .cmp_ge = .{ .lhs = val, .rhs = self.builder.constInt(dst_layout.limit(false), src) } }, .bool);
+    }
+    if (integerValue(src_layout, src_layout.limit(true)) > dst_max) {
+        const upper = self.builder.emit(.{ .cmp_le = .{ .lhs = val, .rhs = self.builder.constInt(dst_layout.limit(true), src) } }, .bool);
+        fits = self.builder.emit(.{ .bool_and = .{ .lhs = fits, .rhs = upper } }, .bool);
+    }
+    const ok_bb = self.freshBlock("intcast.ok");
+    const fail_bb = self.freshBlock("intcast.fail");
+    const merge_bb = self.freshBlockWithParams("intcast.merge", &.{result_ty});
+    self.builder.condBr(fits, ok_bb, &.{}, fail_bb, &.{});
+    self.builder.switchToBlock(ok_bb);
+    const conversion = inst_mod.Conversion{ .operand = val, .from = src, .to = dst };
+    const value = self.builder.emit(if (dst_layout.width < src_layout.width)
+        .{ .narrow = conversion }
+    else if (dst_layout.width > src_layout.width)
+        .{ .widen = conversion }
+    else
+        .{ .bitcast = conversion }, dst);
+    const ok_result = self.buildFailableTuple(result_ty, &.{value}, self.builder.constInt(0, set));
+    self.builder.br(merge_bb, &.{ok_result});
+    self.builder.switchToBlock(fail_bb);
+    self.emitTracePush(self.placeholderTraceFrame());
+    const tag = self.builder.constInt(@intCast(self.module.types.errorSetMember(set, "OutOfRange").one), set);
+    const fail_result = self.buildFailableTuple(result_ty, &.{self.builder.constUndef(dst)}, tag);
+    self.builder.br(merge_bb, &.{fail_result});
+    self.builder.switchToBlock(merge_bb);
+    return self.builder.blockParam(merge_bb, 0, result_ty);
+}
+
 pub fn fieldCall(_: *Lowering, node: *const Node) ?ast.Call {
     if (node.data != .call) return null;
     const c = node.data.call;
@@ -4543,6 +4626,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         .@"@as" => return lowerAsIntrinsic(self, c),
         .@"@convert" => return lowerConvertIntrinsic(self, c),
         .@"@coerce" => return lowerCoerceIntrinsic(self, c),
+        .@"@intCast" => return lowerIntCastIntrinsic(self, c),
         .@"@reinterpret" => return lowerReinterpretIntrinsic(self, c),
         else => {},
     };

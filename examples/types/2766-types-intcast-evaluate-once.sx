@@ -1,0 +1,19 @@
+@import "modules/std.sx";
+
+operand :: (n: i64) -> i64 {
+    print("operand {}\n", n);
+    return n;
+}
+
+convert :: (n: i64) {
+    value: u8 = @intCast(u8, operand(n)) catch |e| {
+        print("{}\n", e);
+        return;
+    };
+    print("value {}\n", value);
+}
+
+main :: () {
+    convert(300);
+    convert(42);
+}

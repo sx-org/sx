@@ -2968,6 +2968,29 @@ without `xx` / `.(T)`:
   (`y : i64 = xx 1.5` → 1); this is the escape hatch from the implicit rule above
 - Unsigned to signed of same or narrower width (`u8` → `i8`)
 
+The three explicit integer operations have distinct contracts:
+
+| Operation | Result |
+|---|---|
+| `value.(T)` | Converts silently, truncating excess bits; `300.(u8)` is `44`. |
+| `@intCast(T, value)` | Preserves the mathematical value or returns `IntCastError.OutOfRange`. |
+| `@reinterpret(T, value)` | Reads the same bytes as `T`; source and destination must have equal, non-zero size. |
+
+`@intCast :: ($T: Type, value: $S) -> (T, !IntCastError)` requires a
+compile-time integer destination and an integer operand, including `@int`
+widths. It evaluates the operand once in its own type, then checks the
+destination's minimum and maximum before converting. `IntCastError :: error
+{ OutOfRange }` is a payload-free prelude error set. The result uses ordinary
+error handling (`try`, `catch`, `??`, or destructuring), even when the value
+fits; an unhandled result is a compile error. `or` is a boolean operator.
+
+A directly known out-of-range constant (literal, named constant, or constant
+arithmetic) is a compile error even with a handler: `@intCast(u8, 300)` reports
+`@intCast value 300 is out of range for 'u8' (0..255)`. A check executed inside
+a function under `@run` returns the ordinary error. For
+`byte :: (n: i64) -> (u8, !IntCastError) { return try @intCast(u8, n); }`,
+`VALUE :: @run byte(300) catch { 7 };` evaluates to `7`.
+
 The `xx` prefix operator marks an expression for auto-conversion to the type its context expects:
 ```sx
 large: f64 = 5999.5;
@@ -5553,6 +5576,7 @@ An `any` is accepted because it can hold either a value or a `Type`. `@typeName`
 - `variantIndex(av: any) -> ?i64` — the sequential ordinal of a boxed enum value's variant, null when its tag names none.
 - `@convert($T: Type, v: $S/Into(T), alloc: Allocator = context.allocator) -> T` — the `impl Into(T) for S` conversion, funded from `alloc`.
 - `@coerce($T: Type, v: $S) -> T` — the ladder `xx` and `.(T)` enter: `@as`, then `@convert` from the context allocator when the compiler's conversions make no progress.
+- `@intCast($T: Type, value: $S) -> (T, !IntCastError)` — [checked integer conversion](#type-conversions).
 - `@reinterpret($T: Type, v: $S) -> T` — `v`'s bytes read as a `T`. No conversion runs on either side: the value's storage is the result, byte for byte. `T` is a type known at compile time, and the pairing is admitted when `@sizeOf(T)` equals `@sizeOf(S)` and that size is not zero — any other pair is a compile-time error naming both sizes. The evaluator reads the same bytes, so a `@run` call folds to the same value compiled code computes.
 - `@assert(ok: bool, msg: ?string = null, site: @SourceSite = @caller)` — stops the program at `site` through `@panic` unless `ok`. `p.(Q)` between interfaces is the handle build plus `@assert(<row present>, "re-erasure to 'Q' failed")` at the site.
 

@@ -56,6 +56,7 @@
 // The ladder the cast sugars enter: `@as`, then `@convert` from the context
 // allocator when the compiler's conversions make no progress.
 @coerce :: ($T: Type, v: $S) -> T;
+@intCast :: ($T: Type, value: $S) -> (T, !IntCastError);
 // `v`'s bytes, read as a `T`: no conversion runs, the storage is the result.
 // `T` and `S` must be the same size; any other pair is a compile-time error.
 @reinterpret :: ($T: Type, v: $S) -> T;
@@ -156,6 +157,7 @@
 // The graceful assertion (`try av.(T)`) raises `mismatch`; `@cast` is the
 // unconsumed one, and a mismatch stops the program naming the call site.
 CastError :: error { mismatch }
+IntCastError :: error { OutOfRange }
 
 @cast :: ($T: Type, av: any, site: @SourceSite = @caller) -> T {
     if !@typeEq(@typeOf(av), T) {
