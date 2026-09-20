@@ -1,0 +1,6 @@
+@import "modules/std.sx";
+
+main :: () {
+    v := @intCast(f32, 42) catch { 0.0 };
+    print("{}\n", v);
+}

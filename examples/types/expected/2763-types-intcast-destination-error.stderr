@@ -1,0 +1,5 @@
+error: @intCast expects an integer destination type, got 'f32'
+  --> examples/types/2763-types-intcast-destination-error.sx:4:19
+   |
+ 4 |     v := @intCast(f32, 42) catch { 0.0 };
+   |                   ^^^

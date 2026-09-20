@@ -1,0 +1,16 @@
+@import "modules/std.sx";
+
+checkedByte :: (n: i64) -> (u8, !IntCastError) {
+    return try @intCast(u8, n);
+}
+
+main :: () {
+    print("truncate: {}\n", 300.(u8));
+    print("wrap: {}\n", (-1).(u64));
+    f: f32 = 1.0;
+    print("bits: {}\n", @reinterpret(u32, f));
+    checkedByte(300) catch |e| {
+        print("checked: {}\n", e);
+        return;
+    };
+}

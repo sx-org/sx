@@ -11,6 +11,46 @@ const sema = @import("sema.zig");
 const types = @import("types.zig");
 const Type = types.Type;
 
+test "sema: intCast exposes its error channel and handlers retain the integer type" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\main :: () {
+        \\    n: i64 = 300;
+        \\    result := @intCast(u8, n);
+        \\    caught := @intCast(u8, n) catch |err| { 7 };
+        \\    propagated := try @intCast(u8, n);
+        \\    defaulted := @intCast(u8, n) ?? 7;
+        \\    value, failure := @intCast(u8, n);
+        \\    bits := @intCast(@int(3, .unsigned), n) ?? 0;
+        \\}
+    ;
+    var parser = try Parser.init(alloc, source);
+    const root = try parser.parse();
+    var analyzer = sema.Analyzer.init(alloc);
+    const result = try analyzer.analyze(root);
+    const expected = [_]struct { name: []const u8, display: []const u8 }{
+        .{ .name = "result", .display = "(u8, !IntCastError)" },
+        .{ .name = "caught", .display = "u8" },
+        .{ .name = "err", .display = "!IntCastError" },
+        .{ .name = "propagated", .display = "u8" },
+        .{ .name = "defaulted", .display = "u8" },
+        .{ .name = "value", .display = "u8" },
+        .{ .name = "failure", .display = "!IntCastError" },
+        .{ .name = "bits", .display = "@int(3, .unsigned)" },
+    };
+    for (expected) |want| {
+        var found = false;
+        for (result.symbols) |symbol| {
+            if (!std.mem.eql(u8, symbol.name, want.name)) continue;
+            try std.testing.expectEqualStrings(want.display, try symbol.ty.?.displayName(alloc));
+            found = true;
+        }
+        try std.testing.expect(found);
+    }
+}
+
 test "sema: field indices retain concrete types and runtime indices produce views" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

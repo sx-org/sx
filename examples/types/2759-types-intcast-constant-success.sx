@@ -1,0 +1,14 @@
+@import "modules/std.sx";
+
+byte :: (n: i64) -> (u8, !IntCastError) {
+    return try @intCast(u8, n);
+}
+
+FOLDED :: @run byte(255);
+
+main :: () -> ! {
+    v := try @intCast(u8, 42);
+    print("{} {}\n", v, FOLDED);
+    remainder := try @intCast(u8, u64.max % 256);
+    print("remainder {}\n", remainder);
+}

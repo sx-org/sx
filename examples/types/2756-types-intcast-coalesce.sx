@@ -1,0 +1,23 @@
+@import "modules/std.sx";
+
+attempt :: (n: i64) -> (u8, !IntCastError) {
+    print("attempt {}\n", n);
+    return try @intCast(u8, n);
+}
+
+choose :: (a: i64, b: i64) -> (u8, !) {
+    return try attempt(a) ?? try attempt(b);
+}
+
+main :: () {
+    a := attempt(300) ?? 7;
+    print("default {}\n", a);
+    b := choose(300, 42) catch { return; };
+    print("chain {}\n", b);
+    c := choose(12, 300) catch { return; };
+    print("first {}\n", c);
+    choose(300, 400) catch |e| {
+        print("exhausted {}\n", e);
+        return;
+    };
+}

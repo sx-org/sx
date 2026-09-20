@@ -634,29 +634,51 @@ pub fn boxAnyOf(self: *Lowering, val: Ref, src_ty: TypeId, node: ?*const Node) R
     return self.builder.boxAnyAt(slot, src_ty);
 }
 
-/// Folded integer behind `ref`: a `const_int`, or add/sub/widen of those.
+/// Integer constant expressions retain each IR operation's width and signedness.
 pub fn foldedInt(self: *Lowering, ref: Ref) ?i64 {
+    const layout = self.module.types.integerLayout(self.builder.getRefType(ref)) orelse return null;
     const op = self.builder.getRefOp(ref) orelse return null;
-    return switch (op) {
+    const raw: i64 = switch (op) {
         .const_int => |v| v,
-        .add => |b| blk: {
+        .add, .sub, .mul, .div, .mod, .bit_and, .bit_or, .bit_xor, .shl, .shr => |b| blk: {
             const l = self.foldedInt(b.lhs) orelse return null;
             const r = self.foldedInt(b.rhs) orelse return null;
-            break :blk l +% r;
+            const lu: u64 = @bitCast(l);
+            const ru: u64 = @bitCast(r);
+            break :blk switch (op) {
+                .add => l +% r,
+                .sub => l -% r,
+                .mul => l *% r,
+                .div => if (layout.signed)
+                    std.math.divTrunc(i64, l, r) catch return null
+                else
+                    @bitCast(std.math.divTrunc(u64, lu, ru) catch return null),
+                .mod => if (layout.signed)
+                    std.math.rem(i64, l, r) catch return null
+                else
+                    @bitCast(std.math.rem(u64, lu, ru) catch return null),
+                .bit_and => l & r,
+                .bit_or => l | r,
+                .bit_xor => l ^ r,
+                .shl, .shr => shifted: {
+                    if (r < 0 or r >= layout.width) return null;
+                    const shift: u6 = @intCast(r);
+                    break :shifted if (op == .shl) l << shift else if (layout.signed) l >> shift else @bitCast(lu >> shift);
+                },
+                else => unreachable,
+            };
         },
-        .sub => |b| blk: {
-            const l = self.foldedInt(b.lhs) orelse return null;
-            const r = self.foldedInt(b.rhs) orelse return null;
-            break :blk l -% r;
-        },
-        .widen => |c| self.foldedInt(c.operand),
+        .neg => |u| 0 -% (self.foldedInt(u.operand) orelse return null),
+        .bit_not => |u| ~(self.foldedInt(u.operand) orelse return null),
+        .widen, .narrow, .bitcast => |c| self.foldedInt(c.operand) orelse return null,
         .length => |u| blk: {
             const oty = self.builder.getRefType(u.operand);
             if (oty.isBuiltin() or self.module.types.get(oty) != .array) return null;
             break :blk @intCast(self.module.types.get(oty).array.length);
         },
-        else => null,
+        else => return null,
     };
+    return @bitCast(layout.normalize(@bitCast(raw)));
 }
 
 /// Folded element count of an already-lowered slice value, when the IR

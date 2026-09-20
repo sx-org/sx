@@ -24,6 +24,7 @@ SpawnOpts       :: core.SpawnOpts;
 PinTarget       :: core.PinTarget;
 ParkToken       :: core.ParkToken;
 Into            :: core.Into;
+IntCastError    :: core.IntCastError;
 
 // --- The reflected type shape (`@typeInfo`) ---
 

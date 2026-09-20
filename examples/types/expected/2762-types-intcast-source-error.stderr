@@ -1,0 +1,5 @@
+error: @intCast expects an integer value, got 'f64'
+  --> examples/types/2762-types-intcast-source-error.sx:4:23
+   |
+ 4 |     v := @intCast(u8, 42.0) catch { 7 };
+   |                       ^^^^

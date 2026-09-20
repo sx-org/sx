@@ -1,0 +1,15 @@
+@import "modules/std.sx";
+
+inspect :: (n: i64) {
+    v, e := @intCast(u8, n);
+    if !e {
+        print("value {}\n", v);
+    } else {
+        print("error {}\n", e);
+    }
+}
+
+main :: () {
+    inspect(12);
+    inspect(300);
+}

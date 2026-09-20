@@ -38,6 +38,7 @@ pub const Type = union(enum) {
     optional_type: OptionalTypeInfo,
     meta_type: MetaTypeInfo,
     tuple_type: TupleTypeInfo,
+    error_type: []const u8,
     /// Type resolution failed (sema couldn't infer/resolve). A dedicated
     /// sentinel — never a legitimate type — so callers can't mistake it for a
     /// real result the way a fabricated `s(64)` would be. Mirrors
@@ -113,6 +114,18 @@ pub const Type = union(enum) {
         field_names: ?[]const []const u8, // null for positional tuples
         field_types: []const Type,
     };
+
+    pub fn failableSuccess(self: Type) ?Type {
+        if (self == .error_type) return .void_type;
+        if (self != .tuple_type) return null;
+        const fields = self.tuple_type.field_types;
+        if (fields.len == 0 or fields[fields.len - 1] != .error_type) return null;
+        if (fields.len == 2) return fields[0];
+        return .{ .tuple_type = .{
+            .field_types = fields[0 .. fields.len - 1],
+            .field_names = if (self.tuple_type.field_names) |names| names[0 .. names.len - 1] else null,
+        } };
+    }
 
     // Convenience constructors
     pub fn s(width: u8) Type {
@@ -265,11 +278,15 @@ pub const Type = union(enum) {
     pub fn displayName(self: Type, allocator: std.mem.Allocator) ![]const u8 {
         return switch (self) {
             .signed => |w| {
+                if (w != 8 and w != 16 and w != 32 and w != 64)
+                    return fmtAlloc(allocator, "@int({d}, .signed)", .{w});
                 var buf: [4]u8 = undefined;
                 const result = std.fmt.bufPrint(&buf, "i{d}", .{w}) catch unreachable;
                 return try allocator.dupe(u8, result);
             },
             .unsigned => |w| {
+                if (w != 8 and w != 16 and w != 32 and w != 64)
+                    return fmtAlloc(allocator, "@int({d}, .unsigned)", .{w});
                 var buf: [4]u8 = undefined;
                 const result = std.fmt.bufPrint(&buf, "u{d}", .{w}) catch unreachable;
                 return try allocator.dupe(u8, result);
@@ -284,6 +301,7 @@ pub const Type = union(enum) {
             .usize_type => "usize",
             .isize_type => "isize",
             .unresolved => "<unresolved>",
+            .error_type => |name| fmtAlloc(allocator, "!{s}", .{name}),
             .enum_type => |name| name,
             .struct_type => |name| name,
             .union_type => |name| name,

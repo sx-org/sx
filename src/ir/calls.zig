@@ -226,6 +226,14 @@ pub const CallResolver = struct {
                     TypeId.unresolved;
                 return refl(bare_name, target);
             }
+            if (std.mem.eql(u8, bare_name, "@intCast")) {
+                const target = if (c.args.len == 2 and self.l.isStaticTypeArg(c.args[0]))
+                    self.l.resolveTypeArg(c.args[0])
+                else
+                    TypeId.unresolved;
+                const set = self.l.intCastErrorSet() orelse return refl(bare_name, .unresolved);
+                return refl(bare_name, self.l.module.types.internFailable(target, set));
+            }
             if (std.mem.eql(u8, bare_name, "@as") or std.mem.eql(u8, bare_name, "@reinterpret")) {
                 const target = if (c.args.len == 2 and self.l.isStaticTypeArg(c.args[0]))
                     self.l.resolveTypeArg(c.args[0])

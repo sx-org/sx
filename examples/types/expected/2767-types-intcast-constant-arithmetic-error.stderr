@@ -1,0 +1,5 @@
+error: @intCast value 9223372036854775807 is out of range for 'u8' (0..255)
+  --> examples/types/2767-types-intcast-constant-arithmetic-error.sx:4:27
+   |
+ 4 |     value := @intCast(u8, u64.max / 2) catch { 7 };
+   |                           ^^^^^^^^^^^

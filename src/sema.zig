@@ -524,6 +524,21 @@ pub const Analyzer = struct {
                     .is_c_variadic = fte.is_c_variadic,
                 } };
             }
+            const int_args: ?[]const *Node = switch (tn.data) {
+                .parameterized_type_expr => |pt| if (std.mem.eql(u8, pt.name, "@int")) pt.args else null,
+                .call => |c| if (self.resolveCalleeName(c)) |name| (if (std.mem.eql(u8, name, "@int")) c.args else null) else null,
+                else => null,
+            };
+            if (int_args) |args| {
+                if (args.len != 2) return .unresolved;
+                const width = self.constIndexValue(args[0]) orelse return .unresolved;
+                if (width < 1 or width > @import("ir/types.zig").max_int_width) return .unresolved;
+                if (args[1].data != .enum_literal) return .unresolved;
+                const sign = args[1].data.enum_literal.name;
+                if (std.mem.eql(u8, sign, "signed")) return .{ .signed = @intCast(width) };
+                if (std.mem.eql(u8, sign, "unsigned")) return .{ .unsigned = @intCast(width) };
+                return .unresolved;
+            }
             // Sema does not resolve generics; codegen handles instantiation
             if (tn.data == .parameterized_type_expr) {
                 return .void_type;
@@ -796,6 +811,13 @@ pub const Analyzer = struct {
                     }
                 }
                 const callee_name = self.resolveCalleeName(call_node) orelse return Type.unresolved;
+                if (std.mem.eql(u8, callee_name, "@intCast") and call_node.args.len == 2) {
+                    const fields = self.allocator.dupe(Type, &.{
+                        self.resolveTypeNode(call_node.args[0]),
+                        .{ .error_type = "IntCastError" },
+                    }) catch return .unresolved;
+                    return .{ .tuple_type = .{ .field_types = fields, .field_names = null } };
+                }
                 if (std.mem.eql(u8, callee_name, "@field") and call_node.args.len == 2) {
                     const obj_ty = self.inferExprType(call_node.args[0]);
                     const index = self.constIndexValue(call_node.args[1]) orelse return .any_type;
@@ -948,9 +970,12 @@ pub const Analyzer = struct {
             },
             .null_coalesce => |nc| {
                 const opt_ty = self.inferExprType(nc.lhs);
+                if (opt_ty.failableSuccess()) |success| return success;
                 if (opt_ty.isOptional()) return self.resolveTypeNameStr(opt_ty.optional_type.child_name, opt_ty.optional_type.is_raw);
                 return self.inferExprType(nc.rhs);
             },
+            .try_expr => |te| self.inferExprType(te.operand).failableSuccess() orelse .unresolved,
+            .catch_expr => |ce| self.inferExprType(ce.operand).failableSuccess() orelse .unresolved,
             .deref_expr => |de| {
                 const ptr_ty = self.inferExprType(de.operand);
                 if (ptr_ty.isPointer()) return self.resolveTypeNameStr(ptr_ty.pointer_type.pointee_name, ptr_ty.pointer_type.is_raw);
@@ -1460,6 +1485,14 @@ pub const Analyzer = struct {
             },
             .destructure_decl => |dd| {
                 try self.analyzeNode(dd.value);
+                const ty = self.inferExprType(dd.value);
+                for (dd.names, dd.name_spans, 0..) |name, span, i| {
+                    const field_ty: ?Type = if (ty == .tuple_type and i < ty.tuple_type.field_types.len)
+                        ty.tuple_type.field_types[i]
+                    else
+                        null;
+                    try self.addSymbol(name, .variable, field_ty, span);
+                }
             },
             .return_stmt => |ret| {
                 if (ret.value) |val| {
@@ -1481,7 +1514,11 @@ pub const Analyzer = struct {
                 try self.analyzeNode(ce.operand);
                 try self.pushScope();
                 if (ce.binding) |bname| {
-                    try self.addSymbol(bname, .variable, null, node.span);
+                    const ty = self.inferExprType(ce.operand);
+                    const error_ty: ?Type = if (ty == .tuple_type and ty.failableSuccess() != null)
+                        ty.tuple_type.field_types[ty.tuple_type.field_types.len - 1]
+                    else if (ty == .error_type) ty else null;
+                    try self.addSymbol(bname, .variable, error_ty, node.span);
                 }
                 try self.analyzeNode(ce.body);
                 self.popScope();

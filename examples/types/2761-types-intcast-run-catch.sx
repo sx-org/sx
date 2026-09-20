@@ -1,0 +1,11 @@
+@import "modules/std.sx";
+
+byte :: (n: i64) -> (u8, !IntCastError) {
+    return try @intCast(u8, n);
+}
+
+VALUE :: @run byte(300) catch { 7 };
+
+main :: () {
+    print("{}\n", VALUE);
+}

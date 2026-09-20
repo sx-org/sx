@@ -1,0 +1,6 @@
+@import "modules/std.sx";
+
+main :: () {
+    v := @intCast(u8, 42.0) catch { 7 };
+    print("{}\n", v);
+}
