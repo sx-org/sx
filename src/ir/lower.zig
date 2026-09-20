@@ -3841,6 +3841,7 @@ pub const Lowering = struct {
     pub const foldedInt = lower_coerce.foldedInt;
     pub const isByValueBindingIdent = lower_coerce.isByValueBindingIdent;
     pub const coerceOrErase = lower_coerce.coerceOrErase;
+    pub const coerceConstant = lower_coerce.coerceConstant;
     pub const buildProtocolErasure = lower_coerce.buildProtocolErasure;
     pub const viewOfConcreteAddr = lower_coerce.viewOfConcreteAddr;
     pub const inferConcreteTypeName = lower_coerce.inferConcreteTypeName;
@@ -4056,6 +4057,9 @@ pub const Lowering = struct {
 
     // --- lower/expr.zig (lower_expr) ---
     pub const lowerStructLiteral = lower_expr.lowerStructLiteral;
+    pub const StructLiteralIndices = lower_expr.StructLiteralIndices;
+    pub const literalSpreadTypes = lower_expr.literalSpreadTypes;
+    pub const checkPlainInitializerNames = lower_expr.checkPlainInitializerNames;
     pub const refuseVoidElement = lower_expr.refuseVoidElement;
     pub const inferAnonStructType = lower_expr.inferAnonStructType;
     pub const synthesizeAnonStruct = lower_expr.synthesizeAnonStruct;

@@ -239,6 +239,28 @@ fn implicitIntegerConversion(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) ?b
         !src.signed and dst.width > src.width;
 }
 
+pub fn coerceConstant(self: *Lowering, value: inst_mod.ConstantValue, src: TypeId, dst: TypeId) ?inst_mod.ConstantValue {
+    if (src == dst) return value;
+    if (!(implicitIntegerConversion(self, src, dst) orelse true)) return null;
+    return switch (self.coercionResolver().classify(src, dst)) {
+        .no_op, .ptr_to_void => value,
+        .widen => if (src == .f32 and value == .float)
+            .{ .float = @as(f32, @floatCast(value.float)) }
+        else
+            value,
+        .int_to_float => if (value == .int)
+            .{ .float = if (self.module.types.integerLayout(src).?.signed)
+                @floatFromInt(value.int)
+            else
+                @floatFromInt(@as(u64, @bitCast(value.int))) }
+        else if (value == .zeroinit)
+            .{ .float = 0 }
+        else
+            null,
+        else => null,
+    };
+}
+
 fn isGlyphFreeImplicit(plan: @import("../conversions.zig").CoercionResolver.CoercionPlan) bool {
     return switch (plan) {
         .widen, .int_to_float, .array_to_slice, .array_drop_terminator, .array_to_many_ptr, .slice_to_many_ptr, .optional_wrap, .void_to_optional, .member_to_open_set, .ptr_to_void, .optional_to_optional, .struct_elementwise, .slice_len_convert => true,

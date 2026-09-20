@@ -75,6 +75,40 @@ const LiteralInitializerCursor = struct {
     }
 };
 
+pub const StructLiteralIndices = struct {
+    cursor: LiteralInitializerCursor,
+    plain_named: bool,
+    ty: TypeId,
+
+    pub fn init(self: *Lowering, sl: *const ast.StructLiteral, ty: TypeId) StructLiteralIndices {
+        const cursor = LiteralInitializerCursor.init(self.alloc, sl);
+        return .{
+            .cursor = cursor,
+            .plain_named = cursor.reserved == null and plainLiteralHasNames(self, sl, ty),
+            .ty = ty,
+        };
+    }
+
+    pub fn deinit(self: *StructLiteralIndices) void {
+        self.cursor.deinit();
+    }
+
+    pub fn plain(self: *StructLiteralIndices, l: *Lowering, fi: ast.StructFieldInit) ?u32 {
+        const name = if (self.cursor.reserved != null)
+            (if (fi.was_shorthand and l.lookupField(self.ty, fi.name.?) == .missing) null else fi.name)
+        else if (self.plain_named)
+            fi.name
+        else
+            null;
+        if (self.plain_named and name == null) return null;
+        return self.spread(l, name, fi.value.span);
+    }
+
+    pub fn spread(self: *StructLiteralIndices, l: *Lowering, name: ?[]const u8, span: ast.Span) ?u32 {
+        return structInitializerIndex(l, self.ty, name, &self.cursor, span);
+    }
+};
+
 fn genericInitializerName(tmpl: *const program_index_mod.StructTemplate, fi: ast.StructFieldInit, has_spread: bool) ?[]const u8 {
     const name = fi.name orelse return null;
     const punned = if (has_spread) fi.was_shorthand else fi.value.data == .identifier and std.mem.eql(u8, fi.value.data.identifier.name, name);
@@ -140,7 +174,7 @@ fn literalSpreadName(name: []const u8) ?[]const u8 {
 
 const LiteralSpreadType = struct { name: ?[]const u8, ty: TypeId };
 
-fn literalSpreadTypes(self: *Lowering, operand: *const Node) ?[]LiteralSpreadType {
+pub fn literalSpreadTypes(self: *Lowering, operand: *const Node) ?[]LiteralSpreadType {
     const saved_tt = self.target_type;
     self.target_type = null;
     defer self.target_type = saved_tt;
@@ -193,7 +227,7 @@ fn literalSpreadTypes(self: *Lowering, operand: *const Node) ?[]LiteralSpreadTyp
     return fields.toOwnedSlice(self.alloc) catch unreachable;
 }
 
-fn checkPlainInitializerNames(self: *Lowering, sl: *const ast.StructLiteral, ty: TypeId) bool {
+pub fn checkPlainInitializerNames(self: *Lowering, sl: *const ast.StructLiteral, ty: TypeId) bool {
     var names = std.StringHashMap(void).init(self.alloc);
     defer names.deinit();
     var valid = true;
@@ -855,29 +889,22 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         const selected = self.alloc.alloc(?Ref, struct_fields.len) catch unreachable;
         defer self.alloc.free(selected);
         @memset(selected, null);
-        var cursor = LiteralInitializerCursor.init(self.alloc, sl);
-        defer cursor.deinit();
-        const has_spread = cursor.reserved != null;
-        const plain_named = !has_spread and plainLiteralHasNames(self, sl, ty);
+        var indices = StructLiteralIndices.init(self, sl, ty);
+        defer indices.deinit();
+        const has_spread = indices.cursor.reserved != null;
         for (sl.field_inits, 0..) |fi, k| {
             if (fi.value.data == .spread_expr) {
                 const contributions = if (prelowered) |pl| pl[k].spread else lowerLiteralSpread(self, fi.value) orelse continue;
                 defer if (prelowered == null) self.alloc.free(contributions);
                 for (contributions) |contribution| {
-                    const index = structInitializerIndex(self, ty, contribution.name, &cursor, fi.value.span);
+                    const index = indices.spread(self, contribution.name, fi.value.span);
                     if (index) |idx| {
                         selected[idx] = coerceStructInitializer(self, contribution.value, struct_fields[idx], idx, contribution.node, fi.value.span);
                     }
                 }
                 continue;
             }
-            const name = if (has_spread)
-                (if (fi.was_shorthand and self.lookupField(ty, fi.name.?) == .missing) null else fi.name)
-            else if (plain_named)
-                fi.name
-            else
-                null;
-            const index = if (plain_named and name == null) null else structInitializerIndex(self, ty, name, &cursor, fi.value.span);
+            const index = indices.plain(self, fi);
             const saved_tt = self.target_type;
             self.target_type = if (index) |idx| struct_fields[idx].ty else if (has_spread) null else saved_tt;
             const val = if (prelowered) |pl|
