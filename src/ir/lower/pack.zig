@@ -198,10 +198,10 @@ pub fn diagPackAsValue(self: *Lowering, name: []const u8, span: ast.Span, kind: 
         const id = d.addFmtId(.err, span, "pack '{s}' has no runtime value — a pack is comptime-only and can't be used as a value here", .{name});
         switch (kind) {
             .storage => d.addHelpFmt(id, span, null, "to store it, materialize a tuple: `(..{s})`", .{name}),
-            .call_arg => d.addHelpFmt(id, span, null, "to pass it to a `[]any`/`[]P` parameter, materialize it with `xx {s}`", .{name}),
+            .call_arg => d.addHelpFmt(id, span, null, "to pass runtime values, use a slice (`[]any`/`[]P`) instead of a pack", .{}),
             .return_value => d.addHelpFmt(id, span, null, "to return it, return a tuple `(..{s})` and make the return type that tuple", .{name}),
             .runtime_iter => d.addHelpFmt(id, span, null, "to iterate at comptime use `inline for x in {s}` (or `inline for i in 0..{s}.len` for the index); for a runtime loop declare it as `..{s}: []P` (an interface slice) instead of a pack", .{ name, name, name }),
-            .generic => d.addHelpFmt(id, span, null, "materialize a tuple `(..{s})` to store it, or `xx {s}` to convert it to an expected `[]any`/`[]P` slice", .{ name, name }),
+            .generic => d.addHelpFmt(id, span, null, "to store runtime values, use a tuple or slice instead of a pack", .{}),
         }
     }
     return self.emitPlaceholder(name);

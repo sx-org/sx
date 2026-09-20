@@ -509,7 +509,7 @@ pub fn tryLowerErrorSetEquality(self: *Lowering, bop: *const ast.BinaryOp) ?Ref 
     if (!l_ok or !r_ok) {
         if (self.diagnostics) |diags| {
             const bad = if (!l_ok) bop.lhs else bop.rhs;
-            diags.addFmt(.err, bad.span, "an error-set value compares only with a `.X` shorthand, a `Set.X` member, or another error-set value; coerce with `xx` to compare the raw id", .{});
+            diags.addFmt(.err, bad.span, "an error-set value compares only with a `.X` shorthand, a `Set.X` member, or another error-set value; coerce with `.(i64)` to compare the raw id", .{});
         }
         return self.builder.constBool(false);
     }
