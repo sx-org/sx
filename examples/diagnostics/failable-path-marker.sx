@@ -1,0 +1,33 @@
+@import "modules/std.sx";
+
+Failure :: error { Failed }
+failable :: () -> (i64, !Failure) { raise Failure.Failed; }
+pure :: () -> !Failure { raise Failure.Failed; }
+inspect :: (e: Failure) -> !Failure { return e; }
+
+Box :: struct {
+    value: i64;
+    failure :: (self: *Box) -> !Failure @get { raise Failure.Failed; }
+}
+
+chain :: () -> (i64, !Failure) {
+    value := try failable() ?? failable();
+    return value;
+}
+
+main :: () {
+    value := failable();
+    pure();
+    if pure() {}
+    if !pure() {}
+    box := Box{ value = 0 };
+    box.failure;
+    inspect(pure()) catch {};
+    nested := try {
+        hidden := failable();
+        try pure();
+        1
+    } catch { 0 };
+    chain() catch { 0 };
+    print("unhandled error accepted\n");
+}

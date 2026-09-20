@@ -1,0 +1,47 @@
+error: a failable expression needs an error-path marker: `try`, `catch`, `??` with a value, a destructure binding, or a forwarded call
+  --> examples/diagnostics/failable-path-marker.sx:19:14
+   |
+19 |     value := failable();
+   |              ^^^^^^^^^^
+
+error: a pure failable expression needs an error-path marker; use `catch` to handle the error
+  --> examples/diagnostics/failable-path-marker.sx:20:5
+   |
+20 |     pure();
+   |     ^^^^^^
+
+error: a pure failable expression needs an error-path marker; use `catch` to handle the error
+  --> examples/diagnostics/failable-path-marker.sx:21:8
+   |
+21 |     if pure() {}
+   |        ^^^^^^
+
+error: a pure failable expression needs an error-path marker; use `catch` to handle the error
+  --> examples/diagnostics/failable-path-marker.sx:22:9
+   |
+22 |     if !pure() {}
+   |         ^^^^^^
+
+error: a pure failable expression needs an error-path marker; use `catch` to handle the error
+  --> examples/diagnostics/failable-path-marker.sx:24:5
+   |
+24 |     box.failure;
+   |     ^^^^^^^^^^^
+
+error: a pure failable expression needs an error-path marker; use `catch` to handle the error
+  --> examples/diagnostics/failable-path-marker.sx:25:13
+   |
+25 |     inspect(pure()) catch {};
+   |             ^^^^^^
+
+error: a failable expression needs an error-path marker: `try`, `catch`, `??` with a value, a destructure binding, or a forwarded call
+  --> examples/diagnostics/failable-path-marker.sx:27:19
+   |
+27 |         hidden := failable();
+   |                   ^^^^^^^^^^
+
+error: a failable expression needs an error-path marker: `try`, `catch`, `??` with a value, a destructure binding, or a forwarded call
+  --> examples/diagnostics/failable-path-marker.sx:14:32
+   |
+14 |     value := try failable() ?? failable();
+   |                                ^^^^^^^^^^

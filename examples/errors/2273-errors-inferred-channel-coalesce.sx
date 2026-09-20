@@ -1,10 +1,5 @@
-// A bare `!` collects what a `??` chain LEAVES, not what it attempts. Each
-// operand's failure routes to the operand that follows it, so only the last
-// operand escapes — with or without a `try` marker on it. A `try` nested
-// inside an operand re-raises before the chain routes anything, so it escapes
-// too. A `catch` over the chain takes the total failure, so none of it
-// escapes. Every `Fwd` here forwards its inferred channel into a DECLARED one
-// that carries exactly the escaping members.
+// A fallback chain exposes only its final operand's error channel; a nested
+// `try` escapes before the chain routes an operand's failure.
 
 @import "modules/std.sx";
 
@@ -32,7 +27,7 @@ markedFwd :: (n: i32) -> (i32, !IoErr) {
 }
 
 bare :: (n: i32) -> (i32, !) {
-    v := ga(n) ?? hb(n);
+    v := ga(n) ?? try hb(n);
     return v;
 }
 
@@ -60,7 +55,7 @@ handledFwd :: (n: i32) -> (i32, !IoErr) {
 }
 
 viaSlot :: (n: i32, f: (i32) -> (i32, !IoErr)) -> (i32, !) {
-    v := ga(n) ?? f(n);
+    v := ga(n) ?? try f(n);
     return v;
 }
 

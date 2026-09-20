@@ -1429,16 +1429,16 @@ fn lowerTryBoundary(self: *Lowering, block: *const Node, span: ast.Span) Ref {
 
 /// The failable an attempt consumes, evaluated. A `try { … }` boundary is
 /// lowered here rather than typed first: its success type is the block's tail,
-/// which only the block's own lowering settles. `.none` marks a non-failable
-/// operand — the caller diagnoses it and nothing was lowered.
-fn lowerAttempt(self: *Lowering, a: Attempted, span: ast.Span) struct { ty: TypeId, ref: Ref } {
+/// which only the block's own lowering settles. A non-failable operand has
+/// no lowered ref; the caller diagnoses its type.
+fn lowerAttempt(self: *Lowering, a: Attempted, span: ast.Span, marked: bool) struct { ty: TypeId, ref: ?Ref } {
     if (a.boundary) {
         const ref = lowerTryBoundary(self, a.node, span);
         return .{ .ty = self.builder.getRefType(ref), .ref = ref };
     }
     const ty = self.inferExprType(a.node);
-    if (self.errorChannelOf(ty) == null) return .{ .ty = ty, .ref = .none };
-    return .{ .ty = ty, .ref = self.lowerExpr(a.node) };
+    if (self.errorChannelOf(ty) == null) return .{ .ty = ty, .ref = null };
+    return .{ .ty = ty, .ref = if (marked) self.lowerMarkedExpr(a.node, false) else self.lowerExpr(a.node) };
 }
 
 /// Where an error leaving the current position goes: the innermost
@@ -1487,7 +1487,7 @@ pub fn lowerTry(self: *Lowering, operand_in: *const Node, span: ast.Span) Ref {
 
     // (2) The operand must be failable. This is the sole failable-operand
     //     check (the parser imposes none).
-    const attempt = lowerAttempt(self, attempted, span);
+    const attempt = lowerAttempt(self, attempted, span, true);
     const op_ty = attempt.ty;
     const callee_set = self.errorChannelOf(op_ty) orelse {
         if (self.diagnostics) |diags| {
@@ -1508,7 +1508,7 @@ pub fn lowerTry(self: *Lowering, operand_in: *const Node, span: ast.Span) Ref {
 
     // (4) Branch on the operand's error tag — the bare result for a pure
     //     callee, the last tuple slot for a value-carrying one.
-    const result = attempt.ref;
+    const result = attempt.ref.?;
     const err_val = if (callee_value_carrying)
         self.extractErrorSlot(result, op_ty, callee_set)
     else
@@ -1594,7 +1594,7 @@ pub fn lowerCatch(self: *Lowering, ce_in: *const ast.CatchExpr, span: ast.Span) 
         return self.lowerCatchOverChain(ce, span);
     }
 
-    const attempt = lowerAttempt(self, attempted, span);
+    const attempt = lowerAttempt(self, attempted, span, true);
     const op_ty = attempt.ty;
     const err_set = self.errorChannelOf(op_ty) orelse {
         if (self.diagnostics) |diags| {
@@ -1605,7 +1605,7 @@ pub fn lowerCatch(self: *Lowering, ce_in: *const ast.CatchExpr, span: ast.Span) 
     // Pure-failable LHS (`-> !`): no success value. Run the body on the
     // error path; both paths fall through to a value-less merge.
     if (op_ty == err_set) {
-        const err_val = attempt.ref;
+        const err_val = attempt.ref.?;
         const err_ty = self.builder.getRefType(err_val);
         const is_err = self.builder.emit(.{ .cmp_ne = .{ .lhs = err_val, .rhs = self.builder.constInt(0, err_ty) } }, .bool);
         const handle_bb = self.freshBlock("catch.handle");
@@ -1632,7 +1632,7 @@ pub fn lowerCatch(self: *Lowering, ce_in: *const ast.CatchExpr, span: ast.Span) 
     // the handler body's value. The paths merge through a block-parameter
     // (phi).
     const succ_ty = self.failableSuccessType(op_ty);
-    const result = attempt.ref;
+    const result = attempt.ref.?;
     const err_val = self.extractErrorSlot(result, op_ty, err_set);
     const succ_val = self.extractSuccessValue(result, op_ty, succ_ty);
     const is_err = self.builder.emit(.{ .cmp_ne = .{ .lhs = err_val, .rhs = self.builder.constInt(0, err_set) } }, .bool);
@@ -1965,6 +1965,10 @@ pub fn lowerFailableCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
     self.flattenCoalesceChain(nc, &operands);
     const last_idx = operands.items.len - 1;
     const last_is_value = !self.operandIsFailableLike(operands.items[last_idx]);
+    var last_try: ?usize = null;
+    for (operands.items, 0..) |operand, i| {
+        if (operand.data == .try_expr) last_try = i;
+    }
 
     // The chain's total-failure routing. An absorbing consumer (`catch`)
     // sets this so the final operand's failure reaches the handler; cleared
@@ -1992,7 +1996,10 @@ pub fn lowerFailableCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
     if (!last_is_value and fail_target == null) {
         exit = errorExit(self);
         if (exit == null) {
-            if (self.diagnostics) |d| d.addFmt(.err, span, "a failable `??` chain propagates on total failure, so it is only valid inside a failable function — add a value terminator (`… ?? value`) or wrap with `catch`", .{});
+            if (self.diagnostics) |d| d.add(.err, if (has_value)
+                "a failable `??` chain propagates on total failure, so it is only valid inside a failable function — add a value terminator (`… ?? value`) or wrap with `catch`"
+            else
+                "a pure failable `??` chain propagates on total failure, so it is only valid inside a failable function — use `catch` to handle the error", span);
             return self.builder.constInt(0, .void);
         }
     }
@@ -2018,7 +2025,8 @@ pub fn lowerFailableCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
         }
 
         const attempted = attemptedExpr(operand);
-        const attempt = lowerAttempt(self, attempted, operand.span);
+        const marked = last_is_value or fail_target != null or (if (last_try) |j| i <= j else false);
+        const attempt = lowerAttempt(self, attempted, operand.span, marked);
         const op_ty = attempt.ty;
         const op_set = self.errorChannelOf(op_ty) orelse {
             if (self.diagnostics) |d| d.addFmt(.err, operand.span, "operand of a failable `??` chain must be failable; got '{s}'", .{self.formatTypeName(op_ty)});
@@ -2030,7 +2038,7 @@ pub fn lowerFailableCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
         // error exit (no absorbing consumer); a `catch` target absorbs it.
         if (is_last and fail_target == null) self.checkEscapeWidening(attempted.node, op_set, exit.?.set, operand.span);
 
-        const result = attempt.ref;
+        const result = attempt.ref.?;
         const err_val = if (op_value_carrying) self.extractErrorSlot(result, op_ty, op_set) else result;
         const err_ty = self.builder.getRefType(err_val);
         const is_err = self.builder.emit(.{ .cmp_ne = .{ .lhs = err_val, .rhs = self.builder.constInt(0, err_ty) } }, .bool);

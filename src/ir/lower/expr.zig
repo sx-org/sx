@@ -3692,6 +3692,28 @@ pub fn resolveOptionalInner(self: *Lowering, ty: TypeId) TypeId {
 
 // ── Core expression dispatch ───────────────────────────────────
 
+pub fn lowerMarkedExpr(self: *Lowering, node: *const Node, pure_only: bool) Ref {
+    const saved = self.marked_error_expr;
+    self.marked_error_expr = .{ .node = node, .pure_only = pure_only };
+    defer self.marked_error_expr = saved;
+    return self.lowerExpr(node);
+}
+
+/// Only result paths inherit a marker; arguments and prefix statements do not.
+fn errorPathContains(root: *const Node, node: *const Node) bool {
+    if (root == node) return true;
+    return switch (root.data) {
+        .block => |b| b.produces_value and b.stmts.len > 0 and errorPathContains(b.stmts[b.stmts.len - 1], node),
+        .if_expr => |ie| errorPathContains(ie.then_branch, node) or
+            (if (ie.else_branch) |eb| errorPathContains(eb, node) else false),
+        .match_expr => |me| blk: {
+            for (me.arms) |arm| if (errorPathContains(arm.body, node)) break :blk true;
+            break :blk false;
+        },
+        else => false,
+    };
+}
+
 pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
     // A named-argument value pre-lowered in written order by `mapNamedArgs`
     // already produced its ref — return it; re-lowering would evaluate the
@@ -3728,6 +3750,33 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
     // the body's defining-module pin for the whole recursive lowering.
     const author = Lowering.AuthorScope.enter(self, node);
     defer author.leave();
+    const result = lowerExprInner(self, node);
+    const ty = self.builder.getRefType(result);
+    const failable = blk: {
+        if (self.module.types.get(ty) == .failable) break :blk true;
+        if (self.errorChannelOf(ty) == null) break :blk false;
+        if (node.data == .call) break :blk true;
+        if (node.data != .field_access) break :blk false;
+        const fa = node.data.field_access;
+        var recv_ty = self.inferExprType(fa.object);
+        if (self.module.types.get(recv_ty) == .pointer)
+            recv_ty = self.module.types.get(recv_ty).pointer.pointee;
+        break :blk self.getAccessorFor(recv_ty, fa.field) != null;
+    };
+    if (failable and !(if (self.marked_error_expr) |marker|
+        (!marker.pure_only or self.module.types.get(ty) == .@"error") and errorPathContains(marker.node, node)
+    else
+        false))
+    {
+        if (self.diagnostics) |d| d.add(.err, if (self.module.types.get(ty) == .@"error")
+            "a pure failable expression needs an error-path marker; use `catch` to handle the error"
+        else
+            "a failable expression needs an error-path marker: `try`, `catch`, `??` with a value, a destructure binding, or a forwarded call", node.span);
+    }
+    return result;
+}
+
+fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
     return switch (node.data) {
         // Bare `$<pack>` in expression position → an `[]Type` slice
         // value where each element is a `const_type(arg_types[i])`.

@@ -3741,7 +3741,8 @@ inflateInto :: (data: string, output: string, parseZlibHeader: bool = false, all
         }
         if progress.produced > 0 { probedFullOutput = false; }
         state.deinit();
-        raise tinflError(progress.status);
+        failure := tinflError(progress.status);
+        raise failure;
     }
     raise .InvalidData;
 }

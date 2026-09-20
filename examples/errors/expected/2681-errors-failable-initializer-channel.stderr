@@ -1,10 +1,10 @@
-error: cannot initialize 'v' of type '(i32, !B)' with a value of type '(i32, !A)'
+error: a failable expression needs an error-path marker: `try`, `catch`, `??` with a value, a destructure binding, or a forwarded call
   --> examples/errors/2681-errors-failable-initializer-channel/main.sx:12:20
    |
 12 |     v: (i32, !B) = lib.failsA();
    |                    ^^^^^^^^^^^^
 
-error: cannot initialize 'w' of type '(i32, !IoErr (examples/errors/2681-errors-failable-initializer-channel/main.sx))' with a value of type '(i32, !IoErr (examples/errors/2681-errors-failable-initializer-channel/lib.sx))'
+error: a failable expression needs an error-path marker: `try`, `catch`, `??` with a value, a destructure binding, or a forwarded call
   --> examples/errors/2681-errors-failable-initializer-channel/main.sx:13:24
    |
 13 |     w: (i32, !IoErr) = lib.failsIo();

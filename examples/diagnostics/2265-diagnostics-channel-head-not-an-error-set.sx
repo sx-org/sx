@@ -9,7 +9,7 @@ lost :: (n: i32) -> (i32, !Nope.Bad) { return n; }
 routed :: (n: i32) -> (i32, !ns.helper) { return n; }
 
 main :: () -> i32 {
-    _ = lost(0);
-    _ = routed(0);
+    _, lost_error := lost(0);
+    _, routed_error := routed(0);
     return 0;
 }

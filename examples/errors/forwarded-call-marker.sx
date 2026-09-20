@@ -1,0 +1,36 @@
+@import "modules/std.sx";
+
+sx_trace_len :: () -> u32 extern;
+Failure :: error { Failed }
+
+failable :: () -> (i64, !Failure) { raise Failure.Failed; }
+pure :: () -> !Failure { raise Failure.Failed; }
+forward :: () -> (i64, !Failure) { return failable(); }
+tail :: () -> (i64, !Failure) { failable() }
+propagate :: () -> (i64, !Failure) { return try failable(); }
+fallback :: () -> (i64, !Failure) {
+    value := failable() ?? try failable();
+    return value;
+}
+
+main :: () {
+    defer {
+        err := pure();
+        print("cleanup bound={}\n", err == Failure.Failed);
+    }
+    forward() catch |e| {
+        print("forward: error={} frames={}\n", e == Failure.Failed, sx_trace_len());
+        0
+    };
+    tail() catch |e| {
+        print("tail: error={} frames={}\n", e == Failure.Failed, sx_trace_len());
+        0
+    };
+    propagate() catch |e| {
+        print("try: error={} frames={}\n", e == Failure.Failed, sx_trace_len());
+        0
+    };
+    print("fallback={}\n", fallback() catch { 7 });
+    err := if true { pure() } else { Failure.Failed };
+    print("bound={}\n", err == Failure.Failed);
+}

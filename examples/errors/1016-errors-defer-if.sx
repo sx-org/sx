@@ -37,9 +37,9 @@ probe :: (n: i32) -> i32 {
 
 main :: () -> i32 {
     print("[handed out]\n");
-    a := make(7);
+    make(7) catch { 0 };
     print("[rolled back]\n");
-    b := make(200);
+    make(200) catch { 0 };
     print("[snapshot]\n");
     print("probe ok: {}\n", probe(4));
     print("probe err: {}\n", probe(-1));
