@@ -775,7 +775,10 @@ b: Sprite = .{scale = 5, ..a};
 ```
 
 The operand's fields determine named versus positional contributions. Packs,
-positional products and fixed-length arrays contribute positionally, so
+positional products and fixed-length arrays contribute positionally. In a literal
+containing a spread, plain named initializers reserve their target fields;
+positional contributions fill the remaining fields in declaration order. Names
+contributed by spreads do not reserve fields. Thus
 `Sprite{..coords, scale = 2}` fills the leading fields from `coords`.
 Contextual `.{…}` uses the target's struct-initialization rules.
 

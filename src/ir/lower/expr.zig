@@ -49,21 +49,64 @@ const LoweredLiteralInitializer = union(enum) {
 };
 const InferredLiteral = struct { ty: TypeId, initializers: []const LoweredLiteralInitializer };
 
-fn genericInitializerName(tmpl: *const program_index_mod.StructTemplate, fi: ast.StructFieldInit) ?[]const u8 {
+const LiteralInitializerCursor = struct {
+    position: usize = 0,
+    reserved: ?std.StringHashMap(void),
+
+    fn init(alloc: std.mem.Allocator, sl: *const ast.StructLiteral) LiteralInitializerCursor {
+        const has_spread = for (sl.field_inits) |fi| {
+            if (fi.value.data == .spread_expr) break true;
+        } else false;
+        if (!has_spread) return .{ .reserved = null };
+        var reserved = std.StringHashMap(void).init(alloc);
+        for (sl.field_inits) |fi| {
+            if (fi.value.data == .spread_expr) continue;
+            if (fi.name) |name| reserved.put(name, {}) catch unreachable;
+        }
+        return .{ .reserved = reserved };
+    }
+
+    fn deinit(self: *LiteralInitializerCursor) void {
+        if (self.reserved) |*names| names.deinit();
+    }
+
+    fn isReserved(self: *const LiteralInitializerCursor, name: []const u8) bool {
+        return if (self.reserved) |names| names.contains(name) else false;
+    }
+};
+
+fn genericInitializerName(tmpl: *const program_index_mod.StructTemplate, fi: ast.StructFieldInit, has_spread: bool) ?[]const u8 {
     const name = fi.name orelse return null;
-    if (fi.was_shorthand) {
+    const punned = if (has_spread) fi.was_shorthand else fi.value.data == .identifier and std.mem.eql(u8, fi.value.data.identifier.name, name);
+    if (punned) {
         for (tmpl.field_names) |field| if (std.mem.eql(u8, field, name)) return name;
         return null;
     }
     return name;
 }
 
-fn genericInitializerIndex(tmpl: *const program_index_mod.StructTemplate, name: ?[]const u8, position: usize) ?usize {
+fn genericInitializerIndex(tmpl: *const program_index_mod.StructTemplate, name: ?[]const u8, cursor: *LiteralInitializerCursor) ?usize {
     if (name) |n| {
+        if (cursor.reserved == null) cursor.position += 1;
         for (tmpl.field_names, 0..) |field, i| if (std.mem.eql(u8, field, n)) return i;
         return null;
     }
+    while (cursor.position < tmpl.field_names.len and cursor.isReserved(tmpl.field_names[cursor.position])) cursor.position += 1;
+    const position = cursor.position;
+    cursor.position += 1;
     return if (position < tmpl.field_names.len) position else null;
+}
+
+fn plainLiteralHasNames(self: *Lowering, sl: *const ast.StructLiteral, ty: TypeId) bool {
+    if (sl.field_inits.len == 0 or sl.field_inits[0].name == null) return false;
+    if (self.getStructFields(ty).len > 0) {
+        for (sl.field_inits) |fi| {
+            const name = fi.name orelse continue;
+            const punned = fi.value.data == .identifier and std.mem.eql(u8, fi.value.data.identifier.name, name);
+            if (punned and self.lookupField(ty, name) == .missing) return false;
+        }
+    }
+    return true;
 }
 
 fn bindGenericLiteralField(self: *Lowering, tmpl: *const program_index_mod.StructTemplate, idx: ?usize, arg_ty: TypeId, tb: *std.StringHashMap(TypeId), diagnostic: ?struct { bound_by: *std.StringHashMap([]const u8), span: ast.Span }) bool {
@@ -176,21 +219,20 @@ fn checkPlainInitializerNames(self: *Lowering, sl: *const ast.StructLiteral, ty:
 pub fn genericLiteralType(self: *Lowering, sl: *const ast.StructLiteral, tmpl: *const program_index_mod.StructTemplate) ?TypeId {
     for (tmpl.type_params) |tp| if (!tp.is_type_param) return null;
     var tb = std.StringHashMap(TypeId).init(self.alloc);
-    var position: usize = 0;
+    var cursor = LiteralInitializerCursor.init(self.alloc, sl);
+    defer cursor.deinit();
     for (sl.field_inits) |fi| {
         if (fi.value.data == .spread_expr) {
             const fields = literalSpreadTypes(self, fi.value.data.spread_expr.operand) orelse return null;
             defer self.alloc.free(fields);
             for (fields) |field| {
-                const idx = genericInitializerIndex(tmpl, field.name, position);
-                if (field.name == null) position += 1;
+                const idx = genericInitializerIndex(tmpl, field.name, &cursor);
                 if (!bindGenericLiteralField(self, tmpl, idx, field.ty, &tb, null)) return null;
             }
             continue;
         }
-        const name = genericInitializerName(tmpl, fi);
-        const idx = genericInitializerIndex(tmpl, name, position);
-        if (name == null) position += 1;
+        const name = genericInitializerName(tmpl, fi, cursor.reserved != null);
+        const idx = genericInitializerIndex(tmpl, name, &cursor);
         const arg_ty = if (fi.value.data == .lambda) blk: {
             if (!fi.value.data.lambda.has_env) return null;
             break :blk self.lambdaEnvType(&fi.value.data.lambda) orelse return null;
@@ -234,22 +276,21 @@ fn inferGenericLiteral(self: *Lowering, sl: *const ast.StructLiteral, tmpl: *con
         }
     }
 
-    var position: usize = 0;
+    var cursor = LiteralInitializerCursor.init(self.alloc, sl);
+    defer cursor.deinit();
     for (sl.field_inits) |fi| {
         if (fi.value.data == .spread_expr) {
             const contributions = lowerLiteralSpread(self, fi.value) orelse return failed;
             initializers.append(self.alloc, .{ .spread = contributions }) catch unreachable;
             for (contributions) |contribution| {
-                const idx = genericInitializerIndex(tmpl, contribution.name, position);
-                if (contribution.name == null) position += 1;
+                const idx = genericInitializerIndex(tmpl, contribution.name, &cursor);
                 const arg_ty = self.valueTypeOfRef(contribution.value, self.builder.getRefType(contribution.value));
                 if (!bindGenericLiteralField(self, tmpl, idx, arg_ty, &tb, .{ .bound_by = &bound_by, .span = span })) ok = false;
             }
             continue;
         }
-        const name = genericInitializerName(tmpl, fi);
-        const idx = genericInitializerIndex(tmpl, name, position);
-        if (name == null) position += 1;
+        const name = genericInitializerName(tmpl, fi, cursor.reserved != null);
+        const idx = genericInitializerIndex(tmpl, name, &cursor);
         var target: ?TypeId = null;
         if (idx) |k| {
             const node = tmpl.field_type_nodes[k];
@@ -366,7 +407,7 @@ fn lowerLiteralSpread(self: *Lowering, spread: *const Node) ?[]LiteralSpreadFiel
     return fields.toOwnedSlice(self.alloc) catch unreachable;
 }
 
-fn structInitializerIndex(self: *Lowering, ty: TypeId, name: ?[]const u8, position: usize, span: ast.Span) ?u32 {
+fn structInitializerIndex(self: *Lowering, ty: TypeId, name: ?[]const u8, cursor: *LiteralInitializerCursor, span: ast.Span) ?u32 {
     if (name) |n| {
         return switch (self.mentionField(ty, n, span)) {
             .hit, .private => |hit| hit.index,
@@ -380,6 +421,9 @@ fn structInitializerIndex(self: *Lowering, ty: TypeId, name: ?[]const u8, positi
         };
     }
     const fields = self.getStructFields(ty);
+    while (cursor.position < fields.len and cursor.isReserved(self.module.types.getString(fields[cursor.position].name))) cursor.position += 1;
+    const position = cursor.position;
+    cursor.position += 1;
     if (position < fields.len) return @intCast(position);
     if (self.diagnostics) |d|
         d.addFmt(.err, span, "positional initializer {d} exceeds the {d} fields of '{s}'", .{ position, fields.len, self.formatTypeName(ty) });
@@ -811,25 +855,31 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         const selected = self.alloc.alloc(?Ref, struct_fields.len) catch unreachable;
         defer self.alloc.free(selected);
         @memset(selected, null);
-        var position: usize = 0;
+        var cursor = LiteralInitializerCursor.init(self.alloc, sl);
+        defer cursor.deinit();
+        const has_spread = cursor.reserved != null;
+        const plain_named = !has_spread and plainLiteralHasNames(self, sl, ty);
         for (sl.field_inits, 0..) |fi, k| {
             if (fi.value.data == .spread_expr) {
                 const contributions = if (prelowered) |pl| pl[k].spread else lowerLiteralSpread(self, fi.value) orelse continue;
                 defer if (prelowered == null) self.alloc.free(contributions);
                 for (contributions) |contribution| {
-                    const index = structInitializerIndex(self, ty, contribution.name, position, fi.value.span);
-                    if (contribution.name == null) position += 1;
+                    const index = structInitializerIndex(self, ty, contribution.name, &cursor, fi.value.span);
                     if (index) |idx| {
                         selected[idx] = coerceStructInitializer(self, contribution.value, struct_fields[idx], idx, contribution.node, fi.value.span);
                     }
                 }
                 continue;
             }
-            const name = if (fi.was_shorthand and self.lookupField(ty, fi.name.?) == .missing) null else fi.name;
-            const index = structInitializerIndex(self, ty, name, position, fi.value.span);
-            if (name == null) position += 1;
+            const name = if (has_spread)
+                (if (fi.was_shorthand and self.lookupField(ty, fi.name.?) == .missing) null else fi.name)
+            else if (plain_named)
+                fi.name
+            else
+                null;
+            const index = if (plain_named and name == null) null else structInitializerIndex(self, ty, name, &cursor, fi.value.span);
             const saved_tt = self.target_type;
-            self.target_type = if (index) |idx| struct_fields[idx].ty else null;
+            self.target_type = if (index) |idx| struct_fields[idx].ty else if (has_spread) null else saved_tt;
             const val = if (prelowered) |pl|
                 pl[k].value
             else if (index) |idx|
