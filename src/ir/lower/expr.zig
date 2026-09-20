@@ -68,11 +68,12 @@ pub const StructLiteralIndices = struct {
     route: literal_fields.Typed,
     ty: TypeId,
 
-    pub fn init(self: *Lowering, ty: TypeId) StructLiteralIndices {
+    pub fn init(self: *Lowering, sl: *const ast.StructLiteral, ty: TypeId) StructLiteralIndices {
         const fields = self.getStructFields(ty);
         const names = self.alloc.alloc([]const u8, fields.len) catch unreachable;
         for (fields, names) |field, *name| name.* = self.module.types.getString(field.name);
-        return .{ .route = literal_fields.Typed.init(self.alloc, names), .ty = ty };
+        const layout: literal_fields.Typed.Layout = if (sl.struct_name == null and sl.type_expr == null and self.module.types.isAnonStruct(ty)) .anonymous else .declaration;
+        return .{ .route = literal_fields.Typed.init(self.alloc, names, layout), .ty = ty };
     }
 
     pub fn deinit(self: *StructLiteralIndices, alloc: std.mem.Allocator) void {
@@ -96,8 +97,7 @@ pub const StructLiteralIndices = struct {
     }
 };
 
-fn bindGenericLiteralField(self: *Lowering, tmpl: *const program_index_mod.StructTemplate, idx: usize, arg_ty: TypeId, tb: *std.StringHashMap(TypeId), diagnostic: ?struct { bound_by: *std.StringHashMap([]const u8), span: ast.Span }) bool {
-    const k = idx;
+fn bindGenericLiteralField(self: *Lowering, tmpl: *const program_index_mod.StructTemplate, k: usize, arg_ty: TypeId, tb: *std.StringHashMap(TypeId), diagnostic: ?struct { bound_by: *std.StringHashMap([]const u8), span: ast.Span }) bool {
     if (arg_ty == .unresolved) return false;
     const node = tmpl.field_type_nodes[k];
     var ok = true;
@@ -204,7 +204,7 @@ pub fn checkPlainInitializerNames(self: *Lowering, sl: *const ast.StructLiteral,
 pub fn genericLiteralType(self: *Lowering, sl: *const ast.StructLiteral, tmpl: *const program_index_mod.StructTemplate) ?TypeId {
     for (tmpl.type_params) |tp| if (!tp.is_type_param) return null;
     var tb = std.StringHashMap(TypeId).init(self.alloc);
-    var route = literal_fields.Typed.init(self.alloc, tmpl.field_names);
+    var route = literal_fields.Typed.init(self.alloc, tmpl.field_names, .declaration);
     defer route.deinit(self.alloc);
     for (sl.field_inits) |fi| {
         if (fi.value.data == .spread_expr) {
@@ -261,7 +261,7 @@ fn inferGenericLiteral(self: *Lowering, sl: *const ast.StructLiteral, tmpl: *con
         }
     }
 
-    var route = literal_fields.Typed.init(self.alloc, tmpl.field_names);
+    var route = literal_fields.Typed.init(self.alloc, tmpl.field_names, .declaration);
     defer route.deinit(self.alloc);
     for (sl.field_inits) |fi| {
         if (fi.value.data == .spread_expr) {
@@ -803,7 +803,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         const selected = self.alloc.alloc(?Ref, struct_fields.len) catch unreachable;
         defer self.alloc.free(selected);
         @memset(selected, null);
-        var indices = StructLiteralIndices.init(self, ty);
+        var indices = StructLiteralIndices.init(self, sl, ty);
         defer indices.deinit(self.alloc);
         for (sl.field_inits, 0..) |fi, k| {
             if (fi.value.data == .spread_expr) {

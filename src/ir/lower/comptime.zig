@@ -278,7 +278,7 @@ fn constStructLiteralInner(self: *Lowering, sl: *const ast.StructLiteral, ty: Ty
     const selected = self.alloc.alloc(?inst_mod.ConstantValue, struct_fields.len) catch return null;
     defer self.alloc.free(selected);
     @memset(selected, null);
-    var indices = Lowering.StructLiteralIndices.init(self, ty);
+    var indices = Lowering.StructLiteralIndices.init(self, sl, ty);
     defer indices.deinit(self.alloc);
     for (sl.field_inits) |fi| {
         if (fi.value.data == .spread_expr) {

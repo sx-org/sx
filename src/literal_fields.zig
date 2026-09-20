@@ -8,18 +8,21 @@ pub fn spreadName(name: []const u8) ?[]const u8 {
 }
 
 pub const Typed = struct {
+    pub const Layout = enum { declaration, anonymous };
+
     names: []const []const u8,
+    layout: Layout,
     direct: []bool,
     plain: []bool,
     position: usize = 0,
     named: bool = false,
 
-    pub fn init(alloc: std.mem.Allocator, names: []const []const u8) Typed {
+    pub fn init(alloc: std.mem.Allocator, names: []const []const u8, layout: Layout) Typed {
         const direct = alloc.alloc(bool, names.len) catch unreachable;
         const plain = alloc.alloc(bool, names.len) catch unreachable;
         @memset(direct, false);
         @memset(plain, false);
-        return .{ .names = names, .direct = direct, .plain = plain };
+        return .{ .names = names, .layout = layout, .direct = direct, .plain = plain };
     }
 
     pub fn deinit(self: *Typed, alloc: std.mem.Allocator) void {
@@ -48,7 +51,12 @@ pub const Typed = struct {
             }
             return index;
         }
-        if (self.named) return error.UnnamedAfterNamed;
+        switch (self.layout) {
+            .declaration => if (self.named) return error.UnnamedAfterNamed,
+            .anonymous => while (self.position < self.names.len and spreadName(self.names[self.position]) != null) {
+                self.position += 1;
+            },
+        }
         const index = self.position;
         self.position += 1;
         if (index >= self.names.len) return error.TooManyValues;

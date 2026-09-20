@@ -18,6 +18,15 @@ computed :: () -> i64 {
 }
 Computed :: @run computed();
 Overridden :: .{k = .{true}, ..Mixed};
+Holder :: struct ($T: Type) { value: T; }
+Held :: Holder{value = .{k = 5, 7}};
+contextual :: () -> i64 {
+    xs := .{7, 8};
+    m := .{..xs, k = 5};
+    m = .{..xs, k = 5};
+    m.k * 100 + @field(m, 1) * 10 + @field(m, 2)
+}
+Contextual :: @run contextual();
 
 main :: () {
     plain := Sprite{1, 2, scale = 5};
@@ -32,6 +41,9 @@ main :: () {
     roundtrip := .{0, ..returned};
     print("inferred: {} {} {} {}\n", @field(roundtrip, 0), @field(roundtrip, 1), @field(roundtrip, 2), @field(roundtrip, 3));
     print("vm: {} {} overwritten: {}\n", Computed, computed(), Overridden.k);
+    rows := .[ .{k = 5, 7}, .{k = 6, 8} ];
+    print("contextual: {} {} / {} {} / {} {}\n", contextual(), Contextual, rows[0].k, @field(rows[0], 1), rows[1].k, @field(rows[1], 1));
+    print("constant field: {} {}\n", Held.value.k, @field(Held.value, 1));
     size: [@field(Mixed, 0) + Constant.py]i64 = ---;
     print("constant: {} {} {} / {} {} {} / {}\n", Constant.px, Constant.py, Constant.scale, @field(Mixed, 0), @field(Mixed, 1), @field(Mixed, 2), @sizeOf(@typeOf(size)));
 }
