@@ -135,15 +135,8 @@ pub const ProtocolDefaultDispatchDomain = struct {
     concrete: TypeId,
 };
 
-/// One frame in the chain of module-const names currently being folded by the
-/// SOURCE-AWARE const evaluator (`Lowering.foldSourceConstInt` and its float
-/// twins). Stack-allocated per recursive frame, so cycle detection needs no
-/// allocation — the source-aware analogue of `program_index.ModuleConstFrame`,
-/// which guards the GLOBAL-map fold (`moduleConstInt`). The frame keys on the
-/// const's (name, author-source) pair, NOT name alone: same-name nested consts
-/// across modules (`a.M` ≠ `b.M`) must NOT trip a false cycle. A pair
-/// already on the chain is a cyclic definition (`N :: N`; `N :: M + 1; M :: N`)
-/// with no compile-time value → folds to null.
+/// Stack-allocated dependency chain for module-constant folding and lowering.
+/// Author source distinguishes same-named constants in different modules.
 pub const ConstFoldFrame = struct {
     name: []const u8,
     source: ?[]const u8,
@@ -684,6 +677,8 @@ pub const Lowering = struct {
     protocol_ast_by_type: std.AutoHashMap(TypeId, *const ast.ProtocolDecl),
     program_index: ProgramIndex,
     current_source_file: ?[]const u8 = null, // source file of function currently being lowered
+    /// Uncached nested bodies remain part of the active constant expansion.
+    module_const_frame: ?*const ConstFoldFrame = null,
     // Implicit Context parameter machinery. When the program imports
     // `std.sx` (and therefore declares `Context :: struct {...}`), every
     // default-conv sx function gains a synthetic `__sx_ctx: *void` param
@@ -1112,6 +1107,7 @@ pub const Lowering = struct {
         block_terminated: bool,
         force_block_value: bool,
         source_file: ?[]const u8,
+        module_const_frame: ?*const ConstFoldFrame,
         jni_env_base: usize,
         pack_arg_nodes: ?std.StringHashMap([]const *const Node),
         pack_param_count: ?std.StringHashMap(u32),
@@ -1137,6 +1133,7 @@ pub const Lowering = struct {
                 .block_terminated = l.block_terminated,
                 .force_block_value = l.force_block_value,
                 .source_file = l.current_source_file,
+                .module_const_frame = l.module_const_frame,
                 .jni_env_base = l.jni_env_stack_base,
                 .pack_arg_nodes = l.pack_arg_nodes,
                 .pack_param_count = l.pack_param_count,
@@ -1177,12 +1174,14 @@ pub const Lowering = struct {
             l.func_defer_base = l.defer_stack.items.len;
             l.block_terminated = false;
             l.force_block_value = false;
+            l.module_const_frame = null;
             return g;
         }
 
         pub fn restore(g: FnBodyReentry) void {
             const l = g.l;
             l.setCurrentSourceFile(g.source_file);
+            l.module_const_frame = g.module_const_frame;
             l.scope = g.scope;
             l.func_defer_base = g.defer_base;
             l.block_terminated = g.block_terminated;
@@ -1244,6 +1243,7 @@ pub const Lowering = struct {
         pending_callable_return: ?*const ast.Node,
         fixed_callable_ret: ?TypeId,
         lambda_sig_target: ?lower_closure.CallableSig,
+        module_const_frame: ?*const ConstFoldFrame,
 
         pub fn enter(l: *Lowering) NestedBodyGuard {
             const g = NestedBodyGuard{
@@ -1251,6 +1251,7 @@ pub const Lowering = struct {
                 .pending_callable_return = l.pending_callable_return,
                 .fixed_callable_ret = l.fixed_callable_ret,
                 .lambda_sig_target = l.lambda_sig_target,
+                .module_const_frame = l.module_const_frame,
                 .narrowed = l.narrowed,
                 .narrowed_refs = l.narrowed_refs,
                 .xx_passthrough_refs = l.xx_passthrough_refs,
@@ -1278,6 +1279,12 @@ pub const Lowering = struct {
             return g;
         }
 
+        pub fn enterCached(l: *Lowering) NestedBodyGuard {
+            const g = enter(l);
+            l.module_const_frame = null;
+            return g;
+        }
+
         pub fn restore(g: NestedBodyGuard) void {
             g.l.narrowed.deinit();
             g.l.narrowed = g.narrowed;
@@ -1296,6 +1303,7 @@ pub const Lowering = struct {
             g.l.pending_callable_return = g.pending_callable_return;
             g.l.fixed_callable_ret = g.fixed_callable_ret;
             g.l.lambda_sig_target = g.lambda_sig_target;
+            g.l.module_const_frame = g.module_const_frame;
         }
     };
 

@@ -4166,7 +4166,7 @@ pub fn callableReturnBinder(fd: *const ast.FnDecl, ret_ty: TypeId) ?*const Node 
 
 // ── Module-const emission ───────────────────────────────────────
 
-pub fn emitModuleConst(self: *Lowering, ci: ModuleConstInfo, author_source: ?[]const u8) Ref {
+pub fn emitModuleConst(self: *Lowering, name: []const u8, ci: ModuleConstInfo, author_source: ?[]const u8) Ref {
     // A const read from another module folds/lowers its RHS in the
     // AUTHOR's visibility context, so a same-name leaf (`K :: M + 1` selected
     // from `a.sx`) resolves `M` against `a.sx` — not against the reading
@@ -4174,6 +4174,14 @@ pub fn emitModuleConst(self: *Lowering, ci: ModuleConstInfo, author_source: ?[]c
     // own-read consts pin to the source they were already in → byte-identical.
     const author_pin = self.pinConstAuthorSource(author_source);
     defer author_pin.unpin();
+    if (lower.constFoldFrameContains(self.module_const_frame, name, author_source)) {
+        if (self.diagnostics) |d|
+            d.addFmt(.err, ci.value.span, "constant '{s}' depends on itself", .{name});
+        return self.builder.constUndef(ci.ty);
+    }
+    const frame = lower.ConstFoldFrame{ .name = name, .source = author_source, .parent = self.module_const_frame };
+    self.module_const_frame = &frame;
+    defer self.module_const_frame = frame.parent;
     // An integer-typed const whose initializer is a compile-time integer —
     // an int literal/expression, OR an INTEGRAL float that `typedConstInitFits`
     // accepted under the unified narrowing rule — materializes as its folded

@@ -38,7 +38,7 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
     // Flow narrowing is per-function: this monomorphized body has
     // its own `Ref` space (overlapping the caller's), so isolate it from the
     // caller's `narrowed`/`narrowed_refs` to avoid a false-positive unwrap gate.
-    var nested_guard = Lowering.NestedBodyGuard.enter(self);
+    var nested_guard = Lowering.NestedBodyGuard.enterCached(self);
     defer nested_guard.restore();
 
     // Save builder state
