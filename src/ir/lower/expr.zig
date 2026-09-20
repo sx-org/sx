@@ -459,8 +459,10 @@ fn structInitializerIndex(self: *Lowering, ty: TypeId, name: ?[]const u8, cursor
     const position = cursor.position;
     cursor.position += 1;
     if (position < fields.len) return @intCast(position);
-    if (self.diagnostics) |d|
-        d.addFmt(.err, span, "positional initializer {d} exceeds the {d} fields of '{s}'", .{ position, fields.len, self.formatTypeName(ty) });
+    if (!self.externalErrorsExist()) {
+        if (self.diagnostics) |d|
+            d.addFmt(.err, span, "positional initializer {d} exceeds the {d} fields of '{s}'", .{ position, fields.len, self.formatTypeName(ty) });
+    }
     return null;
 }
 

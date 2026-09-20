@@ -1,0 +1,3 @@
+main :: () {
+    v := NoSuchType{1, 2};
+}
