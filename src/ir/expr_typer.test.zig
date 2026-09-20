@@ -36,6 +36,7 @@ test "expr_typer: anonymous spread shape needs no IR function" {
     var spread = node(.{ .spread_expr = .{ .operand = &source } });
     var value = node(.{ .int_literal = .{ .value = 70000 } });
     var inits = [_]ast.StructFieldInit{
+        .{ .name = null, .value = &value },
         .{ .name = null, .value = &spread },
         .{ .name = "px", .value = &value },
     };
@@ -43,6 +44,7 @@ test "expr_typer: anonymous spread shape needs no IR function" {
     const expected_fields = [_]ir_mod.types.TypeInfo.StructInfo.Field{
         .{ .name = fields[0].name, .ty = .i64 },
         fields[1],
+        .{ .name = module.types.internString("2"), .ty = .i64 },
     };
     l.target_type = .i32;
     try std.testing.expectEqual(module.types.internAnonStruct(&expected_fields), l.inferExprType(&literal));

@@ -15,6 +15,7 @@
 //! `SemaResult`) name an editor index, not compiler authority.
 
 const std = @import("std");
+const literal_fields = @import("literal_fields.zig");
 const ast = @import("ast.zig");
 const Node = ast.Node;
 const Span = ast.Span;
@@ -239,7 +240,7 @@ pub const Analyzer = struct {
                 });
             },
             .const_decl => |cd| {
-                const ty = self.resolveTypeAnnotation(cd.type_annotation) orelse inferValueType(cd.value);
+                const ty = self.resolveTypeAnnotation(cd.type_annotation) orelse self.inferValueType(cd.value);
                 const kind = classifyConstDecl(cd);
                 const int_constant = self.constIndexValue(cd.value);
                 try self.addSymbol(cd.name, kind, ty, node.span);
@@ -850,6 +851,13 @@ pub const Analyzer = struct {
                         if (self.context_members.get(fa.field)) |ty| return ty;
                     }
                 }
+                if (obj_ty == .tuple_type) {
+                    if (obj_ty.tuple_type.field_names) |names| {
+                        for (names, obj_ty.tuple_type.field_types) |name, ty| {
+                            if (std.mem.eql(u8, name, fa.field)) return ty;
+                        }
+                    }
+                }
                 if (obj_ty.isArray()) {
                     return self.resolveTypeNameStr(obj_ty.array_type.element_name, obj_ty.array_type.is_raw);
                 }
@@ -898,22 +906,40 @@ pub const Analyzer = struct {
                     }
                     return self.inferExprType(te);
                 }
-                var fields = std.ArrayList(Type).empty;
-                var names = std.ArrayList([]const u8).empty;
-                var named = false;
+                var shape = literal_fields.Anonymous(Type){};
+                defer shape.deinit(self.allocator);
                 for (sl.field_inits) |fi| {
-                    if (fi.value.data == .spread_expr) return .unresolved;
-                    fields.append(self.allocator, self.inferExprType(fi.value)) catch return .unresolved;
-                    if (fi.name) |name| {
-                        names.append(self.allocator, name) catch return .unresolved;
-                        named = true;
+                    if (fi.value.data == .spread_expr) {
+                        const ty = self.inferExprType(fi.value.data.spread_expr.operand);
+                        const source: StructTypeInfo = switch (ty) {
+                            .struct_type => |name| self.struct_types.get(name) orelse return .unresolved,
+                            .tuple_type => |tt| .{ .field_names = tt.field_names orelse &.{}, .field_types = tt.field_types },
+                            .array_type => |array| {
+                                const element = self.resolveTypeNameStr(array.element_name, array.is_raw);
+                                for (0..(array.length orelse return .unresolved)) |_| shape.contribute(self.allocator, null, .spread, element) catch unreachable;
+                                continue;
+                            },
+                            else => return .unresolved,
+                        };
+                        for (source.field_types, 0..) |field, i| {
+                            const name = if (i < source.field_names.len) literal_fields.spreadName(source.field_names[i]) else null;
+                            shape.contribute(self.allocator, name, .spread, field) catch unreachable;
+                        }
+                    } else {
+                        shape.contribute(self.allocator, fi.name, .direct, self.inferExprType(fi.value)) catch return .unresolved;
                     }
                 }
-                if (named and names.items.len != fields.items.len) return .unresolved;
-                return .{ .tuple_type = .{
-                    .field_types = fields.toOwnedSlice(self.allocator) catch return .unresolved,
-                    .field_names = if (named) names.toOwnedSlice(self.allocator) catch return .unresolved else null,
-                } };
+                const fields = self.allocator.alloc(Type, shape.named.items.len + shape.unnamed.items.len) catch return .unresolved;
+                const names = self.allocator.alloc([]const u8, fields.len) catch return .unresolved;
+                for (shape.named.items, 0..) |field, i| {
+                    fields[i] = field.value;
+                    names[i] = field.name;
+                }
+                for (shape.unnamed.items, shape.named.items.len..) |field, i| {
+                    fields[i] = field;
+                    names[i] = std.fmt.allocPrint(self.allocator, "{d}", .{i}) catch return .unresolved;
+                }
+                return .{ .tuple_type = .{ .field_types = fields, .field_names = names } };
             },
             .force_unwrap => |fu| {
                 const opt_ty = self.inferExprType(fu.operand);
@@ -1230,7 +1256,7 @@ pub const Analyzer = struct {
             .const_decl => |cd| {
                 // Analyze value first (so it can't reference itself)
                 try self.analyzeNode(cd.value);
-                const ty = self.resolveTypeAnnotation(cd.type_annotation) orelse inferValueType(cd.value);
+                const ty = self.resolveTypeAnnotation(cd.type_annotation) orelse self.inferValueType(cd.value);
                 const kind = classifyConstDecl(cd);
                 const int_constant = self.constIndexValue(cd.value);
                 try self.addSymbol(cd.name, kind, ty, node.span);
@@ -1804,8 +1830,9 @@ pub const Analyzer = struct {
         }
     }
 
-    fn inferValueType(value: *Node) ?Type {
+    fn inferValueType(self: *Analyzer, value: *Node) ?Type {
         return switch (value.data) {
+            .struct_literal => self.inferExprType(value),
             .int_literal => Type.s(64),
             .float_literal => .f64,
             .bool_literal => .boolean,
@@ -2826,4 +2853,32 @@ test "sema: an expanded named field is indexed and types a member expression" {
         }
     }
     return error.TestUnexpectedResult;
+}
+
+test "sema: mixed contributions retain named layout and last types" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        "A :: struct { px: i16; py: i32; } " ++
+        "B :: struct { py: i32; px: i64; } " ++
+        "tuple :: .{true}; " ++
+        "main :: () { a := A{}; b := B{}; " ++
+        "mixed :: .{..tuple, ..a, 7, ..b}; " ++
+        "first := @field(mixed, 0); last := @field(mixed, 2); member := mixed.px; }";
+    var parser = try @import("parser.zig").Parser.init(alloc, source);
+    var analyzer = Analyzer.init(alloc);
+    analyzer.source = source;
+    const result = try analyzer.analyze(try parser.parse());
+    var found: usize = 0;
+    for (result.symbols) |symbol| {
+        if (std.mem.eql(u8, symbol.name, "first") or std.mem.eql(u8, symbol.name, "member")) {
+            try std.testing.expectEqual(Type.s(64), symbol.ty.?);
+            found += 1;
+        } else if (std.mem.eql(u8, symbol.name, "last")) {
+            try std.testing.expectEqual(Type.boolean, symbol.ty.?);
+            found += 1;
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 3), found);
 }

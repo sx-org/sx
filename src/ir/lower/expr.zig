@@ -7,6 +7,7 @@ const mod_mod = @import("../module.zig");
 const type_bridge = @import("../type_bridge.zig");
 const program_index_mod = @import("../program_index.zig");
 const unescape = @import("../../unescape.zig");
+const literal_fields = @import("../../literal_fields.zig");
 const contracts = @import("../../contracts.zig");
 const errors = @import("../../errors.zig");
 const TypeResolver = @import("../type_resolver.zig").TypeResolver;
@@ -49,102 +50,61 @@ const LoweredLiteralInitializer = union(enum) {
 };
 const InferredLiteral = struct { ty: TypeId, initializers: []const LoweredLiteralInitializer };
 
-const LiteralInitializerCursor = struct {
-    position: usize = 0,
-    reserved: ?std.StringHashMap(void),
-
-    fn init(alloc: std.mem.Allocator, sl: *const ast.StructLiteral) LiteralInitializerCursor {
-        const has_spread = for (sl.field_inits) |fi| {
-            if (fi.value.data == .spread_expr) break true;
-        } else false;
-        if (!has_spread) return .{ .reserved = null };
-        var reserved = std.StringHashMap(void).init(alloc);
-        for (sl.field_inits) |fi| {
-            if (fi.value.data == .spread_expr) continue;
-            if (fi.name) |name| reserved.put(name, {}) catch unreachable;
-        }
-        return .{ .reserved = reserved };
-    }
-
-    fn deinit(self: *LiteralInitializerCursor) void {
-        if (self.reserved) |*names| names.deinit();
-    }
-
-    fn isReserved(self: *const LiteralInitializerCursor, name: []const u8) bool {
-        return if (self.reserved) |names| names.contains(name) else false;
-    }
-};
+fn routeLiteralContribution(self: *Lowering, route: *literal_fields.Typed, name: ?[]const u8, origin: literal_fields.Origin, span: ast.Span, type_name: []const u8) ?usize {
+    return route.contribute(name, origin) catch |err| {
+        if ((err == error.UnknownField or err == error.TooManyValues) and self.externalErrorsExist()) return null;
+        if (self.diagnostics) |d| switch (err) {
+            error.UnknownField => d.addFmt(.err, span, "field '{s}' not found on type '{s}'", .{ name.?, type_name }),
+            error.TooManyValues => d.addFmt(.err, span, "positional initializer {d} exceeds the {d} fields of '{s}'", .{ route.position - 1, route.names.len, type_name }),
+            error.UnnamedAfterNamed => d.add(.err, "unnamed contribution after a named field", span),
+            error.DirectCollision => d.addFmt(.err, span, "field '{s}' already initialized by a directly written value", .{name.?}),
+            error.DuplicateName => d.addFmt(.err, span, "field '{s}' initialized twice", .{name.?}),
+        };
+        return null;
+    };
+}
 
 pub const StructLiteralIndices = struct {
-    cursor: LiteralInitializerCursor,
-    plain_named: bool,
+    route: literal_fields.Typed,
     ty: TypeId,
 
     pub fn init(self: *Lowering, sl: *const ast.StructLiteral, ty: TypeId) StructLiteralIndices {
-        const cursor = LiteralInitializerCursor.init(self.alloc, sl);
-        return .{
-            .cursor = cursor,
-            .plain_named = cursor.reserved == null and plainLiteralHasNames(self, sl, ty),
-            .ty = ty,
+        const fields = self.getStructFields(ty);
+        const names = self.alloc.alloc([]const u8, fields.len) catch unreachable;
+        for (fields, names) |field, *name| name.* = self.module.types.getString(field.name);
+        const layout: literal_fields.Typed.Layout = layout: {
+            if (sl.struct_name == null and sl.type_expr == null and self.module.types.isAnonStruct(ty)) {
+                for (names) |name| {
+                    if (literal_fields.spreadName(name) == null) break :layout .anonymous;
+                }
+            }
+            break :layout .declaration;
         };
+        return .{ .route = literal_fields.Typed.init(self.alloc, names, layout), .ty = ty };
     }
 
-    pub fn deinit(self: *StructLiteralIndices) void {
-        self.cursor.deinit();
+    pub fn deinit(self: *StructLiteralIndices, alloc: std.mem.Allocator) void {
+        alloc.free(self.route.names);
+        self.route.deinit(alloc);
     }
 
     pub fn plain(self: *StructLiteralIndices, l: *Lowering, fi: ast.StructFieldInit) ?u32 {
-        const name = if (self.cursor.reserved != null)
-            (if (fi.was_shorthand and l.lookupField(self.ty, fi.name.?) == .missing) null else fi.name)
-        else if (self.plain_named)
-            fi.name
-        else
-            null;
-        if (self.plain_named and name == null) return null;
-        return self.spread(l, name, fi.value.span);
+        const name = self.route.plainName(fi.name, fi.was_shorthand);
+        return self.contribute(l, name, .direct, fi.value.span);
     }
 
     pub fn spread(self: *StructLiteralIndices, l: *Lowering, name: ?[]const u8, span: ast.Span) ?u32 {
-        return structInitializerIndex(l, self.ty, name, &self.cursor, span);
+        return self.contribute(l, name, .spread, span);
+    }
+
+    fn contribute(self: *StructLiteralIndices, l: *Lowering, name: ?[]const u8, origin: literal_fields.Origin, span: ast.Span) ?u32 {
+        const index = routeLiteralContribution(l, &self.route, name, origin, span, l.formatTypeName(self.ty)) orelse return null;
+        if (name) |n| _ = l.mentionField(self.ty, n, span);
+        return @intCast(index);
     }
 };
 
-fn genericInitializerName(tmpl: *const program_index_mod.StructTemplate, fi: ast.StructFieldInit, has_spread: bool) ?[]const u8 {
-    const name = fi.name orelse return null;
-    const punned = if (has_spread) fi.was_shorthand else fi.value.data == .identifier and std.mem.eql(u8, fi.value.data.identifier.name, name);
-    if (punned) {
-        for (tmpl.field_names) |field| if (std.mem.eql(u8, field, name)) return name;
-        return null;
-    }
-    return name;
-}
-
-fn genericInitializerIndex(tmpl: *const program_index_mod.StructTemplate, name: ?[]const u8, cursor: *LiteralInitializerCursor) ?usize {
-    if (name) |n| {
-        if (cursor.reserved == null) cursor.position += 1;
-        for (tmpl.field_names, 0..) |field, i| if (std.mem.eql(u8, field, n)) return i;
-        return null;
-    }
-    while (cursor.position < tmpl.field_names.len and cursor.isReserved(tmpl.field_names[cursor.position])) cursor.position += 1;
-    const position = cursor.position;
-    cursor.position += 1;
-    return if (position < tmpl.field_names.len) position else null;
-}
-
-fn plainLiteralHasNames(self: *Lowering, sl: *const ast.StructLiteral, ty: TypeId) bool {
-    if (sl.field_inits.len == 0 or sl.field_inits[0].name == null) return false;
-    if (self.getStructFields(ty).len > 0) {
-        for (sl.field_inits) |fi| {
-            const name = fi.name orelse continue;
-            const punned = fi.value.data == .identifier and std.mem.eql(u8, fi.value.data.identifier.name, name);
-            if (punned and self.lookupField(ty, name) == .missing) return false;
-        }
-    }
-    return true;
-}
-
-fn bindGenericLiteralField(self: *Lowering, tmpl: *const program_index_mod.StructTemplate, idx: ?usize, arg_ty: TypeId, tb: *std.StringHashMap(TypeId), diagnostic: ?struct { bound_by: *std.StringHashMap([]const u8), span: ast.Span }) bool {
-    const k = idx orelse return true;
+fn bindGenericLiteralField(self: *Lowering, tmpl: *const program_index_mod.StructTemplate, k: usize, arg_ty: TypeId, tb: *std.StringHashMap(TypeId), diagnostic: ?struct { bound_by: *std.StringHashMap([]const u8), span: ast.Span }) bool {
     if (arg_ty == .unresolved) return false;
     const node = tmpl.field_type_nodes[k];
     var ok = true;
@@ -168,9 +128,7 @@ fn bindGenericLiteralField(self: *Lowering, tmpl: *const program_index_mod.Struc
     return ok;
 }
 
-fn literalSpreadName(name: []const u8) ?[]const u8 {
-    return if (std.fmt.parseInt(usize, name, 10)) |_| null else |_| name;
-}
+const literalSpreadName = literal_fields.spreadName;
 
 const LiteralSpreadType = struct { name: ?[]const u8, ty: TypeId };
 
@@ -253,20 +211,20 @@ pub fn checkPlainInitializerNames(self: *Lowering, sl: *const ast.StructLiteral,
 pub fn genericLiteralType(self: *Lowering, sl: *const ast.StructLiteral, tmpl: *const program_index_mod.StructTemplate) ?TypeId {
     for (tmpl.type_params) |tp| if (!tp.is_type_param) return null;
     var tb = std.StringHashMap(TypeId).init(self.alloc);
-    var cursor = LiteralInitializerCursor.init(self.alloc, sl);
-    defer cursor.deinit();
+    var route = literal_fields.Typed.init(self.alloc, tmpl.field_names, .declaration);
+    defer route.deinit(self.alloc);
     for (sl.field_inits) |fi| {
         if (fi.value.data == .spread_expr) {
             const fields = literalSpreadTypes(self, fi.value.data.spread_expr.operand) orelse return null;
             defer self.alloc.free(fields);
             for (fields) |field| {
-                const idx = genericInitializerIndex(tmpl, field.name, &cursor);
+                const idx = route.contribute(field.name, .spread) catch return null;
                 if (!bindGenericLiteralField(self, tmpl, idx, field.ty, &tb, null)) return null;
             }
             continue;
         }
-        const name = genericInitializerName(tmpl, fi, cursor.reserved != null);
-        const idx = genericInitializerIndex(tmpl, name, &cursor);
+        const name = route.plainName(fi.name, fi.was_shorthand);
+        const idx = route.contribute(name, .direct) catch return null;
         const arg_ty = if (fi.value.data == .lambda) blk: {
             if (!fi.value.data.lambda.has_env) return null;
             break :blk self.lambdaEnvType(&fi.value.data.lambda) orelse return null;
@@ -310,24 +268,24 @@ fn inferGenericLiteral(self: *Lowering, sl: *const ast.StructLiteral, tmpl: *con
         }
     }
 
-    var cursor = LiteralInitializerCursor.init(self.alloc, sl);
-    defer cursor.deinit();
+    var route = literal_fields.Typed.init(self.alloc, tmpl.field_names, .declaration);
+    defer route.deinit(self.alloc);
     for (sl.field_inits) |fi| {
         if (fi.value.data == .spread_expr) {
             const contributions = lowerLiteralSpread(self, fi.value) orelse return failed;
             initializers.append(self.alloc, .{ .spread = contributions }) catch unreachable;
             for (contributions) |contribution| {
-                const idx = genericInitializerIndex(tmpl, contribution.name, &cursor);
+                const idx = routeLiteralContribution(self, &route, contribution.name, .spread, fi.value.span, tmpl.name) orelse return failed;
                 const arg_ty = self.valueTypeOfRef(contribution.value, self.builder.getRefType(contribution.value));
                 if (!bindGenericLiteralField(self, tmpl, idx, arg_ty, &tb, .{ .bound_by = &bound_by, .span = span })) ok = false;
             }
             continue;
         }
-        const name = genericInitializerName(tmpl, fi, cursor.reserved != null);
-        const idx = genericInitializerIndex(tmpl, name, &cursor);
+        const name = route.plainName(fi.name, fi.was_shorthand);
+        const idx = routeLiteralContribution(self, &route, name, .direct, fi.name_span orelse fi.value.span, tmpl.name) orelse return failed;
         var target: ?TypeId = null;
-        if (idx) |k| {
-            const node = tmpl.field_type_nodes[k];
+        {
+            const node = tmpl.field_type_nodes[idx];
             var generic = false;
             for (tmpl.type_params) |tp| {
                 if (self.matchTypeParam(node, tp.name)) generic = true;
@@ -439,31 +397,6 @@ fn lowerLiteralSpread(self: *Lowering, spread: *const Node) ?[]LiteralSpreadFiel
         },
     }
     return fields.toOwnedSlice(self.alloc) catch unreachable;
-}
-
-fn structInitializerIndex(self: *Lowering, ty: TypeId, name: ?[]const u8, cursor: *LiteralInitializerCursor, span: ast.Span) ?u32 {
-    if (name) |n| {
-        return switch (self.mentionField(ty, n, span)) {
-            .hit, .private => |hit| hit.index,
-            .missing => blk: {
-                if (!self.externalErrorsExist()) {
-                    if (self.diagnostics) |d|
-                        d.addFmt(.err, span, "field '{s}' not found on type '{s}'", .{ n, self.formatTypeName(ty) });
-                }
-                break :blk null;
-            },
-        };
-    }
-    const fields = self.getStructFields(ty);
-    while (cursor.position < fields.len and cursor.isReserved(self.module.types.getString(fields[cursor.position].name))) cursor.position += 1;
-    const position = cursor.position;
-    cursor.position += 1;
-    if (position < fields.len) return @intCast(position);
-    if (!self.externalErrorsExist()) {
-        if (self.diagnostics) |d|
-            d.addFmt(.err, span, "positional initializer {d} exceeds the {d} fields of '{s}'", .{ position, fields.len, self.formatTypeName(ty) });
-    }
-    return null;
 }
 
 fn coerceStructInitializer(self: *Lowering, value: Ref, field: types.TypeInfo.StructInfo.Field, index: usize, node: *const Node, span: ast.Span) Ref {
@@ -751,7 +684,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
             // stay silent — or an element whose type genuinely cannot be
             // inferred — diagnose.)
             if (self.target_type == null) {
-                return self.synthesizeAnonStruct(sl, span);
+                return self.synthesizeAnonStruct(sl);
             }
             if (self.diagnostics) |d| {
                 if (!d.hasErrors())
@@ -878,8 +811,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         defer self.alloc.free(selected);
         @memset(selected, null);
         var indices = StructLiteralIndices.init(self, sl, ty);
-        defer indices.deinit();
-        const has_spread = indices.cursor.reserved != null;
+        defer indices.deinit(self.alloc);
         for (sl.field_inits, 0..) |fi, k| {
             if (fi.value.data == .spread_expr) {
                 const contributions = if (prelowered) |pl| pl[k].spread else lowerLiteralSpread(self, fi.value) orelse continue;
@@ -894,7 +826,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
             }
             const index = indices.plain(self, fi);
             const saved_tt = self.target_type;
-            self.target_type = if (index) |idx| struct_fields[idx].ty else if (has_spread) null else saved_tt;
+            self.target_type = if (index) |idx| struct_fields[idx].ty else null;
             const val = if (prelowered) |pl|
                 pl[k].value
             else if (index) |idx|
@@ -3380,42 +3312,20 @@ pub fn lowerSliceExpr(self: *Lowering, se: *const ast.SliceExpr) Ref {
     return self.builder.emit(.{ .subslice = .{ .base = obj, .lo = lo, .hi = hi, .base_ty = obj_ty } }, slice_ty);
 }
 
-const AnonLiteralShape = struct {
-    fields: std.ArrayList(types.TypeInfo.StructInfo.Field) = .empty,
-    named: ?bool = null,
+const AnonLiteralValue = struct { ty: TypeId, value: ?Ref = null };
+const AnonLiteralShape = literal_fields.Anonymous(AnonLiteralValue);
 
-    fn deinit(self: *AnonLiteralShape, alloc: std.mem.Allocator) void {
-        self.fields.deinit(alloc);
+fn internAnonLiteral(self: *Lowering, shape: *const AnonLiteralShape) TypeId {
+    const fields = self.module.types.slice_arena.allocator().alloc(types.TypeInfo.StructInfo.Field, shape.named.items.len + shape.unnamed.items.len) catch unreachable;
+    for (shape.named.items, fields[0..shape.named.items.len]) |field, *dest| {
+        dest.* = .{ .name = self.module.types.internString(field.name), .ty = field.value.ty };
     }
-
-    fn contribute(self: *AnonLiteralShape, l: *Lowering, name: ?[]const u8, ty: TypeId) error{MixedElements}!usize {
-        const named = name != null;
-        if (self.named) |kind| {
-            if (kind != named) return error.MixedElements;
-        }
-        self.named = named;
-        var name_buf: [24]u8 = undefined;
-        const fname = name orelse (std.fmt.bufPrint(&name_buf, "{d}", .{self.fields.items.len}) catch unreachable);
-        const name_id = l.module.types.internString(fname);
-        if (named) {
-            for (self.fields.items, 0..) |*field, i| {
-                if (field.name == name_id) {
-                    field.ty = ty;
-                    return i;
-                }
-            }
-        }
-        const index = self.fields.items.len;
-        self.fields.append(l.alloc, .{ .name = name_id, .ty = ty }) catch unreachable;
-        return index;
+    for (shape.unnamed.items, fields[shape.named.items.len..], shape.named.items.len..) |value, *dest, i| {
+        var buf: [24]u8 = undefined;
+        dest.* = .{ .name = self.module.types.internString(std.fmt.bufPrint(&buf, "{d}", .{i}) catch unreachable), .ty = value.ty };
     }
-
-    fn intern(self: *const AnonLiteralShape, l: *Lowering) TypeId {
-        return l.module.types.internAnonStruct(
-            l.module.types.slice_arena.allocator().dupe(types.TypeInfo.StructInfo.Field, self.fields.items) catch unreachable,
-        );
-    }
-};
+    return self.module.types.internAnonStruct(fields);
+}
 
 pub fn inferAnonStructType(self: *Lowering, sl: *const ast.StructLiteral) TypeId {
     var shape = AnonLiteralShape{};
@@ -3426,43 +3336,26 @@ pub fn inferAnonStructType(self: *Lowering, sl: *const ast.StructLiteral) TypeId
     const saved_diag = self.diagnostics;
     self.diagnostics = null;
     defer self.diagnostics = saved_diag;
-    if (!checkPlainInitializerNames(self, sl, .unresolved)) return .unresolved;
     for (sl.field_inits) |fi| {
         if (fi.value.data == .spread_expr) {
             const contributions = literalSpreadTypes(self, fi.value.data.spread_expr.operand) orelse return .unresolved;
             defer self.alloc.free(contributions);
             for (contributions) |contribution| {
                 if (contribution.ty == .unresolved or contribution.ty == .void) return .unresolved;
-                _ = shape.contribute(self, contribution.name, contribution.ty) catch return .unresolved;
+                shape.contribute(self.alloc, contribution.name, .spread, .{ .ty = contribution.ty }) catch return .unresolved;
             }
         } else {
             const ty = self.inferExprType(fi.value);
             if (ty == .unresolved or ty == .void) return .unresolved;
-            _ = shape.contribute(self, fi.name, ty) catch return .unresolved;
+            shape.contribute(self.alloc, fi.name, .direct, .{ .ty = ty }) catch return .unresolved;
         }
     }
-    return shape.intern(self);
+    return internAnonLiteral(self, &shape);
 }
 
-fn selectAnonLiteralValue(self: *Lowering, shape: *AnonLiteralShape, values: *std.ArrayList(Ref), name: ?[]const u8, value: Ref, span: ast.Span) bool {
-    const index = shape.contribute(self, name, self.builder.getRefType(value)) catch {
-        if (self.diagnostics) |d|
-            d.addFmt(.err, span, "an untyped '.{{ }}' literal cannot mix positional and named elements — name all elements or none", .{});
-        return false;
-    };
-    if (index == values.items.len) {
-        values.append(self.alloc, value) catch unreachable;
-    } else {
-        values.items[index] = value;
-    }
-    return true;
-}
-
-pub fn synthesizeAnonStruct(self: *Lowering, sl: *const ast.StructLiteral, span: ast.Span) Ref {
+pub fn synthesizeAnonStruct(self: *Lowering, sl: *const ast.StructLiteral) Ref {
     var shape = AnonLiteralShape{};
     defer shape.deinit(self.alloc);
-    var values = std.ArrayList(Ref).empty;
-    defer values.deinit(self.alloc);
     const saved_target = self.target_type;
     self.target_type = null;
     defer self.target_type = saved_target;
@@ -3471,16 +3364,27 @@ pub fn synthesizeAnonStruct(self: *Lowering, sl: *const ast.StructLiteral, span:
             const contributions = lowerLiteralSpread(self, fi.value) orelse return self.builder.constUndef(.unresolved);
             defer self.alloc.free(contributions);
             for (contributions) |contribution| {
-                if (!selectAnonLiteralValue(self, &shape, &values, contribution.name, contribution.value, span))
-                    return self.builder.constUndef(.unresolved);
+                shape.contribute(self.alloc, contribution.name, .spread, .{
+                    .ty = self.builder.getRefType(contribution.value),
+                    .value = contribution.value,
+                }) catch unreachable;
             }
         } else {
             const value = self.lowerExpr(fi.value);
-            if (!selectAnonLiteralValue(self, &shape, &values, fi.name, value, span))
+            shape.contribute(self.alloc, fi.name, .direct, .{ .ty = self.builder.getRefType(value), .value = value }) catch {
+                if (self.diagnostics) |d| d.addFmt(.err, fi.name_span orelse fi.value.span, "field '{s}' initialized twice", .{fi.name.?});
                 return self.builder.constUndef(.unresolved);
+            };
         }
     }
-    return self.builder.structInit(values.items, shape.intern(self));
+    var values = std.ArrayList(Ref).empty;
+    defer values.deinit(self.alloc);
+    for (shape.named.items) |field| values.append(self.alloc, field.value.value.?) catch unreachable;
+    for (shape.unnamed.items) |value| values.append(self.alloc, value.value.?) catch unreachable;
+    const ty = internAnonLiteral(self, &shape);
+    const result = self.builder.structInit(values.items, ty);
+    if (sl.init_block) |ib| return self.lowerInitBlock(result, ty, ib, sl.init_block_self.?);
+    return result;
 }
 
 pub fn lowerTupleLiteral(self: *Lowering, tl: *const ast.TupleLiteral) Ref {

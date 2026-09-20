@@ -3783,6 +3783,33 @@ test "lsp/workspace: loadWorkspaceFiles analyses .sx files that were never opene
     try std.testing.expect(b.sema != null);
 }
 
+test "lsp/project: contextual literals select routing from index-named target slots" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const io = test_io();
+    var store = doc_mod.DocumentStore.init(alloc, io, &.{}, alloc);
+    _ = try store.openOrUpdate("literal-routing.sx",
+        \\main :: () {
+        \\    p: struct { x: i64; y: i64; } = .{1, 2};
+        \\    m := .{k = 5, 7};
+        \\    m = .{k = 6, 8};
+        \\    bad: struct { x: i64; y: i64; } = .{y = 2, 1};
+        \\}
+    , 1);
+    var server = Server{
+        .allocator = alloc,
+        .documents = store,
+        .transport = undefined,
+        .io = io,
+        .project_diag_uris = std.StringHashMap(void).init(alloc),
+    };
+    const diagnostics = server.collectProjectDiagnostics("literal-routing.sx");
+    try std.testing.expectEqual(@as(usize, 1), diagnostics.len);
+    try std.testing.expectEqualStrings("unnamed contribution after a named field", diagnostics[0].message);
+    try std.testing.expectEqual(@as(u32, 4), diagnostics[0].range.start.line);
+}
+
 test "lsp/project: whole-program check attributes a reachable error to its module" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

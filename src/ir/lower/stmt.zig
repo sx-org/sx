@@ -1144,6 +1144,8 @@ pub fn lowerConstDecl(self: *Lowering, cd: *const ast.ConstDecl) void {
         self.target_type = at;
     } else if (cd.value.data == .string_literal) {
         self.target_type = self.stringLiteralType(cd.value.data.string_literal);
+    } else {
+        self.target_type = null;
     }
     const ref = self.lowerExpr(cd.value);
     self.target_type = saved_target;
@@ -1329,21 +1331,13 @@ fn reorderNamedReturn(self: *Lowering, value_node: *const Node, ret_ty: TypeId) 
     return node;
 }
 
-/// A bare `.{ … }` in a TUPLE-returning position is a tuple literal —
-/// rewrite the node shape so every downstream intercept
-/// (multi-return arity validation, named-element reorder, the
-/// full-failable-tuple detection in `failableReturnTarget`) sees the tuple
-/// form it keys on.
-fn tupleFormOfBareBraceLiteral(self: *Lowering, node: *const Node, ret_ty: TypeId) *const Node {
+fn failableTupleForm(self: *Lowering, node: *const Node, ret_ty: TypeId) *const Node {
     if (node.data != .struct_literal) return node;
     const sl = node.data.struct_literal;
     if (sl.struct_name != null or sl.type_expr != null or sl.init_block != null) return node;
     if (ret_ty.isBuiltin()) return node;
     const rinfo = self.module.types.get(ret_ty);
-    if (rinfo != .failable and !(rinfo == .@"struct" and self.module.types.isAnonStruct(ret_ty))) return node;
-    if (rinfo == .@"struct") {
-        for (sl.field_inits) |fi| if (fi.value.data == .spread_expr) return node;
-    }
+    if (rinfo != .failable) return node;
     const elems = self.alloc.alloc(ast.TupleElement, sl.field_inits.len) catch return node;
     for (sl.field_inits, 0..) |fi, i| elems[i] = .{ .name = fi.name, .value = fi.value };
     const n = self.alloc.create(Node) catch return node;
@@ -1400,10 +1394,8 @@ fn reportSecondCallableReturn(self: *Lowering, binder: *const Node, fixed: TypeI
 
 pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) void {
     if (rs.value == null) rejectValuelessReturn(self, span);
-    // Normalize a bare `.{ … }` against a tuple return to the tuple-literal
-    // node shape FIRST — the intercepts below key on it.
     const norm_ret_ty: TypeId = self.effectiveReturnType() orelse .i64;
-    const rs_value: ?*const Node = if (rs.value) |val| tupleFormOfBareBraceLiteral(self, val, norm_ret_ty) else null;
+    const rs_value: ?*const Node = if (rs.value) |val| failableTupleForm(self, val, norm_ret_ty) else null;
     if (rs_value) |val| {
         if (val.data == .identifier and self.isPackName(val.data.identifier.name)) {
             _ = self.diagPackAsValue(val.data.identifier.name, val.span, .return_value);

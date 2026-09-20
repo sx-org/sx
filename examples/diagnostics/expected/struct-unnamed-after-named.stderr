@@ -1,0 +1,11 @@
+error: unnamed contribution after a named field
+  --> examples/diagnostics/struct-unnamed-after-named.sx:3:33
+   |
+ 3 |     direct := Sprite{1, py = 9, 2};
+   |                                 ^
+
+error: unnamed contribution after a named field
+  --> examples/diagnostics/struct-unnamed-after-named.sx:5:33
+   |
+ 5 |     spread := Sprite{scale = 5, ..coords};
+   |                                 ^^^^^^^^

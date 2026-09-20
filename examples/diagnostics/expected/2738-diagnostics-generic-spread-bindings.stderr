@@ -1,4 +1,4 @@
-error: field 'absent' not found on type 'Box__i32'
+error: field 'absent' not found on type 'Box'
   --> examples/diagnostics/2738-diagnostics-generic-spread-bindings.sx:7:20
    |
  7 |     unknown := Box{..extra};
