@@ -1372,7 +1372,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         // reference semantics as the identifier case above. Without this the
         // arg would be loaded into a temporary and the callee would mutate a
         // throwaway copy (silent data loss — e.g. `make_move(self.board, m)`).
-        if (pt != null and (arg.data == .field_access or arg.data == .index_expr or arg.data == .deref_expr)) {
+        if (pt != null and (arg.data == .field_access or arg.data == .index_expr or arg.data == .deref_expr or (self.fieldCall(arg) != null and self.exprHasAddressableStorage(arg)))) {
             const ptv = pt.?;
             if (!ptv.isBuiltin()) {
                 const pti = self.module.types.get(ptv);
@@ -1413,7 +1413,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         // address-of arms above; rvalue args never reach here (no lvalue
         // shape) and are refused at the node-less layer (coerceCallArgs).
         if (pt != null and (arg.data == .identifier or arg.data == .field_access or
-            arg.data == .index_expr or arg.data == .deref_expr))
+            arg.data == .index_expr or arg.data == .deref_expr or (self.fieldCall(arg) != null and self.exprHasAddressableStorage(arg))))
         {
             const ptv = pt.?;
             if (!ptv.isBuiltin()) {
@@ -4137,6 +4137,69 @@ fn lowerReinterpretIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
     return self.builder.load(slot, dst);
 }
 
+pub fn fieldCall(_: *Lowering, node: *const Node) ?ast.Call {
+    if (node.data != .call) return null;
+    const c = node.data.call;
+    if (c.callee.data != .identifier or !std.mem.eql(u8, c.callee.data.identifier.name, "@field") or c.args.len != 2) return null;
+    return c;
+}
+
+pub const FieldProjection = struct {
+    object: *const Node,
+    object_ty: TypeId,
+    index: u32,
+    ty: TypeId,
+};
+
+const FieldSelection = union(enum) {
+    dynamic,
+    field: FieldProjection,
+    out_of_bounds: struct { object_ty: TypeId, index: i64 },
+};
+
+fn selectField(self: *Lowering, c: ast.Call) FieldSelection {
+    if (c.args.len != 2) return .dynamic;
+    const saved_target = self.target_type;
+    self.target_type = null;
+    defer self.target_type = saved_target;
+    const ty = self.inferExprType(c.args[0]);
+    if (self.module.types.get(ty) != .@"struct") return .dynamic;
+    const index = self.comptimeIndexOf(c.args[1]) orelse self.evalComptimeInt(c.args[1]) orelse return .dynamic;
+    const field_ty = self.module.types.memberType(ty, index) orelse return .{ .out_of_bounds = .{ .object_ty = ty, .index = index } };
+    return .{ .field = .{ .object = c.args[0], .object_ty = ty, .index = @intCast(index), .ty = field_ty } };
+}
+
+pub fn fieldProjection(self: *Lowering, c: ast.Call) ?FieldProjection {
+    return switch (selectField(self, c)) {
+        .field => |field| field,
+        else => null,
+    };
+}
+
+fn diagFieldBounds(self: *Lowering, ty: TypeId, index: i64, span: ast.Span) void {
+    if (self.diagnostics) |d| d.addFmt(.err, span, "field index {d} out of bounds — '{s}' has {d} fields", .{ index, self.formatTypeName(ty), self.module.types.get(ty).@"struct".fields.len });
+}
+
+pub const FieldPlace = struct { ptr: Ref, ty: TypeId };
+
+pub fn lowerFieldPlace(self: *Lowering, node: *const Node) ?FieldPlace {
+    if (self.fieldCall(node)) |c| {
+        switch (selectField(self, c)) {
+            .field => |field| if (self.exprHasAddressableStorage(field.object)) {
+                const base = self.getExprAlloca(field.object) orelse self.lowerExprAsPtr(field.object);
+                return .{ .ptr = self.builder.structGepTyped(base, field.index, self.module.types.ptrTo(field.ty), field.object_ty), .ty = field.ty };
+            },
+            .out_of_bounds => |bad| {
+                diagFieldBounds(self, bad.object_ty, bad.index, c.args[1].span);
+                return null;
+            },
+            .dynamic => {},
+        }
+    }
+    if (self.diagnostics) |d| d.add(.err, "field access needs a compile-time index and addressable struct storage", node.span);
+    return null;
+}
+
 fn lowerBoxedViewIntrinsic(self: *Lowering, id: intrinsics.Id, c: *const ast.Call) Ref {
     const entry = intrinsics.byId(id);
     const sentinel = self.builder.constInt(0, if (id == .@"@len") .i64 else .any);
@@ -4145,6 +4208,21 @@ fn lowerBoxedViewIntrinsic(self: *Lowering, id: intrinsics.Id, c: *const ast.Cal
             entry.name, entry.arity, if (entry.arity == 1) @as([]const u8, "") else "s", c.args.len,
         });
         return sentinel;
+    }
+    if (id == .@"@field") {
+        switch (selectField(self, c.*)) {
+            .field => |field| {
+                const saved_target = self.target_type;
+                self.target_type = null;
+                defer self.target_type = saved_target;
+                return self.builder.structGet(self.lowerExpr(field.object), field.index, field.ty);
+            },
+            .out_of_bounds => |bad| {
+                diagFieldBounds(self, bad.object_ty, bad.index, c.args[1].span);
+                return self.builder.constUndef(.unresolved);
+            },
+            .dynamic => {},
+        }
     }
     // A spelled type folds to its part count. A partless spelled type is an
     // error, where a runtime tag of that kind answers 0. A module-scope value

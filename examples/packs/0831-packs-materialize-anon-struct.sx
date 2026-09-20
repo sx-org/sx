@@ -9,7 +9,7 @@ sum3 :: (a: i64, b: i64, c: f64) -> f64 { (a + b).(f64) + c }
 
 maker :: (..$xs) -> f64 {
     stored := .{ ..xs };
-    print("{} {}\n", stored.0, stored.1);
+    print("{} {}\n", @field(stored, 0), @field(stored, 1));
     sum3(..stored)
 }
 

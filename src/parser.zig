@@ -3727,27 +3727,18 @@ pub const Parser = struct {
                     // Dereference: expr.*
                     self.advance();
                     expr = try self.createNode(expr.span.start, .{ .deref_expr = .{ .operand = expr } });
-                } else if (self.tokens.tag(self.tok) == .int_literal) {
-                    // Numeric field access: tuple.0, tuple.1
-                    const field = self.tokens.slice(self.tok);
-                    self.advance();
-                    expr = try self.createNode(expr.span.start, .{ .field_access = .{ .object = expr, .field = field } });
                 } else if (self.dotMemberName()) |field| {
                     // Named field access: expr.field. A reserved keyword is a
                     // valid member name here — the leading dot disambiguates
                     // (`x.enum`, `E.struct`), so no backtick escape is needed.
                     expr = try self.createNode(expr.span.start, .{ .field_access = .{ .object = expr, .field = field } });
                 } else {
-                    return self.fail("expected field name or index after '.'");
+                    return self.fail("expected field name after '.'");
                 }
             } else if (self.tokens.tag(self.tok) == .question_dot) {
                 // Optional chaining: expr?.field
                 self.advance();
                 if (self.tokens.tag(self.tok) == .identifier or self.tokens.tag(self.tok).isKeyword()) {
-                    const field = self.tokens.slice(self.tok);
-                    self.advance();
-                    expr = try self.createNode(expr.span.start, .{ .field_access = .{ .object = expr, .field = field, .is_optional = true } });
-                } else if (self.tokens.tag(self.tok) == .int_literal) {
                     const field = self.tokens.slice(self.tok);
                     self.advance();
                     expr = try self.createNode(expr.span.start, .{ .field_access = .{ .object = expr, .field = field, .is_optional = true } });

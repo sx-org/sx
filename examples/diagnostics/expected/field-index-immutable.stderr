@@ -1,0 +1,17 @@
+error: cannot assign through constant 'K' — constants are immutable (use a '=' global or a local copy for mutable data)
+  --> examples/diagnostics/field-index-immutable.sx:8:5
+   |
+ 8 |     @field(K, 0) = 3;
+   |     ^^^^^^^^^^^^
+
+error: cannot assign through constant 'local' — a '::' declaration is immutable; use ':=' to declare a mutable local
+  --> examples/diagnostics/field-index-immutable.sx:10:5
+   |
+10 |     @field(local, 1) = 6;
+   |     ^^^^^^^^^^^^^^^^
+
+error: cannot assign to 'storage.fixed' — it is a constant, not a mutable global
+  --> examples/diagnostics/field-index-immutable.sx:11:20
+   |
+11 |     @field(storage.fixed, 0) = 7;
+   |                    ^^^^^

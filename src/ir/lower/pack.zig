@@ -692,7 +692,7 @@ pub fn inferPackBodyReturnType(self: *Lowering, body: *const Node) TypeId {
 /// (per-arg typing, `pack_arg_nodes` substitution, the mangle) sees N
 /// ordinary args:
 ///   - a comptime pack `..xs` / `..xs.m`  → `xs[0]` / `xs[0].m()`, …   (pack forwarding)
-///   - a tuple-typed value `..t`          → `t.0`, …, `t.<N-1>`
+///   - a tuple-typed value `..t`          → `@field(t, 0)`, …, `@field(t, N-1)`
 ///   - a fixed-array value `..t`          → `t[0]`, …, `t[N-1]`
 /// Only NAME-shaped value operands (identifier / field access) expand — an
 /// element node re-lowers the operand per element, which must not repeat side
@@ -772,23 +772,28 @@ fn spreadElemNodes(self: *Lowering, operand: *const Node, span: ast.Span) ?[]*No
     }
     const ty = self.inferExprType(operand);
     if (ty.isBuiltin()) return null;
-    // Every aggregate spreads element-wise as `operand[0]`, `operand[1]`, … —
-    // an index, never a name, so no synthesized node can read as a mention of a
-    // field a human never wrote.
+    // Spread projections do not mention private field names.
     switch (self.module.types.get(ty)) {
-        .@"struct" => |st| return spreadIndexNodes(self, operand, span, st.fields.len),
-        .array => |a| return spreadIndexNodes(self, operand, span, a.length),
+        .@"struct" => |st| return spreadIndexNodes(self, operand, span, st.fields.len, true),
+        .array => |a| return spreadIndexNodes(self, operand, span, a.length, false),
         else => return null,
     }
 }
 
-fn spreadIndexNodes(self: *Lowering, operand: *const Node, span: ast.Span, count: usize) ?[]*Node {
+fn spreadIndexNodes(self: *Lowering, operand: *const Node, span: ast.Span, count: usize, fields: bool) ?[]*Node {
     var nodes = std.ArrayList(*Node).empty;
     for (0..count) |i| {
         const idx_node = self.alloc.create(Node) catch return null;
         idx_node.* = .{ .span = span, .data = .{ .int_literal = .{ .value = @intCast(i) } } };
         const index_node = self.alloc.create(Node) catch return null;
-        index_node.* = .{ .span = span, .data = .{ .index_expr = .{ .object = @constCast(operand), .index = idx_node } } };
+        if (fields) {
+            const callee = self.alloc.create(Node) catch return null;
+            callee.* = .{ .span = span, .data = .{ .identifier = .{ .name = "@field" } } };
+            const args = self.alloc.dupe(*Node, &.{ @constCast(operand), idx_node }) catch return null;
+            index_node.* = .{ .span = span, .data = .{ .call = .{ .callee = callee, .args = args } } };
+        } else {
+            index_node.* = .{ .span = span, .data = .{ .index_expr = .{ .object = @constCast(operand), .index = idx_node } } };
+        }
         nodes.append(self.alloc, index_node) catch return null;
     }
     return nodes.toOwnedSlice(self.alloc) catch null;
@@ -828,7 +833,7 @@ fn lowerPackPrefixArg(self: *Lowering, arg: *const Node, param_ty: TypeId, is_re
                 }
             }
 
-            if ((arg.data == .field_access or arg.data == .index_expr or arg.data == .deref_expr) and
+            if ((arg.data == .field_access or arg.data == .index_expr or arg.data == .deref_expr or (self.fieldCall(arg) != null and self.exprHasAddressableStorage(arg))) and
                 self.inferExprType(arg) == pointee)
             {
                 const place = self.lowerExprAsPtr(arg);
@@ -858,7 +863,7 @@ fn lowerPackPrefixArg(self: *Lowering, arg: *const Node, param_ty: TypeId, is_re
     // Concrete lvalue -> *Protocol: construct a borrowed view around the real
     // concrete address, then pass the spilled protocol value by pointer.
     if (!param_ty.isBuiltin() and
-        (arg.data == .identifier or arg.data == .field_access or arg.data == .index_expr or arg.data == .deref_expr))
+        (arg.data == .identifier or arg.data == .field_access or arg.data == .index_expr or arg.data == .deref_expr or (self.fieldCall(arg) != null and self.exprHasAddressableStorage(arg))))
     {
         const param_info = self.module.types.get(param_ty);
         if (param_info == .pointer and self.getProtocolInfo(param_info.pointer.pointee) != null) {

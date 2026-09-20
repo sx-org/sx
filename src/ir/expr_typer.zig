@@ -600,22 +600,6 @@ pub const ExprTyper = struct {
                 // A guard-narrowed container local indexes its payload — the
                 // lockstep partner of `lowerIndexExpr`'s narrowing peel.
                 const obj_ty = self.l.narrowedContainerChild(ie.object) orelse self.l.inferExprType(ie.object);
-                // Comptime-constant index into a tuple VALUE — `tup[i]` where `i`
-                // folds to a compile-time integer (an `inline for` cursor or a
-                // literal). Mirrors the lowering in `lowerIndexExpr`: the result is
-                // the i-th tuple field's CONCRETE type (heterogeneous elements, so
-                // no single runtime element type). Without this the inference path
-                // returned `.unresolved` for `tup[i]`, so a following `.field` /
-                // method / comparison on it could not resolve (the `race` runtime's
-                // `tasks[i].state == .ready`). A runtime index falls through to the
-                // generic element-type path below.
-                if (!obj_ty.isBuiltin() and self.l.module.types.get(obj_ty) == .@"struct") {
-                    // Struct parity (aggregate ladder): `s[comptime i]` types
-                    // as the i-th field, exactly like tuples.
-                    if (self.l.comptimeIndexOf(ie.index)) |ci| {
-                        if (self.l.module.types.memberType(obj_ty, ci)) |fty| return fty;
-                    }
-                }
                 // Optional-chain index `opt?.xs[i]`: the object types as an
                 // optional container (`?[N]T` / `?[]T` / `?[*]T`), so the whole
                 // index expression is `?ElemType` (flattened if the element is

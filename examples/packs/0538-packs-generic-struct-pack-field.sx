@@ -15,11 +15,11 @@ main :: () -> i32 {
     a : Box(i64, i32, string) = ---;
     a.r = 7;
     a.pair = .{42, "hi"};                 // whole-tuple field store
-    print("a: r={} 0={} 1={}\n", a.r, a.pair.0, a.pair.1);
+    print("a: r={} 0={} 1={}\n", a.r, @field(a.pair, 0), @field(a.pair, 1));
 
     // A different shape → a different per-position tuple field.
     b : Box(bool, string, bool) = ---;   // Ts=[string, bool], pair: (string, bool)
     b.pair = .{"x", true};
-    print("b: 0={} 1={}\n", b.pair.0, b.pair.1);
+    print("b: 0={} 1={}\n", @field(b.pair, 0), @field(b.pair, 1));
     0
 }

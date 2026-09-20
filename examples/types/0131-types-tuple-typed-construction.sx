@@ -17,7 +17,7 @@ swap :: (a: i64, b: i64) -> (i64, i64) {
 main :: () -> i32 {
     // Inferred positional product.
     t := .{1, 2};
-    print("t = {} {}\n", t.0, t.1);                // t = 1 2
+    print("t = {} {}\n", @field(t, 0), @field(t, 1));                // t = 1 2
 
     // Explicitly-typed construction.
     u := PT{ a = 3, b = 4};
@@ -33,7 +33,7 @@ main :: () -> i32 {
 
     // Function returning a product via a `.{b, a}` body.
     s := swap(10, 20);
-    print("s = {} {}\n", s.0, s.1);                // s = 20 10
+    print("s = {} {}\n", @field(s, 0), @field(s, 1));                // s = 20 10
 
     0
 }

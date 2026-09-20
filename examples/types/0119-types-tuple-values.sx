@@ -8,20 +8,19 @@ PairI32 :: struct { a: i32; b: i32; }
 Box :: struct { xs: PairI32; }
 
 swap :: (a: i64, b: i64) -> (i64, i64) { return b, a; }
-fst  :: (t: $T) -> i64 { t.0 }
+fst  :: (t: $T) -> i64 { @field(t, 0) }
 
 main :: () -> i32 {
     // Inferred positional product + numeric field access.
     pair := .{40, 2};
-    print("pair {} {}\n", pair.0, pair.1);
+    print("pair {} {}\n", @field(pair, 0), @field(pair, 1));
 
-    // Named product: name access only.
     named : struct { x: i64; y: i64 } = .{x = 10, y = 20};
     print("named {} {}\n", named.x, named.y);
 
     // Element into a typed local (access path, not just print).
-    a : i64 = pair.0;
-    b : i64 = pair.1;
+    a : i64 = @field(pair, 0);
+    b : i64 = @field(pair, 1);
     print("locals {} {}\n", a, b);
 
     // Product-typed struct field: store, read both elements by name.
@@ -31,7 +30,7 @@ main :: () -> i32 {
 
     // Multi-return from a function.
     s := swap(1, 2);
-    print("ret {} {}\n", s.0, s.1);
+    print("ret {} {}\n", @field(s, 0), @field(s, 1));
 
     // Pass a positional product by value.
     print("pass {}\n", fst(.{11, 22}));
@@ -42,6 +41,6 @@ main :: () -> i32 {
     // pointer). Field types are tracked per-position, so reading each back is
     // typed correctly (i64 prints as a number, string as text).
     mixed := .{42, "hi"};
-    print("mixed {} {}\n", mixed.0, mixed.1);
+    print("mixed {} {}\n", @field(mixed, 0), @field(mixed, 1));
     0
 }

@@ -193,9 +193,8 @@ pub const SourceConstCtx = struct {
         return self.lowering.foldComptimeStructField(name, field) orelse
             self.lowering.foldConstStructField(name, field, span, self.frame);
     }
-    // Type-query builtin folds (`field_count`/`@sizeOf`/`@alignOf`) — delegate to
-    // the wrapped Lowering, which can resolve the type-expr arg.
     pub fn evalConstCallInt(self: SourceConstCtx, node: *const Node) ?i64 {
+        if (self.lowering.fieldCall(node) != null) return self.lowering.foldFieldInt(node, self.frame);
         return self.lowering.evalConstCallInt(node);
     }
     pub fn evalConstFieldAccessInt(self: SourceConstCtx, node: *const Node) ?i64 {
@@ -1847,17 +1846,8 @@ pub const Lowering = struct {
         return self.comptimeIntNamed(name);
     }
 
-    /// Fold a pure int-returning type-query builtin CALL to its compile-time
-    /// constant: `@sizeOf(T)` / `@alignOf(T)`. This is what lets a layout
-    /// measurement drive an `inline for` bound / array dim exactly like a plain
-    /// `K :: 3` const. (Reaches the self-ctx fold paths — array dim, inline-for
-    /// bound; a `@Vector` LANE in a plain type annotation resolves through the
-    /// stateless type-bridge ctx, which stubs this to null.) Resolves the type
-    /// arg through the same `resolveTypeArg` + accessors the value path uses, so
-    /// the folded constant always matches the call's runtime value. Returns null
-    /// for any non-type-query call, a wrong arg count, or an unresolved type arg
-    /// → the shared folder then treats it as not-a-compile-time-integer.
     pub fn evalConstCallInt(self: *Lowering, node: *const Node) ?i64 {
+        if (self.fieldCall(node) != null) return self.foldFieldInt(node, null);
         const c = switch (node.data) {
             .call => |call| call,
             else => return null,
@@ -2651,6 +2641,7 @@ pub const Lowering = struct {
             },
             .deref_expr => return true,
             .field_access => |fa| {
+                if (self.qualifiedGlobalHasStorage(node)) return true;
                 // A multi-letter shuffle is a temporary value, not a slot.
                 var obj_ty = self.inferExprType(fa.object);
                 if (!obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .pointer)
@@ -2662,6 +2653,11 @@ pub const Lowering = struct {
                     }
                 }
                 return self.exprHasAddressableStorage(fa.object);
+            },
+            .call => {
+                const c = self.fieldCall(node) orelse return false;
+                const field = self.fieldProjection(c) orelse return false;
+                return self.exprHasAddressableStorage(field.object);
             },
             .index_expr => |ie| return self.packArgNodeAt(&ie) == null and self.exprHasAddressableStorage(ie.object),
             else => return false,
@@ -3556,6 +3552,7 @@ pub const Lowering = struct {
     pub const GlobalAuthor = lower_comptime.GlobalAuthor;
     pub const selectGlobalAuthor = lower_comptime.selectGlobalAuthor;
     pub const foldConstAggLen = lower_comptime.foldConstAggLen;
+    pub const foldFieldInt = lower_comptime.foldFieldInt;
     pub const foldConstArrayElem = lower_comptime.foldConstArrayElem;
     pub const foldConstStructField = lower_comptime.foldConstStructField;
     pub const resolveGlobalRef = lower_comptime.resolveGlobalRef;
@@ -3602,6 +3599,10 @@ pub const Lowering = struct {
     pub const loadPlace = lower_stmt.loadPlace;
     pub const storePlace = lower_stmt.storePlace;
     pub const lowerPlaceRmw = lower_stmt.lowerPlaceRmw;
+    pub const qualifiedGlobalHasStorage = lower_stmt.qualifiedGlobalHasStorage;
+    pub const fieldCall = lower_call.fieldCall;
+    pub const fieldProjection = lower_call.fieldProjection;
+    pub const lowerFieldPlace = lower_call.lowerFieldPlace;
     pub const resolveMutablePlace = lower_stmt.resolveMutablePlace;
     pub const diagEnclosingRootWrite = lower_stmt.diagEnclosingRootWrite;
     pub const diagConstRootWrite = lower_stmt.diagConstRootWrite;

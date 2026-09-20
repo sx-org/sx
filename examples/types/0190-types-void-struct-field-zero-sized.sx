@@ -18,6 +18,6 @@ main :: () -> i32 {
 
     // A product with a void element.
     t := .{ {}, 9 };
-    print("t1={}\n", t.1);
+    print("t1={}\n", @field(t, 1));
     return 0;
 }

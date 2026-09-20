@@ -45,6 +45,7 @@ pub const Symbol = struct {
     ty: ?Type,
     def_span: Span,
     scope_depth: u32,
+    int_constant: ?i64 = null,
     /// null = defined in the current file. Non-null = absolute path of the origin file.
     origin: ?[]const u8 = null,
     /// Module-scope declaration visibility. A `.private` top-level symbol is
@@ -240,7 +241,9 @@ pub const Analyzer = struct {
             .const_decl => |cd| {
                 const ty = self.resolveTypeAnnotation(cd.type_annotation) orelse inferValueType(cd.value);
                 const kind = classifyConstDecl(cd);
+                const int_constant = self.constIndexValue(cd.value);
                 try self.addSymbol(cd.name, kind, ty, node.span);
+                self.symbols.items[self.symbols.items.len - 1].int_constant = int_constant;
                 // Record integer-literal consts so a named array dimension
                 // (`MAX :: 4; [MAX]u8`) can fold to a concrete length.
                 if (cd.value.data == .int_literal) {
@@ -426,6 +429,38 @@ pub const Analyzer = struct {
         };
         if (v < 0 or v > std.math.maxInt(u32)) return null;
         return @intCast(v);
+    }
+
+    fn constIndexValue(self: *Analyzer, node: *const Node) ?i64 {
+        return switch (node.data) {
+            .int_literal => |lit| lit.value,
+            .char_literal => |lit| lit.value,
+            .identifier => |id| blk: {
+                const indices = self.symbol_index.get(id.name) orelse break :blk null;
+                var i = indices.items.len;
+                while (i > 0) {
+                    i -= 1;
+                    const symbol = self.symbols.items[indices.items[i]];
+                    if (symbol.scope_depth <= self.scope_depth) break :blk symbol.int_constant;
+                }
+                break :blk null;
+            },
+            .unary_op => |u| if (u.op == .negate)
+                std.math.negate(self.constIndexValue(u.operand) orelse return null) catch null
+            else
+                null,
+            .binary_op => |b| blk: {
+                const lhs = self.constIndexValue(b.lhs) orelse break :blk null;
+                const rhs = self.constIndexValue(b.rhs) orelse break :blk null;
+                break :blk switch (b.op) {
+                    .add => std.math.add(i64, lhs, rhs) catch null,
+                    .sub => std.math.sub(i64, lhs, rhs) catch null,
+                    .mul => std.math.mul(i64, lhs, rhs) catch null,
+                    else => null,
+                };
+            },
+            else => null,
+        };
     }
 
     /// Resolve a type annotation node to an editor `Type` (metadata only — the
@@ -760,6 +795,16 @@ pub const Analyzer = struct {
                     }
                 }
                 const callee_name = self.resolveCalleeName(call_node) orelse return Type.unresolved;
+                if (std.mem.eql(u8, callee_name, "@field") and call_node.args.len == 2) {
+                    const obj_ty = self.inferExprType(call_node.args[0]);
+                    const index = self.constIndexValue(call_node.args[1]) orelse return .any_type;
+                    const fields = switch (obj_ty) {
+                        .struct_type => |name| (self.struct_types.get(name) orelse return .unresolved).field_types,
+                        .tuple_type => |tt| tt.field_types,
+                        else => return .any_type,
+                    };
+                    return if (index >= 0 and index < fields.len) fields[@intCast(index)] else .unresolved;
+                }
                 // Check fn_signatures registry
                 if (self.fn_signatures.get(callee_name)) |sig| {
                     return sig.return_type;
@@ -853,7 +898,22 @@ pub const Analyzer = struct {
                     }
                     return self.inferExprType(te);
                 }
-                return .void_type;
+                var fields = std.ArrayList(Type).empty;
+                var names = std.ArrayList([]const u8).empty;
+                var named = false;
+                for (sl.field_inits) |fi| {
+                    if (fi.value.data == .spread_expr) return .unresolved;
+                    fields.append(self.allocator, self.inferExprType(fi.value)) catch return .unresolved;
+                    if (fi.name) |name| {
+                        names.append(self.allocator, name) catch return .unresolved;
+                        named = true;
+                    }
+                }
+                if (named and names.items.len != fields.items.len) return .unresolved;
+                return .{ .tuple_type = .{
+                    .field_types = fields.toOwnedSlice(self.allocator) catch return .unresolved,
+                    .field_names = if (named) names.toOwnedSlice(self.allocator) catch return .unresolved else null,
+                } };
             },
             .force_unwrap => |fu| {
                 const opt_ty = self.inferExprType(fu.operand);
@@ -1172,7 +1232,9 @@ pub const Analyzer = struct {
                 try self.analyzeNode(cd.value);
                 const ty = self.resolveTypeAnnotation(cd.type_annotation) orelse inferValueType(cd.value);
                 const kind = classifyConstDecl(cd);
+                const int_constant = self.constIndexValue(cd.value);
                 try self.addSymbol(cd.name, kind, ty, node.span);
+                self.symbols.items[self.symbols.items.len - 1].int_constant = int_constant;
             },
             .var_decl => |vd| {
                 if (vd.value) |val| {

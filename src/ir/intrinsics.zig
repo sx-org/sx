@@ -172,7 +172,7 @@ pub const entries = [_]Entry{
     .{ .id = .@"@errorName", .module = core, .name = "@errorName", .mode = .lower, .arity = 1, .ret = .string },
     .{ .id = .@"@errorPayload", .module = core, .name = "@errorPayload", .mode = .lower, .arity = 1, .ret = .any },
     .{ .id = .@"@len", .module = core, .name = "@len", .mode = .lower, .arity = 1, .ret = .i64 },
-    .{ .id = .@"@field", .module = core, .name = "@field", .mode = .lower, .arity = 2, .ret = .any },
+    .{ .id = .@"@field", .module = core, .name = "@field", .mode = .lower, .arity = 2, .ret = null },
     .{ .id = .@"@inner", .module = core, .name = "@inner", .mode = .lower, .arity = 1 },
     .{ .id = .@"@typeEq", .module = core, .name = "@typeEq", .mode = .lower, .arity = 2, .ret = .bool },
     .{ .id = .@"@unbox", .module = core, .name = "@unbox", .mode = .lower, .arity = 2 },

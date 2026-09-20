@@ -1273,6 +1273,12 @@ pub fn fixupMethodReceiver(self: *Lowering, method_args: *std.ArrayList(Ref), fu
                     return;
                 }
             }
+            if (self.fieldCall(obj_node) != null) {
+                if (self.refStorageAddress(method_args.items[0])) |address| {
+                    method_args.items[0] = receiverPointer(self, address, obj_ty);
+                    return;
+                }
+            }
             // Compound lvalue receiver: obj.field.method() / arr[i].method() /
             // (*p).method() → take the lvalue's real address so mutations
             // through *T are visible on the original storage (not a throwaway
@@ -3128,40 +3134,6 @@ pub fn lowerIndexExpr(self: *Lowering, ie: *const ast.IndexExpr) Ref {
     }
     // Infer element type from the object's slice/array type
     const obj_ty = self.inferExprType(ie.object);
-    // Comptime-constant index into a tuple VALUE — `tup[i]` where `i` folds
-    // to a compile-time integer (an `inline for` cursor or a literal). A tuple
-    // has heterogeneous element types, so there is no runtime element-indexing
-    // op; treat it exactly like the `.N` field-access path (a `structGet` of
-    // the i-th field), yielding the field's CONCRETE type. This is what the
-    // `race`/reflection loops need: read the i-th `*Task(T_i)` from a
-    // named-tuple param with its real type, not a type-erased `Any`. A
-    // *runtime* index into a tuple value falls through to the generic guard
-    // below ("cannot index a value of type '(...)'") — there is no single
-    // element type to index by at runtime.
-    // Comptime-constant index into a STRUCT value — `s[i]` where `i` folds
-    // (exact parity with the tuple path above — the field itself, typed; a
-    // runtime index does NOT apply to structs, use `@field(s, j)`).
-    // This is what gives a positional anonymous struct (`t := .{1, 2}`) the
-    // same `t[i]` walks a tuple literal has.
-    if (!obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .@"struct") {
-        const sinfo = self.module.types.get(obj_ty).@"struct";
-        if (self.comptimeIndexOf(ie.index)) |ci| {
-            if (ci >= 0 and @as(usize, @intCast(ci)) < sinfo.fields.len) {
-                const fi: u32 = @intCast(ci);
-                const obj = self.lowerExpr(ie.object);
-                return self.builder.structGet(obj, fi, sinfo.fields[fi].ty);
-            }
-            if (self.diagnostics) |d| {
-                d.addFmt(.err, ie.index.span, "struct index {} out of bounds — '{s}' has {} field{s}", .{
-                    ci,
-                    self.formatTypeName(obj_ty),
-                    sinfo.fields.len,
-                    if (sinfo.fields.len == 1) "" else "s",
-                });
-            }
-            return self.builder.constInt(0, .i64); // placeholder — hasErrors() aborts before codegen
-        }
-    }
     // A guard-narrowed container local indexes its PAYLOAD: the guard proved
     // presence, so `o[i]` is the element, not an optional chain.
     if (self.narrowedContainerChild(ie.object)) |child| {
@@ -4296,30 +4268,6 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 const ie = &uop.operand.data.index_expr;
                 const narrowed_child = self.narrowedContainerChild(ie.object);
                 const obj_ty = narrowed_child orelse self.inferExprType(ie.object);
-                // Comptime-constant index into a tuple VALUE — `@tup[i]`. A tuple is
-                // heterogeneous: the element address is a typed `structGep` of the
-                // i-th field, never an `index_gep` (whose `ptrTo(.unresolved)`
-                // element type panics at LLVM emit). Out-of-range diagnoses loudly,
-                // mirroring the read path.
-                if (!obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .@"struct") {
-                    // Struct parity (aggregate ladder): `@s[comptime i]` is the
-                    // i-th field's address, exactly like tuples.
-                    const nfields: usize = @intCast(self.module.types.memberCount(obj_ty) orelse 0);
-                    if (self.comptimeIndexOf(ie.index)) |ci| {
-                        if (ci >= 0 and @as(usize, @intCast(ci)) < nfields) {
-                            const fi: u32 = @intCast(ci);
-                            const fld_ty = self.module.types.memberType(obj_ty, ci) orelse .unresolved;
-                            const base = self.getExprAlloca(ie.object) orelse self.lowerExprAsPtr(ie.object);
-                            break :blk self.builder.structGepTyped(base, fi, self.module.types.ptrTo(fld_ty), obj_ty);
-                        }
-                        if (self.diagnostics) |d| {
-                            d.addFmt(.err, ie.index.span, "tuple index {} out of bounds — tuple '{s}' has {} field{s}", .{
-                                ci, self.formatTypeName(obj_ty), nfields, if (nfields == 1) "" else "s",
-                            });
-                        }
-                        break :blk self.builder.constInt(0, .i64); // placeholder — hasErrors() aborts
-                    }
-                }
                 const idx = self.lowerIndexOperand(ie.index);
                 const elem_ty = self.ptrToArrayElem(obj_ty) orelse self.ptrToSliceElem(obj_ty) orelse self.getElementType(obj_ty);
                 // Non-indexable base (`@pc[i]` on a `*T`, a struct, ...): an
@@ -4335,7 +4283,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             }
             // address_of(field_access) → use lowerExprAsPtr for GEP chain
             // Handles all cases: pointer-based, index-based, nested field access
-            if (uop.op == .address_of and uop.operand.data == .field_access) {
+            if (uop.op == .address_of and (uop.operand.data == .field_access or self.fieldCall(uop.operand) != null)) {
                 const inner_ty = self.inferExprType(uop.operand);
                 const ptr_ty = self.module.types.ptrTo(inner_ty);
                 const ptr = self.lowerExprAsPtr(uop.operand);

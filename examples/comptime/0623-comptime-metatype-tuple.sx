@@ -16,7 +16,7 @@ TripleCopy :: define(declare("TripleCopy"), @typeInfo(Triple));
 
 main :: () -> i32 {
     p : Pair = .{ 3, 2.5 };
-    print("p = {} {}\n", p.0, p.1);
+    print("p = {} {}\n", @field(p, 0), @field(p, 1));
 
     t : TripleCopy = .{ a = 7, b = true, c = 1.5 };
     print("t = {} {} {}\n", t.a, t.b, t.c);
