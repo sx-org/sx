@@ -4061,7 +4061,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 // pick. `.none` after a visible name is the registration-only
                 // author (no per-source partition) — emit its global value.
                 switch (self.selectModuleConst(id.name)) {
-                    .resolved => |sel| break :blk self.emitModuleConst(sel.info, sel.source),
+                    .resolved => |sel| break :blk self.emitModuleConst(id.name, sel.info, sel.source),
                     // Own const author with no materialized value (unsupported
                     // shape, e.g. an array const) — fall through; the tail of
                     // identifier lowering diagnoses it as unresolved.
@@ -4071,7 +4071,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                             d.addFmt(.err, node.span, "'{s}' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import", .{id.name});
                         break :blk self.emitPlaceholder(id.name);
                     },
-                    .none => break :blk self.emitModuleConst(ci_global, null),
+                    .none => break :blk self.emitModuleConst(id.name, ci_global, null),
                 }
             }
             // Check if it's a function name — produce function pointer reference

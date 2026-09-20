@@ -1,0 +1,11 @@
+A :: struct { pz: i64; }
+Plain :: A{pz = Plain.pz};
+Spread :: A{..Spread};
+First :: A{..Second};
+Second :: A{pz = First.pz};
+
+main :: () {
+    plain := Plain;
+    spread := Spread;
+    mutual := First;
+}

@@ -1,0 +1,17 @@
+error: constant 'Plain' depends on itself
+  --> examples/diagnostics/2747-diagnostics-module-constant-value-cycle.sx:2:10
+   |
+ 2 | Plain :: A{pz = Plain.pz};
+   |          ^^^^^^^^^^^^^^^^
+
+error: constant 'Spread' depends on itself
+  --> examples/diagnostics/2747-diagnostics-module-constant-value-cycle.sx:3:11
+   |
+ 3 | Spread :: A{..Spread};
+   |           ^^^^^^^^^^^
+
+error: constant 'First' depends on itself
+  --> examples/diagnostics/2747-diagnostics-module-constant-value-cycle.sx:4:10
+   |
+ 4 | First :: A{..Second};
+   |          ^^^^^^^^^^^

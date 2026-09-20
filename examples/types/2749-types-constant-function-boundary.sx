@@ -1,0 +1,14 @@
+@import "modules/std.sx";
+A :: struct { pz: i64; }
+Value :: A{pz = choose(i64)};
+stop: bool = true;
+
+choose :: ($T: Type) -> T {
+    if stop { return 7; }
+    Value.pz
+}
+
+main :: () {
+    value := Value;
+    print("{}\n", value.pz);
+}
