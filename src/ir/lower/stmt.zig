@@ -181,6 +181,10 @@ fn lowerTail(self: *Lowering, tail: *const Node, demand: TailDemand) BodyTail {
             // statement it yields no value; a value-returning function's missing
             // tail value is caught by the missing-value diagnostic instead.
             self.force_block_value = !isNoElseValuelessIf(tail);
+            const saved_marker = self.marked_error_expr;
+            if (demand == .return_value and self.errorChannelOf(demand.return_value) != null)
+                self.marked_error_expr = .{ .node = tail, .pure_only = false };
+            defer self.marked_error_expr = saved_marker;
             const v = self.tryLowerAsExpr(tail) orelse return .no_value;
             if (expressionDiverged(self, v)) return .{ .terminated = .noreturn };
             return .{ .value = v };
@@ -222,6 +226,9 @@ fn lowerErrorOnlyTail(self: *Lowering, tail: *const Node, ret_ty: TypeId) BodyTa
     }
     const saved_target = self.target_type;
     defer self.target_type = saved_target;
+    const saved_marker = self.marked_error_expr;
+    self.marked_error_expr = .{ .node = tail, .pure_only = true };
+    defer self.marked_error_expr = saved_marker;
     if (tailIsKnownNonError(self, tail)) {
         // Nothing demands this value: it has no destination, and it is
         // evaluated purely for its effects.
@@ -786,7 +793,7 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
             self.target_type = ty;
             self.force_block_value = true;
             const errs_before: usize = if (self.diagnostics) |d| d.errorCount() else 0;
-            var ref = self.lowerExpr(val);
+            var ref = self.lowerMarkedExpr(val, true);
             self.target_type = saved_target;
             self.force_block_value = saved_fbv;
             if (self.rejectBlockBinding(val, vd.name, self.builder.getRefType(ref))) return;
@@ -977,7 +984,7 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
         // take their spec defaults (i64/f64) instead of adopting it.
         self.target_type = null;
         const errs_before: usize = if (self.diagnostics) |d| d.errorCount() else 0;
-        const ref = self.lowerExpr(val);
+        const ref = self.lowerMarkedExpr(val, true);
         self.force_block_value = saved_fbv;
         self.target_type = saved_target;
         if (bindDivergingInitializer(self, vd.name, ref)) return;
@@ -1147,7 +1154,7 @@ pub fn lowerConstDecl(self: *Lowering, cd: *const ast.ConstDecl) void {
     } else {
         self.target_type = null;
     }
-    const ref = self.lowerExpr(cd.value);
+    const ref = self.lowerMarkedExpr(cd.value, true);
     self.target_type = saved_target;
     const ref_ty = self.builder.getRefType(ref);
     const ty = annotated orelse ref_ty;
@@ -1451,7 +1458,13 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) v
     // lowering — `reorderNamedReturn` is a no-op for positional / non-tuple
     // returns and for the inline-comptime case (ret_ty_for_target carries the
     // right tuple either way).
-    const ret_val = if (rs_value) |val| self.lowerExpr(reorderNamedReturn(self, val, ret_ty_for_target)) else null;
+    const ret_val = if (rs_value) |val| blk: {
+        const ordered = reorderNamedReturn(self, val, ret_ty_for_target);
+        break :blk if (self.errorChannelOf(ret_ty_for_target) != null)
+            self.lowerMarkedExpr(ordered, false)
+        else
+            self.lowerExpr(ordered);
+    } else null;
     if (ret_demand) |d| d.restore();
     if (ret_val) |rv| {
         // `return proc.exit(0);` never returns: the operand took control where
@@ -4075,7 +4088,7 @@ pub fn lowerDestructureDecl(self: *Lowering, dd: *const ast.DestructureDecl) voi
     // Same as the unannotated var-decl path: the destructure declares new
     // bindings, so the ambient target type must not type the RHS literals.
     self.target_type = null;
-    const ref = self.lowerExpr(dd.value);
+    const ref = self.lowerMarkedExpr(dd.value, false);
     self.force_block_value = saved_fbv;
     self.target_type = saved_target;
     const ty = self.builder.getRefType(ref);

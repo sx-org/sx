@@ -1,4 +1,4 @@
-error: a bare failable call in a `defer` body has nowhere to send its error — the block is already exiting; absorb it locally with `catch` or `?? <value>`
+error: a pure failable expression needs an error-path marker; use `catch` to handle the error
   --> examples/errors/1049-errors-cleanup-absorption-reject.sx:13:11
    |
 13 |     defer failing();           // REJECTED: bare failable in a defer body

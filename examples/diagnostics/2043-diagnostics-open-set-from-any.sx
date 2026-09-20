@@ -50,6 +50,6 @@ main :: () -> i32 {
     // With a failure channel, and through a chain.
     chained: ?any = v;
     reached := chained?.(View);
-    print("{} {}\n", grab(a), reached);
+    print("{} {}\n", grab(a) catch { return 1; }, reached);
     0
 }

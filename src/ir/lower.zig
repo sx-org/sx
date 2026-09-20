@@ -704,6 +704,7 @@ pub const Lowering = struct {
     trace_clear_fid: ?FuncId = null, // extern `sx_trace_clear`
     needs_trace_runtime: bool = false, // set when lowering emits a trace push/clear; signals Compilation to auto-link sx_trace.c
     chain_fail_target: ?ChainFailTarget = null, // when set, a failable `??` chain routes its TOTAL failure here (an absorbing consumer like `catch`) instead of propagating to the function
+    marked_error_expr: ?struct { node: *const Node, pure_only: bool } = null,
     /// A written lambda literal's env struct, interned once for the typer and
     /// the lowering alike, keyed by the literal.
     lambda_env_types: std.AutoHashMap(LambdaKey, TypeId),
@@ -4163,6 +4164,7 @@ pub const Lowering = struct {
     pub const castErrorSet = lower_expr.castErrorSet;
     pub const resolveOptionalInner = lower_expr.resolveOptionalInner;
     pub const lowerExpr = lower_expr.lowerExpr;
+    pub const lowerMarkedExpr = lower_expr.lowerMarkedExpr;
     pub const lowerAsmExpr = lower_expr.lowerAsmExpr;
     pub const asmResultType = lower_expr.asmResultType;
     pub const refCapturePointee = lower_expr.refCapturePointee;

@@ -2092,7 +2092,10 @@ pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, ph
     // An `.unresolved` request is a question the AST could not answer — a block
     // body binds the locals its tail reads only as it lowers — so the lowered
     // result's own type settles the wrapper's return.
-    const result = self.lowerExpr(expr);
+    const result = if (ret_ty == .unresolved or self.errorChannelOf(ret_ty) != null)
+        self.lowerMarkedExpr(expr, false)
+    else
+        self.lowerExpr(expr);
     const settled_ret: TypeId = if (ret_ty == .unresolved) self.builder.getRefType(result) else ret_ty;
     self.module.getFunctionMut(func_id).ret = settled_ret;
     if (settled_ret == .void) {
