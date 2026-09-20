@@ -1,9 +1,9 @@
-// An `any` does not IMPLICITLY unbox to a concrete type — an unbox carries no
-// runtime tag check. The rejection sits in `coerceMode` (`.unbox_any` arm,
-// mode == .implicit), like the no-implicit-optional-unwrap rule, and directs the
-// user to `match` on the value's type or an explicit `xx`. The `xx` escape hatch
-// and the compiler-generated type-dispatch / pack-extraction unboxes are
-// unaffected.
+// An `any` does not implicitly unbox to a
+// concrete type because unboxing does not
+// check the runtime tag. The diagnostic
+// directs the user to dispatch on the boxed
+// type with `match` or assert the boxed
+// type with `.(T)`.
 
 @import "modules/std.sx";
 

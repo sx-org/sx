@@ -2,7 +2,7 @@
 //   - a `.X` shorthand must name a member that is in the destination set,
 //   - an error-set value compares only with a member spelling or another
 //     error-set value; comparing to a raw integer is a type error
-//     (coerce with `xx` to compare the raw id).
+//     (coerce with `.(i64)` to compare the raw id).
 // The positive cases live in `examples/217-error-sets.sx`.
 
 @import "modules/std.sx";

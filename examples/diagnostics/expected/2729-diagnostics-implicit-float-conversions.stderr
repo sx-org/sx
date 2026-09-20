@@ -1,22 +1,22 @@
-error: cannot implicitly convert 'f64' to 'f32'; use an explicit cast (`xx`/`.(T)`)
+error: cannot implicitly convert 'f64' to 'f32'; use an explicit cast (`.(f32)`)
   --> examples/diagnostics/2729-diagnostics-implicit-float-conversions.sx:6:14
    |
  6 |     small := Small{value = large};
    |              ^^^^^^^^^^^^^^^^^^^^
 
-error: cannot implicitly convert 'f64' to 'i32'; use an explicit cast (`xx`/`.(T)`)
+error: cannot implicitly convert 'f64' to 'i32'; use an explicit cast (`.(i32)`)
   --> examples/diagnostics/2729-diagnostics-implicit-float-conversions.sx:8:14
    |
  8 |     whole := Whole{value = fraction};
    |              ^^^^^^^^^^^^^^^^^^^^^^^
 
-error: cannot implicitly convert 'f64' to 'f32'; use an explicit cast (`xx`/`.(T)`)
+error: cannot implicitly convert 'f64' to 'f32'; use an explicit cast (`.(f32)`)
   --> examples/diagnostics/2729-diagnostics-implicit-float-conversions.sx:9:5
    |
  9 |     other_cast: f32 = fraction.(f32).(f64);
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error: cannot implicitly convert 'f64' to 'f32'; use an explicit cast (`xx`/`.(T)`)
+error: cannot implicitly convert 'f64' to 'f32'; use an explicit cast (`.(f32)`)
   --> examples/diagnostics/2729-diagnostics-implicit-float-conversions.sx:10:19
    |
 10 |     branch: f32 = if fraction > 0.0 then 1.0 else large;

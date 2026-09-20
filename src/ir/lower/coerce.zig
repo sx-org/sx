@@ -1118,7 +1118,7 @@ fn terminatedStruct(self: *Lowering, ty: TypeId, info: types.TypeInfo.StructInfo
 /// global-initializer path.
 pub fn diagNonIntegralNarrow(self: *Lowering, span: ast.Span, value: f64, dst_ty: TypeId) void {
     if (self.diagnostics) |d|
-        d.addFmt(.err, span, "cannot implicitly narrow non-integral float '{d}' to '{s}'; use an explicit cast (`xx`/`.(T)`)", .{ value, self.formatTypeName(dst_ty) });
+        d.addFmt(.err, span, "cannot implicitly narrow non-integral float '{d}' to '{s}'; use an explicit cast (`.({s})`)", .{ value, self.formatTypeName(dst_ty), self.formatTypeName(dst_ty) });
 }
 
 /// Lower a struct field default `default_expr`, coerced to the field type
@@ -1332,7 +1332,7 @@ fn diagnosePointerIntegerWeld(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) v
     const cs = self.builder.current_span;
     const span = ast.Span{ .start = cs.start, .end = cs.end };
     const why = if (isPointerValueKind(self, src_ty)) "an address is not a number" else "a number is not an address";
-    d.addFmt(.err, span, "cannot coerce a value of type '{s}' to '{s}': {s}; use an explicit cast (`xx`/`.(T)`)", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty), why });
+    d.addFmt(.err, span, "cannot coerce a value of type '{s}' to '{s}': {s}; use an explicit cast (`.({s})`)", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty), why, self.formatTypeName(dst_ty) });
     self.assignability_error_count += 1;
 }
 
@@ -1624,7 +1624,7 @@ fn refuseImplicitNumericConversion(self: *Lowering, src_ty: TypeId, dst_ty: Type
     if (!self.externalErrorsExist()) {
         if (self.diagnostics) |d| {
             const cs = self.builder.current_span;
-            d.addFmt(.err, .{ .start = cs.start, .end = cs.end }, "cannot implicitly convert '{s}' to '{s}'; use an explicit cast (`xx`/`.(T)`)", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty) });
+            d.addFmt(.err, .{ .start = cs.start, .end = cs.end }, "cannot implicitly convert '{s}' to '{s}'; use an explicit cast (`.({s})`)", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty), self.formatTypeName(dst_ty) });
             self.assignability_error_count += 1;
         }
     }
@@ -1781,7 +1781,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             if (mode == .implicit) {
                 if (self.diagnostics) |d| {
                     const cs = self.builder.current_span;
-                    d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "an 'any' does not implicitly unbox to '{s}': the boxed type is not checked, so a wrong target reinterprets the payload (a wrong scalar silently yields garbage; an aggregate dereferences it and crashes). Dispatch on the value's type with `match`, or force it with `xx` if you know the boxed type.", .{self.formatTypeName(dst_ty)});
+                    d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "an 'any' does not implicitly unbox to '{s}': the boxed type is not checked, so a wrong target reinterprets the payload (a wrong scalar silently yields garbage; an aggregate dereferences it and crashes). Dispatch on the value's type with `match`, or assert the boxed type with `.({s})`.", .{ self.formatTypeName(dst_ty), self.formatTypeName(dst_ty) });
                 }
                 // Diagnosed — `hasErrors()` aborts the build before run time; the
                 // emitted op is never executed.

@@ -2954,7 +2954,7 @@ without `xx` / `.(T)`:
   (folds), `5.0 / 2.0` is `2.5` (errors) — never integer truncating division.
 - A **non-integral** compile-time float — literal or const expression — is a
   **compile error**: `y : i64 = 1.5` → "cannot implicitly narrow non-integral
-  float '1.5' to 'i64'; use an explicit cast (`xx`/`.(T)`)". A count slot has
+  float '1.5' to 'i64'; use an explicit cast (`.(i64)`)". A count slot has
   no cast escape and phrases its rejection as "array dimension must be an
   integer, but '…' is a non-integral float".
 - A **runtime** float (one with no compile-time value) is unaffected — narrow

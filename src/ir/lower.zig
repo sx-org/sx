@@ -3268,9 +3268,9 @@ pub const Lowering = struct {
         // "(range min..max)" wording. The 64-bit types (i64/u64) can't (their
         // bound overflows i64), so report the max magnitude instead.
         if (self.intLiteralRange(ty)) |r| {
-            d.addFmt(.err, span, "integer literal {} does not fit in {s} (range {}..{}) — use an explicit `xx` / `.(T)` to truncate", .{ mag, tn, r.min, r.max });
+            d.addFmt(.err, span, "integer literal {} does not fit in {s} (range {}..{}) — use an explicit `.({s})` to truncate", .{ mag, tn, r.min, r.max, tn });
         } else {
-            d.addFmt(.err, span, "integer literal {} does not fit in {s} (max {}) — use an explicit `xx` / `.(T)` to truncate", .{ mag, tn, cap });
+            d.addFmt(.err, span, "integer literal {} does not fit in {s} (max {}) — use an explicit `.({s})` to truncate", .{ mag, tn, cap, tn });
         }
     }
 
@@ -3283,7 +3283,7 @@ pub const Lowering = struct {
         if (value < r.min or value > r.max) {
             if (self.diagnostics) |d| {
                 const tn = self.formatTypeName(ty);
-                d.addFmt(.err, span, "integer literal {} does not fit in {s} (range {}..{}) — use an explicit `xx` / `.(T)` to truncate", .{ value, tn, r.min, r.max });
+                d.addFmt(.err, span, "integer literal {} does not fit in {s} (range {}..{}) — use an explicit `.({s})` to truncate", .{ value, tn, r.min, r.max, tn });
             }
         }
     }
