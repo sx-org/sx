@@ -166,16 +166,16 @@ const DimCtx = struct {
     // `K` stands in for an INTEGRAL float const (`K : f64 : 4.0`) — it folds to 4
     // through the int delegation yet is still float-typed. Integer consts (`M`/`N`)
     // are resolved by the int delegation and never reach this arm; `Z` is runtime.
+    pub fn lookupFloatName(_: DimCtx, name: []const u8) ?f64 {
+        if (std.mem.eql(u8, name, "F")) return 2.5;
+        if (std.mem.eql(u8, name, "K")) return 4.0;
+        return null;
+    }
     pub fn floatLeafType(_: DimCtx, _: *const Node) ?types.TypeId {
         return null;
     }
     pub fn floatLiteralValue(_: DimCtx, lit: ast.FloatLiteral, ty: types.TypeId, _: ast.Span) f64 {
         return if (ty == .f32) lit.asF32() else lit.value;
-    }
-    pub fn lookupFloatName(_: DimCtx, name: []const u8) ?f64 {
-        if (std.mem.eql(u8, name, "F")) return 2.5;
-        if (std.mem.eql(u8, name, "K")) return 4.0;
-        return null;
     }
     // The float-typed-const predicate the division guard consults: `F`/`K` are
     // float-typed module consts, every other name is not.
