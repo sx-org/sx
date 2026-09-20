@@ -1639,7 +1639,7 @@ pub fn maybeRegisterConstStructGlobal(self: *Lowering, cd: *const ast.ConstDecl)
     const src = self.current_source_file orelse self.main_file orelse return;
     const ci = self.sourceModuleConst(src, cd.name) orelse return;
     if (ci.ty.isBuiltin() or self.module.types.get(ci.ty) != .@"struct") return;
-    const init_val = self.constStructLiteral(&cd.value.data.struct_literal, ci.ty) orelse return;
+    const init_val = self.constStructLiteral(&cd.value.data.struct_literal, ci.ty, ci.declared_type != null) orelse return;
     const name_id = self.module.types.internString(cd.name);
     const gid = self.module.addGlobal(.{
         .name = name_id,
@@ -1820,7 +1820,7 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
         },
         .string_literal => |sl| .{ .string = self.module.types.internString(sl.raw) },
         .array_literal => |al| self.constArrayLiteral(al.elements, var_ty) orelse self.diagnoseNonConstGlobal(vd, v),
-        .struct_literal => |sl| self.constStructLiteral(&sl, var_ty) orelse self.diagnoseNonConstGlobal(vd, v),
+        .struct_literal => |sl| self.constStructLiteral(&sl, var_ty, vd.type_annotation != null) orelse self.diagnoseNonConstGlobal(vd, v),
         .identifier => |id| blk: {
             // A bare identifier at a PROTOCOL-typed global is an
             // identity erasure of the named global — the declared type states
@@ -3916,6 +3916,7 @@ pub fn lowerFunctionBodyInto(self: *Lowering, fd: *const ast.FnDecl, fid: FuncId
         // Already promoted (e.g., via lowerComptimeDeps) — skip.
         return;
     }
+    func.ret = ret_ty;
     func.is_extern = false; // promote from extern stub to real function
     // `export` defines force external linkage + C ABI.
     func.linkage = if (isExportedEntryName(name) or fd.extern_export == .export_) .external else .internal;

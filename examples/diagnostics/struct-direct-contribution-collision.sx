@@ -1,0 +1,5 @@
+Sprite :: struct { px: i64; py: i64; scale: i64 = 1; }
+main :: () {
+    base := Sprite{};
+    value := Sprite{1, 2, ..base, py = 9};
+}

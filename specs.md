@@ -762,7 +762,8 @@ to match no field is instead read as a *positional* element, not an error.)
 field must exist in the target and fit through ordinary implicit initialization
 (see [Type Conversions](#type-conversions)),
 even if a later initializer overwrites it. Overlap involving a spread is
-last-wins; two plain named initializers for one field are an error. Expressions
+last-wins. Two plain names for one field, or a plain name for a field
+initialized by a directly written unnamed value, are errors. Expressions
 and spread operands evaluate once, left to right. Uncovered fields take their
 ordinary default or zero value. A struct containing a private field cannot be
 spread, including in its declaring file.
@@ -775,13 +776,17 @@ a := Sprite{..pos, scale = 2};
 b: Sprite = .{scale = 5, ..a};
 ```
 
-The operand's fields determine named versus positional contributions. Packs,
-positional products and fixed-length arrays contribute positionally. In a literal
-containing a spread, plain named initializers reserve their target fields;
-positional contributions fill the remaining fields in declaration order. Names
-contributed by spreads do not reserve fields. Thus
-`Sprite{..coords, scale = 2}` fills the leading fields from `coords`.
-Contextual `.{…}` uses the target's struct-initialization rules.
+The operand's fields determine named versus unnamed contributions. Packs,
+positional products and fixed-length arrays contribute unnamed values. In a
+typed literal (`T{…}` or contextual `.{…}` with a known type), unnamed
+contributions precede named ones and fill fields from the left in declaration
+order without skipping:
+
+```sx
+coords := .{3.(i32), 4.(i32)};
+c := Sprite{..coords, y = 9};  // x=3, y=9, scale=1
+d := Sprite{3, 4, scale = 2}; // x=3, y=4, scale=2
+```
 
 Named aggregates place `{` directly after the type designator: `Point{ x = 1 }`,
 `List(i64){}`, `mod.Config{ port = 80 }`. The separator-dot form `Type.{…}`
@@ -823,13 +828,12 @@ push Context{ allocator = a } { … }        // explicit Context literal
 #### Anonymous Structs
 
 An **untyped** `.{ … }` literal — no annotation, no type prefix, no target —
-self-types as an *anonymous structural struct*: named elements become fields;
-positional elements get index names (`"0"`, `"1"`, …), accessed through
-`@field`; `.{x}` shorthand is a NAMED field, `.{ (x) }` is the
-positional escape. A spread contributes its operand's fields; mixing named
-and positional contributions after expansion is an error. For overlapping
-named fields, the first occurrence determines position and the last determines
-value and type, with each initializer typed independently:
+self-types as an *anonymous structural struct*. Named contributions come first,
+in order of first occurrence; each takes the last contributed type and value,
+with initializers typed independently. Unnamed contributions follow in their
+contribution order, regardless of written order, and receive their whole-struct
+index as a name (`"0"`, `"1"`, …). Fields are accessed through `@field`.
+`.{x}` shorthand is named; `.{ (x) }` is the unnamed escape.
 
 ```sx
 A :: struct { px: i16; py: i32; }
@@ -838,7 +842,7 @@ a := A{px = 3, py = 4};
 b := B{py = 8, px = 70000};
 ab := .{..a, ..b};              // struct { px: i64; py: i32; }
 ba := .{..b, ..a};              // struct { py: i32; px: i16; }
-plain := .{..a, px = 70000};     // px: i64
+mixed := .{7, ..a, px = 70000}; // struct { px: i64; py: i32; <7>; }
 ```
 
 Inline anonymous type **annotations** (`struct { x: i64; }`, `union { … }`,
