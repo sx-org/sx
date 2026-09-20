@@ -29,7 +29,7 @@ pub const CoercionResolver = struct {
     /// `lowerXX` then tries a user `Into`). Branch order mirrors `coerceToType`
     /// exactly — the emitter switches on this and reproduces each arm.
     pub const CoercionPlan = enum {
-        no_op, // src == dst
+        no_op,
         unbox_any, // any → concrete
         box_any, // concrete → any
         closure_to_fn_reject, // closure value → bare fn-ptr (diagnostic, returns operand)
@@ -319,7 +319,7 @@ pub const CoercionResolver = struct {
     /// Branch order mirrors `lowerXX` exactly.
     pub const XXPlan = enum {
         unbox_any, // src is Any → unbox (lowerXX adds the f32/f64 match dispatch)
-        no_op, // src == dst
+        no_op,
         erase_protocol, // dst is a protocol → buildProtocolErasure
         erase_protocol_wrap, // dst is ?P (protocol child) → node-aware erase to P, then wrap
         reerase_protocol, // both are interfaces → one row of the target's conformance table
