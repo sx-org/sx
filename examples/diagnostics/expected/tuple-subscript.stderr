@@ -1,0 +1,5 @@
+error: cannot index a value of type '__anon'
+  --> examples/diagnostics/tuple-subscript.sx:3:12
+   |
+ 3 |     return t[0];
+   |            ^

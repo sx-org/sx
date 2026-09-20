@@ -1524,13 +1524,14 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) v
 /// The ROOT identifier of an assignment-target chain (`K[0].x` → "K",
 /// `WHITE.r` → "WHITE"). A deref along the chain (`p.*`, `p.*[i]`) breaks
 /// it — writing through a pointer VALUE is not a write to the named root.
-fn assignmentRootIdent(target: *const Node) ?[]const u8 {
+fn assignmentRootIdent(self: *Lowering, target: *const Node) ?[]const u8 {
     var n = target;
     while (true) {
         switch (n.data) {
             .identifier => |id| return id.name,
             .index_expr => |ie| n = ie.object,
             .field_access => |fa| n = fa.object,
+            .call => n = (self.fieldCall(n) orelse return null).args[0],
             else => return null,
         }
     }
@@ -1568,6 +1569,7 @@ pub fn diagEnclosingRootWrite(self: *Lowering, target: *const Node) bool {
         switch (root.data) {
             .index_expr => |ie| root = ie.object,
             .field_access => |fa| root = fa.object,
+            .call => root = (self.fieldCall(root) orelse break :peel).args[0],
             .deref_expr => |de| root = de.operand,
             else => break :peel,
         }
@@ -1588,7 +1590,20 @@ pub fn diagEnclosingRootWrite(self: *Lowering, target: *const Node) bool {
 /// (`assignmentRootIdent`) — writing through a pointer VALUE is not a write
 /// to the named root, so `CONST_PTR.* = v` stays accepted in both forms.
 pub fn diagConstRootWrite(self: *Lowering, target: *const Node) bool {
-    const root = assignmentRootIdent(target) orelse return false;
+    var projection = target;
+    while (true) {
+        switch (projection.data) {
+            .call => {
+                const c = self.fieldCall(projection) orelse break;
+                if (diagnoseQualifiedStoreVerdict(self, selectQualifiedGlobalStoreTarget(self, c.args[0]))) return true;
+                projection = c.args[0];
+            },
+            .field_access => |fa| projection = fa.object,
+            .index_expr => |ie| projection = ie.object,
+            else => break,
+        }
+    }
+    const root = assignmentRootIdent(self, target) orelse return false;
     const shadowed = if (self.scope) |s| s.lookup(root) != null else false;
     if (!shadowed and rootIsConstant(self, root)) {
         if (self.diagnostics) |d|
@@ -1613,6 +1628,7 @@ pub fn diagContextRootWrite(self: *Lowering, target: *const Node) bool {
         const obj = switch (node.data) {
             .field_access => |fa| fa.object,
             .index_expr => |ie| ie.object,
+            .call => (self.fieldCall(node) orelse return false).args[0],
             else => return false,
         };
         if (obj.data == .deref_expr) return false;
@@ -1663,6 +1679,7 @@ fn nonstoreRootOf(self: *Lowering, target: *const Node) ?NonstoreRoot {
         const obj = switch (node.data) {
             .field_access => |fa| fa.object,
             .index_expr => |ie| ie.object,
+            .call => (self.fieldCall(node) orelse return null).args[0],
             else => return null,
         };
         if (obj.data == .deref_expr) return null;
@@ -1702,7 +1719,7 @@ pub fn diagNonstoreRootWrite(self: *Lowering, target: *const Node) bool {
 }
 
 /// `--x` on a target that names no slot: a literal, an accessor property, a
-/// slice header word, a comptime tuple index — everything `resolveMutablePlace`
+/// slice header word, a runtime-index field view — everything `resolveMutablePlace`
 /// answers null for.
 pub fn diagDecrementTarget(self: *Lowering, span: ast.Span) Ref {
     if (self.diagnostics) |d|
@@ -1962,6 +1979,10 @@ fn selectQualifiedGlobalStoreTarget(self: *Lowering, node: *const Node) Qualifie
         .member = stable_member,
         .field = field,
     } };
+}
+
+pub fn qualifiedGlobalHasStorage(self: *Lowering, node: *const Node) bool {
+    return selectQualifiedGlobalStoreTarget(self, node) == .target;
 }
 
 fn diagnoseQualifiedStoreVerdict(self: *Lowering, verdict: QualifiedGlobalStoreVerdict) bool {
@@ -2508,6 +2529,8 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                 }
             }
         }
+    } else if (self.fieldCall(asgn.target)) |c| {
+        if (self.fieldProjection(c)) |field| self.target_type = field.ty;
     } else if (asgn.target.data == .deref_expr) {
         // For `p.* = val`, set target_type to the POINTEE of the LHS pointer
         // so RHS sub-expressions (enum/struct literals, branch arms, null/---)
@@ -2695,7 +2718,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
             // A pointer held in a field or an element arrives as its slot's
             // address, so the pointer is loaded out of it; a call's pointer
             // result IS the address.
-            if ((fa.object.data == .field_access or fa.object.data == .index_expr) and !obj_ty.isBuiltin()) {
+            if ((fa.object.data == .field_access or fa.object.data == .index_expr or self.fieldCall(fa.object) != null) and !obj_ty.isBuiltin()) {
                 const pinfo = self.module.types.get(obj_ty);
                 if (pinfo == .pointer) {
                     obj_ptr = self.builder.load(obj_ptr, obj_ty);
@@ -2774,35 +2797,6 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
         .index_expr => |ie| {
             const narrowed_child = self.narrowedContainerChild(ie.object);
             const obj_ty = narrowed_child orelse self.inferExprType(ie.object);
-            // Comptime-constant store into a tuple element — `tup[i] = v`. A tuple
-            // is heterogeneous, so the destination is a typed `structGep` of field
-            // `i`, never an `index_gep` (whose `ptrTo(.unresolved)` element type
-            // panics at LLVM emit). Mirrors the read path in `lowerIndexExpr`; an
-            // out-of-range comptime index diagnoses loudly here too rather than
-            // falling through to that panic.
-            if (!obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .@"struct") {
-                // Struct parity (aggregate ladder): `s[comptime i] = v` is the
-                // i-th field store, exactly like tuples.
-                const nfields: usize = @intCast(self.module.types.memberCount(obj_ty) orelse 0);
-                if (self.comptimeIndexOf(ie.index)) |ci| {
-                    if (ci >= 0 and @as(usize, @intCast(ci)) < nfields) {
-                        const fi: u32 = @intCast(ci);
-                        const fld_ty = self.module.types.memberType(obj_ty, ci) orelse .unresolved;
-                        const base = self.getExprAlloca(ie.object) orelse self.lowerExprAsPtr(ie.object);
-                        const gep = self.builder.structGepTyped(base, fi, self.module.types.ptrTo(fld_ty), obj_ty);
-                        if (asgn.op == .assign and !self.checkAssignable(self.builder.getRefType(val), fld_ty, asgn.value.span, "assign", "element", asgn.value)) return;
-                        const coerced = self.coerceToType(val, self.builder.getRefType(val), fld_ty);
-                        self.storeOrCompound(gep, coerced, asgn.op, fld_ty);
-                        return;
-                    }
-                    if (self.diagnostics) |d| {
-                        d.addFmt(.err, ie.index.span, "tuple index {} out of bounds — tuple '{s}' has {} field{s}", .{
-                            ci, self.formatTypeName(obj_ty), nfields, if (nfields == 1) "" else "s",
-                        });
-                    }
-                    return; // hasErrors() aborts before codegen
-                }
-            }
             const idx = self.lowerIndexOperand(ie.index);
             const elem_ty = self.ptrToArrayElem(obj_ty) orelse self.ptrToSliceElem(obj_ty) orelse self.getElementType(obj_ty);
             // Non-indexable assignment base (`pc[i] = v` on a `*T`, a struct,
@@ -2859,6 +2853,16 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                 self.storeOrCompound(ptr, val, asgn.op, elem_ty);
             }
         },
+        .call => {
+            if (self.fieldCall(asgn.target) == null) {
+                _ = self.emitError("assignment_target", asgn.target.span);
+                return;
+            }
+            const field = self.lowerFieldPlace(asgn.target) orelse return;
+            const src_ty = self.builder.getRefType(val);
+            if (asgn.op == .assign and !self.checkAssignable(src_ty, field.ty, asgn.value.span, "assign", "field", asgn.value)) return;
+            self.storeOrCompound(field.ptr, self.coerceToType(val, src_ty, field.ty), asgn.op, field.ty);
+        },
         else => {
             _ = self.emitError("assignment_target", asgn.target.span);
         },
@@ -2877,11 +2881,7 @@ fn quietGlobalRef(self: *Lowering, name: []const u8) ?program_index_mod.GlobalIn
 }
 
 /// The one addressable storage slot an assignable target names, with every
-/// subexpression evaluated exactly once. Null when the target names no slot: an
-/// accessor property (a get/set call pair), an Obj-C `@ObjcProperty` or
-/// `__sx_state` field, a payload enum variant, a slice's `.len`/`.ptr` header
-/// word, and a comptime tuple/struct index. The caller diagnoses; this emits no
-/// diagnostic of its own.
+/// subexpression evaluated exactly once.
 ///
 /// The arms mirror `lowerAssignment`'s target switch and reuse its helpers.
 /// `lowerAssignment` deliberately does NOT route through here: it freezes the
@@ -2897,6 +2897,12 @@ pub fn resolveMutablePlace(self: *Lowering, target: *const Node) ?Place {
                 }
             }
             return .{ .global = quietGlobalRef(self, id.name) orelse return null };
+        },
+        .call => {
+            const c = self.fieldCall(target) orelse return null;
+            const projection = self.fieldProjection(c) orelse return null;
+            const field = self.resolveFieldPlace(projection) orelse return null;
+            return .{ .slot = .{ .ptr = field.ptr, .ty = field.ty } };
         },
         .field_access => |fa| {
             switch (selectQualifiedGlobalStoreTarget(self, target)) {
@@ -2958,9 +2964,6 @@ pub fn resolveMutablePlace(self: *Lowering, target: *const Node) ?Place {
         .index_expr => |ie| {
             const narrowed_child = self.narrowedContainerChild(ie.object);
             const obj_ty = narrowed_child orelse self.inferExprType(ie.object);
-            if (!obj_ty.isBuiltin() and
-                self.module.types.get(obj_ty) == .@"struct" and
-                self.comptimeIndexOf(ie.index) != null) return null;
 
             const idx = self.lowerIndexOperand(ie.index);
             const elem_ty = self.ptrToArrayElem(obj_ty) orelse self.ptrToSliceElem(obj_ty) orelse self.getElementType(obj_ty);
@@ -3347,7 +3350,7 @@ pub fn diagPayloadVariantWrite(self: *Lowering, obj_ty: TypeId, field: []const u
 /// A chain that itself types `.unresolved` already carries the diagnostic for
 /// why; naming its root would bury that one.
 pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
-    if ((node.data == .field_access or node.data == .index_expr) and
+    if ((node.data == .field_access or node.data == .index_expr or self.fieldCall(node) != null) and
         self.inferExprType(node) != .unresolved)
     {
         if (nonstoreRootOf(self, node)) |root| {
@@ -3402,6 +3405,10 @@ pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
                 }
                 return self.builder.emit(.{ .global_addr = gi.id }, self.module.types.ptrTo(gi.ty));
             }
+        },
+        .call => if (self.fieldCall(node) != null) {
+            const field = self.lowerFieldPlace(node) orelse return self.emitPlaceholder("field");
+            return field.ptr;
         },
         .field_access => |fa| {
             // A complete namespace-qualified mutable global is one lvalue,
@@ -3458,7 +3465,7 @@ pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
             // first bytes as if they were an address.
             const obj_is_slot = fa.object.data == .field_access or
                 fa.object.data == .index_expr or
-                fa.object.data == .deref_expr;
+                fa.object.data == .deref_expr or self.fieldCall(fa.object) != null;
             if (obj_is_slot and !obj_ty.isBuiltin()) {
                 const info = self.module.types.get(obj_ty);
                 if (info == .pointer) {
@@ -3499,37 +3506,6 @@ pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
         .index_expr => |ie| {
             const narrowed_child = self.narrowedContainerChild(ie.object);
             const obj_ty = narrowed_child orelse self.inferExprType(ie.object);
-            // Comptime-constant index into a tuple VALUE — the L-value sibling of
-            // `lowerIndexExpr`'s tuple read path. A tuple is heterogeneous, so its
-            // element address is a `structGep` of the i-th field (typed with that
-            // field's type), NOT an `index_gep` (which assumes a uniform element
-            // type — `getElementType(tuple)` is `.unresolved`, and an `index_gep`
-            // with a `ptrTo(.unresolved)` result panics at LLVM emit). Needed for
-            // `tasks[i].waiter = …` in the `race` runtime, where the i-th element
-            // is read back as a pointer to GEP into its pointee.
-            if (!obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .@"struct") {
-                // Struct parity (aggregate ladder): `s[comptime i]` is the
-                // i-th field's address, exactly like tuples.
-                const nfields: usize = @intCast(self.module.types.memberCount(obj_ty) orelse 0);
-                if (self.comptimeIndexOf(ie.index)) |ci| {
-                    if (ci >= 0 and @as(usize, @intCast(ci)) < nfields) {
-                        const fi: u32 = @intCast(ci);
-                        const fld_ty = self.module.types.memberType(obj_ty, ci) orelse .unresolved;
-                        const base = self.getExprAlloca(ie.object) orelse self.lowerExprAsPtr(ie.object);
-                        return self.builder.structGepTyped(base, fi, self.module.types.ptrTo(fld_ty), obj_ty);
-                    }
-                    // Comptime index out of range — diagnose loudly (mirror the
-                    // read path in `lowerIndexExpr`) rather than falling through to
-                    // the `index_gep` below, whose `ptrTo(.unresolved)` element type
-                    // would panic at LLVM emit with no source diagnostic.
-                    if (self.diagnostics) |d| {
-                        d.addFmt(.err, ie.index.span, "tuple index {} out of bounds — tuple '{s}' has {} field{s}", .{
-                            ci, self.formatTypeName(obj_ty), nfields, if (nfields == 1) "" else "s",
-                        });
-                    }
-                    return self.builder.constInt(0, .i64); // placeholder — hasErrors() aborts before codegen
-                }
-            }
             const idx = self.lowerIndexOperand(ie.index);
             const elem_ty = self.ptrToArrayElem(obj_ty) orelse self.ptrToSliceElem(obj_ty) orelse self.getElementType(obj_ty);
             // Non-indexable L-value base (`ps[i].field = v` / `@ps[i].field`
@@ -3806,6 +3782,9 @@ fn setMultiAssignTargetType(self: *Lowering, target: *const Node, value: *const 
                 }
             }
         },
+        .call => if (self.fieldCall(target)) |c| {
+            if (self.fieldProjection(c)) |field| self.target_type = field.ty;
+        },
         .index_expr => |ie| {
             // For `arr[i] = val`, type the RHS against the element type.
             const tgt_obj_ty = self.narrowedContainerChild(ie.object) orelse self.inferExprType(ie.object);
@@ -4000,41 +3979,19 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                     }
                 }
             },
+            .call => {
+                if (self.fieldCall(target) == null) {
+                    _ = self.emitError("multi_assign_target", target.span);
+                    continue;
+                }
+                const field = self.lowerFieldPlace(target) orelse continue;
+                const val_ty = self.builder.getRefType(val);
+                if (!self.checkAssignable(val_ty, field.ty, ma.values[i].span, "assign", "field", ma.values[i])) continue;
+                self.builder.store(field.ptr, self.coerceToType(val, val_ty, field.ty));
+            },
             .index_expr => |ie| {
                 const narrowed_child = self.narrowedContainerChild(ie.object);
                 const obj_ty = narrowed_child orelse self.inferExprType(ie.object);
-                // Comptime-constant direct store into a tuple element — `tup[i] = v`
-                // (the store sibling of the L-value tuple path above). Heterogeneous
-                // elements → a typed `structGep` of field `i`, never an `index_gep`
-                // (a uniform-element op whose `ptrTo(.unresolved)` element type would
-                // panic at LLVM emit).
-                if (!obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .@"struct") {
-                    // Struct parity (aggregate ladder): comptime-index stores
-                    // apply to struct values too.
-                    const nfields: usize = @intCast(self.module.types.memberCount(obj_ty) orelse 0);
-                    if (self.comptimeIndexOf(ie.index)) |ci| {
-                        if (ci >= 0 and @as(usize, @intCast(ci)) < nfields) {
-                            const fi: u32 = @intCast(ci);
-                            const fld_ty = self.module.types.memberType(obj_ty, ci) orelse .unresolved;
-                            const base = self.getExprAlloca(ie.object) orelse self.lowerExprAsPtr(ie.object);
-                            const gep = self.builder.structGepTyped(base, fi, self.module.types.ptrTo(fld_ty), obj_ty);
-                            const v_ty = self.builder.getRefType(val);
-                            if (!self.checkAssignable(v_ty, fld_ty, ma.values[i].span, "assign", "element", ma.values[i])) continue;
-                            const sv = if (v_ty != fld_ty and v_ty != .void and fld_ty != .void) self.coerceToType(val, v_ty, fld_ty) else val;
-                            self.builder.store(gep, sv);
-                            continue;
-                        }
-                        // Comptime index out of range — diagnose loudly instead of
-                        // falling through to the `index_gep` store (whose
-                        // `ptrTo(.unresolved)` element type would panic at LLVM emit).
-                        if (self.diagnostics) |d| {
-                            d.addFmt(.err, ie.index.span, "tuple index {} out of bounds — tuple '{s}' has {} field{s}", .{
-                                ci, self.formatTypeName(obj_ty), nfields, if (nfields == 1) "" else "s",
-                            });
-                        }
-                        continue; // hasErrors() aborts before codegen
-                    }
-                }
                 const idx = self.lowerIndexOperand(ie.index);
                 const elem_ty = self.ptrToArrayElem(obj_ty) orelse self.ptrToSliceElem(obj_ty) orelse self.getElementType(obj_ty);
                 // Non-indexable multi-assign base (`ps[i], a = v, w` where

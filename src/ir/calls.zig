@@ -243,6 +243,9 @@ pub const CallResolver = struct {
                     .unresolved;
                 return refl(bare_name, rt);
             }
+            if (std.mem.eql(u8, bare_name, "@field")) {
+                return refl(bare_name, if (self.l.fieldProjection(c.*)) |field| field.ty else .any);
+            }
             // Reflection intrinsics lower through `tryLowerReflectionCall`, not
             // the `BuiltinId` dispatch above — but a pack-fn caller still needs
             // their result type to mangle with the right tag. The registry owns

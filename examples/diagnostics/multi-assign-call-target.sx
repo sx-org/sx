@@ -1,0 +1,9 @@
+@import "modules/std.sx";
+
+mk :: () -> i64 { return 0; }
+
+main :: () -> i32 {
+    a := 0;
+    mk(), a = 1, 2;
+    return 0;
+}

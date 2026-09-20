@@ -490,6 +490,10 @@ pub fn isLvalueExpr(self: *Lowering, node: *const Node) bool {
         // AST for the borrow — double-calling `make_pair()` and handing the
         // erasure a garbage address (the value fallback of lowerExprAsPtr).
         // A rvalue base routes to the self-contained copy path instead.
+        .call => if (self.fieldCall(node)) |c|
+            (if (self.fieldProjection(c)) |field| self.isLvalueExpr(field.object) else false)
+        else
+            false,
         .field_access => |fa| self.isLvalueExpr(fa.object),
         // A comptime pack index (`pack[i]`) is not an lvalue: a pack has no
         // runtime storage — `pack[i]` resolves to the call-site arg node.

@@ -22,7 +22,7 @@ main :: () -> i32 {
     print("x.a={} x.b={}\n", x.a, x.b);
 
     s := swap(x);
-    print("s.0={} s.1={}\n", s.0, s.1);
+    print("s.0={} s.1={}\n", @field(s, 0), @field(s, 1));
 
     dbl := |v: i32| -> i32 v * 2;
     print("apply={}\n", apply(dbl, 21));

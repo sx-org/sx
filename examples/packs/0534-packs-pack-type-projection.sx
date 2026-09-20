@@ -21,7 +21,7 @@ impl Box(i64) for Dbl { get :: (self: *Dbl) -> i64 => self.n * 2; }
 // value-projection `.(..xs.get)`.
 snap :: (..xs: Box) -> void {
     t : struct { ..xs.T } = .{..xs.get};
-    print("0={} 1={}\n", t.0, t.1);
+    print("0={} 1={}\n", @field(t, 0), @field(t, 1));
 }
 
 // Closure signature `Closure(..xs.T) -> i64` — here `Closure(i64, i64) -> i64`.

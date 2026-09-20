@@ -6,16 +6,16 @@ PairI32 :: struct { a: i32; b: i32 };
 Combined   :: struct { sources: PairI32; }
 
 swap :: (a: i64, b: i64) -> (i64, i64) { return b, a; }
-fst  :: (t: $T) -> i64 { t.0 }
+fst  :: (t: $T) -> i64 { @field(t, 0) }
 
 main :: () -> i32 {
     pair := .{40, 2};
-    print("A.idx     {} {}\n", pair.0, pair.1);
+    print("A.idx     {} {}\n", @field(pair, 0), @field(pair, 1));
     named := .{x = 10, y = 20};
     print("A.named   {} {}\n", named.x, named.y);
     one := .{42};
-    print("A.one     {}\n", one.0);
-    a : i64 = pair.0;
+    print("A.one     {}\n", @field(one, 0));
+    a : i64 = @field(pair, 0);
     print("A.local   {}\n", a);
 
     c : Combined = ---;
@@ -23,7 +23,7 @@ main :: () -> i32 {
     print("B.field   {} {}\n", c.sources.a, c.sources.b);
 
     s := swap(1, 2);
-    print("C.ret     {} {}\n", s.0, s.1);
+    print("C.ret     {} {}\n", @field(s, 0), @field(s, 1));
     print("C.pass    {}\n", fst(.{11, 22}));
     print("C.eq      {}\n", .{1, 2} == .{1, 2});
     0

@@ -180,6 +180,15 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
                     }
                 }
             }
+            if (self.fieldCall(expr)) |c| {
+                if (self.fieldProjection(c)) |field| {
+                    if (constExprValueInner(self, field.object, field.object_ty, frame)) |value| {
+                        if (value == .aggregate) {
+                            if (self.coerceConstant(value.aggregate[field.index], field.ty, expected_ty)) |converted| break :blk converted;
+                        }
+                    }
+                }
+            }
             const ctx = SourceConstCtx{ .lowering = self, .frame = frame };
             if (self.isIntEx(expected_ty)) {
                 if (program_index_mod.evalConstIntExpr(expr, ctx)) |v| break :blk inst_mod.ConstantValue{ .int = v };
@@ -191,6 +200,16 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
             break :blk null;
         },
     };
+}
+
+pub fn foldFieldInt(self: *Lowering, node: *const Node, frame: ?*const ConstFoldFrame) ?i64 {
+    const c = self.fieldCall(node) orelse return null;
+    const field = self.fieldProjection(c) orelse return null;
+    if (!self.isIntEx(field.ty)) return null;
+    const value = constExprValueInner(self, field.object, field.object_ty, frame) orelse return null;
+    if (value != .aggregate) return null;
+    const member = value.aggregate[field.index];
+    return if (member == .int) member.int else null;
 }
 
 fn constSelectedValue(self: *Lowering, name: []const u8, sel: SelectedConst, expected_ty: TypeId, frame: ?*const ConstFoldFrame) ?inst_mod.ConstantValue {
@@ -324,6 +343,14 @@ fn staticInterfaceLeaf(self: *Lowering, expr: *const Node, expected_ty: TypeId) 
 pub fn evalComptimeValue(self: *Lowering, node: *const Node) ?Lowering.ComptimeValue {
     switch (node.data) {
         .identifier => |id| return self.comptime_constants.get(id.name),
+        .call => {
+            const c = self.fieldCall(node) orelse return null;
+            const obj = evalComptimeValue(self, c.args[0]) orelse return null;
+            if (obj != .struct_val) return null;
+            const index = self.comptimeIndexOf(c.args[1]) orelse self.evalComptimeInt(c.args[1]) orelse return null;
+            if (index < 0 or index >= obj.struct_val.len) return null;
+            return obj.struct_val[@intCast(index)].value;
+        },
         .field_access => |fa| {
             const obj = evalComptimeValue(self, fa.object) orelse return null;
             if (obj != .struct_val) return null;
@@ -2051,6 +2078,13 @@ pub fn comptimeIntNamed(self: *Lowering, name: []const u8) ?i64 {
     };
     if (self.comptime_value_bindings) |cvb| {
         if (cvb.get(name)) |v| return v;
+    }
+    if (self.scope) |scope| {
+        const scoped = scope.lookupBoundary(name);
+        if (scoped.crossed != .none) return null;
+        if (scoped.binding) |binding| {
+            return if (binding.origin == .local_const and self.isIntEx(binding.ty)) self.foldedInt(binding.ref) else null;
+        }
     }
     return self.foldSourceConstInt(name, null);
 }

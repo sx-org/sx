@@ -1,9 +1,3 @@
-// Anonymous products:
-//   - positional VALUE `.{a, b}` with `.0` access
-//   - named VALUE `.{x = a, y = b}` with `.x` access
-//   - a `-> (i64, i64)` multi-return with a `.{b, a}` body
-//   - product equality over two `.{...}` literals
-
 @import "modules/std.sx";
 
 swap :: (a: i64, b: i64) -> (i64, i64) {
@@ -13,7 +7,7 @@ swap :: (a: i64, b: i64) -> (i64, i64) {
 main :: () -> i32 {
     // Positional value + index access.
     p := .{1, 2};
-    print("p {} {}\n", p.0, p.1);
+    print("p {} {}\n", @field(p, 0), @field(p, 1));
 
     // Named value (`=`) + name access.
     n := .{x = 10, y = 20};
@@ -21,11 +15,11 @@ main :: () -> i32 {
 
     // 1-element positional product.
     one := .{7};
-    print("one {}\n", one.0);
+    print("one {}\n", @field(one, 0));
 
     // Multi-return with a `.{...}` body.
     s := swap(3, 4);
-    print("swap {} {}\n", s.0, s.1);
+    print("swap {} {}\n", @field(s, 0), @field(s, 1));
 
     // Named product TYPE annotation, filled by a named `.{...}` literal.
     nt : struct { x: i64; y: i64 } = .{x = 5, y = 6};

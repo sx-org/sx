@@ -10,15 +10,15 @@ main :: () {
     {
         print("=== Products ===\n");
         pair := .{40, 2};
-        print("{}\n", pair.0);
-        print("{}\n", pair.1);
+        print("{}\n", @field(pair, 0));
+        print("{}\n", @field(pair, 1));
 
         named : struct { x: i64; y: i64 } = .{x = 10, y = 20};
         print("{}\n", named.x);
         print("{}\n", named.y);
 
         single := .{42};
-        print("{}\n", single.0);
+        print("{}\n", @field(single, 0));
 
         zeroed : struct { a: i32; b: i32 } = ---;
         print("{}\n", zeroed.a);

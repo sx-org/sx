@@ -28,9 +28,9 @@ main :: () {
 
     // A 1-element positional product is inferred `.{9}`.
     one := .{9};
-    print("{}\n", one.0);             // 9
+    print("{}\n", @field(one, 0));             // 9
 
     // A 2-element positional product.
     two := .{40, 2};
-    print("{}\n", two.0 + two.1);     // 42
+    print("{}\n", @field(two, 0) + @field(two, 1));     // 42
 }

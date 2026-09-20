@@ -1,5 +1,5 @@
-error: field '42' not found on type '__anon'
-  --> examples/diagnostics/1101-diagnostics-err-tuple-oob.sx:5:15
+error: field index 42 out of bounds — '__anon' has 2 fields
+  --> examples/diagnostics/1101-diagnostics-err-tuple-oob.sx:3:15
    |
- 5 |     return xx t.42;
-   |               ^^^^
+ 3 |     @field(t, 42);
+   |               ^^
