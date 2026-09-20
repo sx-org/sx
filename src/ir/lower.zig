@@ -177,6 +177,12 @@ pub const SourceConstCtx = struct {
     pub fn typeLimitInt(self: SourceConstCtx, receiver: *const Node, field: []const u8) ?i64 {
         return self.lowering.typeLimitInt(receiver, field);
     }
+    pub fn floatLeafType(self: SourceConstCtx, node: *const Node) ?TypeId {
+        return self.lowering.floatLeafType(node);
+    }
+    pub fn floatLiteralValue(self: SourceConstCtx, lit: ast.FloatLiteral, ty: TypeId, span: ast.Span) f64 {
+        return self.lowering.floatLiteralValue(lit, ty, span);
+    }
     pub fn lookupFloatName(self: SourceConstCtx, name: []const u8) ?f64 {
         return self.lowering.foldSourceConstFloat(name, self.frame);
     }
@@ -2800,6 +2806,23 @@ pub const Lowering = struct {
 
     pub fn isFloat(ty: TypeId) bool {
         return ty == .f32 or ty == .f64;
+    }
+
+    pub fn floatLeafType(self: *Lowering, node: *const Node) ?TypeId {
+        switch (node.data) {
+            .identifier, .type_expr, .field_access => {},
+            else => return null,
+        }
+        const ty = self.inferExprType(node);
+        return if (isFloat(ty)) ty else null;
+    }
+
+    pub fn floatLiteralValue(self: *Lowering, lit: ast.FloatLiteral, ty: TypeId, span: ast.Span) f64 {
+        const value: f64 = if (ty == .f32) lit.asF32() else lit.value;
+        if (!std.math.isFinite(value)) {
+            if (self.diagnostics) |d| d.addFmt(.err, span, "float literal overflows '{s}'", .{self.formatTypeName(ty)});
+        }
+        return value;
     }
 
     pub fn arithResultType(self: *Lowering, lhs_ty: TypeId, rhs_ty: TypeId) TypeId {

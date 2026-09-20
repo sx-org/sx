@@ -4039,8 +4039,10 @@ pub const Parser = struct {
                 const value = std.fmt.parseFloat(f64, stripped) catch {
                     return self.fail("float literal overflow");
                 };
+                if (!std.math.isFinite(value)) return self.fail("float literal overflow");
+                const value32 = std.fmt.parseFloat(f32, stripped) catch unreachable;
                 self.advance();
-                return try self.createNode(start, .{ .float_literal = .{ .value = value } });
+                return try self.createNode(start, .{ .float_literal = .{ .value = value, .value32 = value32 } });
             },
             .string_literal => {
                 // raw includes quotes

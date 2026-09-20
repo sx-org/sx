@@ -1,0 +1,5 @@
+error: float literal overflows 'f32'
+  --> examples/diagnostics/float-literal-overflow.sx:3:17
+   |
+ 3 |     overflow := 1e39 - s;
+   |                 ^^^^

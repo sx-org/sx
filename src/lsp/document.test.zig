@@ -346,6 +346,19 @@ fn tokenCount(doc: *const doc_mod.Document) usize {
     return n;
 }
 
+test "analyzeDocument indexes an exponent-only float declaration" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const doc = try store.openOrUpdate("main.sx", "RATE :: 15e-4;", 1);
+    try store.analyzeDocument(doc);
+    const root = doc.root orelse return error.MissingRoot;
+    try std.testing.expectEqual(@as(f64, 0.0015), root.data.root.decls[0].data.const_decl.value.data.float_literal.value);
+    try std.testing.expect(doc.sema != null);
+    try std.testing.expectEqual(@as(usize, 1), doc.topLevelSymbols().len);
+}
+
 test "openOrUpdate: a new document carries a token list over its own source" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

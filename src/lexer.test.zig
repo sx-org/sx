@@ -56,6 +56,25 @@ test "a `.` between digits lexes as one float literal" {
     try std.testing.expectEqualSlices(Tag, &.{ .float_literal, .int_literal, .float_literal, .eof }, tl.tags);
 }
 
+test "decimal exponents bind their sign and preserve member and range boundaries" {
+    var tl = try lexT("1e10 1.5E-3 1_0.e2 1e+2__0_ 1e2..3 1e2.(f32) 0x1e10");
+    defer deinitT(&tl);
+    try std.testing.expectEqualSlices(Tag, &.{
+        .float_literal, .float_literal, .int_literal, .dot,         .identifier,
+        .float_literal, .float_literal, .dot_dot,     .int_literal, .float_literal,
+        .dot,           .l_paren,       .kw_f32,      .r_paren,     .int_literal,
+        .eof,
+    }, tl.tags);
+}
+
+test "an exponent requires a digit immediately after its optional sign" {
+    for ([_][:0]const u8{ "1e+", "1e_2" }) |source| {
+        var tl = try lexT(source);
+        defer deinitT(&tl);
+        try std.testing.expectEqual(Tag.invalid, tl.tags[0]);
+    }
+}
+
 test "lex the reserved keyword spellings" {
     var tl = try lexT("if else then true false enum case break return f32 f64 struct");
     defer deinitT(&tl);

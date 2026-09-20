@@ -257,10 +257,12 @@ const ModuleConstCtx = struct {
     pub fn qualifiedNodeIsFloatTyped(_: ModuleConstCtx, _: *const Node) bool {
         return false;
     }
-    /// Float counterpart of `lookupDimName`, so `evalConstFloatExpr` resolves a
-    /// float-const leaf whose value references another const
-    /// (`G : f64 : 2.0; F : f64 : G + 0.5`) recursively through the SAME
-    /// cycle-guarded frame.
+    pub fn floatLeafType(self: ModuleConstCtx, node: *const Node) ?TypeId {
+        return moduleFloatLeafType(self.index, node);
+    }
+    pub fn floatLiteralValue(_: ModuleConstCtx, lit: ast.FloatLiteral, ty: TypeId, _: ast.Span) f64 {
+        return if (ty == .f32) lit.asF32() else lit.value;
+    }
     pub fn lookupFloatName(self: ModuleConstCtx, name: []const u8) ?f64 {
         return moduleConstFloatFramed(self.index, self.table, name, self.frame);
     }
@@ -277,6 +279,54 @@ const ModuleConstCtx = struct {
 /// `f32` / `f64`.
 pub fn isFloatConstType(ty: TypeId) bool {
     return ty == .f32 or ty == .f64;
+}
+
+pub fn floatOperandTypes(b: ast.BinaryOp, lhs: ?TypeId, rhs: ?TypeId) struct { lhs: ?TypeId, rhs: ?TypeId } {
+    const adapts = switch (b.op) {
+        .add, .sub, .mul, .div, .mod, .eq, .neq, .lt, .lte, .gt, .gte => true,
+        else => false,
+    };
+    return .{
+        .lhs = if (adapts and ast.floatLiteral(b.lhs) != null and (rhs == .f32 or rhs == .f64)) rhs else lhs,
+        .rhs = if (adapts and ast.floatLiteral(b.rhs) != null and (lhs == .f32 or lhs == .f64)) lhs else rhs,
+    };
+}
+
+pub fn constFloatType(node: *const Node, ctx: anytype) ?TypeId {
+    return switch (node.data) {
+        .float_literal => .f64,
+        .unary_op => |u| if (u.op == .negate) constFloatType(u.operand, ctx) else null,
+        .binary_op => |b| blk: {
+            const operands = floatOperandTypes(b, constFloatType(b.lhs, ctx), constFloatType(b.rhs, ctx));
+            break :blk operands.lhs orelse operands.rhs;
+        },
+        else => ctx.floatLeafType(node),
+    };
+}
+
+pub fn moduleFloatLeafType(index: *const ProgramIndex, node: *const Node) ?TypeId {
+    const name = switch (node.data) {
+        .identifier => |id| id.name,
+        .type_expr => |te| te.name,
+        .field_access => |fa| {
+            const receiver = switch (fa.object.data) {
+                .type_expr => |te| if (te.is_raw) return null else te.name,
+                .identifier => |id| if (id.is_raw) return null else id.name,
+                else => return null,
+            };
+            if (type_resolver.TypeResolver.floatLimitFor(receiver, fa.field) == null) return null;
+            return type_resolver.TypeResolver.resolvePrimitive(receiver);
+        },
+        else => return null,
+    };
+    const ci = index.lookup(.module_const, name) orelse return null;
+    return if (isFloatConstType(ci.ty)) ci.ty else null;
+}
+
+pub fn evalConstFloatInit(node: *const Node, ctx: anytype, ty: TypeId) ?f64 {
+    if (ast.floatLiteral(node)) |lit| return ctx.floatLiteralValue(lit, ty, node.span);
+    const value = evalConstFloatExpr(node, ctx) orelse return null;
+    return if (ty == .f32) @as(f32, @floatCast(value)) else value;
 }
 
 /// True iff `name` is a FLOAT-valued module const — judged by the const's VALUE,
@@ -318,7 +368,9 @@ fn moduleConstIntFramed(index: *const ProgramIndex, table: *types.TypeTable, nam
     const ci = index.lookup(.module_const, name) orelse return null;
     if (!isCountableConstType(table, ci.ty)) return null;
     var frame = ModuleConstFrame{ .name = name, .parent = parent };
-    return evalConstIntExpr(ci.value, ModuleConstCtx{ .index = index, .table = table, .frame = &frame });
+    const ctx = ModuleConstCtx{ .index = index, .table = table, .frame = &frame };
+    if (ci.ty == .f32) return floatToIntExact(evalConstFloatInit(ci.value, ctx, ci.ty) orelse return null);
+    return evalConstIntExpr(ci.value, ctx);
 }
 
 /// A name bound to a module-global integer constant → its value, else null.
@@ -353,7 +405,7 @@ fn moduleConstFloatFramed(index: *const ProgramIndex, table: *types.TypeTable, n
     const ci = index.lookup(.module_const, name) orelse return null;
     if (!isCountableConstType(table, ci.ty)) return null;
     var frame = ModuleConstFrame{ .name = name, .parent = parent };
-    return evalConstFloatExpr(ci.value, ModuleConstCtx{ .index = index, .table = table, .frame = &frame });
+    return evalConstFloatInit(ci.value, ModuleConstCtx{ .index = index, .table = table, .frame = &frame }, ci.ty);
 }
 
 pub fn moduleConstFloat(index: *const ProgramIndex, table: *types.TypeTable, name: []const u8) ?f64 {
@@ -478,6 +530,7 @@ fn qualifiedDottedIsFloat(name: []const u8, ctx: anytype) bool {
 /// by zero: the caller then emits the clean compile-halting diagnostic, never a
 /// fabricated length / lane count / value-param.
 pub fn evalConstIntExpr(node: *const Node, ctx: anytype) ?i64 {
+    if (constFloatType(node, ctx) == .f32) return floatToIntExact(evalConstFloatExpr(node, ctx) orelse return null);
     return switch (node.data) {
         .int_literal => |lit| lit.value,
         .char_literal => |lit| lit.value,
@@ -617,7 +670,9 @@ pub fn evalConstFloatExpr(node: *const Node, ctx: anytype) ?f64 {
     // Delegate any integer-foldable subtree (incl. an INTEGRAL float like `4.0`
     // / `M + 2.0`) to the single int folder, then promote — keeps named consts
     // and `.min`/`.max` resolution in one place.
-    if (evalConstIntExpr(node, ctx)) |iv| return @floatFromInt(iv);
+    if (constFloatType(node, ctx) != .f32) {
+        if (evalConstIntExpr(node, ctx)) |iv| return @floatFromInt(iv);
+    }
     return switch (node.data) {
         .float_literal => |lit| lit.value,
         // A name bound to a numeric module const whose value is a non-integral
@@ -660,8 +715,21 @@ pub fn evalConstFloatExpr(node: *const Node, ctx: anytype) ?f64 {
             else => null,
         },
         .binary_op => |b| {
-            const l = evalConstFloatExpr(b.lhs, ctx) orelse return null;
-            const r = evalConstFloatExpr(b.rhs, ctx) orelse return null;
+            const operands = floatOperandTypes(b, constFloatType(b.lhs, ctx), constFloatType(b.rhs, ctx));
+            const l = evalConstFloatInit(b.lhs, ctx, operands.lhs orelse .f64) orelse return null;
+            const r = evalConstFloatInit(b.rhs, ctx, operands.rhs orelse .f64) orelse return null;
+            if (constFloatType(node, ctx) == .f32) {
+                const lf: f32 = @floatCast(l);
+                const rf: f32 = @floatCast(r);
+                return switch (b.op) {
+                    .add => lf + rf,
+                    .sub => lf - rf,
+                    .mul => lf * rf,
+                    .div => if (rf == 0.0) null else lf / rf,
+                    .mod => if (rf == 0.0) null else @rem(lf, rf),
+                    else => null,
+                };
+            }
             return switch (b.op) {
                 .add => l + r,
                 .sub => l - r,

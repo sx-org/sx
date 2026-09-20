@@ -116,7 +116,7 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
                 self.diagNonIntegralNarrow(expr.span, fl.value, expected_ty);
                 break :blk null;
             }
-            break :blk inst_mod.ConstantValue{ .float = fl.value };
+            break :blk inst_mod.ConstantValue{ .float = self.floatLiteralValue(fl, expected_ty, expr.span) };
         },
         .string_literal => |sl| .{ .string = self.module.types.internString(sl.raw) },
         .undef_literal => .zeroinit,
@@ -130,7 +130,7 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
                     .{ .float = @floatFromInt(-il.value) }
                 else
                     .{ .int = -il.value },
-                .float_literal => |fl| .{ .float = -fl.value },
+                .float_literal => |fl| .{ .float = -self.floatLiteralValue(fl, expected_ty, expr.span) },
                 else => null,
             },
             else => null,
@@ -2168,7 +2168,9 @@ pub fn foldSourceConstInt(self: *Lowering, name: []const u8, frame: ?*const Cons
             var f = ConstFoldFrame{ .name = name, .source = sel.source, .parent = frame };
             const restore = self.pinConstAuthorSource(sel.source);
             defer restore.unpin();
-            return program_index_mod.evalConstIntExpr(sel.info.value, SourceConstCtx{ .lowering = self, .frame = &f });
+            const ctx = SourceConstCtx{ .lowering = self, .frame = &f };
+            if (sel.info.ty == .f32) return program_index_mod.floatToIntExact(program_index_mod.evalConstFloatInit(sel.info.value, ctx, sel.info.ty) orelse return null);
+            return program_index_mod.evalConstIntExpr(sel.info.value, ctx);
         },
         .own_opaque, .ambiguous, .none => null,
     };
@@ -2212,7 +2214,9 @@ pub fn foldQualifiedConstInt(self: *Lowering, ns: []const u8, field: []const u8,
     var f = ConstFoldFrame{ .name = field, .source = sel.source, .parent = frame };
     const restore = self.pinConstAuthorSource(sel.source);
     defer restore.unpin();
-    return program_index_mod.evalConstIntExpr(sel.info.value, SourceConstCtx{ .lowering = self, .frame = &f });
+    const ctx = SourceConstCtx{ .lowering = self, .frame = &f };
+    if (sel.info.ty == .f32) return program_index_mod.floatToIntExact(program_index_mod.evalConstFloatInit(sel.info.value, ctx, sel.info.ty) orelse return null);
+    return program_index_mod.evalConstIntExpr(sel.info.value, ctx);
 }
 
 /// FLOAT counterpart of `foldQualifiedConstInt` — the qualified
@@ -2225,7 +2229,7 @@ pub fn foldQualifiedConstFloat(self: *Lowering, ns: []const u8, field: []const u
     var f = ConstFoldFrame{ .name = field, .source = sel.source, .parent = frame };
     const restore = self.pinConstAuthorSource(sel.source);
     defer restore.unpin();
-    return program_index_mod.evalConstFloatExpr(sel.info.value, SourceConstCtx{ .lowering = self, .frame = &f });
+    return program_index_mod.evalConstFloatInit(sel.info.value, SourceConstCtx{ .lowering = self, .frame = &f }, sel.info.ty);
 }
 
 /// "Is the qualified const `ns.field` FLOAT-valued" — the
@@ -2276,7 +2280,7 @@ pub fn foldSourceConstFloat(self: *Lowering, name: []const u8, frame: ?*const Co
             var f = ConstFoldFrame{ .name = name, .source = sel.source, .parent = frame };
             const restore = self.pinConstAuthorSource(sel.source);
             defer restore.unpin();
-            return program_index_mod.evalConstFloatExpr(sel.info.value, SourceConstCtx{ .lowering = self, .frame = &f });
+            return program_index_mod.evalConstFloatInit(sel.info.value, SourceConstCtx{ .lowering = self, .frame = &f }, sel.info.ty);
         },
         .own_opaque, .ambiguous, .none => null,
     };

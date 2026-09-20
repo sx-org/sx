@@ -65,7 +65,7 @@ Mat4 :: struct {
         m := Mat4.identity();
         m.data[5] = c;
         m.data[6] = s;
-        m.data[9] = (0.0 - s).(f32);
+        m.data[9] = 0.0 - s;
         m.data[10] = c;
         m
     }
@@ -75,7 +75,7 @@ Mat4 :: struct {
         s := @sin(angle);
         m := Mat4.identity();
         m.data[0] = c;
-        m.data[2] = (0.0 - s).(f32);
+        m.data[2] = 0.0 - s;
         m.data[8] = s;
         m.data[10] = c;
         m
@@ -87,19 +87,19 @@ Mat4 :: struct {
         m := Mat4.identity();
         m.data[0] = c;
         m.data[1] = s;
-        m.data[4] = (0.0 - s).(f32);
+        m.data[4] = 0.0 - s;
         m.data[5] = c;
         m
     }
 
     ortho :: (left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) -> Mat4 {
         m := Mat4.zero();
-        m.data[0] = (2.0 / (right - left)).(f32);
-        m.data[5] = (2.0 / (top - bottom)).(f32);
-        m.data[10] = (0.0 - 2.0 / (far - near)).(f32);
-        m.data[12] = (0.0 - (right + left) / (right - left)).(f32);
-        m.data[13] = (0.0 - (top + bottom) / (top - bottom)).(f32);
-        m.data[14] = (0.0 - (far + near) / (far - near)).(f32);
+        m.data[0] = 2.0 / (right - left);
+        m.data[5] = 2.0 / (top - bottom);
+        m.data[10] = 0.0 - 2.0 / (far - near);
+        m.data[12] = 0.0 - (right + left) / (right - left);
+        m.data[13] = 0.0 - (top + bottom) / (top - bottom);
+        m.data[14] = 0.0 - (far + near) / (far - near);
         m.data[15] = 1.0;
         m
     }
@@ -107,11 +107,11 @@ Mat4 :: struct {
     perspective :: (fov: f32, aspect: f32, near: f32, far: f32) -> Mat4 {
         halfTan := @sin(fov * 0.5) / @cos(fov * 0.5);
         m := Mat4.zero();
-        m.data[0] = (1.0 / (aspect * halfTan)).(f32);
-        m.data[5] = (1.0 / halfTan).(f32);
-        m.data[10] = (0.0 - (far + near) / (far - near)).(f32);
+        m.data[0] = 1.0 / (aspect * halfTan);
+        m.data[5] = 1.0 / halfTan;
+        m.data[10] = 0.0 - (far + near) / (far - near);
         m.data[11] = (0.0 - 1.0).(f32);
-        m.data[14] = (0.0 - 2.0 * far * near / (far - near)).(f32);
+        m.data[14] = 0.0 - 2.0 * far * near / (far - near);
         m
     }
 }

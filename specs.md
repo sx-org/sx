@@ -199,7 +199,7 @@ hand-written sx code.
 | Kind      | Examples            | Type    |
 |-----------|---------------------|---------|
 | Integer   | `0`, `42`, `0xFF`, `0o755`, `0b1010` | `i64`   |
-| Float     | `0.3`, `0.9`        | `f64`   |
+| Float     | `0.3`, `1e10`, `1.5e-3` | inferred; defaults to `f64` |
 | String    | `"Hello"`, `"z: {z}"` | `[N:0]u8` (may span multiple lines) |
 | Heredoc String | `@string END`...`END` | `[N:0]u8` |
 | Line String | `\\raw line` | `[N:0]u8` |
@@ -228,8 +228,15 @@ separators as pure visual grouping; they are stripped before the value is
 computed, so `0xFF_FF` == `0xFFFF`, `1_000` == `1000`, and `3.14_159` ==
 `3.14159`. Separators are permissive — repeated (`1__0`) and trailing (`1000_`)
 underscores are accepted and stripped. A leading `_` before the first digit is
-not a number (it lexes as an identifier). There is no scientific-exponent
-(`1e10`) float form.
+not a number (it lexes as an identifier).
+
+**Decimal floats.** A decimal number is a float when it has a fraction or an
+exponent: `digits ("." digits)? ([eE] [+-]? digits)?`, with at least one of
+those two parts. Each `digits` starts with a decimal digit and continues with
+digits or `_`; separators may repeat or trail, including in the exponent.
+The fraction and exponent contain no whitespace. `1e10` is a float, `1.5E-3`
+is `0.0015`, and `1e` is invalid. A dot without a following digit starts the
+ordinary member, cast or range syntax.
 
 String literals support escape sequences (`\n`, `\t`, `\r`, `\\`, `\"`, `\0`) and may span multiple lines directly:
 ```sx
@@ -2906,8 +2913,24 @@ isReady : ValueListenable(bool) = map(
 - `:=` bindings infer type from the right-hand side
 - Explicit annotation overrides inference: `NAME : f64 : 0.9;`
 - Integer literals default to `i64`
-- Float literals default to `f64`
+- Float literals default to `f64`. In binary arithmetic and comparisons, a
+  direct float literal (including unary negation) adopts the other operand's
+  float type. Both-literal operands stay `f64`. Parentheses preserve the
+  expression; a nested operation has its own result type, and a named value
+  keeps its inferred or declared type. A typed slot or parameter supplies the
+  type of a direct literal, not the operands of a binary expression.
+  Literals round directly to the nearest representable value of their type,
+  with ties to even; overflow is a located compile error, and underflow may
+  round to zero. Compile-time arithmetic uses the operands' adopted types.
 - Enum literals (`.variant`) infer their enum type from context (expected type)
+
+```sx
+s: f32 = 1.5;
+adapted := 0.0 - s;
+pair := 0.0 - 1.0;
+```
+`adapted` is `f32`, `pair` is `f64`, and `1e39 - s` is an overflow error at
+`1e39`.
 
 ### Type Conversions
 

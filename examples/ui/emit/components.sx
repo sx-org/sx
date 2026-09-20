@@ -35,7 +35,7 @@ Button :: @OpenVariant(View) {
     fit :: (self: *Button, proposal: ProposedSize) -> Size {
         w := self.label.len * 8;
         pad := self.modifier.padding.horizontal();
-        Size{ width = w + pad, height = (24.0 + self.modifier.padding.vertical()).(f32) }
+        Size{ width = w + pad, height = 24.0 + self.modifier.padding.vertical() }
     }
 
     layout :: (self: *Button, bounds: Frame) {}

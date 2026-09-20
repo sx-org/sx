@@ -56,15 +56,15 @@ Quat :: struct {
         wz := self.w * self.z;
 
         m := Mat4.identity();
-        m.data[0]  = (1.0 - 2.0 * (y2 + z2)).(f32);
-        m.data[1]  = (2.0 * (xy + wz)).(f32);
-        m.data[2]  = (2.0 * (xz - wy)).(f32);
-        m.data[4]  = (2.0 * (xy - wz)).(f32);
-        m.data[5]  = (1.0 - 2.0 * (x2 + z2)).(f32);
-        m.data[6]  = (2.0 * (yz + wx)).(f32);
-        m.data[8]  = (2.0 * (xz + wy)).(f32);
-        m.data[9]  = (2.0 * (yz - wx)).(f32);
-        m.data[10] = (1.0 - 2.0 * (x2 + y2)).(f32);
+        m.data[0]  = 1.0 - 2.0 * (y2 + z2);
+        m.data[1]  = 2.0 * (xy + wz);
+        m.data[2]  = 2.0 * (xz - wy);
+        m.data[4]  = 2.0 * (xy - wz);
+        m.data[5]  = 1.0 - 2.0 * (x2 + z2);
+        m.data[6]  = 2.0 * (yz + wx);
+        m.data[8]  = 2.0 * (xz + wy);
+        m.data[9]  = 2.0 * (yz - wx);
+        m.data[10] = 1.0 - 2.0 * (x2 + y2);
         m
     }
 }

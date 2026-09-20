@@ -49,14 +49,10 @@ pub const ExprTyper = struct {
                     break :blk .bool;
                 },
                 .and_op, .or_op, .in_op, .is_op => .bool,
-                // Arithmetic / bitwise / shift ops: infer the PROMOTED result
-                // of (lhs, rhs), not the LHS alone — `Lowering.arithResultType`
-                // is the same rule `lowerBinaryOp` applies, so `M + 0.5` types
-                // as `f64` regardless of operand order.
-                else => self.l.arithResultType(
-                    self.l.operandType(self.l.inferExprType(bop.lhs)),
-                    self.l.operandType(self.l.inferExprType(bop.rhs)),
-                ),
+                else => blk: {
+                    const operands = program_index_mod.floatOperandTypes(bop, self.l.operandType(self.l.inferExprType(bop.lhs)), self.l.operandType(self.l.inferExprType(bop.rhs)));
+                    break :blk self.l.arithResultType(operands.lhs.?, operands.rhs.?);
+                },
             },
             .unary_op => |uop| switch (uop.op) {
                 .not => .bool,
