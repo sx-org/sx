@@ -6495,8 +6495,8 @@ error there (`parse(s) or 0` names no bool).
 A failable expression `X` may appear **bare** (no `try`) iff its error path
 passes through at least one explicit marker before reaching the enclosing
 boundary. The markers are: a `try` keyword, a `catch` handler, a `??` value
-terminator, a destructure binding (`v, err := X`), or a forwarded call (a
-`return`ed call or the body's tail call). Otherwise `try` (or one of the other
+terminator, a destructure binding (`v, err := X`), or forwarding the expression
+as the enclosing body's own result. Otherwise `try` (or one of the other
 markers directly on `X`) is required. A pure failable has only its error result,
 so binding it to a name (`err := check()`) counts as a destructure. A direct
 condition such as `if check() { … }` requires `catch`.

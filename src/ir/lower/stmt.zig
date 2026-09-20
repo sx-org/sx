@@ -226,6 +226,9 @@ fn lowerErrorOnlyTail(self: *Lowering, tail: *const Node, ret_ty: TypeId) BodyTa
     }
     const saved_target = self.target_type;
     defer self.target_type = saved_target;
+    const saved_marker = self.marked_error_expr;
+    self.marked_error_expr = .{ .node = tail, .pure_only = true };
+    defer self.marked_error_expr = saved_marker;
     if (tailIsKnownNonError(self, tail)) {
         // Nothing demands this value: it has no destination, and it is
         // evaluated purely for its effects.
@@ -238,9 +241,6 @@ fn lowerErrorOnlyTail(self: *Lowering, tail: *const Node, ret_ty: TypeId) BodyTa
     // once and dispose by what it ACTUALLY lowered to, never by the prediction.
     self.target_type = ret_ty;
     const errs_before: usize = if (self.diagnostics) |d| d.errorCount() else 0;
-    const saved_marker = self.marked_error_expr;
-    self.marked_error_expr = .{ .node = tail, .pure_only = false };
-    defer self.marked_error_expr = saved_marker;
     const maybe_val = self.tryLowerAsExpr(tail);
     if (self.currentBlockHasTerminator()) return .{ .terminated = .noreturn };
     const val = maybe_val orelse return .no_value;

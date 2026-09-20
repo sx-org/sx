@@ -41,7 +41,13 @@ error: a failable expression needs an error-path marker: `try`, `catch`, `??` wi
    |                   ^^^^^^^^^^
 
 error: a failable expression needs an error-path marker: `try`, `catch`, `??` with a value, a destructure binding, or a forwarded call
-  --> examples/diagnostics/failable-path-marker.sx:14:32
+  --> examples/diagnostics/failable-path-marker.sx:14:28
    |
-14 |     value := try failable() ?? failable();
-   |                                ^^^^^^^^^^
+14 |     value := failable() ?? failable();
+   |                            ^^^^^^^^^^
+
+error: a failable expression needs an error-path marker: `try`, `catch`, `??` with a value, a destructure binding, or a forwarded call
+  --> examples/diagnostics/failable-path-marker.sx:32:19
+   |
+32 |     print("{}\n", failable());
+   |                   ^^^^^^^^^^

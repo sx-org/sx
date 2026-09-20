@@ -3710,6 +3710,7 @@ fn errorPathContains(root: *const Node, node: *const Node) bool {
             for (me.arms) |arm| if (errorPathContains(arm.body, node)) break :blk true;
             break :blk false;
         },
+        .null_coalesce => |nc| errorPathContains(nc.lhs, node) or errorPathContains(nc.rhs, node),
         else => false,
     };
 }
@@ -3752,10 +3753,10 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
     defer author.leave();
     const result = lowerExprInner(self, node);
     const ty = self.builder.getRefType(result);
-    const failable = blk: {
-        if (self.module.types.get(ty) == .failable) break :blk true;
+    const produces_failable = blk: {
         if (self.errorChannelOf(ty) == null) break :blk false;
         if (node.data == .call) break :blk true;
+        if (node.data == .null_coalesce) break :blk self.coalesceIsFailable(&node.data.null_coalesce);
         if (node.data != .field_access) break :blk false;
         const fa = node.data.field_access;
         var recv_ty = self.inferExprType(fa.object);
@@ -3763,7 +3764,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             recv_ty = self.module.types.get(recv_ty).pointer.pointee;
         break :blk self.getAccessorFor(recv_ty, fa.field) != null;
     };
-    if (failable and !(if (self.marked_error_expr) |marker|
+    if (produces_failable and !(if (self.marked_error_expr) |marker|
         (!marker.pure_only or self.module.types.get(ty) == .@"error") and errorPathContains(marker.node, node)
     else
         false))

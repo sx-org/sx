@@ -8,6 +8,15 @@ pure :: () -> !Failure { raise Failure.Failed; }
 forward :: () -> (i64, !Failure) { return failable(); }
 tail :: () -> (i64, !Failure) { failable() }
 propagate :: () -> (i64, !Failure) { return try failable(); }
+attempt :: (n: i64) -> (i64, !Failure) {
+    if n < 0 { raise Failure.Failed; }
+    n
+}
+forwardChain :: (n: i64) -> (i64, !Failure) { return failable() ?? attempt(n); }
+tailChain :: (n: i64) -> (i64, !Failure) { failable() ?? attempt(n) }
+pureTailChain :: () -> !Failure { pure() ?? pure() }
+errorValue :: () -> Failure { Failure.Failed }
+raiseCall :: () -> !Failure { raise errorValue(); }
 fallback :: () -> (i64, !Failure) {
     value := failable() ?? try failable();
     return value;
@@ -29,6 +38,15 @@ main :: () {
     propagate() catch |e| {
         print("try: error={} frames={}\n", e == Failure.Failed, sx_trace_len());
         0
+    };
+    print("chain: return={}/{} tail={}/{}\n",
+        forwardChain(-1) catch { -9 }, forwardChain(3) catch { -9 },
+        tailChain(-1) catch { -9 }, tailChain(3) catch { -9 });
+    pureTailChain() catch |e| {
+        print("pure chain={}\n", e == Failure.Failed);
+    };
+    raiseCall() catch |e| {
+        print("raise: error={} frames={}\n", e == Failure.Failed, sx_trace_len());
     };
     print("fallback={}\n", fallback() catch { 7 });
     err := if true { pure() } else { Failure.Failed };

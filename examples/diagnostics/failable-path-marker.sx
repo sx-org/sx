@@ -11,7 +11,7 @@ Box :: struct {
 }
 
 chain :: () -> (i64, !Failure) {
-    value := try failable() ?? failable();
+    value := failable() ?? failable();
     return value;
 }
 
@@ -29,5 +29,6 @@ main :: () {
         1
     } catch { 0 };
     chain() catch { 0 };
+    print("{}\n", failable());
     print("unhandled error accepted\n");
 }

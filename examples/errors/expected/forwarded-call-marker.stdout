@@ -1,6 +1,9 @@
 forward: error=true frames=1
 tail: error=true frames=1
 try: error=true frames=2
+chain: return=-9/3 tail=-9/3
+pure chain=true
+raise: error=true frames=1
 fallback=7
 bound=true
 cleanup bound=true

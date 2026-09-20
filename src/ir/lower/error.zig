@@ -917,7 +917,7 @@ pub fn lowerRaise(self: *Lowering, rs: *const ast.RaiseStmt, span: ast.Span) voi
     //     member). The variable form `raise e` is subset-checked below.
     const saved_target = self.target_type;
     self.target_type = err_set;
-    const tag_ref = self.lowerExpr(rs.tag);
+    const tag_ref = self.lowerMarkedExpr(rs.tag, false);
     self.target_type = saved_target;
 
     if (!inferred) {
@@ -1965,10 +1965,6 @@ pub fn lowerFailableCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
     self.flattenCoalesceChain(nc, &operands);
     const last_idx = operands.items.len - 1;
     const last_is_value = !self.operandIsFailableLike(operands.items[last_idx]);
-    var last_try: ?usize = null;
-    for (operands.items, 0..) |operand, i| {
-        if (operand.data == .try_expr) last_try = i;
-    }
 
     // The chain's total-failure routing. An absorbing consumer (`catch`)
     // sets this so the final operand's failure reaches the handler; cleared
@@ -2025,7 +2021,7 @@ pub fn lowerFailableCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
         }
 
         const attempted = attemptedExpr(operand);
-        const marked = last_is_value or fail_target != null or (if (last_try) |j| i <= j else false);
+        const marked = !is_last or fail_target != null or operand.data == .try_expr;
         const attempt = lowerAttempt(self, attempted, operand.span, marked);
         const op_ty = attempt.ty;
         const op_set = self.errorChannelOf(op_ty) orelse {
