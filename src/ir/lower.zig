@@ -3602,6 +3602,7 @@ pub const Lowering = struct {
     pub const qualifiedGlobalHasStorage = lower_stmt.qualifiedGlobalHasStorage;
     pub const fieldCall = lower_call.fieldCall;
     pub const fieldProjection = lower_call.fieldProjection;
+    pub const resolveFieldPlace = lower_call.resolveFieldPlace;
     pub const lowerFieldPlace = lower_call.lowerFieldPlace;
     pub const resolveMutablePlace = lower_stmt.resolveMutablePlace;
     pub const diagEnclosingRootWrite = lower_stmt.diagEnclosingRootWrite;

@@ -4182,13 +4182,16 @@ fn diagFieldBounds(self: *Lowering, ty: TypeId, index: i64, span: ast.Span) void
 
 pub const FieldPlace = struct { ptr: Ref, ty: TypeId };
 
+pub fn resolveFieldPlace(self: *Lowering, field: FieldProjection) ?FieldPlace {
+    if (!self.exprHasAddressableStorage(field.object)) return null;
+    const base = self.getExprAlloca(field.object) orelse self.lowerExprAsPtr(field.object);
+    return .{ .ptr = self.builder.structGepTyped(base, field.index, self.module.types.ptrTo(field.ty), field.object_ty), .ty = field.ty };
+}
+
 pub fn lowerFieldPlace(self: *Lowering, node: *const Node) ?FieldPlace {
     if (self.fieldCall(node)) |c| {
         switch (selectField(self, c)) {
-            .field => |field| if (self.exprHasAddressableStorage(field.object)) {
-                const base = self.getExprAlloca(field.object) orelse self.lowerExprAsPtr(field.object);
-                return .{ .ptr = self.builder.structGepTyped(base, field.index, self.module.types.ptrTo(field.ty), field.object_ty), .ty = field.ty };
-            },
+            .field => |field| if (self.resolveFieldPlace(field)) |place| return place,
             .out_of_bounds => |bad| {
                 diagFieldBounds(self, bad.object_ty, bad.index, c.args[1].span);
                 return null;

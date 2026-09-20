@@ -2899,8 +2899,9 @@ pub fn resolveMutablePlace(self: *Lowering, target: *const Node) ?Place {
             return .{ .global = quietGlobalRef(self, id.name) orelse return null };
         },
         .call => {
-            if (self.fieldCall(target) == null) return null;
-            const field = self.lowerFieldPlace(target) orelse return null;
+            const c = self.fieldCall(target) orelse return null;
+            const projection = self.fieldProjection(c) orelse return null;
+            const field = self.resolveFieldPlace(projection) orelse return null;
             return .{ .slot = .{ .ptr = field.ptr, .ty = field.ty } };
         },
         .field_access => |fa| {
@@ -3979,6 +3980,10 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                 }
             },
             .call => {
+                if (self.fieldCall(target) == null) {
+                    _ = self.emitError("multi_assign_target", target.span);
+                    continue;
+                }
                 const field = self.lowerFieldPlace(target) orelse continue;
                 const val_ty = self.builder.getRefType(val);
                 if (!self.checkAssignable(val_ty, field.ty, ma.values[i].span, "assign", "field", ma.values[i])) continue;
