@@ -1715,3 +1715,20 @@ test "parser: bodyless member of an `@` struct parses as an intrinsic method" {
 
     try std.testing.expect(sd.methods[2].data.fn_decl.body.data != .intrinsic_expr);
 }
+
+test "parser: a juxtaposed spread retains its operand and source span" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const source = "f :: () { x := mod.Box(i32){ ..make(), value = 3 }; }";
+    var parser = try Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const value = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0].data.var_decl.value.?;
+    const jx = value.data.juxtaposition;
+    try std.testing.expect(jx.expr.data == .call);
+    const items = jx.block.data.block.stmts;
+    try std.testing.expectEqual(@as(usize, 2), items.len);
+    const spread = items[0];
+    try std.testing.expect(spread.data.spread_expr.operand.data == .call);
+    try std.testing.expectEqualStrings("..make()", source[spread.span.start..spread.span.end]);
+    try std.testing.expect(items[1].data == .assignment);
+}

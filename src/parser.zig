@@ -2980,6 +2980,14 @@ pub const Parser = struct {
     /// keyword one takes the backtick raw escape (`` Pair(i64){ `push = 7 } ``),
     /// bare it heads a statement.
     fn parseBraceItem(self: *Parser) anyerror!*Node {
+        if (self.tokens.tag(self.tok) == .dot_dot) {
+            const start = self.tokens.start(self.tok);
+            self.advance();
+            const operand = try self.parseExpr();
+            const item = try self.createNode(start, .{ .spread_expr = .{ .operand = operand } });
+            try self.expectSemicolonAfter(item);
+            return item;
+        }
         if (self.tokens.tag(self.tok) == .identifier and self.peekNext() == .equal) {
             const start = self.tokens.start(self.tok);
             const name = self.tokens.slice(self.tok);

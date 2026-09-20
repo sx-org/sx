@@ -1,0 +1,6 @@
+P :: struct { x: i32; }
+main :: () {
+    p := P{x = 3};
+    x: i32 = 1;
+    duplicate := P{x, ..p, x = 2};
+}

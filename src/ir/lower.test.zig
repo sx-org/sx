@@ -87,6 +87,36 @@ test "lower: simple function with arithmetic" {
     try std.testing.expect(std.mem.indexOf(u8, output, "add %") != null or std.mem.indexOf(u8, output, "ret %") != null);
 }
 
+test "literal pack spread keeps diagnostics when argument metadata is shorter than arity" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var module = ir_mod.Module.init(alloc);
+    defer module.deinit();
+    var diagnostics = errors.DiagnosticList.init(alloc, "", "test.sx");
+    var lowering = Lowering.init(&module);
+    lowering.diagnostics = &diagnostics;
+    _ = lowering.builder.beginFunction(module.types.internString("spread"), &.{}, .void);
+    const entry = lowering.builder.appendBlock(module.types.internString("entry"), &.{});
+    lowering.builder.switchToBlock(entry);
+
+    const span = ast.Span{ .start = 0, .end = 0 };
+    var value = Node{ .span = span, .data = .{ .int_literal = .{ .value = 1 } } };
+    var operand = Node{ .span = span, .data = .{ .identifier = .{ .name = "xs" } } };
+    var spread = Node{ .span = span, .data = .{ .spread_expr = .{ .operand = &operand } } };
+    var counts = std.StringHashMap(u32).init(alloc);
+    try counts.put("xs", 2);
+    lowering.pack_param_count = counts;
+    var nodes = std.StringHashMap([]const *const Node).init(alloc);
+    try nodes.put("xs", &.{&value});
+    lowering.pack_arg_nodes = nodes;
+    const target = module.types.internProduct(&.{ .i64, .i64 }, null);
+    lowering.target_type = target;
+    const result = lowering.lowerStructLiteral(&.{ .struct_name = null, .field_inits = &.{.{ .name = null, .value = &spread }} }, span);
+    try std.testing.expectEqual(target, lowering.builder.getRefType(result));
+    try std.testing.expect(diagnostics.hasErrors());
+}
+
 test "lower: writable slice ptr keeps pointer type on wasm32" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

@@ -1,0 +1,6 @@
+Box :: struct { w: i32; private fd: i32; }
+Public :: struct { w: i32; }
+main :: () {
+    box := Box{w = 1, fd = 2};
+    value := Public{..box};
+}

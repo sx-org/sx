@@ -1,0 +1,5 @@
+error: field 'fd' is private to its declaring file
+  --> examples/diagnostics/2735-diagnostics-private-spread-target.sx:5:25
+   |
+ 5 |     value := target.Box{..source};
+   |                         ^^^^^^^^
