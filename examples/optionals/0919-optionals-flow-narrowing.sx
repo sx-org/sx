@@ -26,11 +26,11 @@ guard2 :: (a: ?i64, b: ?i64) -> i64 {
 main :: () {
     // if-then narrowing
     n : ?i64 = 41;
-    if n != null { takesI32(n); }            // i32 41
+    if n != null { takesI32(xx n); }
 
     // else-branch narrowing (false ⇒ present)
     m : ?i64 = 7;
-    if m == null { print("none\n"); } else { takesI32(m); }  // i32 7
+    if m == null { print("none\n"); } else { takesI32(xx m); }
 
     // compound `and` narrows both inside the then-branch
     a : ?i64 = 3;
@@ -45,8 +45,8 @@ main :: () {
     // reassignment kills narrowing; re-narrow before reuse
     k : ?i64 = 100;
     if k != null {
-        takesI32(k);          // i32 100
+        takesI32(xx k);
         k = 200;               // narrowing killed here
-        if k != null { takesI32(k); }  // i32 200 (re-narrowed)
+        if k != null { takesI32(xx k); }
     }
 }

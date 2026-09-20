@@ -9,9 +9,9 @@
 @import "modules/std.sx";
 @import "modules/platform/types.sx";
 
-VIEW_H :: 800.0;
-KEYBOARD_H :: 300.0;
-FRAME :: 1.0 / 60.0;
+VIEW_H : f32 : 800.0;
+KEYBOARD_H : f32 : 300.0;
+FRAME : f32 : 1.0 / 60.0;
 
 show :: (label: string, kb: *KeyboardOverlap) {
     print("{} height {} offset {} grip {}\n", label, kb.height, kb.offset, kb.grip);
@@ -81,7 +81,7 @@ main :: () -> i32 {
     kb.sample(top, VIEW_H);
     kb.grab();
     kb.track(top + 20.0, VIEW_H);
-    kb.letGo(KEYBOARD_FLICK_VELOCITY + 1.0);
+    kb.letGo((KEYBOARD_FLICK_VELOCITY + 1.0).(f32));
     print("flick target {}\n", kb.settleTo);
     0
 }

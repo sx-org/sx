@@ -1,0 +1,5 @@
+error: unknown type 'Bse'
+  --> examples/diagnostics/2719-diagnostics-unknown-closure-result-struct-spread.sx:4:53
+   |
+ 4 |     callback: Closure(..$Ts) -> [@sizeOf(struct { ..Bse; z: i32; })]i32;
+   |                                                     ^^^

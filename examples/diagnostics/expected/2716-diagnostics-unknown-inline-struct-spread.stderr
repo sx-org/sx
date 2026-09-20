@@ -1,0 +1,5 @@
+error: unknown type 'Bse'
+  --> examples/diagnostics/2716-diagnostics-unknown-inline-struct-spread.sx:6:20
+   |
+ 6 |     v : struct { ..Bse; z: i32; } = ---;
+   |                    ^^^

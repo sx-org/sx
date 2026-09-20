@@ -22,7 +22,7 @@ Widget :: struct { a: i64; }
 Nums :: [2]i64;
 
 describe :: ($T: Type) -> i32 {
-    r := match T {
+    r: i32 = match T {
         case Widget: 111;
         else: 222;
     }

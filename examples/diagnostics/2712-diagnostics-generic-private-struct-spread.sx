@@ -1,0 +1,3 @@
+Box :: struct { private secret: i64; }
+Wrap :: struct ($T: Type) { ..T; value: i32; }
+main :: () { w : Wrap(Box) = ---; }

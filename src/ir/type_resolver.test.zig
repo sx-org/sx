@@ -29,9 +29,6 @@ const PrimInner = struct {
             else => null,
         };
     }
-    pub fn expandTypeSpread(_: PrimInner, _: *const Node) ?[]TypeId {
-        return null;
-    }
 };
 
 test "TypeResolver.resolvePrimitive maps builtin keywords, null otherwise" {

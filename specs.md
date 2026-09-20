@@ -740,8 +740,8 @@ v2 := Vec4{4, 1, 1, 3 };
 v3 := Vec4{w=0, x=2, y=3, z=4 };
 
 // Mixed named + shorthand (bare identifier = field name matches variable name)
-z := 5.0;
-w := 6.0;
+z: f32 = 5.0;
+w: f32 = 6.0;
 v4 := Vec4{y=3, x=9, w, z };
 
 // Trailing commas are allowed in all comma-separated lists
@@ -757,6 +757,31 @@ A named field must name a **declared field** of the struct. An explicit
 type 'T'`) — it is never silently dropped, so a typo or a field removed by an
 `inline if @host.os` branch is caught. (Bare-identifier shorthand that happens
 to match no field is instead read as a *positional* element, not an error.)
+
+`..value` contributes a struct value's fields as initializers. Every contributed
+field must exist in the target and fit through ordinary implicit initialization
+(see [Type Conversions](#type-conversions)),
+even if a later initializer overwrites it. Overlap involving a spread is
+last-wins; two plain named initializers for one field are an error. Expressions
+and spread operands evaluate once, left to right. Uncovered fields take their
+ordinary default or zero value. A struct containing a private field cannot be
+spread, including in its declaring file.
+
+```sx
+Position :: struct { x: i32; y: i32; }
+Sprite :: struct { x: i32; y: i32; scale: i32 = 1; }
+pos := Position{x = 3, y = 4};
+a := Sprite{..pos, scale = 2};
+b: Sprite = .{scale = 5, ..a};
+```
+
+The operand's fields determine named versus positional contributions. Packs,
+positional products and fixed-length arrays contribute positionally. In a literal
+containing a spread, plain named initializers reserve their target fields;
+positional contributions fill the remaining fields in declaration order. Names
+contributed by spreads do not reserve fields. Thus
+`Sprite{..coords, scale = 2}` fills the leading fields from `coords`.
+Contextual `.{…}` uses the target's struct-initialization rules.
 
 Named aggregates place `{` directly after the type designator: `Point{ x = 1 }`,
 `List(i64){}`, `mod.Config{ port = 80 }`. The separator-dot form `Type.{…}`
@@ -801,17 +826,32 @@ An **untyped** `.{ … }` literal — no annotation, no type prefix, no target �
 self-types as an *anonymous structural struct*: named elements become fields;
 positional elements get index names (`"0"`, `"1"`, …) readable via `.N` or a
 comptime `[i]` index; `.{x}` shorthand is a NAMED field, `.{ (x) }` is the
-positional escape; mixing named and positional elements is an error. Inline
-anonymous type **annotations** (`struct { x: i64; }`, `union { … }`,
+positional escape. A spread contributes its operand's fields; mixing named
+and positional contributions after expansion is an error. For overlapping
+named fields, the first occurrence determines position and the last determines
+value and type, with each initializer typed independently:
+
+```sx
+A :: struct { px: i16; py: i32; }
+B :: struct { py: i32; px: i64; }
+a := A{px = 3, py = 4};
+b := B{py = 8, px = 70000};
+ab := .{..a, ..b};              // struct { px: i64; py: i32; }
+ba := .{..b, ..a};              // struct { py: i32; px: i16; }
+plain := .{..a, px = 70000};     // px: i64
+```
+
+Inline anonymous type **annotations** (`struct { x: i64; }`, `union { … }`,
 `enum { S: T; … }`) produce the same kind of type, in any type position —
 including a function's return type (`make :: () -> struct { x: i64; } {
 .{ x = 3 } }`; a bodyless `F :: () -> struct { … };` stays a function-type
 alias).
 
-Anonymous type identity is by **shape**, never by name: two anonymous types
+Anonymous type equality is by **shape**, never by name: two anonymous types
 with the same canonical field sequence (names + types, in order) are the SAME
 type — across literal and annotation sites — and differently-shaped ones are
-always distinct types:
+always distinct types. Each anonymous struct annotation keeps its own field
+defaults; defaults affect construction, not type equality or assignability:
 
 ```sx
 a : struct { x: i64; } = .{ x = 1 };
@@ -847,25 +887,23 @@ inactive-variant bytes are unspecified. That mirrors the rejection of a bare
 `union` top-level `==` operand. `<`, `<=`, `>`, `>=` are not defined on
 structs.
 
-#### `@using` — Struct Composition
-`@using StructName;` inside a struct declaration embeds all fields from `StructName` at that position. The embedded fields are accessed directly, as if declared inline.
+#### Struct Member Spread
+`..X` in a struct body splices the operand's members at that position: a pack
+supplies positional fields, and a struct type supplies its named fields and
+types. Other operand kinds are compile errors. A struct operand containing a
+private field cannot be spread, including in its declaring file. Spread fields
+receive no base defaults; explicit fields keep their declared defaults.
 
 ```sx
 UBase :: struct { x: i32; y: i32; }
-UExt :: struct { @using UBase; z: i32; }
-e := UExt{x = 1, y = 2, z = 3 };
-print("{}\n", e.x);  // 1
+UExt :: struct { ..UBase; z: i32 = 3; }
+e := UExt{x = 1, y = 2};
+print("{}\n", e.z);  // 3
 ```
 
-`@using` may appear at any field position (beginning, middle, end) and multiple `@using` entries are allowed:
-```sx
-UPos :: struct { px: i32; py: i32; }
-UCol :: struct { r: i32; g: i32; }
-USprite :: struct { @using UPos; @using UCol; scale: i32; }
-s := USprite{px = 10, py = 20, r = 255, g = 128, scale = 1 };
-```
-
-The referenced struct must be declared before use. This is purely a compile-time field expansion — no runtime overhead.
+The operand's layout is resolved on demand, including for a struct declared
+later in the file. Member spread is a compile-time expansion with no runtime
+overhead.
 
 #### Struct Interpolation
 Struct values in string interpolation print their fields with no type-name
@@ -2756,7 +2794,7 @@ concrete arg types at any particular call site.
 | Projection | `xs.field` | see "Pack projection" |
 | Spread → call args | `..xs` / `..xs.field` | expands to N positional args |
 | Spread → aggregate value | `.{..xs}` / `.{..xs.field}` | materializes the pack as an anonymous positional struct |
-| Spread → struct type | `struct { ..F(Ts) }` / `struct { ..F(Ts.Arg) }` | anonymous struct whose one field is the pack-spread product |
+| Spread → struct type | `struct { ..F(Ts) }` / `struct { ..F(Ts.Arg) }` | splices the pack elements as positional fields |
 | Spread → callable sig | `Closure(..Ts) -> R` / `Closure(..Ts.Arg) -> R` | positional params of the callable |
 
 #### Pack projection
@@ -3329,7 +3367,7 @@ An arm's last expression is the arm's value:
 classify :: (n: i32) -> i32 {
   match n {
     case 0: 100;            // arm value is 100
-    case 1: { x := 5; x*2 } // braced block → value 10
+    case 1: { x: i32 = 5; x*2 } // braced block → value 10
     else:   7
   }
 }
@@ -4314,7 +4352,7 @@ and never a value expression.
 Over the slice of right operands that are concrete descriptions they answer
 alike — there is no subtyping and no fits-rule — and that coincidence is a
 theorem about those operands, not the definition of either. Nothing is refused
-for the overlap. `t1 == t2` over two `Type` values is the tag compare `@typeEq`
+for the overlap. `t1 == t2` over two `Type` values is the type equality comparison `@typeEq`
 spells, and it folds when both operands are static.
 
 #### Left operands
@@ -5462,7 +5500,7 @@ error: 'intern' runs only at compile time — it cannot be called from the
 - `@errorName(e: $T) -> string` — `Owner.Member` for the member an error value carries (`"FooError.D"`) — the composition `e.set.name`, `"."`, and `e.name` spell out. Reads the always-linked qualified-name table at the value's member id.
 - `@errorPayload(e: $T) -> any` — the live member's payload as an `any` VIEW of the channel's payload area (same borrow rules as the boxed-view family). A payload-free member views as `void`.
 - `@isFlags($T: Type) -> bool` — returns `true` if `T` is a flags enum (declared with `@flags`)
-- `@typeEq($A: Type, $B: Type) -> bool` — structural TypeId equality (`@typeEq(i64, i64)` is `true`, distinct shapes are `false`); folds at compile time, so `inline if @typeEq(...)` is comptime-decidable
+- `@typeEq($A: Type, $B: Type) -> bool` — type equality (`@typeEq(i64, i64)` is `true`, distinct shapes are `false`); folds at compile time, so `inline if @typeEq(...)` is comptime-decidable
 - `@unbox($T: Type, v: any) -> T` — the boxed storage read AS `T`: an unchecked typed load through the view, with no tag check, so `T` must be the boxed type and a wider one overreads. The checked forms are the postfix assertions (`v.(T)` / `try v.(T)` / `v.(?T)`).
 - The boxed-view family — `@len` / `@field` / `@inner` — reads a boxed value's parts in place, dispatching on the view's runtime tag. Each result is an `any` VIEW `{the part's type, a pointer to it inside the receiver}` — an interior pointer, not a copy. An addressable receiver is borrowed (mutations of it stay visible through a live view) and an rvalue receiver spills to a frame temp first, so a view is valid only while the storage it names lives. A wrong-kind tag or an index past the count is **undefined behavior** (in-bounds GEP — the caller gates on `@len`).
 - `@len(v: any) -> i64` — the receiver's part count: struct and union fields, enum variants, array elements, vector lanes, and the count a slice's or string's header carries. A `Type` receiver — spelled, or a runtime `Type` value — answers that type's part count (`@len(@Vector(3, f32))` is `3`, the one vector length the size tables cannot answer, since a vector's ABI size is pow2-rounded); a spelled type with no parts is a compile error, a runtime tag of such a kind answers 0.
@@ -5474,7 +5512,7 @@ formatter reads to print unsigned integers as unsigned decimal; it lowers to
 `__sx_type_is_unsigned` over a runtime `Type` and folds outright over a static
 one.
 
-The type-only builtins — `@sizeOf`, `@alignOf`, `@typeName`, `@typeEq`, `@isFlags` — strictly require a **type** argument. A spelled type (`i64`, `*u8`, `Point`) or a generic type parameter (`T`) is accepted by all of them. A runtime `Type` value (`@typeOf(x)`, a `[]Type` element, a `Type`-typed local) is supported by the whole scalar family: `@typeName`, plus `@sizeOf`, `@alignOf`, and `@isFlags` — each reads a lazily-emitted, tag-indexed table (`__sx_type_sizes` / `_aligns` / `_flag_bits`; built only when a dynamic call site exists, so programs without runtime reflection carry no tables) — and `@typeEq`, which compares tags directly (no table). Passing a non-Type VALUE (`@sizeOf(6)`, `@isFlags(true)`) is a compile-time error — `<builtin> expects a type, got '<type>'` — never a silent reinterpretation of the value's bits as a type.
+The type-only builtins — `@sizeOf`, `@alignOf`, `@typeName`, `@typeEq`, `@isFlags` — strictly require a **type** argument. A spelled type (`i64`, `*u8`, `Point`) or a generic type parameter (`T`) is accepted by all of them. A runtime `Type` value (`@typeOf(x)`, a `[]Type` element, a `Type`-typed local) is supported by the whole scalar family: `@typeName`, plus `@sizeOf`, `@alignOf`, and `@isFlags` — each reads a lazily-emitted, tag-indexed table (`__sx_type_sizes` / `_aligns` / `_flag_bits`; built only when a dynamic call site exists, so programs without runtime reflection carry no tables) — and `@typeEq`, which compares the canonical types read from the lazily-emitted, tag-indexed `__sx_canonical_types` table. Passing a non-Type VALUE (`@sizeOf(6)`, `@isFlags(true)`) is a compile-time error — `<builtin> expects a type, got '<type>'` — never a silent reinterpretation of the value's bits as a type.
 
 An `any` is accepted because it can hold either a value or a `Type`. `@typeName` consults the `any`'s runtime type-tag, not its payload: an `any` holding a *value* reports the type **of that value** (`av : any = 6` → `@typeName(av)` is `"i64"`), while an `any` holding a *`Type` value* (e.g. `@typeOf(x)` stored in an `any`) names the **held type**. This is the same tag the `{}` formatter reads, so `print(av)` and `@typeName(av)` agree on what `av` is. `is` reads that tag rather than peeling it: `at is type` is true for a `Type`-holding `any`, and classifying the held type unboxes first (`at.(?Type)`).
 
@@ -5809,8 +5847,9 @@ Semantics:
   and a mention includes `x.fd(…)` when `fd` is a callable field. Another file
   can still produce a value without naming the field: a positional init
   (`File{ 3 }`), `File{}` defaults, `File{ --- }` / `---`, and copy assignment.
-  A value spread (`f(..x)`), an index (`x[0]`), and reflection (`print("{}", x)`,
-  `@field`) read the layout rather than the name, so none is a mention.
+  A call-argument spread (`f(..x)`), an index (`x[0]`), and reflection
+  (`print("{}", x)`, `@field`) read the layout rather than the name, so none
+  is a mention.
   Same-file methods, free functions, and literals may name the field.
   A method whose name matches a private field still dispatches: `x.fd(…)` is a
   mention only when `fd` resolves to a field.
@@ -5818,9 +5857,6 @@ Semantics:
 - **A promoted union member answers to its payload's file.** A union whose
   variant is a named struct promotes that struct's members; a private one is
   nameable only from the file declaring the payload.
-- **A `@using` promotion carries the base's authority.** A struct that promotes
-  a base with a private field gains the field's storage, not the right to name
-  it: only the base's declaring file may.
 
 Placement rules — `private` is allowed on identifier-headed module-scope
 declarations and on the fields of a NAMED struct declaration (a generic
@@ -5829,7 +5865,8 @@ inline `struct { … }`, a type function's returned `struct { … }`), locals,
 parameters, union and runtime-class fields, enum cases and error tags,
 struct / `constraint` / `interface` / `impl` methods and requirements, flat
 `@import`, `impl` blocks,
-`@context.extend`, `@using`, standalone `@run`, global `asm`, and `@framework`.
+`@context.extend`, struct spread members, standalone `@run`, global `asm`,
+and `@framework`.
 Top-level `inline if` branches and `inline for` bodies MAY declare private
 globals (their statements are module-scope after comptime flattening); function
 and method bodies may not.
@@ -6699,7 +6736,7 @@ set_member      = IDENT ('=' (expr | 'else'))? (':' type)?
 struct_decl     = IDENT '::' 'struct' '{' struct_members '}'
 struct_members  = (struct_member (';' struct_member)* ';'? )?
                   // members are `;`-separated; a trailing `;` before `}` is optional
-struct_member   = field_group | '@using' IDENT
+struct_member   = field_group | '..' type
 field_group     = IDENT (',' IDENT)* ':' type ('=' expr)?
 union_decl      = IDENT '::' 'union' '{' union_members '}'
 union_members   = (union_member (';' union_member)* ';'? )?

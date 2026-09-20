@@ -10,7 +10,7 @@ interfaces, and an LLVM backend — compiled to native code.
 
 Point :: struct {
     x, y: i32;
-    magnitude :: (self: *@This()) -> f32 { @sqrt(self.x * self.x + self.y * self.y); }
+    magnitude :: (self: *@This()) -> f32 { @sqrt(self.x * self.x + self.y * self.y).(f32); }
 }
 
 main :: () {
@@ -137,7 +137,7 @@ v2 := Vec3{ 1, 2, 3 };
 Shape :: enum { circle: f32; rect: struct { w, h: f32; }; none; }
 area :: (s: Shape) -> f32 {
     match s {
-        case .circle: |r| 3.14159 * r * r;
+        case .circle: |r| (3.14159 * r * r).(f32);
         case .rect: |r| r.w * r.h;
         case .none: 0;
     }
@@ -155,7 +155,7 @@ name := node?.name ?? "unknown";
 if n != null { takeI32(n); }    // narrowed; a bare `takeI32(n)` is an error
 ```
 
-`@using` composes structs. Methods live in the body.
+`..Base` in a struct body splices Base’s fields. Methods live in the body.
 
 ### Generics and closures
 

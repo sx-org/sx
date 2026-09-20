@@ -1,0 +1,12 @@
+Box :: struct ($T: Type) { x: T; count: i32; }
+Wide :: struct { x: i64; }
+Extra :: struct { x: i32; absent: i32; }
+
+main :: () {
+    extra := Extra{x = 3, absent = 4};
+    unknown := Box{..extra};
+    wide := Wide{x = 1};
+    conflict := Box{..wide, x = 2.(i32)};
+    _ = conflict;
+    _ = unknown;
+}

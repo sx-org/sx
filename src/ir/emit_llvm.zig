@@ -367,6 +367,8 @@ pub const LLVMEmitter = struct {
     type_is_unsigned_array_len: u32 = 0,
     // Runtime-reflection scalar tables (lazy, tag-indexed [N x i64] /
     // [N x i1]); built on the first dynamic call site of their builtin.
+    canonical_type_array: ?c.LLVMValueRef = null,
+    canonical_type_array_len: u32 = 0,
     type_size_array: ?c.LLVMValueRef = null,
     type_size_array_len: u32 = 0,
     type_align_array: ?c.LLVMValueRef = null,
@@ -2313,6 +2315,10 @@ pub const LLVMEmitter = struct {
     pub fn emitCmp(self: *LLVMEmitter, bin: ir_inst.BinOp, _: TypeId, int_pred: c_uint, float_pred: c_uint) void {
         var lhs = self.resolveRef(bin.lhs);
         var rhs = self.resolveRef(bin.rhs);
+        if (self.getRefIRType(bin.lhs) == .type_value and self.getRefIRType(bin.rhs) == .type_value) {
+            lhs = self.ops().scalarTableRead(.canonical_type, lhs);
+            rhs = self.ops().scalarTableRead(.canonical_type, rhs);
+        }
         // Determine if float by inspecting operand LLVM type
         var lhs_ty = c.LLVMTypeOf(lhs);
         var kind = c.LLVMGetTypeKind(lhs_ty);

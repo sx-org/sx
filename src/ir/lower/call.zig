@@ -135,7 +135,7 @@ fn receiverFitsFirstParam(self: *Lowering, fd: *const ast.FnDecl, recv_ty: TypeI
     if (recv_ty == .unresolved) return false;
     const want = self.resolveTypeArg(fd.params[0].type_expr);
     if (want == .unresolved) return true;
-    if (want == recv_ty) return true;
+    if (self.module.types.sameType(want, recv_ty)) return true;
     const pi = self.getProtocolInfo(want) orelse return false;
     if (!pi.isErased()) return false;
     const cname = self.resolveConcreteTypeName(recv_ty) orelse return false;
@@ -567,7 +567,7 @@ fn coerceGlobalFnPointerArgs(self: *Lowering, args: []Ref, info: types.TypeInfo.
         const src_ty = self.builder.getRefType(arg.*);
         if (!dst_ty.isBuiltin()) {
             const dti = self.module.types.get(dst_ty);
-            if (dti == .pointer and dti.pointer.pointee == src_ty and src_ty != .void) {
+            if (dti == .pointer and self.module.types.sameType(dti.pointer.pointee, src_ty) and src_ty != .void) {
                 if (ai < c.args.len and c.args[ai].data == .identifier) {
                     if (self.scope) |scope| {
                         if (scope.lookup(c.args[ai].data.identifier.name)) |binding| {
@@ -1338,7 +1338,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     const local = if (self.scope) |scope| scope.lookup(nm) else null;
                     if (local) |binding| {
                         // Only apply when the binding type matches the pointee type
-                        if (binding.is_alloca and binding.ty == pti.pointer.pointee) {
+                        if (binding.is_alloca and self.module.types.sameType(binding.ty, pti.pointer.pointee)) {
                             const ptr_ty = self.module.types.ptrTo(binding.ty);
                             args.append(self.alloc, self.builder.emit(.{ .addr_of = .{ .operand = binding.ref } }, ptr_ty)) catch unreachable;
                             continue;
@@ -1351,7 +1351,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         // A `::` const global is excluded (no `*T` into `.rodata`
                         // — would SIGBUS / slip past the const-write guard); it
                         // falls through to the value copy below.
-                        if (gi.ty == pti.pointer.pointee and !self.rootIsConstant(nm)) {
+                        if (self.module.types.sameType(gi.ty, pti.pointer.pointee) and !self.rootIsConstant(nm)) {
                             const ptr_ty = self.module.types.ptrTo(gi.ty);
                             const place = self.lowerExprAsPtr(arg);
                             const place_ty = self.builder.getRefType(place);
@@ -1456,7 +1456,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         if (pt) |ptv| {
             const vt = self.builder.getRefType(val);
             const vti = self.module.types.get(vt);
-            if (vti == .pointer and vti.pointer.pointee == ptv) {
+            if (vti == .pointer and self.module.types.sameType(vti.pointer.pointee, ptv)) {
                 if (self.diagnostics) |d| {
                     const tn = self.formatTypeName(ptv);
                     if (arg.data == .identifier) {
@@ -3880,7 +3880,7 @@ const tag_width_types = [_]struct { width: i64, ty: TypeId }{
 /// A view of a boxed enum's tag word, typed by its tag type.
 fn boxedTagView(self: *Lowering, av: Ref) Ref {
     const b = &self.builder;
-    const type_word = b.structGet(av, 1, .i64);
+    const type_word = b.structGet(av, 1, .type_value);
     const width_args = self.alloc.dupe(Ref, &.{type_word}) catch return Ref.none;
     const width = b.callBuiltin(.rt_variant_tag_width, width_args, .i64);
     const slot = b.alloca(.type_value);
@@ -3931,7 +3931,7 @@ fn lowerAsIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
     const xx_plan = self.coercionResolver().classifyXX(src_ty, dst);
     if (xx_plan == .reerase_protocol or xx_plan == .reerase_protocol_wrap) return refuseAs(self, src_ty, dst, c.callee.span);
     switch (self.coercionResolver().classify(src_ty, dst)) {
-        .no_op => return val,
+        .no_op => return self.coerceToType(val, src_ty, dst),
         .unbox_any => unreachable,
         .closure_to_fn_reject, .unique_to_closure_reject, .lambda_ptr_to_closure_reject, .optional_to_bool_reject, .many_to_slice_reject => return refuseAs(self, src_ty, dst, c.callee.span),
         else => {
@@ -3966,7 +3966,7 @@ fn boxedAsConverts(self: *Lowering, s: TypeId, dst: TypeId) bool {
 
 fn boxedAs(self: *Lowering, av: Ref, dst: TypeId, span: ast.Span) Ref {
     const b = &self.builder;
-    const type_word = b.structGet(av, 1, .i64);
+    const type_word = b.structGet(av, 1, .type_value);
     const slot = b.alloca(dst);
     const merge_bb = self.freshBlock("as.merge");
     const refuse_bb = self.freshBlock("as.refuse");
@@ -3992,7 +3992,7 @@ fn boxedAs(self: *Lowering, av: Ref, dst: TypeId, span: ast.Span) Ref {
         if (self.module.types.integerLayout(s) != null) continue;
         if (!boxedAsConverts(self, s, dst)) continue;
         const bb = self.freshBlock("as.from");
-        cases.append(self.alloc, .{ .value = @intCast(s.index()), .target = bb, .args = &.{} }) catch return Ref.none;
+        cases.append(self.alloc, .{ .value = @intCast(self.module.types.canonicalType(s).index()), .target = bb, .args = &.{} }) catch return Ref.none;
         srcs.append(self.alloc, s) catch return Ref.none;
         blocks.append(self.alloc, bb) catch return Ref.none;
     }
@@ -4389,19 +4389,10 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         return self.builder.callBuiltin(.type_name, args_owned, .string);
     }
     if (std.mem.eql(u8, name, "@typeEq")) {
-        // @typeEq(T1, T2) → const_bool — comptime TypeId equality.
-        // TypeIds are interned per structural shape so equality on
-        // them matches the user's intuition: `@typeEq(i64, i64)` is
-        // true, `@typeEq(*i64, *i64)` is true, distinct shapes are
-        // false. Pack-indexed types (`$args[0]`) resolve through
-        // `resolveTypeArg` → `resolveTypeWithBindings`.
         if (c.args.len < 2) return self.builder.constBool(false);
         const a_static = self.isStaticTypeArg(c.args[0]);
         const b_static = self.isStaticTypeArg(c.args[1]);
         if (!a_static or !b_static) {
-            // Runtime tag compare: Type is an i64 tag at runtime, so
-            // equality is a plain integer compare — no table involved. A
-            // static side lowers to its constant tag.
             const ra = if (a_static) self.builder.constType(self.resolveTypeArg(c.args[0])) else self.lowerExpr(c.args[0]);
             const rb = if (b_static) self.builder.constType(self.resolveTypeArg(c.args[1])) else self.lowerExpr(c.args[1]);
             const args_owned = self.alloc.dupe(Ref, &.{ ra, rb }) catch return self.builder.constBool(false);
@@ -4409,7 +4400,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         }
         const a = self.resolveTypeArg(c.args[0]);
         const b = self.resolveTypeArg(c.args[1]);
-        return self.builder.constBool(a == b);
+        return self.builder.constBool(self.module.types.sameType(a, b));
     }
     if (std.mem.eql(u8, name, "@isFlags")) {
         if (!self.isStaticTypeArg(c.args[0])) {

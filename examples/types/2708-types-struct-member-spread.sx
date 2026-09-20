@@ -1,0 +1,19 @@
+@import "modules/std.sx";
+
+Base :: struct { x: i32 = 91; y: i64 = 92; }
+Ext :: struct {
+    tag: i16;
+    ..Base;
+    z: i32 = 3;
+    detail: struct { enabled: bool; };
+}
+Header :: struct ($T: Type) { value: T; stamp: i64 = 99; }
+Envelope :: struct ($T: Type) { ..Header($T); bytes: i64 = @sizeOf(T); }
+
+main :: () {
+    e := Ext{ tag = 1, detail = .{ enabled = true } };
+    print("{} {} {} {} {}\n", e.tag, e.x, e.y, e.z, e.detail.enabled);
+    print("{}\n", @typeName(@typeOf(e.detail)));
+    g := Envelope(i16){ value = 7 };
+    print("{} {} {}\n", g.value, g.stamp, g.bytes);
+}

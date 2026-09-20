@@ -183,7 +183,7 @@ writeAny :: ufcs (w: Writer, val: any) {
         // so one arm covers every width.
         case .int: {
             match val {
-                case unsigned: |n| { writeUint(w, n); }
+                case unsigned: |n| { writeUint(w, n.(u64)); }
                 case signed: |n| { writeInt(w, n); }
             }
         }

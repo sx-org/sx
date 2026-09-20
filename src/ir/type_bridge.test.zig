@@ -259,3 +259,29 @@ test "resolveAstType: `(i32, !Named)` result list is a tuple ending in the error
     try std.testing.expectEqual(TypeId.i32, info.failable.value);
     try std.testing.expectEqual(set, info.failable.err);
 }
+
+test "resolveAstType: binding-free struct spread expands names and refuses invalid layouts" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var table = TypeTable.init(alloc);
+    var parser = try @import("../parser.zig").Parser.init(
+        alloc,
+        "Base :: struct { x: i32; y: bool; } " ++
+            "Derived :: struct { ..Base; z: i64; } " ++
+            "Bad :: struct { ..i32; } " ++
+            "Private :: struct { private secret: i64; } " ++
+            "Hidden :: struct { ..Private; }",
+    );
+    const decls = (try parser.parse()).data.root.decls;
+    _ = type_bridge.resolveAstType(decls[0], &table, null);
+    const derived = type_bridge.resolveAstType(decls[1], &table, null);
+    const fields = table.get(derived).@"struct".fields;
+    try std.testing.expectEqual(@as(usize, 3), fields.len);
+    try std.testing.expectEqualStrings("x", table.getString(fields[0].name));
+    try std.testing.expectEqual(TypeId.i32, fields[0].ty);
+    try std.testing.expectEqualStrings("z", table.getString(fields[2].name));
+    try std.testing.expectEqual(TypeId.unresolved, type_bridge.resolveAstType(decls[2], &table, null));
+    _ = type_bridge.resolveAstType(decls[3], &table, null);
+    try std.testing.expectEqual(TypeId.unresolved, type_bridge.resolveAstType(decls[4], &table, null));
+}

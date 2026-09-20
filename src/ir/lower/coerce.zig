@@ -85,14 +85,14 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
         .no_op => {
             if (!self.xx_is_postfix and target_explicit) {
                 const natural = self.inferExprType(operand_node);
-                if (natural == src_ty or natural == .unresolved) {
+                if (self.module.types.sameType(natural, src_ty) or natural == .unresolved) {
                     if (self.diagnostics) |d| {
                         const cs = self.builder.current_span;
                         d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "already '{s}'", .{self.formatTypeName(src_ty)});
                     }
                 }
             }
-            return operand;
+            return self.coerceToType(operand, src_ty, dst_ty);
         },
         // Concrete → Protocol: build protocol value.
         .erase_protocol => return self.buildProtocolErasure(operand, operand_node, src_ty, dst_ty),
@@ -170,7 +170,7 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
     // Dest-inferred `xx` is an error when implicit conversion already applies.
     if (!self.xx_is_postfix and target_explicit and src_ty != dst_ty) {
         const plan = self.coercionResolver().classify(src_ty, dst_ty);
-        if (isGlyphFreeImplicit(plan)) {
+        if (isGlyphFreeImplicit(plan) and (implicitIntegerConversion(self, src_ty, dst_ty) orelse true)) {
             if (self.diagnostics) |d| {
                 const cs = self.builder.current_span;
                 d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "already converts to '{s}'", .{self.formatTypeName(dst_ty)});
@@ -228,6 +228,37 @@ pub fn lowerCoerce(self: *Lowering, operand: Ref, operand_node: *const Node, src
         }
     }
     return result;
+}
+
+fn implicitIntegerConversion(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) ?bool {
+    const src = self.module.types.integerLayout(src_ty) orelse return null;
+    const dst = self.module.types.integerLayout(dst_ty) orelse return null;
+    return if (src.signed == dst.signed)
+        dst.width >= src.width
+    else
+        !src.signed and dst.width > src.width;
+}
+
+pub fn coerceConstant(self: *Lowering, value: inst_mod.ConstantValue, src: TypeId, dst: TypeId) ?inst_mod.ConstantValue {
+    if (src == dst) return value;
+    if (!(implicitIntegerConversion(self, src, dst) orelse true)) return null;
+    return switch (self.coercionResolver().classify(src, dst)) {
+        .no_op, .ptr_to_void => value,
+        .widen => if (src == .f32 and value == .float)
+            .{ .float = @as(f32, @floatCast(value.float)) }
+        else
+            value,
+        .int_to_float => if (value == .int)
+            .{ .float = if (self.module.types.integerLayout(src).?.signed)
+                @floatFromInt(value.int)
+            else
+                @floatFromInt(@as(u64, @bitCast(value.int))) }
+        else if (value == .zeroinit)
+            .{ .float = 0 }
+        else
+            null,
+        else => null,
+    };
 }
 
 fn isGlyphFreeImplicit(plan: @import("../conversions.zig").CoercionResolver.CoercionPlan) bool {
@@ -436,7 +467,7 @@ fn intoConvertArgs(self: *Lowering, operand: Ref, operand_node: *const Node, fun
     var alloc_val = alloc_ref;
     if (alloc_ty) |aty| {
         const got = self.builder.getRefType(alloc_val);
-        if (got != aty) {
+        if (!self.module.types.sameType(got, aty)) {
             alloc_val = self.coerceOrErase(alloc_val, got, aty, operand_node);
         }
     }
@@ -804,7 +835,7 @@ pub fn buildProtocolErasure(self: *Lowering, operand: Ref, operand_node: *const 
 
     if (!src_ty.isBuiltin()) {
         const src_info = self.module.types.get(src_ty);
-        if (src_info == .pointer and src_info.pointer.pointee == dst_ty) {
+        if (src_info == .pointer and self.module.types.sameType(src_info.pointer.pointee, dst_ty)) {
             // `*I` at an `I` target: the handle is the pointee, so LOAD it.
             // This arm stands ahead of the pointer-erasure arm, which would
             // otherwise erase the handle's own storage as a concrete value.
@@ -1018,14 +1049,7 @@ pub fn buildDefaultValue(self: *Lowering, ty: TypeId) Ref {
     if (ty.isBuiltin()) return self.zeroValue(ty);
     const info = self.module.types.get(ty);
     if (info != .@"struct") return self.zeroValue(ty);
-    // Check for struct defaults — TypeId identity first; for an
-    // author-tracked type a tid-map miss means "no defaults".
-    const struct_name_str = self.module.types.getString(info.@"struct".name);
-    const field_defaults = self.struct_defaults_by_tid.get(ty) orelse blk: {
-        if (self.plain_struct_authors.contains(ty)) return self.zeroValue(ty);
-        break :blk self.struct_defaults_map.get(struct_name_str) orelse
-            return self.zeroValue(ty);
-    };
+    const field_defaults = self.struct_defaults_by_tid.get(ty) orelse return self.zeroValue(ty);
     const fields = info.@"struct".fields;
     var field_vals = std.ArrayList(Ref).empty;
     defer field_vals.deinit(self.alloc);
@@ -1130,9 +1154,6 @@ pub fn lowerDefaultWithBindings(
     return self.lowerCoercedDefault(default_expr, field_ty);
 }
 
-/// How a float→int conversion is treated. An IMPLICIT coercion (a typed
-/// binding initializer) folds an integral compile-time float to its int and
-/// REJECTS a non-integral one; an EXPLICIT `xx` / `.(T)` always truncates.
 const CoerceMode = enum { implicit, explicit };
 
 /// Insert a conversion if src_ty and dst_ty differ.
@@ -1595,6 +1616,17 @@ fn sameStoreWidth(self: *Lowering, a: TypeId, b: TypeId) bool {
     return self.module.types.typeSizeBytes(a) == self.module.types.typeSizeBytes(b);
 }
 
+fn refuseImplicitNumericConversion(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) Ref {
+    if (!self.externalErrorsExist()) {
+        if (self.diagnostics) |d| {
+            const cs = self.builder.current_span;
+            d.addFmt(.err, .{ .start = cs.start, .end = cs.end }, "cannot implicitly convert '{s}' to '{s}'; use an explicit cast (`xx`/`.(T)`)", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty) });
+            self.assignability_error_count += 1;
+        }
+    }
+    return self.builder.constUndef(dst_ty);
+}
+
 pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mode: CoerceMode) Ref {
     // Pointer-to-concrete (or concrete-storage value) → `*P`: materialize
     // the borrowed VIEW here, at the node-less layer, so EVERY store site
@@ -1622,15 +1654,29 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             }
         }
     }
-    if (mode == .implicit and !self.xx_passthrough_refs.contains(val)) {
+    if (mode == .implicit) {
         const cs = self.builder.current_span;
         const span = ast.Span{ .start = cs.start, .end = cs.end };
-        self.checkErrorSetValueCoercion(src_ty, dst_ty, span);
-        const src_sig = valueTypeOfRef(self, val, src_ty);
-        if (self.slotReturnType(src_sig)) |src_ret| {
-            if (self.slotReturnType(dst_ty)) |dst_ret| {
-                if (!self.checkSlotChannel(src_ret, dst_ret, span)) {
-                    self.assignability_error_count += 1;
+        if (implicitIntegerConversion(self, src_ty, dst_ty)) |widens| {
+            if (!widens) {
+                if (self.externalErrorsExist()) return self.builder.constUndef(dst_ty);
+                if (self.builder.getRefOp(val)) |op| {
+                    if (op == .const_int) {
+                        self.checkIntLiteralFits(op.const_int, dst_ty, span);
+                        return self.builder.constInt(op.const_int, dst_ty);
+                    }
+                }
+                return refuseImplicitNumericConversion(self, src_ty, dst_ty);
+            }
+        }
+        if (!self.xx_passthrough_refs.contains(val)) {
+            self.checkErrorSetValueCoercion(src_ty, dst_ty, span);
+            const src_sig = valueTypeOfRef(self, val, src_ty);
+            if (self.slotReturnType(src_sig)) |src_ret| {
+                if (self.slotReturnType(dst_ty)) |dst_ret| {
+                    if (!self.checkSlotChannel(src_ret, dst_ret, span)) {
+                        self.assignability_error_count += 1;
+                    }
                 }
             }
         }
@@ -1638,7 +1684,9 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
     // PLANNING: classify the built-in coercion (conversions.zig).
     // EMISSION: each arm below reproduces the original lowering.
     switch (self.coercionResolver().classify(src_ty, dst_ty)) {
-        .no_op => return val,
+        .no_op => return if (src_ty == dst_ty) val else self.builder.emit(.{
+            .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty },
+        }, dst_ty),
         .error_set_retype => return self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
         // No modeled coercion — the value passes through UNCHANGED. For an
         // EXPLICIT `xx`/`cast(T)` that is the intended escape hatch: record
@@ -1933,22 +1981,15 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         },
         .int_to_float => return self.builder.emit(.{ .int_to_float = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
         .float_to_int => {
-            // Implicit float→int narrowing follows the unified rule (the
-            // same `floatToIntExact` the array-dim / `$K: Count` paths use):
-            // a compile-time INTEGRAL float folds to its int, a NON-integral
-            // one is a compile error. Explicit `xx` / `cast` (mode
-            // `.explicit`) skips this and truncates. A runtime float has no
-            // compile-time value to fold — it truncates as before.
             if (mode == .implicit) {
                 if (self.builder.constFloatInfo(val)) |info| {
                     if (program_index_mod.floatToIntExact(info.value)) |iv| {
                         return self.builder.constInt(iv, dst_ty);
                     }
-                    // Non-integral: diagnose, then fall through to the
-                    // truncating op below so lowering finishes and
-                    // `hasErrors()` aborts the build.
                     self.diagNonIntegralNarrow(.{ .start = info.span.start, .end = info.span.end }, info.value, dst_ty);
+                    return self.builder.constUndef(dst_ty);
                 }
+                return refuseImplicitNumericConversion(self, src_ty, dst_ty);
             }
             return self.builder.emit(.{ .float_to_int = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty);
         },
@@ -1982,7 +2023,15 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         },
         // *T / [*]T → *void: same address, result typed `*void`.
         .ptr_to_void => return self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
-        .narrow => return self.builder.emit(.{ .narrow = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
+        .narrow => {
+            if (mode == .implicit and Lowering.isFloat(src_ty) and Lowering.isFloat(dst_ty)) {
+                if (self.builder.constFloatInfo(val)) |info| {
+                    return self.builder.constFloat(info.value, dst_ty);
+                }
+                return refuseImplicitNumericConversion(self, src_ty, dst_ty);
+            }
+            return self.builder.emit(.{ .narrow = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty);
+        },
         .widen => return self.builder.emit(.{ .widen = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
         .array_to_slice => {
             // Implicit array→slice coercion (`fill(arr)` where `fill :: (s:
@@ -2160,7 +2209,7 @@ pub fn coerceCallArgs(self: *Lowering, args: []Ref, params: []const Function.Par
             }
             // Implicit address-of: passing T value where *T is expected → alloca + store
             // Only when the pointee type matches the source type.
-            if (dst_info == .pointer and src_info != .pointer and dst_info.pointer.pointee == src_ty) {
+            if (dst_info == .pointer and src_info != .pointer and self.module.types.sameType(dst_info.pointer.pointee, src_ty)) {
                 const slot = self.builder.alloca(src_ty);
                 self.builder.store(slot, args[i]);
                 args[i] = slot;

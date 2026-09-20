@@ -1500,21 +1500,23 @@ test "a struct-body typed constant adds no field name start" {
     try expectNameStarts(src, sd.field_names, sd.field_name_starts);
 }
 
-test "'@using' leaves the declaration's name starts in step with its names" {
+test "spread member retains its span alongside explicit field name starts" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const src: [:0]const u8 =
         \\Base :: struct { a: i32; }
         \\Derived :: struct {
-        \\    @using Base;
+        \\    ..Base;
         \\    b: i64;
         \\}
     ;
     var parser = try Parser.init(arena.allocator(), src);
     const root = try parser.parse();
     const sd = root.data.root.decls[1].data.struct_decl;
-    try std.testing.expectEqual(@as(usize, 1), sd.using_entries.len);
-    try expectNameStarts(src, sd.field_names, sd.field_name_starts);
+    try std.testing.expectEqual(@as(usize, 2), sd.field_names.len);
+    try std.testing.expect(sd.field_types[0].data == .spread_expr);
+    try std.testing.expectEqualStrings("..", src[sd.field_name_starts[0]..][0..2]);
+    try expectNameStarts(src, sd.field_names[1..], sd.field_name_starts[1..]);
 }
 
 test "parser: last struct member may omit `;`" {
@@ -1541,28 +1543,44 @@ test "parser: missing `;` between struct members is `expected ';'`" {
     try std.testing.expect(std.mem.indexOf(u8, msg, "expected ';'") != null);
 }
 
-test "parser: last `@using` may omit `;`" {
+test "parser: last spread member may omit `;`" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
     for ([_][:0]const u8{
-        "S :: struct { @using Base }",
-        "S :: struct { @using Base; }",
+        "S :: struct { ..Base }",
+        "S :: struct { ..Base; }",
     }) |src| {
         var parser = try Parser.init(alloc, src);
         const root = try parser.parse();
-        try std.testing.expectEqual(@as(usize, 1), root.data.root.decls[0].data.struct_decl.using_entries.len);
+        try std.testing.expectEqual(@as(usize, 1), root.data.root.decls[0].data.struct_decl.field_types.len);
     }
 }
 
-test "parser: missing `;` between `@using` members is `expected ';'`" {
+test "parser: missing `;` between spread members is `expected ';'`" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    const msg = try parseErrMsg(alloc, "S :: struct { @using Base @using Other }");
+    const msg = try parseErrMsg(alloc, "S :: struct { ..Base ..Other }");
     try std.testing.expect(std.mem.indexOf(u8, msg, "expected ';'") != null);
+}
+
+test "parser: unknown at-name in a struct uses the ordinary member diagnostic" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const msg = try parseErrMsg(alloc, "S :: struct { @using Base; }");
+    const unknown = try parseErrMsg(alloc, "S :: struct { @unknown Base; }");
+    try std.testing.expectEqualStrings(unknown, msg);
+}
+
+test "parser: private cannot decorate a spread member" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const msg = try parseErrMsg(arena.allocator(), "S :: struct { private ..Base; }");
+    try std.testing.expectEqualStrings("'private' is not allowed on a spread member", msg);
 }
 
 test "parser: last struct-body constant may omit `;`" {
@@ -1696,4 +1714,21 @@ test "parser: bodyless member of an `@` struct parses as an intrinsic method" {
     try std.testing.expect(mac.return_type != null);
 
     try std.testing.expect(sd.methods[2].data.fn_decl.body.data != .intrinsic_expr);
+}
+
+test "parser: a juxtaposed spread retains its operand and source span" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const source = "f :: () { x := mod.Box(i32){ ..make(), value = 3 }; }";
+    var parser = try Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const value = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0].data.var_decl.value.?;
+    const jx = value.data.juxtaposition;
+    try std.testing.expect(jx.expr.data == .call);
+    const items = jx.block.data.block.stmts;
+    try std.testing.expectEqual(@as(usize, 2), items.len);
+    const spread = items[0];
+    try std.testing.expect(spread.data.spread_expr.operand.data == .call);
+    try std.testing.expectEqualStrings("..make()", source[spread.span.start..spread.span.end]);
+    try std.testing.expect(items[1].data == .assignment);
 }

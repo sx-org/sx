@@ -1,0 +1,3 @@
+Peek :: struct { ..Box; }
+Box :: struct { private secret: i64; }
+main :: () {}

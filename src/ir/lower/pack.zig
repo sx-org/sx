@@ -814,13 +814,13 @@ fn lowerPackPrefixArg(self: *Lowering, arg: *const Node, param_ty: TypeId, is_re
                 const name = arg.data.identifier.name;
                 const local = if (self.scope) |scope| scope.lookup(name) else null;
                 if (local) |binding| {
-                    if (binding.is_alloca and binding.ty == pointee)
+                    if (binding.is_alloca and self.module.types.sameType(binding.ty, pointee))
                         return self.builder.emit(.{ .addr_of = .{ .operand = binding.ref } }, param_ty);
                 } else if (self.resolveGlobalRef(name, null)) |global| {
-                    if (global.ty == pointee and !self.rootIsConstant(name)) {
+                    if (self.module.types.sameType(global.ty, pointee) and !self.rootIsConstant(name)) {
                         const place = self.lowerExprAsPtr(arg);
                         const place_ty = self.builder.getRefType(place);
-                        return if (place_ty == param_ty)
+                        return if (self.module.types.sameType(place_ty, param_ty))
                             place
                         else
                             self.builder.emit(.{ .addr_of = .{ .operand = place } }, param_ty);
@@ -833,7 +833,7 @@ fn lowerPackPrefixArg(self: *Lowering, arg: *const Node, param_ty: TypeId, is_re
             {
                 const place = self.lowerExprAsPtr(arg);
                 const place_ty = self.builder.getRefType(place);
-                if (place_ty == param_ty) return place;
+                if (self.module.types.sameType(place_ty, param_ty)) return place;
                 if (place_ty == pointee)
                     return self.builder.emit(.{ .addr_of = .{ .operand = place } }, param_ty);
             }
@@ -888,13 +888,13 @@ fn lowerPackPrefixArg(self: *Lowering, arg: *const Node, param_ty: TypeId, is_re
     const value_ty = self.builder.getRefType(value);
     if (is_receiver and !value_ty.isBuiltin()) {
         const value_info = self.module.types.get(value_ty);
-        if (value_info == .pointer and value_info.pointer.pointee == param_ty)
+        if (value_info == .pointer and self.module.types.sameType(value_info.pointer.pointee, param_ty))
             return self.builder.load(value, param_ty);
     }
 
     if (!is_receiver and !value_ty.isBuiltin()) {
         const value_info = self.module.types.get(value_ty);
-        if (value_info == .pointer and value_info.pointer.pointee == param_ty) {
+        if (value_info == .pointer and self.module.types.sameType(value_info.pointer.pointee, param_ty)) {
             if (self.diagnostics) |diagnostics| {
                 const type_name = self.formatTypeName(param_ty);
                 if (arg.data == .identifier) {
@@ -1188,7 +1188,7 @@ pub fn monomorphizePackFn(
     // Flow narrowing is per-function: this monomorphized pack body
     // has its own `Ref` space (overlapping the caller's), so isolate it from the
     // caller's `narrowed`/`narrowed_refs` to avoid a false-positive unwrap gate.
-    var nested_guard = Lowering.NestedBodyGuard.enter(self);
+    var nested_guard = Lowering.NestedBodyGuard.enterCached(self);
     defer nested_guard.restore();
 
     // Find the pack param's name and position in fd.params, plus its

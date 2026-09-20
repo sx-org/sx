@@ -29,7 +29,7 @@ pub const CoercionResolver = struct {
     /// `lowerXX` then tries a user `Into`). Branch order mirrors `coerceToType`
     /// exactly — the emitter switches on this and reproduces each arm.
     pub const CoercionPlan = enum {
-        no_op, // src == dst
+        no_op,
         unbox_any, // any → concrete
         box_any, // concrete → any
         closure_to_fn_reject, // closure value → bare fn-ptr (diagnostic, returns operand)
@@ -114,13 +114,13 @@ pub const CoercionResolver = struct {
     /// is free; keeping it demands the same terminator.
     fn terminatorReaches(self: CoercionResolver, src_elem: TypeId, src_sentinel: ?i64, dst_ty: TypeId, dst_elem: TypeId) bool {
         const term = src_sentinel orelse return false;
-        if (src_elem != dst_elem and !(byteSized(src_elem) and byteSized(dst_elem))) return false;
+        if (!self.l.module.types.sameType(src_elem, dst_elem) and !(byteSized(src_elem) and byteSized(dst_elem))) return false;
         const want = self.pointerDestSentinel(dst_ty) orelse return true;
         return want == term;
     }
 
     pub fn classify(self: CoercionResolver, src_ty: TypeId, dst_ty: TypeId) CoercionPlan {
-        if (src_ty == dst_ty) return .no_op;
+        if (self.l.module.types.sameType(src_ty, dst_ty)) return .no_op;
         // A terminated value reaches a pointer that names the same terminator
         // or names none.
         if (self.pointerDestElement(dst_ty)) |dst_elem| {
@@ -158,7 +158,7 @@ pub const CoercionResolver = struct {
             if (self.l.module.types.get(src_ty) == .pointer and self.l.module.types.get(dst_ty) == .closure) {
                 if (self.l.uniqueLambdaOf(self.l.module.types.get(src_ty).pointer.pointee)) |u| {
                     const want = self.l.module.types.get(dst_ty).closure;
-                    if (u.ret == want.ret and std.mem.eql(TypeId, u.params, want.params)) return .lambda_ptr_to_closure;
+                    if (self.l.module.types.sameType(u.ret, want.ret) and self.l.module.types.sameTypes(u.params, want.params)) return .lambda_ptr_to_closure;
                     return .lambda_ptr_to_closure_reject;
                 }
             }
@@ -180,7 +180,7 @@ pub const CoercionResolver = struct {
             const si = self.l.module.types.get(src_ty);
             const di = self.l.module.types.get(dst_ty);
             if (si == .array and di == .array and si.array.sentinel != null and di.array.sentinel == null and
-                si.array.element == di.array.element and si.array.length == di.array.length) return .array_drop_terminator;
+                self.l.module.types.sameType(si.array.element, di.array.element) and si.array.length == di.array.length) return .array_drop_terminator;
         }
 
         // Fixed array → slice of the same element: an aggregate array value
@@ -192,7 +192,7 @@ pub const CoercionResolver = struct {
         if (self.l.module.types.sliceInfoOf(dst_ty)) |ds| {
             if (!src_ty.isBuiltin()) {
                 const si = self.l.module.types.get(src_ty);
-                if (si == .array and si.array.element == ds.element and
+                if (si == .array and self.l.module.types.sameType(si.array.element, ds.element) and
                     (ds.sentinel == null or ds.sentinel == si.array.sentinel)) return .array_to_slice;
                 // `[*]T → []T`: a many-pointer carries NO length, so it cannot form a
                 // `{ptr,len}` slice header implicitly. Silently passing the bare 8-byte
@@ -207,7 +207,7 @@ pub const CoercionResolver = struct {
             // `Len`, the view unchanged. A destination naming a terminator takes
             // only a source that already carries it.
             if (self.l.module.types.sliceInfoOf(src_ty)) |ss| {
-                if (ss.element == ds.element and (ds.sentinel == null or ds.sentinel == ss.sentinel)) return .slice_len_convert;
+                if (self.l.module.types.sameType(ss.element, ds.element) and (ds.sentinel == null or ds.sentinel == ss.sentinel)) return .slice_len_convert;
             }
         }
 
@@ -227,7 +227,7 @@ pub const CoercionResolver = struct {
                 if (dst_ty == .bool and child_ty != .bool) {
                     return .optional_to_bool_reject;
                 }
-                if (child_ty == dst_ty or (dst_ty.isBuiltin() and child_ty.isBuiltin())) {
+                if (self.l.module.types.sameType(child_ty, dst_ty) or (dst_ty.isBuiltin() and child_ty.isBuiltin())) {
                     return .optional_unwrap;
                 }
                 // ?A → ?B: a presence-preserving payload coercion. Without a
@@ -319,7 +319,7 @@ pub const CoercionResolver = struct {
     /// Branch order mirrors `lowerXX` exactly.
     pub const XXPlan = enum {
         unbox_any, // src is Any → unbox (lowerXX adds the f32/f64 match dispatch)
-        no_op, // src == dst
+        no_op,
         erase_protocol, // dst is a protocol → buildProtocolErasure
         erase_protocol_wrap, // dst is ?P (protocol child) → node-aware erase to P, then wrap
         reerase_protocol, // both are interfaces → one row of the target's conformance table
@@ -370,7 +370,7 @@ pub const CoercionResolver = struct {
 
     pub fn classifyXX(self: CoercionResolver, src_ty: TypeId, dst_ty: TypeId) XXPlan {
         if (src_ty == .any) return .unbox_any;
-        if (src_ty == dst_ty) return .no_op;
+        if (self.l.module.types.sameType(src_ty, dst_ty)) return .no_op;
         // Re-erasure precedes the ordinary erasure: the concrete type behind an
         // interface handle is not statically known, so the conversion is a
         // runtime table read rather than a coercion of the operand (§6.4).
@@ -418,14 +418,14 @@ pub const CoercionResolver = struct {
     };
 
     pub fn classifyCompare(self: CoercionResolver, lhs_ty: TypeId, rhs_ty: TypeId) CompareMeet {
-        if (lhs_ty == rhs_ty) return .{ .type = lhs_ty };
+        if (self.l.module.types.sameType(lhs_ty, rhs_ty)) return .{ .type = lhs_ty };
         if (lhs_ty == .unresolved or rhs_ty == .unresolved) return .none;
         if (lhs_ty == .void or rhs_ty == .void) return .none;
 
         const l_addr = self.isAddressType(lhs_ty);
         const r_addr = self.isAddressType(rhs_ty);
         if (l_addr and r_addr) {
-            if (lhs_ty == rhs_ty) return .{ .type = lhs_ty };
+            if (self.l.module.types.sameType(lhs_ty, rhs_ty)) return .{ .type = lhs_ty };
             return .{ .type = self.l.module.types.ptrTo(.void) };
         }
         if (l_addr and self.l.isIntEx(rhs_ty)) return .{ .type = lhs_ty };

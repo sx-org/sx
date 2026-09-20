@@ -304,48 +304,30 @@ pub const Analyzer = struct {
                     try tp_names.append(self.allocator, p.name);
                 }
                 const tp_slice = try tp_names.toOwnedSlice(self.allocator);
-                // Populate struct_types registry, expanding @using entries
-                if (sd.using_entries.len > 0) {
-                    var all_names = std.ArrayList([]const u8).empty;
-                    var all_types = std.ArrayList(Type).empty;
-                    var using_idx: usize = 0;
-                    for (0..sd.field_names.len + 1) |i| {
-                        while (using_idx < sd.using_entries.len and
-                            sd.using_entries[using_idx].insert_index == i)
-                        {
-                            const entry = sd.using_entries[using_idx];
-                            if (self.struct_types.get(entry.type_name)) |used| {
-                                for (used.field_names, 0..) |fname, fi| {
-                                    try all_names.append(self.allocator, fname);
-                                    try all_types.append(self.allocator, used.field_types[fi]);
-                                }
+                var field_names = std.ArrayList([]const u8).empty;
+                var field_types = std.ArrayList(Type).empty;
+                for (sd.field_names, sd.field_types) |name, node_type| {
+                    if (node_type.data == .spread_expr) {
+                        const operand_ty = self.fieldType(node_type.data.spread_expr.operand);
+                        if (operand_ty == .struct_type) {
+                            if (self.struct_types.get(operand_ty.struct_type)) |base| {
+                                try field_names.appendSlice(self.allocator, base.field_names);
+                                try field_types.appendSlice(self.allocator, base.field_types);
                             }
-                            using_idx += 1;
                         }
-                        if (i < sd.field_names.len) {
-                            try all_names.append(self.allocator, sd.field_names[i]);
-                            const resolved = self.fieldType(sd.field_types[i]);
-                            try all_types.append(self.allocator, resolved);
-                        }
+                        continue;
                     }
-                    try self.struct_types.put(sd.name, .{
-                        .field_names = try all_names.toOwnedSlice(self.allocator),
-                        .field_types = try all_types.toOwnedSlice(self.allocator),
-                        .type_params = tp_slice,
-                    });
-                } else {
-                    var field_types = std.ArrayList(Type).empty;
-                    for (sd.field_types) |ft| {
-                        const resolved = self.fieldType(ft);
-                        try field_types.append(self.allocator, resolved);
-                    }
-                    try self.struct_types.put(sd.name, .{
-                        .field_names = sd.field_names,
-                        .field_types = try field_types.toOwnedSlice(self.allocator),
-                        .type_params = tp_slice,
-                    });
+                    try field_names.append(self.allocator, name);
+                    try field_types.append(self.allocator, self.fieldType(node_type));
                 }
-                for (sd.field_names) |fname| self.recordMemberRef(fname, sd.name, true);
+                try self.struct_types.put(sd.name, .{
+                    .field_names = try field_names.toOwnedSlice(self.allocator),
+                    .field_types = try field_types.toOwnedSlice(self.allocator),
+                    .type_params = tp_slice,
+                });
+                for (sd.field_names, sd.field_types) |fname, field_type| {
+                    if (field_type.data != .spread_expr) self.recordMemberRef(fname, sd.name, true);
+                }
                 for (sd.methods) |mnode| {
                     if (mnode.data == .fn_decl) {
                         try self.registerMethodSig(mnode.data.fn_decl.name, sd.name, mnode.data.fn_decl.return_type);
@@ -2757,4 +2739,29 @@ test "sema: top-level ufcs_alias registers symbol" {
         }
     }
     try std.testing.expect(found_sum);
+}
+
+test "sema: an expanded named field is indexed and types a member expression" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        "Base :: struct { x: i32; y: bool; } " ++
+        "Derived :: struct { ..Base; z: i64; } " ++
+        "main :: () { d := Derived{}; value := d.x; }";
+    var parser = try @import("parser.zig").Parser.init(alloc, source);
+    var analyzer = Analyzer.init(alloc);
+    analyzer.source = source;
+    const result = try analyzer.analyze(try parser.parse());
+    const derived = result.struct_types.get("Derived") orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(@as(usize, 3), derived.field_names.len);
+    try std.testing.expectEqualStrings("x", derived.field_names[0]);
+    try std.testing.expectEqual(Type{ .signed = 32 }, derived.field_types[0]);
+    for (result.symbols) |symbol| {
+        if (std.mem.eql(u8, symbol.name, "value")) {
+            try std.testing.expectEqual(Type{ .signed = 32 }, symbol.ty.?);
+            return;
+        }
+    }
+    return error.TestUnexpectedResult;
 }

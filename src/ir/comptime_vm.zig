@@ -1548,7 +1548,11 @@ pub const Vm = struct {
             // type-category match where the operand is a `.type_value` whose word IS
             // its `TypeId` index (so the same i64 compare covers both).
             .switch_br => |sb| {
-                const operand: i64 = @bitCast(frame.get(sb.operand.index()));
+                const raw = frame.get(sb.operand.index());
+                const operand: i64 = if (try self.refTy(ref_types, sb.operand) == .type_value)
+                    (try self.requireTable()).canonicalType(TypeId.fromIndex(try self.typeIdxOf(raw))).index()
+                else
+                    @bitCast(raw);
                 for (sb.cases) |case| {
                     if (operand == case.value) return .{ .jump = .{ .target = case.target, .args = case.args } };
                 }
@@ -1678,6 +1682,10 @@ pub const Vm = struct {
     }
 
     fn cmp(self: *Vm, tag: OpTag, lty: TypeId, l: Reg, r: Reg) Error!bool {
+        if (lty == .type_value and (tag == .cmp_eq or tag == .cmp_ne)) {
+            const equal = (try self.requireTable()).sameType(TypeId.fromIndex(try self.typeIdxOf(l)), TypeId.fromIndex(try self.typeIdxOf(r)));
+            return if (tag == .cmp_eq) equal else !equal;
+        }
         if (isFloat(lty)) {
             const lf: f64 = @bitCast(l);
             const rf: f64 = @bitCast(r);
@@ -2420,7 +2428,7 @@ pub const Vm = struct {
                 if (bi.args.len < 2) return self.failMsg("comptime @typeEq: expected two arguments");
                 const ta = try self.reflectArgTypeId(try self.refTy(ref_types, bi.args[0]), frame.get(bi.args[0].index()));
                 const tb = try self.reflectArgTypeId(try self.refTy(ref_types, bi.args[1]), frame.get(bi.args[1].index()));
-                return @as(Reg, @intFromBool(ta == tb));
+                return @as(Reg, @intFromBool((try self.requireTable()).sameType(ta, tb)));
             },
             // `@typeInfo($T)` → reflect a type INTO a TypeInfo VALUE (the inverse
             // of define's decode). The arg folded to a `const_type` (a

@@ -1,0 +1,5 @@
+error: unknown type 'NoSuchType'
+  --> examples/diagnostics/2750-diagnostics-unknown-positional-struct-type.sx:2:10
+   |
+ 2 |     v := NoSuchType{1, 2};
+   |          ^^^^^^^^^^^^^^^^

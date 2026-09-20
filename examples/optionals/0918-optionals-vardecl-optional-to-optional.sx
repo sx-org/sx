@@ -21,10 +21,10 @@ main :: () {
 
     // Narrow ?i64 → ?i32.
     e : ?i64 = null;
-    f : ?i32 = e;
+    f : ?i32 = e?.(i32);
     if f { print("narrow-null: present\n"); } else { print("narrow-null: absent\n"); }
     g : ?i64 = 9;
-    h : ?i32 = g;
+    h : ?i32 = g?.(i32);
     print("narrow-pres: {}\n", h ?? -1);
 
     // int → float ?i32 → ?f64.

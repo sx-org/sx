@@ -1,0 +1,16 @@
+P :: struct { x: i32; }
+Large :: struct { x: i64; }
+Extra :: struct { x: i32; absent: i32; }
+Real :: struct { x: f64; }
+Float :: struct { x: f32; }
+
+main :: () {
+    large := Large{x = 5000000000};
+    extra := Extra{x = 1, absent = 2};
+    real := Real{x = 1.5};
+    bad_int := P{..large, x = 1};
+    bad_float := Float{..real, x = 1.0};
+    good := P{x = 2};
+    bad_plain := P{x = large.x, ..good};
+    bad_name := P{..extra, x = 1};
+}

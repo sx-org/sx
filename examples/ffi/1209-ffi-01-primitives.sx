@@ -15,8 +15,8 @@
 
 main :: () -> i32 {
     // Signed roundtrips
-    print("ffi_id_int(-42)         = {}\n", ffi_id_int(0 - 42));
-    print("ffi_id_short(-1234)     = {}\n", ffi_id_short(0 - 1234));
+    print("ffi_id_int(-42)         = {}\n", ffi_id_int(-42));
+    print("ffi_id_short(-1234)     = {}\n", ffi_id_short(-1234));
     print("ffi_id_i64(huge)        = {}\n", ffi_id_i64(9000000000000000000));
 
     // Unsigned roundtrips

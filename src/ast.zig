@@ -601,11 +601,6 @@ pub const StructTypeParam = struct {
     is_variadic: bool = false,
 };
 
-pub const UsingEntry = struct {
-    insert_index: u32, // position in field_names where used fields are spliced
-    type_name: []const u8, // struct type to inline
-};
-
 pub const StructDecl = struct {
     name: []const u8,
     field_names: []const []const u8,
@@ -617,7 +612,6 @@ pub const StructDecl = struct {
     field_defaults: []const ?*Node, // default value per field, null if none
     field_visibilities: []const Visibility = &.{},
     type_params: []const StructTypeParam = &.{},
-    using_entries: []const UsingEntry = &.{},
     methods: []const *Node = &.{}, // fn_decl nodes for struct methods
     constants: []const *Node = &.{}, // const_decl nodes for struct-level constants
     /// ABI / layout annotation (`struct abi(.zig) extern <lib> { … }`). `.default`
@@ -663,6 +657,7 @@ pub const OpenSetDecl = struct {
 
 pub const StructFieldInit = struct {
     name: ?[]const u8, // null for positional, non-null for named/shorthand
+    name_span: ?Span = null,
     value: *Node,
     /// True when the source wrote the bare-identifier SHORTHAND (`.{ x }`,
     /// parser-rewritten to `x = x`). The self-typing of an untyped `.{ }`

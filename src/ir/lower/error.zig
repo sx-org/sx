@@ -1761,6 +1761,9 @@ pub fn runCatchBody(self: *Lowering, ce: *const ast.CatchExpr, err_val: Ref, err
         if (ce.body.data == .block) self.lowerBlock(ce.body) else _ = self.lowerExpr(ce.body);
         return null;
     }
+    const saved_target = self.target_type;
+    self.target_type = want_ty;
+    defer self.target_type = saved_target;
     const saved_fbv = self.force_block_value;
     self.force_block_value = true;
     defer self.force_block_value = saved_fbv;

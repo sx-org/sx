@@ -1,0 +1,5 @@
+main :: () {
+    named := .{x = 1};
+    positional := .{2};
+    mixed := .{..named, ..positional};
+}

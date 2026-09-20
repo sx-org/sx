@@ -541,38 +541,7 @@ pub const ExprTyper = struct {
                     };
                     if (usable) return tt;
                 }
-                // No usable target: infer the anonymous-struct SHAPE the
-                // lowering's synthesis will mint (same rules: all-positional
-                // fields "0"/"1"/… or all-named; shorthand is named; spreads
-                // and mixed forms stay unresolved — lowering handles them).
-                // Interning makes this idempotent and identical to lowering.
-                {
-                    var named_n: usize = 0;
-                    var pos_n: usize = 0;
-                    for (sl.field_inits) |fi| {
-                        if (fi.value.data == .spread_expr) return .unresolved;
-                        if (fi.name != null) named_n += 1 else pos_n += 1;
-                    }
-                    if (named_n > 0 and pos_n > 0) return .unresolved;
-                    var fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
-                    defer fields.deinit(self.l.alloc);
-                    const saved_tt = self.l.target_type;
-                    self.l.target_type = null;
-                    defer self.l.target_type = saved_tt;
-                    for (sl.field_inits, 0..) |fi, i| {
-                        const vty = self.l.inferExprType(fi.value);
-                        if (vty == .unresolved or vty == .void) return .unresolved;
-                        var name_buf: [24]u8 = undefined;
-                        const fname = fi.name orelse (std.fmt.bufPrint(&name_buf, "{d}", .{i}) catch return .unresolved);
-                        fields.append(self.l.alloc, .{
-                            .name = self.l.module.types.internString(fname),
-                            .ty = vty,
-                        }) catch return .unresolved;
-                    }
-                    return self.l.module.types.internAnonStruct(
-                        self.l.module.types.slice_arena.allocator().dupe(types.TypeInfo.StructInfo.Field, fields.items) catch return .unresolved,
-                    );
-                }
+                return self.l.inferAnonStructType(&sl);
             },
             .tuple_literal => |tl| {
                 // Explicitly-typed construction with a type prefix: the literal's type is

@@ -1,0 +1,5 @@
+error: array dimension must be a compile-time integer constant
+  --> examples/diagnostics/2745-diagnostics-constant-spread-dimension.sx:5:14
+   |
+ 5 |     values: [Value.active]i64 = ---;
+   |              ^^^^^^^^^^^^

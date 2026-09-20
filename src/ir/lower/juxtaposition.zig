@@ -99,10 +99,10 @@ fn aggregate(self: *Lowering, node: *const Node, jx: ast.Juxtaposition) Node.Dat
     for (stmts, inits) |stmt, *init| {
         init.* = switch (stmt.data) {
             .assignment => |a| if (a.op == .assign and a.target.data == .identifier)
-                .{ .name = a.target.data.identifier.name, .value = a.value }
+                .{ .name = a.target.data.identifier.name, .name_span = a.target.span, .value = a.value }
             else
                 .{ .name = null, .value = stmt },
-            .identifier => |id| .{ .name = id.name, .value = stmt, .was_shorthand = true },
+            .identifier => |id| .{ .name = id.name, .name_span = stmt.span, .value = stmt, .was_shorthand = true },
             else => .{ .name = null, .value = stmt },
         };
     }

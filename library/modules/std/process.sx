@@ -80,7 +80,7 @@ run :: (cmd: [:0]u8) -> ?ProcessResult {
 decodeStatus :: (raw: i32) -> i32 {
     code := (raw >> 8) & 0xFF;
     sig := raw & 0x7F;
-    if code == 0 and sig != 0 { return 128 + sig; }
+    if code == 0 and sig != 0 { return 128.(i32) + sig; }
     code
 }
 

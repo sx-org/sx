@@ -1,0 +1,43 @@
+@import "modules/std.sx";
+
+Pos :: struct { py: i32; px: i32; }
+Box :: struct ($T: Type) {
+    px: T;
+    py: T;
+    extra: i32 = 7;
+    sum :: (self: *@This()) -> T { self.px + self.py }
+}
+Tagged :: struct ($T: Type) {
+    tag: string;
+    value: T;
+    get :: (self: *@This()) -> T { self.value }
+}
+
+mark :: (log: *i32, n: i32) -> i32 {
+    log.* = log.* * 10 + n;
+    n
+}
+make :: (log: *i32, n: i32) -> Pos {
+    mark(log, n);
+    Pos{px = n, py = n}
+}
+packed :: (..xs: any) -> Box(i32) { Box{extra = 8, ..xs} }
+
+main :: () {
+    log: i32 = 0;
+    box := Box{extra = mark(*log, 1), ..make(*log, 2), px = mark(*log, 3)};
+    print("ordered: {} {} {} {}\n", log, box.px, box.py, box.extra);
+    pos := Pos{px = 4, py = 5};
+    print("receiver: {}\n", Box{..pos}.sum());
+    tuple := .{6.(i32), 7.(i32)};
+    product := Box{extra = 9, ..tuple};
+    pack := packed(10.(i32), 11.(i32));
+    array: [2]i32 = .[12, 13];
+    fixed := Box{..array};
+    print("positional: {} {} {} {} {} {} {} {} {}\n", product.px, product.py, product.extra, pack.px, pack.py, pack.extra, fixed.px, fixed.py, fixed.extra);
+    plain := Box{1, py = 9, 2};
+    print("plain: {} {} {} receiver {}\n", plain.px, plain.py, plain.extra, Box{1, py = 9, 2}.sum());
+    one: [1]i32 = .[6];
+    tagged := Tagged{tag = "value", ..one};
+    print("reserved: {} {} receiver {}\n", tagged.tag, tagged.value, Tagged{..one, tag = "receiver"}.get());
+}

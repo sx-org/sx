@@ -1,0 +1,6 @@
+Flags :: struct { active: bool; }
+Base :: Flags{};
+Value :: Flags{..Base};
+main :: () {
+    values: [Value.active]i64 = ---;
+}

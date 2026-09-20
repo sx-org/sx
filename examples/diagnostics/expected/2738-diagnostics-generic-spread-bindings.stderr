@@ -1,0 +1,11 @@
+error: field 'absent' not found on type 'Box__i32'
+  --> examples/diagnostics/2738-diagnostics-generic-spread-bindings.sx:7:20
+   |
+ 7 |     unknown := Box{..extra};
+   |                    ^^^^^^^
+
+error: 'x' binds '$T' to 'i32', but 'x' bound it to 'i64'
+  --> examples/diagnostics/2738-diagnostics-generic-spread-bindings.sx:9:17
+   |
+ 9 |     conflict := Box{..wide, x = 2.(i32)};
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^

@@ -285,6 +285,9 @@ fn returnDemand(self: *Lowering, ret_ty: TypeId) Lowering.ParamDemand {
         return .none;
     }
     if (ret_ty == .void or ret_ty == .noreturn) return .none;
+    if (self.current_fn_decl) |fd| {
+        if (fd.return_type == null) return .{ .inferred = ret_ty };
+    }
     return .{ .coerce = ret_ty };
 }
 
@@ -336,6 +339,9 @@ pub fn lowerFunctionBody(self: *Lowering, body: *const Node, ret_ty_in: TypeId) 
             const val_ty = self.builder.getRefType(val);
             if (val_ty != .void) {
                 const span = bodyTailSpan(body);
+                const saved_span = self.builder.current_span;
+                self.builder.current_span = .{ .start = span.start, .end = span.end };
+                defer self.builder.current_span = saved_span;
                 if (self.rejectBlockReturn(val_ty, span)) return;
                 // Value-carrying failable `-> (T..., !)`: a trailing success
                 // EXPRESSION (no explicit `return`) yields just the value part —
@@ -1335,6 +1341,9 @@ fn tupleFormOfBareBraceLiteral(self: *Lowering, node: *const Node, ret_ty: TypeI
     if (ret_ty.isBuiltin()) return node;
     const rinfo = self.module.types.get(ret_ty);
     if (rinfo != .failable and !(rinfo == .@"struct" and self.module.types.isAnonStruct(ret_ty))) return node;
+    if (rinfo == .@"struct") {
+        for (sl.field_inits) |fi| if (fi.value.data == .spread_expr) return node;
+    }
     const elems = self.alloc.alloc(ast.TupleElement, sl.field_inits.len) catch return node;
     for (sl.field_inits, 0..) |fi, i| elems[i] = .{ .name = fi.name, .value = fi.value };
     const n = self.alloc.create(Node) catch return node;
@@ -1426,10 +1435,10 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) v
     // comptime-body return path too (iri.ret_ty is the failable tuple there).
     const target_for_value = self.failableReturnTarget(ret_ty_for_target, rs_value);
     if (target_for_value != .void) self.target_type = target_for_value;
-    // A return-position callable binder has no type yet: what the value is typed
-    // against is the SIGNATURE its bound spells.
-    const ret_demand: ?Lowering.DemandScope = if (self.pending_callable_return != null)
-        self.enterDemand(returnDemand(self, ret_ty_for_target))
+    // An inferred return preserves the value's shape; a callable binder supplies only its signature.
+    const ret_demand: ?Lowering.DemandScope = if (self.pending_callable_return != null or
+        (self.current_fn_decl != null and self.current_fn_decl.?.return_type == null))
+        self.enterDemand(returnDemand(self, target_for_value))
     else
         null;
     // A `return <expr>` for a value-returning function is a VALUE position, just

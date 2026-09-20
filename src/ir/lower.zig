@@ -90,12 +90,9 @@ pub const PlainStructAuthor = struct {
     source: ?[]const u8,
 };
 
-/// A private field reached through `@using` promotion, keyed on the PROMOTING
-/// struct's TypeId. The promoting struct copies the base's field verbatim, so
-/// only this record still names the file that may mention it.
-pub const PromotedField = struct {
-    ty: TypeId,
-    name: types.StringId,
+pub const PendingStructLayout = struct {
+    author: PlainStructAuthor,
+    state: enum { pending, resolving } = .pending,
 };
 
 /// Identity key for a materialized protocol/concrete dispatch table. The
@@ -138,15 +135,8 @@ pub const ProtocolDefaultDispatchDomain = struct {
     concrete: TypeId,
 };
 
-/// One frame in the chain of module-const names currently being folded by the
-/// SOURCE-AWARE const evaluator (`Lowering.foldSourceConstInt` and its float
-/// twins). Stack-allocated per recursive frame, so cycle detection needs no
-/// allocation — the source-aware analogue of `program_index.ModuleConstFrame`,
-/// which guards the GLOBAL-map fold (`moduleConstInt`). The frame keys on the
-/// const's (name, author-source) pair, NOT name alone: same-name nested consts
-/// across modules (`a.M` ≠ `b.M`) must NOT trip a false cycle. A pair
-/// already on the chain is a cyclic definition (`N :: N`; `N :: M + 1; M :: N`)
-/// with no compile-time value → folds to null.
+/// Stack-allocated dependency chain for module-constant folding and lowering.
+/// Author source distinguishes same-named constants in different modules.
 pub const ConstFoldFrame = struct {
     name: []const u8,
     source: ?[]const u8,
@@ -639,8 +629,7 @@ pub const Lowering = struct {
     /// author here lets method dispatch select the body from that identity rather
     /// than from the global last-wins `fn_ast_map["Struct.method"]` entry.
     plain_struct_authors: std.AutoHashMap(TypeId, PlainStructAuthor),
-    /// Declaring file of each private field a struct gained through `@using`.
-    promoted_field_authority: std.AutoHashMap(PromotedField, ?[]const u8),
+    pending_struct_layouts: std.AutoHashMap(TypeId, PendingStructLayout),
     /// Explicit nullary-protocol impl methods, addressed by protocol + nominal
     /// concrete TypeId + method. The `Type.method` AST map cannot distinguish
     /// same-display-name types.
@@ -688,6 +677,8 @@ pub const Lowering = struct {
     protocol_ast_by_type: std.AutoHashMap(TypeId, *const ast.ProtocolDecl),
     program_index: ProgramIndex,
     current_source_file: ?[]const u8 = null, // source file of function currently being lowered
+    /// Uncached nested bodies remain part of the active constant expansion.
+    module_const_frame: ?*const ConstFoldFrame = null,
     // Implicit Context parameter machinery. When the program imports
     // `std.sx` (and therefore declares `Context :: struct {...}`), every
     // default-conv sx function gains a synthetic `__sx_ctx: *void` param
@@ -821,14 +812,7 @@ pub const Lowering = struct {
     /// resolution (run in the template's source context) must NOT bind a
     /// name the CALLER declared block-local.
     local_type_names: std.StringHashMap(std.StringHashMap(void)),
-    struct_defaults_map: std.StringHashMap([]const ?*const Node), // struct name → field defaults
-    /// Concrete plain-struct TypeId → field defaults ALIGNED WITH THE
-    /// FLATTENED layout (a `@using`-embedded base field holds null — base
-    /// defaults do not flow through `@using`, matching generic instantiation).
-    /// Literal lowering selects
-    /// through this identity first; the display-name map above stays only as
-    /// the generic-instance / alias fallback, because its name key is
-    /// last-wins across same-name authors.
+    /// Construction-handle defaults follow the flattened layout; spread fields have none.
     struct_defaults_by_tid: std.AutoHashMap(TypeId, []const ?*const Node),
     /// (concrete TypeId, const name) → struct-level constant. TypeId-keyed
     /// twin of `struct_const_map`: the `"Struct.CONST"` string key is
@@ -1122,6 +1106,7 @@ pub const Lowering = struct {
         block_terminated: bool,
         force_block_value: bool,
         source_file: ?[]const u8,
+        module_const_frame: ?*const ConstFoldFrame,
         jni_env_base: usize,
         pack_arg_nodes: ?std.StringHashMap([]const *const Node),
         pack_param_count: ?std.StringHashMap(u32),
@@ -1147,6 +1132,7 @@ pub const Lowering = struct {
                 .block_terminated = l.block_terminated,
                 .force_block_value = l.force_block_value,
                 .source_file = l.current_source_file,
+                .module_const_frame = l.module_const_frame,
                 .jni_env_base = l.jni_env_stack_base,
                 .pack_arg_nodes = l.pack_arg_nodes,
                 .pack_param_count = l.pack_param_count,
@@ -1187,12 +1173,14 @@ pub const Lowering = struct {
             l.func_defer_base = l.defer_stack.items.len;
             l.block_terminated = false;
             l.force_block_value = false;
+            l.module_const_frame = null;
             return g;
         }
 
         pub fn restore(g: FnBodyReentry) void {
             const l = g.l;
             l.setCurrentSourceFile(g.source_file);
+            l.module_const_frame = g.module_const_frame;
             l.scope = g.scope;
             l.func_defer_base = g.defer_base;
             l.block_terminated = g.block_terminated;
@@ -1254,6 +1242,7 @@ pub const Lowering = struct {
         pending_callable_return: ?*const ast.Node,
         fixed_callable_ret: ?TypeId,
         lambda_sig_target: ?lower_closure.CallableSig,
+        module_const_frame: ?*const ConstFoldFrame,
 
         pub fn enter(l: *Lowering) NestedBodyGuard {
             const g = NestedBodyGuard{
@@ -1261,6 +1250,7 @@ pub const Lowering = struct {
                 .pending_callable_return = l.pending_callable_return,
                 .fixed_callable_ret = l.fixed_callable_ret,
                 .lambda_sig_target = l.lambda_sig_target,
+                .module_const_frame = l.module_const_frame,
                 .narrowed = l.narrowed,
                 .narrowed_refs = l.narrowed_refs,
                 .xx_passthrough_refs = l.xx_passthrough_refs,
@@ -1288,6 +1278,12 @@ pub const Lowering = struct {
             return g;
         }
 
+        pub fn enterCached(l: *Lowering) NestedBodyGuard {
+            const g = enter(l);
+            l.module_const_frame = null;
+            return g;
+        }
+
         pub fn restore(g: NestedBodyGuard) void {
             g.l.narrowed.deinit();
             g.l.narrowed = g.narrowed;
@@ -1306,6 +1302,7 @@ pub const Lowering = struct {
             g.l.pending_callable_return = g.pending_callable_return;
             g.l.fixed_callable_ret = g.fixed_callable_ret;
             g.l.lambda_sig_target = g.lambda_sig_target;
+            g.l.module_const_frame = g.module_const_frame;
         }
     };
 
@@ -1315,12 +1312,14 @@ pub const Lowering = struct {
     pub const ParamDemand = union(enum) {
         none,
         coerce: TypeId,
+        /// The type comes from the value, so anonymous fields have no contextual coercion.
+        inferred: TypeId,
         callable: lower_closure.CallableSig,
 
         /// The type the demand coerces to. A callable binder has none.
         pub fn coerceType(d: ParamDemand) ?TypeId {
             return switch (d) {
-                .coerce => |t| t,
+                .coerce, .inferred => |t| t,
                 .none, .callable => null,
             };
         }
@@ -1354,6 +1353,7 @@ pub const Lowering = struct {
                 self.target_type = null;
             },
             .coerce => |t| self.target_type = if (t == .unresolved or t == .void) null else t,
+            .inferred => |t| self.target_type = if (t == .unresolved or t == .void or self.module.types.isAnonStruct(t)) null else t,
             .none => self.target_type = null,
         }
         return scope;
@@ -1376,7 +1376,7 @@ pub const Lowering = struct {
             .decl_identity_first = std.StringHashMap(*const anyopaque).init(module.alloc),
             .decl_identity_ids = std.AutoHashMap(*const anyopaque, u32).init(module.alloc),
             .plain_struct_authors = std.AutoHashMap(TypeId, PlainStructAuthor).init(module.alloc),
-            .promoted_field_authority = std.AutoHashMap(PromotedField, ?[]const u8).init(module.alloc),
+            .pending_struct_layouts = std.AutoHashMap(TypeId, PendingStructLayout).init(module.alloc),
             .protocol_impl_methods = std.AutoHashMap(ProtocolImplMethodKey, ProtocolImplMethod).init(module.alloc),
             .protocol_impl_decls = std.AutoHashMap(ProtocolConcreteKey, void).init(module.alloc),
             .protocol_impl_sites = std.AutoHashMap(ProtocolConcreteKey, std.ArrayList(lower_protocol.ImplSite)).init(module.alloc),
@@ -1388,7 +1388,6 @@ pub const Lowering = struct {
             .protocol_ast_by_type = std.AutoHashMap(TypeId, *const ast.ProtocolDecl).init(module.alloc),
             .scanned_decls = std.AutoHashMap(*const ast.Node, void).init(module.alloc),
             .local_type_names = std.StringHashMap(std.StringHashMap(void)).init(module.alloc),
-            .struct_defaults_map = std.StringHashMap([]const ?*const Node).init(module.alloc),
             .struct_defaults_by_tid = std.AutoHashMap(TypeId, []const ?*const Node).init(module.alloc),
             .struct_const_by_tid = std.AutoHashMap(StructConstTidKey, StructConstInfo).init(module.alloc),
             .unique_lambdas = std.AutoHashMap(TypeId, lower_closure.UniqueLambda).init(module.alloc),
@@ -1480,6 +1479,9 @@ pub const Lowering = struct {
             }
             return resolved;
         }
+        const saved_target = self.target_type;
+        self.target_type = null;
+        defer self.target_type = saved_target;
         // No explicit annotation — the type is inferred from the body, which
         // references the function's own parameters (`|x: i32| x * 2`). Those
         // params aren't pushed into `self.scope` until body lowering, so bind
@@ -1678,9 +1680,63 @@ pub const Lowering = struct {
         return self.resolveTypeWithBindings(node);
     }
 
-    pub fn expandTypeSpread(self: *Lowering, node: *const Node) ?[]TypeId {
-        if (node.data != .spread_expr) return null;
-        return self.packResolver().packTypeElems(node.data.spread_expr.operand);
+    pub fn expandStructSpread(self: *Lowering, node: *const Node, start: usize) ?[]const types.TypeInfo.StructInfo.Field {
+        const operand = node.data.spread_expr.operand;
+        if (self.packResolver().packTypeElems(operand)) |tys| {
+            const fields = self.alloc.alloc(types.TypeInfo.StructInfo.Field, tys.len) catch @panic("out of memory");
+            for (tys, fields, start..) |ty, *field, i| {
+                field.* = .{
+                    .name = self.module.types.internString(std.fmt.allocPrint(self.alloc, "{d}", .{i}) catch @panic("out of memory")),
+                    .ty = ty,
+                };
+            }
+            return fields;
+        }
+        const ty = self.resolveTypeWithBindings(operand);
+        if (self.pending_struct_layouts.get(ty)) |pending| {
+            switch (pending.state) {
+                .pending => {
+                    const saved_types = self.type_bindings;
+                    const saved_values = self.comptime_value_bindings;
+                    const saved_packs = self.pack_bindings;
+                    const saved_pack_types = self.pack_arg_types;
+                    self.type_bindings = null;
+                    self.comptime_value_bindings = null;
+                    self.pack_bindings = null;
+                    self.pack_arg_types = null;
+                    defer {
+                        self.type_bindings = saved_types;
+                        self.comptime_value_bindings = saved_values;
+                        self.pack_bindings = saved_packs;
+                        self.pack_arg_types = saved_pack_types;
+                    }
+                    self.registerStructDecl(pending.author.decl, pending.author.source);
+                },
+                .resolving => {
+                    if (self.diagnostics) |d| d.add(.err, "struct member spread has a circular layout dependency", node.span);
+                    return null;
+                },
+            }
+        }
+        return type_bridge.structSpreadFields(&self.module.types, ty) catch |err| {
+            if (self.diagnostics) |d| d.add(.err, switch (err) {
+                error.InvalidOperand => "struct member spread requires a pack or struct type",
+                error.PrivateField => "cannot spread a struct containing a private field",
+            }, node.span);
+            return null;
+        };
+    }
+
+    pub fn recordStructDefaults(self: *Lowering, ty: TypeId, defaults: []const ?*const Node) void {
+        for (defaults) |default| {
+            if (default != null) break;
+        } else return;
+        for (defaults) |default| {
+            if (default) |node| {
+                if (node.source_file == null) @constCast(node).source_file = self.current_source_file;
+            }
+        }
+        self.struct_defaults_by_tid.put(ty, defaults) catch @panic("out of memory");
     }
 
     /// TYPE-NAME twin of `resolveInner` for callers holding a name rather than
@@ -3684,13 +3740,10 @@ pub const Lowering = struct {
     pub const PlainStructMethod = lower_nominal.PlainStructMethod;
     pub const StaticStructHead = lower_nominal.StaticStructHead;
     pub const registerStructDecl = lower_nominal.registerStructDecl;
-    pub const resolveUsingBase = lower_nominal.resolveUsingBase;
+    pub const reserveStructLayout = lower_nominal.reserveStructLayout;
     pub const staticStructHead = lower_nominal.staticStructHead;
     pub const hasPlainStructAuthor = lower_nominal.hasPlainStructAuthor;
     pub const plainStructOwnerType = lower_nominal.plainStructOwnerType;
-    pub const PromotedPrivate = lower_nominal.PromotedPrivate;
-    pub const notePromotedPrivate = lower_nominal.notePromotedPrivate;
-    pub const recordPromotedPrivate = lower_nominal.recordPromotedPrivate;
     pub const plainStructMethod = lower_nominal.plainStructMethod;
     pub const plainStructAdoptableMethod = lower_nominal.plainStructAdoptableMethod;
     pub const plainStructMethodName = lower_nominal.plainStructMethodName;
@@ -3792,6 +3845,7 @@ pub const Lowering = struct {
     pub const foldedInt = lower_coerce.foldedInt;
     pub const isByValueBindingIdent = lower_coerce.isByValueBindingIdent;
     pub const coerceOrErase = lower_coerce.coerceOrErase;
+    pub const coerceConstant = lower_coerce.coerceConstant;
     pub const buildProtocolErasure = lower_coerce.buildProtocolErasure;
     pub const viewOfConcreteAddr = lower_coerce.viewOfConcreteAddr;
     pub const inferConcreteTypeName = lower_coerce.inferConcreteTypeName;
@@ -4007,13 +4061,16 @@ pub const Lowering = struct {
 
     // --- lower/expr.zig (lower_expr) ---
     pub const lowerStructLiteral = lower_expr.lowerStructLiteral;
+    pub const StructLiteralIndices = lower_expr.StructLiteralIndices;
+    pub const literalSpreadTypes = lower_expr.literalSpreadTypes;
+    pub const checkPlainInitializerNames = lower_expr.checkPlainInitializerNames;
     pub const refuseVoidElement = lower_expr.refuseVoidElement;
+    pub const inferAnonStructType = lower_expr.inferAnonStructType;
     pub const synthesizeAnonStruct = lower_expr.synthesizeAnonStruct;
     pub const lowerInitBlock = lower_expr.lowerInitBlock;
     pub const lowerSelfBlock = lower_expr.lowerSelfBlock;
     pub const getStructFields = lower_expr.getStructFields;
     pub const structDeclaringSource = lower_expr.structDeclaringSource;
-    pub const fieldDeclaringSource = lower_expr.fieldDeclaringSource;
     pub const privateFieldHere = lower_expr.privateFieldHere;
     pub const diagPrivateField = lower_expr.diagPrivateField;
     pub const FieldLookup = lower_expr.FieldLookup;
