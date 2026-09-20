@@ -759,7 +759,8 @@ type 'T'`) — it is never silently dropped, so a typo or a field removed by an
 to match no field is instead read as a *positional* element, not an error.)
 
 `..value` contributes a struct value's fields as initializers. Every contributed
-field must exist in the target and fit through ordinary implicit initialization,
+field must exist in the target and fit through ordinary implicit initialization
+(see [Type Conversions](#type-conversions)),
 even if a later initializer overwrites it. Overlap involving a spread is
 last-wins; two plain named initializers for one field are an error. Expressions
 and spread operands evaluate once, left to right. Uncovered fields take their
@@ -899,8 +900,9 @@ e := UExt{x = 1, y = 2};
 print("{}\n", e.z);  // 3
 ```
 
-The referenced struct must be declared before use. This is a compile-time field
-expansion with no runtime overhead.
+The operand's layout is resolved on demand, including for a struct declared
+later in the file. Member spread is a compile-time expansion with no runtime
+overhead.
 
 #### Struct Interpolation
 Struct values in string interpolation print their fields with no type-name
