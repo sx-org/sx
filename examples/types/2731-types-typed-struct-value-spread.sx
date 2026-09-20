@@ -7,7 +7,6 @@ Sprite :: struct { px: i32; py: i32; r: i32 = 7; scale: i32; }
 Wide :: struct { small: i16; real: f64; address: *void; }
 Narrow :: struct { small: u8; real: f32; address: *u8; }
 Cfg :: struct { host: string; port: i32; retries: i32; }
-View :: struct { part: []i32; }
 
 mark :: (log: *i32, n: i32) -> i32 {
     log.* = log.* * 10 + n;
@@ -45,7 +44,7 @@ main :: () {
     array: [2]i32 = .[6, 7];
     array_copy := Sprite{..array, scale = 8};
     rows: [1][2]i32 = .[.[1, 2]];
-    view: View = .{..rows};
+    view: struct { part: []i32; } = .{..rows};
     view.part[0] = 9;
     print("array borrow: {}\n", rows[0][0]);
     mixed := Pos{1, py = 2};

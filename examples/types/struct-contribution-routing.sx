@@ -27,6 +27,12 @@ contextual :: () -> i64 {
     m.k * 100 + @field(m, 1) * 10 + @field(m, 2)
 }
 Contextual :: @run contextual();
+Inline: struct { x: i64; y: i64; } : .{1, 2};
+inline_decl :: () -> i64 {
+    p: struct { x: i64; y: i64; } = .{1, 2};
+    p.x * 10 + p.y
+}
+InlineRun :: @run inline_decl();
 
 main :: () {
     plain := Sprite{1, 2, scale = 5};
@@ -43,6 +49,7 @@ main :: () {
     print("vm: {} {} overwritten: {}\n", Computed, computed(), Overridden.k);
     rows := .[ .{k = 5, 7}, .{k = 6, 8} ];
     print("contextual: {} {} / {} {} / {} {}\n", contextual(), Contextual, rows[0].k, @field(rows[0], 1), rows[1].k, @field(rows[1], 1));
+    print("inline: {} {} / {} {}\n", inline_decl(), InlineRun, Inline.x, Inline.y);
     print("constant field: {} {}\n", Held.value.k, @field(Held.value, 1));
     size: [@field(Mixed, 0) + Constant.py]i64 = ---;
     print("constant: {} {} {} / {} {} {} / {}\n", Constant.px, Constant.py, Constant.scale, @field(Mixed, 0), @field(Mixed, 1), @field(Mixed, 2), @sizeOf(@typeOf(size)));

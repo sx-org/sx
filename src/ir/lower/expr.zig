@@ -72,7 +72,14 @@ pub const StructLiteralIndices = struct {
         const fields = self.getStructFields(ty);
         const names = self.alloc.alloc([]const u8, fields.len) catch unreachable;
         for (fields, names) |field, *name| name.* = self.module.types.getString(field.name);
-        const layout: literal_fields.Typed.Layout = if (sl.struct_name == null and sl.type_expr == null and self.module.types.isAnonStruct(ty)) .anonymous else .declaration;
+        const layout: literal_fields.Typed.Layout = layout: {
+            if (sl.struct_name == null and sl.type_expr == null and self.module.types.isAnonStruct(ty)) {
+                for (names) |name| {
+                    if (literal_fields.spreadName(name) == null) break :layout .anonymous;
+                }
+            }
+            break :layout .declaration;
+        };
         return .{ .route = literal_fields.Typed.init(self.alloc, names, layout), .ty = ty };
     }
 

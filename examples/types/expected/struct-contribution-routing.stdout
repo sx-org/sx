@@ -4,5 +4,6 @@ plain return: 5 7
 inferred: 5 0 1 2
 vm: 33 33 overwritten: 5
 contextual: 578 578 / 5 7 / 6 8
+inline: 12 12 / 1 2
 constant field: 5 7
 constant: 1 9 1 / 5 1 2 / 112

@@ -778,7 +778,7 @@ b: Sprite = .{scale = 5, ..a};
 
 The operand's fields determine named versus unnamed contributions. Packs,
 positional products and fixed-length arrays contribute unnamed values. In a
-typed literal (`T{…}` or contextual `.{…}` with a non-anonymous target), unnamed
+typed literal (`T{…}` or contextual `.{…}` with a known type), unnamed
 contributions precede named ones and fill fields from the left in declaration
 order without skipping:
 
@@ -827,17 +827,16 @@ push Context{ allocator = a } { … }        // explicit Context literal
 
 #### Anonymous Structs
 
-A bare `.{ … }` literal uses anonymous layout when it has no target or targets
-an *anonymous structural struct*. Without a target it self-types: named
-contributions come first, in order of first occurrence; each takes the last
-contributed type and value, with initializers typed independently. Unnamed
-contributions follow in their contribution order, regardless of written order,
-and receive their whole-struct index as a name (`"0"`, `"1"`, …). Fields are
-accessed through `@field`.
+A bare `.{ … }` literal without a target self-types as an *anonymous structural
+struct*: named contributions come first, in order of first occurrence; each
+takes the last contributed type and value, with initializers typed independently.
+Unnamed contributions follow in their contribution order, regardless of written
+order, and receive their whole-struct index as a name (`"0"`, `"1"`, …). Fields
+are accessed through `@field`.
 `.{x}` shorthand is named; `.{ (x) }` is the unnamed escape.
-With an anonymous target, named contributions match fields by name, unnamed
-contributions fill only unnamed slots in order, and target fields supply the
-initializer types.
+For a bare literal whose anonymous target contains index-named fields, named
+contributions match fields by name, unnamed contributions fill only index-named
+slots in order, and target fields supply the initializer types.
 
 ```sx
 A :: struct { px: i16; py: i32; }
