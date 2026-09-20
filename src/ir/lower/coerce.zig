@@ -85,14 +85,14 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
         .no_op => {
             if (!self.xx_is_postfix and target_explicit) {
                 const natural = self.inferExprType(operand_node);
-                if (natural == src_ty or natural == .unresolved) {
+                if (self.module.types.sameType(natural, src_ty) or natural == .unresolved) {
                     if (self.diagnostics) |d| {
                         const cs = self.builder.current_span;
                         d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "already '{s}'", .{self.formatTypeName(src_ty)});
                     }
                 }
             }
-            return operand;
+            return self.coerceToType(operand, src_ty, dst_ty);
         },
         // Concrete → Protocol: build protocol value.
         .erase_protocol => return self.buildProtocolErasure(operand, operand_node, src_ty, dst_ty),
@@ -467,7 +467,7 @@ fn intoConvertArgs(self: *Lowering, operand: Ref, operand_node: *const Node, fun
     var alloc_val = alloc_ref;
     if (alloc_ty) |aty| {
         const got = self.builder.getRefType(alloc_val);
-        if (got != aty) {
+        if (!self.module.types.sameType(got, aty)) {
             alloc_val = self.coerceOrErase(alloc_val, got, aty, operand_node);
         }
     }
@@ -835,7 +835,7 @@ pub fn buildProtocolErasure(self: *Lowering, operand: Ref, operand_node: *const 
 
     if (!src_ty.isBuiltin()) {
         const src_info = self.module.types.get(src_ty);
-        if (src_info == .pointer and src_info.pointer.pointee == dst_ty) {
+        if (src_info == .pointer and self.module.types.sameType(src_info.pointer.pointee, dst_ty)) {
             // `*I` at an `I` target: the handle is the pointee, so LOAD it.
             // This arm stands ahead of the pointer-erasure arm, which would
             // otherwise erase the handle's own storage as a concrete value.
@@ -1049,14 +1049,7 @@ pub fn buildDefaultValue(self: *Lowering, ty: TypeId) Ref {
     if (ty.isBuiltin()) return self.zeroValue(ty);
     const info = self.module.types.get(ty);
     if (info != .@"struct") return self.zeroValue(ty);
-    // Check for struct defaults — TypeId identity first; for an
-    // author-tracked type a tid-map miss means "no defaults".
-    const struct_name_str = self.module.types.getString(info.@"struct".name);
-    const field_defaults = self.struct_defaults_by_tid.get(ty) orelse blk: {
-        if (self.plain_struct_authors.contains(ty)) return self.zeroValue(ty);
-        break :blk self.struct_defaults_map.get(struct_name_str) orelse
-            return self.zeroValue(ty);
-    };
+    const field_defaults = self.struct_defaults_by_tid.get(ty) orelse return self.zeroValue(ty);
     const fields = info.@"struct".fields;
     var field_vals = std.ArrayList(Ref).empty;
     defer field_vals.deinit(self.alloc);
@@ -1691,7 +1684,9 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
     // PLANNING: classify the built-in coercion (conversions.zig).
     // EMISSION: each arm below reproduces the original lowering.
     switch (self.coercionResolver().classify(src_ty, dst_ty)) {
-        .no_op => return val,
+        .no_op => return if (src_ty == dst_ty) val else self.builder.emit(.{
+            .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty },
+        }, dst_ty),
         .error_set_retype => return self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
         // No modeled coercion — the value passes through UNCHANGED. For an
         // EXPLICIT `xx`/`cast(T)` that is the intended escape hatch: record
@@ -2214,7 +2209,7 @@ pub fn coerceCallArgs(self: *Lowering, args: []Ref, params: []const Function.Par
             }
             // Implicit address-of: passing T value where *T is expected → alloca + store
             // Only when the pointee type matches the source type.
-            if (dst_info == .pointer and src_info != .pointer and dst_info.pointer.pointee == src_ty) {
+            if (dst_info == .pointer and src_info != .pointer and self.module.types.sameType(dst_info.pointer.pointee, src_ty)) {
                 const slot = self.builder.alloca(src_ty);
                 self.builder.store(slot, args[i]);
                 args[i] = slot;

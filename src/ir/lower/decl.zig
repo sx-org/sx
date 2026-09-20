@@ -1510,7 +1510,7 @@ pub fn constExprInitFits(self: *Lowering, init_ty: TypeId, dst_ty: TypeId) bool 
     if (init_ty == .string) return dst_ty == .string;
     if (init_ty == .cstring) return dst_ty == .cstring or dst_ty == .string;
     // Any other concrete initializer type must match the annotation exactly.
-    return init_ty == dst_ty;
+    return self.module.types.sameType(init_ty, dst_ty);
 }
 
 /// Register an array-typed `::` constant (`K : [4]i64 : .[...]`, or the
@@ -3423,10 +3423,10 @@ fn returnGenericLeaf(node: *const Node) ?[]const u8 {
 pub fn dedupeExternSymbol(self: *Lowering, fd: *const ast.FnDecl, sym_name: StringId, params: []const Function.Param, ret_ty: TypeId, is_c_variadic: bool) bool {
     for (self.module.functions.items, 0..) |*func, i| {
         if (func.name != sym_name or !func.is_extern) continue;
-        var same = func.ret == ret_ty and func.params.len == params.len and func.is_c_variadic == is_c_variadic;
+        var same = self.module.types.sameType(func.ret, ret_ty) and func.params.len == params.len and func.is_c_variadic == is_c_variadic;
         if (same) {
             for (func.params, params) |a, b| {
-                if (a.ty != b.ty) {
+                if (!self.module.types.sameType(a.ty, b.ty)) {
                     same = false;
                     break;
                 }

@@ -6,7 +6,7 @@ const ast = @import("../ast.zig");
 pub const cvariadic_cursor = "@VaList";
 
 // ── TypeId ──────────────────────────────────────────────────────────────
-// Opaque handle into the TypeTable. First 16 slots are reserved for builtins.
+// Construction handle into TypeTable; language equality uses TypeTable.sameType.
 
 pub const TypeId = enum(u32) {
     // Builtin slots 0–17.
@@ -594,13 +594,12 @@ pub const TypeTable = struct {
     /// identity without threading the wrapping `ast.Node`. Populated by the
     /// resolver as it assigns nominal ids.
     type_decl_tids: std.AutoHashMap(*const anyopaque, TypeId),
-    /// Anonymous-struct-literal identity: canonical (field-name, field-type)
-    /// shape → TypeId. The nominal intern map keys structs by DISPLAY NAME,
-    /// and every anonymous literal displays as `__anon` — shape keying here
-    /// is what makes `.{x = 1}` at two sites one type while `.{x = 1}` and
-    /// `.{1, 2}` stay distinct. Entries are appended to `infos` directly and
-    /// deliberately NOT added to the name-keyed intern map.
+    /// Anonymous construction shapes retain each field's construction handle.
     anon_struct_map: std.StringHashMap(TypeId),
+    anon_defaults_map: std.StringHashMap(TypeId),
+    instance_shapes: std.StringHashMap(TypeId),
+    /// Construction handles retain annotation defaults; equality uses this shape handle.
+    canonical_types: std.AutoHashMap(TypeId, TypeId),
     alloc: Allocator,
     /// Owns the element/param slices duped by the type constructors
     /// (`functionType*`, `closureType*`, `packType`). Freed wholesale in
@@ -619,6 +618,9 @@ pub const TypeTable = struct {
             .intern_map = std.HashMap(TypeKey, TypeId, TypeKeyContext, 80).init(alloc),
             .type_decl_tids = std.AutoHashMap(*const anyopaque, TypeId).init(alloc),
             .anon_struct_map = std.StringHashMap(TypeId).init(alloc),
+            .anon_defaults_map = std.StringHashMap(TypeId).init(alloc),
+            .instance_shapes = std.StringHashMap(TypeId).init(alloc),
+            .canonical_types = std.AutoHashMap(TypeId, TypeId).init(alloc),
             .alloc = alloc,
             .slice_arena = std.heap.ArenaAllocator.init(alloc),
         };
@@ -671,6 +673,9 @@ pub const TypeTable = struct {
         self.intern_map.deinit();
         self.type_decl_tids.deinit();
         self.anon_struct_map.deinit();
+        self.anon_defaults_map.deinit();
+        self.instance_shapes.deinit();
+        self.canonical_types.deinit();
         self.slice_arena.deinit();
     }
 
@@ -690,14 +695,114 @@ pub const TypeTable = struct {
         const id = TypeId.fromIndex(@intCast(self.infos.items.len));
         self.infos.append(self.alloc, info) catch unreachable;
         self.intern_map.putNoClobber(key, id) catch unreachable;
+        self.recordCanonicalType(id, info, false);
         return id;
     }
 
-    /// Intern an anonymous STRUCTURAL struct (an untyped `.{ … }` literal's
-    /// synthesized type) by SHAPE — the canonical (field-name, field-type)
-    /// sequence — not by display name. See `internAnonShape` for the identity
-    /// rule. `fields` must outlive the table (callers dupe into a stable
-    /// allocator, same contract as `intern`).
+    pub fn canonicalType(self: *const TypeTable, id: TypeId) TypeId {
+        if (id.isBuiltin()) return id;
+        return self.canonical_types.get(id) orelse id;
+    }
+
+    pub fn sameType(self: *const TypeTable, a: TypeId, b: TypeId) bool {
+        return self.canonicalType(a) == self.canonicalType(b);
+    }
+
+    pub fn sameTypes(self: *const TypeTable, a: []const TypeId, b: []const TypeId) bool {
+        if (a.len != b.len) return false;
+        for (a, b) |left, right| if (!self.sameType(left, right)) return false;
+        return true;
+    }
+
+    pub fn recordInstanceShape(self: *TypeTable, id: TypeId, key: []const u8) void {
+        if (self.instance_shapes.get(key)) |canonical| {
+            if (id != canonical) self.canonical_types.put(id, canonical) catch unreachable;
+        } else {
+            const owned = self.slice_arena.allocator().dupe(u8, key) catch unreachable;
+            self.instance_shapes.put(owned, id) catch unreachable;
+        }
+    }
+
+    fn canonicalSlice(self: *TypeTable, comptime T: type, values: []const T, comptime field: ?[]const u8) []const T {
+        for (values) |value| {
+            const ty = if (field) |f| @field(value, f) else value;
+            if (ty != self.canonicalType(ty)) break;
+        } else return values;
+        const result = self.slice_arena.allocator().dupe(T, values) catch unreachable;
+        for (result) |*value| {
+            if (field) |f| {
+                @field(value, f) = self.canonicalType(@field(value, f));
+            } else {
+                value.* = self.canonicalType(value.*);
+            }
+        }
+        return result;
+    }
+
+    fn recordCanonicalType(self: *TypeTable, id: TypeId, info: TypeInfo, anonymous: bool) void {
+        var shape = info;
+        switch (shape) {
+            .pointer => |*p| p.pointee = self.canonicalType(p.pointee),
+            .many_pointer => |*p| p.element = self.canonicalType(p.element),
+            .slice => |*s| s.element = self.canonicalType(s.element),
+            .array => |*a| a.element = self.canonicalType(a.element),
+            .vector => |*v| v.element = self.canonicalType(v.element),
+            .optional => |*o| o.child = self.canonicalType(o.child),
+            .failable => |*f| f.value = self.canonicalType(f.value),
+            .pack => |*p| p.elements = self.canonicalSlice(TypeId, p.elements, null),
+            .function => |*f| {
+                f.params = self.canonicalSlice(TypeId, f.params, null);
+                f.ret = self.canonicalType(f.ret);
+            },
+            .closure => |*c| {
+                c.params = self.canonicalSlice(TypeId, c.params, null);
+                c.ret = self.canonicalType(c.ret);
+                if (c.init_target) |t| c.init_target = self.canonicalType(t);
+            },
+            .@"struct" => |*s| {
+                if (!anonymous) return;
+                s.fields = self.canonicalSlice(TypeInfo.StructInfo.Field, s.fields, "ty");
+                if (s.fields.ptr == info.@"struct".fields.ptr) return;
+            },
+            .@"union" => |*u| {
+                if (!anonymous) return;
+                u.fields = self.canonicalSlice(TypeInfo.StructInfo.Field, u.fields, "ty");
+                if (u.fields.ptr == info.@"union".fields.ptr) return;
+            },
+            .@"enum" => |*e| {
+                if (!anonymous) return;
+                e.variants = self.canonicalSlice(TypeInfo.EnumInfo.Variant, e.variants, "payload");
+                if (e.layout) |t| e.layout = self.canonicalType(t);
+                if (e.variants.ptr == info.@"enum".variants.ptr and e.layout == info.@"enum".layout) return;
+            },
+            else => return,
+        }
+        if (!anonymous and typeInfoEql(info, shape)) return;
+        const canonical = if (anonymous) self.internAnonShape(shape) else self.intern(shape);
+        self.canonical_types.put(id, canonical) catch unreachable;
+    }
+
+    pub fn internAnonStructDefaults(self: *TypeTable, info: TypeInfo, defaults: []const ?*const ast.Node) TypeId {
+        const shape = self.internAnonShape(info);
+        for (defaults) |value| {
+            if (value != null) break;
+        } else return shape;
+        var key = std.ArrayList(u8).empty;
+        defer key.deinit(self.alloc);
+        key.appendSlice(self.alloc, std.mem.asBytes(&shape)) catch unreachable;
+        for (defaults) |value| {
+            key.appendSlice(self.alloc, std.mem.asBytes(&value)) catch unreachable;
+        }
+        if (self.anon_defaults_map.get(key.items)) |existing| return existing;
+        const id = TypeId.fromIndex(@intCast(self.infos.items.len));
+        self.infos.append(self.alloc, info) catch unreachable;
+        const owned_key = self.slice_arena.allocator().dupe(u8, key.items) catch unreachable;
+        self.anon_defaults_map.put(owned_key, id) catch unreachable;
+        self.canonical_types.put(id, self.canonicalType(shape)) catch unreachable;
+        return id;
+    }
+
+    /// Intern a default-free anonymous struct. Field storage must outlive the table.
     pub fn internAnonStruct(self: *TypeTable, fields: []const TypeInfo.StructInfo.Field) TypeId {
         return self.internAnonShape(.{ .@"struct" = .{
             .name = self.internString("__anon"),
@@ -794,17 +899,9 @@ pub const TypeTable = struct {
         return out;
     }
 
-    /// Intern an anonymous (`__anon`) nominal TypeInfo by SHAPE, not by
-    /// display name. The nominal intern map keys these kinds by name, and
-    /// every anonymous decl displays as `__anon`, so routing them through
-    /// `intern` would collapse differently-shaped anonymous types onto
-    /// whichever shape interned first (untyped `.{ }`
-    /// literals, inline `struct { … }` / `union { … }` / `enum { … }`
-    /// annotations). The entry is appended to `infos` directly and NOT added
-    /// to the name-keyed map; `anon_struct_map` alone owns identity, so
-    /// identical shapes at any two sites share a TypeId and distinct shapes
-    /// never merge. Slices inside `info` must outlive the table (same
-    /// contract as `intern`).
+    /// Intern an anonymous shape by its ordered members, retaining nested
+    /// construction handles. `sameType` compares their canonical shapes.
+    /// Slices inside `info` must outlive the table.
     pub fn internAnonShape(self: *TypeTable, info: TypeInfo) TypeId {
         var key = std.ArrayList(u8).empty;
         defer key.deinit(self.alloc);
@@ -849,6 +946,7 @@ pub const TypeTable = struct {
         self.infos.append(self.alloc, info) catch unreachable;
         const owned_key = self.alloc.dupe(u8, key.items) catch unreachable;
         self.anon_struct_map.put(owned_key, id) catch unreachable;
+        self.recordCanonicalType(id, info, true);
         return id;
     }
 

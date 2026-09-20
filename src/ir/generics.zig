@@ -55,6 +55,12 @@ pub const GenericResolver = struct {
     /// Mangle a TypeId into its mono-key fragment ("i64", "ptr_T", "SL_T",
     /// "AR_n_T", struct name, "tu_X_Y", …). Recursive for compound shapes.
     pub fn mangleTypeName(self: GenericResolver, ty: TypeId) []const u8 {
+        if (self.l.module.types.canonicalType(ty) != ty) {
+            const info = self.l.module.types.get(ty);
+            const is_instance = info == .@"struct" and self.l.struct_instance_template.contains(self.l.module.types.getString(info.@"struct".name));
+            if (!is_instance)
+                return std.fmt.allocPrint(self.l.alloc, "annotation_{d}", .{ty.index()}) catch @panic("out of memory while mangling type");
+        }
         // Builtin types
         if (ty == .i8) return "i8";
         if (ty == .i16) return "i16";

@@ -33,6 +33,38 @@ test "intern deduplicates structural types" {
     try std.testing.expect(ptr1 != ptr3);
 }
 
+test "annotation construction handles preserve defaults beneath structural equality" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var table = TypeTable.init(arena.allocator());
+    defer table.deinit();
+    const first = ast.Node{ .span = .{ .start = 0, .end = 1 }, .data = .{ .int_literal = .{ .value = 1 } } };
+    const second = ast.Node{ .span = .{ .start = 2, .end = 3 }, .data = .{ .int_literal = .{ .value = 5 } } };
+    const fields = [_]TypeInfo.StructInfo.Field{.{ .name = table.internString("p"), .ty = .i32 }};
+    const info: TypeInfo = .{ .@"struct" = .{ .name = table.internString("__anon"), .fields = &fields } };
+    const a = table.internAnonStructDefaults(info, &.{&first});
+    const b = table.internAnonStructDefaults(info, &.{&second});
+    const plain = table.internAnonStructDefaults(info, &.{null});
+    try std.testing.expect(a != b and a != plain and b != plain);
+    try std.testing.expectEqual(a, table.internAnonStructDefaults(info, &.{&first}));
+    try std.testing.expect(table.sameType(a, b) and table.sameType(a, plain));
+
+    const nested_a = table.internAnonStruct(&.{.{ .name = fields[0].name, .ty = a }});
+    const nested_b = table.internAnonStruct(&.{.{ .name = fields[0].name, .ty = b }});
+    try std.testing.expect(nested_a != nested_b);
+    try std.testing.expectEqual(a, table.get(nested_a).@"struct".fields[0].ty);
+    try std.testing.expectEqual(b, table.get(nested_b).@"struct".fields[0].ty);
+    try std.testing.expect(table.sameType(nested_a, nested_b));
+
+    const fa = table.functionType(&.{table.ptrTo(nested_a)}, table.arrayOf(a, 2));
+    const fb = table.functionType(&.{table.ptrTo(nested_b)}, table.arrayOf(b, 2));
+    try std.testing.expect(fa != fb);
+    try std.testing.expect(table.sameType(fa, fb));
+    try std.testing.expect(!table.sameType(fa, table.functionType(&.{table.ptrTo(nested_b)}, table.arrayOf(b, 3))));
+    const named = table.internNominal(.{ .@"struct" = .{ .name = table.internString("Named"), .fields = &fields } }, 1);
+    try std.testing.expect(!table.sameType(a, named));
+}
+
 test "slice and array interning" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);

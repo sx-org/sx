@@ -481,7 +481,7 @@ pub const ProtocolResolver = struct {
             // Return type: if the impl's return is a generic var
             // (ret_var_name set), any source return binds; otherwise it
             // must equal the source's return exactly.
-            if (entry.ret_var_name == null and ent_ci.ret != src_ret) continue;
+            if (entry.ret_var_name == null and !self.l.module.types.sameType(ent_ci.ret, src_ret)) continue;
             // First match wins for v1; concrete-wins-over-pack already
             // happened by the caller checking concrete first. Multiple
             // overlapping pack impls get no diagnostic here; same-module
@@ -844,8 +844,8 @@ pub const ProtocolResolver = struct {
         var head_params = std.ArrayList(TypeId).empty;
         for (fte.param_types) |p| head_params.append(self.l.alloc, self.l.resolveTypeInSource(source, p)) catch return;
         const head_ret = if (fte.return_type) |rt| self.l.resolveTypeInSource(source, rt) else TypeId.void;
-        const agrees = head_ret == ret and head_params.items.len == params.items.len and
-            std.mem.eql(TypeId, head_params.items, params.items);
+        const agrees = self.l.module.types.sameType(head_ret, ret) and head_params.items.len == params.items.len and
+            self.l.module.types.sameTypes(head_params.items, params.items);
         if (!agrees) {
             if (diags) |d| {
                 const id = d.addFmtId(.err, fd.name_span, "'call' is '{s}', and the impl head is '{s}'", .{
@@ -1212,7 +1212,7 @@ pub const ProtocolResolver = struct {
                     if (p >= tmpl_decl.type_params.len) break :blk .unresolved;
                     break :blk binds.get(tmpl_decl.type_params[p].name) orelse .unresolved;
                 } else self.l.resolveTypeArg(node);
-                if (got != want) {
+                if (!self.l.module.types.sameType(got, want)) {
                     all = false;
                     break;
                 }
@@ -1259,7 +1259,7 @@ pub const ProtocolResolver = struct {
                     if (p >= tmpl_decl.type_params.len) break :blk .unresolved;
                     break :blk binds.get(tmpl_decl.type_params[p].name) orelse .unresolved;
                 } else self.l.resolveTypeArg(node);
-                if (got != want) {
+                if (!self.l.module.types.sameType(got, want)) {
                     all = false;
                     break;
                 }
@@ -1300,13 +1300,13 @@ pub const ProtocolResolver = struct {
                 const name = node.data.type_expr.name;
                 const gop = seen.getOrPut(name) catch return false;
                 if (gop.found_existing) {
-                    if (gop.value_ptr.* != bound) return false;
+                    if (!self.l.module.types.sameType(gop.value_ptr.*, bound)) return false;
                 } else {
                     gop.value_ptr.* = bound;
                 }
                 continue;
             }
-            if (self.l.resolveTypeArg(node) != bound) return false;
+            if (!self.l.module.types.sameType(self.l.resolveTypeArg(node), bound)) return false;
         }
         return true;
     }

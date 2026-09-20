@@ -245,12 +245,7 @@ fn constStructLiteralInner(self: *Lowering, sl: *const ast.StructLiteral, ty: Ty
     if (ti != .@"struct" or sl.init_block != null) return null;
     if (!self.checkPlainInitializerNames(sl, ty)) return null;
     const struct_fields = ti.@"struct".fields;
-    const struct_name = self.module.types.getString(ti.@"struct".name);
-    // An author-tracked TypeId owns its defaults, including their absence.
-    const field_defaults: []const ?*const Node = self.struct_defaults_by_tid.get(ty) orelse blk: {
-        if (self.plain_struct_authors.contains(ty)) break :blk &.{};
-        break :blk self.struct_defaults_map.get(struct_name) orelse &.{};
-    };
+    const field_defaults: []const ?*const Node = self.struct_defaults_by_tid.get(ty) orelse &.{};
 
     const selected = self.alloc.alloc(?inst_mod.ConstantValue, struct_fields.len) catch return null;
     defer self.alloc.free(selected);
@@ -525,11 +520,11 @@ pub fn staticTypeMatchesCategory(self: *Lowering, tid: TypeId, name: []const u8)
     if (std.mem.eql(u8, name, "closure")) return info == .closure;
     // A specific type name: generic bindings, then aliases, then the table.
     if (self.type_bindings) |tb| {
-        if (tb.get(name)) |bound| return bound == tid;
+        if (tb.get(name)) |bound| return self.module.types.sameType(bound, tid);
     }
-    if (self.program_index.lookup(.type_alias, name)) |alias_ty| return alias_ty == tid;
+    if (self.program_index.lookup(.type_alias, name)) |alias_ty| return self.module.types.sameType(alias_ty, tid);
     const name_id = self.module.types.internString(name);
-    if (self.module.types.findByName(name_id)) |t| return t == tid;
+    if (self.module.types.findByName(name_id)) |t| return self.module.types.sameType(t, tid);
     return false;
 }
 
@@ -1297,13 +1292,13 @@ fn lowerComptimeRuntimeArg(
                 const name = arg.data.identifier.name;
                 const local = if (self.scope) |scope| scope.lookup(name) else null;
                 if (local) |binding| {
-                    if (binding.is_alloca and binding.ty == pointee)
+                    if (binding.is_alloca and self.module.types.sameType(binding.ty, pointee))
                         return self.builder.emit(.{ .addr_of = .{ .operand = binding.ref } }, param_ty);
                 } else if (self.resolveGlobalRef(name, null)) |global| {
-                    if (global.ty == pointee and !self.rootIsConstant(name)) {
+                    if (self.module.types.sameType(global.ty, pointee) and !self.rootIsConstant(name)) {
                         const place = self.lowerExprAsPtr(arg);
                         const place_ty = self.builder.getRefType(place);
-                        return if (place_ty == param_ty)
+                        return if (self.module.types.sameType(place_ty, param_ty))
                             place
                         else
                             self.builder.emit(.{ .addr_of = .{ .operand = place } }, param_ty);
@@ -1315,7 +1310,7 @@ fn lowerComptimeRuntimeArg(
             {
                 const place = self.lowerExprAsPtr(arg);
                 const place_ty = self.builder.getRefType(place);
-                if (place_ty == param_ty) return place;
+                if (self.module.types.sameType(place_ty, param_ty)) return place;
                 if (place_ty == pointee)
                     return self.builder.emit(.{ .addr_of = .{ .operand = place } }, param_ty);
             }
@@ -1384,7 +1379,7 @@ fn lowerComptimeRuntimeArg(
     // Dot dispatch permits a *T receiver for a value-receiver `self: T`.
     if (is_receiver and !value_ty.isBuiltin()) {
         const value_info = self.module.types.get(value_ty);
-        if (value_info == .pointer and value_info.pointer.pointee == param_ty) {
+        if (value_info == .pointer and self.module.types.sameType(value_info.pointer.pointee, param_ty)) {
             value = self.builder.load(value, param_ty);
             value_ty = param_ty;
         }

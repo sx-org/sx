@@ -855,26 +855,12 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     // Get struct field types for coercion and ordering
     const struct_fields = self.getStructFields(ty);
 
-    // Defaults and type-param bindings key off the RESOLVED type's own struct
-    // name: a generic instance registers both under its mangled name, which an
-    // alias of it (`BI :: Box(i64)`) never spells.
-    const struct_name_for_defaults: ?[]const u8 = if (ty.isBuiltin()) null else blk: {
+    // Generic bindings use the resolved instance name, including through aliases.
+    const instance_name: ?[]const u8 = if (ty.isBuiltin()) null else blk: {
         const ti = self.module.types.get(ty);
         break :blk if (ti == .@"struct") self.module.types.getString(ti.@"struct".name) else null;
     };
-    // The concrete TypeId selects the AUTHORING declaration's defaults. For
-    // an author-tracked type the identity map is AUTHORITATIVE — a miss means
-    // "this struct declares no defaults", never "borrow a same-name author's".
-    // The display-name map remains only for names without a nominal identity
-    // entry (generic instances, whose mangled names are unique) — its key is
-    // last-wins across same-name authors.
-    const field_defaults: []const ?*const Node = blk: {
-        if (!ty.isBuiltin()) {
-            if (self.struct_defaults_by_tid.get(ty)) |d| break :blk d;
-            if (self.plain_struct_authors.contains(ty)) break :blk &.{};
-        }
-        break :blk if (struct_name_for_defaults) |sn| (self.struct_defaults_map.get(sn) orelse &.{}) else &.{};
-    };
+    const field_defaults: []const ?*const Node = self.struct_defaults_by_tid.get(ty) orelse &.{};
 
     // A generic instance's defaults may REFERENCE its type params — `sz: i64 =
     // @sizeOf(T)` (dependent defaults). Those default AST nodes are
@@ -885,7 +871,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     // THIS instantiation. A non-generic struct has no entry and its defaults
     // lower in the ambient binding context.
     const default_bindings: ?std.StringHashMap(TypeId) =
-        if (struct_name_for_defaults) |sn| self.struct_instance_bindings.get(sn) else null;
+        if (instance_name) |sn| self.struct_instance_bindings.get(sn) else null;
 
     if (self.module.types.get(ty) == .@"struct") {
         const selected = self.alloc.alloc(?Ref, struct_fields.len) catch unreachable;
@@ -1314,7 +1300,7 @@ pub fn fixupMethodReceiver(self: *Lowering, method_args: *std.ArrayList(Ref), fu
             // `for *x in xs` by-ref capture) — deref to pass the value.
             if (!obj_ty.isBuiltin()) {
                 const oi = self.module.types.get(obj_ty);
-                if (oi == .pointer and oi.pointer.pointee == first_param_ty) {
+                if (oi == .pointer and self.module.types.sameType(oi.pointer.pointee, first_param_ty)) {
                     method_args.items[0] = self.builder.load(method_args.items[0], first_param_ty);
                 }
             }
@@ -3361,7 +3347,7 @@ pub fn lowerSliceExpr(self: *Lowering, se: *const ast.SliceExpr) Ref {
     const len_ty = blk: {
         if (self.target_type) |tgt| {
             if (self.module.types.sliceInfoOf(tgt)) |ts| {
-                const same_elem = ts.element == elem_ty or (elem_ty == .void and ts.element == .u8);
+                const same_elem = self.module.types.sameType(ts.element, elem_ty) or (elem_ty == .void and ts.element == .u8);
                 if (same_elem) break :blk ts.len_type;
             }
         }
@@ -5535,7 +5521,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         if (self.isStaticTypeRef(bop.lhs) and self.isStaticTypeRef(bop.rhs)) {
             const lhs_ty = self.resolveTypeArg(bop.lhs);
             const rhs_ty = self.resolveTypeArg(bop.rhs);
-            const eq_result = lhs_ty == rhs_ty;
+            const eq_result = self.module.types.sameType(lhs_ty, rhs_ty);
             return self.builder.constBool(if (bop.op == .eq) eq_result else !eq_result);
         }
     }
@@ -5749,7 +5735,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         const r_ty = refTypeOr(self, rhs, rhs_ty);
         const l_elem = sequenceElement(self, l_ty);
         const r_elem = sequenceElement(self, r_ty);
-        if (l_elem != null and l_elem == r_elem) {
+        if (l_elem != null and r_elem != null and self.module.types.sameType(l_elem.?, r_elem.?)) {
             return lowerSequenceEquality(self, lhs, rhs, l_elem.?, bop.op == .eq, bop.lhs.span);
         }
         if (l_elem != null or r_elem != null) {
@@ -5795,7 +5781,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         const eq_info = self.module.types.get(ty);
         if (eq_info == .@"struct" and !eq_info.@"struct".is_protocol) {
             const other_ty = if (rhs_ty == .unresolved) self.builder.getRefType(rhs) else rhs_ty;
-            if (other_ty != ty) {
+            if (!self.module.types.sameType(other_ty, ty)) {
                 if (self.diagnostics) |d| d.addFmt(.err, bop.rhs.span, "cannot compare values of distinct types '{s}' and '{s}'", .{
                     self.formatTypeName(ty), self.formatTypeName(other_ty),
                 });

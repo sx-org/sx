@@ -847,10 +847,11 @@ including a function's return type (`make :: () -> struct { x: i64; } {
 .{ x = 3 } }`; a bodyless `F :: () -> struct { … };` stays a function-type
 alias).
 
-Anonymous type identity is by **shape**, never by name: two anonymous types
+Anonymous type equality is by **shape**, never by name: two anonymous types
 with the same canonical field sequence (names + types, in order) are the SAME
 type — across literal and annotation sites — and differently-shaped ones are
-always distinct types:
+always distinct types. Each anonymous struct annotation keeps its own field
+defaults; defaults affect construction, not type equality or assignability:
 
 ```sx
 a : struct { x: i64; } = .{ x = 1 };
@@ -4351,7 +4352,7 @@ and never a value expression.
 Over the slice of right operands that are concrete descriptions they answer
 alike — there is no subtyping and no fits-rule — and that coincidence is a
 theorem about those operands, not the definition of either. Nothing is refused
-for the overlap. `t1 == t2` over two `Type` values is the tag compare `@typeEq`
+for the overlap. `t1 == t2` over two `Type` values is the type equality comparison `@typeEq`
 spells, and it folds when both operands are static.
 
 #### Left operands
@@ -5499,7 +5500,7 @@ error: 'intern' runs only at compile time — it cannot be called from the
 - `@errorName(e: $T) -> string` — `Owner.Member` for the member an error value carries (`"FooError.D"`) — the composition `e.set.name`, `"."`, and `e.name` spell out. Reads the always-linked qualified-name table at the value's member id.
 - `@errorPayload(e: $T) -> any` — the live member's payload as an `any` VIEW of the channel's payload area (same borrow rules as the boxed-view family). A payload-free member views as `void`.
 - `@isFlags($T: Type) -> bool` — returns `true` if `T` is a flags enum (declared with `@flags`)
-- `@typeEq($A: Type, $B: Type) -> bool` — structural TypeId equality (`@typeEq(i64, i64)` is `true`, distinct shapes are `false`); folds at compile time, so `inline if @typeEq(...)` is comptime-decidable
+- `@typeEq($A: Type, $B: Type) -> bool` — type equality (`@typeEq(i64, i64)` is `true`, distinct shapes are `false`); folds at compile time, so `inline if @typeEq(...)` is comptime-decidable
 - `@unbox($T: Type, v: any) -> T` — the boxed storage read AS `T`: an unchecked typed load through the view, with no tag check, so `T` must be the boxed type and a wider one overreads. The checked forms are the postfix assertions (`v.(T)` / `try v.(T)` / `v.(?T)`).
 - The boxed-view family — `@len` / `@field` / `@inner` — reads a boxed value's parts in place, dispatching on the view's runtime tag. Each result is an `any` VIEW `{the part's type, a pointer to it inside the receiver}` — an interior pointer, not a copy. An addressable receiver is borrowed (mutations of it stay visible through a live view) and an rvalue receiver spills to a frame temp first, so a view is valid only while the storage it names lives. A wrong-kind tag or an index past the count is **undefined behavior** (in-bounds GEP — the caller gates on `@len`).
 - `@len(v: any) -> i64` — the receiver's part count: struct and union fields, enum variants, array elements, vector lanes, and the count a slice's or string's header carries. A `Type` receiver — spelled, or a runtime `Type` value — answers that type's part count (`@len(@Vector(3, f32))` is `3`, the one vector length the size tables cannot answer, since a vector's ABI size is pow2-rounded); a spelled type with no parts is a compile error, a runtime tag of such a kind answers 0.
@@ -5511,7 +5512,7 @@ formatter reads to print unsigned integers as unsigned decimal; it lowers to
 `__sx_type_is_unsigned` over a runtime `Type` and folds outright over a static
 one.
 
-The type-only builtins — `@sizeOf`, `@alignOf`, `@typeName`, `@typeEq`, `@isFlags` — strictly require a **type** argument. A spelled type (`i64`, `*u8`, `Point`) or a generic type parameter (`T`) is accepted by all of them. A runtime `Type` value (`@typeOf(x)`, a `[]Type` element, a `Type`-typed local) is supported by the whole scalar family: `@typeName`, plus `@sizeOf`, `@alignOf`, and `@isFlags` — each reads a lazily-emitted, tag-indexed table (`__sx_type_sizes` / `_aligns` / `_flag_bits`; built only when a dynamic call site exists, so programs without runtime reflection carry no tables) — and `@typeEq`, which compares tags directly (no table). Passing a non-Type VALUE (`@sizeOf(6)`, `@isFlags(true)`) is a compile-time error — `<builtin> expects a type, got '<type>'` — never a silent reinterpretation of the value's bits as a type.
+The type-only builtins — `@sizeOf`, `@alignOf`, `@typeName`, `@typeEq`, `@isFlags` — strictly require a **type** argument. A spelled type (`i64`, `*u8`, `Point`) or a generic type parameter (`T`) is accepted by all of them. A runtime `Type` value (`@typeOf(x)`, a `[]Type` element, a `Type`-typed local) is supported by the whole scalar family: `@typeName`, plus `@sizeOf`, `@alignOf`, and `@isFlags` — each reads a lazily-emitted, tag-indexed table (`__sx_type_sizes` / `_aligns` / `_flag_bits`; built only when a dynamic call site exists, so programs without runtime reflection carry no tables) — and `@typeEq`, which compares the canonical types read from the lazily-emitted, tag-indexed `__sx_canonical_types` table. Passing a non-Type VALUE (`@sizeOf(6)`, `@isFlags(true)`) is a compile-time error — `<builtin> expects a type, got '<type>'` — never a silent reinterpretation of the value's bits as a type.
 
 An `any` is accepted because it can hold either a value or a `Type`. `@typeName` consults the `any`'s runtime type-tag, not its payload: an `any` holding a *value* reports the type **of that value** (`av : any = 6` → `@typeName(av)` is `"i64"`), while an `any` holding a *`Type` value* (e.g. `@typeOf(x)` stored in an `any`) names the **held type**. This is the same tag the `{}` formatter reads, so `print(av)` and `@typeName(av)` agree on what `av` is. `is` reads that tag rather than peeling it: `at is type` is true for a `Type`-holding `any`, and classifying the held type unboxes first (`at.(?Type)`).
 

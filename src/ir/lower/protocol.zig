@@ -514,7 +514,7 @@ pub fn staticIsAnswer(self: *Lowering, subject: TypeId, node: *const Node) ?bool
     const target = classifyIsTarget(self, node) orelse return null;
     switch (target) {
         .category => |word| return self.staticTypeMatchesCategory(subject, word),
-        .concrete => |ty| return subject == ty,
+        .concrete => |ty| return self.module.types.sameType(subject, ty),
         .interface => |ty| {
             // An interface names itself.
             if (subject == ty) return true;

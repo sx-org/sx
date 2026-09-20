@@ -84,6 +84,35 @@ test "comptime_vm exec: integer add of two params" {
     try std.testing.expectEqual(@as(i64, 43), toI64(out));
 }
 
+test "comptime Type comparisons ignore annotation defaults" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var table = types.TypeTable.init(alloc);
+    defer table.deinit();
+    const ast = @import("../ast.zig");
+    const value = ast.Node{ .span = .{ .start = 0, .end = 1 }, .data = .{ .int_literal = .{ .value = 5 } } };
+    const fields = [_]types.TypeInfo.StructInfo.Field{.{ .name = table.internString("p"), .ty = .i32 }};
+    const shape: types.TypeInfo = .{ .@"struct" = .{ .name = table.internString("__anon"), .fields = &fields } };
+    const annotated = table.internAnonStructDefaults(shape, &.{&value});
+    const plain = table.internAnonShape(shape);
+    try std.testing.expect(annotated != plain);
+
+    const params = [_]Function.Param{ param(.type_value), param(.type_value) };
+    var fb = Fb.init(alloc, &params, .bool);
+    defer fb.deinit();
+    const block = fb.block(&.{});
+    const equal = fb.add(block, inst(.{ .call_builtin = .{ .builtin = .rt_type_eq, .args = &.{ ref(0), ref(1) } } }, .bool));
+    const compared = fb.add(block, inst(.{ .cmp_eq = .{ .lhs = ref(0), .rhs = ref(1) } }, .bool));
+    const both = fb.add(block, inst(.{ .bool_and = .{ .lhs = ref(equal), .rhs = ref(compared) } }, .bool));
+    _ = fb.add(block, inst(.{ .ret = .{ .operand = ref(both) } }, .void));
+    var machine = vm.Vm.init(alloc);
+    machine.table = &table;
+    defer machine.deinit();
+    try std.testing.expectEqual(@as(vm.Reg, 1), try machine.run(&fb.func, &.{ annotated.index(), plain.index() }));
+    try std.testing.expectEqual(@as(vm.Reg, 0), try machine.run(&fb.func, &.{ annotated.index(), TypeId.i32.index() }));
+}
+
 test "comptime_vm exec: f64 arithmetic (a*2.0 + 1.0)" {
     var table = types.TypeTable.init(std.testing.allocator);
     defer table.deinit();

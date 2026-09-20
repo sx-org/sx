@@ -1821,9 +1821,10 @@ pub const Ops = struct {
     }
 
     /// Load `kind`'s tag-indexed runtime scalar table at `tag`.
-    fn scalarTableRead(self: Ops, kind: Reflection.ScalarTableKind, tag: c.LLVMValueRef) c.LLVMValueRef {
+    pub fn scalarTableRead(self: Ops, kind: Reflection.ScalarTableKind, tag: c.LLVMValueRef) c.LLVMValueRef {
         const arr_global = self.e.reflection().getOrBuildScalarTable(kind);
         const arr_len = switch (kind) {
+            .canonical_type => self.e.canonical_type_array_len,
             .size => self.e.type_size_array_len,
             .alignment => self.e.type_align_array_len,
             .flags => self.e.is_flags_array_len,
@@ -2016,10 +2017,9 @@ pub const Ops = struct {
                 self.e.mapRef(c.LLVMBuildLoad2(self.e.builder, ti_llvm, rec_ptr, "ti.val"));
             },
             .rt_type_eq => {
-                // Runtime tag compare — Type is an i64 tag; no table.
                 const ta = self.reflectArgTypeId(bi.args[0], "@typeEq");
                 const tb = self.reflectArgTypeId(bi.args[1], "@typeEq");
-                self.e.mapRef(c.LLVMBuildICmp(self.e.builder, c.LLVMIntEQ, ta, tb, "rteq"));
+                self.e.mapRef(c.LLVMBuildICmp(self.e.builder, c.LLVMIntEQ, self.scalarTableRead(.canonical_type, ta), self.scalarTableRead(.canonical_type, tb), "rteq"));
             },
             else => {
                 // @sizeOf, cast — handled by lowering or codegen glue
@@ -2955,7 +2955,8 @@ pub const Ops = struct {
 
     // ── Switch branch ──────────────────────────────────────
     pub fn emitSwitchBr(self: Ops, sw: SwitchBranch, func_idx: u32) void {
-        const operand = self.e.channelTag(self.e.resolveRef(sw.operand), self.e.getRefIRType(sw.operand));
+        const raw_operand = self.e.channelTag(self.e.resolveRef(sw.operand), self.e.getRefIRType(sw.operand));
+        const operand = if (self.e.getRefIRType(sw.operand) == .type_value) self.scalarTableRead(.canonical_type, raw_operand) else raw_operand;
         const default_bb = self.e.getBlock(func_idx, sw.default);
         const switch_inst = c.LLVMBuildSwitch(self.e.builder, operand, default_bb, @intCast(sw.cases.len));
         for (sw.cases) |case| {
