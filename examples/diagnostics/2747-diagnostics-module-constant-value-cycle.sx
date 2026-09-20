@@ -4,8 +4,12 @@ Spread :: A{..Spread};
 First :: A{..Second};
 Second :: A{pz = First.pz};
 
+apply :: (f: $F/(i64) -> i64, x: i64) -> i64 { return f(x); }
+Lambda :: A{pz = apply(|x: i64| -> i64 x + Lambda.pz, 1)};
+
 main :: () {
     plain := Plain;
     spread := Spread;
     mutual := First;
+    lambda := Lambda;
 }

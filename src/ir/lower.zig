@@ -677,7 +677,7 @@ pub const Lowering = struct {
     protocol_ast_by_type: std.AutoHashMap(TypeId, *const ast.ProtocolDecl),
     program_index: ProgramIndex,
     current_source_file: ?[]const u8 = null, // source file of function currently being lowered
-    /// Compiling a separate function body does not evaluate its caller's constants.
+    /// Uncached nested bodies remain part of the active constant expansion.
     module_const_frame: ?*const ConstFoldFrame = null,
     // Implicit Context parameter machinery. When the program imports
     // `std.sx` (and therefore declares `Context :: struct {...}`), every
@@ -1276,6 +1276,11 @@ pub const Lowering = struct {
             l.pending_callable_return = null;
             l.fixed_callable_ret = null;
             l.lambda_sig_target = null;
+            return g;
+        }
+
+        pub fn enterCached(l: *Lowering) NestedBodyGuard {
+            const g = enter(l);
             l.module_const_frame = null;
             return g;
         }
