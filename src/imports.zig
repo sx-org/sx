@@ -873,6 +873,12 @@ pub const DeclTable = struct {
         return self.files.get(path);
     }
 
+    pub fn findEnvironment(self: *const DeclTable, source: []const u8, path: []const []const u8) ?EnvironmentId {
+        const root = self.fileEnvironment(source) orelse return null;
+        if (path.len == 0) return root;
+        return self.scoped_environments.get(.{ .source = self.environment(root).source, .scope_path = path });
+    }
+
     fn indexFile(self: *DeclTable, path: []const u8, id: EnvironmentId) !void {
         const owned = try self.alloc.dupe(u8, path);
         errdefer self.alloc.free(owned);
