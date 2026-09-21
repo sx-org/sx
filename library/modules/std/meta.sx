@@ -125,9 +125,9 @@ TryResult :: ($T: Type) -> Type {
 makeVariant :: ($E: Type, idx: i64, payload: $P) -> E {
     out : E = ---;
     c.memset(*out, 0, @sizeOf(E));   // clear tag padding + unused payload bytes
-    tagPtr : *i64 = (*out).(*i64);
+    tagPtr : *i64 = @reinterpret(*i64, *out);
     tagPtr.* = idx;
-    payPtr : *P = ((*out).(i64) + @sizeOf(i64)).(*P);
+    payPtr : *P = @reinterpret(*P, @reinterpret(usize, *out) + @sizeOf(i64).(usize));
     payPtr.* = payload;
     return out;
 }

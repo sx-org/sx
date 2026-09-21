@@ -1,0 +1,5 @@
+error: no conversion from 'Pair' to 'string'
+  --> examples/diagnostics/pair-string-explicit.sx:2:35
+   |
+ 2 | main :: () { pair := Pair{}; s := pair.(string); }
+   |                                   ^^^^^^^^^^^^^

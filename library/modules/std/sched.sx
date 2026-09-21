@@ -216,7 +216,7 @@ Scheduler :: struct {
         self.nSpawned = self.nSpawned + 1;
 
         top := bootStack(f, STACK);
-        f.ctx.regs[0]  = f.(u64);             // x19 = self (→ x0 in the tramp)
+        f.ctx.regs[0]  = @reinterpret(usize, f).(u64);             // x19 = self (→ x0 in the tramp)
         f.ctx.regs[1]  = @reinterpret(u64, fibDispatch);  // x20 = dispatch entry (tramp `br`s to it)
         f.ctx.regs[10] = 0;                // fp
         f.ctx.regs[11] = @reinterpret(u64, fibTramp);     // lr → trampoline
@@ -623,7 +623,7 @@ impl Io for Scheduler {
         // A written env makes the body a value, so `spawn`'s `closure` funds its
         // one heap copy from the allocator `spawn` holds.
         f := self.spawn(||_{ entry, arg } {
-            entryFn := entry.((*void) -> void);
+            entryFn := @reinterpret((*void) -> void, entry);
             entryFn(arg);
         });
         // Stash the cancel-flag back-ref: `suspendRaw` consults it on
@@ -865,7 +865,7 @@ bootStack :: (f: *Fiber, size: i64) -> u64 {
     region : *void = c.mmap(null, total, PROT_RW, MAP_AP, -1, 0);
     // mmap signals failure with MAP_FAILED = (void*)-1 (NOT null). Handing a
     // wild SP to the switch would `ret` onto garbage — bail loudly instead.
-    if region == -1 {
+    if @reinterpret(isize, region) == -1 {
         print("sched: mmap failed for a {}-byte fiber stack\n", total);
         c.abort();
     }
@@ -879,7 +879,7 @@ bootStack :: (f: *Fiber, size: i64) -> u64 {
         print("sched: mprotect(PROT_NONE) failed to arm the stack guard page\n");
         c.abort();
     }
-    usable : u64 = region.(u64) + GUARD;
+    usable : u64 = @reinterpret(usize, region).(u64) + GUARD;
     top : u64 = usable + size;
     return top - (top % 16);   // 16-byte aligned stack top (AAPCS)
 }

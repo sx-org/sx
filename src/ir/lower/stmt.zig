@@ -580,13 +580,7 @@ pub fn bindNamedReturnSlots(self: *Lowering, fd: *const ast.FnDecl, ret_ty: Type
             const dval = self.lowerExpr(dn);
             self.target_type = saved_target;
             const dval_ty = self.builder.getRefType(dval);
-            // Reject a default whose type has NO coercion to the slot type and a
-            // mismatched byte width (e.g. `sum: i32 = "hi"`) — a `.none` plan
-            // would pass the value through unchanged and overrun / under-fill the
-            // slot, corrupting memory (the same guard as plain annotated
-            // assignment). A same-width `.none` (`p: *void = typed_ptr`)
-            // is a legitimate reinterpretation and stays allowed.
-            if (!self.externalErrorsExist() and dval_ty != .unresolved and self.noneReinterpretIsUnsafe(dval_ty, fty)) {
+            if (!self.externalErrorsExist() and dval_ty != .unresolved and !self.conversionAvailable(dval_ty, fty, .implicit)) {
                 if (self.diagnostics) |d| {
                     d.addFmt(.err, dn.span, "named return '{s}' has a default of type '{s}' that does not match its declared type '{s}'", .{ nm, self.formatTypeName(dval_ty), self.formatTypeName(fty) });
                     self.assignability_error_count += 1;
@@ -1133,7 +1127,7 @@ pub fn lowerConstDecl(self: *Lowering, cd: *const ast.ConstDecl) void {
     } else {
         self.target_type = null;
     }
-    const ref = self.lowerMarkedExpr(cd.value, true);
+    var ref = self.lowerMarkedExpr(cd.value, true);
     self.target_type = saved_target;
     const ref_ty = self.builder.getRefType(ref);
     const ty = annotated orelse ref_ty;
@@ -1143,11 +1137,13 @@ pub fn lowerConstDecl(self: *Lowering, cd: *const ast.ConstDecl) void {
     }
     if (rejectVoidInitializer(self, cd.value, cd.name, ref_ty, errs_before)) return;
 
-    // An annotated constant whose initializer cannot coerce to the declared type
-    // would be bound under a type its bytes don't match — diagnose
-    // rather than let a later read reinterpret the wrong-shape value.
     if (cd.type_annotation != null) {
-        _ = self.checkAssignable(self.builder.getRefType(ref), ty, cd.value.span, "initialize", cd.name, cd.value);
+        if (!self.checkAssignable(ref_ty, ty, cd.value.span, "initialize", cd.name, cd.value)) {
+            ref = self.buildDefaultValue(ty);
+        } else if (ref_ty != ty and ref_ty != .void and ty != .void) {
+            const checked = self.coerceChecked(ref, ref_ty, ty);
+            ref = if (checked.refused) self.buildDefaultValue(ty) else checked.ref;
+        }
     }
 
     if (self.scope) |scope| {

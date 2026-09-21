@@ -63,7 +63,7 @@ countOccurrences :: (value: string, needle: string) -> i64 {
 }
 
 streamBody :: (ctx: usize, offset: i64, dst: [*]u8, cap: i64) -> i64 {
-    app : *App = xx ctx;
+    app : *App = @reinterpret(*App, ctx);
     _ := app.streamCalls.fetchAdd(1, .relaxed);
     if offset >= app.body.len { return 0; }
     n := app.body.len - offset;
@@ -86,7 +86,7 @@ faultAfter :: (ctx: usize, offset: i64, dst: [*]u8, cap: i64) -> i64 {
 }
 
 hugeTinyPieces :: (ctx: usize, offset: i64, dst: [*]u8, cap: i64) -> i64 {
-    app : *App = xx ctx;
+    app : *App = @reinterpret(*App, ctx);
     if offset >= HUGE_CALLS { return 0; }
     _ := app.hugeCalls.fetchAdd(1, .relaxed);
     dst[0] = 'a';
@@ -94,7 +94,7 @@ hugeTinyPieces :: (ctx: usize, offset: i64, dst: [*]u8, cap: i64) -> i64 {
 }
 
 route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
-    app : *App = xx ctx;
+    app : *App = @reinterpret(*App, ctx);
     if req.path == "/fixed" { resp.body = app.body; return; }
     if req.path == "/stream" { resp.stream(streamBody, ctx); return; }
     if req.path == "/n204-fixed" { resp.status = 204; resp.body = app.body; return; }
@@ -318,7 +318,7 @@ runMode :: (app: *App, mode: i64, port: i64) -> bool {
     };
     if mode == 1 { cfg.threadPoolCount = 2; }
     if mode == 2 { cfg.fibers = runner; }
-    srv, se := http.Server.init(cfg, route, xx app);
+    srv, se := http.Server.init(cfg, route, @reinterpret(usize, app));
     if se { runner.deinit(); return false; }
     t, te := thread.Thread.spawn(serverEntry, *srv);
     if te { srv.close(); runner.deinit(); return false; }

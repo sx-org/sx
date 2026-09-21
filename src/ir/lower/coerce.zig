@@ -196,32 +196,11 @@ fn refuseInferredReerase(self: *Lowering, dst_ty: TypeId) Ref {
 /// conversions, then `@convert` funded from the context allocator when they
 /// make no progress. A pair neither rung takes is a diagnostic.
 pub fn lowerCoerce(self: *Lowering, operand: Ref, operand_node: *const Node, src_ty: TypeId, dst_ty: TypeId) Ref {
-    const result = self.coerceExplicit(operand, src_ty, dst_ty);
-    if (self.coercionResolver().classify(src_ty, dst_ty).refuses()) return result;
-
-    if (src_ty != dst_ty and result == operand) {
-        if (self.lowerConvert(operand, operand_node, src_ty, dst_ty, null)) |converted| {
-            return converted;
-        }
-    }
-
-    if (src_ty != dst_ty and result == operand) {
-        if (self.diagnostics) |d| {
-            const plan = self.coercionResolver().classify(src_ty, dst_ty);
-            const allowed_reinterpret = plan == .ptr_int_bitcast or plan == .unbox_any or
-                (plan == .none and sameStoreWidth(self, src_ty, dst_ty) and
-                    isAggregateValueKind(self, src_ty) and isAggregateValueKind(self, dst_ty));
-            const pointer_pun = plan == .none and isPointerValueKind(self, src_ty) and
-                (isPointerValueKind(self, dst_ty) or isFunctionType(self, dst_ty));
-            if (!allowed_reinterpret and !pointer_pun) {
-                const cs = self.builder.current_span;
-                d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "no conversion from '{s}' to '{s}'", .{
-                    self.formatTypeName(src_ty), self.formatTypeName(dst_ty),
-                });
-            }
-        }
-    }
-    return result;
+    if (self.coercionResolver().classify(src_ty, dst_ty) != .none)
+        return self.coerceExplicit(operand, src_ty, dst_ty);
+    if (self.lowerConvert(operand, operand_node, src_ty, dst_ty, null)) |converted| return converted;
+    diagnoseUnmodeledCoercion(self, src_ty, dst_ty, .explicit);
+    return self.builder.constUndef(dst_ty);
 }
 
 fn implicitIntegerConversion(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) ?bool {
@@ -1213,19 +1192,6 @@ pub fn coerceChecked(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId) 
     return .{ .ref = converted, .refused = after != before };
 }
 
-/// Is `node` an explicit cast — `xx expr` or a postfix `expr.(T)`? Such a
-/// value is the user's deliberate opt-in to a reinterpretation that has no
-/// standard coercion (e.g. pointer↔int, function↔fn-pointer): the `.none`
-/// passthrough in `coerceMode` is the intended escape hatch there, so the
-/// assignability guard must NOT fire for it.
-fn initIsExplicitCast(node: *const Node) bool {
-    return switch (node.data) {
-        .unary_op => |u| u.op == .xx,
-        .postfix_cast => true,
-        else => false,
-    };
-}
-
 /// Is this weld into a set slot one that membership refuses? A set destination is
 /// decided by the source's DECLARATION: `any` holds a member rather than a set, a
 /// non-member is not what the slot carries, and a member never fails — whatever the
@@ -1260,16 +1226,16 @@ const AssignDiag = union(enum) {
 };
 
 /// Guard a store into an explicitly-annotated slot against a silent bit-mangle.
-pub fn checkAssignable(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: ast.Span, verb: []const u8, name: []const u8, init_node: ?*const Node) bool {
-    return checkAssignableWith(self, src_ty, dst_ty, span, init_node, .{ .ordinary = .{ .verb = verb, .name = name } });
+pub fn checkAssignable(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: ast.Span, verb: []const u8, name: []const u8, _: ?*const Node) bool {
+    return checkAssignableWith(self, src_ty, dst_ty, span, .{ .ordinary = .{ .verb = verb, .name = name } });
 }
 
 /// `checkAssignable` for the write an `@Init(dst_ty)` formation performs.
-pub fn checkFormationWritable(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: ast.Span, init_node: ?*const Node) bool {
-    return checkAssignableWith(self, src_ty, dst_ty, span, init_node, .formation);
+pub fn checkFormationWritable(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: ast.Span, _: ?*const Node) bool {
+    return checkAssignableWith(self, src_ty, dst_ty, span, .formation);
 }
 
-fn checkAssignableWith(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: ast.Span, init_node: ?*const Node, diag: AssignDiag) bool {
+fn checkAssignableWith(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: ast.Span, diag: AssignDiag) bool {
     if (src_ty == dst_ty) return true;
     // Suppress a cascade onto an error that is NOT this guard's own: a
     // pre-lowering "unknown type" (the annotation resolved to a poison stub) or
@@ -1281,14 +1247,6 @@ fn checkAssignableWith(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: as
     if (self.externalErrorsExist()) return true;
     // An unresolved operand was already diagnosed at its origin.
     if (src_ty == .unresolved or dst_ty == .unresolved) return true;
-    if (src_ty == .void or dst_ty == .void) return true;
-    // An explicit `xx`/`.(T)` is the user opting into a reinterpretation that
-    // has no standard coercion — leave the escape hatch intact, width be damned.
-    if (init_node) |n| if (initIsExplicitCast(n)) return true;
-    // A set slot is filled by MEMBERSHIP, and that question is asked BEFORE the
-    // same-width reinterpretation this guard allows everywhere else: a non-member
-    // of the slot's own size is still not the slot, and passing its bytes through
-    // types them as a set the program then dispatches on.
     if (setWeldRefused(self, src_ty, dst_ty)) {
         if (src_ty == .any) {
             if (self.refuseSetFromAny(dst_ty, span)) self.assignability_error_count += 1;
@@ -1307,9 +1265,6 @@ fn checkAssignableWith(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: as
         }
         return false;
     }
-    // Two callables of one shape are the same width, which the reinterpretation
-    // rule below reads as legitimate — but a slot calls through exactly the
-    // channel it names, so the channels are asked about first.
     if (self.slotReturnType(src_ty)) |src_ret| {
         if (self.slotReturnType(dst_ty)) |dst_ret| {
             if (!self.checkSlotChannel(src_ret, dst_ret, span)) {
@@ -1318,7 +1273,12 @@ fn checkAssignableWith(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: as
             }
         }
     }
-    if (!self.noneReinterpretIsUnsafe(src_ty, dst_ty)) return true;
+    if (self.conversionAvailable(src_ty, dst_ty, .implicit)) return true;
+    // Lowering owns the specific refusal diagnostics for these pairs.
+    const plan = self.coercionResolver().classify(src_ty, dst_ty);
+    if (plan.refuses() or plan == .unbox_any) return true;
+    if (!src_ty.isBuiltin() and !dst_ty.isBuiltin() and
+        self.module.types.get(src_ty) == .@"error" and self.module.types.get(dst_ty) == .@"error") return true;
     if (self.diagnostics) |d| {
         switch (diag) {
             .formation => d.addFmt(.err, span, "'{s}' cannot form an initializer for '{s}': no conversion applies", .{ self.formatSourceTypeName(src_ty), self.formatSourceTypeName(dst_ty) }),
@@ -1329,35 +1289,9 @@ fn checkAssignableWith(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: as
     return false;
 }
 
-fn diagnosePointerIntegerWeld(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) void {
-    const d = self.diagnostics orelse return;
-    if (self.externalErrorsExist()) return;
-    const cs = self.builder.current_span;
-    const span = ast.Span{ .start = cs.start, .end = cs.end };
-    const why = if (isPointerValueKind(self, src_ty)) "an address is not a number" else "a number is not an address";
-    d.addFmt(.err, span, "cannot coerce a value of type '{s}' to '{s}': {s}; use an explicit cast (`.({s})`)", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty), why, self.formatTypeName(dst_ty) });
-    self.assignability_error_count += 1;
-}
-
-/// The shared "this implicit passthrough is exempt" gate for the unmodeled-
-/// coercion guards (`diagnoseUnmodeledCoercion` / `checkReturnable`), mirroring
-/// `checkAssignable`'s rules with the REF-based explicit-cast exemption:
-///   - an unresolved/void operand was already diagnosed at its origin;
-///   - a diverging value (`noreturn`) never materializes — nothing to weld;
-///   - the value is an explicit `xx`/`.(T)` passthrough (the user's opt-in);
-///   - the reinterpretation is same-width (`noneReinterpretIsUnsafe` false) —
-///     the legitimate bit-compatible family;
-///   - an external error already fired (suppress the cascade; the build
-///     aborts before the weld could run anyway).
-fn implicitNoneMismatchExempt(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId) bool {
-    if (src_ty == dst_ty) return true;
-    if (src_ty == .unresolved or dst_ty == .unresolved) return true;
-    if (src_ty == .void or dst_ty == .void) return true;
-    if (src_ty == .noreturn) return true;
-    if (self.xx_passthrough_refs.contains(val)) return true;
-    if (!self.noneReinterpretIsUnsafe(src_ty, dst_ty)) return true;
-    if (self.externalErrorsExist()) return true;
-    return false;
+fn recoveringConversion(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool {
+    return src_ty == .unresolved or dst_ty == .unresolved or
+        src_ty == .noreturn or self.externalErrorsExist();
 }
 
 /// The SOURCE-LEVEL signature type of the lowered function `fid`: the implicit
@@ -1412,21 +1346,18 @@ pub fn bareFnNameSignature(self: *Lowering, node: *const Node) ?TypeId {
     return functionSignatureType(self, fid);
 }
 
-/// The central weld guard: an IMPLICIT coercion classified `.none` with
-/// a byte-width mismatch is a silent weld — the passthrough value would be
-/// bit-reinterpreted into a differently-sized slot (return slot, call arg,
-/// field/element init, merge phi), corrupting data with no diagnostic. Emit
-/// the type-mismatch error; the caller still passes the value through (the
-/// build aborts via hasErrors before the IR could reach codegen).
-fn diagnoseUnmodeledCoercion(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId) void {
+fn diagnoseUnmodeledCoercion(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, mode: CoerceMode) void {
     {
         const cs = self.builder.current_span;
         if (refuseSetWeld(self, src_ty, dst_ty, .{ .start = cs.start, .end = cs.end })) return;
     }
-    if (implicitNoneMismatchExempt(self, val, src_ty, dst_ty)) return;
+    if (recoveringConversion(self, src_ty, dst_ty)) return;
     if (self.diagnostics) |d| {
         const cs = self.builder.current_span;
-        d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "cannot coerce a value of type '{s}' to '{s}': no implicit conversion applies", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty) });
+        switch (mode) {
+            .implicit => d.addFmt(.err, .{ .start = cs.start, .end = cs.end }, "cannot coerce a value of type '{s}' to '{s}': no implicit conversion applies", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty) }),
+            .explicit => d.addFmt(.err, .{ .start = cs.start, .end = cs.end }, "no conversion from '{s}' to '{s}'", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty) }),
+        }
         self.assignability_error_count += 1;
     }
 }
@@ -1437,9 +1368,9 @@ fn diagnoseUnmodeledCoercion(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: 
 /// false — otherwise `diagnoseUnmodeledCoercion` would fire a second, redundant
 /// diagnostic for the same weld. Shares `assignability_error_count` so the
 /// external-error suppression keeps working across both guards.
-pub fn checkReturnable(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, span: ast.Span) bool {
+pub fn checkReturnable(self: *Lowering, _: Ref, src_ty: TypeId, dst_ty: TypeId, span: ast.Span) bool {
     if (refuseSetWeld(self, src_ty, dst_ty, span)) return false;
-    if (implicitNoneMismatchExempt(self, val, src_ty, dst_ty)) return true;
+    if (recoveringConversion(self, src_ty, dst_ty) or self.conversionAvailable(src_ty, dst_ty, .implicit)) return true;
     if (self.diagnostics) |d| {
         d.addFmt(.err, span, "cannot return a value of type '{s}' where '{s}' is expected", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty) });
         self.assignability_error_count += 1;
@@ -1457,78 +1388,16 @@ pub fn externalErrorsExist(self: *Lowering) bool {
     return d.errorCount() > self.assignability_error_count;
 }
 
-/// Explicit-only error conversions and incompatible unmodeled stores are unsafe.
-/// Callers clear unresolved operands and explicit casts first.
-pub fn noneReinterpretIsUnsafe(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool {
-    if (src_ty == dst_ty) return false;
+/// Value-dependent checks (literal narrowing and optional presence) run in lowering.
+pub fn conversionAvailable(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, mode: CoerceMode) bool {
     const plan = self.coercionResolver().classify(src_ty, dst_ty);
-    if (plan == .error_to_int or plan == .single_to_many or plan == .void_to_c_function) return true;
-    if (plan != .none) return false;
-    const src_optional = !src_ty.isBuiltin() and self.module.types.get(src_ty) == .optional;
-    const dst_optional = !dst_ty.isBuiltin() and self.module.types.get(dst_ty) == .optional;
-    if (src_optional != dst_optional) return true;
-    if (isFunctionType(self, src_ty) or isFunctionType(self, dst_ty)) return true;
-    // An unmodeled pair where exactly ONE side is an aggregate value
-    // (struct/union/payload enum/array/tuple) is NEVER a legitimate
-    // bit-reinterpretation, width match or not: the aggregate's bytes pun
-    // into a scalar/pointer slot (a same-width `struct{i64}` passed where a
-    // pointer is expected). The same-width
-    // exemption below is for the scalar family only (`*T → [*]T`,
-    // integer and pointer words).
-    if (isAggregateValueKind(self, src_ty) != isAggregateValueKind(self, dst_ty)) return true;
-    // An unmodeled pair where exactly ONE side holds an ADDRESS is never a
-    // bit-compatible reinterpretation either, width match or not: a pointer and
-    // a same-width scalar occupy the same bytes but mean different things, so
-    // the store types an address as a number the program then does arithmetic
-    // on (or a number as an address it then dereferences). Pointer↔pointer
-    // stays in the same-width family below (`*T → [*]T`) unless the two bottom
-    // out on different structs.
-    if (isPointerValueKind(self, src_ty) != isPointerValueKind(self, dst_ty)) return true;
-    if (structPointeesDiffer(self, src_ty, dst_ty)) return true;
-    if (failableChannelEscapes(self, src_ty, dst_ty)) return true;
-    return !sameStoreWidth(self, src_ty, dst_ty);
-}
-
-fn structPointeesDiffer(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool {
-    var src = src_ty;
-    var dst = dst_ty;
-    while (true) {
-        const src_pointee = pointeeOf(self, src) orelse return false;
-        const dst_pointee = pointeeOf(self, dst) orelse return false;
-        if (src_pointee == dst_pointee) return false;
-        if (!isStructType(self, src_pointee) or !isStructType(self, dst_pointee)) {
-            src = src_pointee;
-            dst = dst_pointee;
-            continue;
-        }
-        if (self.getProtocolInfo(dst_pointee) != null) return false;
-        return true;
-    }
-}
-
-fn pointeeOf(self: *Lowering, ty: TypeId) ?TypeId {
-    if (ty.isBuiltin()) return null;
-    return switch (self.module.types.get(ty)) {
-        .pointer => |p| p.pointee,
-        .many_pointer => |p| p.element,
-        else => null,
+    if (plan == .none or plan.refuses()) return false;
+    return switch (plan) {
+        .error_to_int, .single_to_many, .void_to_c_function, .unbox_any => mode == .explicit,
+        .optional_wrap => self.conversionAvailable(src_ty, self.module.types.get(dst_ty).optional.child, mode),
+        .optional_to_optional => self.conversionAvailable(self.module.types.get(src_ty).optional.child, self.module.types.get(dst_ty).optional.child, mode),
+        else => true,
     };
-}
-
-fn isStructType(self: *Lowering, ty: TypeId) bool {
-    return !ty.isBuiltin() and self.module.types.get(ty) == .@"struct";
-}
-
-/// A failable whose members the destination failable's channel does not hold.
-/// Two channels are one width whenever their payload areas coincide, so the
-/// width rule reads the store as bit-compatible, but a `catch` over the
-/// destination can never name the member the value carries.
-fn failableChannelEscapes(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool {
-    if (src_ty.isBuiltin() or dst_ty.isBuiltin()) return false;
-    const src = self.module.types.get(src_ty);
-    const dst = self.module.types.get(dst_ty);
-    if (src != .failable or dst != .failable) return false;
-    return !self.errorSetValueRetypeIsLegal(src.failable.err, dst.failable.err);
 }
 
 fn isFunctionType(self: *Lowering, ty: TypeId) bool {
@@ -1546,38 +1415,6 @@ pub fn isPointerValueKind(self: *Lowering, ty: TypeId) bool {
     };
 }
 
-/// A type whose values are AGGREGATE-shaped at the IR level, for the pun
-/// test above — the classification is by representation, not by kind
-/// nominality: `string` ({ptr,len}), `any` ({data,typeId}), slices, and
-/// closures ({fn,env}) are aggregate-IR even though string/any are
-/// builtins. Aggregate↔aggregate same-width reinterprets are the
-/// legitimate raw-view family (string→@Slice, closure→@Closure);
-/// only an aggregate↔scalar pair is unrepresentable. Optionals are handled
-/// separately above. Vectors are deliberately in NEITHER set because their
-/// representation varies — they never pun-flag.
-fn isAggregateValueKind(self: *Lowering, ty: TypeId) bool {
-    if (ty == .any) return true;
-    return switch (self.module.types.get(ty)) {
-        .string, .@"struct", .@"union", .array, .slice, .closure, .failable => true,
-        .@"enum" => |e| e.hasPayload(),
-        else => false,
-    };
-}
-
-/// ABI/store width of `a` and `b` are equal — the safety test for an unmodeled
-/// (`.none`) reinterpreting store (see `noneReinterpretIsUnsafe`). Uses
-/// `typeSizeBytes` (the LLVM-accurate ABI size, with natural field alignment),
-/// NOT `sizeOf` (which pads every aggregate field to ≥8 and would report
-/// `struct{i32,i32}` as 16 — coincidentally matching a 16-byte `string` and
-/// letting the raw store overrun the real 8-byte slot). Comptime-only `pack`
-/// types have no runtime layout; a pack reaching a store site is a separate,
-/// already-diagnosed misuse, so treat it as "same width" to avoid a spurious
-/// second error.
-fn sameStoreWidth(self: *Lowering, a: TypeId, b: TypeId) bool {
-    if (self.module.types.get(a) == .pack or self.module.types.get(b) == .pack) return true;
-    return self.module.types.typeSizeBytes(a) == self.module.types.typeSizeBytes(b);
-}
-
 fn refuseImplicitNumericConversion(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) Ref {
     if (!self.externalErrorsExist()) {
         if (self.diagnostics) |d| {
@@ -1590,32 +1427,6 @@ fn refuseImplicitNumericConversion(self: *Lowering, src_ty: TypeId, dst_ty: Type
 }
 
 pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mode: CoerceMode) Ref {
-    // Pointer-to-concrete (or concrete-storage value) → `*P`: materialize
-    // the borrowed VIEW here, at the node-less layer, so EVERY store site
-    // agrees with the node-aware decl/arg arms (an assignment
-    // `g = p` classified *C → *P as a plain pointer passthrough — the raw
-    // pointer word was stored as if it were a *P and the first dispatch
-    // read a garbage vtable out of the concrete struct's bytes).
-    if (src_ty != dst_ty and !dst_ty.isBuiltin() and !src_ty.isBuiltin()) {
-        const di = self.module.types.get(dst_ty);
-        if (di == .pointer and self.getProtocolInfo(di.pointer.pointee) != null and
-            self.getProtocolInfo(src_ty) == null)
-        {
-            const si = self.module.types.get(src_ty);
-            if (si == .pointer and self.getProtocolInfo(si.pointer.pointee) == null) {
-                if (self.viewOfConcreteAddr(val, si.pointer.pointee, dst_ty)) |v| return v;
-            } else if (si == .@"struct") {
-                if (self.refStorageAddress(val)) |addr| {
-                    if (self.viewOfConcreteAddr(addr, src_ty, dst_ty)) |v| return v;
-                }
-                if (self.diagnostics) |d| {
-                    const cs = self.builder.current_span;
-                    d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "cannot store a '{s}' rvalue into '{s}' — an rvalue has no durable storage to view; bind it to a local first, or erase to an owned '{s}' value", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty), self.formatTypeName(di.pointer.pointee) });
-                }
-                return self.builder.constNull(dst_ty);
-            }
-        }
-    }
     if (mode == .implicit) {
         const cs = self.builder.current_span;
         const span = ast.Span{ .start = cs.start, .end = cs.end };
@@ -1631,53 +1442,49 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
                 return refuseImplicitNumericConversion(self, src_ty, dst_ty);
             }
         }
-        if (!self.xx_passthrough_refs.contains(val)) {
-            self.checkErrorSetValueCoercion(src_ty, dst_ty, span);
-            if (self.slotReturnType(src_ty)) |src_ret| {
-                if (self.slotReturnType(dst_ty)) |dst_ret| {
-                    if (!self.checkSlotChannel(src_ret, dst_ret, span)) {
-                        self.assignability_error_count += 1;
-                    }
+        self.checkErrorSetValueCoercion(src_ty, dst_ty, span);
+        if (self.slotReturnType(src_ty)) |src_ret| {
+            if (self.slotReturnType(dst_ty)) |dst_ret| {
+                if (!self.checkSlotChannel(src_ret, dst_ret, span)) {
+                    self.assignability_error_count += 1;
                 }
             }
         }
     }
-    // PLANNING: classify the built-in coercion (conversions.zig).
-    // EMISSION: each arm below reproduces the original lowering.
     switch (self.coercionResolver().classify(src_ty, dst_ty)) {
+        .borrow_protocol => {
+            const src = self.module.types.get(src_ty);
+            if (src == .pointer) {
+                if (self.viewOfConcreteAddr(val, src.pointer.pointee, dst_ty)) |view| return view;
+            } else if (self.refStorageAddress(val)) |addr| {
+                if (self.viewOfConcreteAddr(addr, src_ty, dst_ty)) |view| return view;
+            } else if (self.diagnostics) |d| {
+                const cs = self.builder.current_span;
+                const pointee = self.module.types.get(dst_ty).pointer.pointee;
+                d.addFmt(.err, .{ .start = cs.start, .end = cs.end }, "cannot store a '{s}' rvalue into '{s}' — an rvalue has no durable storage to view; bind it to a local first, or erase to an owned '{s}' value", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty), self.formatTypeName(pointee) });
+            }
+            return self.builder.constUndef(dst_ty);
+        },
         .no_op => return if (src_ty == dst_ty) val else self.builder.emit(.{
             .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty },
         }, dst_ty),
         .integer_retype, .error_set_retype => return self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
         .none => {
-            switch (mode) {
-                // Pointer-shaped EXPLICIT cast (`*T`, `[*]T`): same address,
-                // RESULT typed `dst_ty`. An inferred `live := p.(*i64)` binds
-                // off that ref. LLVM bitcast is a no-op under opaque pointers.
-                .explicit => {
-                    if (src_ty != dst_ty and isPointerValueKind(self, src_ty) and
-                        (isPointerValueKind(self, dst_ty) or isFunctionType(self, dst_ty)))
-                    {
-                        const retyped = self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty);
-                        self.xx_passthrough_refs.put(retyped, {}) catch {};
-                        return retyped;
-                    }
-                    // Same-size aggregate pun (string ↔ @Slice, closure ↔ @Closure).
-                    if (src_ty != dst_ty and isAggregateValueKind(self, src_ty) and
-                        isAggregateValueKind(self, dst_ty) and sameStoreWidth(self, src_ty, dst_ty))
-                    {
-                        const slot = self.builder.alloca(dst_ty);
-                        self.builder.store(slot, self.buildDefaultValue(dst_ty));
-                        self.builder.store(slot, val);
-                        const loaded = self.builder.load(slot, dst_ty);
-                        self.xx_passthrough_refs.put(loaded, {}) catch {};
-                        return loaded;
-                    }
-                    self.xx_passthrough_refs.put(val, {}) catch {};
-                },
-                .implicit => diagnoseUnmodeledCoercion(self, val, src_ty, dst_ty),
-            }
+            diagnoseUnmodeledCoercion(self, src_ty, dst_ty, mode);
             return val;
+        },
+        .failable_retype => {
+            const src = self.module.types.get(src_ty).failable;
+            const dst = self.module.types.get(dst_ty).failable;
+            var values = std.ArrayList(Ref).empty;
+            defer values.deinit(self.alloc);
+            const count = self.module.types.failableValueSlotCount(src);
+            for (0..count) |i| {
+                const ty = self.module.types.failableValueSlotType(src, i);
+                values.append(self.alloc, self.builder.emit(.{ .struct_get = .{ .base = val, .field_index = @intCast(i), .base_type = src_ty } }, ty)) catch unreachable;
+            }
+            const tag = self.builder.emit(.{ .struct_get = .{ .base = val, .field_index = @intCast(count), .base_type = src_ty } }, src.err);
+            return self.buildFailableTuple(dst_ty, values.items, self.coerceMode(tag, src.err, dst.err, mode));
         },
         // Unbox Any → concrete type. An IMPLICIT unbox (`s : S = some_any`) is
         // rejected: the unbox blindly reinterprets the boxed payload
@@ -1923,7 +1730,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         },
         .error_to_int => {
             if (mode == .implicit) {
-                diagnoseUnmodeledCoercion(self, val, src_ty, dst_ty);
+                diagnoseUnmodeledCoercion(self, src_ty, dst_ty, mode);
                 return val;
             }
             const tag = self.builder.enumTag(val, .i32);
@@ -1934,21 +1741,9 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             const as_backing = self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = backing } }, backing);
             return self.coerceMode(as_backing, backing, dst_ty, mode);
         },
-        // Ptr ↔ Int — the `xx`/`.(T)` escape hatch to/from an integer-typed
-        // slot, and ONLY that: the spec lists no implicit pointer↔integer
-        // conversion, so an implicit weld is refused rather than typing an
-        // address as a number the program then does arithmetic on. Emits a
-        // `bitcast` IR op; emit_llvm.zig's bitcast arm dispatches to
-        // LLVMBuildPtrToInt / LLVMBuildIntToPtr since LLVMBuildBitCast itself
-        // doesn't accept ptr↔int. The op is still emitted after the refusal so
-        // lowering finishes; `hasErrors()` aborts the build.
-        .ptr_int_bitcast => {
-            if (mode == .implicit) diagnosePointerIntegerWeld(self, src_ty, dst_ty);
-            return self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty);
-        },
         .single_to_many, .void_to_c_function => {
             if (mode == .implicit) {
-                diagnoseUnmodeledCoercion(self, val, src_ty, dst_ty);
+                diagnoseUnmodeledCoercion(self, src_ty, dst_ty, mode);
                 return val;
             }
             return self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty);
@@ -2123,16 +1918,12 @@ pub fn coerceCallArgs(self: *Lowering, args: []Ref, params: []const Function.Par
         if (!src_ty.isBuiltin() and !dst_ty.isBuiltin()) {
             const src_info = self.module.types.get(src_ty);
             const dst_info = self.module.types.get(dst_ty);
-            // Array → many_pointer decay: alloca the array, GEP to first
-            // element. A destination naming a terminator the array does not
-            // carry is no decay — it falls to the classifier's refusal below.
             if (src_info == .array and dst_info == .many_pointer and
-                !self.coercionResolver().classify(src_ty, dst_ty).refuses())
+                self.coercionResolver().classify(self.module.types.ptrTo(src_ty), dst_ty) == .array_ptr_to_many_ptr)
             {
                 const slot = self.builder.alloca(src_ty);
                 self.builder.store(slot, args[i]);
-                const zero = self.builder.constInt(0, .i64);
-                args[i] = self.builder.emit(.{ .index_gep = .{ .lhs = slot, .rhs = zero } }, dst_ty);
+                args[i] = self.coerceToType(slot, self.builder.getRefType(slot), dst_ty);
                 continue;
             }
             // Implicit address-of: passing T value where *T is expected → alloca + store

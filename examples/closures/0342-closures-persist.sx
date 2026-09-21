@@ -34,11 +34,11 @@ main :: () {
 
     // Already erased: returned unchanged, environment shared not copied.
     again := closure(lam);
-    print("identity {} {}\n", again(2), again.(@Closure).env == lam.(@Closure).env);
+    print("identity {} {}\n", again(2), @reinterpret(@Closure, again).env == @reinterpret(@Closure, lam).env);
 
     // A zero-sized environment funds nothing.
     empty := closure(|x: i64|_{ } -> i64 x * 2);
-    print("empty {} {}\n", empty(21), empty.(@Closure).env == null);
+    print("empty {} {}\n", empty(21), @reinterpret(@Closure, empty).env == null);
 
     // The allocator is chosen, or taken from the context.
     arena := Arena.init(context.allocator, 4096);

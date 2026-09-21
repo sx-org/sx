@@ -756,15 +756,6 @@ pub const Lowering = struct {
     /// from name-keyed narrowing to the Ref-keyed `coerceMode` unwrap gate.
     /// Cleared per function body (the `Ref` space is per-function).
     narrowed_refs: std.AutoHashMap(Ref, void) = undefined,
-    /// The SSA `Ref`s an EXPLICIT cast (`xx` / postfix `.(T)`) passed through
-    /// UNCHANGED — no modeled conversion and no user `Into` applied, i.e. the
-    /// user's deliberate opt-in to a bit-reinterpretation. Consulted by the
-    /// implicit unmodeled-coercion guard (`coerceMode`'s `.none` arm and
-    /// `checkReturnable`) so the explicit escape hatch stays open when the
-    /// passthrough value later flows through an implicit coercion site.
-    /// Per-function (the `Ref` space is per-function), cleared alongside
-    /// `narrowed_refs`.
-    xx_passthrough_refs: std.AutoHashMap(Ref, void) = undefined,
     force_block_value: bool = false, // set by lowerDemandedBody for a demand that wants a value, to extract if-else values
     // Set while lowering a NAMED multi-return function body (`-> (x: A, y: B)`):
     // the slot names (1:1 with the return tuple's fields; a trailing "!" marks
@@ -1121,7 +1112,6 @@ pub const Lowering = struct {
         error_boundary: ?ErrorBoundary,
         narrowed: std.AutoHashMap(BindingId, void),
         narrowed_refs: std.AutoHashMap(Ref, void),
-        xx_passthrough_refs: std.AutoHashMap(Ref, void),
         break_target: ?BlockId,
         continue_target: ?BlockId,
         loop_defer_base: usize,
@@ -1150,7 +1140,6 @@ pub const Lowering = struct {
                 // narrowing state and the outer state is restored after.
                 .narrowed = l.narrowed,
                 .narrowed_refs = l.narrowed_refs,
-                .xx_passthrough_refs = l.xx_passthrough_refs,
                 // Loop targets and build replays are lexical to one body for
                 // the same reasons `NestedBodyGuard` states.
                 .break_target = l.break_target,
@@ -1160,7 +1149,6 @@ pub const Lowering = struct {
             };
             l.narrowed = std.AutoHashMap(BindingId, void).init(l.alloc);
             l.narrowed_refs = std.AutoHashMap(Ref, void).init(l.alloc);
-            l.xx_passthrough_refs = std.AutoHashMap(Ref, void).init(l.alloc);
             l.break_target = null;
             l.continue_target = null;
             l.loop_defer_base = 0;
@@ -1204,8 +1192,6 @@ pub const Lowering = struct {
             l.narrowed = g.narrowed;
             l.narrowed_refs.deinit();
             l.narrowed_refs = g.narrowed_refs;
-            l.xx_passthrough_refs.deinit();
-            l.xx_passthrough_refs = g.xx_passthrough_refs;
             l.break_target = g.break_target;
             l.continue_target = g.continue_target;
             l.loop_defer_base = g.loop_defer_base;
@@ -1237,7 +1223,6 @@ pub const Lowering = struct {
         l: *Lowering,
         narrowed: std.AutoHashMap(BindingId, void),
         narrowed_refs: std.AutoHashMap(Ref, void),
-        xx_passthrough_refs: std.AutoHashMap(Ref, void),
         break_target: ?BlockId,
         continue_target: ?BlockId,
         loop_defer_base: usize,
@@ -1259,7 +1244,6 @@ pub const Lowering = struct {
                 .module_const_frame = l.module_const_frame,
                 .narrowed = l.narrowed,
                 .narrowed_refs = l.narrowed_refs,
-                .xx_passthrough_refs = l.xx_passthrough_refs,
                 .break_target = l.break_target,
                 .continue_target = l.continue_target,
                 .loop_defer_base = l.loop_defer_base,
@@ -1270,7 +1254,6 @@ pub const Lowering = struct {
             };
             l.narrowed = std.AutoHashMap(BindingId, void).init(l.alloc);
             l.narrowed_refs = std.AutoHashMap(Ref, void).init(l.alloc);
-            l.xx_passthrough_refs = std.AutoHashMap(Ref, void).init(l.alloc);
             l.break_target = null;
             l.continue_target = null;
             l.loop_defer_base = 0;
@@ -1295,8 +1278,6 @@ pub const Lowering = struct {
             g.l.narrowed = g.narrowed;
             g.l.narrowed_refs.deinit();
             g.l.narrowed_refs = g.narrowed_refs;
-            g.l.xx_passthrough_refs.deinit();
-            g.l.xx_passthrough_refs = g.xx_passthrough_refs;
             g.l.break_target = g.break_target;
             g.l.continue_target = g.continue_target;
             g.l.loop_defer_base = g.loop_defer_base;
@@ -1435,7 +1416,6 @@ pub const Lowering = struct {
             .env_lambdas = std.AutoHashMap(TypeId, *const ast.Lambda).init(module.alloc),
             .alias_cycle_diagnosed = std.AutoHashMap(usize, void).init(module.alloc),
             .narrowed_refs = std.AutoHashMap(Ref, void).init(module.alloc),
-            .xx_passthrough_refs = std.AutoHashMap(Ref, void).init(module.alloc),
             .convert_reentrancy = std.AutoHashMap(u64, void).init(module.alloc),
             .inferred_error_sets = std.AutoHashMap(imports_mod.DeclId, []const u32).init(module.alloc),
             .impl_method_names = std.StringHashMap(void).init(module.alloc),
@@ -3893,7 +3873,7 @@ pub const Lowering = struct {
     pub const checkAssignable = lower_coerce.checkAssignable;
     pub const checkFormationWritable = lower_coerce.checkFormationWritable;
     pub const checkReturnable = lower_coerce.checkReturnable;
-    pub const noneReinterpretIsUnsafe = lower_coerce.noneReinterpretIsUnsafe;
+    pub const conversionAvailable = lower_coerce.conversionAvailable;
     pub const externalErrorsExist = lower_coerce.externalErrorsExist;
     pub const coerceMode = lower_coerce.coerceMode;
     pub const diagNonIntegralNarrow = lower_coerce.diagNonIntegralNarrow;

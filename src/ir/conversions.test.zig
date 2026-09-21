@@ -39,17 +39,17 @@ test "conversions: classify covers the built-in coercion ladder" {
     try std.testing.expectEqual(Plan.int_to_float, cr.classify(.i32, .f64));
     try std.testing.expectEqual(Plan.float_to_int, cr.classify(.f64, .i32));
     const ptr_i64 = tt.ptrTo(.i64);
-    try std.testing.expectEqual(Plan.ptr_int_bitcast, cr.classify(ptr_i64, .i64));
-    try std.testing.expectEqual(Plan.ptr_int_bitcast, cr.classify(.i64, ptr_i64));
+    try std.testing.expectEqual(Plan.none, cr.classify(ptr_i64, .i64));
+    try std.testing.expectEqual(Plan.none, cr.classify(.i64, ptr_i64));
 
     const ptr_void = tt.ptrTo(.void);
     const many_i32 = tt.manyPtrTo(.i32);
     try std.testing.expectEqual(Plan.ptr_to_void, cr.classify(ptr_i64, ptr_void));
     try std.testing.expectEqual(Plan.ptr_to_void, cr.classify(many_i32, ptr_void));
     try std.testing.expectEqual(Plan.void_to_ptr, cr.classify(ptr_void, ptr_i64));
-    try std.testing.expect(!l.noneReinterpretIsUnsafe(ptr_i64, ptr_void));
-    try std.testing.expectEqual(Plan.ptr_int_bitcast, cr.classify(many_i32, .i64));
-    try std.testing.expectEqual(Plan.ptr_int_bitcast, cr.classify(.i64, many_i32));
+    try std.testing.expect(l.conversionAvailable(ptr_i64, ptr_void, .implicit));
+    try std.testing.expectEqual(Plan.none, cr.classify(many_i32, .i64));
+    try std.testing.expectEqual(Plan.none, cr.classify(.i64, many_i32));
 
     // Optional wrap / unwrap, and void → optional.
     const opt_i64 = tt.optionalOf(.i64);
@@ -192,7 +192,7 @@ test "conversions: classifyXX picks the xx-operator head decision" {
     try std.testing.expectEqual(XXPlan.coerce, cr.classifyXX(tt.optionalOf(a), opt_drawable));
 }
 
-test "conversions: unmodeled width-mismatched coercion is flagged unsafe" {
+test "conversions: conversion permission requires a modeled plan" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -202,31 +202,26 @@ test "conversions: unmodeled width-mismatched coercion is flagged unsafe" {
     const cr = CoercionResolver{ .l = &l };
     const tt = &module.types;
 
-    // The weld precondition: a 16-byte `string` flowing into an
-    // 8-byte `i64` slot has NO modeled coercion — the ladder yields `.none`,
-    // so the unsafe-store predicate must flag it (both directions).
     try std.testing.expectEqual(Plan.none, cr.classify(.string, .i64));
-    try std.testing.expect(l.noneReinterpretIsUnsafe(.string, .i64));
-    try std.testing.expect(l.noneReinterpretIsUnsafe(.i64, .string));
+    try std.testing.expect(!l.conversionAvailable(.string, .i64, .implicit));
+    try std.testing.expect(!l.conversionAvailable(.i64, .string, .implicit));
 
-    // A multi-field struct into a scalar slot: same class of weld.
     const p3_fields = &[_]ir_mod.TypeInfo.StructInfo.Field{
         .{ .name = tt.internString("x"), .ty = .i64 },
         .{ .name = tt.internString("y"), .ty = .i64 },
         .{ .name = tt.internString("z"), .ty = .i64 },
     };
     const p3 = tt.intern(.{ .@"struct" = .{ .name = tt.internString("P3"), .fields = alloc.dupe(ir_mod.TypeInfo.StructInfo.Field, p3_fields) catch unreachable } });
-    try std.testing.expect(l.noneReinterpretIsUnsafe(p3, .i64));
+    try std.testing.expect(!l.conversionAvailable(p3, .i64, .implicit));
 
-    try std.testing.expect(!l.noneReinterpretIsUnsafe(.i64, .isize));
+    try std.testing.expect(l.conversionAvailable(.i64, .isize, .implicit));
 
-    // Modeled coercions are never "unsafe none": the ladder handles them.
-    try std.testing.expect(!l.noneReinterpretIsUnsafe(.i32, .i64));
-    try std.testing.expect(!l.noneReinterpretIsUnsafe(.i64, tt.optionalOf(.i64)));
+    try std.testing.expect(l.conversionAvailable(.i32, .i64, .implicit));
+    try std.testing.expect(l.conversionAvailable(.i64, tt.optionalOf(.i64), .implicit));
 
     const opt_ptr = tt.optionalOf(tt.ptrTo(.i64));
     try std.testing.expectEqual(Plan.none, cr.classify(opt_ptr, .i64));
-    try std.testing.expect(l.noneReinterpretIsUnsafe(opt_ptr, .i64));
+    try std.testing.expect(!l.conversionAvailable(opt_ptr, .i64, .implicit));
 }
 
 test "conversions: a pointer welds only over its own struct" {
@@ -241,8 +236,8 @@ test "conversions: a pointer welds only over its own struct" {
     const box = tt.intern(.{ .@"struct" = .{ .name = tt.internString("Box"), .fields = alloc.dupe(ir_mod.TypeInfo.StructInfo.Field, &[_]ir_mod.TypeInfo.StructInfo.Field{.{ .name = tt.internString("n"), .ty = .i32 }}) catch unreachable } });
     const other = tt.intern(.{ .@"struct" = .{ .name = tt.internString("Other"), .fields = alloc.dupe(ir_mod.TypeInfo.StructInfo.Field, &[_]ir_mod.TypeInfo.StructInfo.Field{.{ .name = tt.internString("q"), .ty = .i32 }}) catch unreachable } });
 
-    try std.testing.expect(l.noneReinterpretIsUnsafe(tt.ptrTo(other), tt.ptrTo(box)));
-    try std.testing.expect(l.noneReinterpretIsUnsafe(tt.ptrTo(box), tt.manyPtrTo(box)));
+    try std.testing.expect(!l.conversionAvailable(tt.ptrTo(other), tt.ptrTo(box), .implicit));
+    try std.testing.expect(!l.conversionAvailable(tt.ptrTo(box), tt.manyPtrTo(box), .implicit));
 }
 
 test "conversions: pointer kinds preserve pointees and terminator guarantees" {
@@ -287,7 +282,7 @@ test "conversions: ObjC upcasts follow declared ancestors" {
     const cr = CoercionResolver{ .l = &l };
     try std.testing.expectEqual(Plan.objc_upcast, cr.classify(tt.ptrTo(child_ty), tt.ptrTo(root_ty)));
     try std.testing.expectEqual(Plan.none, cr.classify(tt.ptrTo(layer_ty), tt.ptrTo(child_ty)));
-    try std.testing.expect(l.noneReinterpretIsUnsafe(tt.ptrTo(layer_ty), tt.ptrTo(child_ty)));
+    try std.testing.expect(!l.conversionAvailable(tt.ptrTo(layer_ty), tt.ptrTo(child_ty), .implicit));
 }
 
 test "conversions: a failable welds only into a channel holding its members" {
@@ -307,8 +302,8 @@ test "conversions: a failable welds only into a channel holding its members" {
     const b = tt.internFailable(.i32, tt.errorSetType(.empty, &[_]u32{y}));
     const both = tt.internFailable(.i32, tt.errorSetType(.empty, &[_]u32{ x, y }));
 
-    try std.testing.expect(l.noneReinterpretIsUnsafe(a, b));
-    try std.testing.expect(!l.noneReinterpretIsUnsafe(a, both));
+    try std.testing.expect(!l.conversionAvailable(a, b, .implicit));
+    try std.testing.expect(l.conversionAvailable(a, both, .implicit));
 }
 
 test "conversions: classifyCompare meets pointers, numbers, and refuses mixed signedness" {
@@ -336,6 +331,6 @@ test "conversions: classifyCompare meets pointers, numbers, and refuses mixed si
     try std.testing.expectEqual(Meet.signedness, cr.classifyCompare(.i64, .u64));
 
     try std.testing.expectEqual(Meet{ .type = ptr_void }, cr.classifyCompare(ptr_i64, ptr_u8));
-    try std.testing.expectEqual(Meet{ .type = ptr_i64 }, cr.classifyCompare(ptr_i64, .i64));
-    try std.testing.expectEqual(Meet{ .type = ptr_void }, cr.classifyCompare(ptr_void, .i64));
+    try std.testing.expectEqual(Meet.incompatible, cr.classifyCompare(ptr_i64, .i64));
+    try std.testing.expectEqual(Meet.incompatible, cr.classifyCompare(ptr_void, .i64));
 }

@@ -36,8 +36,8 @@ main :: () -> i32 {
     sentinel : i32 = 42;
     pIn : *void = *sentinel;
     pOut := ffi_id_ptr(pIn);
-    addrIn  : u64 = xx pIn;
-    addrOut : u64 = xx pOut;
+    addrIn  : u64 = @reinterpret(usize, pIn).(u64);
+    addrOut : u64 = @reinterpret(usize, pOut).(u64);
     print("ffi_id_ptr roundtrip    = {}\n", addrIn == addrOut);
 
     // Arithmetic helpers — exercise multi-arg ABI

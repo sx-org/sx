@@ -3025,7 +3025,7 @@ are not written onward.
 | Signed vs unsigned, same width | error — write `a.(u64) < b` |
 | Two sequences of one element type (`[N]T`, `[N:X]T`, `[]T`, `[:X]T`, `string`) | their content (§Array Types); an array meets the slice |
 | Two pointers, any pointees (`*T`, `*void`, `[*]T`, `[*:X]T`, fn-ptr) | address bits / address order |
-| Pointer vs integer | the integer is an address-sized bit pattern: `region == -1`, `p != 0` |
+| Pointer vs integer | error; compare an address read with `@reinterpret(isize, p)` or compare the pointer with `null` |
 | `?T == T` / `?T == null` | unchanged |
 | Two error values, or an error against a `.Member` | no conversion — comparable iff one channel ⊆ the other ([§12 Comparison](#comparison)) |
 
@@ -3037,14 +3037,19 @@ An explicit `xx` in a comparison still takes its target from the OTHER operand:
 `t : <type of a> = xx b; a == t`. A comparison yields `bool`; the surrounding
 context is never the target of an operand.
 
-An explicit cast pair with **no conversion** is a compile error
-(`no conversion from 'A' to 'B'`). Dest-inferred `xx` is also an error
-when the value is already the slot type (`already 'i64'`) and when an
-implicit conversion already applies (`already converts to '*void'`).
-The conversion ladder also admits pointer ↔ integer conversion, same-size
-aggregate views (e.g. `string` ↔ `@Slice`), pointer-to-pointer and
-pointer-to-function conversion, and equal-width integer conversion. User `Into`
-conversions run when the built-in ladder makes no progress.
+Only a modeled conversion converts, implicitly or through `.(T)`. When the
+explicit built-in ladder has no conversion, it tries the user `Into` / `@convert`
+implementation; if neither applies, the pair is a compile error
+(`no conversion from 'A' to 'B'`). Equal storage size grants no conversion.
+Dest-inferred `xx` is also an error when the value is already the slot type
+(`already 'i64'`) or an implicit conversion already applies
+(`already converts to '*void'`).
+
+`@reinterpret(T, value)` reads bytes independently of conversions (§Builtins).
+For example, `@reinterpret(@Slice, s)` reads a raw slice header. Raw `@Slice` is
+the layout struct; `@Slice(T, Len)` is the parameterized slice type constructor.
+Address reads use a pointer-sized integer; a different integer width requires
+a separate integer conversion.
 
 ### Postfix Cast `expr.(T)`
 
@@ -3078,19 +3083,10 @@ The target is exactly one **compile-time** type (a runtime-`Type` target
 would make the expression untypeable). `56.(i8)` lexes as a cast (never a
 float); `0..(5)` stays a range.
 
-**Raw-view retrieval.** The fat-value raw views (`@Closure`
-`{fnPtr, env}`, `@Slice` `{ptr, len}` for slices AND strings,
-`@Interface` `{ctx, typeId}`, and `@Any` `{data, typeId}`) are
-retrieved through this same engine — `c.(@Closure)`, `name.(@Slice)`,
-`p.(@Interface)` (or the `xx` spelling), `av.(@Any)` (postfix ONLY —
-see below). The interface case is a MODELED conversion built field-wise, not
-a bit reinterpret: `{ctx, typeId}` is the leading prefix of a handle
-`{ctx, typeId, vtable}`, so the result is a real value usable in
-any position (argument, return, store). `@Interface` mirrors exactly that
-prefix — byte-identical to an `any` `{data, typeId}`; the handle
-is wider, which is why the build is field-wise and never a reinterpret. A handle receiver with any
-other concrete target is the checked DOWNCAST (see the assertion
-temperaments — the receiver reads as its `{ctx, typeId}` prefix view);
+**Interface and boxed views.** `p.(@Interface)` retrieves `{ctx, typeId}`
+field-wise from a handle; `av.(@Any)` retrieves `{data, typeId}` from a box.
+These are modeled conversions. An interface handle's other concrete targets
+use the checked downcast (see the assertion temperaments);
 the recovery targets — a pointer type (`p.(*T)`, the typed ctx read; `T`
 must be a CONCRETE type or `void` — a pointer-to-interface target is refused,
 since ctx addresses the referent),
@@ -4658,8 +4654,8 @@ kinds (`x.len` in a slice arm, `x.(@Interface)` in an interface arm):
 ```sx
 free :: ufcs (x: $T, a: Allocator = context.allocator) {
     inline match T {
-        case closure:  { env := x.(@Closure).env; if env != null { a.deallocBytes(env); } }
-        case slice:    a.deallocBytes(xx x.ptr);
+        case closure:  { env := @reinterpret(@Closure, x).env; if env != null { a.deallocBytes(env); } }
+        case slice:    a.deallocBytes(@reinterpret([*]u8, x.ptr));
         else:          @error("free expects a closure or a slice");
     }
 }
@@ -5665,7 +5661,7 @@ inline match @host.os {
 free :: ufcs (x: $T, a: Allocator = context.allocator) {
     inline match T {
         case closure:  { ... }
-        case slice:    a.deallocBytes(xx x.ptr);
+        case slice:    a.deallocBytes(@reinterpret([*]u8, x.ptr));
         else:          @error("free expects a closure or a slice");
     }
 }

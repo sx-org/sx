@@ -1,0 +1,5 @@
+error: cannot convert '(i64) -> i64' to '() -> i64': function signatures differ
+  --> examples/diagnostics/typed-local-constant-signature.sx:6:5
+   |
+ 6 |     F : () -> i64 : one;
+   |     ^^^^^^^^^^^^^^^^^^^^

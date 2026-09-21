@@ -1,0 +1,3 @@
+Pair :: struct { p: [*]u8; n: i64; }
+take :: (s: string) {}
+main :: () { take(Pair{}); }

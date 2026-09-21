@@ -38,6 +38,6 @@ C :: @run borrow();
 main :: () {
     view: any = g;
     g = -9;
-    @assert(view.(I) == -9 and @rawAnyData(view) == (*g).(u64));
+    @assert(view.(I) == -9 and @rawAnyData(view) == *g);
     print("storage={} {} global={}\n", C, borrow(), view.(I).(i64));
 }

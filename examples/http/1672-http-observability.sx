@@ -39,7 +39,7 @@ EventLog :: struct {
 }
 
 onEvent :: (ctx: usize, ev: http.EventKind, slot: i64, detail: i64) {
-    log : *EventLog = xx ctx;
+    log : *EventLog = @reinterpret(*EventLog, ctx);
     if log.n < 64 {
         log.kind[log.n] = xx ev;     // enum → its ordinal
         log.detail[log.n] = detail;
@@ -153,7 +153,7 @@ main :: () -> i32 {
         requestCount = 50,
         maxConn = 8,
         onEvent = onEvent,
-        onEventCtx = xx *elog,
+        onEventCtx = @reinterpret(usize, *elog),
     };
     srv, se := http.Server.init(cfg, handler, 0);
     if se { print("server init failed\n"); return 1; }
@@ -236,7 +236,7 @@ main :: () -> i32 {
         threadPoolCount = 1,
         threadPoolBacklog = 1,
         onEvent = onEvent,
-        onEventCtx = xx *plog,
+        onEventCtx = @reinterpret(usize, *plog),
     };
     psrv, pse := http.Server.init(pcfg, slowHandler, 0);
     if pse { print("pooled init failed\n"); return 1; }

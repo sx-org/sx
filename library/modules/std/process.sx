@@ -54,7 +54,7 @@ ProcessResult :: struct {
 // with stdout, append " 2>&1" to the command.
 run :: (cmd: [:0]u8) -> ?ProcessResult {
     f := popen(cmd, "r");
-    if f.(i64) == 0 { return null; }
+    if f == null { return null; }
 
     out : string = "";
     buf := allocString(4096);

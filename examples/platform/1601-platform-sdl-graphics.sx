@@ -158,11 +158,11 @@ main :: () {
     glBufferData(GL_ARRAY_BUFFER, 1152, vertices.ptr, GL_STATIC_DRAW);
 
     // Position attribute (location 0): 3 floats, stride 32 bytes, offset 0
-    glVertexAttribPointer(0, 3, GL_FLOAT, 0, 32, xx 0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, 0, 32, null);
     glEnableVertexAttribArray(0);
 
     // Normal attribute (location 1): 3 floats, stride 32 bytes, offset 16
-    glVertexAttribPointer(1, 3, GL_FLOAT, 0, 32, xx 16);
+    glVertexAttribPointer(1, 3, GL_FLOAT, 0, 32, @reinterpret(*void, 16.(usize)));
     glEnableVertexAttribArray(1);
 
     // Set light direction

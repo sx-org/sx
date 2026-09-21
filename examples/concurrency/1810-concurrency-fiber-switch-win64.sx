@@ -290,13 +290,13 @@ gOut : *void = null;
 
 boot :: (f: *Fiber) {
     raw : *void = VirtualAlloc(null, STACK, 0x3000, 0x4);   // MEM_COMMIT|RESERVE, PAGE_READWRITE
-    top : u64 = (xx raw) + STACK;
+    top : u64 = (@reinterpret(usize, raw).(u64)) + STACK;
     top = top - (top % 16);
-    slot : *u64 = xx (top - 8);
+    slot : *u64 = @reinterpret(*u64, (top - 8).(usize));
     slot.* = @reinterpret(u64, fib_tramp);
     i := 0;
     while i < 30 { f.ctx.regs[i] = 0; i = i + 1; }
-    f.ctx.regs[0] = xx f;       // rbx = self
+    f.ctx.regs[0] = @reinterpret(usize, f).(u64);       // rbx = self
     f.ctx.regs[8] = top - 8;    // rsp
     f.gp = 0;  f.xmm = 0;
 }

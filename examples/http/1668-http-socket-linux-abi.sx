@@ -43,11 +43,11 @@ main :: () -> i32 {
     // sockaddr). The pointer arithmetic bakes the true offsets into the
     // pinned IR.
     ai : socket.AddrInfo = .{};
-    base : usize = xx *ai;
-    offLen:   usize = xx *ai.aiAddrlen;
-    offAddr:  usize = xx *ai.aiAddr;
-    offCanon: usize = xx *ai.aiCanonname;
-    offNext:  usize = xx *ai.aiNext;
+    base : usize = @reinterpret(usize, *ai);
+    offLen:   usize = @reinterpret(usize, *ai.aiAddrlen);
+    offAddr:  usize = @reinterpret(usize, *ai.aiAddr);
+    offCanon: usize = @reinterpret(usize, *ai.aiCanonname);
+    offNext:  usize = @reinterpret(usize, *ai.aiNext);
     if offLen   - base != 16 { return 18; }
     if offAddr  - base != 24 { return 19; }
     if offCanon - base != 32 { return 20; }

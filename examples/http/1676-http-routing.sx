@@ -158,7 +158,7 @@ runSuite :: (scratch: [*]u8, cap: i64) -> bool {
         requestCount = 100,
         maxConn = 8,
     };
-    srv, se := http.Server.init(cfg, http.dispatch, xx *router);
+    srv, se := http.Server.init(cfg, http.dispatch, @reinterpret(usize, *router));
     if se { print("server init failed\n"); return false; }
 
     c := dialPort(PORT);

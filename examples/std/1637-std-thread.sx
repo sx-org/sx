@@ -33,7 +33,7 @@ AddArg :: struct {
 }
 
 addTask :: (arg: usize) {
-    a : *AddArg = arg.(*AddArg);
+    a : *AddArg = @reinterpret(*AddArg, arg);
     a.sh.mu.lock();
     a.sh.counter += a.v;
     a.sh.mu.unlock();
@@ -41,7 +41,7 @@ addTask :: (arg: usize) {
 
 // Holds its worker hostage until the gate opens (backpressure case).
 gateTask :: (arg: usize) {
-    sh : *Shared = arg.(*Shared);
+    sh : *Shared = @reinterpret(*Shared, arg);
     while true {
         sh.mu.lock();
         g := sh.gate;
@@ -79,7 +79,7 @@ main :: () -> i32 {
     n := 0;
     while n < 100 {
         args[n] = AddArg{ sh = *sh, v = (n + 1) };
-        if !pool.submit(addTask, (*args[n]).(usize)) { print("submit unexpectedly refused\n"); return 1; }
+        if !pool.submit(addTask, @reinterpret(usize, *args[n])) { print("submit unexpectedly refused\n"); return 1; }
         n += 1;
     }
     pool.shutdown();   // queued tasks finish before workers exit
@@ -90,7 +90,7 @@ main :: () -> i32 {
     sh.gate = 0;
     p2, pe2 := thread.Pool.create(1, 2);
     if pe2 { print("pool2 create failed\n"); return 1; }
-    if !p2.submit(gateTask, (*sh).(usize)) { print("gate submit refused\n"); return 1; }
+    if !p2.submit(gateTask, @reinterpret(usize, *sh)) { print("gate submit refused\n"); return 1; }
     // give the worker a beat to take the gate task off the queue
     spins := 0;
     taken := false;

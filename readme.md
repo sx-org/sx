@@ -70,7 +70,7 @@ sx lsp                   # start language server
 
 `[N]T` coerces to `[]T`. A `[*]T` has no length — slice it with `ptr[0..len]`.
 
-A typed store needs a coercion. Different width with no coercion (`x : i32 = "hi"`) is an error. Same-width reinterpret (`*T → [*]T`) is allowed. `xx` / `x.(T)` is the explicit ladder: `1000.(i8)` truncates; `dog.(Speaker)` builds an interface handle over `dog`. On `any`: `try av.(i64)` / `av.(i64)` / `av.(?i64)`. `o?.(T)` maps over an optional.
+A typed store needs a modeled conversion; equal storage size grants none. Byte views use `@reinterpret(T, value)`. `x.(T)` is the explicit ladder: `1000.(i8)` truncates; `dog.(Speaker)` builds an interface handle over `dog`. On `any`: `try av.(i64)` / `av.(i64)` / `av.(?i64)`. `o?.(T)` maps over an optional.
 
 Limits fold: `i64.max`, `u8.min`, `f64.inf`. See specs → Numeric Limits.
 

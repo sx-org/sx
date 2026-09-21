@@ -127,7 +127,7 @@ sliceToString :: (items: []$T) -> string {
 }
 
 pointerToString :: (p: $T) -> string {
-    addr : i64 = p.(i64);
+    addr := @reinterpret(usize, p);
     if addr == 0 { "null" } else {
         sb := StringBuilder.init();
         sb.write(@typeName(T));
@@ -288,7 +288,7 @@ writePointer :: ufcs (w: Writer, val: any) {
     pt := @typeOf(val);
     w.write(@typeName(pt));
     w.write("@0x");
-    w.writeHex(p.(u64));
+    w.writeHex(@reinterpret(usize, p).(u64));
 }
 
 anyToString :: (val: any) -> string {

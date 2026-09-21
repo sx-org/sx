@@ -202,7 +202,7 @@ Loop :: struct {
     wake :: (self: *Loop) {
         if self.wakeFd < 0 { return; }
         one : u64 = 1;
-        socket.write(self.wakeFd, *one, 8);
+        socket.write(self.wakeFd, @reinterpret([*]u8, *one), 8);
     }
 
     // Fill `out` with ready events, waiting at most `timeoutMs`
@@ -223,7 +223,7 @@ Loop :: struct {
             if self.wakeFd >= 0 and fd == self.wakeFd {
                 // Drain the eventfd counter so it doesn't re-fire immediately.
                 drain : u64 = 0;
-                socket.read(self.wakeFd, *drain, 8);
+                socket.read(self.wakeFd, @reinterpret([*]u8, *drain), 8);
                 e.user = true;
                 e.udata = self.wakeUdata;
             } else {

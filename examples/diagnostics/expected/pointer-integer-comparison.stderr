@@ -1,0 +1,11 @@
+error: cannot compare values of type '*i64' and 'i64'
+  --> examples/diagnostics/pointer-integer-comparison.sx:5:10
+   |
+ 5 |     a := p == n;
+   |          ^^^^^^
+
+error: cannot compare values of type '*i64' and 'i64'
+  --> examples/diagnostics/pointer-integer-comparison.sx:6:10
+   |
+ 6 |     b := p == 0;
+   |          ^^^^^^

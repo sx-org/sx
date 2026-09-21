@@ -48,7 +48,7 @@ contains :: (value: string, needle: string) -> bool {
 }
 
 streamBody :: (ctx: usize, offset: i64, dst: [*]u8, cap: i64) -> i64 {
-    app : *App = xx ctx;
+    app : *App = @reinterpret(*App, ctx);
     if offset >= app.body.len { return 0; }
     n := app.body.len - offset;
     if n > 7001 { n = 7001; }
@@ -61,7 +61,7 @@ streamBody :: (ctx: usize, offset: i64, dst: [*]u8, cap: i64) -> i64 {
 faultBefore :: (ctx: usize, offset: i64, dst: [*]u8, cap: i64) -> i64 { -1 }
 
 faultAfter :: (ctx: usize, offset: i64, dst: [*]u8, cap: i64) -> i64 {
-    app : *App = xx ctx;
+    app : *App = @reinterpret(*App, ctx);
     if offset >= 7001 { return -1; }
     n := 7001 - offset;
     if n > cap { n = cap; }
@@ -71,7 +71,7 @@ faultAfter :: (ctx: usize, offset: i64, dst: [*]u8, cap: i64) -> i64 {
 }
 
 handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
-    app : *App = xx ctx;
+    app : *App = @reinterpret(*App, ctx);
     if req.path == "/stream" {
         resp.stream(streamBody, ctx);
         return;
@@ -274,7 +274,7 @@ runServerCases :: (app: *App, poolCount: i64, port: i64) -> bool {
         compressMinSize = 1024,
         compressLevel = 6,
     };
-    srv, se := http.Server.init(cfg, handler, xx app);
+    srv, se := http.Server.init(cfg, handler, @reinterpret(usize, app));
     if se { return false; }
     t, te := thread.Thread.spawn(serverEntry, *srv);
     if te { srv.close(); return false; }

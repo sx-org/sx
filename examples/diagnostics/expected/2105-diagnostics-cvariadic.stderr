@@ -262,12 +262,6 @@ error: cannot read '[1]@VaList' — it holds a '@VaList', which has no value for
 116 |     kept := ||_{ rows = rows } -> i64 { return rows.len; }; // a wrapper carries the same tail
     |                                                ^^^^
 
-error: no conversion from '<unresolved>' to 'i64'
-  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:118:12
-    |
-118 |     return xx narrow;
-    |            ^^^^^^^^^
-
 error: '@vaStart' needs a C-variadic tail to open — end this definition's parameter list in '..' (`(fixed, ..) -> R abi(.c)`)
   --> examples/diagnostics/2105-diagnostics-cvariadic.sx:90:5
    |

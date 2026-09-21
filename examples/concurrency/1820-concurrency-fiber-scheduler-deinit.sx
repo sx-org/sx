@@ -50,7 +50,7 @@ S :: struct {
 main :: () -> i64 {
     st : S = .{ readN = 0, readDone = false };   // bytes[] zero-filled; read() fills it
 
-    fds : [2]i32 = ---;
+    fds : [2]c.Fd = ---;
     if c.pipe(*fds) != 0 {
         print("1820: pipe() failed\n");
         return 1;

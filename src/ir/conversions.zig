@@ -25,9 +25,7 @@ pub const CoercionResolver = struct {
     l: *Lowering,
 
     /// The built-in coercion the `coerceToType` ladder will emit for `src → dst`.
-    /// `.none` means no built-in applies (the value passes through unchanged;
-    /// `lowerXX` then tries a user `Into`). Branch order mirrors `coerceToType`
-    /// exactly — the emitter switches on this and reproduces each arm.
+    /// `.none` means no built-in applies; explicit conversion tries user `Into`.
     pub const CoercionPlan = enum {
         no_op,
         unbox_any, // any → concrete
@@ -45,6 +43,7 @@ pub const CoercionResolver = struct {
         void_to_optional, // void (null literal) → ?T
         optional_to_optional, // ?A → ?B (presence-preserving payload coercion)
         optional_wrap, // concrete → ?T
+        borrow_protocol,
         erase_protocol, // concrete → protocol value
         member_to_open_set, // a member VALUE → its open set's inline slot
         int_to_float,
@@ -53,7 +52,6 @@ pub const CoercionResolver = struct {
         enum_to_int, // payload-less enum → int (through the enum's backing type)
         integer_retype,
         error_to_int,
-        ptr_int_bitcast, // ptr ↔ int
         ptr_to_void, // *T / [*]T → *void
         void_to_ptr,
         many_to_single,
@@ -72,7 +70,8 @@ pub const CoercionResolver = struct {
         many_to_slice_reject, // [*]T → []T (no length — needs ptr[0..len]; diagnostic)
         adds_terminator_reject, // an unterminated view → a terminated shape (diagnostic)
         error_set_retype, // error set → error set, tags legal in the destination
-        none, // nothing applies — pass the value through
+        failable_retype,
+        none, // no built-in conversion
 
         /// A plan that REFUSES the conversion. The value does not reach the
         /// destination; the emitter reports the refusal and passes the operand
@@ -142,6 +141,14 @@ pub const CoercionResolver = struct {
     pub fn classify(self: CoercionResolver, src_ty: TypeId, dst_ty: TypeId) CoercionPlan {
         if (self.l.module.types.sameType(src_ty, dst_ty)) return .no_op;
         if (self.classifyPointer(src_ty, dst_ty)) |plan| return plan;
+        if (!dst_ty.isBuiltin() and !src_ty.isBuiltin()) {
+            const dst = self.l.module.types.get(dst_ty);
+            const src = self.l.module.types.get(src_ty);
+            if (dst == .pointer and self.l.getProtocolInfo(dst.pointer.pointee) != null and
+                self.l.getProtocolInfo(src_ty) == null and
+                self.l.resolveConcreteTypeName(if (src == .pointer) src.pointer.pointee else src_ty) != null and
+                (src == .@"struct" or (src == .pointer and self.l.getProtocolInfo(src.pointer.pointee) == null))) return .borrow_protocol;
+        }
         // A terminated value reaches a pointer that names the same terminator
         // or names none.
         if (self.pointerDestElement(dst_ty)) |dst_elem| {
@@ -300,8 +307,6 @@ pub const CoercionResolver = struct {
         const dst_float = Lowering.isFloat(dst_ty);
         const src_int = self.l.isIntEx(src_ty);
         const dst_int = self.l.isIntEx(dst_ty);
-        const src_ptr = self.isTypedAddress(src_ty);
-        const dst_ptr = self.isTypedAddress(dst_ty);
 
         // Int ↔ payload-less enum. Such an enum IS an integer of its backing
         // type (§Enums), so the conversion is that integer conversion plus a
@@ -316,7 +321,6 @@ pub const CoercionResolver = struct {
         if (!src_ty.isBuiltin() and self.l.module.types.get(src_ty) == .@"error" and dst_int) return .error_to_int;
         if (src_int and dst_float) return .int_to_float;
         if (src_float and dst_int) return .float_to_int;
-        if ((src_ptr and dst_int) or (src_int and dst_ptr)) return .ptr_int_bitcast;
 
         const src_bits = self.l.typeBitsEx(src_ty);
         const dst_bits = self.l.typeBitsEx(dst_ty);
@@ -332,10 +336,13 @@ pub const CoercionResolver = struct {
         // implicit gate, and `unifyValueArmTypes` reads a modeled plan as a
         // safe join.
         if (lower_error.errorSetValueRetypeIsLegal(self.l, src_ty, dst_ty)) return .error_set_retype;
-        // A terminated type's guarantee comes only from an arm above that reads
-        // the source's own terminator: the passthrough below would hand any
-        // same-width address or aggregate a guarantee its bytes do not carry.
-        // `void` (the null literal), `noreturn` and `unresolved` are not values.
+        if (!src_ty.isBuiltin() and !dst_ty.isBuiltin()) {
+            const src = self.l.module.types.get(src_ty);
+            const dst = self.l.module.types.get(dst_ty);
+            if (src == .failable and dst == .failable and
+                self.l.module.types.sameType(src.failable.value, dst.failable.value) and
+                lower_error.errorSetValueRetypeIsLegal(self.l, src.failable.err, dst.failable.err)) return .failable_retype;
+        }
         if (self.destSentinel(dst_ty) != null and
             src_ty != .void and src_ty != .noreturn and src_ty != .unresolved) return .adds_terminator_reject;
         return .none;
@@ -483,6 +490,7 @@ pub const CoercionResolver = struct {
         type: TypeId,
         /// Signed vs unsigned integers that do not widen into each other.
         signedness,
+        incompatible,
         /// No comparison-specific meeting; the existing operand rules apply.
         none,
     };
@@ -498,8 +506,7 @@ pub const CoercionResolver = struct {
             if (self.l.module.types.sameType(lhs_ty, rhs_ty)) return .{ .type = lhs_ty };
             return .{ .type = self.l.module.types.ptrTo(.void) };
         }
-        if (l_addr and self.l.isIntEx(rhs_ty)) return .{ .type = lhs_ty };
-        if (r_addr and self.l.isIntEx(lhs_ty)) return .{ .type = rhs_ty };
+        if ((l_addr and self.l.isIntEx(rhs_ty)) or (r_addr and self.l.isIntEx(lhs_ty))) return .incompatible;
 
         const l_float = Lowering.isFloat(lhs_ty);
         const r_float = Lowering.isFloat(rhs_ty);

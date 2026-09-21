@@ -3656,12 +3656,12 @@ pub fn lowerNullCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
     self.target_type = inner_ty;
     var rhs = self.lowerExpr(nc.rhs);
     self.target_type = saved_tt;
+    if (self.currentBlockHasTerminator()) {
+        self.builder.switchToBlock(merge_bb);
+        return self.builder.blockParam(merge_bb, 0, inner_ty);
+    }
     const rhs_ty = self.builder.getRefType(rhs);
-    // Skip the coerce entirely when the pair has NO modeled coercion and a
-    // width mismatch: `coerceToType` would be a passthrough no-op anyway, and
-    // its weld guard would fire a generic "cannot coerce" ahead of the
-    // focused `'??' default has type ...` diagnostic below (double error).
-    if (rhs_ty != inner_ty and rhs_ty != .void and inner_ty != .void and !self.noneReinterpretIsUnsafe(rhs_ty, inner_ty)) {
+    if (rhs_ty != inner_ty and self.conversionAvailable(rhs_ty, inner_ty, .implicit)) {
         rhs = self.coerceToType(rhs, rhs_ty, inner_ty);
     }
     // The merge-block param, the unwrapped LHS, and the coerced RHS must all
@@ -3673,7 +3673,7 @@ pub fn lowerNullCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
     // verifier. Diagnose loudly and br with a typed placeholder so
     // the PHI stays well-formed; `hasErrors()` aborts before codegen anyway.
     const coerced_ty = self.builder.getRefType(rhs);
-    if (coerced_ty != inner_ty and coerced_ty != .void and inner_ty != .void) {
+    if (coerced_ty != inner_ty) {
         if (self.diagnostics) |d| {
             d.addFmt(.err, nc.rhs.span, "'??' default has type '{s}', but the optional's payload is '{s}'", .{ self.formatTypeName(coerced_ty), self.formatTypeName(inner_ty) });
         }
@@ -5685,11 +5685,6 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
 
     if (self.diagOperandTypes(bop.op, ty, self.operandType(rhs_ty), bop.lhs.span)) return self.emitPlaceholder("operand-type-mismatch");
 
-    // Comparison operands meet at a comparison type — not a store.
-    // Numeric pairs widen / promote to float; two pointers meet at `*void`;
-    // a pointer and an integer meet at the pointer (the integer is an
-    // address-sized bit pattern). Signed vs unsigned of the same width
-    // is refused.
     switch (bop.op) {
         .eq, .neq, .lt, .lte, .gt, .gte => {
             const span = ast.Span{ .start = bop.lhs.span.start, .end = bop.rhs.span.end };
@@ -6081,6 +6076,12 @@ fn meetCompareOperands(
                 .rhs = coerceCompareOperand(self, rhs, rhs_ty, meet_ty),
             };
         },
+        .incompatible => {
+            if (self.diagnostics) |d| {
+                d.addFmt(.err, span, "cannot compare values of type '{s}' and '{s}'", .{ self.formatTypeName(lhs_ty), self.formatTypeName(rhs_ty) });
+            }
+            return null;
+        },
         .signedness => {
             if (constIntOf(self, lhs)) |n| {
                 if (self.isIntEx(rhs_ty)) {
@@ -6118,11 +6119,6 @@ fn meetCompareOperands(
 
 fn coerceCompareOperand(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId) Ref {
     if (src_ty == dst_ty) return val;
-    // Pointer ↔ integer is a store-time explicit conversion; a comparison
-    // still uses that IR (inttoptr / ptrtoint) without requiring a glyph.
-    if (self.coercionResolver().classify(src_ty, dst_ty) == .ptr_int_bitcast) {
-        return self.coerceExplicit(val, src_ty, dst_ty);
-    }
     return self.coerceToType(val, src_ty, dst_ty);
 }
 

@@ -654,3 +654,23 @@ test "analyzeDocument: a @context.extend member's type owns its method uses" {
     const sema = main_doc.sema orelse return error.SkipZigTest;
     try std.testing.expect(findMemberRef(&sema, "area", "Shape", false) != null);
 }
+
+test "analyzeDocument: reinterpretation exposes its destination to the editor" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const doc = try store.openOrUpdate("view.sx",
+        \\main :: () { n: i64 = 0; p := @reinterpret(*u8, *n); }
+    , 1);
+    try store.analyzeDocument(doc);
+    const sema = doc.sema orelse return error.TestUnexpectedResult;
+    for (sema.symbols) |symbol| {
+        if (!std.mem.eql(u8, symbol.name, "p")) continue;
+        const ty = symbol.ty orelse return error.TestUnexpectedResult;
+        try std.testing.expect(ty == .pointer_type);
+        try std.testing.expectEqualStrings("u8", ty.pointer_type.pointee_name);
+        return;
+    }
+    return error.TestUnexpectedResult;
+}

@@ -115,9 +115,9 @@ STACK :: 131072;
 
 boot :: (f: *Fiber) {
     base : *void = context.allocator.allocBytes(STACK);
-    top : u64 = (xx base) + STACK;
+    top : u64 = (@reinterpret(usize, base).(u64)) + STACK;
     top = top - (top % 16);          // 16-byte aligned stack top (AAPCS)
-    f.ctx.regs[0]  = xx f;           // x19 = self
+    f.ctx.regs[0]  = @reinterpret(usize, f).(u64);           // x19 = self
     f.ctx.regs[10] = 0;              // fp
     f.ctx.regs[11] = @reinterpret(u64, fib_tramp);   // lr → trampoline
     f.ctx.regs[12] = top;            // sp

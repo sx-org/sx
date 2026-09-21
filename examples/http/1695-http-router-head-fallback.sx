@@ -129,7 +129,7 @@ main :: () -> i32 {
         router.setNotFound(nf);
 
         cfg : http.Config = .{ port = PORT, maxConn = 4, requestCount = 10 };
-        srv, se := http.Server.init(cfg, http.dispatch, xx *router);
+        srv, se := http.Server.init(cfg, http.dispatch, @reinterpret(usize, *router));
         if se { print("init failed\n"); return 1; }
 
         // (a) GET control

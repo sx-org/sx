@@ -52,7 +52,7 @@ Obs :: struct {
 }
 
 route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
-    obs : *Obs = xx ctx;
+    obs : *Obs = @reinterpret(*Obs, ctx);
     if req.path == "/sum" or req.path == "/slowsum" {
         if req.path == "/slowsum" { usleep(60000); }   // let the channel fill (backpressure)
         scratch : [8192]u8 = ---;
@@ -213,7 +213,7 @@ main :: () -> i32 {
             handlerTimeoutMs = 5000,
             streamRequestBody = true,
         };
-        srv, se := http.Server.init(cfg, route, xx *obs);
+        srv, se := http.Server.init(cfg, route, @reinterpret(usize, *obs));
         if se { print("init failed\n"); return 1; }
 
         // ── case 1: Content-Length 200000 streamed, split delivery ────

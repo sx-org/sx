@@ -2107,19 +2107,8 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                     self.builder.constInt(0, result_type);
                 const v_ty = self.builder.getRefType(v);
                 v = self.coerceToType(v, v_ty, result_type);
-                // Backstop for inference-blind arms: when the
-                // coercion ladder had nothing (`.none` passthrough) and the
-                // arm value can't occupy the merge phi's slot, feeding it
-                // through builds a mixed-type phi — an LLVM verifier failure
-                // with NO diagnostic. The unification pass in
-                // `inferMatchResultType` diagnoses every statically-visible
-                // mismatch; this catches an arm it couldn't type (`.unresolved`
-                // at inference, concrete after lowering). Diagnose (unless an
-                // error already fired — the unification's own, or a cascade
-                // source) and substitute an inert undef so the IR stays
-                // well-formed while compilation aborts on the diagnostic.
                 const coerced_ty = self.builder.getRefType(v);
-                if (coerced_ty != result_type and self.noneReinterpretIsUnsafe(coerced_ty, result_type)) {
+                if (coerced_ty != result_type and !self.conversionAvailable(coerced_ty, result_type, .implicit)) {
                     if (self.diagnostics) |diags| {
                         if (diags.errorCount() == 0) {
                             diags.addFmt(.err, arm.body.span, "match arms have incompatible types: '{s}' vs '{s}'", .{

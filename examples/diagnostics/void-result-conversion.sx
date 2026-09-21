@@ -1,0 +1,3 @@
+Value :: struct { n: i64; }
+nothing :: () {}
+main :: () { value := nothing().(Value); }
