@@ -1127,7 +1127,7 @@ pub fn lowerConstDecl(self: *Lowering, cd: *const ast.ConstDecl) void {
     } else {
         self.target_type = null;
     }
-    const ref = self.lowerMarkedExpr(cd.value, true);
+    var ref = self.lowerMarkedExpr(cd.value, true);
     self.target_type = saved_target;
     const ref_ty = self.builder.getRefType(ref);
     const ty = annotated orelse ref_ty;
@@ -1137,11 +1137,13 @@ pub fn lowerConstDecl(self: *Lowering, cd: *const ast.ConstDecl) void {
     }
     if (rejectVoidInitializer(self, cd.value, cd.name, ref_ty, errs_before)) return;
 
-    // An annotated constant whose initializer cannot coerce to the declared type
-    // would be bound under a type its bytes don't match — diagnose
-    // rather than let a later read reinterpret the wrong-shape value.
     if (cd.type_annotation != null) {
-        _ = self.checkAssignable(self.builder.getRefType(ref), ty, cd.value.span, "initialize", cd.name, cd.value);
+        if (!self.checkAssignable(ref_ty, ty, cd.value.span, "initialize", cd.name, cd.value)) {
+            ref = self.buildDefaultValue(ty);
+        } else if (ref_ty != ty and ref_ty != .void and ty != .void) {
+            const checked = self.coerceChecked(ref, ref_ty, ty);
+            ref = if (checked.refused) self.buildDefaultValue(ty) else checked.ref;
+        }
     }
 
     if (self.scope) |scope| {
