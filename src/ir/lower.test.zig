@@ -3531,3 +3531,102 @@ test "function bodies and signatures retain distinct environments in one file" {
     try std.testing.expectEqual(first_fn, lowering.qualifiedFnMember("first.answer").?);
     try std.testing.expect(!lowering.program_index.contains(.function, "first.answer"));
 }
+
+test "expansion finality separates environments, names and retiring contributions" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var p = try parser.Parser.init(alloc,
+        \\inline if true { x :: 1; y :: 2; }
+        \\inline if true { x :: 3; }
+        \\inline if true { x :: 4; }
+    );
+    const root = try p.parse();
+    const drivers = root.data.root.decls;
+    for (drivers) |driver| driver.source_file = "same.sx";
+    var table = imports.DeclTable.init(alloc);
+    const first = try table.internEnvironment("same.sx", &.{"first"});
+    const second = try table.internEnvironment("same.sx", &.{"second"});
+    var module = ir_mod.Module.init(alloc);
+    defer module.deinit();
+    var lowering = Lowering.init(&module);
+    lowering.program_index.decl_table = &table;
+    const work = &lowering.expansion;
+    work.registerDriver(drivers[0], first, null);
+    work.registerDriver(drivers[0], first, null);
+    work.registerDriver(drivers[1], first, null);
+    work.registerDriver(drivers[2], second, null);
+
+    try std.testing.expect(!work.environmentFinal(first));
+    try std.testing.expect(!work.environmentFinal(second));
+    const x = try alloc.dupe(u8, "x");
+    try std.testing.expect(work.mayDeclare(first, x));
+    try std.testing.expect(work.mayDeclare(first, "y"));
+    try std.testing.expect(!work.mayDeclare(second, "y"));
+    work.folding = true;
+    try std.testing.expect(!lowering.namespaceMissWaits(.{ .namespace = "ns", .environment = second, .member = "y" }));
+    try std.testing.expect(work.awaited == null);
+    try std.testing.expect(lowering.namespaceMissWaits(.{ .namespace = "ns", .environment = first, .member = "y" }));
+
+    work.retire(drivers[0]);
+    work.retire(drivers[0]);
+    work.awaited = null;
+    try std.testing.expect(!lowering.namespaceMissWaits(.{ .namespace = "ns", .environment = first, .member = "y" }));
+    try std.testing.expect(!work.environmentFinal(first));
+    try std.testing.expect(work.mayDeclare(first, x));
+    work.retire(drivers[1]);
+    try std.testing.expect(work.environmentFinal(first));
+    try std.testing.expect(!work.mayDeclare(first, x));
+    try std.testing.expect(!work.environmentFinal(second));
+    try std.testing.expect(work.mayDeclare(second, x));
+    work.retire(drivers[2]);
+    try std.testing.expect(work.environmentFinal(second));
+    try std.testing.expect(!work.mayDeclare(second, x));
+}
+
+test "namespace expansion keeps parked and published names in its environment" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var p = try parser.Parser.init(alloc,
+        \\OperatingSystem :: enum { linux }
+        \\inline if pending { pending :: true; }
+        \\inline if true { ready :: 1; }
+    );
+    const root = try p.parse();
+    for (root.data.root.decls) |driver| driver.source_file = "same.sx";
+    var file_parser = try parser.Parser.init(alloc, "inline if top_pending { top_pending :: true; }");
+    const file_root = try file_parser.parse();
+    const file_driver = file_root.data.root.decls[0];
+    file_driver.source_file = "same.sx";
+    var namespace = Node{ .span = root.span, .source_file = "same.sx", .data = .{ .namespace_decl = .{
+        .name = "nested",
+        .target_module_path = "same.sx",
+        .decls = root.data.root.decls,
+        .own_decls = root.data.root.decls,
+    } } };
+    var table = imports.DeclTable.init(alloc);
+    const file = try table.internEnvironment("same.sx", &.{});
+    try std.testing.expect(try table.claim(file, &namespace));
+    const nested = table.environment(file).namespaces.get("nested").?.environment;
+    var module = ir_mod.Module.init(alloc);
+    defer module.deinit();
+    var lowering = Lowering.init(&module);
+    lowering.program_index.decl_table = &table;
+    lowering.main_file = "same.sx";
+    lowering.setCurrentEnvironment(file);
+    _ = @import("lower/expand.zig").expandModuleDrivers(&lowering, &.{ file_driver, &namespace });
+
+    try std.testing.expect(lowering.expansion.mayDeclare(file, "top_pending"));
+    try std.testing.expect(!lowering.expansion.mayDeclare(nested, "top_pending"));
+    try std.testing.expect(!lowering.expansion.mayDeclare(file, "pending"));
+    try std.testing.expect(!lowering.expansion.environmentFinal(nested));
+    try std.testing.expect(lowering.expansion.mayDeclare(nested, "pending"));
+    try std.testing.expect(!lowering.expansion.mayDeclare(nested, "ready"));
+    try std.testing.expect(table.rawAuthor(file, "ready") == null);
+    const ready = table.rawAuthor(nested, "ready").?;
+    try std.testing.expectEqual(nested, table.get(ready.id).environment.?);
+    lowering.setCurrentEnvironment(file);
+    const miss = lowering.qualifiedMemberVerdict("nested.pending").missing;
+    try std.testing.expectEqual(nested, miss.environment);
+}

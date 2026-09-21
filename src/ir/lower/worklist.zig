@@ -53,19 +53,37 @@ pub const Kind = enum {
     monomorphization,
 };
 
-/// One registered driver, holding exactly what retiring gives back: the
-/// protocols its unexpanded branches could `impl`, and how many names they
-/// could declare into `scope` — the module scope the driver was written in.
+/// Retirement releases exactly the contributions recorded at registration.
 const Item = struct {
     kind: Kind,
     impls: []const []const u8,
-    scope: []const u8,
+    environment: ?imports.EnvironmentId,
     names: []const []const u8,
     /// How many `@context.extend` declarations its unexpanded branches could
     /// still put into the program Context.
     contexts: u32,
     retired: bool,
 };
+
+const NameKey = struct {
+    environment: imports.EnvironmentId,
+    name: []const u8,
+};
+
+const NameKeyContext = struct {
+    pub fn hash(_: @This(), key: NameKey) u64 {
+        var h = std.hash.Wyhash.init(0);
+        std.hash.autoHash(&h, key.environment);
+        h.update(key.name);
+        return h.final();
+    }
+
+    pub fn eql(_: @This(), a: NameKey, b: NameKey) bool {
+        return a.environment == b.environment and std.mem.eql(u8, a.name, b.name);
+    }
+};
+
+const NameCounts = std.HashMap(NameKey, u32, NameKeyContext, std.hash_map.default_max_load_percentage);
 
 /// Work the drain cannot run: a driver whose condition asked a question no set
 /// can answer yet, or an evaluation suspended at the instruction that asked
@@ -79,6 +97,7 @@ pub const Parked = struct {
     what: []const u8,
     awaited: []const u8,
     span: ast.Span,
+    source_file: ?[]const u8,
 };
 
 pub const Worklist = struct {
@@ -92,15 +111,9 @@ pub const Worklist = struct {
     known: std.AutoHashMap(*const Node, usize),
     /// Protocol name → how many unretired drivers could still `impl` it.
     open_impls: std.StringHashMap(u32),
-    /// Source file → how many names unretired drivers could still declare into
-    /// that module's scope. A namespace's member surface is a claim about
-    /// exactly this, so it publishes only at zero.
-    open_names: std.StringHashMap(u32),
-    /// `scope \x00 name` → how many unretired drivers could still declare that
-    /// exact name there. A LOOKUP asks about one name, so it reads this rather
-    /// than the whole scope: a driver waiting on a name it does not itself
-    /// declare is not waiting on itself.
-    open_decls: std.StringHashMap(u32),
+    open_environments: std.AutoHashMap(imports.EnvironmentId, u32),
+    /// A missing name can be final while other names in its environment remain open.
+    open_decls: NameCounts,
     /// `@run` nodes being driven right now — a condition that reaches the run
     /// it is itself part of would otherwise recurse forever.
     driving: std.AutoHashMap(*const Node, void),
@@ -124,8 +137,8 @@ pub const Worklist = struct {
             .items = std.ArrayList(Item).empty,
             .known = std.AutoHashMap(*const Node, usize).init(alloc),
             .open_impls = std.StringHashMap(u32).init(alloc),
-            .open_names = std.StringHashMap(u32).init(alloc),
-            .open_decls = std.StringHashMap(u32).init(alloc),
+            .open_environments = .init(alloc),
+            .open_decls = .init(alloc),
             .driving = std.AutoHashMap(*const Node, void).init(alloc),
         };
     }
@@ -133,7 +146,7 @@ pub const Worklist = struct {
     /// Register a module-scope driver with the contributions its unexpanded
     /// branches could still make. `cache` is every resolved module, so a
     /// branch-local `@import`'s module is counted too. Idempotent per node.
-    pub fn registerDriver(w: *Worklist, node: *const Node, cache: ?*const imports.ModuleCache) void {
+    pub fn registerDriver(w: *Worklist, node: *const Node, environment: ?imports.EnvironmentId, cache: ?*const imports.ModuleCache) void {
         if (w.known.contains(node)) return;
         var scan = Scan{
             .alloc = w.alloc,
@@ -144,23 +157,23 @@ pub const Worklist = struct {
         };
         defer scan.counted.deinit();
         scan.driver(node, 0, true);
-        const impls = scan.impls.toOwnedSlice(w.alloc) catch &.{};
-        // The names land in the scope of the file the driver was written in.
-        const scope = node.source_file orelse "";
-        const names = scan.names.toOwnedSlice(w.alloc) catch &.{};
+        const impls = scan.impls.toOwnedSlice(w.alloc) catch @panic("out of memory");
+        const names = scan.names.toOwnedSlice(w.alloc) catch @panic("out of memory");
         for (impls) |p| bump(&w.open_impls, p);
-        if (names.len > 0) bumpBy(&w.open_names, scope, @intCast(names.len));
-        for (names) |n| bump(&w.open_decls, w.declKey(scope, n));
+        if (environment) |env| {
+            if (names.len > 0) bumpBy(&w.open_environments, env, @intCast(names.len));
+            for (names) |name| bump(&w.open_decls, NameKey{ .environment = env, .name = name });
+        }
         w.open_contexts += scan.contexts;
-        w.known.put(node, w.items.items.len) catch {};
+        w.known.put(node, w.items.items.len) catch @panic("out of memory");
         w.items.append(w.alloc, .{
             .kind = .module_driver,
             .impls = impls,
-            .scope = scope,
+            .environment = environment,
             .names = names,
             .contexts = scan.contexts,
             .retired = false,
-        }) catch {};
+        }) catch @panic("out of memory");
     }
 
     /// A driver has been decided — taken, rejected, or run out of iterations.
@@ -171,9 +184,15 @@ pub const Worklist = struct {
         if (item.retired) return;
         item.retired = true;
         for (item.impls) |p| drop(&w.open_impls, p);
-        if (item.names.len > 0) dropBy(&w.open_names, item.scope, @intCast(item.names.len));
-        for (item.names) |n| drop(&w.open_decls, w.declKey(item.scope, n));
-        w.open_contexts -= @min(w.open_contexts, item.contexts);
+        if (item.environment) |env| {
+            if (item.names.len > 0) dropBy(&w.open_environments, env, @intCast(item.names.len));
+            for (item.names) |name| drop(&w.open_decls, NameKey{ .environment = env, .name = name });
+        }
+        w.open_contexts -= item.contexts;
+    }
+
+    pub fn driverEnvironment(w: *const Worklist, node: *const Node) ?imports.EnvironmentId {
+        return w.items.items[w.known.get(node).?].environment;
     }
 
     /// Register a driver of a non-declaration class. These contribute no
@@ -184,7 +203,7 @@ pub const Worklist = struct {
         w.items.append(w.alloc, .{
             .kind = kind,
             .impls = &.{},
-            .scope = "",
+            .environment = null,
             .names = &.{},
             .contexts = 0,
             .retired = true,
@@ -221,24 +240,26 @@ pub const Worklist = struct {
 
     /// A driver the drain could not fold: it awaits `awaited`, and until that
     /// fires it stays undecided — its contributions are still out.
-    pub fn parkDriver(w: *Worklist, what: []const u8, awaited: []const u8, span: ast.Span) void {
+    pub fn parkDriver(w: *Worklist, what: []const u8, awaited: []const u8, span: ast.Span, source_file: ?[]const u8) void {
         w.parked.append(w.alloc, .{
             .evaluation = null,
             .what = what,
             .awaited = awaited,
             .span = span,
+            .source_file = source_file,
         }) catch {};
     }
 
     /// An evaluation suspended at the instruction that asked the fact. The
     /// worklist owns it from here: its VM, task, heap, and VM-local Context
     /// stay alive until it resumes or the deadlock refuses it.
-    pub fn parkEvaluation(w: *Worklist, evaluation: *comptime_vm.Evaluation, what: []const u8, awaited: []const u8, span: ast.Span) void {
+    pub fn parkEvaluation(w: *Worklist, evaluation: *comptime_vm.Evaluation, what: []const u8, awaited: []const u8, span: ast.Span, source_file: ?[]const u8) void {
         w.parked.append(w.alloc, .{
             .evaluation = evaluation,
             .what = what,
             .awaited = awaited,
             .span = span,
+            .source_file = source_file,
         }) catch {};
     }
 
@@ -250,10 +271,15 @@ pub const Worklist = struct {
     pub fn reportDeadlock(w: *Worklist, diagnostics: ?*errors.DiagnosticList) void {
         if (w.parked.items.len == 0) return;
         if (diagnostics) |d| {
+            const saved = d.current_source_file;
+            defer d.current_source_file = saved;
+            d.current_source_file = w.parked.items[0].source_file;
             const id = d.addFmtId(.err, w.parked.items[0].span, "expansion deadlock — nothing can run: every compile-time unit still waiting needs a fact only another waiting unit could publish, so the expansion depends negatively on a set it feeds", .{});
             for (w.parked.items) |p| {
+                d.current_source_file = p.source_file;
                 d.addNoteFmt(id, p.span, "{s} awaits {s}", .{ p.what, p.awaited });
             }
+            d.current_source_file = w.parked.items[0].source_file;
             d.addHelp(id, w.parked.items[0].span, "decide the declaration outside the set it queries — a question whose answer changes what it asks about has no single answer", null);
         }
         for (w.parked.items) |p| {
@@ -281,11 +307,8 @@ pub const Worklist = struct {
         return w.folding;
     }
 
-    /// Has `scope` stopped growing? A namespace's member surface is the answer
-    /// to "what does this module declare", so it publishes only once no driver
-    /// written there can still add a name.
-    pub fn scopeFinal(w: *const Worklist, scope: []const u8) bool {
-        return (w.open_names.get(scope) orelse 0) == 0;
+    pub fn environmentFinal(w: *const Worklist, environment: imports.EnvironmentId) bool {
+        return (w.open_environments.get(environment) orelse 0) == 0;
     }
 
     /// Has the program Context stopped growing? Its layout is program-global
@@ -296,33 +319,25 @@ pub const Worklist = struct {
         return w.open_contexts == 0;
     }
 
-    /// Can an undecided driver still declare `name` into `scope`? What a
-    /// name LOOKUP waits on: the absence of one name, not the closure of the
-    /// whole scope.
-    pub fn mayDeclare(w: *Worklist, scope: []const u8, name: []const u8) bool {
-        return (w.open_decls.get(w.declKey(scope, name)) orelse 0) > 0;
+    pub fn mayDeclare(w: *const Worklist, environment: imports.EnvironmentId, name: []const u8) bool {
+        return (w.open_decls.get(.{ .environment = environment, .name = name }) orelse 0) > 0;
     }
 
-    fn declKey(w: *Worklist, scope: []const u8, name: []const u8) []const u8 {
-        return std.fmt.allocPrint(w.alloc, "{s}\x00{s}", .{ scope, name }) catch name;
-    }
-
-    fn bump(map: *std.StringHashMap(u32), key: []const u8) void {
+    fn bump(map: anytype, key: anytype) void {
         bumpBy(map, key, 1);
     }
 
-    fn bumpBy(map: *std.StringHashMap(u32), key: []const u8, n: u32) void {
-        const e = map.getOrPut(key) catch return;
+    fn bumpBy(map: anytype, key: anytype, n: u32) void {
+        const e = map.getOrPut(key) catch @panic("out of memory");
         e.value_ptr.* = if (e.found_existing) e.value_ptr.* + n else n;
     }
 
-    fn drop(map: *std.StringHashMap(u32), key: []const u8) void {
+    fn drop(map: anytype, key: anytype) void {
         dropBy(map, key, 1);
     }
 
-    fn dropBy(map: *std.StringHashMap(u32), key: []const u8, n: u32) void {
-        const e = map.getPtr(key) orelse return;
-        e.* = if (e.* > n) e.* - n else 0;
+    fn dropBy(map: anytype, key: anytype, n: u32) void {
+        map.getPtr(key).?.* -= n;
     }
 };
 

@@ -208,14 +208,22 @@ const Expansion = struct {
 
     fn registerDriversIn(ex: *Expansion, decls: []const *Node, seen: *std.AutoHashMap(*const Node, void)) void {
         for (decls) |decl| {
+            const saved = ex.self.lexicalContext();
+            defer ex.self.restoreLexicalContext(saved);
+            ex.self.setDeclarationContext(decl);
             if (imports.isModuleDriver(decl)) {
-                ex.self.expansion.registerDriver(decl, ex.self.program_index.module_cache);
+                ex.self.expansion.registerDriver(decl, ex.self.current_environment, ex.self.program_index.module_cache);
                 continue;
             }
             if (decl.data != .namespace_decl) continue;
             if (seen.contains(decl)) continue;
             seen.put(decl, {}) catch {};
             const ns = &decl.data.namespace_decl;
+            const target = if (ex.self.current_environment) |env|
+                ex.self.program_index.declarations().environment(env).namespaces.get(ns.name)
+            else
+                null;
+            ex.self.setCurrentEnvironment(if (target) |t| t.environment else null);
             ex.registerDriversIn(ns.own_decls, seen);
             ex.registerDriversIn(ns.decls, seen);
         }
@@ -226,6 +234,8 @@ const Expansion = struct {
     /// and arch fields are tags of, and the module constants a condition can
     /// name.
     fn primeTargetFacts(ex: *Expansion, decls: []const *Node) void {
+        const context = ex.self.lexicalContext();
+        defer ex.self.restoreLexicalContext(context);
         var seen = std.AutoHashMap(*const Node, void).init(ex.self.alloc);
         defer seen.deinit();
         ex.registerTargetEnums(decls, &seen);
@@ -296,7 +306,7 @@ const Expansion = struct {
             const env: imports.EnvironmentId = @enumFromInt(@as(u32, @intCast(i)));
             var aliases = table.environment(env).namespaces.valueIterator();
             while (aliases.next()) |target| {
-                if (!ex.self.expansion.scopeFinal(target.target_module_path)) continue;
+                if (!ex.self.expansion.environmentFinal(target.environment)) continue;
                 const ids = table.memberIds(target.environment, target.own_decls) catch @panic("out of memory");
                 target.member_ids = ids;
             }
@@ -438,7 +448,7 @@ const Expansion = struct {
         for (ex.parked.items) |p| {
             if (named.contains(p.decl)) continue;
             named.put(p.decl, {}) catch {};
-            ex.self.expansion.parkDriver(driverWhat(p.decl), p.awaited, driverSpan(p.decl));
+            ex.self.expansion.parkDriver(driverWhat(p.decl), p.awaited, driverSpan(p.decl), p.src);
         }
     }
 
@@ -605,6 +615,8 @@ const Expansion = struct {
     /// question, a name lookup — may WAIT here, because this fold is the one
     /// thing the drain can run again once the fact fires.
     fn foldTypeList(ex: *Expansion, iterable: *const Node, src: ?[]const u8) ?*const ast.ArrayLiteral {
+        const context = ex.self.lexicalContext();
+        defer ex.self.restoreLexicalContext(context);
         ex.self.expansion.awaited = null;
         const saved = ex.self.expansion.folding;
         ex.self.expansion.folding = true;
@@ -613,6 +625,8 @@ const Expansion = struct {
     }
 
     fn foldCondition(ex: *Expansion, condition: *const Node, src: ?[]const u8) ?bool {
+        const context = ex.self.lexicalContext();
+        defer ex.self.restoreLexicalContext(context);
         ex.self.expansion.awaited = null;
         const saved = ex.self.expansion.folding;
         ex.self.expansion.folding = true;
@@ -654,7 +668,7 @@ const Expansion = struct {
             .identifier => |id| {
                 if (ex.self.evalComptimeCondition(node)) |folded| return folded;
                 const cd = constNamed(ex, id.name, src) orelse {
-                    ex.awaitName(src orelse "", null, id.name);
+                    ex.awaitName(ex.self.environmentForSource(src), null, id.name);
                     return null;
                 };
                 return ex.driveCondition(cd.value, src, depth + 1);
@@ -703,18 +717,15 @@ const Expansion = struct {
                 return null;
             },
             .missing => |m| {
-                ex.awaitName(m.scope, m.namespace, m.member);
+                ex.awaitName(m.environment, m.namespace, m.member);
                 return null;
             },
             .ambiguous, .not_qualified => return null,
         }
     }
 
-    /// Wait for `scope` to finish declaring `member`. Once no undecided driver
-    /// can still write that name there, the absence is publishable and the
-    /// fold takes its ordinary unevaluable-condition path.
-    fn awaitName(ex: *Expansion, scope: []const u8, namespace: ?[]const u8, member: []const u8) void {
-        if (!ex.self.expansion.mayDeclare(scope, member)) return;
+    fn awaitName(ex: *Expansion, environment: ?imports.EnvironmentId, namespace: ?[]const u8, member: []const u8) void {
+        if (!ex.self.expansion.mayDeclare(environment orelse return, member)) return;
         const fact = if (namespace) |ns|
             std.fmt.allocPrint(ex.self.alloc, "'{s}' to declare '{s}'", .{ ns, member })
         else
@@ -925,7 +936,7 @@ const Group = struct {
     /// per-`inline for` name ledger (null outside one); false means the
     /// expansion was abandoned after a diagnostic.
     fn expandDriver(g: *Group, decl: *const Node, src: ?[]const u8, declared: ?*std.StringHashMap([]const u8), cursor: []const u8) bool {
-        g.ex.self.expansion.registerDriver(decl, g.ex.self.program_index.module_cache);
+        g.ex.self.expansion.registerDriver(decl, g.ex.self.environmentForSource(src), g.ex.self.program_index.module_cache);
         g.ex.just_parked = false;
         const done = g.expandDriverBody(decl, src, declared, cursor);
         // A driver that parked is not decided: it holds its contributions until
@@ -942,7 +953,9 @@ const Group = struct {
     }
 
     fn expandDriverBody(g: *Group, decl: *const Node, src: ?[]const u8, declared: ?*std.StringHashMap([]const u8), cursor: []const u8) bool {
-        g.ex.self.setCurrentSourceFile(src);
+        const context = g.ex.self.lexicalContext();
+        defer g.ex.self.restoreLexicalContext(context);
+        g.ex.self.setCurrentEnvironment(g.ex.self.expansion.driverEnvironment(decl));
         switch (decl.data) {
             .if_expr => |ie| {
                 const folded = g.ex.foldCondition(ie.condition, src);
@@ -1152,7 +1165,7 @@ const Group = struct {
     fn mintFacts(g: *Group, decl: *Node, source: []const u8) bool {
         const self = g.ex.self;
         const table = self.program_index.declarations();
-        const env = table.internEnvironment(source, &.{}) catch @panic("out of memory");
+        const env = self.environmentForSource(source).?;
         const claimed = table.claim(env, decl) catch @panic("out of memory");
         if (!claimed) {
             if (self.diagnostics) |diags|
