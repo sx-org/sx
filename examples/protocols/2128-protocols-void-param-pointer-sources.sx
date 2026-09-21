@@ -21,9 +21,9 @@ main :: () {
     s : Sink = .{};
     t : Take = s;
 
-    many : [*]u8 = xx a.allocBytes(8);
+    many : [*]u8 = a.allocBytes(8);
     truth : usize = xx many;
-    one : *u8 = xx many;
+    one : *u8 = many;
     raw : *void = many;
 
     print("plain {}\n", plain(many) == truth);

@@ -9,7 +9,7 @@ pthread_create :: (thread: *usize, attr: *void, start: (*void) -> *void abi(.c),
 pthread_join   :: (thread: usize, retval: **void) -> i32 extern clib;
 
 entry :: (arg: *void) -> *void abi(.c) {
-    p : *i64 = xx arg;
+    p : *i64 = arg;
     gpa := GPA.init();
     push .{ allocator = gpa } {
         s := concat("th", "read");      // allocate through the thread's OWN context

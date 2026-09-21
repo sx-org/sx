@@ -113,7 +113,7 @@ decodeCase :: (packed: string, plain: string, coding: string, framing: i64, oneS
     cap := head.len + plain.len - (if oneShort then 1 else 0);
     storage := context.allocator.allocBytes(cap);
     if storage == null { socket.close(pair[0]); if pair[1] >= 0 { socket.close(pair[1]); } return false; }
-    response, e := http.Client.recv(pair[0], xx storage, cap);
+    response, e := http.Client.recv(pair[0], storage, cap);
     if oneShort { ok = ok and e == .TooLarge; }
     else {
         wanted := if coding == "gzip" then http.ContentCoding.gzip else http.ContentCoding.deflate;
@@ -151,7 +151,7 @@ rangeCodingPreserved :: (packed: string, coding: string, status: i64) -> bool {
     ok := writeAll(pair[1], head) and writeAll(pair[1], packed);
     storage := context.allocator.allocBytes(head.len + packed.len);
     if storage == null { socket.close(pair[0]); socket.close(pair[1]); return false; }
-    response, e := http.Client.recv(pair[0], xx storage, head.len + packed.len);
+    response, e := http.Client.recv(pair[0], storage, head.len + packed.len);
     ok = ok and !e and response.status == status and response.decodedFrom == null
         and response.header("content-encoding") == coding and same(response.body, packed);
     context.allocator.deallocBytes(storage);

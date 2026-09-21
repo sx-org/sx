@@ -143,7 +143,7 @@ main :: () -> i32 {
 
     push .{ allocator = gpa } {
         cap : i64 = 32768;
-        rbuf : [*]u8 = xx context.allocator.allocBytes(cap);
+        rbuf : [*]u8 = context.allocator.allocBytes(cap);
         reqArena := mem.Arena.init(gpa, 65536);
 
         cfg : http.Config = .{
@@ -182,7 +182,7 @@ main :: () -> i32 {
         chk : i64 = 0;
         push .{ allocator = reqArena } {
             // build the full decoded body first for the expected checksum
-            full : [*]u8 = xx context.allocator.allocBytes(bodyWant);
+            full : [*]u8 = context.allocator.allocBytes(bodyWant);
             i := 0;
             while i < bodyWant { full[i] = xx (65 + (i % 26)); i += 1; }
             chk = checksum(string{ ptr = full, len = bodyWant });

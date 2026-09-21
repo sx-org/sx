@@ -212,7 +212,7 @@ GlyphCache :: struct {
 
         // Load font file
         fileSize : i32 = 0;
-        fontData := read_file_bytes(path.ptr.([*:0]u8), *fileSize);
+        fontData := read_file_bytes(path, *fileSize);
         if fontData == null {
             @printf("Failed to load font: ");
             @printf("{}", path);
@@ -627,7 +627,7 @@ GlyphCache :: struct {
         total : f32 = 0.0;
 
         kbts_ShapeBegin(self.shapeCtx, KBTS_DIRECTION_DONT_KNOW, KBTS_LANGUAGE_DONT_KNOW);
-        kbts_ShapeUtf8(self.shapeCtx, text.ptr.([*:0]u8), text.len.(i32), KBTS_USER_ID_GENERATION_MODE_CODEPOINT_INDEX);
+        kbts_ShapeUtf8(self.shapeCtx, @reinterpret([*:0]u8, text.ptr), text.len.(i32), KBTS_USER_ID_GENERATION_MODE_CODEPOINT_INDEX);
         kbts_ShapeEnd(self.shapeCtx);
 
         run : KbtsRun = ---;

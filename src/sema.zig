@@ -844,7 +844,14 @@ pub const Analyzer = struct {
                 return Type.unresolved;
             },
             .unary_op => |unop| {
-                return self.inferExprType(unop.operand);
+                const inner = self.inferExprType(unop.operand);
+                if (unop.op == .address_of) {
+                    const name = inner.displayName(self.allocator) catch return .unresolved;
+                    const is_raw = innerNameIsRaw(inner);
+                    if (unop.operand.data == .index_expr) return .{ .many_pointer_type = .{ .element_name = name, .is_raw = is_raw } };
+                    return .{ .pointer_type = .{ .pointee_name = name, .is_raw = is_raw } };
+                }
+                return inner;
             },
             .field_access => |fa| {
                 var obj_ty = self.inferExprType(fa.object);
@@ -886,7 +893,11 @@ pub const Analyzer = struct {
                 return Type.unresolved;
             },
             .index_expr => |ie| {
-                const obj_ty = self.inferExprType(ie.object);
+                var obj_ty = self.inferExprType(ie.object);
+                if (obj_ty.isPointer()) {
+                    obj_ty = self.resolveTypeNameStr(obj_ty.pointer_type.pointee_name, obj_ty.pointer_type.is_raw);
+                    if (!obj_ty.isArray() and !obj_ty.isSlice()) return .unresolved;
+                }
                 if (obj_ty == .string_type) return Type.u(8);
                 if (obj_ty.isArray()) return self.resolveTypeNameStr(obj_ty.array_type.element_name, obj_ty.array_type.is_raw);
                 if (obj_ty.isManyPointer()) return self.resolveTypeNameStr(obj_ty.many_pointer_type.element_name, obj_ty.many_pointer_type.is_raw);

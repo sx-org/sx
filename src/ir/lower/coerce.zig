@@ -236,8 +236,9 @@ fn implicitIntegerConversion(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) ?b
 pub fn coerceConstant(self: *Lowering, value: inst_mod.ConstantValue, src: TypeId, dst: TypeId) ?inst_mod.ConstantValue {
     if (src == dst) return value;
     if (!(implicitIntegerConversion(self, src, dst) orelse true)) return null;
+    if (self.coercionResolver().classify(src, dst).implicitPointer()) return value;
     return switch (self.coercionResolver().classify(src, dst)) {
-        .no_op, .integer_retype, .ptr_to_void => value,
+        .no_op, .integer_retype => value,
         .widen => if (src == .f32 and value == .float)
             .{ .float = @as(f32, @floatCast(value.float)) }
         else
@@ -256,8 +257,9 @@ pub fn coerceConstant(self: *Lowering, value: inst_mod.ConstantValue, src: TypeI
 }
 
 fn isGlyphFreeImplicit(plan: @import("../conversions.zig").CoercionResolver.CoercionPlan) bool {
+    if (plan.implicitPointer()) return true;
     return switch (plan) {
-        .integer_retype, .widen, .int_to_float, .array_to_slice, .array_drop_terminator, .array_to_many_ptr, .slice_to_many_ptr, .optional_wrap, .void_to_optional, .member_to_open_set, .ptr_to_void, .optional_to_optional, .struct_elementwise, .slice_len_convert => true,
+        .integer_retype, .widen, .int_to_float, .array_to_slice, .array_drop_terminator, .array_to_many_ptr, .slice_to_many_ptr, .optional_wrap, .void_to_optional, .member_to_open_set, .optional_to_optional, .struct_elementwise, .slice_len_convert => true,
         else => false,
     };
 }
@@ -1460,7 +1462,7 @@ pub fn externalErrorsExist(self: *Lowering) bool {
 pub fn noneReinterpretIsUnsafe(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool {
     if (src_ty == dst_ty) return false;
     const plan = self.coercionResolver().classify(src_ty, dst_ty);
-    if (plan == .error_to_int) return true;
+    if (plan == .error_to_int or plan == .single_to_many or plan == .void_to_c_function) return true;
     if (plan != .none) return false;
     const src_optional = !src_ty.isBuiltin() and self.module.types.get(src_ty) == .optional;
     const dst_optional = !dst_ty.isBuiltin() and self.module.types.get(dst_ty) == .optional;
@@ -1487,13 +1489,6 @@ pub fn noneReinterpretIsUnsafe(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) 
     return !sameStoreWidth(self, src_ty, dst_ty);
 }
 
-/// Two addresses that bottom out on DIFFERENT structs at the same indirection
-/// depth (`*A → *B`). Both sides are one word, so the width rule reads the
-/// store as bit-compatible, but the destination names a layout the source's
-/// bytes do not hold: the program reads `B`'s fields out of an `A`. Two
-/// layouts are exempt — a protocol, which the source concrete lends a view of,
-/// and a foreign runtime class, whose hierarchy lives in the runtime rather
-/// than the type table.
 fn structPointeesDiffer(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool {
     var src = src_ty;
     var dst = dst_ty;
@@ -1507,7 +1502,7 @@ fn structPointeesDiffer(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool {
             continue;
         }
         if (self.getProtocolInfo(dst_pointee) != null) return false;
-        return !isRuntimeClass(self, src_pointee) and !isRuntimeClass(self, dst_pointee);
+        return true;
     }
 }
 
@@ -1522,11 +1517,6 @@ fn pointeeOf(self: *Lowering, ty: TypeId) ?TypeId {
 
 fn isStructType(self: *Lowering, ty: TypeId) bool {
     return !ty.isBuiltin() and self.module.types.get(ty) == .@"struct";
-}
-
-fn isRuntimeClass(self: *Lowering, struct_ty: TypeId) bool {
-    const name = self.module.types.getString(self.module.types.get(struct_ty).@"struct".name);
-    return self.program_index.contains(.runtime_class, name);
 }
 
 /// A failable whose members the destination failable's channel does not hold.
@@ -1815,25 +1805,14 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             }
             return val;
         },
-        // Nothing implicitly adds a terminator: a view whose type carries none
-        // cannot stand where one is named. `toCstring` is the owned,
-        // terminated copy a `string` reaches a C byte pointer through.
         .adds_terminator_reject => {
-            // An explicit `p.([*:X]T)` asserts the terminator the pointer's own
-            // type does not carry — the pointer pun the `.none` arm gives every
-            // other thin-pointer pair.
-            if (mode == .explicit and isPointerValueKind(self, src_ty) and isPointerValueKind(self, dst_ty)) {
-                const retyped = self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty);
-                self.xx_passthrough_refs.put(retyped, {}) catch {};
-                return retyped;
-            }
             if (self.diagnostics) |d| {
                 const cs = self.builder.current_span;
                 const fix = if (src_ty == .string and !self.coercionResolver().classify(.cstring, dst_ty).refuses())
                     " — materialize one with toCstring(s)"
                 else
                     "";
-                d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "a value of type '{s}' does not coerce to '{s}': nothing implicitly adds a terminator{s}", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty), fix });
+                d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "a value of type '{s}' does not coerce to '{s}': no conversion adds a terminator{s}", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty), fix });
             }
             return val;
         },
@@ -1967,8 +1946,14 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             if (mode == .implicit) diagnosePointerIntegerWeld(self, src_ty, dst_ty);
             return self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty);
         },
-        // *T / [*]T → *void: same address, result typed `*void`.
-        .ptr_to_void => return self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
+        .single_to_many, .void_to_c_function => {
+            if (mode == .implicit) {
+                diagnoseUnmodeledCoercion(self, val, src_ty, dst_ty);
+                return val;
+            }
+            return self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty);
+        },
+        .ptr_to_void, .void_to_ptr, .many_to_single, .array_ptr_to_many_ptr, .many_drop_terminator, .objc_upcast => return self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
         .narrow => {
             if (mode == .implicit and Lowering.isFloat(src_ty) and Lowering.isFloat(dst_ty)) {
                 if (self.builder.constFloatInfo(val)) |info| {

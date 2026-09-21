@@ -28,7 +28,7 @@ main :: () -> i32 {
         class_addMethod(cls, sel, @reinterpret(*void, lengthImp), "i@:".ptr);
         objc_registerClassPair(cls);
 
-        inst : *SxProbeNiladic = xx class_createInstance(cls, 0);
+        inst : *SxProbeNiladic = class_createInstance(cls, 0);
         n := inst.length();
         print("length = {}\n", n);
     }

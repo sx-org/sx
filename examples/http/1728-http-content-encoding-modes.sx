@@ -137,7 +137,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
 }
 
 serverEntry :: (arg: *void) -> *void abi(.c) {
-    srv : *http.Server = xx arg;
+    srv : *http.Server = arg;
     gpa := GPA.init();
     push .{ allocator = gpa } { srv.run(); }
     null
@@ -323,7 +323,7 @@ runMode :: (app: *App, mode: i64, port: i64) -> bool {
     t, te := thread.Thread.spawn(serverEntry, *srv);
     if te { srv.close(); runner.deinit(); return false; }
 
-    storage : [*]u8 = xx context.allocator.allocBytes(BODY_LEN + 8192);
+    storage : [*]u8 = context.allocator.allocBytes(BODY_LEN + 8192);
     if storage == null {
         srv.stop(); t.join(); srv.close(); runner.deinit(); return false;
     }

@@ -9,6 +9,6 @@ Probe :: @ObjcClass("NSString") extern {
 }
 
 probeLen :: (p: *void) -> u64 {
-    s : *Probe = xx p;
+    s : *Probe = p;
     s.length()
 }

@@ -157,7 +157,7 @@ main :: () -> i32 {
 
     push .{ allocator = gpa } {
         cap : i64 = 16384;
-        rbuf : [*]u8 = xx context.allocator.allocBytes(cap);
+        rbuf : [*]u8 = context.allocator.allocBytes(cap);
 
         cfg : http.Config = .{ port = PORT_A, maxConn = 4, requestCount = 10 };
         srv, se := http.Server.init(cfg, route, xx *streamCalls);

@@ -18,7 +18,7 @@ handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
 // C→sx thread boundary: fabricate a Context, then run the server's loop until
 // stop() wakes it (the 1636 re-entry contract).
 srvEntry :: (arg: *void) -> *void abi(.c) {
-    srv : *http.Server = xx arg;
+    srv : *http.Server = arg;
     gpa := GPA.init();
     push .{ allocator = gpa } {
         srv.run();

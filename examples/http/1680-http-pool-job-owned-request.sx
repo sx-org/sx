@@ -115,7 +115,7 @@ main :: () -> i32 {
 
     push .{ allocator = gpa } {
         cap : i64 = 65536;
-        rbuf : [*]u8 = xx context.allocator.allocBytes(cap);
+        rbuf : [*]u8 = context.allocator.allocBytes(cap);
 
         cfg : http.Config = .{
             port = PORT,
@@ -131,7 +131,7 @@ main :: () -> i32 {
         if se { print("init failed\n"); return 1; }
 
         // ── connection A: POST /slow with a known body ────────────────
-        aBody : [*]u8 = xx context.allocator.allocBytes(A_BODY_LEN);
+        aBody : [*]u8 = context.allocator.allocBytes(A_BODY_LEN);
         i : i64 = 0;
         while i < A_BODY_LEN { aBody[i] = xx ((i * 7) % 251); i += 1; }
         aBodyS := string{ ptr = aBody, len = A_BODY_LEN };
@@ -165,7 +165,7 @@ main :: () -> i32 {
         // the read buffer while the worker still holds its request. B's body
         // is a DIFFERENT pattern, so a view-holding worker's checksum would
         // see B's bytes (or freed memory), never A's.
-        bBody : [*]u8 = xx context.allocator.allocBytes(B_BODY_LEN);
+        bBody : [*]u8 = context.allocator.allocBytes(B_BODY_LEN);
         i = 0;
         while i < B_BODY_LEN { bBody[i] = xx (255 - (i % 199)); i += 1; }
 

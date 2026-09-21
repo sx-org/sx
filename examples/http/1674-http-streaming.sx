@@ -168,8 +168,8 @@ main :: () -> i32 {
         else {
             // Response buffer big enough for the framed 200 KB response.
             cap : i64 = BODY_LEN + 65536;
-            rbuf : [*]u8 = xx context.allocator.allocBytes(cap);
-            dbuf : [*]u8 = xx context.allocator.allocBytes(BODY_LEN + 16);
+            rbuf : [*]u8 = context.allocator.allocBytes(cap);
+            dbuf : [*]u8 = context.allocator.allocBytes(BODY_LEN + 16);
 
             // ── 1. large chunked body, byte-exact reassembly ──────────
             c1 := dialPort(PORT);

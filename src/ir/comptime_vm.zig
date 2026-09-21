@@ -3149,13 +3149,11 @@ pub const Vm = struct {
         return raw;
     }
 
-    /// The pointee of a single-element pointer type (the result of `index_gep` is
-    /// `*element`). Falls back to `ty` if it isn't a `.pointer` (the caller only
-    /// uses the result for an element-size query).
     fn pointeeOf(table: *const types.TypeTable, ty: TypeId) TypeId {
         if (!ty.isBuiltin()) {
             const info = table.get(ty);
             if (info == .pointer) return info.pointer.pointee;
+            if (info == .many_pointer) return info.many_pointer.element;
         }
         return ty;
     }

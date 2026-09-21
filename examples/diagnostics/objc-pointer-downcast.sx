@@ -1,0 +1,7 @@
+CALayer :: @ObjcClass("CALayer") extern {}
+CAEAGLLayer :: @ObjcClass("CAEAGLLayer", extends = CALayer) extern {}
+
+main :: () {
+    layer: *CALayer = null;
+    child: *CAEAGLLayer = layer;
+}

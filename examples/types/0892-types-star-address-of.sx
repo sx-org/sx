@@ -24,7 +24,7 @@ main :: () {
     fp := *pr.b;
     fp.* = 60;
     arr : [3]i64 = .[1, 2, 3];
-    ep := *arr[2];
+    ep: *i64 = *arr[2];
     ep.* = 30;
     print("places: {} {}\n", pr.b, arr[2]);
 

@@ -32,7 +32,7 @@ addWithCtx :: (ctx: *void, v: i32) -> i32 abi(.c) {
     gCallbackHits += 1;
     // Pass a sentinel via ctx to prove the pointer arg also survives the
     // round-trip — read it back as an i32 through *i32.
-    p : *i32 = xx ctx;
+    p : *i32 = ctx;
     p.* + v
 }
 

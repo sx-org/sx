@@ -37,7 +37,7 @@ main :: () {
     w := Widget{ value = 7 };
     sz := w.(Sizable);
     pr : @Protocol = xx sz;
-    wc : *Widget = xx sz.(@Protocol).ctx;
+    wc : *Widget = sz.(@Protocol).ctx;
     print("default: {} {}\n", wc.value == 7 and sz.(@Protocol).ctx == *w, pr.ctx == sz.(@Protocol).ctx);
     print("default typeId: {}\n", sz.(@Protocol).typeId == @typeOf(sz));
 

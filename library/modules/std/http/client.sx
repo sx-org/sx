@@ -1123,7 +1123,7 @@ ClientPool :: struct {
                 idx = self.store(u, c);
                 reused = false;
             }
-            e := *self.entries.items[idx];
+            e: *PoolEntry = *self.entries.items[idx];
             se := sendOn(*e.conn, method, u.path, u.host, "", body);
             if se {
                 self.drop(idx);
@@ -1167,7 +1167,7 @@ ClientPool :: struct {
     find :: (self: *ClientPool, u: Url) -> i64 {
         i : i64 = 0;
         while i < self.entries.len {
-            e := *self.entries.items[i];
+            e: *PoolEntry = *self.entries.items[i];
             if e.live and e.https == u.https and e.port == u.port and e.hostLen == u.host.len {
                 same := true;
                 j : i64 = 0;
@@ -1195,7 +1195,7 @@ ClientPool :: struct {
         ne : PoolEntry = .{ host = hp, hostLen = u.host.len, port = u.port,
                             https = u.https, conn = c, live = true };
         if i < self.entries.len {
-            old := *self.entries.items[i];
+            old: *PoolEntry = *self.entries.items[i];
             if old.host != null { self.a.deallocBytes(old.host); }
             self.entries.items[i] = ne;
         } else {
@@ -1205,7 +1205,7 @@ ClientPool :: struct {
     }
 
     drop :: (self: *ClientPool, idx: i64) {
-        e := *self.entries.items[idx];
+        e: *PoolEntry = *self.entries.items[idx];
         if !e.live { return; }
         closeConn(*e.conn);
         e.live = false;
@@ -1215,7 +1215,7 @@ ClientPool :: struct {
     close :: (self: *ClientPool) {
         i : i64 = 0;
         while i < self.entries.len {
-            e := *self.entries.items[i];
+            e: *PoolEntry = *self.entries.items[i];
             if e.live { closeConn(*e.conn); e.live = false; }
             if e.host != null { self.a.deallocBytes(e.host); e.host = null; }
             i += 1;

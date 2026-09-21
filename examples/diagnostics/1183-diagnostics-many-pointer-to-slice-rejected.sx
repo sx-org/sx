@@ -11,11 +11,11 @@ sum :: (s: []i64) -> i64 {
 
 main :: () -> i32 {
     a : [4]i64 = .[10, 20, 30, 40];
-    mp : [*]i64 = xx *a[0];   // a genuine many-pointer (carries no length)
+    mp : [*]i64 = *a[0];
     r := sum(mp);             // [*]i64 → []i64 — rejected; needs mp[0..len]
     print("{}\n", r);
     bytes : [2]u8 = .[1, 2];
-    mp8 : [*]u8 = xx *bytes[0];
+    mp8 : [*]u8 = *bytes[0];
     s : []u8 = mp8;           // [*]u8 → string
     return 0;
 }

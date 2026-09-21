@@ -1,10 +1,3 @@
-// A terminated value converts wherever the destination names the same
-// terminator or drops it — to a slice, to a thin pointer, to the plain forms.
-// Back the other way, a pointer carrying no terminator reaches one only
-// through the explicit assertion `q.([*:X]T)`. A view or pointer formed from
-// an array aliases the array's storage, so a write through it is a write to
-// the array.
-
 @import "modules/std.sx";
 
 termSlice :: (t: [:1]u8) -> i64 { t.len }
@@ -24,7 +17,7 @@ main :: () -> i32 {
     print("pointer: {} {}\n", termPtr(p), plainPtr(p));
 
     q : [*]u8 = p;
-    print("asserted: {}\n", termPtr(q.([*:1]u8)));
+    print("asserted: {}\n", termPtr(@reinterpret([*:1]u8, q)));
 
     p[1] = 55;
     print("aliases: {} {}\n", k[1], t[1]);

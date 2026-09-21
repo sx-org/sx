@@ -1,0 +1,4 @@
+main :: () {
+    raw: *void = null;
+    p := raw.([*:0]u8);
+}

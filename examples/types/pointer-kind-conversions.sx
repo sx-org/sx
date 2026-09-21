@@ -1,0 +1,28 @@
+@import "modules/std.sx";
+
+readSecond :: () -> u8 {
+    bytes: [3]u8 = .[11, 22, 33];
+    p := *bytes[1];
+    p[0]
+}
+
+Second :: @run readSecond();
+
+main :: () {
+    a: [2]i64 = .[1, 2];
+    x: i64 = 7;
+    element := *a[0];
+    array := *a;
+    object := *x;
+    print("{} {} {}\n", @typeName(@typeOf(*a[0])), @typeName(@typeOf(array)), @typeName(@typeOf(object)));
+
+    decayed: [*]i64 = *a;
+    first: *i64 = element;
+    raw: *void = object;
+    recovered: *i64 = raw;
+    buffer: [*]i64 = raw;
+    asserted := object.([*]i64);
+    decayed[1] = 9;
+    print("{} {} {} {} {}\n", first.*, recovered.*, buffer[0], asserted[0], element[1]);
+    print("{} {}\n", Second, readSecond());
+}

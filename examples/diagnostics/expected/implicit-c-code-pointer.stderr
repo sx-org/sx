@@ -1,0 +1,5 @@
+error: cannot initialize 'f' of type '(i64) -> i64 abi(.c)' with a value of type '*void'
+  --> examples/diagnostics/implicit-c-code-pointer.sx:3:31
+   |
+ 3 |     f: (i64) -> i64 abi(.c) = raw;
+   |                               ^^^

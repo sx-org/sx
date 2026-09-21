@@ -349,7 +349,7 @@ test "a named tail refuses a string where its element names a terminator" {
     , &lowered);
     defer lowered.module.deinit();
 
-    try std.testing.expectEqual(@as(usize, 1), countMessages(&lowered, "nothing implicitly adds a terminator"));
+    try std.testing.expectEqual(@as(usize, 1), countMessages(&lowered, "no conversion adds a terminator"));
 }
 
 test "an unwrapped C boundary and an internal borrow stay legal" {

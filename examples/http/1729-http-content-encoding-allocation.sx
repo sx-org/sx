@@ -100,7 +100,7 @@ serializationCase :: (chunked: bool, fail: bool) -> bool {
         then serverImpl.serializeChunkedHead(*resp, true, failing, date, "")
         else serverImpl.serializeBytes(*resp, true, failing, false, date, "");
     success := output.buf != null;
-    if output.buf != null { failing.deallocBytes(xx output.buf); }
+    if output.buf != null { failing.deallocBytes(output.buf); }
     expected := if fail then !success and failing.failures == 1 else success;
     expected and failing.live == 0 and gpa.allocCount == 0
 }

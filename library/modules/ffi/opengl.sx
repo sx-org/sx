@@ -200,7 +200,7 @@ createProgram :: (vertSrc: [:0]u8, fragSrc: [:0]u8) -> u32 {
 
 compileShader :: (shaderType : u32, source: [:0]u8) -> u32 {
     shader := glCreateShader(shaderType);
-    text : [*:0]u8 = source.ptr.([*:0]u8);
+    text : [*:0]u8 = source;
     glShaderSource(shader, 1, *text, null);
     glCompileShader(shader);
 

@@ -11,6 +11,39 @@ const sema = @import("sema.zig");
 const types = @import("types.zig");
 const Type = types.Type;
 
+test "sema: indexed addresses are many-pointers and object addresses retain their shape" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\main :: () {
+        \\    a: [2]i64 = .[1, 2];
+        \\    x: i64 = 3;
+        \\    array := *a;
+        \\    element := *array[0];
+        \\    object := *x;
+        \\}
+    ;
+    var parser = try Parser.init(alloc, source);
+    const root = try parser.parse();
+    var analyzer = sema.Analyzer.init(alloc);
+    const result = try analyzer.analyze(root);
+    const expected = [_]struct { name: []const u8, display: []const u8 }{
+        .{ .name = "element", .display = "[*]i64" },
+        .{ .name = "array", .display = "*[2]i64" },
+        .{ .name = "object", .display = "*i64" },
+    };
+    for (expected) |want| {
+        var found = false;
+        for (result.symbols) |symbol| {
+            if (!std.mem.eql(u8, symbol.name, want.name)) continue;
+            try std.testing.expectEqualStrings(want.display, try symbol.ty.?.displayName(alloc));
+            found = true;
+        }
+        try std.testing.expect(found);
+    }
+}
+
 test "sema: intCast exposes its error channel and handlers retain the integer type" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
