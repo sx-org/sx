@@ -342,3 +342,34 @@ test "sema: terminated array, slice and many-pointer types display their termina
         try std.testing.expectEqualStrings(case.want, try ty.displayName(alloc));
     }
 }
+
+test "generic editor instances retain selected declarations behind equal display names" {
+    const parser_mod = @import("parser.zig");
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var ap = try parser_mod.Parser.init(alloc, "Box :: struct ($T: Type) { first: i64; }");
+    var bp = try parser_mod.Parser.init(alloc, "Box :: struct ($T: Type) { second: bool; }");
+    var a = sema.Analyzer.init(alloc);
+    var b = sema.Analyzer.init(alloc);
+    const ar = try a.analyze(try ap.parse());
+    const br = try b.analyze(try bp.parse());
+    var analyzer = sema.Analyzer.init(alloc);
+    try analyzer.struct_types.merge(ar.struct_types);
+    try analyzer.struct_types.merge(br.struct_types);
+    var arg = ast.Node{ .span = .{ .start = 0, .end = 0 }, .data = .{ .type_expr = .{ .name = "i64" } } };
+    const args = [_]*ast.Node{&arg};
+    try analyzer.selection.own.put("Box", ar.selection.select("Box").?);
+    const first = analyzer.instantiateGeneric("Box", &args).?.struct_instance;
+    try analyzer.selection.own.put("Box", br.selection.select("Box").?);
+    const second = analyzer.instantiateGeneric("Box", &args).?.struct_instance;
+    try std.testing.expect(first != second);
+    try std.testing.expectEqualStrings(first.name, second.name);
+    try std.testing.expectEqualStrings("first", first.field_names[0]);
+    try std.testing.expectEqualStrings("second", second.field_names[0]);
+    try std.testing.expectEqual(ar.selection.select("Box").?, first.key.declaration);
+    try std.testing.expectEqual(br.selection.select("Box").?, second.key.declaration);
+    try std.testing.expectEqual(second, analyzer.instantiateGeneric("Box", &args).?.struct_instance);
+    try analyzer.selection.own.put("Box", ar.selection.select("Box").?);
+    try std.testing.expectEqual(first, analyzer.instantiateGeneric("Box", &args).?.struct_instance);
+}

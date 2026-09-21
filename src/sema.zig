@@ -70,6 +70,8 @@ pub const Reference = struct {
 /// A reference to a struct field / method / enum variant. These aren't symbols,
 /// so they're tracked separately and matched by (owner type, name).
 pub const MemberRef = struct {
+    declaration: ?Declaration = null,
+    instance: ?*const Type.StructInstance = null,
     span: Span, // the member-name token
     name: []const u8,
     owner: []const u8 = "", // owning type name, "" if unknown (bare enum literal)
@@ -83,10 +85,21 @@ pub const FnSignature = struct {
 };
 
 pub const StructTypeInfo = struct {
+    declaration: ?Declaration = null,
     field_names: []const []const u8,
     field_types: []const Type,
     type_params: []const []const u8 = &.{},
 };
+
+const InstanceCache = std.HashMap(editor_index.InstanceKey, *const Type.StructInstance, editor_index.InstanceKey.Context, std.hash_map.default_max_load_percentage);
+
+pub fn structTypeInfo(registry: Registry(StructTypeInfo), ty: Type) ?StructTypeInfo {
+    return switch (ty) {
+        .struct_type => |name| registry.get(name),
+        .struct_instance => |i| .{ .declaration = i.key.declaration, .field_names = i.field_names, .field_types = i.field_types },
+        else => null,
+    };
+}
 
 pub const TypeMap = std.AutoHashMap(*const Node, Type);
 
@@ -134,6 +147,7 @@ pub const Analyzer = struct {
     // Type registries
     fn_signatures: Registry(FnSignature),
     struct_types: Registry(StructTypeInfo),
+    generic_instances: InstanceCache,
     enum_types: Registry([]const []const u8),
     context_members: std.StringHashMap(Type),
     type_aliases: Registry([]const u8),
@@ -164,6 +178,7 @@ pub const Analyzer = struct {
             .symbol_index = std.StringHashMap(std.ArrayList(u32)).init(allocator),
             .fn_signatures = Registry(FnSignature).init(allocator, selection),
             .struct_types = Registry(StructTypeInfo).init(allocator, selection),
+            .generic_instances = InstanceCache.init(allocator),
             .context_members = std.StringHashMap(Type).init(allocator),
             .enum_types = Registry([]const []const u8).init(allocator, selection),
             .type_aliases = Registry([]const u8).init(allocator, selection),
@@ -349,8 +364,8 @@ pub const Analyzer = struct {
                 for (sd.field_names, sd.field_types) |name, node_type| {
                     if (node_type.data == .spread_expr) {
                         const operand_ty = self.fieldType(node_type.data.spread_expr.operand);
-                        if (operand_ty == .struct_type) {
-                            if (self.struct_types.get(operand_ty.struct_type)) |base| {
+                        if (operand_ty.isStruct()) {
+                            if (self.structInfo(operand_ty)) |base| {
                                 try field_names.appendSlice(self.allocator, base.field_names);
                                 try field_types.appendSlice(self.allocator, base.field_types);
                             }
@@ -361,6 +376,7 @@ pub const Analyzer = struct {
                     try field_types.append(self.allocator, self.fieldType(node_type));
                 }
                 try self.struct_types.put(sd.name, .{
+                    .declaration = self.selection.select(sd.name),
                     .field_names = try field_names.toOwnedSlice(self.allocator),
                     .field_types = try field_types.toOwnedSlice(self.allocator),
                     .type_params = tp_slice,
@@ -653,7 +669,7 @@ pub const Analyzer = struct {
     /// same either way).
     fn innerNameIsRaw(inner: Type) bool {
         return switch (inner) {
-            .struct_type, .enum_type, .union_type => true,
+            .struct_type, .struct_instance, .enum_type, .union_type => true,
             else => false,
         };
     }
@@ -674,6 +690,14 @@ pub const Analyzer = struct {
         };
     }
 
+    fn pointerType(self: *Analyzer, pointer: Type.PointerTypeInfo) Type {
+        return if (pointer.pointee) |ty| ty.* else self.resolveTypeNameStr(pointer.pointee_name, pointer.is_raw);
+    }
+
+    pub fn structInfo(self: *const Analyzer, ty: Type) ?StructTypeInfo {
+        return structTypeInfo(self.struct_types, ty);
+    }
+
     /// The element type yielded by iterating `ty` in a `for` loop: arrays,
     /// slices and many-pointers give their element; a List-like struct (one
     /// with an `items: [*]T` field) gives `T`; a pointer is followed to its
@@ -683,9 +707,9 @@ pub const Analyzer = struct {
             .array_type => |i| self.resolveTypeNameStr(i.element_name, i.is_raw),
             .slice_type => |i| self.resolveTypeNameStr(i.element_name, i.is_raw),
             .many_pointer_type => |i| self.resolveTypeNameStr(i.element_name, i.is_raw),
-            .pointer_type => |i| self.elementTypeOf(self.resolveTypeNameStr(i.pointee_name, i.is_raw)),
-            .struct_type => |name| blk: {
-                const info = self.struct_types.get(name) orelse break :blk null;
+            .pointer_type => |i| self.elementTypeOf(self.pointerType(i)),
+            .struct_type, .struct_instance => blk: {
+                const info = self.structInfo(ty) orelse break :blk null;
                 for (info.field_names, info.field_types) |fname, fty| {
                     if (std.mem.eql(u8, fname, "items") and fty == .many_pointer_type) {
                         break :blk self.resolveTypeNameStr(fty.many_pointer_type.element_name, fty.many_pointer_type.is_raw);
@@ -693,16 +717,6 @@ pub const Analyzer = struct {
                 }
                 break :blk null;
             },
-            else => null,
-        };
-    }
-
-    /// The type name an instantiation arg node carries (`Move` in
-    /// `List(Move)`). Null for non-nameable args (e.g. value params like `3`).
-    fn argTypeName(node: *const Node) ?[]const u8 {
-        return switch (node.data) {
-            .type_expr => |te| te.name,
-            .identifier => |id| id.name,
             else => null,
         };
     }
@@ -732,17 +746,27 @@ pub const Analyzer = struct {
     /// access resolves the generic params (`List(Move).items` → `[*]Move`).
     /// Returns the instance type, or null when `base` isn't a generic struct,
     /// the arity mismatches, or an arg isn't nameable.
-    fn instantiateGeneric(self: *Analyzer, base: []const u8, arg_nodes: []const *Node) ?Type {
+    pub fn instantiateGeneric(self: *Analyzer, base: []const u8, arg_nodes: []const *Node) ?Type {
         const info = self.struct_types.get(base) orelse return null;
         if (info.type_params.len == 0 or arg_nodes.len != info.type_params.len) return null;
 
+        const declaration = info.declaration orelse return null;
+        var arguments = std.ArrayList(editor_index.InstanceArgument).empty;
         var args = std.ArrayList([]const u8).empty;
         for (arg_nodes) |an| {
-            const nm = argTypeName(an) orelse return null;
+            const nm = self.qualifiedTypeName(an) orelse return null;
             args.append(self.allocator, nm) catch return null;
+            const argument: editor_index.InstanceArgument = if (!typeExprIsRaw(an) and Type.fromName(nm) != null)
+                .{ .name = nm }
+            else if (self.selection.select(nm)) |d|
+                .{ .declaration = d }
+            else
+                return null;
+            arguments.append(self.allocator, argument) catch return null;
         }
 
-        // Mangle "base(A,B)".
+        const key: editor_index.InstanceKey = .{ .declaration = declaration, .arguments = arguments.items };
+        if (self.generic_instances.get(key)) |instance| return .{ .struct_instance = instance };
         var name_buf = std.ArrayList(u8).empty;
         name_buf.appendSlice(self.allocator, base) catch return null;
         name_buf.append(self.allocator, '(') catch return null;
@@ -753,17 +777,19 @@ pub const Analyzer = struct {
         name_buf.append(self.allocator, ')') catch return null;
         const mangled = name_buf.toOwnedSlice(self.allocator) catch return null;
 
-        if (self.struct_types.contains(mangled)) return .{ .struct_type = mangled };
-
         var new_fts = std.ArrayList(Type).empty;
         for (info.field_types) |ft| {
             new_fts.append(self.allocator, substType(ft, info.type_params, args.items)) catch return null;
         }
-        self.struct_types.put(mangled, .{
+        const instance = self.allocator.create(Type.StructInstance) catch return null;
+        instance.* = .{
+            .name = mangled,
+            .key = key,
             .field_names = info.field_names,
             .field_types = new_fts.toOwnedSlice(self.allocator) catch return null,
-        }) catch return null;
-        return .{ .struct_type = mangled };
+        };
+        self.generic_instances.put(key, instance) catch return null;
+        return .{ .struct_instance = instance };
     }
 
     /// Infer an approximate editor `Type` for an expression (hover/completion;
@@ -828,8 +854,12 @@ pub const Analyzer = struct {
                 if (call_node.callee.data == .field_access) {
                     const fa = call_node.callee.data.field_access;
                     var recv_ty = self.inferExprType(fa.object);
-                    if (recv_ty.isPointer()) recv_ty = self.resolveTypeNameStr(recv_ty.pointer_type.pointee_name, recv_ty.pointer_type.is_raw);
-                    if (recv_ty.toName()) |owner| {
+                    if (recv_ty.isPointer()) recv_ty = self.pointerType(recv_ty.pointer_type);
+                    if (recv_ty == .struct_instance) {
+                        if (self.fn_signatures.members.get(recv_ty.struct_instance.key.declaration)) |members| {
+                            if (members.get(fa.field)) |sig| return sig.return_type;
+                        }
+                    } else if (recv_ty.toName()) |owner| {
                         if (std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ owner, fa.field })) |key| {
                             if (self.fn_signatures.get(key)) |sig| return sig.return_type;
                         } else |_| {}
@@ -847,7 +877,7 @@ pub const Analyzer = struct {
                     const obj_ty = self.inferExprType(call_node.args[0]);
                     const index = self.constIndexValue(call_node.args[1]) orelse return .any_type;
                     const fields = switch (obj_ty) {
-                        .struct_type => |name| (self.struct_types.get(name) orelse return .unresolved).field_types,
+                        .struct_type, .struct_instance => (self.structInfo(obj_ty) orelse return .unresolved).field_types,
                         .tuple_type => |tt| tt.field_types,
                         else => return .any_type,
                     };
@@ -876,7 +906,9 @@ pub const Analyzer = struct {
                     const name = inner.displayName(self.allocator) catch return .unresolved;
                     const is_raw = innerNameIsRaw(inner);
                     if (unop.operand.data == .index_expr) return .{ .many_pointer_type = .{ .element_name = name, .is_raw = is_raw } };
-                    return .{ .pointer_type = .{ .pointee_name = name, .is_raw = is_raw } };
+                    const pointee = self.allocator.create(Type) catch return .unresolved;
+                    pointee.* = inner;
+                    return .{ .pointer_type = .{ .pointee_name = name, .is_raw = is_raw, .pointee = pointee } };
                 }
                 return inner;
             },
@@ -884,7 +916,7 @@ pub const Analyzer = struct {
                 var obj_ty = self.inferExprType(fa.object);
                 // `p.field` where `p` is `*T` resolves on the pointee `T`.
                 if (obj_ty.isPointer()) {
-                    obj_ty = self.resolveTypeNameStr(obj_ty.pointer_type.pointee_name, obj_ty.pointer_type.is_raw);
+                    obj_ty = self.pointerType(obj_ty.pointer_type);
                 }
                 // `.len` / `.ptr` on the built-in containers (string, slice, array).
                 if (std.mem.eql(u8, fa.field, "len")) {
@@ -896,14 +928,14 @@ pub const Analyzer = struct {
                     if (obj_ty.isArray()) return .{ .many_pointer_type = .{ .element_name = obj_ty.array_type.element_name, .is_raw = obj_ty.array_type.is_raw } };
                 }
                 if (obj_ty.isStruct()) {
-                    if (self.struct_types.get(obj_ty.struct_type)) |info| {
+                    if (self.structInfo(obj_ty)) |info| {
                         for (info.field_names, 0..) |fname, idx| {
                             if (std.mem.eql(u8, fname, fa.field)) {
                                 return info.field_types[idx];
                             }
                         }
                     }
-                    if (std.mem.eql(u8, obj_ty.struct_type, "Context")) {
+                    if (obj_ty == .struct_type and std.mem.eql(u8, obj_ty.struct_type, "Context")) {
                         if (self.context_members.get(fa.field)) |ty| return ty;
                     }
                 }
@@ -922,7 +954,7 @@ pub const Analyzer = struct {
             .index_expr => |ie| {
                 var obj_ty = self.inferExprType(ie.object);
                 if (obj_ty.isPointer()) {
-                    obj_ty = self.resolveTypeNameStr(obj_ty.pointer_type.pointee_name, obj_ty.pointer_type.is_raw);
+                    obj_ty = self.pointerType(obj_ty.pointer_type);
                     if (!obj_ty.isArray() and !obj_ty.isSlice()) return .unresolved;
                 }
                 if (obj_ty == .string_type) return Type.u(8);
@@ -972,7 +1004,7 @@ pub const Analyzer = struct {
                     if (fi.value.data == .spread_expr) {
                         const ty = self.inferExprType(fi.value.data.spread_expr.operand);
                         const source: StructTypeInfo = switch (ty) {
-                            .struct_type => |name| self.struct_types.get(name) orelse return .unresolved,
+                            .struct_type, .struct_instance => self.structInfo(ty) orelse return .unresolved,
                             .tuple_type => |tt| .{ .field_names = tt.field_names orelse &.{}, .field_types = tt.field_types },
                             .array_type => |array| {
                                 const element = self.resolveTypeNameStr(array.element_name, array.is_raw);
@@ -1016,7 +1048,7 @@ pub const Analyzer = struct {
             .catch_expr => |ce| self.inferExprType(ce.operand).failableSuccess() orelse .unresolved,
             .deref_expr => |de| {
                 const ptr_ty = self.inferExprType(de.operand);
-                if (ptr_ty.isPointer()) return self.resolveTypeNameStr(ptr_ty.pointer_type.pointee_name, ptr_ty.pointer_type.is_raw);
+                if (ptr_ty.isPointer()) return self.pointerType(ptr_ty.pointer_type);
                 return .void_type;
             },
             .postfix_cast => |pc| return self.resolveTypeNode(pc.type_expr),
@@ -1075,22 +1107,17 @@ pub const Analyzer = struct {
         return null;
     }
 
-    /// Resolve the callee name from a call node (handles identifiers and field_access).
     fn resolveCalleeName(self: *Analyzer, call_node: ast.Call) ?[]const u8 {
-        _ = self;
-        if (call_node.callee.data == .identifier) {
-            return call_node.callee.data.identifier.name;
-        }
-        if (call_node.callee.data == .field_access) {
-            const fa = call_node.callee.data.field_access;
-            if (fa.object.data == .identifier) {
-                // Return qualified name — caller will look up in fn_signatures
-                // We can't allocate here easily, so just return the field name
-                // and let the caller try both qualified and unqualified
-                return fa.field;
-            }
-        }
-        return null;
+        return self.qualifiedTypeName(call_node.callee);
+    }
+
+    fn qualifiedTypeName(self: *Analyzer, node: *const Node) ?[]const u8 {
+        return switch (node.data) {
+            .identifier => |id| id.name,
+            .type_expr => |te| te.name,
+            .field_access => |fa| std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ self.qualifiedTypeName(fa.object) orelse return null, fa.field }) catch null,
+            else => null,
+        };
     }
 
     /// Pass 2: analyse the body/value of a top-level declaration.
@@ -1246,9 +1273,13 @@ pub const Analyzer = struct {
     }
 
     fn recordMemberRef(self: *Analyzer, name: []const u8, owner: []const u8, is_def: bool) void {
+        self.recordTypedMemberRef(name, owner, is_def, null);
+    }
+
+    fn recordTypedMemberRef(self: *Analyzer, name: []const u8, owner: []const u8, is_def: bool, instance: ?*const Type.StructInstance) void {
         const span = self.spanOf(name);
         if (span.end == 0) return; // not locatable in source
-        self.member_refs.append(self.allocator, .{ .span = span, .name = name, .owner = owner, .is_def = is_def }) catch {};
+        self.member_refs.append(self.allocator, .{ .span = span, .name = name, .owner = owner, .is_def = is_def, .declaration = if (instance) |i| i.key.declaration else self.selection.select(owner), .instance = instance }) catch {};
     }
 
     fn selectedSymbol(self: *Analyzer, name: []const u8) ?u32 {
@@ -1419,8 +1450,8 @@ pub const Analyzer = struct {
             .field_access => |fa| {
                 try self.analyzeNode(fa.object);
                 var owner_ty = self.inferExprType(fa.object);
-                if (owner_ty.isPointer()) owner_ty = self.resolveTypeNameStr(owner_ty.pointer_type.pointee_name, owner_ty.pointer_type.is_raw);
-                self.recordMemberRef(fa.field, owner_ty.toName() orelse "", false);
+                if (owner_ty.isPointer()) owner_ty = self.pointerType(owner_ty.pointer_type);
+                self.recordTypedMemberRef(fa.field, owner_ty.toName() orelse "", false, if (owner_ty == .struct_instance) owner_ty.struct_instance else null);
             },
             .enum_literal => |el| {
                 self.recordMemberRef(el.name, "", false);
@@ -1509,12 +1540,13 @@ pub const Analyzer = struct {
                 // On the aggregate reading, a `name = …` item names a FIELD of
                 // the head's type — indexed as a member ref so go-to-definition
                 // works from it, exactly as for a `.{ … }` literal's names.
-                const owner = self.inferExprType(node).toName() orelse "";
+                const owner_type = self.inferExprType(node);
+                const owner = owner_type.toName() orelse "";
                 for (jx.block.data.block.stmts) |item| {
                     if (owner.len != 0 and item.data == .assignment) {
                         const a = item.data.assignment;
                         if (a.op == .assign and a.target.data == .identifier)
-                            self.recordMemberRef(a.target.data.identifier.name, owner, false);
+                            self.recordTypedMemberRef(a.target.data.identifier.name, owner, false, if (owner_type == .struct_instance) owner_type.struct_instance else null);
                     }
                     try self.analyzeNode(item);
                 }
@@ -1608,10 +1640,11 @@ pub const Analyzer = struct {
                 // field names, not just `obj.field` reads. An anonymous
                 // literal has no resolvable owner here — except as a `push`
                 // context expression, which the `.push_stmt` arm owns.
-                const owner = self.inferExprType(node).toName() orelse "";
+                const owner_type = self.inferExprType(node);
+                const owner = owner_type.toName() orelse "";
                 for (sl.field_inits) |fi| {
                     if (owner.len != 0) {
-                        if (fi.name) |fname| self.recordMemberRef(fname, owner, false);
+                        if (fi.name) |fname| self.recordTypedMemberRef(fname, owner, false, if (owner_type == .struct_instance) owner_type.struct_instance else null);
                     }
                     try self.analyzeNode(fi.value);
                 }

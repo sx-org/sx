@@ -235,8 +235,9 @@ pub const Server = struct {
                 const osema = odoc.sema orelse continue;
                 for (osema.member_refs) |mr| {
                     if (!std.mem.eql(u8, mr.name, mt.name)) continue;
-                    // Owner must match, treating an unknown owner ("") as a wildcard.
-                    if (mr.owner.len != 0 and mt.owner.len != 0 and !std.mem.eql(u8, mr.owner, mt.owner)) continue;
+                    if (mt.declaration) |declaration| {
+                        if (!std.meta.eql(mr.declaration, @as(?sx.sema.Declaration, declaration))) continue;
+                    } else if (mr.owner.len != 0 and mt.owner.len != 0 and !std.mem.eql(u8, mr.owner, mt.owner)) continue;
                     if (mr.is_def and !include_decl) continue;
                     try self.appendRefLoc(&buf, &first, odoc, mr.span);
                 }
@@ -349,7 +350,7 @@ pub const Server = struct {
             if (mr.owner.len != 0) {
                 if (std.mem.eql(u8, mr.owner, "Context")) {
                     if (try self.sendContextFieldDef(id_json, doc, mr.name, mr.span)) return;
-                } else if (findMemberDefAcrossDocs(&self.documents, mr.owner, mr.name)) |def| {
+                } else if (findMemberDefAcrossDocs(&self.documents, mr.owner, mr.name, mr.declaration)) |def| {
                     if (try self.sendSpanLocation(id_json, def.doc, def.span, doc, mr.span)) return;
                 }
             }
@@ -518,7 +519,9 @@ pub const Server = struct {
         // resolved owner — `push .{ ui = … }` hovers the Context field).
         if (memberUseAt(&sema, offset)) |mr| {
             if (mr.owner.len != 0) {
-                const hover_text = if (std.mem.eql(u8, mr.owner, "Context"))
+                const hover_text = if (mr.instance) |instance|
+                    try self.formatInstanceFieldHover(instance, mr.name)
+                else if (std.mem.eql(u8, mr.owner, "Context"))
                     try self.formatContextFieldHover(doc, mr.name)
                 else
                     try self.formatStructFieldHover(doc, mr.owner, mr.name);
@@ -989,9 +992,10 @@ pub const Server = struct {
                 const ty = sym.ty orelse return null;
                 const struct_name = switch (ty) {
                     .struct_type => |n| n,
+                    .struct_instance => |i| i.name,
                     else => return null,
                 };
-                if (sema.struct_types.get(struct_name)) |info| {
+                if (sx.sema.structTypeInfo(sema.struct_types, ty)) |info| {
                     for (info.field_names, 0..) |fname, fi| {
                         if (std.mem.eql(u8, fname, field_name) and fi < info.field_types.len) {
                             return switch (info.field_types[fi]) {
@@ -1107,6 +1111,27 @@ pub const Server = struct {
     }
 
     fn collectMemberCompletions(self: *Server, items: *std.ArrayList(lsp.CompletionItem), sema: SemaResult, doc: *const Document, name: []const u8) !void {
+        if (findSymbolByName(sema.symbols, name)) |symbol| {
+            if (sema.symbols[symbol].ty) |symbol_type| {
+                const ty = if (symbol_type == .pointer_type and symbol_type.pointer_type.pointee != null) symbol_type.pointer_type.pointee.?.* else symbol_type;
+                if (ty == .struct_instance) {
+                    const instance = ty.struct_instance;
+                    for (instance.field_names, instance.field_types) |field, field_type| try items.append(self.allocator, .{
+                        .label = field,
+                        .kind = @intFromEnum(lsp.CompletionItemKind.Field),
+                        .detail = try field_type.displayName(self.allocator),
+                    });
+                    const node = instance.key.declaration.info().node.?;
+                    for (node.data.struct_decl.methods) |method| {
+                        if (method.data == .fn_decl) try items.append(self.allocator, .{
+                            .label = method.data.fn_decl.name,
+                            .kind = @intFromEnum(lsp.CompletionItemKind.Method),
+                        });
+                    }
+                    return;
+                }
+            }
+        }
         const lookup = self.findTypeDeclNode(sema, doc, name) orelse return;
         const node = lookup.node;
 
@@ -2198,14 +2223,16 @@ pub const Server = struct {
 
     /// The member-ref DEF site for (owner, name) across all loaded documents
     /// — `@context.extend` decls and struct-decl fields both record one.
-    fn findMemberDefAcrossDocs(store: *DocumentStore, owner: []const u8, name: []const u8) ?struct { doc: *const Document, span: sx.ast.Span } {
+    fn findMemberDefAcrossDocs(store: *DocumentStore, owner: []const u8, name: []const u8, declaration: ?sx.sema.Declaration) ?struct { doc: *const Document, span: sx.ast.Span } {
         var it = store.by_path.iterator();
         while (it.next()) |entry| {
             const odoc = entry.value_ptr.*;
             const osema = odoc.sema orelse continue;
             for (osema.member_refs) |mr| {
                 if (!mr.is_def) continue;
-                if (!std.mem.eql(u8, mr.owner, owner)) continue;
+                if (declaration) |d| {
+                    if (!std.meta.eql(mr.declaration, @as(?sx.sema.Declaration, d))) continue;
+                } else if (!std.mem.eql(u8, mr.owner, owner)) continue;
                 if (!std.mem.eql(u8, mr.name, name)) continue;
                 return .{ .doc = odoc, .span = mr.span };
             }
@@ -2231,7 +2258,7 @@ pub const Server = struct {
         if (findContextExtendDecl(&self.documents, member)) |hit| {
             return self.sendSpanLocation(id_json, hit.doc, hit.ce.name_span, origin_doc, origin);
         }
-        if (findMemberDefAcrossDocs(&self.documents, "Context", member)) |def| {
+        if (findMemberDefAcrossDocs(&self.documents, "Context", member, null)) |def| {
             return self.sendSpanLocation(id_json, def.doc, def.span, origin_doc, origin);
         }
         return false;
@@ -2516,6 +2543,13 @@ pub const Server = struct {
     }
 
     // ---- Hover helpers ----
+
+    fn formatInstanceFieldHover(self: *Server, instance: *const sx.types.Type.StructInstance, field_name: []const u8) !?[]const u8 {
+        for (instance.field_names, instance.field_types) |name, ty| {
+            if (std.mem.eql(u8, name, field_name)) return try std.fmt.allocPrint(self.allocator, "```sx\n{s}.{s} : {s}\n```", .{ instance.name, name, try ty.displayName(self.allocator) });
+        }
+        return null;
+    }
 
     fn formatStructFieldHover(self: *Server, doc: *const Document, obj_name: []const u8, field_name: []const u8) !?[]const u8 {
         const sema = doc.sema orelse return null;
@@ -3858,7 +3892,7 @@ test "lsp/context: cross-file field def resolves without an import" {
     try std.testing.expectEqual(decl_name_off, hit.ce.name_span.start);
 
     // ...and so is the member DEF the read resolves to.
-    const def = Server.findMemberDefAcrossDocs(&store, "Context", "trace_depth") orelse return error.TestUnexpectedResult;
+    const def = Server.findMemberDefAcrossDocs(&store, "Context", "trace_depth", null) orelse return error.TestUnexpectedResult;
     try std.testing.expectEqualStrings("ctx_decl.sx", def.doc.path);
 
     // The read itself is a member USE under the cursor.
@@ -4552,4 +4586,36 @@ test "editor namespace signatures types and navigation select the same declarati
     const lookup = server.findTypeDeclNode(sema, doc, "b.Item").?;
     try std.testing.expect(lookup.doc == right);
     try std.testing.expect(lookup.node == sema.selection.select("b.Item").?.info().node.?);
+}
+
+test "generic member navigation and completion use the instance author" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const left = try store.openOrUpdate("left.sx", "Box :: struct ($T: Type) { value: i64; }", 1);
+    const right = try store.openOrUpdate("right.sx", "Box :: struct ($T: Type) { value: bool; }", 1);
+    try store.analyzeDocument(left);
+    try store.analyzeDocument(right);
+    const doc = try store.openOrUpdate("main.sx",
+        \\a :: @import "left.sx";
+        \\b :: @import "right.sx";
+        \\Alias :: b.Box;
+        \\main :: () { x := a.Box(i64){}; v := Alias(i64){}; y := *v; x.value; y.value; }
+    , 1);
+    try store.analyzeDocument(doc);
+    const sema = doc.sema.?;
+    const offset: u32 = @intCast(std.mem.indexOf(u8, doc.source, "y.value").? + 2);
+    const member = Server.memberUseAt(&sema, offset).?;
+    try std.testing.expectEqual(right.sema.?.selection.select("Box").?, member.declaration.?);
+    const definition = Server.findMemberDefAcrossDocs(&store, member.owner, member.name, member.declaration).?;
+    try std.testing.expectEqual(@as(*const Document, right), definition.doc);
+    var server: Server = undefined;
+    server.allocator = alloc;
+    server.documents = store;
+    var completions = std.ArrayList(lsp.CompletionItem).empty;
+    try server.collectMemberCompletions(&completions, sema, doc, "y");
+    try std.testing.expectEqual(@as(usize, 1), completions.items.len);
+    try std.testing.expectEqualStrings("bool", completions.items[0].detail.?);
+    try std.testing.expectEqualStrings("```sx\nAlias(i64).value : bool\n```", (try server.formatInstanceFieldHover(member.instance.?, "value")).?);
 }

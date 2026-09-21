@@ -520,13 +520,6 @@ pub fn shadowNominalId(self: *Lowering, name_id: types.StringId) u32 {
     return self.next_nominal_id;
 }
 
-/// The spelling `name` must be keyed under so it addresses `decl` and nothing
-/// else. The FIRST declaration to claim a spelling keeps it verbatim; every
-/// further declaration of the same spelling gets a distinct `__d<id>` suffix.
-/// Every name-keyed instantiation cache (generic-struct layouts, type-function
-/// results, generic/pack monomorphs, protocol registrations and instances)
-/// funnels its base name through here, so two same-display-name authors can
-/// never share a cache entry, symbol, impl entry, thunk set, or vtable.
 pub fn declIdentityName(self: *Lowering, name: []const u8, decl: *const anyopaque) []const u8 {
     if (self.decl_identity_first.get(name)) |first| {
         if (first == decl) return name;

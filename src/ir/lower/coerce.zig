@@ -284,9 +284,7 @@ pub fn tryPackImplMatch(
     bindings.put(pd.type_params[0].name, dst_ty) catch return null;
     if (entry.ret_var_name) |rv| bindings.put(rv, src_ret) catch return null;
 
-    var pack_bindings = std.StringHashMap([]const TypeId).init(self.alloc);
-    defer pack_bindings.deinit();
-    pack_bindings.put(entry.pack_var_name, tail_owned) catch return null;
+    bindings.put(entry.pack_var_name, table.intern(.{ .pack = .{ .elements = tail_owned } })) catch return null;
 
     // Mangled name keyed on the CONCRETE source so distinct shapes
     // monomorphise separately. Same scheme as the concrete path:
@@ -298,14 +296,7 @@ pub fn tryPackImplMatch(
     self.convert_reentrancy.put(guard_key, {}) catch {};
     defer _ = self.convert_reentrancy.remove(guard_key);
 
-    if (!self.lowered_functions.contains(mangled)) {
-        const saved_pack = self.pack_bindings;
-        self.pack_bindings = pack_bindings;
-        defer self.pack_bindings = saved_pack;
-        self.monomorphizeFunction(fd, mangled, &bindings);
-    }
-
-    const fid = self.resolveFuncByName(mangled) orelse return null;
+    const fid = self.monomorphizeFunction(fd, mangled, &bindings) orelse return null;
     const func = &self.module.functions.items[@intFromEnum(fid)];
     const ret_ty = func.ret;
     const params = func.params;
@@ -417,11 +408,7 @@ pub fn lowerConvert(self: *Lowering, operand: Ref, operand_node: *const Node, sr
     self.convert_reentrancy.put(guard_key, {}) catch {};
     defer _ = self.convert_reentrancy.remove(guard_key);
 
-    if (!self.lowered_functions.contains(mangled)) {
-        self.monomorphizeFunction(fd, mangled, &bindings);
-    }
-
-    const fid = self.resolveFuncByName(mangled) orelse return null;
+    const fid = self.monomorphizeFunction(fd, mangled, &bindings) orelse return null;
     const func = &self.module.functions.items[@intFromEnum(fid)];
     const ret_ty = func.ret;
     const params = func.params;

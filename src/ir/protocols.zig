@@ -1,4 +1,5 @@
 const std = @import("std");
+const instances = @import("instances.zig");
 const ast = @import("../ast.zig");
 const types = @import("types.zig");
 const type_bridge = @import("type_bridge.zig");
@@ -154,18 +155,23 @@ pub const ProtocolResolver = struct {
         return self.l.declIdentityName(pd.name, pd);
     }
 
-    /// Internal runtime name for one parameterized protocol instance. `p_name`
-    /// is the declaration's identity name and type arguments use nominal-aware
-    /// mangles, so neither two same-spelled protocols nor `P(a.Thing)` and
-    /// `P(b.Thing)` can share a protocol type, impl key, thunk set, or vtable.
-    pub fn paramProtocolInstanceName(self: ProtocolResolver, p_name: []const u8, arg_tys: []const TypeId) []const u8 {
+    pub fn paramProtocolKey(self: ProtocolResolver, pd: *const ast.ProtocolDecl, arguments: []const instances.Argument) instances.Key {
+        return .{ .declaration = self.l.declId(.{ .protocol_decl = pd }, pd.source_file), .arguments = arguments };
+    }
+
+    pub fn paramProtocolInstanceName(self: ProtocolResolver, pd: *const ast.ProtocolDecl, arg_tys: []const TypeId) []const u8 {
+        const key = self.paramProtocolKey(pd, &.{.{ .pack = arg_tys }});
+        if (self.l.protocol_instance_names.get(key)) |name| return name;
         var buf = std.ArrayList(u8).empty;
-        buf.appendSlice(self.l.alloc, p_name) catch @panic("out of memory");
+        defer buf.deinit(self.l.alloc);
+        buf.appendSlice(self.l.alloc, self.protocolIdentityName(pd)) catch @panic("out of memory");
         for (arg_tys) |ty| {
             buf.appendSlice(self.l.alloc, "__") catch @panic("out of memory");
             buf.appendSlice(self.l.alloc, self.l.mangleTypeName(ty)) catch @panic("out of memory");
         }
-        return buf.items;
+        const name = self.l.instanceName(buf.items);
+        self.l.protocol_instance_names.put(instances.ownKey(self.l.alloc, key), name) catch @panic("out of memory");
+        return name;
     }
 
     /// Exact explicit impl method for a protocol + nominal concrete TypeId.
@@ -1413,7 +1419,8 @@ pub const ProtocolResolver = struct {
             const si = table.get(src_ty);
             if (!src_ty.isBuiltin() and si == .@"struct") {
                 const src_name = self.l.formatTypeName(src_ty);
-                const instance_name = self.paramProtocolInstanceName(proto_name, arg_tys.items);
+                const pd = self.l.program_index.lookup(.protocol_ast, proto_name).?;
+                const instance_name = self.paramProtocolInstanceName(pd, arg_tys.items);
                 // A generic-struct source (`impl VL($R) for Combined($R, ..$Ts)`)
                 // registers each method as a TEMPLATE only: its signature
                 // references unbound type params (`-> $R`), so declaring it as a

@@ -1,4 +1,5 @@
 const std = @import("std");
+const instances = @import("../instances.zig");
 const ast = @import("../../ast.zig");
 const print = @import("../../print.zig");
 const Node = ast.Node;
@@ -274,12 +275,10 @@ pub fn instantiateParamProtocol(self: *Lowering, pd: *const ast.ProtocolDecl, ar
         tb.put(tp.name, ty) catch {};
         arg_tys.append(self.alloc, ty) catch @panic("out of memory");
     }
-    const mangled = self.protocolResolver().paramProtocolInstanceName(self.protocolResolver().protocolIdentityName(pd), arg_tys.items);
+    const key = self.protocolResolver().paramProtocolKey(pd, &.{.{ .pack = arg_tys.items }});
+    if (self.protocol_instances.get(key)) |existing| return existing;
+    const mangled = self.protocolResolver().paramProtocolInstanceName(pd, arg_tys.items);
     const name_id = table.internString(mangled);
-    if (table.findByName(name_id)) |existing| {
-        const info = table.get(existing);
-        if (info == .@"struct" and info.@"struct".is_protocol) return existing;
-    }
 
     // Value struct: the {ctx, typeId, vtable} layout of registerProtocolDecl.
     var fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
@@ -290,8 +289,8 @@ pub fn instantiateParamProtocol(self: *Lowering, pd: *const ast.ProtocolDecl, ar
     }) catch unreachable;
     fields.append(self.alloc, .{ .name = table.internString("vtable"), .ty = void_ptr_ty }) catch unreachable;
     const struct_info: types.TypeInfo = .{ .@"struct" = .{ .name = name_id, .fields = fields.items, .is_protocol = true } };
-    const id = if (table.findByName(name_id)) |existing| existing else table.intern(struct_info);
-    table.updatePreservingKey(id, struct_info);
+    const id = table.intern(struct_info);
+    self.protocol_instances.put(instances.ownKey(self.alloc, key), id) catch @panic("out of memory");
 
     // Method infos resolved with the type-arg binding (T → i64), pinned to
     // the protocol's OWN module so a method-signature type visible only
@@ -991,8 +990,7 @@ pub fn createProtocolThunk(self: *Lowering, proto_ty: TypeId, proto_name: []cons
         // have matched `protocolDispatchMethod` by protocol-instance + TypeId;
         // consulting a flat `Type.method` name here would let a distinct
         // same-display-name nominal type borrow another type's impl.
-        self.monomorphizeFunction(gm.fd, qualified, gm.bindings);
-        break :blk self.resolveFuncByName(qualified);
+        break :blk self.monomorphizeFunction(gm.fd, qualified, gm.bindings);
     } else null;
 
     // Call the concrete method: ConcreteType.method(__sx_ctx?, ctx, args...).
