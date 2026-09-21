@@ -1,0 +1,2 @@
+E :: error { Missing; }
+Box :: struct { go :: (self: *Box) -> !E { raise E.Missing; } }

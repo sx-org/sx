@@ -2408,7 +2408,7 @@ pub const Lowering = struct {
         };
     }
 
-    fn exprTyper(self: *Lowering) ExprTyper {
+    pub fn exprTyper(self: *Lowering) ExprTyper {
         return .{ .l = self };
     }
 

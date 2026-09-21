@@ -1,0 +1,34 @@
+@import "modules/std.sx";
+m :: @import "2708-errors-field-and-element-receivers-name-their-channel/mod.sx";
+
+Holder :: struct($T: Type) {
+    box: T;
+    ptr :: (self: *Holder(T)) -> T @get { self.box }
+}
+
+field :: (h: *Holder(m.Box)) -> ! { h := h.box; try h.go(); }
+member :: (h: *Holder(m.Box)) -> ! { try h.box.go(); }
+element :: (boxes: []m.Box) -> ! { b := boxes[0]; try b.go(); }
+indexed :: (boxes: []m.Box) -> ! { try boxes[0].go(); }
+accessor :: (h: *Holder(m.Box)) -> ! { b := h.ptr; try b.go(); }
+subslice :: (boxes: []m.Box) -> ! {
+    rest := boxes[1..];
+    for b in rest { try b.go(); }
+}
+
+main :: () -> i32 {
+    h : Holder(m.Box) = .{};
+    boxes : [2]m.Box = .{ .{}, .{} };
+    e1 := field(*h);
+    e2 := member(*h);
+    e3 := element(boxes[..]);
+    e4 := subslice(boxes[..]);
+    e5 := indexed(boxes[..]);
+    e6 := accessor(*h);
+    print("field={} member={} element={} subslice={} indexed={} accessor={}\n",
+          e1 == .Missing, e2 == .Missing, e3 == .Missing, e4 == .Missing,
+          e5 == .Missing, e6 == .Missing);
+    if e1 == .Missing and e2 == .Missing and e3 == .Missing and e4 == .Missing
+       and e5 == .Missing and e6 == .Missing { return 0; }
+    1
+}

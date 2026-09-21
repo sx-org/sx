@@ -23,6 +23,79 @@ const TypeResolver = @import("type_resolver.zig").TypeResolver;
 pub const ExprTyper = struct {
     l: *Lowering,
 
+    pub fn memberType(self: ExprTyper, receiver: TypeId, field: []const u8, optional: bool) ?TypeId {
+        var ty = receiver;
+        if (!ty.isBuiltin() and self.l.module.types.get(ty) == .pointer)
+            ty = self.l.module.types.get(ty).pointer.pointee;
+        if (optional and !ty.isBuiltin() and self.l.module.types.get(ty) == .optional)
+            ty = self.l.module.types.get(ty).optional.child;
+
+        const special_container = switch (self.l.module.types.get(ty)) {
+            .string, .slice, .array, .vector => true,
+            else => false,
+        };
+        if (special_container) {
+            if (std.mem.eql(u8, field, "len")) {
+                const result = self.l.module.types.lenTypeOf(ty);
+                return if (optional) self.l.optionalOfFlattened(result) else result;
+            }
+            if (std.mem.eql(u8, field, "ptr")) {
+                const result = self.l.module.types.manyPtrTo(self.l.getElementType(ty));
+                return if (optional) self.l.optionalOfFlattened(result) else result;
+            }
+        }
+        if (self.l.errorViewFieldType(ty, field)) |result| return result;
+        if (ty.isBuiltin()) return null;
+
+        const info = self.l.module.types.get(ty);
+        if (info == .@"union" or (info == .@"enum" and info.@"enum".hasPayload())) {
+            const name = self.l.module.types.internString(field);
+            var i: u32 = 0;
+            while (self.l.module.types.memberName(ty, i)) |member_name| : (i += 1) {
+                const member_ty = self.l.module.types.memberType(ty, i) orelse break;
+                if (member_name == name) return if (optional) self.l.optionalOfFlattened(member_ty) else member_ty;
+                if (!self.l.payloadPromotes(member_ty)) continue;
+                switch (self.l.lookupField(member_ty, field)) {
+                    .hit, .private => |hit| return if (optional) self.l.optionalOfFlattened(hit.ty) else hit.ty,
+                    .missing => {},
+                }
+            }
+        }
+        if (self.l.swizzleRecvOf(ty)) |recv| {
+            switch (Lowering.parseSwizzle(field)) {
+                .ok => |sw| {
+                    const result = self.l.swizzleResultType(recv, self.l.getElementType(ty), sw);
+                    return if (optional) self.l.optionalOfFlattened(result) else result;
+                },
+                else => {},
+            }
+        }
+        switch (self.l.lookupField(ty, field)) {
+            .hit, .private => |hit| return if (optional) self.l.optionalOfFlattened(hit.ty) else hit.ty,
+            .missing => {},
+        }
+        if (optional and self.l.module.types.get(ty) == .pointer)
+            ty = self.l.module.types.get(ty).pointer.pointee;
+        if (self.l.getterReturnTypeOnDeref(ty, field)) |result|
+            return if (optional) self.l.optionalOfFlattened(result) else result;
+        return null;
+    }
+
+    pub fn indexType(self: ExprTyper, receiver: TypeId) ?TypeId {
+        const optional = !receiver.isBuiltin() and self.l.module.types.get(receiver) == .optional;
+        const ty = if (optional) self.l.module.types.get(receiver).optional.child else receiver;
+        const element = self.l.ptrToArrayElem(ty) orelse self.l.ptrToSliceElem(ty) orelse self.l.getElementType(ty);
+        if (element == .unresolved) return null;
+        return if (optional) self.l.optionalOfFlattened(element) else element;
+    }
+
+    pub fn sliceType(self: ExprTyper, receiver: TypeId) ?TypeId {
+        if (receiver == .string) return .string;
+        const element = self.l.getElementType(receiver);
+        if (element == .unresolved) return null;
+        return self.l.module.types.sliceOfLen(element, self.l.module.types.lenTypeOf(receiver));
+    }
+
     /// Infer the IR type an expression evaluates to (without lowering it).
     /// Recurses through `Lowering.inferExprType` so a nested call node is typed
     /// by its one owner.
@@ -221,100 +294,7 @@ pub const ExprTyper = struct {
                         obj_ty = nrw_info.optional.child;
                     }
                 }
-                // Auto-deref: if object is a pointer, resolve through it (matches lowerFieldAccess behavior)
-                if (!obj_ty.isBuiltin()) {
-                    const ptr_info = self.l.module.types.get(obj_ty);
-                    if (ptr_info == .pointer) {
-                        obj_ty = ptr_info.pointer.pointee;
-                    }
-                }
-                // Optional chaining: ?T.field → ?FieldType (flattened if field is already optional)
-                const is_opt_chain = fa.is_optional;
-                if (is_opt_chain and !obj_ty.isBuiltin()) {
-                    const opt_info = self.l.module.types.get(obj_ty);
-                    if (opt_info == .optional) {
-                        obj_ty = opt_info.optional.child;
-                    }
-                }
-                // `.len`/`.ptr` pseudo-fields belong to the special containers
-                // only — a struct/union/tuple member named `len`/`ptr` resolves
-                // below to its DECLARED type (`@get` accessors also
-                // resolve below, via getAccessorFor).
-                const is_special_container = switch (self.l.module.types.get(obj_ty)) {
-                    .string, .slice, .array, .vector => true,
-                    else => false,
-                };
-                if (is_special_container) {
-                    if (std.mem.eql(u8, fa.field, "len")) {
-                        const len_ty = self.l.module.types.lenTypeOf(obj_ty);
-                        return if (is_opt_chain) self.l.module.types.optionalOf(len_ty) else len_ty;
-                    }
-                    if (std.mem.eql(u8, fa.field, "ptr")) {
-                        // .ptr on slice/string → [*]element_type
-                        const elem_ty = self.l.getElementType(obj_ty);
-                        const mp_ty = self.l.module.types.manyPtrTo(elem_ty);
-                        return if (is_opt_chain) self.l.module.types.optionalOf(mp_ty) else mp_ty;
-                    }
-                }
-                if (self.l.errorViewFieldType(obj_ty, fa.field)) |t| return t;
-                if (!obj_ty.isBuiltin()) {
-                    const field_name_id = self.l.module.types.internString(fa.field);
-                    // Check union fields (payload enum payloads) + promoted struct fields
-                    const info = self.l.module.types.get(obj_ty);
-                    var m: usize = 0;
-                    const overlay = info == .@"union" or (info == .@"enum" and info.@"enum".hasPayload());
-                    while (self.l.module.types.memberName(obj_ty, @intCast(m))) |mname| : (m += 1) {
-                        if (!overlay) break;
-                        const mty = self.l.module.types.memberType(obj_ty, @intCast(m)) orelse break;
-                        if (mname == field_name_id) return if (is_opt_chain) self.l.optionalOfFlattened(mty) else mty;
-                        if (!self.l.payloadPromotes(mty)) continue;
-                        // Members promoted out of a struct variant
-                        switch (self.l.lookupField(mty, fa.field)) {
-                            .hit, .private => |h| return if (is_opt_chain) self.l.optionalOfFlattened(h.ty) else h.ty,
-                            .missing => {},
-                        }
-                    }
-                    // Letter-swizzle on a vector, array, or slice. One letter
-                    // is the element; two or more is `@Vector(N, T)` or `[N]T`.
-                    if (self.l.swizzleRecvOf(obj_ty)) |recv| {
-                        switch (Lowering.parseSwizzle(fa.field)) {
-                            .ok => |sw| {
-                                const elem = self.l.getElementType(obj_ty);
-                                const rt = self.l.swizzleResultType(recv, elem, sw);
-                                return if (is_opt_chain) self.l.optionalOfFlattened(rt) else rt;
-                            },
-                            else => {},
-                        }
-                    }
-                    // Check struct fields
-                    switch (self.l.lookupField(obj_ty, fa.field)) {
-                        .hit, .private => |h| return if (is_opt_chain) self.l.optionalOfFlattened(h.ty) else h.ty,
-                        .missing => {},
-                    }
-                    // `@get` property accessor through an optional chain
-                    // (`obj?.getter`): resolve the getter on the dereferenced
-                    // inner type via a synthetic `*T` receiver, so a value
-                    // optional (`?T`) — whose receiver would otherwise be the
-                    // optional itself — and a pointer optional (`?*T`) both type
-                    // exactly as `lowerOptionalChain` emits.
-                    if (is_opt_chain) {
-                        var deref_inner = obj_ty;
-                        if (!deref_inner.isBuiltin() and self.l.module.types.get(deref_inner) == .pointer)
-                            deref_inner = self.l.module.types.get(deref_inner).pointer.pointee;
-                        if (self.l.getterReturnTypeOnDeref(deref_inner, fa.field)) |rt|
-                            return self.l.optionalOfFlattened(rt);
-                    }
-                    // `@get` property accessor: type as the accessor's return
-                    // type. Resolve via the synthesized no-arg call so generic
-                    // bindings (e.g. a `List(T)` getter returning `T`) resolve
-                    // exactly as the lowering path's call does.
-                    if (self.l.getAccessorFor(obj_ty, fa.field) != null) {
-                        const callee_node = Node{ .data = .{ .field_access = fa }, .span = node.span };
-                        const syn_call = ast.Call{ .callee = @constCast(&callee_node), .args = &.{} };
-                        const rt = self.l.callResolver().resultType(&syn_call);
-                        return if (is_opt_chain) self.l.optionalOfFlattened(rt) else rt;
-                    }
-                }
+                if (self.memberType(obj_ty, fa.field, fa.is_optional)) |ty| return ty;
                 if (self.l.qualifiedErrorSet(fa.object)) |set_ty| return set_ty;
                 // Bare `Enum.variant` — a qualified enum literal read as a VALUE
                 // (its type is the enum). Mirrors the `lowerFieldAccess`
@@ -599,27 +579,11 @@ pub const ExprTyper = struct {
                 // A guard-narrowed container local indexes its payload — the
                 // lockstep partner of `lowerIndexExpr`'s narrowing peel.
                 const obj_ty = self.l.narrowedContainerChild(ie.object) orelse self.l.inferExprType(ie.object);
-                // Optional-chain index `opt?.xs[i]`: the object types as an
-                // optional container (`?[N]T` / `?[]T` / `?[*]T`), so the whole
-                // index expression is `?ElemType` (flattened if the element is
-                // itself optional) — mirrors lowerOptionalChainIndex.
-                if (!obj_ty.isBuiltin() and self.l.module.types.get(obj_ty) == .optional) {
-                    const child = self.l.module.types.get(obj_ty).optional.child;
-                    // `?*[N]T` is indexable: element is the pointee array's
-                    // element. `getElementType` has no pointer arm, so consult
-                    // `ptrToArrayElem` first (mirrors lowerIndexExpr's guard) —
-                    // otherwise `?*[N]T` typed as `.unresolved`.
-                    const elem = self.l.ptrToArrayElem(child) orelse self.l.ptrToSliceElem(child) orelse self.l.getElementType(child);
-                    if (elem != .unresolved) return self.l.optionalOfFlattened(elem);
-                }
-                if (self.l.ptrToArrayElem(obj_ty)) |elem| return elem;
-                if (self.l.ptrToSliceElem(obj_ty)) |elem| return elem;
-                return self.l.getElementType(obj_ty);
+                return self.indexType(obj_ty) orelse .unresolved;
             },
             .slice_expr => |se| {
                 const obj_ty = self.l.narrowedContainerChild(se.object) orelse self.l.inferExprType(se.object);
-                if (obj_ty == .string) return .string;
-                return self.l.module.types.sliceOfLen(self.l.getElementType(obj_ty), self.l.module.types.lenTypeOf(obj_ty));
+                return self.sliceType(obj_ty) orelse .unresolved;
             },
             .deref_expr => |de| {
                 const ptr_ty = self.l.inferExprType(de.operand);
