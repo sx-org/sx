@@ -316,14 +316,6 @@ pub const ErrorAnalysis = struct {
         return self.l.getElementType(ty);
     }
 
-    fn fieldType(self: ErrorAnalysis, ty: TypeId, field: []const u8) TypeId {
-        return self.l.resolveFieldType(self.derefed(ty), field);
-    }
-
-    fn elementType(self: ErrorAnalysis, ty: TypeId) TypeId {
-        return self.l.getElementType(self.derefed(ty));
-    }
-
     fn derefed(self: ErrorAnalysis, ty: TypeId) TypeId {
         if (ty.isBuiltin()) return ty;
         const info = self.l.module.types.get(ty);
@@ -336,16 +328,13 @@ pub const ErrorAnalysis = struct {
             .unary_op => |op| if (op.op == .address_of)
                 return self.l.module.types.ptrTo(self.receiverType(fd, op.operand)),
             .field_access => |fa| {
-                const member = self.fieldType(self.receiverType(fd, fa.object), fa.field);
-                if (member != .unresolved) return member;
+                if (self.l.exprTyper().memberType(self.receiverType(fd, fa.object), fa.field, fa.is_optional)) |ty| return ty;
             },
             .index_expr => |ix| {
-                const element = self.elementType(self.receiverType(fd, ix.object));
-                if (element != .unresolved) return element;
+                if (self.l.exprTyper().indexType(self.receiverType(fd, ix.object))) |ty| return ty;
             },
             .slice_expr => |sl| {
-                const element = self.elementType(self.receiverType(fd, sl.object));
-                if (element != .unresolved) return self.l.module.types.sliceOf(element);
+                if (self.l.exprTyper().sliceType(self.receiverType(fd, sl.object))) |ty| return ty;
             },
             .call => |call| result: {
                 if (call.callee.data != .field_access) break :result;

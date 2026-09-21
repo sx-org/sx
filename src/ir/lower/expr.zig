@@ -2235,36 +2235,19 @@ pub fn getAccessorFor(self: *Lowering, ty: TypeId, field: []const u8) ?*const as
     return null;
 }
 
-/// A `@set` property accessor for `obj_ty.field`, or null — the WRITE
-/// counterpart of `getAccessorFor`. A `@set` is registered/dispatched under its
-/// effective `field$set` name (so a same-name `@get` keeps the plain `field`),
-/// and a REAL field of the same name wins over it (parallels the `@get` rule).
-/// `ty` must be the dereferenced (non-pointer) receiver type.
-/// The return type of a `@get` accessor named `field` on `deref_ty` (a
-/// dereferenced struct type), or null when there is no such getter (or no scope
-/// to resolve through). Resolves the type the SAME way a real read does — via a
-/// synthetic `*deref_ty` receiver local routed through inference — so a generic
-/// instance getter (`List(T).len`) binds its type parameter exactly as the call
-/// path would. Shared by `lowerOptionalChain` and the optional-chain inference
-/// in `expr_typer`, so `obj?.getter` types identically to how it lowers.
+/// Pre-lowering getter queries have a receiver type but no value bindings.
 pub fn getterReturnTypeOnDeref(self: *Lowering, deref_ty: TypeId, field: []const u8) ?TypeId {
-    if (deref_ty.isBuiltin()) return null;
     if (self.getAccessorFor(deref_ty, field) == null) return null;
-    const s = self.scope orelse return null;
-    // Warm a generic-instance getter's monomorph so its return type resolves
-    // (cold instance methods are absent from `resolveFuncByName` → `.unresolved`).
-    if (self.genericInstanceMethod(self.formatTypeName(deref_ty), field)) |gm|
-        _ = self.ensureGenericInstanceMethodLowered(gm);
-    var buf: [40]u8 = undefined;
-    const nm = std.fmt.bufPrint(&buf, "$oc_ty_{d}", .{self.block_counter}) catch "$oc_ty";
-    self.block_counter += 1;
-    const owned = self.alloc.dupe(u8, nm) catch return null;
-    s.put(owned, .{ .ref = Ref.none, .ty = self.module.types.ptrTo(deref_ty), .is_alloca = false });
-    const id = self.alloc.create(Node) catch return null;
-    id.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .identifier = .{ .name = owned } } };
-    const rn = self.alloc.create(Node) catch return null;
-    rn.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .field_access = .{ .object = id, .field = field } } };
-    return self.inferExprType(rn);
+    var scope = lower.Scope.init(self.alloc, self.scope, &self.next_binding_id);
+    defer scope.deinit();
+    scope.put("$getter", .{ .ref = Ref.none, .ty = self.module.types.ptrTo(deref_ty), .is_alloca = false });
+    const saved_scope = self.scope;
+    self.scope = &scope;
+    defer self.scope = saved_scope;
+    var receiver = Node{ .span = .{ .start = 0, .end = 0 }, .data = .{ .identifier = .{ .name = "$getter" } } };
+    var callee = Node{ .span = receiver.span, .data = .{ .field_access = .{ .object = &receiver, .field = field } } };
+    const call = ast.Call{ .callee = &callee, .args = &.{} };
+    return self.callResolver().resultType(&call);
 }
 
 pub fn getSetterFor(self: *Lowering, ty: TypeId, field: []const u8) ?*const ast.FnDecl {

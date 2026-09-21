@@ -1,1 +1,1 @@
-field=true member=true element=true subslice=true
+field=true member=true element=true subslice=true indexed=true accessor=true
