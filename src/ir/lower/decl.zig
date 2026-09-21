@@ -760,19 +760,19 @@ pub fn registerLiteralModuleConsts(self: *Lowering, decls: []const *const Node) 
         } else null;
         switch (cd.value.data) {
             .int_literal => {
-                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = float_annotation orelse .i64 };
+                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = float_annotation orelse .i64, .declared_type = float_annotation };
                 self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), decl.source_file, cd.name, info);
             },
             .char_literal => {
-                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = float_annotation orelse .i64 };
+                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = float_annotation orelse .i64, .declared_type = float_annotation };
                 self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), decl.source_file, cd.name, info);
             },
             .float_literal => {
-                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = float_annotation orelse .f64 };
+                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = float_annotation orelse .f64, .declared_type = float_annotation };
                 self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), decl.source_file, cd.name, info);
             },
             .binary_op, .unary_op => {
-                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = float_annotation orelse .i64 };
+                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = float_annotation orelse .i64, .declared_type = float_annotation };
                 self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), decl.source_file, cd.name, info);
             },
             // Bool/string literal consts carry their real type — registering
@@ -1408,14 +1408,8 @@ pub fn registerConstAliases(self: *Lowering, decls: []const *const Node) void {
 /// would otherwise mistype the constant.
 pub fn registerTypedModuleConst(self: *Lowering, cd: *const ast.ConstDecl) void {
     const ta = cd.type_annotation orelse return;
-    // Only initializer shapes that pass 0 (binary_op / unary_op → placeholder
-    // `.i64`) or the literal path register as a USABLE module const need
-    // reconciling against the annotation. Every other shape (call,
-    // struct/array literal, bare identifier) is never registered as a
-    // foldable / emittable const, so it cannot manifest a
-    // wrong-type fold/emit; a use-site diagnostic covers it.
     switch (cd.value.data) {
-        .int_literal, .float_literal, .bool_literal, .string_literal, .char_literal, .undef_literal, .null_literal, .binary_op, .unary_op, .struct_literal, .postfix_cast => {},
+        .int_literal, .float_literal, .bool_literal, .string_literal, .char_literal, .undef_literal, .null_literal, .binary_op, .unary_op, .struct_literal, .postfix_cast, .identifier, .field_access => {},
         else => return,
     }
     const ty = self.resolveType(ta);
@@ -1489,6 +1483,7 @@ pub fn typedConstInitFits(self: *Lowering, value: *const Node, dst_ty: TypeId) b
     // `M + 0.5`, `F + 0.25`) yields null here and falls through to the
     // rejecting checks below, where `registerTypedModuleConst` emits the
     // unified narrowing diagnostic.
+    if (isFloat(dst_ty) and self.isAdaptableFloat(value)) return true;
     if (self.isIntEx(dst_ty)) {
         switch (value.data) {
             .float_literal, .binary_op, .unary_op => {
@@ -1530,18 +1525,12 @@ pub fn typedConstInitFits(self: *Lowering, value: *const Node, dst_ty: TypeId) b
     };
 }
 
-/// True iff a const-expression initializer of inferred type `init_ty` is
-/// faithfully representable at the declared `dst_ty`. Type-based so it covers
-/// every const-expression shape (binary_op, unary_op, …) through one check
-/// rather than per-node-kind arms. The integer/float arms mirror the
-/// int/float literal arms of `typedConstInitFits` (an integer expression fits
-/// an integer or float annotation; a float expression fits a float).
 pub fn constExprInitFits(self: *Lowering, init_ty: TypeId, dst_ty: TypeId) bool {
     // An initializer whose type we couldn't infer is left for the use-site /
     // emission diagnostic rather than rejected here (no over-rejection).
     if (init_ty == .unresolved) return true;
     if (self.isIntEx(init_ty)) return self.isIntEx(dst_ty) or isFloat(dst_ty);
-    if (isFloat(init_ty)) return isFloat(dst_ty);
+    if (isFloat(init_ty)) return isFloat(dst_ty) and !(init_ty == .f64 and dst_ty == .f32);
     if (init_ty == .bool) return dst_ty == .bool;
     if (init_ty == .string) return dst_ty == .string;
     if (init_ty == .cstring) return dst_ty == .cstring or dst_ty == .string;
@@ -1777,6 +1766,7 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
         .undef_literal, .null_literal => {},
         else => return anyGlobalInit(self, vd, v),
     };
+    if (isFloat(var_ty) and self.isAdaptableFloat(v)) return self.constExprValue(v, var_ty);
     return switch (v.data) {
         .undef_literal => .zeroinit,
         .null_literal => .null_val,
@@ -1835,7 +1825,7 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
                 self.diagNonIntegralNarrow(v.span, fl.value, var_ty);
                 break :blk null;
             }
-            break :blk inst_mod.ConstantValue{ .float = self.floatLiteralValue(fl, var_ty, v.span) };
+            break :blk inst_mod.ConstantValue{ .float = self.adoptFloatValue(fl.value, var_ty, v.span) };
         },
         .string_literal => |sl| .{ .string = self.module.types.internString(sl.raw) },
         .array_literal => |al| self.constArrayLiteral(al.elements, var_ty) orelse self.diagnoseNonConstGlobal(vd, v),
@@ -1852,10 +1842,9 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
             // same pass-2 before this). Copy the SOURCE-AWARE author's
             // value (own-wins), folding its RHS in the author's context, and
             // reject a ≥2-flat ambiguity loudly.
-            if (self.program_index.lookup(.module_const, id.name)) |ci_global| {
-                const sel: SelectedConst = switch (self.selectModuleConst(id.name)) {
-                    .resolved => |s| s,
-                    .none => .{ .info = ci_global, .source = null },
+            if (self.program_index.contains(.module_const, id.name)) {
+                switch (self.selectModuleConst(id.name)) {
+                    .resolved, .none => {},
                     .own_opaque => {
                         if (self.diagnostics) |d|
                             d.addFmt(.err, v.span, "global '{s}' must be initialized by a compile-time constant; '{s}' is not a usable constant here", .{ vd.name, id.name });
@@ -1866,10 +1855,8 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
                             d.addFmt(.err, v.span, "'{s}' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import", .{id.name});
                         break :blk null;
                     },
-                };
-                const author_pin = self.pinConstAuthorSource(sel.source);
-                defer author_pin.unpin();
-                if (self.constExprValue(sel.info.value, var_ty)) |cv| break :blk cv;
+                }
+                if (self.constExprValue(v, var_ty)) |cv| break :blk cv;
             }
             if (self.diagnostics) |d|
                 d.addFmt(.err, v.span, "global '{s}' must be initialized by a compile-time constant; '{s}' is not a usable constant here", .{ vd.name, id.name });
@@ -4212,6 +4199,9 @@ pub fn emitModuleConst(self: *Lowering, name: []const u8, ci: ModuleConstInfo, a
     // own-read consts pin to the source they were already in → byte-identical.
     const author_pin = self.pinConstAuthorSource(author_source);
     defer author_pin.unpin();
+    const saved_scope = self.scope;
+    self.scope = null;
+    defer self.scope = saved_scope;
     if (lower.constFoldFrameContains(self.module_const_frame, name, author_source)) {
         if (self.diagnostics) |d|
             d.addFmt(.err, ci.value.span, "constant '{s}' depends on itself", .{name});
@@ -4247,7 +4237,7 @@ pub fn emitModuleConst(self: *Lowering, name: []const u8, ci: ModuleConstInfo, a
         }
     }
     if (isFloat(ci.ty)) {
-        if (program_index_mod.evalConstFloatInit(ci.value, self, ci.ty)) |value| {
+        if (program_index_mod.evalConstFloatInit(ci.value, lower.SourceConstCtx{ .lowering = self, .frame = &frame }, ci.ty)) |value| {
             return self.builder.constFloat(value, ci.ty);
         }
     }

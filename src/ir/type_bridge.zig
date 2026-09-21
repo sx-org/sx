@@ -143,11 +143,14 @@ const StatelessInner = struct {
         return false;
     }
 
+    pub fn untypedNumericLeaf(self: StatelessInner, node: *const Node) ?program_index_mod.UntypedNumericKind {
+        return program_index_mod.moduleUntypedNumericLeaf(self.facts orelse return null, self.table, node);
+    }
     pub fn floatLeafType(self: StatelessInner, node: *const Node) ?TypeId {
         return program_index_mod.moduleFloatLeafType(self.facts orelse return null, node);
     }
-    pub fn floatLiteralValue(_: StatelessInner, lit: ast.FloatLiteral, ty: TypeId, _: ast.Span) f64 {
-        return if (ty == .f32) lit.asF32() else lit.value;
+    pub fn adoptFloatValue(_: StatelessInner, value: f64, ty: TypeId, _: ast.Span) f64 {
+        return if (ty == .f32) @as(f32, @floatCast(value)) else value;
     }
     pub fn lookupFloatName(self: StatelessInner, name: []const u8) ?f64 {
         const facts = self.facts orelse return null;

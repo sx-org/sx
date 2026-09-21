@@ -284,24 +284,7 @@ pub const IntLiteral = struct {
 
 pub const FloatLiteral = struct {
     value: f64,
-    // The decimal spelling rounds independently at each width.
-    value32: ?f32 = null,
-
-    pub fn asF32(self: FloatLiteral) f32 {
-        return self.value32 orelse @as(f32, @floatCast(self.value));
-    }
 };
-
-pub fn floatLiteral(node: *const Node) ?FloatLiteral {
-    return switch (node.data) {
-        .float_literal => |lit| lit,
-        .unary_op => |u| if (u.op == .negate) blk: {
-            const lit = floatLiteral(u.operand) orelse break :blk null;
-            break :blk .{ .value = -lit.value, .value32 = if (lit.value32) |v| -v else null };
-        } else null,
-        else => null,
-    };
-}
 
 pub const BoolLiteral = struct {
     value: bool,

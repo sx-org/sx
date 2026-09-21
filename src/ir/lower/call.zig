@@ -1781,7 +1781,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                                         if (ord < variants.len) {
                                             const field_ty = variants[ord].payload;
                                             if (field_ty != .void) {
-                                                const payload_ty = self.inferExprType(c.args[0]);
+                                                const payload_ty = self.builder.getRefType(payload);
                                                 if (field_ty != payload_ty) {
                                                     payload = self.coerceToType(payload, payload_ty, field_ty);
                                                 }
@@ -2008,7 +2008,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                                 const variants = type_info.@"enum".variants;
                                 if (ord < variants.len and variants[ord].payload != .void) {
                                     const field_ty = variants[ord].payload;
-                                    const payload_ty = self.inferExprType(c.args[0]);
+                                    const payload_ty = self.builder.getRefType(payload);
                                     if (field_ty != payload_ty) {
                                         payload = self.coerceToType(payload, payload_ty, field_ty);
                                     }
@@ -5824,6 +5824,17 @@ fn coerceDemands(self: *Lowering, tys: []const TypeId) []const ParamDemand {
     return out;
 }
 
+fn variantParamTypes(self: *Lowering, ty: TypeId, name: []const u8) ?[]const ParamDemand {
+    if (ty.isBuiltin()) return null;
+    const info = self.module.types.get(ty);
+    if (info != .@"enum") return null;
+    for (info.@"enum".variants) |variant| {
+        if (std.mem.eql(u8, self.module.types.getString(variant.name), name))
+            return if (variant.payload == .void) &.{} else coerceDemands(self, &.{variant.payload});
+    }
+    return null;
+}
+
 pub fn resolveCallParamTypes(
     self: *Lowering,
     c: *const ast.Call,
@@ -5856,6 +5867,9 @@ pub fn resolveCallParamTypes(
         // Args map directly to all declared params (no receiver prepend).
         if (qualified_selected) return astCalleeParamTypes(self, sel_author.?.decl, c.args);
 
+        if (fa.object.data == .call and self.isTypeReturningCallNode(fa.object)) {
+            if (variantParamTypes(self, self.resolveTypeArg(fa.object), fa.field)) |params| return params;
+        }
         if (self.genericStaticHeadMethod(fa.object, fa.field)) |method| {
             var scope = generics_mod.installTypeBindings(self, method.bindings.*);
             defer scope.exit();
@@ -5871,6 +5885,7 @@ pub fn resolveCallParamTypes(
         if (!self.callResolver().objectIsValue(fa.object)) {
             switch (self.staticStructHead(fa.object)) {
                 .resolved => |owner_ty| {
+                    if (variantParamTypes(self, owner_ty, fa.field)) |params| return params;
                     if (self.plainStructMethod(owner_ty, fa.field)) |method|
                         return astCalleeParamTypes(self, method.fd, c.args);
                     if (self.hasPlainStructAuthor(owner_ty)) return &.{};
@@ -5885,8 +5900,8 @@ pub fn resolveCallParamTypes(
         // — no self prepend — so target_type for arg lowering must include
         // the leading param. Skipping it would lose the protocol context
         // for `xx ptr` inline-cast args.
-        if (fa.object.data == .identifier) {
-            const obj_name = fa.object.data.identifier.name;
+        if (fa.object.data == .identifier or fa.object.data == .type_expr) {
+            const obj_name = if (fa.object.data == .identifier) fa.object.data.identifier.name else fa.object.data.type_expr.name;
             var selected_namespace_fd: ?*const ast.FnDecl = null;
             const is_value = self.identifierBindsVisibleValue(obj_name);
             if (!is_value) {
@@ -5934,6 +5949,19 @@ pub fn resolveCallParamTypes(
         }
 
         const obj_ty = self.inferExprType(fa.object);
+        if (openSetReceiver(self, obj_ty)) |set_ty| {
+            if (self.openSetOf(set_ty)) |set| {
+                if (lower_open_set.requiredMethod(set, fa.field)) |method| {
+                    const saved_source = self.current_source_file;
+                    self.setCurrentSourceFile(set.source_file);
+                    defer self.setCurrentSourceFile(saved_source);
+                    const demands = self.alloc.alloc(ParamDemand, method.params.len) catch return &.{};
+                    for (method.params, 0..) |param, i|
+                        demands[i] = .{ .coerce = self.resolveTypeWithBindings(param) };
+                    return demands;
+                }
+            }
+        }
         // Protocol-typed receiver: look up the method on the protocol decl. The
         // protocol's ProtocolMethodInfo.param_types already excludes self.
         // The receiver may be erased directly (`P`), a view (`*P`), or the

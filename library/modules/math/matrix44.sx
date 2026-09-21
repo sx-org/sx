@@ -110,7 +110,7 @@ Mat4 :: struct {
         m.data[0] = 1.0 / (aspect * halfTan);
         m.data[5] = 1.0 / halfTan;
         m.data[10] = 0.0 - (far + near) / (far - near);
-        m.data[11] = (0.0 - 1.0).(f32);
+        m.data[11] = 0.0 - 1.0;
         m.data[14] = 0.0 - 2.0 * far * near / (far - near);
         m
     }

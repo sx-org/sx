@@ -78,6 +78,83 @@ pub fn defaultConstant(self: *Lowering, ty: TypeId) ?inst_mod.ConstantValue {
     }
 }
 
+pub fn untypedNumericLeaf(self: *Lowering, node: *const Node) ?program_index_mod.UntypedNumericKind {
+    const name = switch (node.data) {
+        .identifier => |id| id.name,
+        .type_expr => |te| te.name,
+        else => null,
+    };
+    if (name) |n| {
+        if (self.scope) |scope| {
+            const scoped = scope.lookupBoundary(n);
+            if (scoped.crossed != .none) return null;
+            if (scoped.binding) |binding| return binding.untyped_numeric;
+        }
+    }
+    return untypedSelectedNumeric(self, numericConstLeaf(self, node) orelse return null);
+}
+
+const NumericConstLeaf = struct {
+    value: *const Node,
+    declared_type: ?TypeId,
+    source: ?[]const u8,
+
+    fn fromSelected(sel: SelectedConst) NumericConstLeaf {
+        return .{ .value = sel.info.value, .declared_type = sel.info.declared_type, .source = sel.source };
+    }
+};
+
+fn numericConstLeaf(self: *Lowering, node: *const Node) ?NumericConstLeaf {
+    const name = switch (node.data) {
+        .identifier => |id| id.name,
+        .type_expr => |te| te.name,
+        else => null,
+    };
+    if (name) |n| switch (self.selectModuleConst(n)) {
+        .resolved => |sel| return NumericConstLeaf.fromSelected(sel),
+        else => {},
+    };
+    if (self.qualifiedTypeName(node)) |path| {
+        defer self.alloc.free(path);
+        if (std.mem.lastIndexOfScalar(u8, path, '.')) |dot| {
+            if (self.selectQualifiedConst(path[0..dot], path[dot + 1 ..])) |sel|
+                return NumericConstLeaf.fromSelected(sel);
+        }
+    }
+    if (node.data == .field_access) {
+        const fa = node.data.field_access;
+        if (fa.object.data != .identifier) return null;
+        const head = fa.object.data.identifier.name;
+        if (self.scope) |scope| if (scope.lookup(head) != null) return null;
+        const from = self.current_source_file orelse self.main_file orelse return null;
+        const ty = switch (self.selectNominalLeaf(head, from, false)) {
+            .resolved => |t| t,
+            else => return null,
+        };
+        const author = self.plain_struct_authors.get(ty) orelse return null;
+        const info = self.struct_const_by_tid.get(.{ .ty = ty, .name = self.module.types.internString(fa.field) }) orelse return null;
+        return .{ .source = author.source, .value = info.value, .declared_type = info.ty };
+    }
+    return null;
+}
+
+fn untypedSelectedNumeric(self: *Lowering, sel: NumericConstLeaf) ?program_index_mod.UntypedNumericKind {
+    if (sel.declared_type != null) return null;
+    var frame = self.untyped_const_frame;
+    while (frame) |f| : (frame = f.parent) {
+        if (f.value == sel.value) return null;
+    }
+    const next = Lowering.UntypedConstFrame{ .value = sel.value, .parent = self.untyped_const_frame };
+    self.untyped_const_frame = &next;
+    defer self.untyped_const_frame = next.parent;
+    const pin = self.pinConstAuthorSource(sel.source);
+    defer pin.unpin();
+    const saved_scope = self.scope;
+    self.scope = null;
+    defer self.scope = saved_scope;
+    return program_index_mod.untypedNumericKind(sel.value, self);
+}
+
 /// Try to convert a single AST expression into a compile-time ConstantValue.
 /// `expected_ty` is the destination element/field type — it lets aggregate
 /// leaves (struct literals, nested arrays) serialize with the correct shape
@@ -95,6 +172,10 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
     // the image can hold. Serializing anything else here would lay the operand's
     // own bytes into the handle's three words.
     if (self.isErasedProtocolType(expected_ty)) return staticInterfaceLeaf(self, expr, expected_ty);
+    if (isFloat(expected_ty) and self.isAdaptableFloat(expr)) {
+        if (program_index_mod.evalConstFloatInit(expr, self, expected_ty)) |value|
+            return .{ .float = value };
+    }
     return switch (expr.data) {
         // An int element in a FLOAT destination converts exactly (the
         // int+float promotion rule, element-wise — `[2]f64 : .[1, 2.5]`).
@@ -116,7 +197,7 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
                 self.diagNonIntegralNarrow(expr.span, fl.value, expected_ty);
                 break :blk null;
             }
-            break :blk inst_mod.ConstantValue{ .float = self.floatLiteralValue(fl, expected_ty, expr.span) };
+            break :blk inst_mod.ConstantValue{ .float = self.adoptFloatValue(fl.value, expected_ty, expr.span) };
         },
         .string_literal => |sl| .{ .string = self.module.types.internString(sl.raw) },
         .undef_literal => .zeroinit,
@@ -130,7 +211,7 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
                     .{ .float = @floatFromInt(-il.value) }
                 else
                     .{ .int = -il.value },
-                .float_literal => |fl| .{ .float = -self.floatLiteralValue(fl, expected_ty, expr.span) },
+                .float_literal => |fl| .{ .float = -self.adoptFloatValue(fl.value, expected_ty, expr.span) },
                 else => null,
             },
             else => null,
@@ -195,7 +276,11 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
                 if (program_index_mod.evalConstIntExpr(expr, ctx)) |v| break :blk inst_mod.ConstantValue{ .int = v };
             }
             if (isFloat(expected_ty)) {
-                if (program_index_mod.evalConstFloatExpr(expr, ctx)) |v| break :blk inst_mod.ConstantValue{ .float = v };
+                const source_ty = self.inferExprType(expr);
+                if (isFloat(source_ty)) {
+                    const v = program_index_mod.evalConstFloatExpr(expr, ctx) orelse break :blk null;
+                    break :blk self.coerceConstant(.{ .float = v }, source_ty, expected_ty);
+                }
                 if (program_index_mod.evalConstIntExpr(expr, ctx)) |v| break :blk inst_mod.ConstantValue{ .float = @floatFromInt(v) };
             }
             break :blk null;
@@ -2261,17 +2346,26 @@ pub fn foldQualifiedConstNodeInt(self: *Lowering, node: *const Node, frame: ?*co
 }
 
 pub fn foldQualifiedConstNodeFloat(self: *Lowering, node: *const Node, frame: ?*const ConstFoldFrame) ?f64 {
+    const sel = numericConstLeaf(self, node) orelse return null;
     const path = self.qualifiedTypeName(node) orelse return null;
     defer self.alloc.free(path);
-    const dot = std.mem.lastIndexOfScalar(u8, path, '.') orelse return null;
-    return self.foldQualifiedConstFloat(path[0..dot], path[dot + 1 ..], frame);
+    if (constFoldFrameContains(frame, path, sel.source)) return null;
+    const f = ConstFoldFrame{ .name = path, .source = sel.source, .parent = frame };
+    const restore = self.pinConstAuthorSource(sel.source);
+    defer restore.unpin();
+    return program_index_mod.evalConstFloatInit(sel.value, SourceConstCtx{ .lowering = self, .frame = &f }, sel.declared_type orelse .f64);
 }
 
 pub fn qualifiedConstNodeIsFloatTyped(self: *Lowering, node: *const Node, frame: ?*const ConstFoldFrame) bool {
+    const sel = numericConstLeaf(self, node) orelse return false;
+    if (sel.declared_type) |ty| return isFloat(ty);
     const path = self.qualifiedTypeName(node) orelse return false;
     defer self.alloc.free(path);
-    const dot = std.mem.lastIndexOfScalar(u8, path, '.') orelse return false;
-    return self.qualifiedConstIsFloatTyped(path[0..dot], path[dot + 1 ..], frame);
+    if (constFoldFrameContains(frame, path, sel.source)) return false;
+    const f = ConstFoldFrame{ .name = path, .source = sel.source, .parent = frame };
+    const restore = self.pinConstAuthorSource(sel.source);
+    defer restore.unpin();
+    return program_index_mod.isFloatValuedExpr(sel.value, SourceConstCtx{ .lowering = self, .frame = &f });
 }
 
 /// Float counterpart of `foldSourceConstInt`.

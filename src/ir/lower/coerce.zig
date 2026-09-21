@@ -1751,9 +1751,6 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         .ptr_to_void, .void_to_ptr, .many_to_single, .array_ptr_to_many_ptr, .many_drop_terminator, .objc_upcast => return self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
         .narrow => {
             if (mode == .implicit and Lowering.isFloat(src_ty) and Lowering.isFloat(dst_ty)) {
-                if (self.builder.constFloatInfo(val)) |info| {
-                    return self.builder.constFloat(info.value, dst_ty);
-                }
                 return refuseImplicitNumericConversion(self, src_ty, dst_ty);
             }
             return self.builder.emit(.{ .narrow = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty);

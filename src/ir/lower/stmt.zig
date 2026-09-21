@@ -1146,8 +1146,9 @@ pub fn lowerConstDecl(self: *Lowering, cd: *const ast.ConstDecl) void {
         }
     }
 
+    const untyped_numeric = if (annotated == null) program_index_mod.untypedNumericKind(cd.value, self) else null;
     if (self.scope) |scope| {
-        scope.put(cd.name, .{ .ref = ref, .ty = ty, .is_alloca = false, .origin = .local_const });
+        scope.put(cd.name, .{ .ref = ref, .ty = ty, .is_alloca = false, .origin = .local_const, .untyped_numeric = untyped_numeric });
     }
 }
 
@@ -2378,7 +2379,8 @@ fn tryLowerPropertyAssignment(self: *Lowering, asgn: *const ast.Assignment) bool
 /// literals, branch arms, and `xx` casts resolve against it too. Skipped for
 /// forms that would forward the type unchanged into method-call arg slots
 /// (`resolveCallParamTypes` can't override target_type per-arg).
-fn rhsNeedsTargetType(value: *const ast.Node) bool {
+fn rhsNeedsTargetType(self: *Lowering, value: *const ast.Node) bool {
+    if (self.isAdaptableFloat(value)) return true;
     return switch (value.data) {
         .enum_literal, .struct_literal, .tuple_literal, .array_literal, .if_expr, .match_expr, .block, .unary_op, .binary_op, .null_literal, .undef_literal => true,
         .call => |vc| vc.callee.data == .enum_literal,
@@ -2466,7 +2468,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
         // resolve against it. Skipped for forms that would forward the type
         // unchanged into method-call arg slots (`resolveCallParamTypes` can't
         // override target_type per-arg).
-        if (rhsNeedsTargetType(asgn.value)) {
+        if (rhsNeedsTargetType(self, asgn.value)) {
             if (qualified_store_target) |target| {
                 self.target_type = target.valueType();
             } else {
@@ -2518,7 +2520,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
         // the literal from whatever the fn returned: .unresolved
         // → LLVM-emission panic for a void fn, bogus "cannot assign"/"field
         // not found" for scalar/struct returns, invalid insertvalue for `?T`.
-        if (rhsNeedsTargetType(asgn.value)) {
+        if (rhsNeedsTargetType(self, asgn.value)) {
             const ptr_ty = self.inferExprType(asgn.target.data.deref_expr.operand);
             if (!ptr_ty.isBuiltin()) {
                 const pinfo = self.module.types.get(ptr_ty);
@@ -3774,7 +3776,7 @@ fn setMultiAssignTargetType(self: *Lowering, target: *const Node, value: *const 
             // the RHS target type and the store slot can't diverge.
             // Gated like single-assign: only for RHS forms that
             // consume a target type.
-            if (rhsNeedsTargetType(value)) {
+            if (rhsNeedsTargetType(self, value)) {
                 const obj_ty_raw = self.inferExprType(fa.object);
                 const obj_ty = if (!obj_ty_raw.isBuiltin()) blk: {
                     const pinfo = self.module.types.get(obj_ty_raw);
@@ -3787,7 +3789,7 @@ fn setMultiAssignTargetType(self: *Lowering, target: *const Node, value: *const 
         },
         .deref_expr => |de| {
             // For `p.* = val`, type the RHS against the POINTEE.
-            if (rhsNeedsTargetType(value)) {
+            if (rhsNeedsTargetType(self, value)) {
                 const ptr_ty = self.inferExprType(de.operand);
                 if (!ptr_ty.isBuiltin()) {
                     const pinfo = self.module.types.get(ptr_ty);
@@ -3838,7 +3840,7 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
         if (vi < ma.targets.len) {
             if (qualified_store_verdicts[vi] == .target) {
                 const target = qualified_store_verdicts[vi].target;
-                if (rhsNeedsTargetType(v)) self.target_type = target.valueType();
+                if (rhsNeedsTargetType(self, v)) self.target_type = target.valueType();
             } else {
                 setMultiAssignTargetType(self, ma.targets[vi], v);
             }

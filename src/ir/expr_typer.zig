@@ -27,6 +27,7 @@ pub const ExprTyper = struct {
     /// Recurses through `Lowering.inferExprType` so a nested call node is typed
     /// by its one owner.
     pub fn inferType(self: ExprTyper, node: *const Node) TypeId {
+        if (self.l.isAdaptableFloat(node)) return .f64;
         return switch (node.data) {
             // Call result typing is owned by `CallResolver` (`calls.zig`);
             // delegate through `Lowering.inferExprType` so a call node reaching
@@ -51,7 +52,7 @@ pub const ExprTyper = struct {
                 },
                 .and_op, .or_op, .in_op, .is_op => .bool,
                 else => blk: {
-                    const operands = program_index_mod.floatOperandTypes(bop, self.l.operandType(self.l.inferExprType(bop.lhs)), self.l.operandType(self.l.inferExprType(bop.rhs)));
+                    const operands = program_index_mod.floatOperandTypes(bop, self.l.operandType(self.l.inferExprType(bop.lhs)), self.l.operandType(self.l.inferExprType(bop.rhs)), self.l);
                     break :blk self.l.arithResultType(operands.lhs.?, operands.rhs.?);
                 },
             },
