@@ -3,6 +3,7 @@ const ast = @import("../ast.zig");
 const types = @import("types.zig");
 const type_bridge = @import("type_bridge.zig");
 const lower = @import("lower.zig");
+const lower_closure = @import("lower/closure.zig");
 const inst = @import("inst.zig");
 const program_index = @import("program_index.zig");
 
@@ -142,11 +143,11 @@ pub const CallResolver = struct {
     /// The plan twin of lowering's `callValue`: how a call through a callable
     /// VALUE of type `ty` types. `target` names the value; a callable nominal
     /// names its own `call` instead, because that is what lowering dispatches.
-    fn callableValuePlan(self: CallResolver, ty: TypeId, target: CallPlan.Target) ?CallPlan {
+    fn callableValuePlan(self: CallResolver, ty: TypeId, target: CallPlan.Target, c: *const ast.Call) ?CallPlan {
         return switch (self.l.callableShapeOf(ty) orelse return null) {
             .unique => |u| .{
                 .kind = .closure,
-                .return_type = u.ret,
+                .return_type = lower_closure.formationCallResult(self.l, u, c.args),
                 .target = target,
                 .prepends_ctx = self.l.implicit_ctx_enabled,
             },
@@ -171,10 +172,10 @@ pub const CallResolver = struct {
         };
     }
 
-    fn localCallablePlan(self: CallResolver, name: []const u8) ?CallPlan {
+    fn localCallablePlan(self: CallResolver, name: []const u8, c: *const ast.Call) ?CallPlan {
         const scope = self.l.scope orelse return null;
         const binding = scope.lookup(name) orelse return null;
-        return self.callableValuePlan(binding.ty, .{ .named = name });
+        return self.callableValuePlan(binding.ty, .{ .named = name }, c);
     }
 
     /// Classify a call: pick the dispatch kind / target / variant and derive
@@ -299,7 +300,7 @@ pub const CallResolver = struct {
             // dispatches through the LOCAL, so typing binds it before the
             // name-keyed arms or the two disagree on the callee.
             if (self.l.callableLocalShadow(bare_name)) {
-                if (self.localCallablePlan(bare_name)) |p| return p;
+                if (self.localCallablePlan(bare_name, c)) |p| return p;
             }
             if (!author_declines) {
                 // Generic function — infer return type via type bindings.
@@ -338,12 +339,12 @@ pub const CallResolver = struct {
             }
             // Local callable binding — extract its return type so `try` /
             // `catch` on the call see the (possibly failable) result.
-            if (self.localCallablePlan(bare_name)) |p| return p;
+            if (self.localCallablePlan(bare_name, c)) |p| return p;
             // A module global holding a callable value. `globalValueRef` is the
             // producer lowering's `resolveGlobalRef` reads, so a global typing
             // answers for is one the call path can dispatch through.
             if (self.l.globalValueRef(bare_name)) |gi| {
-                if (self.callableValuePlan(gi.ty, .{ .callable_global = gi })) |p| return p;
+                if (self.callableValuePlan(gi.ty, .{ .callable_global = gi }, c)) |p| return p;
             }
         } else if (c.callee.data == .field_access) {
             const cfa = c.callee.data.field_access;
@@ -370,7 +371,7 @@ pub const CallResolver = struct {
             // return `.none`, leaving method/static dispatch below untouched.
             switch (qualified_call) {
                 .func => |sf| return self.selectedNamespacePlan(sf, c),
-                .callable_value => |cv| return self.callableValuePlan(cv.global.ty, .{ .callable_global = cv.global }) orelse
+                .callable_value => |cv| return self.callableValuePlan(cv.global.ty, .{ .callable_global = cv.global }, c) orelse
                     .{ .kind = .unresolved, .return_type = .unresolved },
                 .non_callable, .missing, .not_visible, .ambiguous => return .{ .kind = .unresolved, .return_type = .unresolved },
                 .never_qualified, .value_receiver, .type_prefix => {},
@@ -471,7 +472,7 @@ pub const CallResolver = struct {
             // `try`/`catch`-ed. Lowering owns the dispatch; plan only needs the
             // field's `.ret` so typing matches.
             switch (self.l.lookupField(recv_ty, cfa.field)) {
-                .hit, .private => |h| if (self.callableValuePlan(h.ty, .{ .named = cfa.field })) |p| return p,
+                .hit, .private => |h| if (self.callableValuePlan(h.ty, .{ .named = cfa.field }, c)) |p| return p,
                 .missing => {},
             }
             // Instance method call: obj.method(args) → StructName.method.
@@ -773,7 +774,7 @@ pub const CallResolver = struct {
         // value — including a nominal carrying `impl (sig) for T` — is called.
         switch (c.callee.data) {
             .identifier, .field_access, .enum_literal => {},
-            else => if (self.callableValuePlan(self.l.inferExprType(c.callee), .none)) |p| return p,
+            else => if (self.callableValuePlan(self.l.inferExprType(c.callee), .none, c)) |p| return p,
         }
         return .{ .kind = .unresolved, .return_type = .unresolved };
     }

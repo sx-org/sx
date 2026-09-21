@@ -178,9 +178,12 @@ pub const CoercionResolver = struct {
             }
             // A unique lambda erases only when its env is empty: the pair is
             // {fn, null} and nothing has to be stored anywhere.
-            if (self.l.uniqueLambdaOf(src_ty) != null and self.l.module.types.get(dst_ty) == .closure) {
-                const env = self.l.module.types.get(src_ty).@"struct";
-                return if (env.fields.len == 0) .unique_to_closure else .unique_to_closure_reject;
+            if (self.l.module.types.get(dst_ty) == .closure) {
+                if (self.l.uniqueLambdaOf(src_ty)) |u| {
+                    if (u.func == .formation) return .closure_signature_reject;
+                    const env = self.l.module.types.get(src_ty).@"struct";
+                    return if (env.fields.len == 0) .unique_to_closure else .unique_to_closure_reject;
+                }
             }
             // A pointer to a unique lambda erases by borrowing: the pointer is
             // the env word, and the caller taking the address is what gives the
@@ -188,7 +191,7 @@ pub const CoercionResolver = struct {
             if (self.l.module.types.get(src_ty) == .pointer and self.l.module.types.get(dst_ty) == .closure) {
                 if (self.l.uniqueLambdaOf(self.l.module.types.get(src_ty).pointer.pointee)) |u| {
                     const want = self.l.module.types.get(dst_ty).closure;
-                    if (self.l.module.types.sameType(u.ret, want.ret) and self.l.module.types.sameTypes(u.params, want.params)) return .lambda_ptr_to_closure;
+                    if (u.func == .lowered and self.l.module.types.sameType(u.ret, want.ret) and self.l.module.types.sameTypes(u.params, want.params)) return .lambda_ptr_to_closure;
                     return .lambda_ptr_to_closure_reject;
                 }
             }

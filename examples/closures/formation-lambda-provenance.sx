@@ -1,0 +1,57 @@
+@import "modules/std.sx";
+
+read :: (value: $I/@Init(i64)) -> i64 {
+    out: i64 = 0;
+    value.write(*out);
+    out
+}
+
+next :: (count: *i64) -> i64 {
+    count.* += 1;
+    count.*
+}
+
+forward :: (value: $I/@Init(i64)) -> bool {
+    relay := |v: $J/@Init(i64), expected: ?@SourceSite| {
+        print("forwarded {} {}\n", v.site()?.id == expected?.id, read(v));
+        return v.site()?.id == expected?.id;
+    };
+    relay(value, value.site())
+}
+
+captured :: (value: $T) {
+    accumulate := |v: $I/@Init($T)|_{ sum = 0 } -> i64 {
+        slot: T = ---;
+        v.write(*slot);
+        sum += slot.(i64);
+        sum
+    };
+    first := accumulate(value);
+    copy := accumulate;
+    print("captured {} {} {}\n", first, accumulate(value), copy(value));
+}
+
+main :: () {
+    site := |v: $I/@Init(i64)| v.site();
+    first := site(7);
+    second := site(8);
+    print("sites {} {} {}\n", first != null, second != null, first?.id != second?.id);
+
+    count: i64 = 0;
+    count_ptr := *count;
+    twice := |v: $I/@Init(i64)| {
+        a: i64 = 0;
+        b: i64 = 0;
+        v.write(*a);
+        v.write(*b);
+        print("writes {} {}\n", a, b);
+    };
+    twice(next(count_ptr));
+    print("count {}\n", count);
+    print("forward {}\n", forward(23));
+    identity := |v: $I/@Init(i64)| v;
+    print("returned {}\n", identity(31).site() != null);
+    print("read {}\n", read(identity(37)));
+    captured(3);
+    captured(4.(i32));
+}

@@ -177,6 +177,38 @@ test "lower: bare function values use a pointer-width word on wasm32" {
     try std.testing.expect(!diagnostics.hasErrors());
 }
 
+test "formation lambda parameters carry concrete initializer sites" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source = try alloc.dupeZ(u8,
+        \\main :: () {
+        \\    recipe := |value: $I/@Init(i64)| 1;
+        \\    recipe(7);
+        \\}
+    );
+    var p = try parser.Parser.init(alloc, source);
+    const root = p.parse() catch return error.ParseFailed;
+    var module = ir_mod.Module.init(alloc);
+    defer module.deinit();
+    var diagnostics = errors.DiagnosticList.init(alloc, source, "test.sx");
+    var lowering = Lowering.init(&module);
+    lowering.diagnostics = &diagnostics;
+    lowering.lowerRoot(root);
+    try std.testing.expect(!diagnostics.hasErrors());
+
+    var has_initializer_param = false;
+    for (module.functions.items) |func| {
+        for (func.params) |param| {
+            if (module.types.initSiteOf(param.ty)) |site| {
+                has_initializer_param = true;
+                try std.testing.expect(site != 0);
+            }
+        }
+    }
+    try std.testing.expect(has_initializer_param);
+}
+
 test "lower: instructions carry their AST node's source span" {
     const alloc = std.testing.allocator;
     var module = ir_mod.Module.init(alloc);

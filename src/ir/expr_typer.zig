@@ -3,6 +3,7 @@ const ast = @import("../ast.zig");
 const types = @import("types.zig");
 const program_index_mod = @import("program_index.zig");
 const lower = @import("lower.zig");
+const lower_closure = @import("lower/closure.zig");
 
 const Node = ast.Node;
 const TypeId = types.TypeId;
@@ -669,7 +670,9 @@ pub const ExprTyper = struct {
             // lambda's declared return type. An unannotated param /
             // body-inferred return stays `.unresolved` here — that arg simply
             // doesn't contribute a binding, exactly as before.
-            .lambda => |lam| blk: {
+            .lambda => |*lam| blk: {
+                if (lower_closure.hasFormationParam(lam))
+                    break :blk self.l.lambdaEnvType(lam) orelse .unresolved;
                 var pbuf = std.ArrayList(TypeId).empty;
                 defer pbuf.deinit(self.l.alloc);
                 for (lam.params) |p| {
