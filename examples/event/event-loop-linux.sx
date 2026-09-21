@@ -1,0 +1,19 @@
+@import "modules/std.sx";
+
+main :: () -> i32 {
+    loop, initErr := event.Loop.init();
+    if initErr { return 1; }
+    defer loop.close();
+
+    events: [1]event.Event = ---;
+    count, waitErr := loop.wait(.{ ptr = *events[0], len = 1 }, 0);
+    if waitErr { return 2; }
+    if count != 0 { return 3; }
+
+    loop.addWake(42) catch { return 4; };
+    loop.wake();
+    ready, wakeErr := loop.wait(.{ ptr = *events[0], len = 1 }, -1);
+    if wakeErr { return 5; }
+    if ready != 1 or !events[0].user or events[0].udata != 42 { return 6; }
+    return 0;
+}
