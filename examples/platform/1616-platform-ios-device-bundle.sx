@@ -49,10 +49,10 @@ main :: () -> i32 {
     SxAppDelegate := objc_allocateClassPair(UIResponder, "SxAppDelegate".ptr, 0);
 
     sel := sel_registerName("application:didFinishLaunchingWithOptions:".ptr);
-    class_addMethod(SxAppDelegate, sel, xx didFinishLaunching, "c@:@@".ptr);
+    class_addMethod(SxAppDelegate, sel, @reinterpret(*void, didFinishLaunching), "c@:@@".ptr);
 
     objc_registerClassPair(SxAppDelegate);
 
     // UIApplicationMain blocks driving iOS's run loop.
-    return UIApplicationMain(0, xx 0, xx 0, nsstring("SxAppDelegate"));
+    return UIApplicationMain(0, null, null, nsstring("SxAppDelegate"));
 }

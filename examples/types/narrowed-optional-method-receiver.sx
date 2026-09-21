@@ -1,0 +1,19 @@
+@import "modules/std.sx";
+
+Box :: struct {
+    value: i64;
+    bump :: (self: *Box) { self.value += 1; }
+}
+
+mutate :: () -> i64 {
+    b: ?Box = Box{ value = 40 };
+    if b == null { return 0; }
+    b.bump();
+    b.bump();
+    b.value
+}
+
+main :: () {
+    print("runtime: {}\n", mutate());
+    print("comptime: {}\n", @run mutate());
+}

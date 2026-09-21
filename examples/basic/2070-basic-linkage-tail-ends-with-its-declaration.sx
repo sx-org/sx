@@ -19,7 +19,7 @@ sxDouble :: (n: i32) -> i32 export
     { n * 2 }
 
 main :: () -> i32 {
-    stdinBits : u64 = xx *__stdinp;
+    stdinBits : u64 = @reinterpret(usize, *__stdinp).(u64);
     print("limit={} stdin={}\n", LIMIT, stdinBits != 0);
     print("abs={} double={}\n", cAbs(-42), sxDouble(21));
     0

@@ -33,7 +33,7 @@ main :: () -> i32 {
         sel := sel_registerName("tripleValue".ptr);
         // Type encoding: {Triple=qqq}@: → returns 24 B struct of 3 i64,
         // implicit (self: id, _cmd: SEL).
-        ok := class_addMethod(myCls, sel, xx tripleImp, "{Triple=qqq}@:".ptr);
+        ok := class_addMethod(myCls, sel, @reinterpret(*void, tripleImp), "{Triple=qqq}@:".ptr);
         print("addMethod = {}\n", ok);
         objc_registerClassPair(myCls);
 

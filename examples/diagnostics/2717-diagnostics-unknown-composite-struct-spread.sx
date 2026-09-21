@@ -1,0 +1,10 @@
+@import "modules/std.sx";
+
+Make :: ($T: Type) -> Type {
+    return [2]union { inner: struct { ..Bse; value: T; }; };
+}
+
+main :: () {
+    v: Make(i32) = ---;
+    print("{}\n", @sizeOf(@typeOf(v)));
+}

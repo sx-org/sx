@@ -60,7 +60,7 @@ FAR_ZEROS :: 12000;
 farOverflowRaises :: (alloc: Allocator) -> bool {
     tail := "1e999999999";
     len := 2 + FAR_ZEROS + tail.len;
-    src : [*]u8 = xx alloc.allocBytes(len);
+    src : [*]u8 = alloc.allocBytes(len);
     src[0] = '0';
     src[1] = '.';
     i := 0;

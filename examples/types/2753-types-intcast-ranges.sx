@@ -1,0 +1,23 @@
+@import "modules/std.sx";
+
+show :: ($T: Type, n: $S) {
+    v := @intCast(T, n) catch |e| {
+        print("{}: {}\n", n, e);
+        return;
+    };
+    print("{}: {}\n", n, v);
+}
+
+main :: () {
+    show(u8, 255);
+    show(u8, 256);
+    show(u64, -1);
+    show(i8, 128);
+    largest: u64 = 18446744073709551615;
+    show(i64, largest);
+    show(@int(3, .unsigned), 8);
+    show(@int(3, .signed), -4);
+    show(@int(3, .signed), -5);
+    show(i16, 255.(u8));
+    show(u64, largest);
+}

@@ -4,7 +4,19 @@ error: condition must be a bool, integer, pointer, or optional, but has type '(i
 15 |     x := parse(-1) or 0;               // error: failable LHS is not a bool
    |          ^^^^^^^^^
 
+error: a failable expression needs an error-path marker: `try`, `catch`, `??` with a value, a destructure binding, or a forwarded call
+  --> examples/errors/1081-errors-or-is-boolean.sx:15:10
+   |
+15 |     x := parse(-1) or 0;               // error: failable LHS is not a bool
+   |          ^^^^^^^^^
+
 error: condition must be a bool, integer, pointer, or optional, but has type '(i32, !E)'
+  --> examples/errors/1081-errors-or-is-boolean.sx:16:10
+   |
+16 |     y := parse(-1) and true;           // error: failable LHS is not a bool
+   |          ^^^^^^^^^
+
+error: a failable expression needs an error-path marker: `try`, `catch`, `??` with a value, a destructure binding, or a forwarded call
   --> examples/errors/1081-errors-or-is-boolean.sx:16:10
    |
 16 |     y := parse(-1) and true;           // error: failable LHS is not a bool

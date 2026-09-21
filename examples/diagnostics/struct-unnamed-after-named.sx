@@ -1,0 +1,6 @@
+Sprite :: struct { px: i64; py: i64; scale: i64 = 1; }
+main :: () {
+    direct := Sprite{1, py = 9, 2};
+    coords := .{1, 2};
+    spread := Sprite{scale = 5, ..coords};
+}

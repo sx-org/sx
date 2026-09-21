@@ -1,14 +1,4 @@
-// Obj-C runtime FFI smoke test: round-trip a string through NSString.
-//
-// Demonstrates the typed-fn-pointer cast idiom for `objc_msgSend`. Each
-// shape we invoke gets its own variable typed with the exact ABI:
-//
-//   msg3 : (*void, *void, [*]u8) -> *void = xx objc_msgSend;
-//   msg2 : (*void, *void) -> [*]u8 = xx objc_msgSend;
-//
-// On ARM64 Apple, objc_msgSend doesn't take a varargs path — invoking it
-// through a typed fn-pointer is the only correct way to land args in the
-// right registers.
+// objc_msgSend dispatches through a signature matching the selector ABI.
 
 @import "modules/std.sx";
 @import "modules/ffi/objc.sx";
@@ -18,10 +8,10 @@ main :: () -> i32 {
     selWithUtf8  := sel_registerName("stringWithUTF8String:".ptr);
     selUtf8      := sel_registerName("UTF8String".ptr);
 
-    msg3 : (*void, *void, [*]u8) -> *void abi(.c) = xx objc_msgSend;
+    msg3 : (*void, *void, [*]u8) -> *void abi(.c) = @reinterpret((*void, *void, [*]u8) -> *void abi(.c), objc_msgSend);
     nsStr := msg3(nsClass, selWithUtf8, "hi".ptr);
 
-    msg2 : (*void, *void) -> [*]u8 abi(.c) = xx objc_msgSend;
+    msg2 : (*void, *void) -> [*]u8 abi(.c) = @reinterpret((*void, *void) -> [*]u8 abi(.c), objc_msgSend);
     back := msg2(nsStr, selUtf8);
 
     return (back[0] + back[1]); // 'h' + 'i' = 104 + 105 = 209

@@ -28,7 +28,7 @@ main :: () -> i32 {
         sel := sel_registerName("safeAreaInsets".ptr);
         // Method type encoding: {UIEdgeInsets=dddd}@: → returns 4×f64,
         // implicit (self: id, _cmd: SEL). `d` = double.
-        ok := class_addMethod(myCls, sel, xx insetsImp, "{UIEdgeInsets=dddd}@:".ptr);
+        ok := class_addMethod(myCls, sel, @reinterpret(*void, insetsImp), "{UIEdgeInsets=dddd}@:".ptr);
         print("addMethod = {}\n", ok);
         objc_registerClassPair(myCls);
 

@@ -1,0 +1,5 @@
+@import "2203-diagnostics-private-field-struct-spread/box.sx";
+
+Peek :: struct { ..Box; }
+
+main :: () {}

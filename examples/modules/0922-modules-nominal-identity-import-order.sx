@@ -12,6 +12,6 @@ main :: () -> i32 {
     print("consts: a={} b={}\n", a.Thing.SIZE, b.Thing.SIZE);
     va := a.Thing{ ca = 3, cb = 4 };
     vb := b.Thing{ da = 6 };
-    print("using: a=({},{}) b={}\n", va.ca, va.cb, vb.da);
+    print("spread: a=({},{}) b={}\n", va.ca, va.cb, vb.da);
     return 0;
 }

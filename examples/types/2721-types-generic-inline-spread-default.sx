@@ -1,0 +1,11 @@
+@import "modules/std.sx";
+
+Base :: struct { x: i32; }
+Wrap :: struct ($T: Type) {
+    inner: struct { ..T; tail: i32 = 7; };
+}
+
+main :: () {
+    v := Wrap(Base){ inner = .{ x = 2 } };
+    print("{} {}\n", v.inner.x, v.inner.tail);
+}

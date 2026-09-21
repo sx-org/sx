@@ -5,26 +5,8 @@ const lower = @import("lower.zig");
 const Node = ast.Node;
 const Lowering = lower.Lowering;
 
-// ── error-flow analysis ────────────────────────────────────────────
-//
-// One structured, path-sensitive walk over each MAIN-file function body
-// (imported modules are trusted) drives two checks:
-//
-//  • Value-slot liveness: a `v, err := failable()` destructure binds
-//    `v` "live only where `err` is proven absent". A read of `v` is legal
-//    iff `err` is proven null on the current path — established by
-//    `if !err { … }` (proven inside) or `if err { return/raise }` (proven on
-//    the fall-through). Error-set `==`/tag-compares do NOT prove absence.
-//
-//  • Cleanup absorption: a bare failable call in a `defer` body (with no
-//    `catch` / `?? value`) is rejected — its error has nowhere to propagate
-//    (the block is already exiting). See `checkCleanupNode`.
-//
-// This is the diagnostic-only Pass 1e. A `*Lowering` facade (like
-// `ErrorAnalysis`/`CoercionResolver`): it reads AST decls + `ProgramIndex` and
-// emits diagnostics via `self.l.diagnostics`; lowering proceeds only if those
-// are clean (`core.zig` halts before codegen on any error). External helpers it
-// consumes: `inferExprType`, `errorChannelOf`, `exprIsFailable`.
+// A destructured value slot is live only where its error binding is proven absent.
+// Tag comparisons do not establish absence.
 
 /// The proven-null set: error-variable names known to be absent on the
 /// current path. Threaded by value-clone across branches; the join after an
@@ -268,7 +250,6 @@ pub const ErrorFlow = struct {
                 return false;
             },
             .defer_stmt => |ds| {
-                self.checkCleanupNode(ds.expr);
                 self.flowExpr(ds.expr, ctx, proven.*);
                 return false;
             },
@@ -474,53 +455,5 @@ pub const ErrorFlow = struct {
             if (std.mem.eql(u8, vn, "_")) continue;
             ctx.bindings.put(vn, err_name) catch {};
         }
-    }
-
-    /// A `defer` body runs while the block is already exiting, so a bare
-    /// failable call has nowhere to send its error. Reject any failable
-    /// expression-statement that isn't absorbed locally by `catch` / `?? value`
-    /// / a destructure binding. (Parser already bans `try`/`raise`/`return`/
-    /// `break`/`continue` here, so the only escape route left for a failable is
-    /// local absorption.) The check is transitive through nested blocks, `if`,
-    /// loops, match arms, and `catch` handlers, but stops at a nested closure
-    /// (its own function boundary).
-    fn checkCleanupNode(self: ErrorFlow, node: *const Node) void {
-        switch (node.data) {
-            .block => |b| for (b.stmts) |s| self.checkCleanupNode(s),
-            .if_expr => |ie| {
-                self.cleanupReject(ie.condition);
-                self.checkCleanupNode(ie.then_branch);
-                if (ie.else_branch) |eb| self.checkCleanupNode(eb);
-            },
-            .while_expr => |we| {
-                self.cleanupReject(we.condition);
-                self.checkCleanupNode(we.body);
-            },
-            .for_expr => |fe| self.checkCleanupNode(fe.body),
-            .match_expr => |me| for (me.arms) |arm| self.checkCleanupNode(arm.body),
-            .push_stmt => |ps| self.checkCleanupNode(ps.body),
-            // A destructure binds the error slot → absorbed (explicit ownership).
-            .destructure_decl => {},
-            .var_decl => |vd| if (vd.value) |v| self.cleanupReject(v),
-            .const_decl => |cd| self.cleanupReject(cd.value),
-            .assignment => |a| self.cleanupReject(a.value),
-            // Closures are their own boundary; the parser-banned control-flow
-            // exits are handled elsewhere; nested cleanup is independent.
-            .lambda, .return_stmt, .raise_stmt, .break_expr, .continue_expr, .defer_stmt => {},
-            else => self.cleanupReject(node),
-        }
-    }
-
-    /// Reject `expr` if it is a bare (un-absorbed) failable in cleanup position.
-    /// `catch` / `?? value` strip the error channel (so `exprIsFailable` is
-    /// false for them); only a still-failable expression has an unhandled error.
-    fn cleanupReject(self: ErrorFlow, expr: *const Node) void {
-        if (expr.data == .catch_expr) {
-            // The operand is absorbed; the handler body still runs in cleanup.
-            self.checkCleanupNode(expr.data.catch_expr.body);
-            return;
-        }
-        if (!self.l.exprIsFailable(expr)) return;
-        if (self.l.diagnostics) |d| d.addFmt(.err, expr.span, "a bare failable call in a `defer` body has nowhere to send its error — the block is already exiting; absorb it locally with `catch` or `?? <value>`", .{});
     }
 };

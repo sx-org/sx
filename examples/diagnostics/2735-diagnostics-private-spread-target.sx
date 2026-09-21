@@ -1,0 +1,6 @@
+target :: @import "2735-diagnostics-private-spread-target/target.sx";
+Public :: struct { fd: i32; }
+main :: () {
+    source := Public{fd = 3};
+    value := target.Box{..source};
+}

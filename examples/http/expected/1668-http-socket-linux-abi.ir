@@ -52,9 +52,8 @@ if.merge.49:                                      ; preds = %or.merge.47
   %lenN = extractvalue { ptr, i64 } %loadN, 1
   %add = add i64 2, %lenN
   %addN = add i64 %add, 1
-  %trunc = trunc i64 %addN to i32
-  %truncN = trunc i32 %trunc to i8
-  call void @unHeader(ptr %0, ptr %allocaN, i8 %truncN)
+  %trunc = trunc i64 %addN to i8
+  call void @unHeader(ptr %0, ptr %allocaN, i8 %trunc)
   store i64 0, ptr %allocaN, align 8
   br label %while.hdr.50
 
@@ -86,8 +85,8 @@ while.exit.52:                                    ; preds = %while.hdr.50
   %lenN = extractvalue { ptr, i64 } %loadN, 1
   %addN = add i64 2, %lenN
   %gepN = getelementptr inbounds nuw { [128 x i8], i32 }, ptr %allocaN, i32 0, i32 0
-  %igp.ptr26 = getelementptr i8, ptr %gepN, i64 %addN
-  store i8 0, ptr %igp.ptr26, align 1
+  %igp.ptr25 = getelementptr i8, ptr %gepN, i64 %addN
+  store i8 0, ptr %igp.ptr25, align 1
   %loadN = load { ptr, i64 }, ptr %alloca, align 8
   %lenN = extractvalue { ptr, i64 } %loadN, 1
   %addN = add i64 2, %lenN
@@ -192,10 +191,15 @@ entry:
   %alloca = alloca { i16, i16, i32, i64 }, align 8
   %allocaN = alloca { i32, i32, i32, i32, i32, i64, i64, i64 }, align 8
   %allocaN = alloca i64, align 8
+  %allocaN = alloca ptr, align 8
   %allocaN = alloca i64, align 8
+  %allocaN = alloca ptr, align 8
   %allocaN = alloca i64, align 8
+  %allocaN = alloca ptr, align 8
   %allocaN = alloca i64, align 8
+  %allocaN = alloca ptr, align 8
   %allocaN = alloca i64, align 8
+  %allocaN = alloca ptr, align 8
   %allocaN = alloca [16 x i8], align 1
   %allocaN = alloca { i16, i16, i32, [16 x i8], i32 }, align 8
   %allocaN = alloca { [128 x i8], i32 }, align 8
@@ -313,20 +317,25 @@ if.then.32:                                       ; preds = %if.merge.31
 
 if.merge.33:                                      ; preds = %if.merge.31
   store { i32, i32, i32, i32, i32, i64, i64, i64 } zeroinitializer, ptr %allocaN, align 8
-  %pti = ptrtoint ptr %allocaN to i64
-  store i64 %pti, ptr %allocaN, align 8
+  store ptr %allocaN, ptr %allocaN, align 8
+  %loadN = load i64, ptr %allocaN, align 8
+  store i64 %loadN, ptr %allocaN, align 8
   %gep = getelementptr inbounds nuw { i32, i32, i32, i32, i32, i64, i64, i64 }, ptr %allocaN, i32 0, i32 4
-  %ptiN = ptrtoint ptr %gep to i64
-  store i64 %ptiN, ptr %allocaN, align 8
+  store ptr %gep, ptr %allocaN, align 8
+  %loadN = load i64, ptr %allocaN, align 8
+  store i64 %loadN, ptr %allocaN, align 8
   %gepN = getelementptr inbounds nuw { i32, i32, i32, i32, i32, i64, i64, i64 }, ptr %allocaN, i32 0, i32 5
-  %ptiN = ptrtoint ptr %gepN to i64
-  store i64 %ptiN, ptr %allocaN, align 8
+  store ptr %gepN, ptr %allocaN, align 8
+  %loadN = load i64, ptr %allocaN, align 8
+  store i64 %loadN, ptr %allocaN, align 8
   %gepN = getelementptr inbounds nuw { i32, i32, i32, i32, i32, i64, i64, i64 }, ptr %allocaN, i32 0, i32 6
-  %ptiN = ptrtoint ptr %gepN to i64
-  store i64 %ptiN, ptr %allocaN, align 8
+  store ptr %gepN, ptr %allocaN, align 8
+  %loadN = load i64, ptr %allocaN, align 8
+  store i64 %loadN, ptr %allocaN, align 8
   %gepN = getelementptr inbounds nuw { i32, i32, i32, i32, i32, i64, i64, i64 }, ptr %allocaN, i32 0, i32 7
-  %ptiN = ptrtoint ptr %gepN to i64
-  store i64 %ptiN, ptr %allocaN, align 8
+  store ptr %gepN, ptr %allocaN, align 8
+  %loadN = load i64, ptr %allocaN, align 8
+  store i64 %loadN, ptr %allocaN, align 8
   %loadN = load i64, ptr %allocaN, align 8
   %loadN = load i64, ptr %allocaN, align 8
   %sub = sub i64 %loadN, %loadN

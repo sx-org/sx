@@ -1,0 +1,10 @@
+255: 255
+256: IntCastError.OutOfRange
+-1: IntCastError.OutOfRange
+128: IntCastError.OutOfRange
+18446744073709551615: IntCastError.OutOfRange
+8: IntCastError.OutOfRange
+-4: -4
+-5: IntCastError.OutOfRange
+255: 255
+18446744073709551615: 18446744073709551615

@@ -1,0 +1,26 @@
+@import "modules/std.sx";
+
+S : f32 : 16777216.0;
+Folded :: 16777217.0 - S;
+Nearest :: struct { VALUE: f32: 1.00000005960464477539062501; }
+
+take :: (v: f32) -> f32 { v }
+
+main :: () {
+    s: f32 = S;
+    adapted := 16777217.0 - s;
+    pair := 0.0 - 1.0;
+    nested := 1.0 + (0.0 - s);
+    fixed := 0.0;
+    print("types: {} {} {} {}\n", @typeOf(adapted) == f32,
+        @typeOf(pair) == f64, @typeOf(nested) == f32, @typeOf(fixed - s) == f64);
+    print("rounded: {} {} {}\n", adapted == 0.0, 16777217.0 == s, s == 16777217.0);
+    print("call: {}\n", take(0.0 - s) == -16777216.0);
+    folded: i64 = Folded;
+    print("folded: {} {}\n", folded, @typeOf(Folded) == f32);
+    z: f32 = 0.0;
+    near := 1.00000005960464477539062501 + z;
+    print("nearest: {} {}\n", near == 1.0 and near == Nearest.VALUE, 1e-99 + z == 0.0);
+    exponent := 1_5.0E-1__0_;
+    print("exponent: {} {}\n", @typeOf(1e10) == f64, exponent == 0.0000000015);
+}

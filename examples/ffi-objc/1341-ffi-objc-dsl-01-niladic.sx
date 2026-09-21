@@ -25,10 +25,10 @@ main :: () -> i32 {
         nsObject := objc_getClass("NSObject".ptr);
         cls := objc_allocateClassPair(nsObject, "SxProbeNiladic".ptr, 0);
         sel := sel_registerName("length".ptr);
-        class_addMethod(cls, sel, xx lengthImp, "i@:".ptr);
+        class_addMethod(cls, sel, @reinterpret(*void, lengthImp), "i@:".ptr);
         objc_registerClassPair(cls);
 
-        inst : *SxProbeNiladic = xx class_createInstance(cls, 0);
+        inst : *SxProbeNiladic = class_createInstance(cls, 0);
         n := inst.length();
         print("length = {}\n", n);
     }

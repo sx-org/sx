@@ -199,7 +199,7 @@ hand-written sx code.
 | Kind      | Examples            | Type    |
 |-----------|---------------------|---------|
 | Integer   | `0`, `42`, `0xFF`, `0o755`, `0b1010` | `i64`   |
-| Float     | `0.3`, `0.9`        | `f64`   |
+| Float     | `0.3`, `1e10`, `1.5e-3` | inferred; defaults to `f64` |
 | String    | `"Hello"`, `"z: {z}"` | `[N:0]u8` (may span multiple lines) |
 | Heredoc String | `@string END`...`END` | `[N:0]u8` |
 | Line String | `\\raw line` | `[N:0]u8` |
@@ -228,8 +228,15 @@ separators as pure visual grouping; they are stripped before the value is
 computed, so `0xFF_FF` == `0xFFFF`, `1_000` == `1000`, and `3.14_159` ==
 `3.14159`. Separators are permissive — repeated (`1__0`) and trailing (`1000_`)
 underscores are accepted and stripped. A leading `_` before the first digit is
-not a number (it lexes as an identifier). There is no scientific-exponent
-(`1e10`) float form.
+not a number (it lexes as an identifier).
+
+**Decimal floats.** A decimal number is a float when it has a fraction or an
+exponent: `digits ("." digits)? ([eE] [+-]? digits)?`, with at least one of
+those two parts. Each `digits` starts with a decimal digit and continues with
+digits or `_`; separators may repeat or trail, including in the exponent.
+The fraction and exponent contain no whitespace. `1e10` is a float, `1.5E-3`
+is `0.0015`, and `1e` is invalid. A dot without a following digit starts the
+ordinary member, cast or range syntax.
 
 String literals support escape sequences (`\n`, `\t`, `\r`, `\\`, `\"`, `\0`) and may span multiple lines directly:
 ```sx
@@ -740,8 +747,8 @@ v2 := Vec4{4, 1, 1, 3 };
 v3 := Vec4{w=0, x=2, y=3, z=4 };
 
 // Mixed named + shorthand (bare identifier = field name matches variable name)
-z := 5.0;
-w := 6.0;
+z: f32 = 5.0;
+w: f32 = 6.0;
 v4 := Vec4{y=3, x=9, w, z };
 
 // Trailing commas are allowed in all comma-separated lists
@@ -757,6 +764,36 @@ A named field must name a **declared field** of the struct. An explicit
 type 'T'`) — it is never silently dropped, so a typo or a field removed by an
 `inline if @host.os` branch is caught. (Bare-identifier shorthand that happens
 to match no field is instead read as a *positional* element, not an error.)
+
+`..value` contributes a struct value's fields as initializers. Every contributed
+field must exist in the target and fit through ordinary implicit initialization
+(see [Type Conversions](#type-conversions)),
+even if a later initializer overwrites it. Overlap involving a spread is
+last-wins. Two plain names for one field, or a plain name for a field
+initialized by a directly written unnamed value, are errors. Expressions
+and spread operands evaluate once, left to right. Uncovered fields take their
+ordinary default or zero value. A struct containing a private field cannot be
+spread, including in its declaring file.
+
+```sx
+Position :: struct { x: i32; y: i32; }
+Sprite :: struct { x: i32; y: i32; scale: i32 = 1; }
+pos := Position{x = 3, y = 4};
+a := Sprite{..pos, scale = 2};
+b: Sprite = .{scale = 5, ..a};
+```
+
+The operand's fields determine named versus unnamed contributions. Packs,
+positional products and fixed-length arrays contribute unnamed values. In a
+typed literal (`T{…}` or contextual `.{…}` with a known type), unnamed
+contributions precede named ones and fill fields from the left in declaration
+order without skipping:
+
+```sx
+coords := .{3.(i32), 4.(i32)};
+c := Sprite{..coords, y = 9};  // x=3, y=9, scale=1
+d := Sprite{3, 4, scale = 2}; // x=3, y=4, scale=2
+```
 
 Named aggregates place `{` directly after the type designator: `Point{ x = 1 }`,
 `List(i64){}`, `mod.Config{ port = 80 }`. The separator-dot form `Type.{…}`
@@ -797,21 +834,38 @@ push Context{ allocator = a } { … }        // explicit Context literal
 
 #### Anonymous Structs
 
-An **untyped** `.{ … }` literal — no annotation, no type prefix, no target —
-self-types as an *anonymous structural struct*: named elements become fields;
-positional elements get index names (`"0"`, `"1"`, …) readable via `.N` or a
-comptime `[i]` index; `.{x}` shorthand is a NAMED field, `.{ (x) }` is the
-positional escape; mixing named and positional elements is an error. Inline
-anonymous type **annotations** (`struct { x: i64; }`, `union { … }`,
+A bare `.{ … }` literal without a target self-types as an *anonymous structural
+struct*: named contributions come first, in order of first occurrence; each
+takes the last contributed type and value, with initializers typed independently.
+Unnamed contributions follow in their contribution order, regardless of written
+order, and receive their whole-struct index as a name (`"0"`, `"1"`, …). Fields
+are accessed through `@field`.
+`.{x}` shorthand is named; `.{ (x) }` is the unnamed escape.
+For a bare literal whose anonymous target contains index-named fields, named
+contributions match fields by name, unnamed contributions fill only index-named
+slots in order, and target fields supply the initializer types.
+
+```sx
+A :: struct { px: i16; py: i32; }
+B :: struct { py: i32; px: i64; }
+a := A{px = 3, py = 4};
+b := B{py = 8, px = 70000};
+ab := .{..a, ..b};              // struct { px: i64; py: i32; }
+ba := .{..b, ..a};              // struct { py: i32; px: i16; }
+mixed := .{7, ..a, px = 70000}; // struct { px: i64; py: i32; <7>; }
+```
+
+Inline anonymous type **annotations** (`struct { x: i64; }`, `union { … }`,
 `enum { S: T; … }`) produce the same kind of type, in any type position —
 including a function's return type (`make :: () -> struct { x: i64; } {
 .{ x = 3 } }`; a bodyless `F :: () -> struct { … };` stays a function-type
 alias).
 
-Anonymous type identity is by **shape**, never by name: two anonymous types
+Anonymous type equality is by **shape**, never by name: two anonymous types
 with the same canonical field sequence (names + types, in order) are the SAME
 type — across literal and annotation sites — and differently-shaped ones are
-always distinct types:
+always distinct types. Each anonymous struct annotation keeps its own field
+defaults; defaults affect construction, not type equality or assignability:
 
 ```sx
 a : struct { x: i64; } = .{ x = 1 };
@@ -847,25 +901,23 @@ inactive-variant bytes are unspecified. That mirrors the rejection of a bare
 `union` top-level `==` operand. `<`, `<=`, `>`, `>=` are not defined on
 structs.
 
-#### `@using` — Struct Composition
-`@using StructName;` inside a struct declaration embeds all fields from `StructName` at that position. The embedded fields are accessed directly, as if declared inline.
+#### Struct Member Spread
+`..X` in a struct body splices the operand's members at that position: a pack
+supplies positional fields, and a struct type supplies its named fields and
+types. Other operand kinds are compile errors. A struct operand containing a
+private field cannot be spread, including in its declaring file. Spread fields
+receive no base defaults; explicit fields keep their declared defaults.
 
 ```sx
 UBase :: struct { x: i32; y: i32; }
-UExt :: struct { @using UBase; z: i32; }
-e := UExt{x = 1, y = 2, z = 3 };
-print("{}\n", e.x);  // 1
+UExt :: struct { ..UBase; z: i32 = 3; }
+e := UExt{x = 1, y = 2};
+print("{}\n", e.z);  // 3
 ```
 
-`@using` may appear at any field position (beginning, middle, end) and multiple `@using` entries are allowed:
-```sx
-UPos :: struct { px: i32; py: i32; }
-UCol :: struct { r: i32; g: i32; }
-USprite :: struct { @using UPos; @using UCol; scale: i32; }
-s := USprite{px = 10, py = 20, r = 255, g = 128, scale = 1 };
-```
-
-The referenced struct must be declared before use. This is purely a compile-time field expansion — no runtime overhead.
+The operand's layout is resolved on demand, including for a struct declared
+later in the file. Member spread is a compile-time expansion with no runtime
+overhead.
 
 #### Struct Interpolation
 Struct values in string interpolation print their fields with no type-name
@@ -1617,12 +1669,12 @@ Design notes and rejected directions: `design/protocols.md` (appendix).
 ### Anonymous products
 
 A positional anonymous product is the type of `.{1, 2}`: an anonymous
-structural struct whose fields are named `"0"`, `"1"`, …. Field access is
-`t.0` / `t.1`. `@typeInfo` on it is `.struct`. There is no writable type
-spelling for a positional product other than `struct { ..P(Ts) }` (a pack
+structural struct whose fields are named `"0"`, `"1"`, …. Fields are accessed
+through `@field` (see Reflection). `@typeInfo` on it is `.struct`. There is no
+writable type spelling for a positional product other than `struct { ..P(Ts) }` (a pack
 spread as the struct's one field — see "Variadic Heterogeneous Type Packs").
-Named products are ordinary structs: `struct { x: A; y: B }`, accessed by
-name only (`.x`, not `.0`).
+Named products are ordinary structs: `struct { x: A; y: B }`. Named fields
+also have `.name` access.
 
 `.{ … }` is the one aggregate literal. Untyped `.{1, 2}` infers the positional
 product. Named `.{x = 10, y = 20}` against `struct { x: i64; y: i64 }` is a
@@ -1631,8 +1683,8 @@ inside bare parens is a hard error.
 
 ```sx
 pair := .{40, 2};
-pair.0;              // 40
-pair.1;              // 2
+@field(pair, 0);     // 40
+@field(pair, 1) = 3;
 
 named : struct { x: i64; y: i64 } = .{x = 10, y = 20};
 named.x;             // 10
@@ -1916,6 +1968,9 @@ v := Vec2{1.0, 2.0 };
 ptr := *v;             // *Vec2
 ```
 
+An indexed-element address `*buf[i]` has type `[*]T`. Addressing the
+whole array retains `*[N]T`; addressing a single object retains `*T`.
+
 **Dereference**: `p.*` loads the value through the pointer.
 ```sx
 copy := ptr.*;          // Vec2
@@ -1948,20 +2003,25 @@ op : ?*Vec2 = null;    // same layout; deref demands proof of presence
 index is the only way to step a pointer — `+` / `-` have no pointer form.
 ```sx
 arr : [5]i32 = .[10, 20, 30, 40, 50];
-mp : [*]i32 = *arr[0];   // *i32 → [*]i32 implicit
+mp : [*]i32 = *arr[0];
 val := mp[2];             // 30
 ```
 
 **Implicit conversions**:
-- `*T` → `[*]T` (pointer to element → many-pointer)
+- `[*]T` → `*T` (the first element)
 - `*[N]T` → `[*]T` (pointer to array → many-pointer)
 - `[N]T` → `[*]T` at call sites (array decays to many-pointer)
 - `[]T` → `[*]T` (slice decays to many-pointer, extracts `.ptr`)
 - `T` → `*T` at call sites (implicit address-of)
-- `null` (`*void`) → any `*T`
-- `*T` / `[*]T` → `*void` (losing the pointee). `[]T.ptr` is a
-  many-pointer, so it takes this arm. Gaining a pointee (`*void` → `*T`) is
-  explicit: `raw.(*T)` or `xx raw` at a `*T` slot.
+- `*T` / `[*]T` → `*void`
+- `*void` → `*T` or unterminated `[*]T`
+- `[*:X]T` → `[*]T` (drop the terminator guarantee)
+- An ObjC class pointer → a pointer to a declared ancestor
+
+`*T` → `[*]T` requires `.([*]T)`. Recovering a C-convention function
+from `*void` requires `.((Args) -> Result abi(.c))`. Other code-pointer
+reads and ObjC downcasts use `@reinterpret`. No conversion adds a
+terminator guarantee.
 
 **Unchecked writes (the pointer contract)**: pointers carry no
 read-only qualifier — there is no `const` pointer type in sx (`const` is
@@ -2756,7 +2816,7 @@ concrete arg types at any particular call site.
 | Projection | `xs.field` | see "Pack projection" |
 | Spread → call args | `..xs` / `..xs.field` | expands to N positional args |
 | Spread → aggregate value | `.{..xs}` / `.{..xs.field}` | materializes the pack as an anonymous positional struct |
-| Spread → struct type | `struct { ..F(Ts) }` / `struct { ..F(Ts.Arg) }` | anonymous struct whose one field is the pack-spread product |
+| Spread → struct type | `struct { ..F(Ts) }` / `struct { ..F(Ts.Arg) }` | splices the pack elements as positional fields |
 | Spread → callable sig | `Closure(..Ts) -> R` / `Closure(..Ts.Arg) -> R` | positional params of the callable |
 
 #### Pack projection
@@ -2861,18 +2921,37 @@ isReady : ValueListenable(bool) = map(
 - `:=` bindings infer type from the right-hand side
 - Explicit annotation overrides inference: `NAME : f64 : 0.9;`
 - Integer literals default to `i64`
-- Float literals default to `f64`
+- Untyped float expressions comprise numeric literals, unannotated numeric
+  constants and their aliases, unary negation, and `+ - * / %`, with at least
+  one float-producing component. They evaluate in `f64`, preserving integer
+  semantics in integer-only subexpressions, then adopt a contextual float type
+  by rounding the complete result once to nearest, ties to even. A typed float
+  peer supplies that context before an enclosing destination; an integer peer
+  supplies no float width. Without context the type is `f64`. Overflow is a
+  located compile error; underflow may produce signed zero, and decimal digit
+  count imposes no restriction. Explicit annotations, conversions, stored values,
+  runtime results, and ordinary field values retain their types. Generic
+  inference binds arguments with their own types before adaptable arguments;
+  `@typeOf` observes the default type without fixing later constant uses.
 - Enum literals (`.variant`) infer their enum type from context (expected type)
+
+```sx
+s: f32 = 1.5;
+adapted := 0.0 - s;
+pair := 0.0 - 1.0;
+```
+`adapted` is `f32`, `pair` is `f64`, and `1e39 - s` is an overflow error at
+`1e39`.
 
 ### Type Conversions
 
 **Implicit (widening)** — allowed without annotation:
-- Integer to wider integer of same signedness (`u8` → `u16`, `i8` → `i32`)
+- Integer to equal-width or wider integer of the same signedness; widths follow the target (`i64` → `isize` on a 64-bit target)
 - Unsigned to strictly wider signed (`u8` → `i16`)
 - Any integer to any float (`u8` → `f32`, `i32` → `f64`)
 - Float to wider float (`f32` → `f64`)
 - Integer literals can convert to any numeric type implicitly
-- `*T` / `[*]T` → `*void`
+- Pointer conversions follow §Pointer Types.
 
 **Implicit float → integer** — a float flowing into an integer-typed slot
 without `xx` / `.(T)`:
@@ -2886,7 +2965,7 @@ without `xx` / `.(T)`:
   (folds), `5.0 / 2.0` is `2.5` (errors) — never integer truncating division.
 - A **non-integral** compile-time float — literal or const expression — is a
   **compile error**: `y : i64 = 1.5` → "cannot implicitly narrow non-integral
-  float '1.5' to 'i64'; use an explicit cast (`xx`/`.(T)`)". A count slot has
+  float '1.5' to 'i64'; use an explicit cast (`.(i64)`)". A count slot has
   no cast escape and phrases its rejection as "array dimension must be an
   integer, but '…' is a non-integral float".
 - A **runtime** float (one with no compile-time value) is unaffected — narrow
@@ -2899,6 +2978,36 @@ without `xx` / `.(T)`:
 - Float to any integer (`f64` → `u16`) — always **truncates**, integral or not
   (`y : i64 = xx 1.5` → 1); this is the escape hatch from the implicit rule above
 - Unsigned to signed of same or narrower width (`u8` → `i8`)
+
+Function values carry their parameter types, return type, calling convention and
+C-variadic tail. A matching function slot takes the value unchanged. Raw function
+addresses use `@reinterpret(T, function)` with a pointer-sized destination.
+
+An error value's `.(T)` conversion to an integer reads its `i32` discriminant,
+then applies the integer conversion to `T`; a member's payload is not read.
+
+The three explicit integer operations have distinct contracts:
+
+| Operation | Result |
+|---|---|
+| `value.(T)` | Converts silently, truncating excess bits; `300.(u8)` is `44`. |
+| `@intCast(T, value)` | Preserves the mathematical value or returns `IntCastError.OutOfRange`. |
+| `@reinterpret(T, value)` | Reads the same bytes as `T`; source and destination must have equal, non-zero size. |
+
+`@intCast :: ($T: Type, value: $S) -> (T, !IntCastError)` requires a
+compile-time integer destination and an integer operand, including `@int`
+widths. It evaluates the operand once in its own type, then checks the
+destination's minimum and maximum before converting. `IntCastError :: error
+{ OutOfRange }` is a payload-free prelude error set. The result uses ordinary
+error handling (`try`, `catch`, `??`, or destructuring), even when the value
+fits; an unhandled result is a compile error. `or` is a boolean operator.
+
+A directly known out-of-range constant (literal, named constant, or constant
+arithmetic) is a compile error even with a handler: `@intCast(u8, 300)` reports
+`@intCast value 300 is out of range for 'u8' (0..255)`. A check executed inside
+a function under `@run` returns the ordinary error. For
+`byte :: (n: i64) -> (u8, !IntCastError) { return try @intCast(u8, n); }`,
+`VALUE :: @run byte(300) catch { 7 };` evaluates to `7`.
 
 The `xx` prefix operator marks an expression for auto-conversion to the type its context expects:
 ```sx
@@ -2919,7 +3028,7 @@ are not written onward.
 | Signed vs unsigned, same width | error — write `a.(u64) < b` |
 | Two sequences of one element type (`[N]T`, `[N:X]T`, `[]T`, `[:X]T`, `string`) | their content (§Array Types); an array meets the slice |
 | Two pointers, any pointees (`*T`, `*void`, `[*]T`, `[*:X]T`, fn-ptr) | address bits / address order |
-| Pointer vs integer | the integer is an address-sized bit pattern: `region == -1`, `p != 0` |
+| Pointer vs integer | error; compare an address read with `@reinterpret(isize, p)` or compare the pointer with `null` |
 | `?T == T` / `?T == null` | unchanged |
 | Two error values, or an error against a `.Member` | no conversion — comparable iff one channel ⊆ the other ([§12 Comparison](#comparison)) |
 
@@ -2931,15 +3040,19 @@ An explicit `xx` in a comparison still takes its target from the OTHER operand:
 `t : <type of a> = xx b; a == t`. A comparison yields `bool`; the surrounding
 context is never the target of an operand.
 
-An explicit cast pair with **no conversion** is a compile error
-(`no conversion from 'A' to 'B'`). Dest-inferred `xx` is also an error
-when the value is already the slot type (`already 'i64'`) and when an
-implicit conversion already applies (`already converts to '*void'`).
-The remaining reinterprets are modeled: pointer
-↔ integer, same-size aggregate pun (e.g. `string` ↔ `@Slice`), pointer
-or function-pointer pun, and same-width integer pun. There is no spill
-fallback. User `Into` conversions run when the built-in ladder makes no
-progress.
+Only a modeled conversion converts, implicitly or through `.(T)`. When the
+explicit built-in ladder has no conversion, it tries the user `Into` / `@convert`
+implementation; if neither applies, the pair is a compile error
+(`no conversion from 'A' to 'B'`). Equal storage size grants no conversion.
+Dest-inferred `xx` is also an error when the value is already the slot type
+(`already 'i64'`) or an implicit conversion already applies
+(`already converts to '*void'`).
+
+`@reinterpret(T, value)` reads bytes independently of conversions (§Builtins).
+For example, `@reinterpret(@Slice, s)` reads a raw slice header. Raw `@Slice` is
+the layout struct; `@Slice(T, Len)` is the parameterized slice type constructor.
+Address reads use a pointer-sized integer; a different integer width requires
+a separate integer conversion.
 
 ### Postfix Cast `expr.(T)`
 
@@ -2973,19 +3086,10 @@ The target is exactly one **compile-time** type (a runtime-`Type` target
 would make the expression untypeable). `56.(i8)` lexes as a cast (never a
 float); `0..(5)` stays a range.
 
-**Raw-view retrieval.** The fat-value raw views (`@Closure`
-`{fnPtr, env}`, `@Slice` `{ptr, len}` for slices AND strings,
-`@Interface` `{ctx, typeId}`, and `@Any` `{data, typeId}`) are
-retrieved through this same engine — `c.(@Closure)`, `name.(@Slice)`,
-`p.(@Interface)` (or the `xx` spelling), `av.(@Any)` (postfix ONLY —
-see below). The interface case is a MODELED conversion built field-wise, not
-a bit reinterpret: `{ctx, typeId}` is the leading prefix of a handle
-`{ctx, typeId, vtable}`, so the result is a real value usable in
-any position (argument, return, store). `@Interface` mirrors exactly that
-prefix — byte-identical to an `any` `{data, typeId}`; the handle
-is wider, which is why the build is field-wise and never a reinterpret. A handle receiver with any
-other concrete target is the checked DOWNCAST (see the assertion
-temperaments — the receiver reads as its `{ctx, typeId}` prefix view);
+**Interface and boxed views.** `p.(@Interface)` retrieves `{ctx, typeId}`
+field-wise from a handle; `av.(@Any)` retrieves `{data, typeId}` from a box.
+These are modeled conversions. An interface handle's other concrete targets
+use the checked downcast (see the assertion temperaments);
 the recovery targets — a pointer type (`p.(*T)`, the typed ctx read; `T`
 must be a CONCRETE type or `void` — a pointer-to-interface target is refused,
 since ctx addresses the referent),
@@ -3329,7 +3433,7 @@ An arm's last expression is the arm's value:
 classify :: (n: i32) -> i32 {
   match n {
     case 0: 100;            // arm value is 100
-    case 1: { x := 5; x*2 } // braced block → value 10
+    case 1: { x: i32 = 5; x*2 } // braced block → value 10
     else:   7
   }
 }
@@ -4314,7 +4418,7 @@ and never a value expression.
 Over the slice of right operands that are concrete descriptions they answer
 alike — there is no subtyping and no fits-rule — and that coincidence is a
 theorem about those operands, not the definition of either. Nothing is refused
-for the overlap. `t1 == t2` over two `Type` values is the tag compare `@typeEq`
+for the overlap. `t1 == t2` over two `Type` values is the type equality comparison `@typeEq`
 spells, and it folds when both operands are static.
 
 #### Left operands
@@ -4553,8 +4657,8 @@ kinds (`x.len` in a slice arm, `x.(@Interface)` in an interface arm):
 ```sx
 free :: ufcs (x: $T, a: Allocator = context.allocator) {
     inline match T {
-        case closure:  { env := x.(@Closure).env; if env != null { a.deallocBytes(env); } }
-        case slice:    a.deallocBytes(xx x.ptr);
+        case closure:  { env := @reinterpret(@Closure, x).env; if env != null { a.deallocBytes(env); } }
+        case slice:    a.deallocBytes(@reinterpret([*]u8, x.ptr));
         else:          @error("free expects a closure or a slice");
     }
 }
@@ -5462,11 +5566,11 @@ error: 'intern' runs only at compile time — it cannot be called from the
 - `@errorName(e: $T) -> string` — `Owner.Member` for the member an error value carries (`"FooError.D"`) — the composition `e.set.name`, `"."`, and `e.name` spell out. Reads the always-linked qualified-name table at the value's member id.
 - `@errorPayload(e: $T) -> any` — the live member's payload as an `any` VIEW of the channel's payload area (same borrow rules as the boxed-view family). A payload-free member views as `void`.
 - `@isFlags($T: Type) -> bool` — returns `true` if `T` is a flags enum (declared with `@flags`)
-- `@typeEq($A: Type, $B: Type) -> bool` — structural TypeId equality (`@typeEq(i64, i64)` is `true`, distinct shapes are `false`); folds at compile time, so `inline if @typeEq(...)` is comptime-decidable
+- `@typeEq($A: Type, $B: Type) -> bool` — type equality (`@typeEq(i64, i64)` is `true`, distinct shapes are `false`); folds at compile time, so `inline if @typeEq(...)` is comptime-decidable
 - `@unbox($T: Type, v: any) -> T` — the boxed storage read AS `T`: an unchecked typed load through the view, with no tag check, so `T` must be the boxed type and a wider one overreads. The checked forms are the postfix assertions (`v.(T)` / `try v.(T)` / `v.(?T)`).
-- The boxed-view family — `@len` / `@field` / `@inner` — reads a boxed value's parts in place, dispatching on the view's runtime tag. Each result is an `any` VIEW `{the part's type, a pointer to it inside the receiver}` — an interior pointer, not a copy. An addressable receiver is borrowed (mutations of it stay visible through a live view) and an rvalue receiver spills to a frame temp first, so a view is valid only while the storage it names lives. A wrong-kind tag or an index past the count is **undefined behavior** (in-bounds GEP — the caller gates on `@len`).
+- A boxed part view is an `any` value holding `{the part's type, a pointer to it inside the receiver}`. An addressable receiver is borrowed (mutations of it stay visible through a live view) and an rvalue receiver spills to a frame temp first, so a view is valid only while the storage it names lives. A wrong-kind tag or an index past the count is **undefined behavior** (in-bounds GEP — the caller gates on `@len`).
 - `@len(v: any) -> i64` — the receiver's part count: struct and union fields, enum variants, array elements, vector lanes, and the count a slice's or string's header carries. A `Type` receiver — spelled, or a runtime `Type` value — answers that type's part count (`@len(@Vector(3, f32))` is `3`, the one vector length the size tables cannot answer, since a vector's ABI size is pow2-rounded); a spelled type with no parts is a compile error, a runtime tag of such a kind answers 0.
-- `@field(v: any, idx: i64) -> any` — the `idx`-th part `@len` counts: a member at its layout offset — a payload enum's members share the PAYLOAD offset (the header size, the same for every variant), a union's arms all sit at 0 — or an array, vector, slice, or string element, striding by the element size from the in-place storage or from the buffer a fat pointer names. Nested access chains by repeated calls with no copies. An arbitrary-width int member views under its TRUE (non-builtin) tag — dispatch consumers (`x.(f.type)`) monomorphize exactly; the `{}` formatter's builtin-width int arm does not match such a tag and prints `<?>`.
+- `@field(v, idx)` selects a field by its index in the whole struct. For a statically typed struct and a compile-time integer index, the result has the field's own type and denotes its storage when the receiver is addressable; ordinary mutability checks apply. Out-of-range constant indices diagnose. Otherwise it returns an `any` view of the `idx`-th part `@len` counts: a member at its layout offset — a payload enum's members share the PAYLOAD offset (the header size, the same for every variant), a union's arms all sit at 0 — or an array, vector, slice, or string element, striding by the element size from the in-place storage or from the buffer a fat pointer names. Nested access chains by repeated calls with no copies. An arbitrary-width int member views under its TRUE (non-builtin) tag — dispatch consumers (`x.(f.type)`) monomorphize exactly; the `{}` formatter's builtin-width int arm does not match such a tag and prints `<?>`.
 - `@inner(v: any) -> ?any` — an optional's payload, `null` when it is absent.
 
 Signedness is asked with `type is unsigned` (§The `is` Operator), which the `{}`
@@ -5474,7 +5578,7 @@ formatter reads to print unsigned integers as unsigned decimal; it lowers to
 `__sx_type_is_unsigned` over a runtime `Type` and folds outright over a static
 one.
 
-The type-only builtins — `@sizeOf`, `@alignOf`, `@typeName`, `@typeEq`, `@isFlags` — strictly require a **type** argument. A spelled type (`i64`, `*u8`, `Point`) or a generic type parameter (`T`) is accepted by all of them. A runtime `Type` value (`@typeOf(x)`, a `[]Type` element, a `Type`-typed local) is supported by the whole scalar family: `@typeName`, plus `@sizeOf`, `@alignOf`, and `@isFlags` — each reads a lazily-emitted, tag-indexed table (`__sx_type_sizes` / `_aligns` / `_flag_bits`; built only when a dynamic call site exists, so programs without runtime reflection carry no tables) — and `@typeEq`, which compares tags directly (no table). Passing a non-Type VALUE (`@sizeOf(6)`, `@isFlags(true)`) is a compile-time error — `<builtin> expects a type, got '<type>'` — never a silent reinterpretation of the value's bits as a type.
+The type-only builtins — `@sizeOf`, `@alignOf`, `@typeName`, `@typeEq`, `@isFlags` — strictly require a **type** argument. A spelled type (`i64`, `*u8`, `Point`) or a generic type parameter (`T`) is accepted by all of them. A runtime `Type` value (`@typeOf(x)`, a `[]Type` element, a `Type`-typed local) is supported by the whole scalar family: `@typeName`, plus `@sizeOf`, `@alignOf`, and `@isFlags` — each reads a lazily-emitted, tag-indexed table (`__sx_type_sizes` / `_aligns` / `_flag_bits`; built only when a dynamic call site exists, so programs without runtime reflection carry no tables) — and `@typeEq`, which compares the canonical types read from the lazily-emitted, tag-indexed `__sx_canonical_types` table. Passing a non-Type VALUE (`@sizeOf(6)`, `@isFlags(true)`) is a compile-time error — `<builtin> expects a type, got '<type>'` — never a silent reinterpretation of the value's bits as a type.
 
 An `any` is accepted because it can hold either a value or a `Type`. `@typeName` consults the `any`'s runtime type-tag, not its payload: an `any` holding a *value* reports the type **of that value** (`av : any = 6` → `@typeName(av)` is `"i64"`), while an `any` holding a *`Type` value* (e.g. `@typeOf(x)` stored in an `any`) names the **held type**. This is the same tag the `{}` formatter reads, so `print(av)` and `@typeName(av)` agree on what `av` is. `is` reads that tag rather than peeling it: `at is type` is true for a `Type`-holding `any`, and classifying the held type unboxes first (`at.(?Type)`).
 
@@ -5485,6 +5589,7 @@ An `any` is accepted because it can hold either a value or a `Type`. `@typeName`
 - `variantIndex(av: any) -> ?i64` — the sequential ordinal of a boxed enum value's variant, null when its tag names none.
 - `@convert($T: Type, v: $S/Into(T), alloc: Allocator = context.allocator) -> T` — the `impl Into(T) for S` conversion, funded from `alloc`.
 - `@coerce($T: Type, v: $S) -> T` — the ladder `xx` and `.(T)` enter: `@as`, then `@convert` from the context allocator when the compiler's conversions make no progress.
+- `@intCast($T: Type, value: $S) -> (T, !IntCastError)` — [checked integer conversion](#type-conversions).
 - `@reinterpret($T: Type, v: $S) -> T` — `v`'s bytes read as a `T`. No conversion runs on either side: the value's storage is the result, byte for byte. `T` is a type known at compile time, and the pairing is admitted when `@sizeOf(T)` equals `@sizeOf(S)` and that size is not zero — any other pair is a compile-time error naming both sizes. The evaluator reads the same bytes, so a `@run` call folds to the same value compiled code computes.
 - `@assert(ok: bool, msg: ?string = null, site: @SourceSite = @caller)` — stops the program at `site` through `@panic` unless `ok`. `p.(Q)` between interfaces is the handle build plus `@assert(<row present>, "re-erasure to 'Q' failed")` at the site.
 
@@ -5559,7 +5664,7 @@ inline match @host.os {
 free :: ufcs (x: $T, a: Allocator = context.allocator) {
     inline match T {
         case closure:  { ... }
-        case slice:    a.deallocBytes(xx x.ptr);
+        case slice:    a.deallocBytes(@reinterpret([*]u8, x.ptr));
         else:          @error("free expects a closure or a slice");
     }
 }
@@ -5809,8 +5914,9 @@ Semantics:
   and a mention includes `x.fd(…)` when `fd` is a callable field. Another file
   can still produce a value without naming the field: a positional init
   (`File{ 3 }`), `File{}` defaults, `File{ --- }` / `---`, and copy assignment.
-  A value spread (`f(..x)`), an index (`x[0]`), and reflection (`print("{}", x)`,
-  `@field`) read the layout rather than the name, so none is a mention.
+  A call-argument spread (`f(..x)`), an index (`x[0]`), and reflection
+  (`print("{}", x)`, `@field`) read the layout rather than the name, so none
+  is a mention.
   Same-file methods, free functions, and literals may name the field.
   A method whose name matches a private field still dispatches: `x.fd(…)` is a
   mention only when `fd` resolves to a field.
@@ -5818,9 +5924,6 @@ Semantics:
 - **A promoted union member answers to its payload's file.** A union whose
   variant is a named struct promotes that struct's members; a private one is
   nameable only from the file declaring the payload.
-- **A `@using` promotion carries the base's authority.** A struct that promotes
-  a base with a private field gains the field's storage, not the right to name
-  it: only the base's declaring file may.
 
 Placement rules — `private` is allowed on identifier-headed module-scope
 declarations and on the fields of a NAMED struct declaration (a generic
@@ -5829,7 +5932,8 @@ inline `struct { … }`, a type function's returned `struct { … }`), locals,
 parameters, union and runtime-class fields, enum cases and error tags,
 struct / `constraint` / `interface` / `impl` methods and requirements, flat
 `@import`, `impl` blocks,
-`@context.extend`, `@using`, standalone `@run`, global `asm`, and `@framework`.
+`@context.extend`, struct spread members, standalone `@run`, global `asm`,
+and `@framework`.
 Top-level `inline if` branches and `inline for` bodies MAY declare private
 globals (their statements are module-scope after comptime flattening); function
 and method bodies may not.
@@ -6417,7 +6521,7 @@ v, n := parsePair(s) ?? .{0, 0};                 // tuple terminator (multi-valu
 ```
 
 A **void** failable (`-> !`) rejects a plain-value RHS (no success type to
-fall back to); `mustInit() ?? mustOther()` (chain) and `mustInit() catch {}`
+fall back to); `mustInit() ?? try mustOther()` (chain) and `mustInit() catch {}`
 (absorb) are the legal forms.
 
 `or` / `and` are logical operators over booleans; a failable operand is a type
@@ -6428,8 +6532,11 @@ error there (`parse(s) or 0` names no bool).
 A failable expression `X` may appear **bare** (no `try`) iff its error path
 passes through at least one explicit marker before reaching the enclosing
 boundary. The markers are: a `try` keyword, a `catch` handler, a `??` value
-terminator, or a destructure binding (`v, err := X`). Otherwise `try` (or one
-of the other markers directly on `X`) is required.
+terminator, a destructure binding (`v, err := X`), or forwarding the expression
+as the enclosing body's own result. Otherwise `try` (or one of the other
+markers directly on `X`) is required. A pure failable has only its error result,
+so binding it to a name (`err := check()`) counts as a destructure. A direct
+condition such as `if check() { … }` requires `catch`.
 
 ```sx
 a := parse(s) ?? 0;          // OK — terminator on the path
@@ -6699,7 +6806,7 @@ set_member      = IDENT ('=' (expr | 'else'))? (':' type)?
 struct_decl     = IDENT '::' 'struct' '{' struct_members '}'
 struct_members  = (struct_member (';' struct_member)* ';'? )?
                   // members are `;`-separated; a trailing `;` before `}` is optional
-struct_member   = field_group | '@using' IDENT
+struct_member   = field_group | '..' type
 field_group     = IDENT (',' IDENT)* ':' type ('=' expr)?
 union_decl      = IDENT '::' 'union' '{' union_members '}'
 union_members   = (union_member (';' union_member)* ';'? )?

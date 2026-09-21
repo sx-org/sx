@@ -1,0 +1,65 @@
+@import "modules/std.sx";
+
+Base :: struct { x: i32; }
+One :: struct { inner: struct { ..Base; tail: i32 = 1; }; }
+Two :: struct { inner: struct { ..Base; tail: i32 = 2; }; }
+Config :: struct { opts: struct { retries: i32 = 5; }; }
+Pair :: struct {
+    a: struct { p: i32 = 1; };
+    b: struct { p: i32 = 5; };
+}
+
+Nested :: struct {
+    a: struct { inner: struct { p: i32 = 3; }; };
+    b: struct { inner: struct { p: i32 = 7; }; };
+}
+
+same :: (a: Type, b: Type) -> bool {
+    left := .{ t = a };
+    right := .{ t = b };
+    @typeEq(a, b) and a == b and left == right
+}
+Box :: struct ($T: Type) { value: T; }
+create :: ($T: Type) -> T { .{} }
+make :: () -> struct { p: i32 = 13; } { .{} }
+read :: (v: struct { p: i32 = 17; }) -> i32 { v.p }
+matched :: ($Expected: Type, t: Type) -> bool {
+    return match t {
+        case Expected: true;
+        else: false;
+    };
+}
+Constant :: Pair{ a = .{}, b = .{} };
+
+main :: () {
+    one := One{ inner = .{ x = 5 } };
+    two := Two{ inner = .{ x = 6 } };
+    pair := Pair{ a = .{}, b = .{} };
+    plain: struct { retries: i32; } = .{};
+    config := Config{ opts = .{} };
+    print("spread: {} {} / {} {}\n", one.inner.x, one.inner.tail, two.inner.x, two.inner.tail);
+    print("defaults: {} {} / {} {}\n", pair.a.p, pair.b.p, plain.retries, config.opts.retries);
+    print("types: {} {} {}\n", @typeEq(@typeOf(pair.a), @typeOf(pair.b)), @typeOf(pair.a) == @typeOf(pair.b), same(@typeOf(pair.a), @typeOf(pair.b)));
+    print("different: {} {}\n", @typeEq(@typeOf(one), @typeOf(two)), @typeEq(@typeOf(pair.a), struct { p: i64; }));
+    print("constants: {} {}\n", Constant.a.p, Constant.b.p);
+    nested := Nested{ a = .{ inner = .{} }, b = .{ inner = .{} } };
+    print("nested: {} {} {}\n", nested.a.inner.p, nested.b.inner.p, @typeEq(@typeOf(nested.a), @typeOf(nested.b)));
+    print("call: {} {} {} {}\n", make().p, read(pair.a), read(.{}), matched(@typeOf(pair.b), @typeOf(pair.a)));
+    local_a: struct { p: i32 = 21; } = .{};
+    local_b: struct { p: i32 = 34; } = .{};
+    ga := create(@typeOf(local_a));
+    gb := create(@typeOf(local_b));
+    ba := Box(struct { p: i32 = 21; }){ value = .{} };
+    bb := Box(struct { p: i32 = 34; }){ value = .{} };
+    print("generic: {} {} {} / {} {} {}\n", ga.p, gb.p, @typeEq(@typeOf(ga), @typeOf(gb)), ba.value.p, bb.value.p, @typeEq(@typeOf(ba), @typeOf(bb)));
+    boxed: any = pair.a;
+    unboxed := @as(@typeOf(pair.b), boxed);
+    copied := unboxed.p;
+    unboxed = .{};
+    print("boxed: {} {}\n", copied, unboxed.p);
+    pair.a = pair.b;
+    pair.b = .{};
+    pair.b = pair.a;
+    pair.a = .{};
+    print("assignment: {} {} {}\n", pair.a.p, pair.b.p, pair.a == pair.b);
+}

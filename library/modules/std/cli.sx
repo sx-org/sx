@@ -91,7 +91,7 @@ inline match @host.os {
             while true {
                 region := c.mmap(null, cap, CMDLINE_PROT_RW, CMDLINE_MAP_AP, -1, 0);
                 // mmap signals failure with MAP_FAILED = (void*)-1, not null.
-                if region == -1 {
+                if @reinterpret(isize, region) == -1 {
                     @printf("std.cli: mmap failed while reading /proc/self/cmdline.\n");
                     proc.exit(EX_UNAVAILABLE);
                 }
@@ -183,11 +183,11 @@ osArgs :: (buf: []string) -> []string {
     inline match @host.os {
         case .macos: {
             argc := (nsGetArgc().*).(i64);
-            argv : [*]i64 = (nsGetArgv().*).([*]i64);
+            argv : [*]i64 = @reinterpret([*]i64, ((nsGetArgv().*)).(usize));
             n := if argc > buf.len then buf.len else argc;
             i := 0;
             while i < n {
-                cstr : [*]u8 = argv[i].([*]u8);
+                cstr : [*]u8 = @reinterpret([*]u8, argv[i].(usize));
                 len := 0;
                 while cstr[len] != 0 { len += 1; }
                 buf[i] = string{ ptr = cstr, len = len };

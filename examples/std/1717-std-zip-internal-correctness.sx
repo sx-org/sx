@@ -29,7 +29,7 @@ impl Allocator for CappedAllocator {
 SinkState :: struct { out: codec.ByteWriter; }
 
 sinkWrite :: (ctx: *void, data: string) -> bool {
-    state : *SinkState = xx ctx;
+    state : *SinkState = ctx;
     state.out.putBytes(data);
     !state.out.failed
 }
@@ -41,7 +41,7 @@ SourceState :: struct {
 }
 
 sourceRead :: (ctx: *void, offset: i64, output: string) -> i64 {
-    state : *SourceState = xx ctx;
+    state : *SourceState = ctx;
     if offset < 0 or offset >= state.data.len { return 0; }
     remaining := state.data.len - offset;
     if output.len > remaining { state.oversizedRequest = true; }

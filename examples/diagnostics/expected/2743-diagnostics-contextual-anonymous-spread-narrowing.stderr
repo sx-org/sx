@@ -1,0 +1,5 @@
+error: cannot implicitly convert 'i64' to 'i16'; use an explicit cast (`.(i16)`)
+  --> examples/diagnostics/2743-diagnostics-contextual-anonymous-spread-narrowing.sx:6:36
+   |
+ 6 |     target: struct { x: i16; } = .{..b, ..a};
+   |                                    ^^^

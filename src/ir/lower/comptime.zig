@@ -1,4 +1,5 @@
 const std = @import("std");
+const literal_fields = @import("../../literal_fields.zig");
 const Allocator = std.mem.Allocator;
 const ast = @import("../../ast.zig");
 const Node = ast.Node;
@@ -33,6 +34,10 @@ const isFloat = Lowering.isFloat;
 /// struct-literal and nested-array elements. Returns null if `array_ty` is not
 /// an array type or any element is not a compile-time constant.
 pub fn constArrayLiteral(self: *Lowering, elements: []const *const Node, array_ty: TypeId) ?inst_mod.ConstantValue {
+    return constArrayLiteralInner(self, elements, array_ty, null);
+}
+
+fn constArrayLiteralInner(self: *Lowering, elements: []const *const Node, array_ty: TypeId, frame: ?*const ConstFoldFrame) ?inst_mod.ConstantValue {
     if (array_ty.isBuiltin()) return null;
     const info: types.TypeInfo.ArrayInfo = switch (self.module.types.get(array_ty)) {
         .array => |a| a,
@@ -40,7 +45,7 @@ pub fn constArrayLiteral(self: *Lowering, elements: []const *const Node, array_t
     };
     const vals = self.alloc.alloc(inst_mod.ConstantValue, elements.len + @intFromBool(info.sentinel != null)) catch return null;
     for (elements, 0..) |elem, i| {
-        vals[i] = self.constExprValue(elem, info.element) orelse return null;
+        vals[i] = constExprValueInner(self, elem, info.element, frame) orelse return null;
     }
     if (info.sentinel) |x| vals[elements.len] = sentinelConstant(x, info.element);
     return .{ .aggregate = vals };
@@ -73,12 +78,93 @@ pub fn defaultConstant(self: *Lowering, ty: TypeId) ?inst_mod.ConstantValue {
     }
 }
 
+pub fn untypedNumericLeaf(self: *Lowering, node: *const Node) ?program_index_mod.UntypedNumericKind {
+    const name = switch (node.data) {
+        .identifier => |id| id.name,
+        .type_expr => |te| te.name,
+        else => null,
+    };
+    if (name) |n| {
+        if (self.scope) |scope| {
+            const scoped = scope.lookupBoundary(n);
+            if (scoped.crossed != .none) return null;
+            if (scoped.binding) |binding| return binding.untyped_numeric;
+        }
+    }
+    return untypedSelectedNumeric(self, numericConstLeaf(self, node) orelse return null);
+}
+
+const NumericConstLeaf = struct {
+    value: *const Node,
+    declared_type: ?TypeId,
+    source: ?[]const u8,
+
+    fn fromSelected(sel: SelectedConst) NumericConstLeaf {
+        return .{ .value = sel.info.value, .declared_type = sel.info.declared_type, .source = sel.source };
+    }
+};
+
+fn numericConstLeaf(self: *Lowering, node: *const Node) ?NumericConstLeaf {
+    const name = switch (node.data) {
+        .identifier => |id| id.name,
+        .type_expr => |te| te.name,
+        else => null,
+    };
+    if (name) |n| switch (self.selectModuleConst(n)) {
+        .resolved => |sel| return NumericConstLeaf.fromSelected(sel),
+        else => {},
+    };
+    if (self.qualifiedTypeName(node)) |path| {
+        defer self.alloc.free(path);
+        if (std.mem.lastIndexOfScalar(u8, path, '.')) |dot| {
+            if (self.selectQualifiedConst(path[0..dot], path[dot + 1 ..])) |sel|
+                return NumericConstLeaf.fromSelected(sel);
+        }
+    }
+    if (node.data == .field_access) {
+        const fa = node.data.field_access;
+        if (fa.object.data != .identifier) return null;
+        const head = fa.object.data.identifier.name;
+        if (self.scope) |scope| if (scope.lookup(head) != null) return null;
+        const from = self.current_source_file orelse self.main_file orelse return null;
+        const ty = switch (self.selectNominalLeaf(head, from, false)) {
+            .resolved => |t| t,
+            else => return null,
+        };
+        const author = self.plain_struct_authors.get(ty) orelse return null;
+        const info = self.struct_const_by_tid.get(.{ .ty = ty, .name = self.module.types.internString(fa.field) }) orelse return null;
+        return .{ .source = author.source, .value = info.value, .declared_type = info.ty };
+    }
+    return null;
+}
+
+fn untypedSelectedNumeric(self: *Lowering, sel: NumericConstLeaf) ?program_index_mod.UntypedNumericKind {
+    if (sel.declared_type != null) return null;
+    var frame = self.untyped_const_frame;
+    while (frame) |f| : (frame = f.parent) {
+        if (f.value == sel.value) return null;
+    }
+    const next = Lowering.UntypedConstFrame{ .value = sel.value, .parent = self.untyped_const_frame };
+    self.untyped_const_frame = &next;
+    defer self.untyped_const_frame = next.parent;
+    const pin = self.pinConstAuthorSource(sel.source);
+    defer pin.unpin();
+    const saved_scope = self.scope;
+    self.scope = null;
+    defer self.scope = saved_scope;
+    return program_index_mod.untypedNumericKind(sel.value, self);
+}
+
 /// Try to convert a single AST expression into a compile-time ConstantValue.
 /// `expected_ty` is the destination element/field type — it lets aggregate
 /// leaves (struct literals, nested arrays) serialize with the correct shape
 /// rather than collapsing to null. Returns null if the
 /// expression is not constant-foldable here.
 pub fn constExprValue(self: *Lowering, expr: *const Node, expected_ty: TypeId) ?inst_mod.ConstantValue {
+    return constExprValueInner(self, expr, expected_ty, null);
+}
+
+fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, frame: ?*const ConstFoldFrame) ?inst_mod.ConstantValue {
     const author = Lowering.AuthorScope.enter(self, expr);
     defer author.leave();
     // An interface-typed leaf is a STATIC position (§6.6): the one operand that
@@ -86,6 +172,10 @@ pub fn constExprValue(self: *Lowering, expr: *const Node, expected_ty: TypeId) ?
     // the image can hold. Serializing anything else here would lay the operand's
     // own bytes into the handle's three words.
     if (self.isErasedProtocolType(expected_ty)) return staticInterfaceLeaf(self, expr, expected_ty);
+    if (isFloat(expected_ty) and self.isAdaptableFloat(expr)) {
+        if (program_index_mod.evalConstFloatInit(expr, self, expected_ty)) |value|
+            return .{ .float = value };
+    }
     return switch (expr.data) {
         // An int element in a FLOAT destination converts exactly (the
         // int+float promotion rule, element-wise — `[2]f64 : .[1, 2.5]`).
@@ -107,7 +197,7 @@ pub fn constExprValue(self: *Lowering, expr: *const Node, expected_ty: TypeId) ?
                 self.diagNonIntegralNarrow(expr.span, fl.value, expected_ty);
                 break :blk null;
             }
-            break :blk inst_mod.ConstantValue{ .float = fl.value };
+            break :blk inst_mod.ConstantValue{ .float = self.adoptFloatValue(fl.value, expected_ty, expr.span) };
         },
         .string_literal => |sl| .{ .string = self.module.types.internString(sl.raw) },
         .undef_literal => .zeroinit,
@@ -121,13 +211,13 @@ pub fn constExprValue(self: *Lowering, expr: *const Node, expected_ty: TypeId) ?
                     .{ .float = @floatFromInt(-il.value) }
                 else
                     .{ .int = -il.value },
-                .float_literal => |fl| .{ .float = -fl.value },
+                .float_literal => |fl| .{ .float = -self.adoptFloatValue(fl.value, expected_ty, expr.span) },
                 else => null,
             },
             else => null,
         },
-        .array_literal => |al| self.constArrayLiteral(al.elements, expected_ty),
-        .struct_literal => |sl| self.constStructLiteral(&sl, expected_ty),
+        .array_literal => |al| constArrayLiteralInner(self, al.elements, expected_ty, frame),
+        .struct_literal => |sl| constStructLiteralInner(self, &sl, expected_ty, frame, null, true),
         // An enum tag as an aggregate leaf (`[2]Color = .[.green, .blue]`, or
         // an enum field inside a global struct) serializes to its tag int
         // against the leaf's declared enum type.
@@ -139,17 +229,85 @@ pub fn constExprValue(self: *Lowering, expr: *const Node, expected_ty: TypeId) ?
         // stays null: the caller keeps its fallback (inline re-lowering for
         // struct consts, a loud diagnostic for globals/array consts).
         else => blk: {
-            const ctx = SourceConstCtx{ .lowering = self, .frame = null };
+            if (expr.data == .identifier) {
+                const name = expr.data.identifier.name;
+                switch (self.selectModuleConst(name)) {
+                    .resolved => |sel| {
+                        if (constSelectedValue(self, name, sel, expected_ty, frame)) |value| break :blk value;
+                    },
+                    else => {},
+                }
+            }
+            if (expr.data == .field_access) {
+                const fa = expr.data.field_access;
+                if (self.qualifiedTypeName(fa.object)) |path| {
+                    defer self.alloc.free(path);
+                    if (self.selectQualifiedConst(path, fa.field)) |sel| {
+                        if (constSelectedValue(self, fa.field, sel, expected_ty, frame)) |value| break :blk value;
+                    }
+                }
+                const object_ty = self.inferExprType(fa.object);
+                if (self.module.types.get(object_ty) == .@"struct") {
+                    const index = switch (self.mentionField(object_ty, fa.field, expr.span)) {
+                        .hit => |hit| hit.index,
+                        else => null,
+                    };
+                    if (index) |i| {
+                        if (constNaturalValue(self, fa.object, object_ty, frame)) |value| {
+                            if (value == .aggregate) {
+                                const field_ty = self.getStructFields(object_ty)[i].ty;
+                                if (self.coerceConstant(value.aggregate[i], field_ty, expected_ty)) |converted| break :blk converted;
+                            }
+                        }
+                    }
+                }
+            }
+            if (self.fieldCall(expr)) |c| {
+                if (self.fieldProjection(c)) |field| {
+                    if (constNaturalValue(self, field.object, field.object_ty, frame)) |value| {
+                        if (value == .aggregate) {
+                            if (self.coerceConstant(value.aggregate[field.index], field.ty, expected_ty)) |converted| break :blk converted;
+                        }
+                    }
+                }
+            }
+            const ctx = SourceConstCtx{ .lowering = self, .frame = frame };
             if (self.isIntEx(expected_ty)) {
                 if (program_index_mod.evalConstIntExpr(expr, ctx)) |v| break :blk inst_mod.ConstantValue{ .int = v };
             }
             if (isFloat(expected_ty)) {
-                if (program_index_mod.evalConstFloatExpr(expr, ctx)) |v| break :blk inst_mod.ConstantValue{ .float = v };
+                const source_ty = self.inferExprType(expr);
+                if (isFloat(source_ty)) {
+                    const v = program_index_mod.evalConstFloatExpr(expr, ctx) orelse break :blk null;
+                    break :blk self.coerceConstant(.{ .float = v }, source_ty, expected_ty);
+                }
                 if (program_index_mod.evalConstIntExpr(expr, ctx)) |v| break :blk inst_mod.ConstantValue{ .float = @floatFromInt(v) };
             }
             break :blk null;
         },
     };
+}
+
+pub fn foldFieldInt(self: *Lowering, node: *const Node, frame: ?*const ConstFoldFrame) ?i64 {
+    const c = self.fieldCall(node) orelse return null;
+    const field = self.fieldProjection(c) orelse return null;
+    if (!self.isIntEx(field.ty)) return null;
+    const value = constNaturalValue(self, field.object, field.object_ty, frame) orelse return null;
+    if (value != .aggregate) return null;
+    const member = value.aggregate[field.index];
+    return if (member == .int) member.int else null;
+}
+
+fn constSelectedValue(self: *Lowering, name: []const u8, sel: SelectedConst, expected_ty: TypeId, frame: ?*const ConstFoldFrame) ?inst_mod.ConstantValue {
+    if (constFoldFrameContains(frame, name, sel.source)) return null;
+    const f = ConstFoldFrame{ .name = name, .source = sel.source, .parent = frame };
+    const pin = self.pinConstAuthorSource(sel.source);
+    defer pin.unpin();
+    const value = if (sel.info.declared_type != null)
+        constExprValueInner(self, sel.info.value, sel.info.ty, &f) orelse return null
+    else
+        constNaturalValue(self, sel.info.value, sel.info.ty, &f) orelse return null;
+    return self.coerceConstant(value, sel.info.ty, expected_ty);
 }
 
 /// Serialize an enum-literal initializer (`.Variant`) into a static
@@ -185,48 +343,112 @@ pub fn constEnumLiteral(self: *Lowering, el: *const ast.EnumLiteral, ty: TypeId,
 /// Try to convert a struct literal into a compile-time ConstantValue.aggregate of the
 /// struct's fields in declaration order, filling missing fields from the struct's
 /// field defaults. Returns null if any value is not constant-foldable.
-pub fn constStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, ty: TypeId) ?inst_mod.ConstantValue {
+pub fn constStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, ty: TypeId, contextual: bool) ?inst_mod.ConstantValue {
+    return constStructLiteralInner(self, sl, ty, null, null, contextual);
+}
+
+fn constStructLiteralInner(self: *Lowering, sl: *const ast.StructLiteral, ty: TypeId, frame: ?*const ConstFoldFrame, field_index: ?u32, contextual: bool) ?inst_mod.ConstantValue {
+    if (sl.init_block != null) return null;
+    if (!contextual and sl.struct_name == null and sl.type_expr == null) {
+        const value = constAnonLiteral(self, sl, frame) orelse return null;
+        return if (field_index) |i| value.aggregate[i] else value;
+    }
     if (ty.isBuiltin()) return null;
     const ti = self.module.types.get(ty);
     if (ti != .@"struct") return null;
-    for (sl.field_inits) |fi| {
-        const n = fi.name orelse continue;
-        _ = self.mentionField(ty, n, fi.value.span);
-    }
+    if (!self.checkPlainInitializerNames(sl, ty)) return null;
     const struct_fields = ti.@"struct".fields;
-    const struct_name = self.module.types.getString(ti.@"struct".name);
-    // TypeId identity first; for an author-tracked type a tid-map miss means
-    // "no defaults".
-    const field_defaults: []const ?*const Node = self.struct_defaults_by_tid.get(ty) orelse blk: {
-        if (self.plain_struct_authors.contains(ty)) break :blk &.{};
-        break :blk self.struct_defaults_map.get(struct_name) orelse &.{};
-    };
+    const field_defaults: []const ?*const Node = self.struct_defaults_by_tid.get(ty) orelse &.{};
 
-    const has_names = sl.field_inits.len > 0 and sl.field_inits[0].name != null;
-
-    const vals = self.alloc.alloc(inst_mod.ConstantValue, struct_fields.len) catch return null;
-    for (struct_fields, 0..) |sf, fi| {
-        const sf_name = self.module.types.getString(sf.name);
-        const init_expr: ?*const Node = blk: {
-            if (has_names) {
-                for (sl.field_inits) |init_pair| {
-                    if (init_pair.name) |n| {
-                        if (std.mem.eql(u8, n, sf_name)) break :blk init_pair.value;
-                    }
-                }
-            } else if (fi < sl.field_inits.len) {
-                break :blk sl.field_inits[fi].value;
+    const selected = self.alloc.alloc(?inst_mod.ConstantValue, struct_fields.len) catch return null;
+    defer self.alloc.free(selected);
+    @memset(selected, null);
+    var indices = Lowering.StructLiteralIndices.init(self, sl, ty);
+    defer indices.deinit(self.alloc);
+    for (sl.field_inits) |fi| {
+        if (fi.value.data == .spread_expr) {
+            const operand = fi.value.data.spread_expr.operand;
+            const fields = self.literalSpreadTypes(operand) orelse return null;
+            defer self.alloc.free(fields);
+            const operand_ty = self.inferExprType(operand);
+            const value = constNaturalValue(self, operand, operand_ty, frame) orelse return null;
+            for (fields, 0..) |field, i| {
+                const index = indices.spread(self, field.name, fi.value.span) orelse return null;
+                const element = switch (value) {
+                    .aggregate => |values| values[i],
+                    .zeroinit => self.defaultConstant(field.ty) orelse .zeroinit,
+                    else => return null,
+                };
+                const converted = self.coerceConstant(element, field.ty, struct_fields[index].ty) orelse return null;
+                selected[index] = converted;
             }
-            if (fi < field_defaults.len) break :blk field_defaults[fi];
-            break :blk null;
-        };
-        if (init_expr) |e| {
-            vals[fi] = self.constExprValue(e, sf.ty) orelse return null;
         } else {
-            vals[fi] = self.defaultConstant(sf.ty) orelse .zeroinit;
+            const index = indices.plain(self, fi) orelse return null;
+            if (field_index) |wanted| {
+                if (index != wanted) continue;
+            }
+            const expected_ty = struct_fields[index].ty;
+            const value = constExprValueInner(self, fi.value, expected_ty, frame) orelse return null;
+            selected[index] = value;
         }
     }
-    return .{ .aggregate = vals };
+    const vals = if (field_index == null)
+        self.alloc.alloc(inst_mod.ConstantValue, struct_fields.len) catch return null
+    else
+        null;
+    for (struct_fields, selected, 0..) |sf, value, i| {
+        if (field_index) |wanted| {
+            if (i != wanted) continue;
+        }
+        const resolved = value orelse blk: {
+            if (i < field_defaults.len) {
+                if (field_defaults[i]) |e| break :blk constExprValueInner(self, e, sf.ty, frame) orelse return null;
+            }
+            break :blk self.defaultConstant(sf.ty) orelse .zeroinit;
+        };
+        if (field_index != null) return resolved;
+        vals.?[i] = resolved;
+    }
+    return .{ .aggregate = vals.? };
+}
+
+fn constNaturalValue(self: *Lowering, expr: *const Node, ty: TypeId, frame: ?*const ConstFoldFrame) ?inst_mod.ConstantValue {
+    if (expr.data == .struct_literal) return constStructLiteralInner(self, &expr.data.struct_literal, ty, frame, null, false);
+    return constExprValueInner(self, expr, ty, frame);
+}
+
+fn constAnonLiteral(self: *Lowering, sl: *const ast.StructLiteral, frame: ?*const ConstFoldFrame) ?inst_mod.ConstantValue {
+    var shape = literal_fields.Anonymous(inst_mod.ConstantValue){};
+    defer shape.deinit(self.alloc);
+    const saved_target = self.target_type;
+    self.target_type = null;
+    defer self.target_type = saved_target;
+    for (sl.field_inits) |fi| {
+        if (fi.value.data == .spread_expr) {
+            const operand = fi.value.data.spread_expr.operand;
+            const fields = self.literalSpreadTypes(operand) orelse return null;
+            defer self.alloc.free(fields);
+            const value = constNaturalValue(self, operand, self.inferExprType(operand), frame) orelse return null;
+            for (fields, 0..) |field, i| {
+                const element = switch (value) {
+                    .aggregate => |values| values[i],
+                    .zeroinit => self.defaultConstant(field.ty) orelse .zeroinit,
+                    else => return null,
+                };
+                shape.contribute(self.alloc, field.name, .spread, element) catch unreachable;
+            }
+        } else {
+            const value = constNaturalValue(self, fi.value, self.inferExprType(fi.value), frame) orelse return null;
+            shape.contribute(self.alloc, fi.name, .direct, value) catch {
+                if (self.diagnostics) |d| d.addFmt(.err, fi.name_span orelse fi.value.span, "field '{s}' initialized twice", .{fi.name.?});
+                return null;
+            };
+        }
+    }
+    const values = self.alloc.alloc(inst_mod.ConstantValue, shape.named.items.len + shape.unnamed.items.len) catch return null;
+    for (shape.named.items, values[0..shape.named.items.len]) |field, *value| value.* = field.value;
+    @memcpy(values[shape.named.items.len..], shape.unnamed.items);
+    return .{ .aggregate = values };
 }
 
 /// The handle a static interface-typed position folds to. Null after a
@@ -254,6 +476,14 @@ fn staticInterfaceLeaf(self: *Lowering, expr: *const Node, expected_ty: TypeId) 
 pub fn evalComptimeValue(self: *Lowering, node: *const Node) ?Lowering.ComptimeValue {
     switch (node.data) {
         .identifier => |id| return self.comptime_constants.get(id.name),
+        .call => {
+            const c = self.fieldCall(node) orelse return null;
+            const obj = evalComptimeValue(self, c.args[0]) orelse return null;
+            if (obj != .struct_val) return null;
+            const index = self.comptimeIndexOf(c.args[1]) orelse self.evalComptimeInt(c.args[1]) orelse return null;
+            if (index < 0 or index >= obj.struct_val.len) return null;
+            return obj.struct_val[@intCast(index)].value;
+        },
         .field_access => |fa| {
             const obj = evalComptimeValue(self, fa.object) orelse return null;
             if (obj != .struct_val) return null;
@@ -450,11 +680,11 @@ pub fn staticTypeMatchesCategory(self: *Lowering, tid: TypeId, name: []const u8)
     if (std.mem.eql(u8, name, "closure")) return info == .closure;
     // A specific type name: generic bindings, then aliases, then the table.
     if (self.type_bindings) |tb| {
-        if (tb.get(name)) |bound| return bound == tid;
+        if (tb.get(name)) |bound| return self.module.types.sameType(bound, tid);
     }
-    if (self.program_index.lookup(.type_alias, name)) |alias_ty| return alias_ty == tid;
+    if (self.program_index.lookup(.type_alias, name)) |alias_ty| return self.module.types.sameType(alias_ty, tid);
     const name_id = self.module.types.internString(name);
-    if (self.module.types.findByName(name_id)) |t| return t == tid;
+    if (self.module.types.findByName(name_id)) |t| return self.module.types.sameType(t, tid);
     return false;
 }
 
@@ -1222,13 +1452,13 @@ fn lowerComptimeRuntimeArg(
                 const name = arg.data.identifier.name;
                 const local = if (self.scope) |scope| scope.lookup(name) else null;
                 if (local) |binding| {
-                    if (binding.is_alloca and binding.ty == pointee)
+                    if (binding.is_alloca and self.module.types.sameType(binding.ty, pointee))
                         return self.builder.emit(.{ .addr_of = .{ .operand = binding.ref } }, param_ty);
                 } else if (self.resolveGlobalRef(name, null)) |global| {
-                    if (global.ty == pointee and !self.rootIsConstant(name)) {
+                    if (self.module.types.sameType(global.ty, pointee) and !self.rootIsConstant(name)) {
                         const place = self.lowerExprAsPtr(arg);
                         const place_ty = self.builder.getRefType(place);
-                        return if (place_ty == param_ty)
+                        return if (self.module.types.sameType(place_ty, param_ty))
                             place
                         else
                             self.builder.emit(.{ .addr_of = .{ .operand = place } }, param_ty);
@@ -1240,7 +1470,7 @@ fn lowerComptimeRuntimeArg(
             {
                 const place = self.lowerExprAsPtr(arg);
                 const place_ty = self.builder.getRefType(place);
-                if (place_ty == param_ty) return place;
+                if (self.module.types.sameType(place_ty, param_ty)) return place;
                 if (place_ty == pointee)
                     return self.builder.emit(.{ .addr_of = .{ .operand = place } }, param_ty);
             }
@@ -1309,7 +1539,7 @@ fn lowerComptimeRuntimeArg(
     // Dot dispatch permits a *T receiver for a value-receiver `self: T`.
     if (is_receiver and !value_ty.isBuiltin()) {
         const value_info = self.module.types.get(value_ty);
-        if (value_info == .pointer and value_info.pointer.pointee == param_ty) {
+        if (value_info == .pointer and self.module.types.sameType(value_info.pointer.pointee, param_ty)) {
             value = self.builder.load(value, param_ty);
             value_ty = param_ty;
         }
@@ -1947,7 +2177,10 @@ pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, ph
     // An `.unresolved` request is a question the AST could not answer — a block
     // body binds the locals its tail reads only as it lowers — so the lowered
     // result's own type settles the wrapper's return.
-    const result = self.lowerExpr(expr);
+    const result = if (ret_ty == .unresolved or self.errorChannelOf(ret_ty) != null)
+        self.lowerMarkedExpr(expr, false)
+    else
+        self.lowerExpr(expr);
     const settled_ret: TypeId = if (ret_ty == .unresolved) self.builder.getRefType(result) else ret_ty;
     self.module.getFunctionMut(func_id).ret = settled_ret;
     if (settled_ret == .void) {
@@ -1981,6 +2214,13 @@ pub fn comptimeIntNamed(self: *Lowering, name: []const u8) ?i64 {
     };
     if (self.comptime_value_bindings) |cvb| {
         if (cvb.get(name)) |v| return v;
+    }
+    if (self.scope) |scope| {
+        const scoped = scope.lookupBoundary(name);
+        if (scoped.crossed != .none) return null;
+        if (scoped.binding) |binding| {
+            return if (binding.origin == .local_const and self.isIntEx(binding.ty)) self.foldedInt(binding.ref) else null;
+        }
     }
     return self.foldSourceConstInt(name, null);
 }
@@ -2016,7 +2256,9 @@ pub fn foldSourceConstInt(self: *Lowering, name: []const u8, frame: ?*const Cons
             var f = ConstFoldFrame{ .name = name, .source = sel.source, .parent = frame };
             const restore = self.pinConstAuthorSource(sel.source);
             defer restore.unpin();
-            return program_index_mod.evalConstIntExpr(sel.info.value, SourceConstCtx{ .lowering = self, .frame = &f });
+            const ctx = SourceConstCtx{ .lowering = self, .frame = &f };
+            if (sel.info.ty == .f32) return program_index_mod.floatToIntExact(program_index_mod.evalConstFloatInit(sel.info.value, ctx, sel.info.ty) orelse return null);
+            return program_index_mod.evalConstIntExpr(sel.info.value, ctx);
         },
         .own_opaque, .ambiguous, .none => null,
     };
@@ -2060,7 +2302,9 @@ pub fn foldQualifiedConstInt(self: *Lowering, ns: []const u8, field: []const u8,
     var f = ConstFoldFrame{ .name = field, .source = sel.source, .parent = frame };
     const restore = self.pinConstAuthorSource(sel.source);
     defer restore.unpin();
-    return program_index_mod.evalConstIntExpr(sel.info.value, SourceConstCtx{ .lowering = self, .frame = &f });
+    const ctx = SourceConstCtx{ .lowering = self, .frame = &f };
+    if (sel.info.ty == .f32) return program_index_mod.floatToIntExact(program_index_mod.evalConstFloatInit(sel.info.value, ctx, sel.info.ty) orelse return null);
+    return program_index_mod.evalConstIntExpr(sel.info.value, ctx);
 }
 
 /// FLOAT counterpart of `foldQualifiedConstInt` — the qualified
@@ -2073,7 +2317,7 @@ pub fn foldQualifiedConstFloat(self: *Lowering, ns: []const u8, field: []const u
     var f = ConstFoldFrame{ .name = field, .source = sel.source, .parent = frame };
     const restore = self.pinConstAuthorSource(sel.source);
     defer restore.unpin();
-    return program_index_mod.evalConstFloatExpr(sel.info.value, SourceConstCtx{ .lowering = self, .frame = &f });
+    return program_index_mod.evalConstFloatInit(sel.info.value, SourceConstCtx{ .lowering = self, .frame = &f }, sel.info.ty);
 }
 
 /// "Is the qualified const `ns.field` FLOAT-valued" — the
@@ -2102,17 +2346,26 @@ pub fn foldQualifiedConstNodeInt(self: *Lowering, node: *const Node, frame: ?*co
 }
 
 pub fn foldQualifiedConstNodeFloat(self: *Lowering, node: *const Node, frame: ?*const ConstFoldFrame) ?f64 {
+    const sel = numericConstLeaf(self, node) orelse return null;
     const path = self.qualifiedTypeName(node) orelse return null;
     defer self.alloc.free(path);
-    const dot = std.mem.lastIndexOfScalar(u8, path, '.') orelse return null;
-    return self.foldQualifiedConstFloat(path[0..dot], path[dot + 1 ..], frame);
+    if (constFoldFrameContains(frame, path, sel.source)) return null;
+    const f = ConstFoldFrame{ .name = path, .source = sel.source, .parent = frame };
+    const restore = self.pinConstAuthorSource(sel.source);
+    defer restore.unpin();
+    return program_index_mod.evalConstFloatInit(sel.value, SourceConstCtx{ .lowering = self, .frame = &f }, sel.declared_type orelse .f64);
 }
 
 pub fn qualifiedConstNodeIsFloatTyped(self: *Lowering, node: *const Node, frame: ?*const ConstFoldFrame) bool {
+    const sel = numericConstLeaf(self, node) orelse return false;
+    if (sel.declared_type) |ty| return isFloat(ty);
     const path = self.qualifiedTypeName(node) orelse return false;
     defer self.alloc.free(path);
-    const dot = std.mem.lastIndexOfScalar(u8, path, '.') orelse return false;
-    return self.qualifiedConstIsFloatTyped(path[0..dot], path[dot + 1 ..], frame);
+    if (constFoldFrameContains(frame, path, sel.source)) return false;
+    const f = ConstFoldFrame{ .name = path, .source = sel.source, .parent = frame };
+    const restore = self.pinConstAuthorSource(sel.source);
+    defer restore.unpin();
+    return program_index_mod.isFloatValuedExpr(sel.value, SourceConstCtx{ .lowering = self, .frame = &f });
 }
 
 /// Float counterpart of `foldSourceConstInt`.
@@ -2124,7 +2377,7 @@ pub fn foldSourceConstFloat(self: *Lowering, name: []const u8, frame: ?*const Co
             var f = ConstFoldFrame{ .name = name, .source = sel.source, .parent = frame };
             const restore = self.pinConstAuthorSource(sel.source);
             defer restore.unpin();
-            return program_index_mod.evalConstFloatExpr(sel.info.value, SourceConstCtx{ .lowering = self, .frame = &f });
+            return program_index_mod.evalConstFloatInit(sel.info.value, SourceConstCtx{ .lowering = self, .frame = &f }, sel.info.ty);
         },
         .own_opaque, .ambiguous, .none => null,
     };
@@ -2280,9 +2533,8 @@ pub fn foldComptimeStructField(self: *Lowering, name: []const u8, field: []const
     return null;
 }
 
-/// `<struct const>.field` as a compile-time integer — the SELECTED author's
-/// field initializer, matched by name (named inits) or position, folded in
-/// the author's context.
+/// `<struct const>.field` as a compile-time integer — the field's value in
+/// the selected author's literal, folded in the author's context.
 pub fn foldConstStructField(self: *Lowering, name: []const u8, field: []const u8, span: ?ast.Span, frame: ?*const ConstFoldFrame) ?i64 {
     const sel = selectShapedConst(self, name) orelse return null;
     if (sel.info.value.data != .struct_literal) return null;
@@ -2295,29 +2547,23 @@ pub fn foldConstStructField(self: *Lowering, name: []const u8, field: []const u8
             d.addFmt(.err, span, "field '{s}' is private to its declaring file", .{field});
         return null;
     }
-    const init_expr: ?*const Node = blk: {
-        const has_names = sl.field_inits.len > 0 and sl.field_inits[0].name != null;
-        if (has_names) {
-            for (sl.field_inits) |fi| {
-                if (fi.name) |n| if (std.mem.eql(u8, n, field)) break :blk fi.value;
-            }
-            break :blk null;
-        }
-        // Positional inits: index via the struct type's field order.
-        switch (self.lookupField(sel.info.ty, field)) {
-            .hit, .private => |h| {
-                if (h.index < sl.field_inits.len) break :blk sl.field_inits[h.index].value;
-                break :blk null;
-            },
-            .missing => break :blk null,
-        }
+    const index = switch (self.lookupField(sel.info.ty, field)) {
+        .hit, .private => |hit| hit.index,
+        .missing => return null,
     };
-    const e = init_expr orelse return null;
+    const field_ty = self.getStructFields(sel.info.ty)[index].ty;
+    if (!program_index_mod.isCountableConstType(&self.module.types, field_ty)) return null;
     if (constFoldFrameContains(frame, name, sel.source)) return null;
-    var f = ConstFoldFrame{ .name = name, .source = sel.source, .parent = frame };
+    const f = ConstFoldFrame{ .name = name, .source = sel.source, .parent = frame };
     const restore = self.pinConstAuthorSource(sel.source);
     defer restore.unpin();
-    return program_index_mod.evalConstIntExpr(e, SourceConstCtx{ .lowering = self, .frame = &f });
+    const value = constStructLiteralInner(self, sl, sel.info.ty, &f, index, sel.info.declared_type != null) orelse return null;
+    return switch (value) {
+        .int => |v| v,
+        .float => |v| program_index_mod.floatToIntExact(v),
+        .zeroinit => 0,
+        else => null,
+    };
 }
 
 /// The module const `name` names as written in `source`, or null.
@@ -2448,20 +2694,9 @@ pub fn pinConstAuthorSource(self: *Lowering, source: ?[]const u8) ConstSourcePin
     return .{ .lowering = self, .saved = self.current_source_file, .active = false };
 }
 
-/// Apply the unified float→int narrowing rule to a typed-binding initializer
-/// EXPRESSION `node` whose declared type is `dst` (a typed local, a struct
-/// field default, or a call argument incl. an expanded param default). When
-/// `node` is a COMPILE-TIME float narrowing into an integer type:
-///   - an INTEGRAL value (`4.0`, `M + 2.0`) folds to its `constInt`;
-///   - a NON-integral value (`1.5`, `M + 0.5`) emits the narrowing
-///     diagnostic and returns a placeholder so lowering finishes.
-/// Returns null — so the caller lowers `node` normally — when the rule does
-/// not apply: `dst` is not an integer, `node` is not statically float-typed,
-/// or `node` is not a compile-time constant (a genuine runtime float keeps
-/// truncating, and `xx` / `cast` keep their explicit-truncation escape since
-/// a cast node's inferred type is the destination integer, not a float).
-/// Reuses `program_index.evalConstIntExpr` (exact integral fold) +
-/// `evalConstFloatExpr` (non-integral detection) + `floatToIntExact`.
+/// Fold integral compile-time floats into integer initializers and diagnose
+/// non-integral constants. Null leaves nonconstant expressions and other
+/// type pairs to ordinary lowering and coercion.
 pub fn foldComptimeFloatInit(self: *Lowering, node: *const Node, dst: TypeId) ?Ref {
     if (!self.isIntEx(dst)) return null;
     const author = Lowering.AuthorScope.enter(self, node);

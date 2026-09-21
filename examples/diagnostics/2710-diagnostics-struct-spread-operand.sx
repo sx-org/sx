@@ -1,0 +1,2 @@
+Bad :: struct { ..i32; z: i32; }
+main :: () { b : Bad = ---; }

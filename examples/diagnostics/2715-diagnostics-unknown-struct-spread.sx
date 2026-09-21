@@ -1,0 +1,9 @@
+@import "modules/std.sx";
+
+Base :: struct { x: i32; }
+Derived :: struct { ..Bse; z: i32; }
+
+main :: () {
+    d := Derived{ z = 2 };
+    print("{} {}\n", d.z, @sizeOf(Derived));
+}

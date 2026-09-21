@@ -1,9 +1,4 @@
-// Pure-sx fn-pointer cast: a function-pointer typed without `abi(.c)`
-// keeps the default (sx) calling convention. Passing a >16-byte aggregate
-// through that pointer must not get the C-ABI byval coercion — the sx-CC
-// callee expects the struct as an SSA value, not as a `ptr byval(<T>)`.
-//
-// 1203 covers the opposite arm (a fn-pointer typed `abi(.c)` does get byval).
+// Default-convention function pointers pass large aggregates as SSA values.
 
 @import "modules/std.sx";
 
@@ -20,7 +15,7 @@ main :: () -> i32 {
     direct := accept(w);
     if direct != 1111 { return 1; }
 
-    fnPtr : (Wide) -> i64 = xx accept;
+    fnPtr : (Wide) -> i64 = accept;
     indirect := fnPtr(w);
     if indirect != 1111 { return 2; }
 

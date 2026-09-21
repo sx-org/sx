@@ -181,6 +181,10 @@ fn lowerTail(self: *Lowering, tail: *const Node, demand: TailDemand) BodyTail {
             // statement it yields no value; a value-returning function's missing
             // tail value is caught by the missing-value diagnostic instead.
             self.force_block_value = !isNoElseValuelessIf(tail);
+            const saved_marker = self.marked_error_expr;
+            if (demand == .return_value and self.errorChannelOf(demand.return_value) != null)
+                self.marked_error_expr = .{ .node = tail, .pure_only = false };
+            defer self.marked_error_expr = saved_marker;
             const v = self.tryLowerAsExpr(tail) orelse return .no_value;
             if (expressionDiverged(self, v)) return .{ .terminated = .noreturn };
             return .{ .value = v };
@@ -222,6 +226,9 @@ fn lowerErrorOnlyTail(self: *Lowering, tail: *const Node, ret_ty: TypeId) BodyTa
     }
     const saved_target = self.target_type;
     defer self.target_type = saved_target;
+    const saved_marker = self.marked_error_expr;
+    self.marked_error_expr = .{ .node = tail, .pure_only = true };
+    defer self.marked_error_expr = saved_marker;
     if (tailIsKnownNonError(self, tail)) {
         // Nothing demands this value: it has no destination, and it is
         // evaluated purely for its effects.
@@ -285,6 +292,9 @@ fn returnDemand(self: *Lowering, ret_ty: TypeId) Lowering.ParamDemand {
         return .none;
     }
     if (ret_ty == .void or ret_ty == .noreturn) return .none;
+    if (self.current_fn_decl) |fd| {
+        if (fd.return_type == null) return .{ .inferred = ret_ty };
+    }
     return .{ .coerce = ret_ty };
 }
 
@@ -336,6 +346,9 @@ pub fn lowerFunctionBody(self: *Lowering, body: *const Node, ret_ty_in: TypeId) 
             const val_ty = self.builder.getRefType(val);
             if (val_ty != .void) {
                 const span = bodyTailSpan(body);
+                const saved_span = self.builder.current_span;
+                self.builder.current_span = .{ .start = span.start, .end = span.end };
+                defer self.builder.current_span = saved_span;
                 if (self.rejectBlockReturn(val_ty, span)) return;
                 // Value-carrying failable `-> (T..., !)`: a trailing success
                 // EXPRESSION (no explicit `return`) yields just the value part —
@@ -567,13 +580,7 @@ pub fn bindNamedReturnSlots(self: *Lowering, fd: *const ast.FnDecl, ret_ty: Type
             const dval = self.lowerExpr(dn);
             self.target_type = saved_target;
             const dval_ty = self.builder.getRefType(dval);
-            // Reject a default whose type has NO coercion to the slot type and a
-            // mismatched byte width (e.g. `sum: i32 = "hi"`) — a `.none` plan
-            // would pass the value through unchanged and overrun / under-fill the
-            // slot, corrupting memory (the same guard as plain annotated
-            // assignment). A same-width `.none` (`p: *void = typed_ptr`)
-            // is a legitimate reinterpretation and stays allowed.
-            if (!self.externalErrorsExist() and dval_ty != .unresolved and self.noneReinterpretIsUnsafe(dval_ty, fty)) {
+            if (!self.externalErrorsExist() and dval_ty != .unresolved and !self.conversionAvailable(dval_ty, fty, .implicit)) {
                 if (self.diagnostics) |d| {
                     d.addFmt(.err, dn.span, "named return '{s}' has a default of type '{s}' that does not match its declared type '{s}'", .{ nm, self.formatTypeName(dval_ty), self.formatTypeName(fty) });
                     self.assignability_error_count += 1;
@@ -780,7 +787,7 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
             self.target_type = ty;
             self.force_block_value = true;
             const errs_before: usize = if (self.diagnostics) |d| d.errorCount() else 0;
-            var ref = self.lowerExpr(val);
+            var ref = self.lowerMarkedExpr(val, true);
             self.target_type = saved_target;
             self.force_block_value = saved_fbv;
             if (self.rejectBlockBinding(val, vd.name, self.builder.getRefType(ref))) return;
@@ -940,7 +947,7 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
                     // (`x : i32 = "hi"`) would otherwise pass through unchanged and
                     // bit-mangle the slot. Diagnose and store a safe
                     // default so the build aborts cleanly instead of segfaulting.
-                    if (!self.checkAssignable(ref_ty, ty, val.span, "initialize", vd.name, val)) {
+                    if (!self.checkAssignable(ref_ty, ty, val.span, "initialize", vd.name)) {
                         self.builder.store(slot, self.buildDefaultValue(ty));
                         if (self.scope) |scope| {
                             scope.put(vd.name, .{ .ref = slot, .ty = ty, .is_alloca = true });
@@ -971,18 +978,11 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
         // take their spec defaults (i64/f64) instead of adopting it.
         self.target_type = null;
         const errs_before: usize = if (self.diagnostics) |d| d.errorCount() else 0;
-        const ref = self.lowerExpr(val);
+        const ref = self.lowerMarkedExpr(val, true);
         self.force_block_value = saved_fbv;
         self.target_type = saved_target;
         if (bindDivergingInitializer(self, vd.name, ref)) return;
-        // A bare function reference is deliberately represented by the
-        // `.i64`-typed `func_ref` op because several async/fiber paths consume
-        // that exact IR shape.  For an unannotated local, however, the binding
-        // must carry the user-visible function type so a later `f(...)` is
-        // planned as an indirect function call rather than as a call through an
-        // integer.  Keep the emitted ref unchanged and specialize
-        // only this declaration-inference boundary.
-        const ty = inferBareFnBindingType(self, val) orelse self.builder.getRefType(ref);
+        const ty = self.builder.getRefType(ref);
         // Asked on the LOWERED type, so every shape a block can arrive through
         // is covered — a bare name, an `if` that yields one, anything.
         if (self.rejectBlockBinding(val, vd.name, ty)) return;
@@ -1056,20 +1056,6 @@ fn bindVoidPlaceholder(self: *Lowering, name: []const u8) void {
     scope.put(name, .{ .ref = self.emitPlaceholder(name), .ty = .unresolved, .is_alloca = false });
 }
 
-fn inferBareFnBindingType(self: *Lowering, value: *const ast.Node) ?TypeId {
-    if (value.data != .identifier) return null;
-    const name = value.data.identifier.name;
-    const effective_name = if (self.scope) |scope| blk: {
-        // A value binding shadows a same-named top-level/local function.  Only
-        // use the function table when the identifier really denotes a fn.
-        if (scope.lookup(name) != null) return null;
-        break :blk scope.lookupFn(name) orelse name;
-    } else name;
-    const fd = self.program_index.lookup(.function, effective_name) orelse return null;
-
-    return self.declSignatureType(fd);
-}
-
 /// Handle a bare fn_decl node as a local function declaration.
 /// The parser produces `fn_decl` (not `const_decl`) for `name :: (params) -> T { body }`.
 pub fn lowerLocalFnDecl(self: *Lowering, fd: *const ast.FnDecl) void {
@@ -1138,8 +1124,10 @@ pub fn lowerConstDecl(self: *Lowering, cd: *const ast.ConstDecl) void {
         self.target_type = at;
     } else if (cd.value.data == .string_literal) {
         self.target_type = self.stringLiteralType(cd.value.data.string_literal);
+    } else {
+        self.target_type = null;
     }
-    const ref = self.lowerExpr(cd.value);
+    var ref = self.lowerMarkedExpr(cd.value, true);
     self.target_type = saved_target;
     const ref_ty = self.builder.getRefType(ref);
     const ty = annotated orelse ref_ty;
@@ -1149,15 +1137,18 @@ pub fn lowerConstDecl(self: *Lowering, cd: *const ast.ConstDecl) void {
     }
     if (rejectVoidInitializer(self, cd.value, cd.name, ref_ty, errs_before)) return;
 
-    // An annotated constant whose initializer cannot coerce to the declared type
-    // would be bound under a type its bytes don't match — diagnose
-    // rather than let a later read reinterpret the wrong-shape value.
     if (cd.type_annotation != null) {
-        _ = self.checkAssignable(self.builder.getRefType(ref), ty, cd.value.span, "initialize", cd.name, cd.value);
+        if (!self.checkAssignable(ref_ty, ty, cd.value.span, "initialize", cd.name)) {
+            ref = self.buildDefaultValue(ty);
+        } else if (ref_ty != ty and ref_ty != .void and ty != .void) {
+            const checked = self.coerceChecked(ref, ref_ty, ty);
+            ref = if (checked.refused) self.buildDefaultValue(ty) else checked.ref;
+        }
     }
 
+    const untyped_numeric = if (annotated == null) program_index_mod.untypedNumericKind(cd.value, self) else null;
     if (self.scope) |scope| {
-        scope.put(cd.name, .{ .ref = ref, .ty = ty, .is_alloca = false, .origin = .local_const });
+        scope.put(cd.name, .{ .ref = ref, .ty = ty, .is_alloca = false, .origin = .local_const, .untyped_numeric = untyped_numeric });
     }
 }
 
@@ -1323,18 +1314,13 @@ fn reorderNamedReturn(self: *Lowering, value_node: *const Node, ret_ty: TypeId) 
     return node;
 }
 
-/// A bare `.{ … }` in a TUPLE-returning position is a tuple literal —
-/// rewrite the node shape so every downstream intercept
-/// (multi-return arity validation, named-element reorder, the
-/// full-failable-tuple detection in `failableReturnTarget`) sees the tuple
-/// form it keys on.
-fn tupleFormOfBareBraceLiteral(self: *Lowering, node: *const Node, ret_ty: TypeId) *const Node {
+fn failableTupleForm(self: *Lowering, node: *const Node, ret_ty: TypeId) *const Node {
     if (node.data != .struct_literal) return node;
     const sl = node.data.struct_literal;
     if (sl.struct_name != null or sl.type_expr != null or sl.init_block != null) return node;
     if (ret_ty.isBuiltin()) return node;
     const rinfo = self.module.types.get(ret_ty);
-    if (rinfo != .failable and !(rinfo == .@"struct" and self.module.types.isAnonStruct(ret_ty))) return node;
+    if (rinfo != .failable) return node;
     const elems = self.alloc.alloc(ast.TupleElement, sl.field_inits.len) catch return node;
     for (sl.field_inits, 0..) |fi, i| elems[i] = .{ .name = fi.name, .value = fi.value };
     const n = self.alloc.create(Node) catch return node;
@@ -1391,10 +1377,8 @@ fn reportSecondCallableReturn(self: *Lowering, binder: *const Node, fixed: TypeI
 
 pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) void {
     if (rs.value == null) rejectValuelessReturn(self, span);
-    // Normalize a bare `.{ … }` against a tuple return to the tuple-literal
-    // node shape FIRST — the intercepts below key on it.
     const norm_ret_ty: TypeId = self.effectiveReturnType() orelse .i64;
-    const rs_value: ?*const Node = if (rs.value) |val| tupleFormOfBareBraceLiteral(self, val, norm_ret_ty) else null;
+    const rs_value: ?*const Node = if (rs.value) |val| failableTupleForm(self, val, norm_ret_ty) else null;
     if (rs_value) |val| {
         if (val.data == .identifier and self.isPackName(val.data.identifier.name)) {
             _ = self.diagPackAsValue(val.data.identifier.name, val.span, .return_value);
@@ -1426,10 +1410,10 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) v
     // comptime-body return path too (iri.ret_ty is the failable tuple there).
     const target_for_value = self.failableReturnTarget(ret_ty_for_target, rs_value);
     if (target_for_value != .void) self.target_type = target_for_value;
-    // A return-position callable binder has no type yet: what the value is typed
-    // against is the SIGNATURE its bound spells.
-    const ret_demand: ?Lowering.DemandScope = if (self.pending_callable_return != null)
-        self.enterDemand(returnDemand(self, ret_ty_for_target))
+    // An inferred return preserves the value's shape; a callable binder supplies only its signature.
+    const ret_demand: ?Lowering.DemandScope = if (self.pending_callable_return != null or
+        (self.current_fn_decl != null and self.current_fn_decl.?.return_type == null))
+        self.enterDemand(returnDemand(self, target_for_value))
     else
         null;
     // A `return <expr>` for a value-returning function is a VALUE position, just
@@ -1450,7 +1434,13 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) v
     // lowering — `reorderNamedReturn` is a no-op for positional / non-tuple
     // returns and for the inline-comptime case (ret_ty_for_target carries the
     // right tuple either way).
-    const ret_val = if (rs_value) |val| self.lowerExpr(reorderNamedReturn(self, val, ret_ty_for_target)) else null;
+    const ret_val = if (rs_value) |val| blk: {
+        const ordered = reorderNamedReturn(self, val, ret_ty_for_target);
+        break :blk if (self.errorChannelOf(ret_ty_for_target) != null)
+            self.lowerMarkedExpr(ordered, false)
+        else
+            self.lowerExpr(ordered);
+    } else null;
     if (ret_demand) |d| d.restore();
     if (ret_val) |rv| {
         // `return proc.exit(0);` never returns: the operand took control where
@@ -1515,13 +1505,14 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) v
 /// The ROOT identifier of an assignment-target chain (`K[0].x` → "K",
 /// `WHITE.r` → "WHITE"). A deref along the chain (`p.*`, `p.*[i]`) breaks
 /// it — writing through a pointer VALUE is not a write to the named root.
-fn assignmentRootIdent(target: *const Node) ?[]const u8 {
+fn assignmentRootIdent(self: *Lowering, target: *const Node) ?[]const u8 {
     var n = target;
     while (true) {
         switch (n.data) {
             .identifier => |id| return id.name,
             .index_expr => |ie| n = ie.object,
             .field_access => |fa| n = fa.object,
+            .call => n = (self.fieldCall(n) orelse return null).args[0],
             else => return null,
         }
     }
@@ -1559,6 +1550,7 @@ pub fn diagEnclosingRootWrite(self: *Lowering, target: *const Node) bool {
         switch (root.data) {
             .index_expr => |ie| root = ie.object,
             .field_access => |fa| root = fa.object,
+            .call => root = (self.fieldCall(root) orelse break :peel).args[0],
             .deref_expr => |de| root = de.operand,
             else => break :peel,
         }
@@ -1579,7 +1571,20 @@ pub fn diagEnclosingRootWrite(self: *Lowering, target: *const Node) bool {
 /// (`assignmentRootIdent`) — writing through a pointer VALUE is not a write
 /// to the named root, so `CONST_PTR.* = v` stays accepted in both forms.
 pub fn diagConstRootWrite(self: *Lowering, target: *const Node) bool {
-    const root = assignmentRootIdent(target) orelse return false;
+    var projection = target;
+    while (true) {
+        switch (projection.data) {
+            .call => {
+                const c = self.fieldCall(projection) orelse break;
+                if (diagnoseQualifiedStoreVerdict(self, selectQualifiedGlobalStoreTarget(self, c.args[0]))) return true;
+                projection = c.args[0];
+            },
+            .field_access => |fa| projection = fa.object,
+            .index_expr => |ie| projection = ie.object,
+            else => break,
+        }
+    }
+    const root = assignmentRootIdent(self, target) orelse return false;
     const shadowed = if (self.scope) |s| s.lookup(root) != null else false;
     if (!shadowed and rootIsConstant(self, root)) {
         if (self.diagnostics) |d|
@@ -1604,6 +1609,7 @@ pub fn diagContextRootWrite(self: *Lowering, target: *const Node) bool {
         const obj = switch (node.data) {
             .field_access => |fa| fa.object,
             .index_expr => |ie| ie.object,
+            .call => (self.fieldCall(node) orelse return false).args[0],
             else => return false,
         };
         if (obj.data == .deref_expr) return false;
@@ -1654,6 +1660,7 @@ fn nonstoreRootOf(self: *Lowering, target: *const Node) ?NonstoreRoot {
         const obj = switch (node.data) {
             .field_access => |fa| fa.object,
             .index_expr => |ie| ie.object,
+            .call => (self.fieldCall(node) orelse return null).args[0],
             else => return null,
         };
         if (obj.data == .deref_expr) return null;
@@ -1693,7 +1700,7 @@ pub fn diagNonstoreRootWrite(self: *Lowering, target: *const Node) bool {
 }
 
 /// `--x` on a target that names no slot: a literal, an accessor property, a
-/// slice header word, a comptime tuple index — everything `resolveMutablePlace`
+/// slice header word, a runtime-index field view — everything `resolveMutablePlace`
 /// answers null for.
 pub fn diagDecrementTarget(self: *Lowering, span: ast.Span) Ref {
     if (self.diagnostics) |d|
@@ -1955,6 +1962,10 @@ fn selectQualifiedGlobalStoreTarget(self: *Lowering, node: *const Node) Qualifie
     } };
 }
 
+pub fn qualifiedGlobalHasStorage(self: *Lowering, node: *const Node) bool {
+    return selectQualifiedGlobalStoreTarget(self, node) == .target;
+}
+
 fn diagnoseQualifiedStoreVerdict(self: *Lowering, verdict: QualifiedGlobalStoreVerdict) bool {
     switch (verdict) {
         .not_applicable, .target => return false,
@@ -1985,11 +1996,10 @@ fn lowerSelectedQualifiedGlobalStore(
     op: ast.Assignment.Op,
     val: Ref,
     val_span: ast.Span,
-    val_node: *const Node,
 ) void {
     if (target.field) |field| {
         const val_ty = self.builder.getRefType(val);
-        if (op == .assign and !self.checkAssignable(val_ty, field.ty, val_span, "assign", field.name, val_node)) return;
+        if (op == .assign and !self.checkAssignable(val_ty, field.ty, val_span, "assign", field.name)) return;
         const base = self.builder.emit(.{ .global_addr = target.global.id }, self.module.types.ptrTo(target.global.ty));
         const ptr = self.builder.structGepTyped(base, field.index, self.module.types.ptrTo(field.ty), target.global.ty);
         self.storeOrCompound(ptr, val, op, field.ty);
@@ -1999,7 +2009,7 @@ fn lowerSelectedQualifiedGlobalStore(
     if (op == .assign) {
         const val_ty = self.builder.getRefType(val);
         if (val_ty != target.global.ty and val_ty != .void and target.global.ty != .void) {
-            if (!self.checkAssignable(val_ty, target.global.ty, val_span, "assign", target.member, val_node)) return;
+            if (!self.checkAssignable(val_ty, target.global.ty, val_span, "assign", target.member)) return;
         }
         const store_val = if (val_ty != target.global.ty and val_ty != .void and target.global.ty != .void)
             self.coerceToType(val, val_ty, target.global.ty)
@@ -2035,7 +2045,6 @@ fn tryLowerQualifiedGlobalStore(
     val: Ref,
     span: ast.Span,
     val_span: ast.Span,
-    val_node: *const Node,
 ) QualifiedStore {
     const full_node = Node{ .span = span, .data = .{ .field_access = fa } };
     const full_path = self.qualifiedTypeName(&full_node) orelse return .not_applicable;
@@ -2149,7 +2158,7 @@ fn tryLowerQualifiedGlobalStore(
                 .private => return .handled,
                 .hit => |h| {
                     const val_ty = self.builder.getRefType(val);
-                    if (op == .assign and !self.checkAssignable(val_ty, h.ty, val_span, "assign", field_name, val_node)) return .handled;
+                    if (op == .assign and !self.checkAssignable(val_ty, h.ty, val_span, "assign", field_name)) return .handled;
                     const base = self.builder.emit(.{ .global_addr = gi.id }, self.module.types.ptrTo(gi.ty));
                     const ptr = self.builder.structGepTyped(base, h.index, self.module.types.ptrTo(h.ty), gi.ty);
                     self.storeOrCompound(ptr, val, op, h.ty);
@@ -2165,7 +2174,7 @@ fn tryLowerQualifiedGlobalStore(
             const val_ty = self.builder.getRefType(val);
             if (val_ty != gi.ty and val_ty != .void and gi.ty != .void) {
                 // No coercion to the global's type — bit-mangle guard.
-                if (!self.checkAssignable(val_ty, gi.ty, val_span, "assign", member, val_node)) return .handled;
+                if (!self.checkAssignable(val_ty, gi.ty, val_span, "assign", member)) return .handled;
             }
             const store_val = if (val_ty != gi.ty and val_ty != .void and gi.ty != .void)
                 self.coerceToType(val, val_ty, gi.ty)
@@ -2370,7 +2379,8 @@ fn tryLowerPropertyAssignment(self: *Lowering, asgn: *const ast.Assignment) bool
 /// literals, branch arms, and `xx` casts resolve against it too. Skipped for
 /// forms that would forward the type unchanged into method-call arg slots
 /// (`resolveCallParamTypes` can't override target_type per-arg).
-fn rhsNeedsTargetType(value: *const ast.Node) bool {
+fn rhsNeedsTargetType(self: *Lowering, value: *const ast.Node) bool {
+    if (self.isAdaptableFloat(value)) return true;
     return switch (value.data) {
         .enum_literal, .struct_literal, .tuple_literal, .array_literal, .if_expr, .match_expr, .block, .unary_op, .binary_op, .null_literal, .undef_literal => true,
         .call => |vc| vc.callee.data == .enum_literal,
@@ -2458,7 +2468,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
         // resolve against it. Skipped for forms that would forward the type
         // unchanged into method-call arg slots (`resolveCallParamTypes` can't
         // override target_type per-arg).
-        if (rhsNeedsTargetType(asgn.value)) {
+        if (rhsNeedsTargetType(self, asgn.value)) {
             if (qualified_store_target) |target| {
                 self.target_type = target.valueType();
             } else {
@@ -2499,6 +2509,8 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                 }
             }
         }
+    } else if (self.fieldCall(asgn.target)) |c| {
+        if (self.fieldProjection(c)) |field| self.target_type = field.ty;
     } else if (asgn.target.data == .deref_expr) {
         // For `p.* = val`, set target_type to the POINTEE of the LHS pointer
         // so RHS sub-expressions (enum/struct literals, branch arms, null/---)
@@ -2508,7 +2520,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
         // the literal from whatever the fn returned: .unresolved
         // → LLVM-emission panic for a void fn, bogus "cannot assign"/"field
         // not found" for scalar/struct returns, invalid insertvalue for `?T`.
-        if (rhsNeedsTargetType(asgn.value)) {
+        if (rhsNeedsTargetType(self, asgn.value)) {
             const ptr_ty = self.inferExprType(asgn.target.data.deref_expr.operand);
             if (!ptr_ty.isBuiltin()) {
                 const pinfo = self.module.types.get(ptr_ty);
@@ -2536,7 +2548,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
     // store Bus-errors through the enclosing frame's dead alloca.
     if (diagEnclosingRootWrite(self, asgn.target)) return;
     if (qualified_store_target) |target| {
-        lowerSelectedQualifiedGlobalStore(self, target, asgn.op, val, asgn.value.span, asgn.value);
+        lowerSelectedQualifiedGlobalStore(self, target, asgn.op, val, asgn.value.span);
         return;
     }
     switch (asgn.target.data) {
@@ -2560,7 +2572,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                                 // A reassignment with no coercion to the slot type
                                 // (`x = "hi"` for `x: i32`) would pass through and
                                 // bit-mangle the slot — diagnose instead.
-                                if (!self.checkAssignable(val_ty, binding.ty, asgn.value.span, "reassign", id.name, asgn.value)) return;
+                                if (!self.checkAssignable(val_ty, binding.ty, asgn.value.span, "reassign", id.name)) return;
                                 store_val = self.coerceToType(val, val_ty, binding.ty);
                             }
                             self.builder.store(binding.ref, store_val);
@@ -2591,7 +2603,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                         const val_ty = self.builder.getRefType(val);
                         if (val_ty != gi.ty and val_ty != .void and gi.ty != .void) {
                             // No coercion to the global's type — bit-mangle guard.
-                            if (!self.checkAssignable(val_ty, gi.ty, asgn.value.span, "reassign", id.name, asgn.value)) return;
+                            if (!self.checkAssignable(val_ty, gi.ty, asgn.value.span, "reassign", id.name)) return;
                         }
                         const store_val = if (val_ty != gi.ty and val_ty != .void and gi.ty != .void)
                             self.coerceToType(val, val_ty, gi.ty)
@@ -2632,7 +2644,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
             // store into the imported module's mutable global.
             // Runs BEFORE the value-lvalue path below — a module alias is not
             // a value, so `lowerExprAsPtr(fa.object)` would fail "unresolved".
-            switch (tryLowerQualifiedGlobalStore(self, fa, asgn.op, val, asgn.target.span, asgn.value.span, asgn.value)) {
+            switch (tryLowerQualifiedGlobalStore(self, fa, asgn.op, val, asgn.target.span, asgn.value.span)) {
                 .handled => return,
                 .not_applicable => {},
             }
@@ -2686,7 +2698,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
             // A pointer held in a field or an element arrives as its slot's
             // address, so the pointer is loaded out of it; a call's pointer
             // result IS the address.
-            if ((fa.object.data == .field_access or fa.object.data == .index_expr) and !obj_ty.isBuiltin()) {
+            if ((fa.object.data == .field_access or fa.object.data == .index_expr or self.fieldCall(fa.object) != null) and !obj_ty.isBuiltin()) {
                 const pinfo = self.module.types.get(obj_ty);
                 if (pinfo == .pointer) {
                     obj_ptr = self.builder.load(obj_ptr, obj_ty);
@@ -2731,7 +2743,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                 const field_ty = self.module.types.manyPtrTo(elem_ty);
                 const gep = self.builder.structGepTyped(obj_ptr, 0, self.module.types.ptrTo(field_ty), obj_ty);
                 self.storeOrCompound(gep, val, asgn.op, field_ty);
-            } else if (self.storeSwizzle(obj_ptr, obj_ty, fa.field, val, asgn.op, asgn.target.span, asgn.value.span, asgn.value)) {
+            } else if (self.storeSwizzle(obj_ptr, obj_ty, fa.field, val, asgn.op, asgn.target.span, asgn.value.span)) {
                 // Multi-letter shuffle store (and diagnosed swizzle errors).
             } else switch (self.fieldLvalueMention(obj_ptr, obj_ty, fa.field, asgn.target.span)) {
                 .private => {},
@@ -2749,7 +2761,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                     // (`w.s = "hi"` for a struct field `s`) — it would overrun the
                     // slot and corrupt neighbors. Plain `=` only;
                     // compound ops load-op-store through the field type.
-                    if (asgn.op == .assign and !self.checkAssignable(src_ty, fl.ty, asgn.value.span, "assign", fa.field, asgn.value)) return;
+                    if (asgn.op == .assign and !self.checkAssignable(src_ty, fl.ty, asgn.value.span, "assign", fa.field)) return;
                     const coerced = self.coerceToType(val, src_ty, fl.ty);
                     self.storeOrCompound(fl.ptr, coerced, asgn.op, fl.ty);
                 },
@@ -2765,35 +2777,6 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
         .index_expr => |ie| {
             const narrowed_child = self.narrowedContainerChild(ie.object);
             const obj_ty = narrowed_child orelse self.inferExprType(ie.object);
-            // Comptime-constant store into a tuple element — `tup[i] = v`. A tuple
-            // is heterogeneous, so the destination is a typed `structGep` of field
-            // `i`, never an `index_gep` (whose `ptrTo(.unresolved)` element type
-            // panics at LLVM emit). Mirrors the read path in `lowerIndexExpr`; an
-            // out-of-range comptime index diagnoses loudly here too rather than
-            // falling through to that panic.
-            if (!obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .@"struct") {
-                // Struct parity (aggregate ladder): `s[comptime i] = v` is the
-                // i-th field store, exactly like tuples.
-                const nfields: usize = @intCast(self.module.types.memberCount(obj_ty) orelse 0);
-                if (self.comptimeIndexOf(ie.index)) |ci| {
-                    if (ci >= 0 and @as(usize, @intCast(ci)) < nfields) {
-                        const fi: u32 = @intCast(ci);
-                        const fld_ty = self.module.types.memberType(obj_ty, ci) orelse .unresolved;
-                        const base = self.getExprAlloca(ie.object) orelse self.lowerExprAsPtr(ie.object);
-                        const gep = self.builder.structGepTyped(base, fi, self.module.types.ptrTo(fld_ty), obj_ty);
-                        if (asgn.op == .assign and !self.checkAssignable(self.builder.getRefType(val), fld_ty, asgn.value.span, "assign", "element", asgn.value)) return;
-                        const coerced = self.coerceToType(val, self.builder.getRefType(val), fld_ty);
-                        self.storeOrCompound(gep, coerced, asgn.op, fld_ty);
-                        return;
-                    }
-                    if (self.diagnostics) |d| {
-                        d.addFmt(.err, ie.index.span, "tuple index {} out of bounds — tuple '{s}' has {} field{s}", .{
-                            ci, self.formatTypeName(obj_ty), nfields, if (nfields == 1) "" else "s",
-                        });
-                    }
-                    return; // hasErrors() aborts before codegen
-                }
-            }
             const idx = self.lowerIndexOperand(ie.index);
             const elem_ty = self.ptrToArrayElem(obj_ty) orelse self.ptrToSliceElem(obj_ty) orelse self.getElementType(obj_ty);
             // Non-indexable assignment base (`pc[i] = v` on a `*T`, a struct,
@@ -2808,7 +2791,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
             // Guard a width-mismatched `.none` store into an element slot
             // (`arr[0] = "hi"` for an i32 array) — it would overrun the element
             // and corrupt neighbors. Plain `=` only.
-            if (asgn.op == .assign and !self.checkAssignable(self.builder.getRefType(val), elem_ty, asgn.value.span, "assign", "element", asgn.value)) return;
+            if (asgn.op == .assign and !self.checkAssignable(self.builder.getRefType(val), elem_ty, asgn.value.span, "assign", "element")) return;
             const base = self.indexBase(ie.object, obj_ty, narrowed_child);
             const gep = self.builder.emit(.{ .index_gep = .{ .lhs = base, .rhs = idx } }, ptr_ty);
             self.storeOrCompound(gep, val, asgn.op, elem_ty);
@@ -2832,7 +2815,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                 }
                 // Guard a width-mismatched `.none` store through the pointer
                 // (`p.* = "hi"` for a `*i32`) — overruns the pointee.
-                if (!self.checkAssignable(val_ty, pointee_ty, asgn.value.span, "assign", "target", asgn.value)) return;
+                if (!self.checkAssignable(val_ty, pointee_ty, asgn.value.span, "assign", "target")) return;
                 const store_val = if (val_ty != pointee_ty and val_ty != .void and pointee_ty != .void)
                     self.coerceToType(val, val_ty, pointee_ty)
                 else
@@ -2849,6 +2832,16 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                 };
                 self.storeOrCompound(ptr, val, asgn.op, elem_ty);
             }
+        },
+        .call => {
+            if (self.fieldCall(asgn.target) == null) {
+                _ = self.emitError("assignment_target", asgn.target.span);
+                return;
+            }
+            const field = self.lowerFieldPlace(asgn.target) orelse return;
+            const src_ty = self.builder.getRefType(val);
+            if (asgn.op == .assign and !self.checkAssignable(src_ty, field.ty, asgn.value.span, "assign", "field")) return;
+            self.storeOrCompound(field.ptr, self.coerceToType(val, src_ty, field.ty), asgn.op, field.ty);
         },
         else => {
             _ = self.emitError("assignment_target", asgn.target.span);
@@ -2868,11 +2861,7 @@ fn quietGlobalRef(self: *Lowering, name: []const u8) ?program_index_mod.GlobalIn
 }
 
 /// The one addressable storage slot an assignable target names, with every
-/// subexpression evaluated exactly once. Null when the target names no slot: an
-/// accessor property (a get/set call pair), an Obj-C `@ObjcProperty` or
-/// `__sx_state` field, a payload enum variant, a slice's `.len`/`.ptr` header
-/// word, and a comptime tuple/struct index. The caller diagnoses; this emits no
-/// diagnostic of its own.
+/// subexpression evaluated exactly once.
 ///
 /// The arms mirror `lowerAssignment`'s target switch and reuse its helpers.
 /// `lowerAssignment` deliberately does NOT route through here: it freezes the
@@ -2888,6 +2877,12 @@ pub fn resolveMutablePlace(self: *Lowering, target: *const Node) ?Place {
                 }
             }
             return .{ .global = quietGlobalRef(self, id.name) orelse return null };
+        },
+        .call => {
+            const c = self.fieldCall(target) orelse return null;
+            const projection = self.fieldProjection(c) orelse return null;
+            const field = self.resolveFieldPlace(projection) orelse return null;
+            return .{ .slot = .{ .ptr = field.ptr, .ty = field.ty } };
         },
         .field_access => |fa| {
             switch (selectQualifiedGlobalStoreTarget(self, target)) {
@@ -2949,9 +2944,6 @@ pub fn resolveMutablePlace(self: *Lowering, target: *const Node) ?Place {
         .index_expr => |ie| {
             const narrowed_child = self.narrowedContainerChild(ie.object);
             const obj_ty = narrowed_child orelse self.inferExprType(ie.object);
-            if (!obj_ty.isBuiltin() and
-                self.module.types.get(obj_ty) == .@"struct" and
-                self.comptimeIndexOf(ie.index) != null) return null;
 
             const idx = self.lowerIndexOperand(ie.index);
             const elem_ty = self.ptrToArrayElem(obj_ty) orelse self.ptrToSliceElem(obj_ty) orelse self.getElementType(obj_ty);
@@ -3001,7 +2993,6 @@ pub fn storeSwizzle(
     op: ast.Assignment.Op,
     target_span: ast.Span,
     value_span: ast.Span,
-    value_node: *const Node,
 ) bool {
     const recv = self.swizzleRecvOf(obj_ty) orelse return false;
     switch (lower_expr.parseSwizzle(field)) {
@@ -3022,7 +3013,7 @@ pub fn storeSwizzle(
             const elem_ty = self.getElementType(obj_ty);
             const result_ty = self.swizzleResultType(recv, elem_ty, sw);
             const src_ty = self.builder.getRefType(val);
-            if (op == .assign and !self.checkAssignable(src_ty, result_ty, value_span, "assign", field, value_node))
+            if (op == .assign and !self.checkAssignable(src_ty, result_ty, value_span, "assign", field))
                 return true;
             const coerced = self.coerceToType(val, src_ty, result_ty);
             for (sw.lanes[0..sw.len], 0..) |lane, i| {
@@ -3338,7 +3329,7 @@ pub fn diagPayloadVariantWrite(self: *Lowering, obj_ty: TypeId, field: []const u
 /// A chain that itself types `.unresolved` already carries the diagnostic for
 /// why; naming its root would bury that one.
 pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
-    if ((node.data == .field_access or node.data == .index_expr) and
+    if ((node.data == .field_access or node.data == .index_expr or self.fieldCall(node) != null) and
         self.inferExprType(node) != .unresolved)
     {
         if (nonstoreRootOf(self, node)) |root| {
@@ -3393,6 +3384,10 @@ pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
                 }
                 return self.builder.emit(.{ .global_addr = gi.id }, self.module.types.ptrTo(gi.ty));
             }
+        },
+        .call => if (self.fieldCall(node) != null) {
+            const field = self.lowerFieldPlace(node) orelse return self.emitPlaceholder("field");
+            return field.ptr;
         },
         .field_access => |fa| {
             // A complete namespace-qualified mutable global is one lvalue,
@@ -3449,7 +3444,7 @@ pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
             // first bytes as if they were an address.
             const obj_is_slot = fa.object.data == .field_access or
                 fa.object.data == .index_expr or
-                fa.object.data == .deref_expr;
+                fa.object.data == .deref_expr or self.fieldCall(fa.object) != null;
             if (obj_is_slot and !obj_ty.isBuiltin()) {
                 const info = self.module.types.get(obj_ty);
                 if (info == .pointer) {
@@ -3490,37 +3485,6 @@ pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
         .index_expr => |ie| {
             const narrowed_child = self.narrowedContainerChild(ie.object);
             const obj_ty = narrowed_child orelse self.inferExprType(ie.object);
-            // Comptime-constant index into a tuple VALUE — the L-value sibling of
-            // `lowerIndexExpr`'s tuple read path. A tuple is heterogeneous, so its
-            // element address is a `structGep` of the i-th field (typed with that
-            // field's type), NOT an `index_gep` (which assumes a uniform element
-            // type — `getElementType(tuple)` is `.unresolved`, and an `index_gep`
-            // with a `ptrTo(.unresolved)` result panics at LLVM emit). Needed for
-            // `tasks[i].waiter = …` in the `race` runtime, where the i-th element
-            // is read back as a pointer to GEP into its pointee.
-            if (!obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .@"struct") {
-                // Struct parity (aggregate ladder): `s[comptime i]` is the
-                // i-th field's address, exactly like tuples.
-                const nfields: usize = @intCast(self.module.types.memberCount(obj_ty) orelse 0);
-                if (self.comptimeIndexOf(ie.index)) |ci| {
-                    if (ci >= 0 and @as(usize, @intCast(ci)) < nfields) {
-                        const fi: u32 = @intCast(ci);
-                        const fld_ty = self.module.types.memberType(obj_ty, ci) orelse .unresolved;
-                        const base = self.getExprAlloca(ie.object) orelse self.lowerExprAsPtr(ie.object);
-                        return self.builder.structGepTyped(base, fi, self.module.types.ptrTo(fld_ty), obj_ty);
-                    }
-                    // Comptime index out of range — diagnose loudly (mirror the
-                    // read path in `lowerIndexExpr`) rather than falling through to
-                    // the `index_gep` below, whose `ptrTo(.unresolved)` element type
-                    // would panic at LLVM emit with no source diagnostic.
-                    if (self.diagnostics) |d| {
-                        d.addFmt(.err, ie.index.span, "tuple index {} out of bounds — tuple '{s}' has {} field{s}", .{
-                            ci, self.formatTypeName(obj_ty), nfields, if (nfields == 1) "" else "s",
-                        });
-                    }
-                    return self.builder.constInt(0, .i64); // placeholder — hasErrors() aborts before codegen
-                }
-            }
             const idx = self.lowerIndexOperand(ie.index);
             const elem_ty = self.ptrToArrayElem(obj_ty) orelse self.ptrToSliceElem(obj_ty) orelse self.getElementType(obj_ty);
             // Non-indexable L-value base (`ps[i].field = v` / `@ps[i].field`
@@ -3797,6 +3761,9 @@ fn setMultiAssignTargetType(self: *Lowering, target: *const Node, value: *const 
                 }
             }
         },
+        .call => if (self.fieldCall(target)) |c| {
+            if (self.fieldProjection(c)) |field| self.target_type = field.ty;
+        },
         .index_expr => |ie| {
             // For `arr[i] = val`, type the RHS against the element type.
             const tgt_obj_ty = self.narrowedContainerChild(ie.object) orelse self.inferExprType(ie.object);
@@ -3809,7 +3776,7 @@ fn setMultiAssignTargetType(self: *Lowering, target: *const Node, value: *const 
             // the RHS target type and the store slot can't diverge.
             // Gated like single-assign: only for RHS forms that
             // consume a target type.
-            if (rhsNeedsTargetType(value)) {
+            if (rhsNeedsTargetType(self, value)) {
                 const obj_ty_raw = self.inferExprType(fa.object);
                 const obj_ty = if (!obj_ty_raw.isBuiltin()) blk: {
                     const pinfo = self.module.types.get(obj_ty_raw);
@@ -3822,7 +3789,7 @@ fn setMultiAssignTargetType(self: *Lowering, target: *const Node, value: *const 
         },
         .deref_expr => |de| {
             // For `p.* = val`, type the RHS against the POINTEE.
-            if (rhsNeedsTargetType(value)) {
+            if (rhsNeedsTargetType(self, value)) {
                 const ptr_ty = self.inferExprType(de.operand);
                 if (!ptr_ty.isBuiltin()) {
                     const pinfo = self.module.types.get(ptr_ty);
@@ -3873,7 +3840,7 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
         if (vi < ma.targets.len) {
             if (qualified_store_verdicts[vi] == .target) {
                 const target = qualified_store_verdicts[vi].target;
-                if (rhsNeedsTargetType(v)) self.target_type = target.valueType();
+                if (rhsNeedsTargetType(self, v)) self.target_type = target.valueType();
             } else {
                 setMultiAssignTargetType(self, ma.targets[vi], v);
             }
@@ -3905,7 +3872,7 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
         if (diagEnclosingRootWrite(self, target)) continue;
         if (qualified_store_verdicts[i] == .target) {
             const selected = qualified_store_verdicts[i].target;
-            lowerSelectedQualifiedGlobalStore(self, selected, .assign, val, ma.values[i].span, ma.values[i]);
+            lowerSelectedQualifiedGlobalStore(self, selected, .assign, val, ma.values[i].span);
             continue;
         }
         switch (target.data) {
@@ -3930,7 +3897,7 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                             handled = true;
                             const val_ty = self.builder.getRefType(val);
                             // Width-mismatched `.none` store guard.
-                            if (!self.checkAssignable(val_ty, binding.ty, ma.values[i].span, "assign", id.name, ma.values[i])) continue;
+                            if (!self.checkAssignable(val_ty, binding.ty, ma.values[i].span, "assign", id.name)) continue;
                             const store_val = if (val_ty != binding.ty and val_ty != .void and binding.ty != .void)
                                 self.coerceToType(val, val_ty, binding.ty)
                             else
@@ -3964,7 +3931,7 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                         const val_ty = self.builder.getRefType(val);
                         if (val_ty != gi.ty and val_ty != .void and gi.ty != .void) {
                             // No coercion to the global's type — bit-mangle guard.
-                            if (!self.checkAssignable(val_ty, gi.ty, ma.values[i].span, "assign", id.name, ma.values[i])) continue;
+                            if (!self.checkAssignable(val_ty, gi.ty, ma.values[i].span, "assign", id.name)) continue;
                         }
                         const store_val = if (val_ty != gi.ty and val_ty != .void and gi.ty != .void)
                             self.coerceToType(val, val_ty, gi.ty)
@@ -3991,41 +3958,19 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                     }
                 }
             },
+            .call => {
+                if (self.fieldCall(target) == null) {
+                    _ = self.emitError("multi_assign_target", target.span);
+                    continue;
+                }
+                const field = self.lowerFieldPlace(target) orelse continue;
+                const val_ty = self.builder.getRefType(val);
+                if (!self.checkAssignable(val_ty, field.ty, ma.values[i].span, "assign", "field")) continue;
+                self.builder.store(field.ptr, self.coerceToType(val, val_ty, field.ty));
+            },
             .index_expr => |ie| {
                 const narrowed_child = self.narrowedContainerChild(ie.object);
                 const obj_ty = narrowed_child orelse self.inferExprType(ie.object);
-                // Comptime-constant direct store into a tuple element — `tup[i] = v`
-                // (the store sibling of the L-value tuple path above). Heterogeneous
-                // elements → a typed `structGep` of field `i`, never an `index_gep`
-                // (a uniform-element op whose `ptrTo(.unresolved)` element type would
-                // panic at LLVM emit).
-                if (!obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .@"struct") {
-                    // Struct parity (aggregate ladder): comptime-index stores
-                    // apply to struct values too.
-                    const nfields: usize = @intCast(self.module.types.memberCount(obj_ty) orelse 0);
-                    if (self.comptimeIndexOf(ie.index)) |ci| {
-                        if (ci >= 0 and @as(usize, @intCast(ci)) < nfields) {
-                            const fi: u32 = @intCast(ci);
-                            const fld_ty = self.module.types.memberType(obj_ty, ci) orelse .unresolved;
-                            const base = self.getExprAlloca(ie.object) orelse self.lowerExprAsPtr(ie.object);
-                            const gep = self.builder.structGepTyped(base, fi, self.module.types.ptrTo(fld_ty), obj_ty);
-                            const v_ty = self.builder.getRefType(val);
-                            if (!self.checkAssignable(v_ty, fld_ty, ma.values[i].span, "assign", "element", ma.values[i])) continue;
-                            const sv = if (v_ty != fld_ty and v_ty != .void and fld_ty != .void) self.coerceToType(val, v_ty, fld_ty) else val;
-                            self.builder.store(gep, sv);
-                            continue;
-                        }
-                        // Comptime index out of range — diagnose loudly instead of
-                        // falling through to the `index_gep` store (whose
-                        // `ptrTo(.unresolved)` element type would panic at LLVM emit).
-                        if (self.diagnostics) |d| {
-                            d.addFmt(.err, ie.index.span, "tuple index {} out of bounds — tuple '{s}' has {} field{s}", .{
-                                ci, self.formatTypeName(obj_ty), nfields, if (nfields == 1) "" else "s",
-                            });
-                        }
-                        continue; // hasErrors() aborts before codegen
-                    }
-                }
                 const idx = self.lowerIndexOperand(ie.index);
                 const elem_ty = self.ptrToArrayElem(obj_ty) orelse self.ptrToSliceElem(obj_ty) orelse self.getElementType(obj_ty);
                 // Non-indexable multi-assign base (`ps[i], a = v, w` where
@@ -4039,7 +3984,7 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                 }
                 const ptr_ty = self.module.types.ptrTo(elem_ty);
                 const val_ty = self.builder.getRefType(val);
-                if (!self.checkAssignable(val_ty, elem_ty, ma.values[i].span, "assign", "element", ma.values[i])) continue;
+                if (!self.checkAssignable(val_ty, elem_ty, ma.values[i].span, "assign", "element")) continue;
                 const store_val = if (val_ty != elem_ty and val_ty != .void and elem_ty != .void)
                     self.coerceToType(val, val_ty, elem_ty)
                 else
@@ -4053,7 +3998,7 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                 // mutable global (the multi-assign sibling). Runs
                 // BEFORE lowerExprAsPtr, which cannot address a module alias.
                 // Multi-assign is always plain `=`.
-                switch (tryLowerQualifiedGlobalStore(self, fa, .assign, val, target.span, ma.values[i].span, ma.values[i])) {
+                switch (tryLowerQualifiedGlobalStore(self, fa, .assign, val, target.span, ma.values[i].span)) {
                     .handled => continue,
                     .not_applicable => {},
                 }
@@ -4074,7 +4019,7 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                     .private => {},
                     .ptr => |r| {
                         const val_ty = self.builder.getRefType(val);
-                        if (!self.checkAssignable(val_ty, r.ty, ma.values[i].span, "assign", fa.field, ma.values[i])) continue;
+                        if (!self.checkAssignable(val_ty, r.ty, ma.values[i].span, "assign", fa.field)) continue;
                         const store_val = if (val_ty != r.ty and val_ty != .void and r.ty != .void)
                             self.coerceToType(val, val_ty, r.ty)
                         else
@@ -4095,7 +4040,7 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                     break :blk ptr_ty;
                 };
                 const val_ty = self.builder.getRefType(val);
-                if (!self.checkAssignable(val_ty, pointee_ty, ma.values[i].span, "assign", "target", ma.values[i])) continue;
+                if (!self.checkAssignable(val_ty, pointee_ty, ma.values[i].span, "assign", "target")) continue;
                 const store_val = if (val_ty != pointee_ty and val_ty != .void and pointee_ty != .void)
                     self.coerceToType(val, val_ty, pointee_ty)
                 else
@@ -4117,7 +4062,7 @@ pub fn lowerDestructureDecl(self: *Lowering, dd: *const ast.DestructureDecl) voi
     // Same as the unannotated var-decl path: the destructure declares new
     // bindings, so the ambient target type must not type the RHS literals.
     self.target_type = null;
-    const ref = self.lowerExpr(dd.value);
+    const ref = self.lowerMarkedExpr(dd.value, false);
     self.force_block_value = saved_fbv;
     self.target_type = saved_target;
     const ty = self.builder.getRefType(ref);

@@ -52,7 +52,7 @@ StreamState :: struct {
 }
 
 producer :: (ctx: usize, offset: i64, dst: [*]u8, dstCap: i64) -> i64 {
-    st : *StreamState = xx ctx;
+    st : *StreamState = @reinterpret(*StreamState, ctx);
     if st.obs.prodTid == 0 { st.obs.prodTid = pthread_self(); }
     left := st.total - offset;
     if left <= 0 { return 0; }
@@ -77,7 +77,7 @@ checksum :: (s: string) -> i64 {
 
 route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     if req.path == "/stream" or req.path == "/big" or req.path == "/slowbig" {
-        obs : *Obs = xx ctx;
+        obs : *Obs = @reinterpret(*Obs, ctx);
         // /slowbig: sleep BEFORE streaming so Server.close can run while
         // this worker is still mid-handler — before the stream channel is
         // registered (the close-deadlock window).
@@ -87,7 +87,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
             total = if req.path == "/stream" then STREAM_TOTAL else BIG_TOTAL,
             obs = obs,
         });
-        resp.stream(producer, xx st);
+        resp.stream(producer, @reinterpret(usize, st));
         return;
     }
     resp.body = "pong";
@@ -241,7 +241,7 @@ main :: () -> i32 {
 
     push .{ allocator = gpa } {
         cap : i64 = 1310720;   // 1.25 MB — the 1 MB stream + framing + head
-        rbuf : [*]u8 = xx context.allocator.allocBytes(cap);
+        rbuf : [*]u8 = context.allocator.allocBytes(cap);
 
         cfg : http.Config = .{
             port = PORT,
@@ -253,7 +253,7 @@ main :: () -> i32 {
             threadPoolBacklog = 16,
             handlerTimeoutMs = 5000,
         };
-        srv, se := http.Server.init(cfg, route, xx *obs);
+        srv, se := http.Server.init(cfg, route, @reinterpret(usize, *obs));
         if se { print("init failed\n"); return 1; }
 
         // ── case 1: 1 MB worker-fed chunked stream, arena-owned ctx ───

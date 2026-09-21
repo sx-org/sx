@@ -198,10 +198,10 @@ pub fn diagPackAsValue(self: *Lowering, name: []const u8, span: ast.Span, kind: 
         const id = d.addFmtId(.err, span, "pack '{s}' has no runtime value — a pack is comptime-only and can't be used as a value here", .{name});
         switch (kind) {
             .storage => d.addHelpFmt(id, span, null, "to store it, materialize a tuple: `(..{s})`", .{name}),
-            .call_arg => d.addHelpFmt(id, span, null, "to pass it to a `[]any`/`[]P` parameter, materialize it with `xx {s}`", .{name}),
+            .call_arg => d.addHelpFmt(id, span, null, "to pass runtime values, use a slice (`[]any`/`[]P`) instead of a pack", .{}),
             .return_value => d.addHelpFmt(id, span, null, "to return it, return a tuple `(..{s})` and make the return type that tuple", .{name}),
             .runtime_iter => d.addHelpFmt(id, span, null, "to iterate at comptime use `inline for x in {s}` (or `inline for i in 0..{s}.len` for the index); for a runtime loop declare it as `..{s}: []P` (an interface slice) instead of a pack", .{ name, name, name }),
-            .generic => d.addHelpFmt(id, span, null, "materialize a tuple `(..{s})` to store it, or `xx {s}` to convert it to an expected `[]any`/`[]P` slice", .{ name, name }),
+            .generic => d.addHelpFmt(id, span, null, "to store runtime values, use a tuple or slice instead of a pack", .{}),
         }
     }
     return self.emitPlaceholder(name);
@@ -363,9 +363,7 @@ pub fn packVariadicCallArgs(self: *Lowering, fd: *const ast.FnDecl, c: *const as
         if (self.module.types.sliceInfoOf(declared)) |declared_slice| {
             const elem = declared_slice.element;
             for (args.items[@min(fixed, args.items.len)..]) |*arg| {
-                // A bare-function value converts by its SIGNATURE, not the
-                // integer word that carries it.
-                const src_ty = self.valueTypeOfRef(arg.*, self.builder.getRefType(arg.*));
+                const src_ty = self.builder.getRefType(arg.*);
                 const checked = self.coerceChecked(arg.*, src_ty, elem);
                 arg.* = if (checked.refused) self.builder.constUndef(elem) else checked.ref;
             }
@@ -692,7 +690,7 @@ pub fn inferPackBodyReturnType(self: *Lowering, body: *const Node) TypeId {
 /// (per-arg typing, `pack_arg_nodes` substitution, the mangle) sees N
 /// ordinary args:
 ///   - a comptime pack `..xs` / `..xs.m`  → `xs[0]` / `xs[0].m()`, …   (pack forwarding)
-///   - a tuple-typed value `..t`          → `t.0`, …, `t.<N-1>`
+///   - a tuple-typed value `..t`          → `@field(t, 0)`, …, `@field(t, N-1)`
 ///   - a fixed-array value `..t`          → `t[0]`, …, `t[N-1]`
 /// Only NAME-shaped value operands (identifier / field access) expand — an
 /// element node re-lowers the operand per element, which must not repeat side
@@ -772,23 +770,28 @@ fn spreadElemNodes(self: *Lowering, operand: *const Node, span: ast.Span) ?[]*No
     }
     const ty = self.inferExprType(operand);
     if (ty.isBuiltin()) return null;
-    // Every aggregate spreads element-wise as `operand[0]`, `operand[1]`, … —
-    // an index, never a name, so no synthesized node can read as a mention of a
-    // field a human never wrote.
+    // Spread projections do not mention private field names.
     switch (self.module.types.get(ty)) {
-        .@"struct" => |st| return spreadIndexNodes(self, operand, span, st.fields.len),
-        .array => |a| return spreadIndexNodes(self, operand, span, a.length),
+        .@"struct" => |st| return spreadIndexNodes(self, operand, span, st.fields.len, true),
+        .array => |a| return spreadIndexNodes(self, operand, span, a.length, false),
         else => return null,
     }
 }
 
-fn spreadIndexNodes(self: *Lowering, operand: *const Node, span: ast.Span, count: usize) ?[]*Node {
+fn spreadIndexNodes(self: *Lowering, operand: *const Node, span: ast.Span, count: usize, fields: bool) ?[]*Node {
     var nodes = std.ArrayList(*Node).empty;
     for (0..count) |i| {
         const idx_node = self.alloc.create(Node) catch return null;
         idx_node.* = .{ .span = span, .data = .{ .int_literal = .{ .value = @intCast(i) } } };
         const index_node = self.alloc.create(Node) catch return null;
-        index_node.* = .{ .span = span, .data = .{ .index_expr = .{ .object = @constCast(operand), .index = idx_node } } };
+        if (fields) {
+            const callee = self.alloc.create(Node) catch return null;
+            callee.* = .{ .span = span, .data = .{ .identifier = .{ .name = "@field" } } };
+            const args = self.alloc.dupe(*Node, &.{ @constCast(operand), idx_node }) catch return null;
+            index_node.* = .{ .span = span, .data = .{ .call = .{ .callee = callee, .args = args } } };
+        } else {
+            index_node.* = .{ .span = span, .data = .{ .index_expr = .{ .object = @constCast(operand), .index = idx_node } } };
+        }
         nodes.append(self.alloc, index_node) catch return null;
     }
     return nodes.toOwnedSlice(self.alloc) catch null;
@@ -814,13 +817,13 @@ fn lowerPackPrefixArg(self: *Lowering, arg: *const Node, param_ty: TypeId, is_re
                 const name = arg.data.identifier.name;
                 const local = if (self.scope) |scope| scope.lookup(name) else null;
                 if (local) |binding| {
-                    if (binding.is_alloca and binding.ty == pointee)
+                    if (binding.is_alloca and self.module.types.sameType(binding.ty, pointee))
                         return self.builder.emit(.{ .addr_of = .{ .operand = binding.ref } }, param_ty);
                 } else if (self.resolveGlobalRef(name, null)) |global| {
-                    if (global.ty == pointee and !self.rootIsConstant(name)) {
+                    if (self.module.types.sameType(global.ty, pointee) and !self.rootIsConstant(name)) {
                         const place = self.lowerExprAsPtr(arg);
                         const place_ty = self.builder.getRefType(place);
-                        return if (place_ty == param_ty)
+                        return if (self.module.types.sameType(place_ty, param_ty))
                             place
                         else
                             self.builder.emit(.{ .addr_of = .{ .operand = place } }, param_ty);
@@ -828,12 +831,12 @@ fn lowerPackPrefixArg(self: *Lowering, arg: *const Node, param_ty: TypeId, is_re
                 }
             }
 
-            if ((arg.data == .field_access or arg.data == .index_expr or arg.data == .deref_expr) and
+            if ((arg.data == .field_access or arg.data == .index_expr or arg.data == .deref_expr or (self.fieldCall(arg) != null and self.exprHasAddressableStorage(arg))) and
                 self.inferExprType(arg) == pointee)
             {
                 const place = self.lowerExprAsPtr(arg);
                 const place_ty = self.builder.getRefType(place);
-                if (place_ty == param_ty) return place;
+                if (self.module.types.sameType(place_ty, param_ty)) return place;
                 if (place_ty == pointee)
                     return self.builder.emit(.{ .addr_of = .{ .operand = place } }, param_ty);
             }
@@ -858,7 +861,7 @@ fn lowerPackPrefixArg(self: *Lowering, arg: *const Node, param_ty: TypeId, is_re
     // Concrete lvalue -> *Protocol: construct a borrowed view around the real
     // concrete address, then pass the spilled protocol value by pointer.
     if (!param_ty.isBuiltin() and
-        (arg.data == .identifier or arg.data == .field_access or arg.data == .index_expr or arg.data == .deref_expr))
+        (arg.data == .identifier or arg.data == .field_access or arg.data == .index_expr or arg.data == .deref_expr or (self.fieldCall(arg) != null and self.exprHasAddressableStorage(arg))))
     {
         const param_info = self.module.types.get(param_ty);
         if (param_info == .pointer and self.getProtocolInfo(param_info.pointer.pointee) != null) {
@@ -888,13 +891,13 @@ fn lowerPackPrefixArg(self: *Lowering, arg: *const Node, param_ty: TypeId, is_re
     const value_ty = self.builder.getRefType(value);
     if (is_receiver and !value_ty.isBuiltin()) {
         const value_info = self.module.types.get(value_ty);
-        if (value_info == .pointer and value_info.pointer.pointee == param_ty)
+        if (value_info == .pointer and self.module.types.sameType(value_info.pointer.pointee, param_ty))
             return self.builder.load(value, param_ty);
     }
 
     if (!is_receiver and !value_ty.isBuiltin()) {
         const value_info = self.module.types.get(value_ty);
-        if (value_info == .pointer and value_info.pointer.pointee == param_ty) {
+        if (value_info == .pointer and self.module.types.sameType(value_info.pointer.pointee, param_ty)) {
             if (self.diagnostics) |diagnostics| {
                 const type_name = self.formatTypeName(param_ty);
                 if (arg.data == .identifier) {
@@ -1017,10 +1020,7 @@ pub fn lowerPackFnCallNamed(
         pack_refs.append(self.alloc, r) catch return self.builder.constInt(0, .void);
         if (pack_is_comptime) {
             const it = self.inferExprType(a);
-            // The lowered ref is the fallback type source, but a bare fn value
-            // rides in the integer word — take its signature so the
-            // element stays callable in the mono.
-            pack_arg_types.append(self.alloc, if (it == .unresolved) self.valueTypeOfRef(r, self.builder.getRefType(r)) else it) catch return self.builder.constInt(0, .void);
+            pack_arg_types.append(self.alloc, if (it == .unresolved) self.builder.getRefType(r) else it) catch return self.builder.constInt(0, .void);
         } else {
             pack_arg_types.append(self.alloc, self.builder.getRefType(r)) catch return self.builder.constInt(0, .void);
         }
@@ -1188,7 +1188,7 @@ pub fn monomorphizePackFn(
     // Flow narrowing is per-function: this monomorphized pack body
     // has its own `Ref` space (overlapping the caller's), so isolate it from the
     // caller's `narrowed`/`narrowed_refs` to avoid a false-positive unwrap gate.
-    var nested_guard = Lowering.NestedBodyGuard.enter(self);
+    var nested_guard = Lowering.NestedBodyGuard.enterCached(self);
     defer nested_guard.restore();
 
     // Find the pack param's name and position in fd.params, plus its

@@ -1,0 +1,8 @@
+@import "modules/std.sx";
+
+TOO_BIG :: 300;
+
+main :: () {
+    v := @intCast(u8, TOO_BIG) catch { 7 };
+    print("{}\n", v);
+}

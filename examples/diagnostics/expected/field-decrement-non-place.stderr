@@ -1,0 +1,11 @@
+error: pre-decrement needs an addressable storage place
+  --> examples/diagnostics/field-decrement-non-place.sx:6:5
+   |
+ 6 |     --@field(t, i);
+   |     ^^^^^^^^^^^^^^
+
+error: pre-decrement needs an addressable storage place
+  --> examples/diagnostics/field-decrement-non-place.sx:7:5
+   |
+ 7 |     --@field(t, 2);
+   |     ^^^^^^^^^^^^^^

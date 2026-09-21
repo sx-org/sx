@@ -216,10 +216,10 @@ Scheduler :: struct {
         self.nSpawned = self.nSpawned + 1;
 
         top := bootStack(f, STACK);
-        f.ctx.regs[0]  = f.(u64);             // x19 = self (→ x0 in the tramp)
-        f.ctx.regs[1]  = fibDispatch.(u64);  // x20 = dispatch entry (tramp `br`s to it)
+        f.ctx.regs[0]  = @reinterpret(usize, f).(u64);             // x19 = self (→ x0 in the tramp)
+        f.ctx.regs[1]  = @reinterpret(u64, fibDispatch);  // x20 = dispatch entry (tramp `br`s to it)
         f.ctx.regs[10] = 0;                // fp
-        f.ctx.regs[11] = fibTramp.(u64);     // lr → trampoline
+        f.ctx.regs[11] = @reinterpret(u64, fibTramp);     // lr → trampoline
         f.ctx.regs[12] = top;              // sp
 
         f.state = .ready;
@@ -623,7 +623,7 @@ impl Io for Scheduler {
         // A written env makes the body a value, so `spawn`'s `closure` funds its
         // one heap copy from the allocator `spawn` holds.
         f := self.spawn(||_{ entry, arg } {
-            entryFn := entry.((*void) -> void);
+            entryFn := @reinterpret((*void) -> void, entry);
             entryFn(arg);
         });
         // Stash the cancel-flag back-ref: `suspendRaw` consults it on
@@ -865,7 +865,7 @@ bootStack :: (f: *Fiber, size: i64) -> u64 {
     region : *void = c.mmap(null, total, PROT_RW, MAP_AP, -1, 0);
     // mmap signals failure with MAP_FAILED = (void*)-1 (NOT null). Handing a
     // wild SP to the switch would `ret` onto garbage — bail loudly instead.
-    if region == -1 {
+    if @reinterpret(isize, region) == -1 {
         print("sched: mmap failed for a {}-byte fiber stack\n", total);
         c.abort();
     }
@@ -879,7 +879,7 @@ bootStack :: (f: *Fiber, size: i64) -> u64 {
         print("sched: mprotect(PROT_NONE) failed to arm the stack guard page\n");
         c.abort();
     }
-    usable : u64 = region.(u64) + GUARD;
+    usable : u64 = @reinterpret(usize, region).(u64) + GUARD;
     top : u64 = usable + size;
     return top - (top % 16);   // 16-byte aligned stack top (AAPCS)
 }
@@ -1105,13 +1105,13 @@ race :: ufcs (io: Io, futures: $T) -> RaceResult(T) {
     winnerIdx : i64 = -1;
     while winnerIdx < 0 {
         inline for i in 0..@typeInfo(T).struct.fields.len {
-            if winnerIdx < 0 and futures[i].state == .ready { winnerIdx = i; }
+            if winnerIdx < 0 and @field(futures, i).state == .ready { winnerIdx = i; }
         }
         if winnerIdx >= 0 { break; }
         me := io.currentPark();
         anyPending := false;
         inline for i in 0..@typeInfo(T).struct.fields.len {
-            if futures[i].state == .pending { futures[i].park.handle = me.handle; anyPending = true; }
+            if @field(futures, i).state == .pending { @field(futures, i).park.handle = me.handle; anyPending = true; }
         }
         // No `.ready` winner and nothing still `.pending` → every racer settled
         // `.failed`/`.canceled` with no success. `race` is first-SUCCESS-wins and
@@ -1128,18 +1128,15 @@ race :: ufcs (io: Io, futures: $T) -> RaceResult(T) {
         pk : ParkToken = .{ handle = null };
         io.suspendRaw(*pk) catch {};
         inline for i in 0..@typeInfo(T).struct.fields.len {
-            if futures[i].park.handle == me.handle { futures[i].park.handle = null; }
+            if @field(futures, i).park.handle == me.handle { @field(futures, i).park.handle = null; }
         }
     }
 
-    // Build the winner variant. `futures[i].value` carries the CONCRETE
-    // result type of variant `i` (comptime-cursor tuple indexing), so the matching
-    // unrolled arm constructs `RaceResult(T)`'s i-th variant directly. `i` is the
-    // comptime cursor; the runtime `if i == winnerIdx` selects the one arm.
+    // The unrolled arm retains each future's concrete result type.
     result : RaceResult(T) = ---;
     inline for i in 0..@typeInfo(T).struct.fields.len {
         if i == winnerIdx {
-            result = makeVariant(RaceResult(T), i, futures[i].value);
+            result = makeVariant(RaceResult(T), i, @field(futures, i).value);
         }
     }
 
@@ -1150,7 +1147,7 @@ race :: ufcs (io: Io, futures: $T) -> RaceResult(T) {
     // already settled (`.ready`/`.failed`) is done — cancelling it would do
     // nothing useful and would stomp its real outcome label to `.canceled`.
     inline for i in 0..@typeInfo(T).struct.fields.len {
-        if i != winnerIdx and futures[i].state == .pending { futures[i].cancel(); }
+        if i != winnerIdx and @field(futures, i).state == .pending { @field(futures, i).cancel(); }
     }
 
     return result;

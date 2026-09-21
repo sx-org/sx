@@ -52,12 +52,12 @@ main :: () -> i32 {
     // Two overlapping triangles: the first at z=0.2 (nearer in Metal's
     // 0=near NDC), the second at z=0.5. Both cover the center pixel.
     verts : [6]MeshVertex = .[
-        .{ position = .[0.0 - 0.8, 0.0 - 0.8, 0.2], normal = .[0.0, 0.0, 1.0], uv = .[0.0, 0.0] },
-        .{ position = .[0.8,       0.0 - 0.8, 0.2], normal = .[0.0, 0.0, 1.0], uv = .[1.0, 0.0] },
+        .{ position = .[-0.8, -0.8, 0.2], normal = .[0.0, 0.0, 1.0], uv = .[0.0, 0.0] },
+        .{ position = .[0.8,       -0.8, 0.2], normal = .[0.0, 0.0, 1.0], uv = .[1.0, 0.0] },
         .{ position = .[0.0,       0.8,       0.2], normal = .[0.0, 0.0, 1.0], uv = .[0.5, 1.0] },
-        .{ position = .[0.0 - 0.8, 0.8,       0.5], normal = .[0.0, 0.0, 1.0], uv = .[0.0, 1.0] },
+        .{ position = .[-0.8, 0.8,       0.5], normal = .[0.0, 0.0, 1.0], uv = .[0.0, 1.0] },
         .{ position = .[0.8,       0.8,       0.5], normal = .[0.0, 0.0, 1.0], uv = .[1.0, 1.0] },
-        .{ position = .[0.0,       0.0 - 0.8, 0.5], normal = .[0.0, 0.0, 1.0], uv = .[0.5, 0.0] },
+        .{ position = .[0.0,       -0.8, 0.5], normal = .[0.0, 0.0, 1.0], uv = .[0.5, 0.0] },
     ];
     idx : [6]u32 = .[0, 1, 2, 3, 4, 5];
 
@@ -86,7 +86,7 @@ main :: () -> i32 {
     gpu.endFrame(0.0);
 
     n : i64 = (W * H * 4);
-    px : [*]u8 = xx context.allocator.allocBytes(n);
+    px : [*]u8 = context.allocator.allocBytes(n);
     if !gpu.readOffscreen(px) { print("readback failed\n"); return 1; }
 
     o : i64 = (((H / 2) * W + (W / 2)) * 4);

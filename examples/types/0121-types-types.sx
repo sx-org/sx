@@ -316,8 +316,8 @@ main :: () {
 
     // Store to many-pointer field must not corrupt adjacent memory
     MpHolder :: struct { items: [*]i64; sentinel: i64; }
-    mph := MpHolder{ items = xx 0, sentinel = 42 };
-    mph.items = xx 0;
+    mph := MpHolder{ items = null, sentinel = 42 };
+    mph.items = null;
     print("mp-store-sentinel: {}\n", mph.sentinel);
 
     // --- Vectors ---

@@ -1,0 +1,7 @@
+@import "modules/std.sx";
+
+VALUE : f32 : 16777217.0 / 1.0;
+
+main :: () {
+    print("{}\n", VALUE);
+}

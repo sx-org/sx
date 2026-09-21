@@ -1,0 +1,9 @@
+Fault :: error { Empty; Data: struct { a: i64; b: i64 }; }
+
+takes :: (n: i64) -> i64 { return n; }
+
+main :: () {
+    e: Fault = Fault.Data{a = 71, b = 92};
+    n: i32 = e;
+    takes(e);
+}

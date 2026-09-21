@@ -1,0 +1,9 @@
+@import "modules/std.sx";
+source :: @import "2748-modules-constant-value-chain/source.sx";
+Value :: source.A{..source.Value};
+
+main :: () {
+    first := Value;
+    second := Value;
+    print("{} {} {}\n", first.pz, second.pz, source.count);
+}

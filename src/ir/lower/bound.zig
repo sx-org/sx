@@ -109,7 +109,10 @@ pub fn boundOnBinder(node: *const Node, name: []const u8) bool {
 pub fn paramDemand(self: *Lowering, fd: *const ast.FnDecl, index: usize) Lowering.ParamDemand {
     if (index >= fd.params.len) return .none;
     if (boundCallableSig(self, fd.params[index].type_expr)) |sig| return .{ .callable = sig };
-    return .{ .coerce = self.resolveDeclParamType(fd, index) };
+    const ty = self.resolveDeclParamType(fd, index);
+    const node = fd.params[index].type_expr;
+    if (node.data == .type_expr and node.data.type_expr.is_generic) return .{ .inferred = ty };
+    return .{ .coerce = ty };
 }
 
 /// The head's written name, whatever it resolved to.
@@ -323,7 +326,7 @@ pub fn checkCallable(
         const want = self.resolveTypeWithBindings(want_node);
         const got = sig.params[got_i];
         got_i += 1;
-        if (want == .unresolved or want == got) continue;
+        if (want == .unresolved or self.module.types.sameType(want, got)) continue;
         return reportUncallable(self, bound, spelled, param, bound_ty, "argument {d} is '{s}', and the bound passes '{s}'", .{ got_i, self.formatSourceTypeName(got), self.formatSourceTypeName(want) });
     }
     if (got_i != sig.params.len) {
@@ -332,7 +335,7 @@ pub fn checkCallable(
         });
     }
     const want_ret = if (fte.return_type) |rt| self.resolveTypeWithBindings(rt) else TypeId.void;
-    if (want_ret == .unresolved or want_ret == sig.ret) return;
+    if (want_ret == .unresolved or self.module.types.sameType(want_ret, sig.ret)) return;
     if (channelOpenMatch(self, want_ret, sig.ret)) return;
     reportUncallable(self, bound, spelled, param, bound_ty, "it returns '{s}', and the bound asks for '{s}'", .{ self.formatSourceTypeName(sig.ret), self.formatSourceTypeName(want_ret) });
 }
@@ -346,7 +349,7 @@ fn channelOpenMatch(self: *Lowering, want_ret: TypeId, got_ret: TypeId) bool {
     const got = self.module.types.get(got_ret);
     if (want != .failable or got != .failable) return false;
     if (!self.channelIsOpen(want.failable.err)) return false;
-    return want.failable.value == got.failable.value;
+    return self.module.types.sameType(want.failable.value, got.failable.value);
 }
 
 /// The violation report for a callable, naming the binding by the signature it
@@ -389,8 +392,7 @@ fn checkOne(
     // keyed impl question.
     if (p.params > 0) {
         if (self.computeHasImpl(bound, bound_ty)) return;
-        reportViolation(self, bound, spelledHead(self, bound, p.name), param, bound_ty,
-            "no 'impl {s} for {s}' is visible here", .{ spelledHead(self, bound, p.name), self.formatTypeName(bound_ty) });
+        reportViolation(self, bound, spelledHead(self, bound, p.name), param, bound_ty, "no 'impl {s} for {s}' is visible here", .{ spelledHead(self, bound, p.name), self.formatTypeName(bound_ty) });
         return;
     }
     const pty = p.ty orelse return;
@@ -415,8 +417,7 @@ fn checkProtocolBinding(
     // closure, tuple, function — has nowhere to hang one, so it fails the bound
     // rather than escaping the check for want of a name to look up.
     const concrete_name = self.resolveConcreteTypeName(bound_ty) orelse {
-        reportViolation(self, bound, proto_name, param, bound_ty,
-            "'{s}' is a structural type and can carry no 'impl'", .{self.formatSourceTypeName(bound_ty)});
+        reportViolation(self, bound, proto_name, param, bound_ty, "'{s}' is a structural type and can carry no 'impl'", .{self.formatSourceTypeName(bound_ty)});
         return;
     };
     const b = self.boundNonConformance(proto_ty, concrete_name, bound_ty) orelse return;
@@ -447,19 +448,15 @@ fn reportBoundNonConformance(
     }
     if (handle) {
         switch (b.nc.kind) {
-            .signature_mismatch => return reportViolation(self, bound, proto_name, param, bound_ty,
-                "method '{s}' has a mismatched signature — an impl must not introduce its own type parameters (e.g. '$T: Type'); it must match the bound's signature exactly", .{b.nc.method}),
-            .type_mismatch => return reportViolation(self, bound, proto_name, param, bound_ty,
-                "method '{s}' has a mismatched signature — {s}", .{ b.nc.method, b.nc.detail }),
-            .arity_mismatch => return reportViolation(self, bound, proto_name, param, bound_ty,
-                "method '{s}' {s}", .{ b.nc.method, b.nc.detail }),
+            .signature_mismatch => return reportViolation(self, bound, proto_name, param, bound_ty, "method '{s}' has a mismatched signature — an impl must not introduce its own type parameters (e.g. '$T: Type'); it must match the bound's signature exactly", .{b.nc.method}),
+            .type_mismatch => return reportViolation(self, bound, proto_name, param, bound_ty, "method '{s}' has a mismatched signature — {s}", .{ b.nc.method, b.nc.detail }),
+            .arity_mismatch => return reportViolation(self, bound, proto_name, param, bound_ty, "method '{s}' {s}", .{ b.nc.method, b.nc.detail }),
             // A method the bridge provides nowhere is named the way a concrete
             // conformer's missing method is.
             .missing => {},
         }
     }
-    reportViolation(self, bound, proto_name, param, bound_ty,
-        "'{s}' has no '{s}' for '{s}'", .{ self.formatSourceTypeName(bound_ty), lower_protocol.requiredMethodSignature(self, proto_ty, b.nc.method), proto_name });
+    reportViolation(self, bound, proto_name, param, bound_ty, "'{s}' has no '{s}' for '{s}'", .{ self.formatSourceTypeName(bound_ty), lower_protocol.requiredMethodSignature(self, proto_ty, b.nc.method), proto_name });
 }
 
 /// A compiler-formed bound. There is no impl to look up: the binding satisfies
@@ -514,7 +511,7 @@ fn checkFormed(
         d.addHelpFmt(id, bound.span, null, "an initializer is formed at the argument of a value parameter — '${s}' can only bind what formation produced", .{param});
         return;
     };
-    if (want == .unresolved or actual == want) return;
+    if (want == .unresolved or self.module.types.sameType(actual, want)) return;
     const d = self.diagnostics orelse return;
     const id = d.addFmtId(.err, bound.span, "'{s}' does not satisfy the bound '{s}' on '${s}'", .{
         self.formatSourceTypeName(bound_ty), spelled, param,

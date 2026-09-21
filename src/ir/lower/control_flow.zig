@@ -304,6 +304,17 @@ fn bindConditionPayload(self: *Lowering, cond: LoweredCondition, name: []const u
     }
 }
 
+fn contextualArmType(self: *Lowering, inferred: TypeId) TypeId {
+    // A cast converts the merged value; its operand keeps its inferred type.
+    if (self.suppress_int_fit_check) return inferred;
+    const target = self.target_type orelse return inferred;
+    if (self.isIntEx(inferred) and self.isIntEx(target)) return target;
+    if (Lowering.isFloat(inferred) and Lowering.isFloat(target)) return target;
+    if (self.module.types.isAnonStruct(inferred) and self.module.types.isAnonStruct(target) and
+        self.module.types.get(inferred).@"struct".fields.len == self.module.types.get(target).@"struct".fields.len) return target;
+    return inferred;
+}
+
 pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.TailDemand) Ref {
     // A PURE-failable body's tail `if` yields nothing: each live arm is its own
     // demanded tail, an error arm takes the function's exit where it stands,
@@ -411,6 +422,7 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.Ta
         if (t == .unresolved) {
             if (self.target_type) |tt| t = tt;
         }
+        t = contextualArmType(self, t);
 
         // Optional lift: a value `if` must produce an OPTIONAL
         // when the arms demand it — otherwise a `null` arm is coerced in a
@@ -627,7 +639,7 @@ pub fn tryConstBoolCondition(self: *Lowering, node: *const Node) ?bool {
             const rhs_ty = self.resolveTypeArg(b.rhs);
             self.diagnostics = saved_diags;
             if (lhs_ty == .unresolved or rhs_ty == .unresolved) return null;
-            const matched = lhs_ty == rhs_ty;
+            const matched = self.module.types.sameType(lhs_ty, rhs_ty);
             return if (b.op == .eq) matched else !matched;
         },
         .call => |c| {
@@ -653,7 +665,7 @@ pub fn tryConstBoolCondition(self: *Lowering, node: *const Node) ?bool {
                     if (!self.isStaticTypeArg(c.args[0]) or !self.isStaticTypeArg(c.args[1])) return null;
                     const a = self.resolveTypeArg(c.args[0]);
                     const b = self.resolveTypeArg(c.args[1]);
-                    return a == b;
+                    return self.module.types.sameType(a, b);
                 }
             }
         },
@@ -801,7 +813,7 @@ const IterPrep = struct {
 fn checkElementCaptureType(self: *Lowering, cap: ast.ForCapture, elem_ty: TypeId) bool {
     const ta = cap.type_annotation orelse return true;
     const want = self.resolveType(ta);
-    if (want == elem_ty) return true;
+    if (self.module.types.sameType(want, elem_ty)) return true;
     if (self.externalErrorsExist() or want == .unresolved) return false;
     if (self.diagnostics) |d| {
         d.addFmt(.err, ta.span, "capture '{s}' is annotated '{s}' but the element type is '{s}'", .{
@@ -1510,7 +1522,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
         }
     }
     const is_value = if (error_only) false else if (is_type_match) self.force_block_value else (self.force_block_value or (inferred_result != .void and inferred_result != .unresolved));
-    const result_type: TypeId = if (is_value) inferred_result else .void;
+    const result_type: TypeId = if (is_value) contextualArmType(self, inferred_result) else .void;
     // A fully-diverging match (`result_type == .noreturn` — every arm
     // `return`s / `raise`s / etc.) produces no value, so it builds no
     // merge phi; its arms terminate and the merge block is unreachable.
@@ -1647,7 +1659,8 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             // First-wins: an earlier arm's claim removes the tag here; an
             // arm whose every tag is already claimed can never run.
             var eff = std.ArrayList(u64).empty;
-            for (raw_tags) |t| {
+            for (raw_tags) |raw| {
+                const t = self.module.types.canonicalType(TypeId.fromIndex(@intCast(raw))).index();
                 if (claimed.contains(t)) continue;
                 claimed.put(t, pat.span) catch unreachable;
                 eff.append(self.alloc, t) catch unreachable;
@@ -1735,7 +1748,8 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             // and a duplicate switch case is invalid IR — before the
             // claim set, an overlap was an LLVM verifier crash.
             var eff_tv = std.ArrayList(u64).empty;
-            for (raw_tv) |t| {
+            for (raw_tv) |raw| {
+                const t = self.module.types.canonicalType(TypeId.fromIndex(@intCast(raw))).index();
                 if (claimed.contains(t)) continue;
                 claimed.put(t, pat.span) catch unreachable;
                 eff_tv.append(self.alloc, t) catch unreachable;
@@ -2093,19 +2107,8 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                     self.builder.constInt(0, result_type);
                 const v_ty = self.builder.getRefType(v);
                 v = self.coerceToType(v, v_ty, result_type);
-                // Backstop for inference-blind arms: when the
-                // coercion ladder had nothing (`.none` passthrough) and the
-                // arm value can't occupy the merge phi's slot, feeding it
-                // through builds a mixed-type phi — an LLVM verifier failure
-                // with NO diagnostic. The unification pass in
-                // `inferMatchResultType` diagnoses every statically-visible
-                // mismatch; this catches an arm it couldn't type (`.unresolved`
-                // at inference, concrete after lowering). Diagnose (unless an
-                // error already fired — the unification's own, or a cascade
-                // source) and substitute an inert undef so the IR stays
-                // well-formed while compilation aborts on the diagnostic.
                 const coerced_ty = self.builder.getRefType(v);
-                if (coerced_ty != result_type and self.noneReinterpretIsUnsafe(coerced_ty, result_type)) {
+                if (coerced_ty != result_type and !self.conversionAvailable(coerced_ty, result_type, .implicit)) {
                     if (self.diagnostics) |diags| {
                         if (diags.errorCount() == 0) {
                             diags.addFmt(.err, arm.body.span, "match arms have incompatible types: '{s}' vs '{s}'", .{

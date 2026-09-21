@@ -23,15 +23,15 @@ check :: (name: string, base: i64, field: i64, walk: i64, sz: i64) {
 
 main :: () {
     a := V3{ pre = 1, v = .[1.0, 2.0, 3.0], post = 2 };
-    check("V3", (*a).(i64), (*a.v).(i64), @typeInfo(V3).struct.fields[1].offset, @sizeOf(V3));
+    check("V3", @reinterpret(isize, *a).(i64), @reinterpret(isize, *a.v).(i64), @typeInfo(V3).struct.fields[1].offset, @sizeOf(V3));
     b := V2{ pre = 1, v = .[1.0, 2.0] };
-    check("V2", (*b).(i64), (*b.v).(i64), @typeInfo(V2).struct.fields[1].offset, @sizeOf(V2));
+    check("V2", @reinterpret(isize, *b).(i64), @reinterpret(isize, *b.v).(i64), @typeInfo(V2).struct.fields[1].offset, @sizeOf(V2));
     c := V4d{ pre = 1, v = .[1.0, 2.0, 3.0, 4.0] };
-    check("V4d", (*c).(i64), (*c.v).(i64), @typeInfo(V4d).struct.fields[1].offset, @sizeOf(V4d));
+    check("V4d", @reinterpret(isize, *c).(i64), @reinterpret(isize, *c.v).(i64), @typeInfo(V4d).struct.fields[1].offset, @sizeOf(V4d));
     d := V8{ pre = 1, v = .[1, 2, 3, 4, 5, 6, 7, 8] };
-    check("V8", (*d).(i64), (*d.v).(i64), @typeInfo(V8).struct.fields[1].offset, @sizeOf(V8));
+    check("V8", @reinterpret(isize, *d).(i64), @reinterpret(isize, *d.v).(i64), @typeInfo(V8).struct.fields[1].offset, @sizeOf(V8));
     e := V16i{ pre = 1, v = .[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] };
-    check("V16i", (*e).(i64), (*e.v).(i64), @typeInfo(V16i).struct.fields[1].offset, @sizeOf(V16i));
+    check("V16i", @reinterpret(isize, *e).(i64), @reinterpret(isize, *e.v).(i64), @typeInfo(V16i).struct.fields[1].offset, @sizeOf(V16i));
 
     // The interior view reads the right lanes through the same offsets.
     av : any = a;

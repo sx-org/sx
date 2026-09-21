@@ -87,6 +87,36 @@ test "lower: simple function with arithmetic" {
     try std.testing.expect(std.mem.indexOf(u8, output, "add %") != null or std.mem.indexOf(u8, output, "ret %") != null);
 }
 
+test "literal pack spread keeps diagnostics when argument metadata is shorter than arity" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var module = ir_mod.Module.init(alloc);
+    defer module.deinit();
+    var diagnostics = errors.DiagnosticList.init(alloc, "", "test.sx");
+    var lowering = Lowering.init(&module);
+    lowering.diagnostics = &diagnostics;
+    _ = lowering.builder.beginFunction(module.types.internString("spread"), &.{}, .void);
+    const entry = lowering.builder.appendBlock(module.types.internString("entry"), &.{});
+    lowering.builder.switchToBlock(entry);
+
+    const span = ast.Span{ .start = 0, .end = 0 };
+    var value = Node{ .span = span, .data = .{ .int_literal = .{ .value = 1 } } };
+    var operand = Node{ .span = span, .data = .{ .identifier = .{ .name = "xs" } } };
+    var spread = Node{ .span = span, .data = .{ .spread_expr = .{ .operand = &operand } } };
+    var counts = std.StringHashMap(u32).init(alloc);
+    try counts.put("xs", 2);
+    lowering.pack_param_count = counts;
+    var nodes = std.StringHashMap([]const *const Node).init(alloc);
+    try nodes.put("xs", &.{&value});
+    lowering.pack_arg_nodes = nodes;
+    const target = module.types.internProduct(&.{ .i64, .i64 }, null);
+    lowering.target_type = target;
+    const result = lowering.lowerStructLiteral(&.{ .struct_name = null, .field_inits = &.{.{ .name = null, .value = &spread }} }, span);
+    try std.testing.expectEqual(target, lowering.builder.getRefType(result));
+    try std.testing.expect(diagnostics.hasErrors());
+}
+
 test "lower: writable slice ptr keeps pointer type on wasm32" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -114,7 +144,7 @@ test "lower: writable slice ptr keeps pointer type on wasm32" {
     try std.testing.expect(!diagnostics.hasErrors());
 }
 
-test "lower: bare function values use a pointer-width word on wasm32" {
+test "lower: function values reach a matching callable slot on wasm32" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -145,6 +175,38 @@ test "lower: bare function values use a pointer-width word on wasm32" {
     lowering.lowerRoot(root);
 
     try std.testing.expect(!diagnostics.hasErrors());
+}
+
+test "formation lambda parameters carry concrete initializer sites" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source = try alloc.dupeZ(u8,
+        \\main :: () {
+        \\    recipe := |value: $I/@Init(i64)| 1;
+        \\    recipe(7);
+        \\}
+    );
+    var p = try parser.Parser.init(alloc, source);
+    const root = p.parse() catch return error.ParseFailed;
+    var module = ir_mod.Module.init(alloc);
+    defer module.deinit();
+    var diagnostics = errors.DiagnosticList.init(alloc, source, "test.sx");
+    var lowering = Lowering.init(&module);
+    lowering.diagnostics = &diagnostics;
+    lowering.lowerRoot(root);
+    try std.testing.expect(!diagnostics.hasErrors());
+
+    var has_initializer_param = false;
+    for (module.functions.items) |func| {
+        for (func.params) |param| {
+            if (module.types.initSiteOf(param.ty)) |site| {
+                has_initializer_param = true;
+                try std.testing.expect(site != 0);
+            }
+        }
+    }
+    try std.testing.expect(has_initializer_param);
 }
 
 test "lower: instructions carry their AST node's source span" {
@@ -2355,6 +2417,57 @@ test "call: a local fn-pointer binding shadows a same-named top-level fn" {
         }
     }
     try std.testing.expect(saw_indirect);
+}
+
+test "a guard-narrowed method receiver addresses the optional payload with its declared pointer type" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source = try alloc.dupeZ(u8,
+        \\Box :: struct {
+        \\    value: i64;
+        \\    bump :: (self: *Box) { self.value += 1; }
+        \\}
+        \\main :: () -> i64 {
+        \\    b: ?Box = Box{ value = 40 };
+        \\    if b == null { return 0; }
+        \\    b.bump();
+        \\    b.value
+        \\}
+        \\
+    );
+    var p = try parser.Parser.init(alloc, source);
+    const root = try p.parse();
+    var module = ir_mod.Module.init(alloc);
+    defer module.deinit();
+    var diagnostics = errors.DiagnosticList.init(alloc, source, "test.sx");
+    var lowering = Lowering.init(&module);
+    lowering.diagnostics = &diagnostics;
+    lowering.lowerRoot(root);
+    try std.testing.expect(!diagnostics.hasErrors());
+
+    const main_id = lowering.resolveFuncByName("main").?;
+    const bump_id = lowering.resolveFuncByName("Box.bump").?;
+    const bump = module.getFunction(bump_id);
+    const receiver_index: usize = if (bump.has_implicit_ctx) 1 else 0;
+    lowering.builder.func = main_id;
+    var found = false;
+    for (module.getFunction(main_id).blocks.items) |block| {
+        for (block.insts.items) |inst| {
+            if (inst.op != .call or inst.op.call.callee != bump_id) continue;
+            const receiver = inst.op.call.args[receiver_index];
+            try std.testing.expectEqual(bump.params[receiver_index].ty, lowering.builder.getRefType(receiver));
+            const address = lowering.builder.getRefOp(receiver).?;
+            try std.testing.expect(address == .struct_gep);
+            try std.testing.expectEqual(@as(u32, 0), address.struct_gep.field_index);
+            const storage = lowering.builder.getRefOp(address.struct_gep.base).?;
+            try std.testing.expect(storage == .alloca);
+            try std.testing.expectEqual(storage.alloca, address.struct_gep.base_type.?);
+            try std.testing.expect(module.types.get(storage.alloca) == .optional);
+            found = true;
+        }
+    }
+    try std.testing.expect(found);
 }
 
 test "scope: lookupNearest resolves by depth across both local namespaces" {

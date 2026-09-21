@@ -18,7 +18,7 @@ main :: () {
     v3 := Vec4{ w=0, x=2, y=3, z=4};
     z := 5.0; // z is f64
     w := 6.0; // w is f64
-    v4 := Vec4{ y=3, x=9, w, z};
+    v4 := Vec4{ y=3, x=9, w = w.(f32), z = z.(f32)};
 
     v4.y = 0;
     print("v1: {}\nv2: {}\nv3: {}\nv4: {}\n", v1, v2, v3, v4);

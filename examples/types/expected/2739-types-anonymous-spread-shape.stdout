@@ -1,0 +1,8 @@
+ab: 70000 8 true
+ba: 4 3 true
+plain: 70000 true shorthand: 3 true
+ordered: 1234 4 4
+type only: true 1234
+inferred: 4 3 12345 4 3
+constants: 3 4 3 true
+empty: 9

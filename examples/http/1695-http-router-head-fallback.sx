@@ -118,7 +118,7 @@ main :: () -> i32 {
 
     push .{ allocator = gpa } {
         cap : i64 = 16384;
-        rbuf : [*]u8 = xx context.allocator.allocBytes(cap);
+        rbuf : [*]u8 = context.allocator.allocBytes(cap);
 
         router := http.Router.init(0);
         router.get("/hello", hello);
@@ -129,7 +129,7 @@ main :: () -> i32 {
         router.setNotFound(nf);
 
         cfg : http.Config = .{ port = PORT, maxConn = 4, requestCount = 10 };
-        srv, se := http.Server.init(cfg, http.dispatch, xx *router);
+        srv, se := http.Server.init(cfg, http.dispatch, @reinterpret(usize, *router));
         if se { print("init failed\n"); return 1; }
 
         // (a) GET control

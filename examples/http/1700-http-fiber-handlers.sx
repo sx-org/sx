@@ -53,7 +53,7 @@ checksum :: (s: string) -> i64 {
 }
 
 route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
-    obs : *Obs = xx ctx;
+    obs : *Obs = @reinterpret(*Obs, ctx);
     if req.path == "/sum" {
         if obs.handlerTid == 0 { obs.handlerTid = pthread_self(); }
         scratch : [8192]u8 = ---;
@@ -173,7 +173,7 @@ main :: () -> i32 {
 
     push .{ allocator = gpa } {
         cap : i64 = 65536;
-        rbuf : [*]u8 = xx context.allocator.allocBytes(cap);
+        rbuf : [*]u8 = context.allocator.allocBytes(cap);
 
         runner := fs.SchedRunner.init();
         cfg : http.Config = .{
@@ -189,7 +189,7 @@ main :: () -> i32 {
             streamRequestBody = true,  // no pool: REQUIRES fibers
             fibers = runner,
         };
-        srv, se := http.Server.init(cfg, route, xx *obs);
+        srv, se := http.Server.init(cfg, route, @reinterpret(usize, *obs));
         if se { print("init failed\n"); return 1; }
 
         // ── case 1: bodyless fiber dispatch ───────────────────────────
@@ -279,7 +279,7 @@ main :: () -> i32 {
         if ptrials >= 10 { print("case1b: no co-buffered trial in 10 attempts\n"); failed = 1; }
 
         // ── case 2: streamed body into a suspending fiber, same conn ──
-        body : [*]u8 = xx context.allocator.allocBytes(SUM_LEN);
+        body : [*]u8 = context.allocator.allocBytes(SUM_LEN);
         sum : i64 = 0;
         i : i64 = 0;
         while i < SUM_LEN {

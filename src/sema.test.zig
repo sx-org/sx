@@ -11,6 +11,117 @@ const sema = @import("sema.zig");
 const types = @import("types.zig");
 const Type = types.Type;
 
+test "sema: indexed addresses are many-pointers and object addresses retain their shape" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\main :: () {
+        \\    a: [2]i64 = .[1, 2];
+        \\    x: i64 = 3;
+        \\    array := *a;
+        \\    element := *array[0];
+        \\    object := *x;
+        \\}
+    ;
+    var parser = try Parser.init(alloc, source);
+    const root = try parser.parse();
+    var analyzer = sema.Analyzer.init(alloc);
+    const result = try analyzer.analyze(root);
+    const expected = [_]struct { name: []const u8, display: []const u8 }{
+        .{ .name = "element", .display = "[*]i64" },
+        .{ .name = "array", .display = "*[2]i64" },
+        .{ .name = "object", .display = "*i64" },
+    };
+    for (expected) |want| {
+        var found = false;
+        for (result.symbols) |symbol| {
+            if (!std.mem.eql(u8, symbol.name, want.name)) continue;
+            try std.testing.expectEqualStrings(want.display, try symbol.ty.?.displayName(alloc));
+            found = true;
+        }
+        try std.testing.expect(found);
+    }
+}
+
+test "sema: intCast exposes its error channel and handlers retain the integer type" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\main :: () {
+        \\    n: i64 = 300;
+        \\    result := @intCast(u8, n);
+        \\    caught := @intCast(u8, n) catch |err| { 7 };
+        \\    propagated := try @intCast(u8, n);
+        \\    defaulted := @intCast(u8, n) ?? 7;
+        \\    value, failure := @intCast(u8, n);
+        \\    bits := @intCast(@int(3, .unsigned), n) ?? 0;
+        \\}
+    ;
+    var parser = try Parser.init(alloc, source);
+    const root = try parser.parse();
+    var analyzer = sema.Analyzer.init(alloc);
+    const result = try analyzer.analyze(root);
+    const expected = [_]struct { name: []const u8, display: []const u8 }{
+        .{ .name = "result", .display = "(u8, !IntCastError)" },
+        .{ .name = "caught", .display = "u8" },
+        .{ .name = "err", .display = "!IntCastError" },
+        .{ .name = "propagated", .display = "u8" },
+        .{ .name = "defaulted", .display = "u8" },
+        .{ .name = "value", .display = "u8" },
+        .{ .name = "failure", .display = "!IntCastError" },
+        .{ .name = "bits", .display = "@int(3, .unsigned)" },
+    };
+    for (expected) |want| {
+        var found = false;
+        for (result.symbols) |symbol| {
+            if (!std.mem.eql(u8, symbol.name, want.name)) continue;
+            try std.testing.expectEqualStrings(want.display, try symbol.ty.?.displayName(alloc));
+            found = true;
+        }
+        try std.testing.expect(found);
+    }
+}
+
+test "sema: field indices retain concrete types and runtime indices produce views" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\Record :: struct { small: i16; text: string; }
+        \\I :: 0;
+        \\main :: () {
+        \\    r: Record = ---;
+        \\    t := .{ 7, "tuple" };
+        \\    small := @field(r, I + 0);
+        \\    text := @field(t, 1);
+        \\    I := 0;
+        \\    view := @field(r, I);
+        \\    invalid := t[0];
+        \\}
+    ;
+    var parser = try Parser.init(alloc, source);
+    const root = try parser.parse();
+    var analyzer = sema.Analyzer.init(alloc);
+    const result = try analyzer.analyze(root);
+    const expected = [_]struct { name: []const u8, ty: Type }{
+        .{ .name = "small", .ty = Type.s(16) },
+        .{ .name = "text", .ty = .string_type },
+        .{ .name = "view", .ty = .any_type },
+        .{ .name = "invalid", .ty = .unresolved },
+    };
+    for (expected) |want| {
+        var found = false;
+        for (result.symbols) |symbol| {
+            if (!std.mem.eql(u8, symbol.name, want.name) or symbol.kind != .variable) continue;
+            try std.testing.expectEqualDeep(want.ty, symbol.ty.?);
+            found = true;
+        }
+        try std.testing.expect(found);
+    }
+}
+
 // the backtick raw escape must hold in BOTH classifiers. A raw
 // reserved-name type reference (`` `i8 ``) resolves to the user-declared type,
 // while a BARE `i8` stays the builtin int. Sema's `resolveTypeNode` honours

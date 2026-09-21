@@ -236,7 +236,6 @@ pub const Lexer = struct {
                     .{ "@import", Tag.at_import },
                     .{ "@library", Tag.at_library },
                     .{ "@framework", Tag.at_framework },
-                    .{ "@using", Tag.at_using },
                     .{ "@include", Tag.at_include },
                     .{ "@source", Tag.at_source },
                     .{ "@define", Tag.at_define },
@@ -506,7 +505,7 @@ pub const Lexer = struct {
         while (self.index < self.source.len and isDigitOrSep(self.source[self.index])) {
             self.index += 1;
         }
-        // Check for float
+        var tag: Tag = .int_literal;
         if (self.index < self.source.len and self.source[self.index] == '.') {
             // Look ahead: must be followed by a REAL digit (not `.identifier`,
             // and not `_` — so `1_000.method()` doesn't misparse as a float).
@@ -515,10 +514,17 @@ pub const Lexer = struct {
                 while (self.index < self.source.len and isDigitOrSep(self.source[self.index])) {
                     self.index += 1;
                 }
-                return self.makeToken(.float_literal, start, self.index);
+                tag = .float_literal;
             }
         }
-        return self.makeToken(.int_literal, start, self.index);
+        if (self.index < self.source.len and (self.source[self.index] == 'e' or self.source[self.index] == 'E')) {
+            self.index += 1;
+            if (self.index < self.source.len and (self.source[self.index] == '+' or self.source[self.index] == '-')) self.index += 1;
+            if (self.index >= self.source.len or !isDigit(self.source[self.index])) return self.makeToken(.invalid, start, self.index);
+            while (self.index < self.source.len and isDigitOrSep(self.source[self.index])) self.index += 1;
+            tag = .float_literal;
+        }
+        return self.makeToken(tag, start, self.index);
     }
 
     fn lexIdentifier(self: *Lexer, start: u32) Token {

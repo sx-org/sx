@@ -30,9 +30,10 @@ const StatelessInner = struct {
     pub fn resolveInner(self: StatelessInner, node: *const Node) TypeId {
         return resolveAstType(node, self.table, self.facts);
     }
-    pub fn expandTypeSpread(_: StatelessInner, _: *const Node) ?[]TypeId {
-        return null;
+    pub fn expandStructSpread(self: StatelessInner, node: *const Node, _: usize) ?[]const TypeInfo.StructInfo.Field {
+        return structSpreadFields(self.table, self.resolveInner(node.data.spread_expr.operand)) catch null;
     }
+    pub fn recordStructDefaults(_: StatelessInner, _: TypeId, _: []const ?*const Node) void {}
     /// Bare TYPE-NAME twin of `resolveInner`, for callers that hold a name
     /// rather than an AST node (an error-set reference `!Named`). Flat:
     /// registered name → alias → stub, no visibility scoping.
@@ -142,14 +143,15 @@ const StatelessInner = struct {
         return false;
     }
 
-    /// Float-valued leaf for the shared float-expression evaluator — the FLOAT
-    /// twin of `lookupDimName`, routed through the SAME `program_index.moduleConstFloat`
-    /// the stateful body-lowering path uses, so a float-const-leaf dimension
-    /// (`Arr :: [F + 1.5]T`, `F : f64 : 2.5` → len 4) folds to the SAME count on
-    /// the registration-time alias path as on the direct form `a : [F + 1.5]T`
-    /// (unify-or-diverge). Integer / integral-float leaves are already
-    /// resolved by the `evalConstIntExpr` delegation inside `evalConstFloatExpr`;
-    /// this surfaces a non-integral float const so the unified rule rejects it.
+    pub fn untypedNumericLeaf(self: StatelessInner, node: *const Node) ?program_index_mod.UntypedNumericKind {
+        return program_index_mod.moduleUntypedNumericLeaf(self.facts orelse return null, self.table, node);
+    }
+    pub fn floatLeafType(self: StatelessInner, node: *const Node) ?TypeId {
+        return program_index_mod.moduleFloatLeafType(self.facts orelse return null, node);
+    }
+    pub fn adoptFloatValue(_: StatelessInner, value: f64, ty: TypeId, _: ast.Span) f64 {
+        return if (ty == .f32) @as(f32, @floatCast(value)) else value;
+    }
     pub fn lookupFloatName(self: StatelessInner, name: []const u8) ?f64 {
         const facts = self.facts orelse return null;
         return program_index_mod.moduleConstFloat(facts, self.table, name);
@@ -726,61 +728,65 @@ pub fn elseMemberIfLegal(ed: *const ast.EnumDecl, table: *TypeTable, e: TypeInfo
     return table.internString(name);
 }
 
-/// Inline-struct resolution for a FIELD-type position (`x: struct {...}`). Field
-/// type NAMES resolve through the injected `inner` hook (flat `StatelessInner`
-/// from `resolveAstType`, or visibility-aware `*Lowering` from
-/// `resolveTypeWithBindings`). The TOP-LEVEL struct path
-/// (`Lowering.registerStructDecl`) builds its own field list directly via
-/// `self.resolveType` (it also expands `@using` and qualifies `__anon` names),
-/// so it does not route through here.
-pub fn resolveInlineStruct(sd: *const ast.StructDecl, table: *TypeTable, inner: anytype) TypeId {
+pub fn structSpreadFields(table: *TypeTable, ty: TypeId) error{ InvalidOperand, PrivateField }![]const TypeInfo.StructInfo.Field {
+    const info = table.get(ty);
+    if (info != .@"struct") return error.InvalidOperand;
+    for (info.@"struct".fields) |field| {
+        if (field.visibility == .private) return error.PrivateField;
+    }
+    return info.@"struct".fields;
+}
+
+pub const StructLayout = struct {
+    fields: []const TypeInfo.StructInfo.Field,
+    defaults: []const ?*const Node,
+    explicit_members: []const ?usize,
+};
+
+pub fn buildStructLayout(sd: *const ast.StructDecl, table: *TypeTable, inner: anytype) ?StructLayout {
     const alloc = table.alloc;
+    var fields = std.ArrayList(TypeInfo.StructInfo.Field).empty;
+    var defaults = std.ArrayList(?*const Node).empty;
+    var explicit_members = std.ArrayList(?usize).empty;
+    for (sd.field_names, sd.field_types, 0..) |fname, node, i| {
+        if (node.data == .spread_expr) {
+            const spread = inner.expandStructSpread(node, fields.items.len) orelse return null;
+            fields.appendSlice(alloc, spread) catch @panic("out of memory");
+            defaults.appendNTimes(alloc, null, spread.len) catch @panic("out of memory");
+            explicit_members.appendNTimes(alloc, null, spread.len) catch @panic("out of memory");
+            continue;
+        }
+        const name = if (fname.len == 0)
+            std.fmt.allocPrint(alloc, "{d}", .{fields.items.len}) catch @panic("out of memory")
+        else
+            fname;
+        fields.append(alloc, .{
+            .name = table.internString(name),
+            .ty = inner.resolveInner(node),
+            .visibility = if (i < sd.field_visibilities.len) sd.field_visibilities[i] else .public,
+        }) catch @panic("out of memory");
+        defaults.append(alloc, if (i < sd.field_defaults.len) sd.field_defaults[i] else null) catch @panic("out of memory");
+        explicit_members.append(alloc, i) catch @panic("out of memory");
+    }
+    return .{ .fields = fields.items, .defaults = defaults.items, .explicit_members = explicit_members.items };
+}
+
+pub fn resolveInlineStruct(sd: *const ast.StructDecl, table: *TypeTable, inner: anytype) TypeId {
     const name_id = table.internString(sd.name);
 
-    // An anonymous inline decl has no name to key by — every one displays as
-    // `__anon`, so the name-keyed lookup/intern below would collapse
-    // differently-shaped annotations onto whichever shape interned first.
-    // Shape-keyed identity instead: identical shapes unify, distinct shapes
-    // separate.
     const is_anon = std.mem.eql(u8, sd.name, "__anon");
     if (!is_anon) {
         if (table.findByName(name_id)) |existing| return existing;
     }
 
-    var fields = std.ArrayList(TypeInfo.StructInfo.Field).empty;
-    var pos: usize = 0;
-    for (sd.field_names, sd.field_types) |fname, ftype_node| {
-        if (ftype_node.data == .spread_expr) {
-            if (inner.expandTypeSpread(ftype_node)) |tys| {
-                for (tys) |ty| {
-                    const n = std.fmt.allocPrint(alloc, "{d}", .{pos}) catch unreachable;
-                    fields.append(alloc, .{
-                        .name = table.internString(n),
-                        .ty = ty,
-                    }) catch unreachable;
-                    pos += 1;
-                }
-                continue;
-            }
-        }
-        const field_ty = inner.resolveInner(ftype_node);
-        const name = if (fname.len == 0)
-            table.internString(std.fmt.allocPrint(alloc, "{d}", .{pos}) catch unreachable)
-        else
-            table.internString(fname);
-        fields.append(alloc, .{
-            .name = name,
-            .ty = field_ty,
-        }) catch unreachable;
-        pos += 1;
-    }
+    const layout = buildStructLayout(sd, table, inner) orelse return .unresolved;
     const info: TypeInfo = .{ .@"struct" = .{
         .name = name_id,
-        .fields = fields.items,
+        .fields = layout.fields,
     } };
-    if (is_anon) return table.internAnonShape(info);
-    const id = table.internNominal(info, 0);
-    table.updatePreservingKey(id, info);
+    const id = if (is_anon) table.internAnonStructDefaults(info, layout.defaults) else table.internNominal(info, 0);
+    if (!is_anon) table.updatePreservingKey(id, info);
+    inner.recordStructDefaults(id, layout.defaults);
     return id;
 }
 

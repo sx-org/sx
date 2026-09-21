@@ -1,0 +1,7 @@
+A :: struct { pz: i64; }
+count: i64 = 0;
+next :: () -> i64 {
+    count += 1;
+    count
+}
+Value :: A{pz = next()};

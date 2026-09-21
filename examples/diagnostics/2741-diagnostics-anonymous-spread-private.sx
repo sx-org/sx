@@ -1,0 +1,5 @@
+Box :: struct { x: i32; private secret: i32; }
+main :: () {
+    box := Box{x = 1, secret = 2};
+    copy := .{..box};
+}

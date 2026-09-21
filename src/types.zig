@@ -38,6 +38,7 @@ pub const Type = union(enum) {
     optional_type: OptionalTypeInfo,
     meta_type: MetaTypeInfo,
     tuple_type: TupleTypeInfo,
+    error_type: []const u8,
     /// Type resolution failed (sema couldn't infer/resolve). A dedicated
     /// sentinel — never a legitimate type — so callers can't mistake it for a
     /// real result the way a fabricated `s(64)` would be. Mirrors
@@ -114,6 +115,18 @@ pub const Type = union(enum) {
         field_types: []const Type,
     };
 
+    pub fn failableSuccess(self: Type) ?Type {
+        if (self == .error_type) return .void_type;
+        if (self != .tuple_type) return null;
+        const fields = self.tuple_type.field_types;
+        if (fields.len == 0 or fields[fields.len - 1] != .error_type) return null;
+        if (fields.len == 2) return fields[0];
+        return .{ .tuple_type = .{
+            .field_types = fields[0 .. fields.len - 1],
+            .field_names = if (self.tuple_type.field_names) |names| names[0 .. names.len - 1] else null,
+        } };
+    }
+
     // Convenience constructors
     pub fn s(width: u8) Type {
         return .{ .signed = width };
@@ -143,11 +156,17 @@ pub const Type = union(enum) {
             'a' => if (std.mem.eql(u8, name, "any")) .any_type else null,
             'v' => if (std.mem.eql(u8, name, "void")) .void_type else null,
             '[' => {
-                // Many-pointer: [*]T
-                if (name.len >= 4 and name[1] == '*' and name[2] == ']') {
-                    return .{ .many_pointer_type = .{ .element_name = name[3..], .is_raw = false } };
-                }
-                return null;
+                const end = std.mem.indexOfScalar(u8, name, ']') orelse return null;
+                if (end + 1 == name.len) return null;
+                const element = name[end + 1 ..];
+                var parts = std.mem.splitScalar(u8, name[1..end], ':');
+                const shape = parts.next().?;
+                const sentinel: ?i64 = if (parts.next()) |value| std.fmt.parseInt(i64, value, 10) catch return null else null;
+                if (parts.next() != null) return null;
+                if (std.mem.eql(u8, shape, "*")) return .{ .many_pointer_type = .{ .element_name = element, .is_raw = false, .sentinel = sentinel } };
+                if (shape.len == 0) return .{ .slice_type = .{ .element_name = element, .is_raw = false, .sentinel = sentinel } };
+                const length: ?u32 = if (std.mem.eql(u8, shape, "_")) null else std.fmt.parseInt(u32, shape, 10) catch return null;
+                return .{ .array_type = .{ .element_name = element, .length = length, .is_raw = false, .sentinel = sentinel } };
             },
             '*' => if (name.len >= 2) .{ .pointer_type = .{ .pointee_name = name[1..], .is_raw = false } } else null,
             '@' => {
@@ -265,11 +284,15 @@ pub const Type = union(enum) {
     pub fn displayName(self: Type, allocator: std.mem.Allocator) ![]const u8 {
         return switch (self) {
             .signed => |w| {
+                if (w != 8 and w != 16 and w != 32 and w != 64)
+                    return fmtAlloc(allocator, "@int({d}, .signed)", .{w});
                 var buf: [4]u8 = undefined;
                 const result = std.fmt.bufPrint(&buf, "i{d}", .{w}) catch unreachable;
                 return try allocator.dupe(u8, result);
             },
             .unsigned => |w| {
+                if (w != 8 and w != 16 and w != 32 and w != 64)
+                    return fmtAlloc(allocator, "@int({d}, .unsigned)", .{w});
                 var buf: [4]u8 = undefined;
                 const result = std.fmt.bufPrint(&buf, "u{d}", .{w}) catch unreachable;
                 return try allocator.dupe(u8, result);
@@ -284,6 +307,7 @@ pub const Type = union(enum) {
             .usize_type => "usize",
             .isize_type => "isize",
             .unresolved => "<unresolved>",
+            .error_type => |name| fmtAlloc(allocator, "!{s}", .{name}),
             .enum_type => |name| name,
             .struct_type => |name| name,
             .union_type => |name| name,

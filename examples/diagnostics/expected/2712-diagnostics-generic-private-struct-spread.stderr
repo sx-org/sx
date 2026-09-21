@@ -1,0 +1,5 @@
+error: cannot spread a struct containing a private field
+  --> examples/diagnostics/2712-diagnostics-generic-private-struct-spread.sx:2:29
+   |
+ 2 | Wrap :: struct ($T: Type) { ..T; value: i32; }
+   |                             ^^^

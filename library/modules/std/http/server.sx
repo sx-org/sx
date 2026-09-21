@@ -584,7 +584,7 @@ BodyChan :: struct {
 // The BodyReadFn the server wires into a streamed request's Request
 // (bodyReadCtx = the *BodyChan).
 bodyChanRead :: (ctx: usize, dst: [*]u8, cap: i64) -> i64 {
-    ch : *BodyChan = ctx.(*BodyChan);
+    ch : *BodyChan = @reinterpret(*BodyChan, ctx);
     return ch.read(dst, cap);
 }
 
@@ -1000,7 +1000,7 @@ prepareContentEncoding :: (req: *Request, resp: *Response, enabled: bool, minSiz
 // mutex is uncontended here (single thread) — kept for field-protocol
 // uniformity with the pool path, not for exclusion.
 bodyFiberRead :: (ctx: usize, dst: [*]u8, cap: i64) -> i64 {
-    job : *HandlerJob = ctx.(*HandlerJob);
+    job : *HandlerJob = @reinterpret(*HandlerJob, ctx);
     ch := job.chan;
     if cap <= 0 { return 0; }
     while true {
@@ -1035,7 +1035,7 @@ bodyFiberRead :: (ctx: usize, dst: [*]u8, cap: i64) -> i64 {
 // allocator; serialize into job-owned bytes; queue the completion; wake
 // the loop.
 runHandlerJob :: (arg: usize) {
-    job : *HandlerJob = arg.(*HandlerJob);
+    job : *HandlerJob = @reinterpret(*HandlerJob, arg);
     resp : Response = .{};
     arena := Arena.init(job.alloc, 65536);
     ob : OutBytes = .{};
@@ -1058,7 +1058,7 @@ runHandlerJob :: (arg: usize) {
         // wire the streaming reader into the request the handler sees.
         if job.chan != null {
             job.req.bodyReadFn = bodyChanRead;
-            job.req.bodyReadCtx = job.chan.(usize);
+            job.req.bodyReadCtx = @reinterpret(usize, job.chan);
         }
         // a HEAD response never carries body bytes; a 204/304 never
         // carries a body regardless of method — and a no-body status wins
@@ -1194,7 +1194,7 @@ runHandlerJob :: (arg: usize) {
 // stack in finalizeFibers, never on this bounded fiber stack). The job is
 // freed here; the runner reaps the fiber (env + stack) after this returns.
 runFiberJob :: (arg: usize) {
-    job : *HandlerJob = arg.(*HandlerJob);
+    job : *HandlerJob = @reinterpret(*HandlerJob, arg);
     srv := job.srv;
     resp : Response = .{};
     arena := Arena.init(job.alloc, 65536);
@@ -1203,7 +1203,7 @@ runFiberJob :: (arg: usize) {
         h := job.handler;
         if job.chan != null {
             job.req.bodyReadFn = bodyFiberRead;
-            job.req.bodyReadCtx = job.(usize);
+            job.req.bodyReadCtx = @reinterpret(usize, job);
         }
         isHead := asciiIeq(job.req.method, "head");
         h(*job.req, *resp, job.appCtx);
@@ -1211,7 +1211,7 @@ runFiberJob :: (arg: usize) {
         encoding := prepareContentEncoding(*job.req, *resp,
             job.compressResponses, job.compressMinSize,
             job.compressLevel, context.allocator);
-        c := *srv.conns[job.slot];
+        c: *Conn = *srv.conns[job.slot];
         // Same-thread completion, gen-checked exactly like a pool
         // completion: a closed/recycled slot (eviction, disconnect,
         // Server.close) makes this response moot — skip it entirely.
@@ -1508,7 +1508,7 @@ Server :: struct {
     // entry at-or-before it (an EXTENSION never pushes — the earlier
     // entry re-arms itself from the current deadline when it pops).
     armSlot :: (self: *Server, slot: i64, dl: i64) {
-        c := *self.conns[slot];
+        c: *Conn = *self.conns[slot];
         if c.hqDeadline == 0 or dl < c.hqDeadline {
             self.heapPush(dl, slot, c.gen);
             c.hqDeadline = dl;
@@ -1519,7 +1519,7 @@ Server :: struct {
     // arm the heap. EVERY c.deadline write goes through here — a deadline
     // the heap never hears about would make its eviction unbounded-late.
     setDeadline :: (self: *Server, slot: i64, ms: i64) {
-        c := *self.conns[slot];
+        c: *Conn = *self.conns[slot];
         c.deadline = event.deadlineIn(ms);
         self.armSlot(slot, c.deadline);
     }
@@ -1529,7 +1529,7 @@ Server :: struct {
     // only (the delivery deadline is suspended while the worker owns the
     // request); every other active state is bounded by c.deadline.
     relevantDeadline :: (self: *Server, slot: i64) -> i64 {
-        c := *self.conns[slot];
+        c: *Conn = *self.conns[slot];
         if c.state == CONN_FREE { return 0; }
         if c.state == CONN_HANDLING { return c.handlerDeadline; }
         return c.deadline;
@@ -1712,7 +1712,7 @@ Server :: struct {
             ps.done = oa.alloc(Completion, ps.doneCap).ptr;
             ps.doneLen = 0;
             // one pumping stream channel per worker, at most.
-            ps.ochans = oa.alloc(usize, cfg.threadPoolCount).ptr;
+            ps.ochans = oa.alloc(*OutChan, cfg.threadPoolCount).ptr;
             ps.ochansLen = 0;
             // Capture the loop AFTER addWake (registered above): on epoll,
             // addWake lazily creates wakeFd, so a copy taken earlier would
@@ -1802,7 +1802,7 @@ Server :: struct {
         }
         i = 0;
         while i < self.cfg.maxConn {
-            c := *self.conns[i];
+            c: *Conn = *self.conns[i];
             if c.readBuf != null {
                 self.ownAlloc.deallocBytes(c.readBuf);
                 c.readBuf = null;
@@ -1873,7 +1873,7 @@ Server :: struct {
     }
 
     connClose :: (self: *Server, slot: i64) {
-        c := *self.conns[slot];
+        c: *Conn = *self.conns[slot];
         // push onto the free list exactly once per FREE transition
         // (a re-close of an already-free slot — close()'s teardown sweep
         // tolerates them — must not corrupt the list with a cycle).
@@ -2016,7 +2016,7 @@ Server :: struct {
                 continue;
             }
             slot : i64 = ev.udata.(i64);
-            c := *self.conns[slot];
+            c: *Conn = *self.conns[slot];
             if c.state == CONN_FREE or c.fd != ev.fd { continue; }   // stale event for a recycled slot
             if c.state == CONN_HANDLING { continue; }   // buffer frozen until the worker finishes
             if c.state == CONN_BODY {                   // streaming body inbound
@@ -2089,7 +2089,7 @@ Server :: struct {
         if self.fiberDoneN == 0 { return; }
         i : i64 = 0;
         while i < self.cfg.maxConn {
-            c := *self.conns[i];
+            c: *Conn = *self.conns[i];
             if c.fiberDone {
                 c.fiberDone = false;
                 self.fiberDoneN -= 1;
@@ -2132,7 +2132,7 @@ Server :: struct {
     sweepDeadlines :: (self: *Server) {
         while self.dheapLen > 0 and event.expired(self.dheap[0].deadline) {
             e := self.heapPop();
-            c := *self.conns[e.slot];
+            c: *Conn = *self.conns[e.slot];
             if c.gen != e.gen or c.state == CONN_FREE { continue; }   // recycled
             if e.deadline == c.hqDeadline { c.hqDeadline = 0; }     // its live entry
             rel := self.relevantDeadline(e.slot);
@@ -2350,7 +2350,7 @@ Server :: struct {
                 self.emit(EventKind.ACCEPT_FAULT, -1, 0);
                 return;
             }
-            c := *self.conns[slot];
+            c: *Conn = *self.conns[slot];
             if c.readBuf == null {
                 initCap : i64 = READ_BUF_INITIAL;
                 if initCap > self.cfg.readBufCap { initCap = self.cfg.readBufCap; }
@@ -2402,7 +2402,7 @@ Server :: struct {
     // buffered; Closed/Fatal drops the connection. The request deadline (set at
     // accept) bounds a stalled handshake — the tick eviction loop closes it.
     driveHandshake :: (self: *Server, slot: i64) {
-        c := *self.conns[slot];
+        c: *Conn = *self.conns[slot];
         step := c.tls.handshake();
         if step == TlsStep.WantWrite {
             if !c.writeArmed {
@@ -2442,7 +2442,7 @@ Server :: struct {
     // in the same critical section as the shortfall, so the worker's next
     // draining read wakes the loop → resumeBodyPumps.
     bodyPark :: (self: *Server, slot: i64) {
-        c := *self.conns[slot];
+        c: *Conn = *self.conns[slot];
         if c.bodyParked { return; }
         self.loop.delRead(c.fd);
         c.bodyParked = true;
@@ -2455,7 +2455,7 @@ Server :: struct {
     // handler's budget starts at BODY-COMPLETE (the upload itself was
     // bounded by the stall-refreshed delivery deadline, never in total).
     bodyEof :: (self: *Server, slot: i64) {
-        c := *self.conns[slot];
+        c: *Conn = *self.conns[slot];
         c.bchan.finish(false);
         // a fiber parked in readBody is woken by state changes too
         // (this eof may arrive with no byte progress this pump — e.g. the
@@ -2492,7 +2492,7 @@ Server :: struct {
     // wire status is whatever the handler responds (a second response
     // cannot be spliced into an owed completion).
     bodyAbort :: (self: *Server, slot: i64) {
-        c := *self.conns[slot];
+        c: *Conn = *self.conns[slot];
         if c.bodyParked {
             c.bodyParked = false;
             self.bodyParkedN -= 1;
@@ -2524,7 +2524,7 @@ Server :: struct {
     // with bytes still pending. On end-of-body: bodyEof (leftover bytes —
     // the next pipelined request — stay buffered for the completion drain).
     pumpBody :: (self: *Server, slot: i64) {
-        c := *self.conns[slot];
+        c: *Conn = *self.conns[slot];
         progressed := false;
         while c.bodyMode != 0 {
             if c.bodyMode == 1 {
@@ -2683,7 +2683,7 @@ Server :: struct {
     // wakes) but never parses requests: the front of readBuf is body
     // framing until end-of-body.
     bodyReady :: (self: *Server, slot: i64) {
-        c := *self.conns[slot];
+        c: *Conn = *self.conns[slot];
         while true {
             self.pumpBody(slot);
             if c.state != CONN_BODY { return; }   // end-of-body → CONN_HANDLING
@@ -2719,7 +2719,7 @@ Server :: struct {
         if self.bodyParkedN == 0 { return; }
         i : i64 = 0;
         while i < self.cfg.maxConn {
-            c := *self.conns[i];
+            c: *Conn = *self.conns[i];
             if c.state == CONN_BODY and c.bodyParked {
                 c.bodyParked = false;
                 self.bodyParkedN -= 1;
@@ -2748,7 +2748,7 @@ Server :: struct {
         if self.streamWaitingN == 0 { return; }
         i : i64 = 0;
         while i < self.cfg.maxConn {
-            c := *self.conns[i];
+            c: *Conn = *self.conns[i];
             if c.state == CONN_WRITING and c.streamWaiting {
                 c.streamWaiting = false;
                 self.streamWaitingN -= 1;
@@ -2763,7 +2763,7 @@ Server :: struct {
     // Grow the slot's read buffer to at least `target` (0 = double),
     // never past cfg.readBufCap. False when already at the limit.
     growReadBuf :: (self: *Server, slot: i64, target: i64) -> bool {
-        c := *self.conns[slot];
+        c: *Conn = *self.conns[slot];
         want := if target > 0 then target else c.readCap * 2;
         if want <= c.readCap { return true; }
         if want > self.cfg.readBufCap { want = self.cfg.readBufCap; }
@@ -2804,7 +2804,7 @@ Server :: struct {
     //     want would spin one futile retry per tick. The always-armed read
     //     watch delivers the retry; the ready loop routes it to writeMore.
     tlsRdWantClear :: (self: *Server, slot: i64) {
-        c := *self.conns[slot];
+        c: *Conn = *self.conns[slot];
         if !c.tlsRdWantWrite { return; }
         c.tlsRdWantWrite = false;
         if c.writeArmed and c.state != CONN_WRITING {
@@ -2824,7 +2824,7 @@ Server :: struct {
     // still holds the pending record, so the want re-establishes itself on
     // the first connRead/connWrite after the slot returns to an I/O state.
     tlsWantDrop :: (self: *Server, slot: i64) {
-        c := *self.conns[slot];
+        c: *Conn = *self.conns[slot];
         c.tlsWrWantRead = false;
         if !c.tlsRdWantWrite { return; }
         c.tlsRdWantWrite = false;
@@ -2835,7 +2835,7 @@ Server :: struct {
     }
 
     connRead :: (self: *Server, slot: i64, buf: [*]u8, cap: i64) -> (i64, !) {
-        c := *self.conns[slot];
+        c: *Conn = *self.conns[slot];
         if c.tls != null {
             n, step := c.tls.read(buf, cap);
             if step == TlsStep.Done {
@@ -2870,7 +2870,7 @@ Server :: struct {
     }
 
     connWrite :: (self: *Server, slot: i64, buf: [*]u8, len: i64) -> (i64, !) {
-        c := *self.conns[slot];
+        c: *Conn = *self.conns[slot];
         if c.tls != null {
             n, step := c.tls.write(buf, len);
             if step == TlsStep.Done {
@@ -2914,7 +2914,7 @@ Server :: struct {
     // stream is unrecoverable, so treat it as a write fault and close.
     // Returns false when the connection was closed.
     sendContinue :: (self: *Server, slot: i64) -> bool {
-        c := *self.conns[slot];
+        c: *Conn = *self.conns[slot];
         if c.contSent { return true; }
         c.contSent = true;
         msg := "HTTP/1.1 100 Continue\r\n\r\n";
@@ -2934,7 +2934,7 @@ Server :: struct {
     }
 
     readMore :: (self: *Server, slot: i64) {
-        c := *self.conns[slot];
+        c: *Conn = *self.conns[slot];
         if c.state == CONN_KEEPALIVE {
             c.state = CONN_READING;
             self.setDeadline(slot, self.cfg.timeoutRequestMs);
@@ -3012,7 +3012,7 @@ Server :: struct {
     // neither a '%' nor a dot segment (the common case — one scan).
     // False = the path was rejected (400 sent, connection closing).
     canonPath :: (self: *Server, slot: i64, req: *Request, pathOff: i64, pathStaticRoot: bool) -> bool {
-        c := *self.conns[slot];
+        c: *Conn = *self.conns[slot];
         if pathStaticRoot or (req.path.len == 1 and req.path[0] == '*') { return true; }
         qoff := 0;   // offset of '?' (or path end) within the target view
         while qoff < req.path.len and req.path[qoff] != '?' { qoff += 1; }
@@ -3055,7 +3055,7 @@ Server :: struct {
     // Parse one request off the front of the buffer; false = incomplete
     // (need more bytes) or the connection left the READING state.
     tryServeOne :: (self: *Server, slot: i64) -> bool {
-        c := *self.conns[slot];
+        c: *Conn = *self.conns[slot];
         buf := string{ ptr = c.readBuf, len = c.readLen };
 
         // headers complete? Resume the terminator scan where the last
@@ -3422,7 +3422,7 @@ Server :: struct {
             // pool path, minus the body — the channel IS the body).
             hdrTotal := he + 4;
             job : *HandlerJob = self.ownAlloc.allocBytes(@sizeOf(HandlerJob) + hdrTotal).(*HandlerJob);
-            jb : [*]u8 = job.([*]u8);
+            jb : [*]u8 = @reinterpret([*]u8, job);
             raw : [*]u8 = *jb[@sizeOf(HandlerJob)];
             clib.memcpy(raw, c.readBuf, hdrTotal);
             jreq := req;
@@ -3464,9 +3464,9 @@ Server :: struct {
                 // runs at this tick's drive). Its readBody suspends on an
                 // empty channel; the pump wakes it. Completion is the
                 // fiber tail + finalizeFibers.
-                c.fiberH = self.cfg.fibers.spawn(runFiberJob.(*void), job);
+                c.fiberH = self.cfg.fibers.spawn(@reinterpret(*void, runFiberJob), job);
                 self.fiberSpawned = true;   // tick re-drives until quiescent
-            } else if !self.ps.pool.submit(runHandlerJob, job.(usize)) {
+            } else if !self.ps.pool.submit(runHandlerJob, @reinterpret(usize, job)) {
                 // Backlog full: shed 503 — undo the dispatch (the worker
                 // never saw the job; both channel refs die here).
                 self.ownAlloc.deallocBytes(job);
@@ -3615,7 +3615,7 @@ Server :: struct {
             // absolute-form) is a static literal, valid on any thread — no
             // rebuild.
             job : *HandlerJob = self.ownAlloc.allocBytes(@sizeOf(HandlerJob) + total).(*HandlerJob);
-            jb : [*]u8 = job.([*]u8);
+            jb : [*]u8 = @reinterpret([*]u8, job);
             raw : [*]u8 = *jb[@sizeOf(HandlerJob)];
             clib.memcpy(raw, c.readBuf, total);
             jreq := req;
@@ -3645,7 +3645,7 @@ Server :: struct {
                 // cannot preempt a fiber it is hosting (inline semantics;
                 // Request.deadlineMs stays the advisory budget).
                 c.handlerDeadline = 0;
-                c.fiberH = self.cfg.fibers.spawn(runFiberJob.(*void), job);
+                c.fiberH = self.cfg.fibers.spawn(@reinterpret(*void, runFiberJob), job);
                 self.fiberSpawned = true;   // tick re-drives until quiescent
             } else {
                 // Arm the handler deadline as the slot enters
@@ -3659,7 +3659,7 @@ Server :: struct {
                 } else {
                     c.handlerDeadline = 0;
                 }
-                if !self.ps.pool.submit(runHandlerJob, job.(usize)) {
+                if !self.ps.pool.submit(runHandlerJob, @reinterpret(usize, job)) {
                     self.ownAlloc.deallocBytes(job);
                     c.state = CONN_READING;
                     c.handlerDeadline = 0;
@@ -3726,7 +3726,7 @@ Server :: struct {
     // bytes (rounded up to a 4 KB multiple; grown via ownAlloc, retained
     // across requests and connections, freed only by Server.close).
     ensureWbuf :: (self: *Server, slot: i64, need: i64) {
-        c := *self.conns[slot];
+        c: *Conn = *self.conns[slot];
         if c.wbufCap >= need { return; }
         want := ((need + 4095) / 4096) * 4096;
         if c.wbuf != null { self.ownAlloc.deallocBytes(c.wbuf); }
@@ -3735,7 +3735,7 @@ Server :: struct {
     }
 
     startStream :: (self: *Server, slot: i64, resp: *Response, keep: bool, encoding: Encoding) -> bool {
-        c := *self.conns[slot];
+        c: *Conn = *self.conns[slot];
         encoded : *EncodedProducer = null;
         if encoding != .identity {
             encoded = createEncodedProducer(encoding,
@@ -3782,7 +3782,7 @@ Server :: struct {
     // the inline paths serialize into the slot's persistent wbuf
     // (outOwned = false) — zero per-response allocations on the fast path.
     serializeResponse :: (self: *Server, slot: i64, resp: *Response, keep: bool, headOnly: bool, encoding: Encoding) {
-        c := *self.conns[slot];
+        c: *Conn = *self.conns[slot];
         noBody := resp.status == 204 or resp.status == 304;
         if resp.streamed and resp.producer != null and !headOnly and !noBody {
             if self.startStream(slot, resp, keep, encoding) { return; }
@@ -3844,7 +3844,7 @@ Server :: struct {
         while i < n {
             done := batch[i];
             i += 1;
-            c := *self.conns[done.slot];
+            c: *Conn = *self.conns[done.slot];
             if (c.state != CONN_HANDLING and c.state != CONN_BODY) or c.gen != done.gen {
                 if done.out.buf != null { self.ownAlloc.deallocBytes(done.out.buf); }
                 // the conn died before attach — abort the feeder (the
@@ -3982,7 +3982,7 @@ Server :: struct {
     // Returns true iff something was staged. Memory is bounded: outBuf is
     // one STREAM_BUF_CAP scratch reused every refill.
     streamRefill :: (self: *Server, slot: i64) -> i64 {
-        c := *self.conns[slot];
+        c: *Conn = *self.conns[slot];
         if c.streamDone { return 0; }
         // Stage the chunk header room at the front, data after it, then the
         // trailing CRLF — but the header length is variable (hex digits), so
@@ -4056,7 +4056,7 @@ Server :: struct {
     }
 
     writeMore :: (self: *Server, slot: i64) {
-        c := *self.conns[slot];
+        c: *Conn = *self.conns[slot];
         while true {
             while c.outSent < c.outLen {
                 nq, we := self.connWrite(slot, *c.outBuf[c.outSent], c.outLen - c.outSent);
@@ -4171,7 +4171,7 @@ Server :: struct {
     // EOF or the linger deadline. The slot owes nothing — beginStop and
     // the force-close path may drop it at any time.
     beginLinger :: (self: *Server, slot: i64) {
-        c := *self.conns[slot];
+        c: *Conn = *self.conns[slot];
         // Linger discards RAW bytes — any pending TLS
         // want is moot, and a surviving cross-armed write watch would spin
         // against the CONN_LINGER arm (which ignores writable) until the
@@ -4196,7 +4196,7 @@ Server :: struct {
     // Discard inbound bytes on a lingering conn. EOF (or any read fault)
     // ends the linger — the client has seen our FIN + response by then.
     lingerDrain :: (self: *Server, slot: i64) {
-        c := *self.conns[slot];
+        c: *Conn = *self.conns[slot];
         scratch : [4096]u8 = ---;
         while true {
             nq, re := socket.readNb(c.fd, *scratch[0], 4096);

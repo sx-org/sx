@@ -28,25 +28,25 @@ error: array length 20 does not fit the @int(4, .unsigned) length word of '@Slic
 25 |     takeNib(mid);
    |     ^^^^^^^^^^^^
 
-error: integer literal 300 does not fit in u8 (range 0..255) — use an explicit `xx` / `.(T)` to truncate
+error: integer literal 300 does not fit in u8 (range 0..255) — use an explicit `.(u8)` to truncate
   --> examples/diagnostics/2154-diagnostics-slice-length-word.sx:29:13
    |
 29 |     t.len = 300;
    |             ^^^
 
-error: integer literal 300 does not fit in u8 (range 0..255) — use an explicit `xx` / `.(T)` to truncate
+error: integer literal 300 does not fit in u8 (range 0..255) — use an explicit `.(u8)` to truncate
   --> examples/diagnostics/2154-diagnostics-slice-length-word.sx:30:14
    |
 30 |     t.len += 300;
    |              ^^^
 
-error: integer literal 300 does not fit in u8 (range 0..255) — use an explicit `xx` / `.(T)` to truncate
+error: integer literal 300 does not fit in u8 (range 0..255) — use an explicit `.(u8)` to truncate
   --> examples/diagnostics/2154-diagnostics-slice-length-word.sx:31:14
    |
 31 |     t.len -= 300;
    |              ^^^
 
-error: integer literal 300 does not fit in u8 (range 0..255) — use an explicit `xx` / `.(T)` to truncate
+error: integer literal 300 does not fit in u8 (range 0..255) — use an explicit `.(u8)` to truncate
   --> examples/diagnostics/2154-diagnostics-slice-length-word.sx:32:13
    |
 32 |     t.len = 200 + 100;

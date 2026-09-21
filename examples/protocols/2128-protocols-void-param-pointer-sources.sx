@@ -10,10 +10,10 @@ Take :: interface {
 
 Sink :: struct { seen: usize = 0; }
 impl Take for Sink {
-    take :: (self: *Sink, ptr: *void) { self.seen = xx ptr; }
+    take :: (self: *Sink, ptr: *void) { self.seen = @reinterpret(usize, ptr); }
 }
 
-plain :: (ptr: *void) -> usize { return xx ptr; }
+plain :: (ptr: *void) -> usize { return @reinterpret(usize, ptr); }
 
 main :: () {
     a := context.allocator;
@@ -21,9 +21,9 @@ main :: () {
     s : Sink = .{};
     t : Take = s;
 
-    many : [*]u8 = xx a.allocBytes(8);
-    truth : usize = xx many;
-    one : *u8 = xx many;
+    many : [*]u8 = a.allocBytes(8);
+    truth : usize = @reinterpret(usize, many);
+    one : *u8 = many;
     raw : *void = many;
 
     print("plain {}\n", plain(many) == truth);
@@ -38,7 +38,7 @@ main :: () {
     // A non-pointer argument still crosses as the address of its slot.
     n : i64 = 42;
     t.take(n);
-    slot : *i64 = xx s.seen;
+    slot : *i64 = @reinterpret(*i64, s.seen);
     print("scalar {}\n", slot.* == 42);
 
     a.deallocBytes(raw);

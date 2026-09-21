@@ -42,9 +42,9 @@ tapFrame :: () {
 
     if !gLoaded {
         // Cache the GL fn-ptrs we use beyond what modules/ffi/opengl.sx loads.
-        glEnable_  = xx iosGlProc("glEnable");
-        glDisable_ = xx iosGlProc("glDisable");
-        glScissor_ = xx iosGlProc("glScissor");
+        glEnable_  = @reinterpret((u32) -> void, iosGlProc("glEnable"));
+        glDisable_ = @reinterpret((u32) -> void, iosGlProc("glDisable"));
+        glScissor_ = @reinterpret((i32, i32, i32, i32) -> void, iosGlProc("glScissor"));
         gLoaded = true;
     }
 
@@ -94,7 +94,7 @@ main :: () -> void {
     // iOS-only example (see the build+run header). The host seam gates
     // here — uikit.sx itself carries no per-function OS guards.
     inline if @host.os != .ios { return; }
-    plat : *UIKitPlatform = xx c.libcMalloc(@sizeOf(UIKitPlatform));
+    plat : *UIKitPlatform = c.libcMalloc(@sizeOf(UIKitPlatform));
     plat.init("SxUIKitPlatform", 0, 0);
     uikitAppRun(plat, tapFrame);
 }

@@ -1,0 +1,9 @@
+@import "modules/std.sx";
+
+bad :: (n: i64) -> u8 {
+    return @intCast(u8, n) or 7;
+}
+
+main :: () {
+    print("{}\n", bad(300));
+}

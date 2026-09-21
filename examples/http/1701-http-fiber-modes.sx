@@ -28,7 +28,7 @@ ChunkyState :: struct {
 }
 
 producer :: (ctx: usize, offset: i64, dst: [*]u8, dstCap: i64) -> i64 {
-    st : *ChunkyState = xx ctx;
+    st : *ChunkyState = @reinterpret(*ChunkyState, ctx);
     left := st.total - offset;
     if left <= 0 { return 0; }
     n := if dstCap < left then dstCap else left;
@@ -66,8 +66,8 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
         return;
     }
     if req.path == "/chunky" {
-        st : *ChunkyState = xx ctx;   // caller-owned (main's stack)
-        resp.stream(producer, xx st);
+        st : *ChunkyState = @reinterpret(*ChunkyState, ctx);   // caller-owned (main's stack)
+        resp.stream(producer, @reinterpret(usize, st));
         return;
     }
     resp.body = "hello";   // GET or HEAD /hello
@@ -216,7 +216,7 @@ main :: () -> i32 {
 
     push .{ allocator = gpa } {
         cap : i64 = 131072;   // 128 KB — the chunked body + framing + heads
-        rbuf : [*]u8 = xx context.allocator.allocBytes(cap);
+        rbuf : [*]u8 = context.allocator.allocBytes(cap);
 
         runner := fs.SchedRunner.init();
         cfg : http.Config = .{
@@ -227,11 +227,11 @@ main :: () -> i32 {
             maxConn = 4,
             fibers = runner,          // fiber mode, ACCUMULATE bodies
         };
-        srv, se := http.Server.init(cfg, route, xx *chunky);
+        srv, se := http.Server.init(cfg, route, @reinterpret(usize, *chunky));
         if se { print("init failed\n"); return 1; }
 
         // ── case 1: accumulate-fiber body + readBody cursor ──────────
-        body : [*]u8 = xx context.allocator.allocBytes(SUM_LEN);
+        body : [*]u8 = context.allocator.allocBytes(SUM_LEN);
         sum : i64 = 0;
         i : i64 = 0;
         while i < SUM_LEN {

@@ -114,7 +114,7 @@ main :: () -> i32 {
     // pure same-set forward
     eq := checkSame(-1);
     if eq != MyErr.Boom { return 13; }
-    if checkSame(1) { return 15; }
+    checkSame(1) catch { return 15; };
     print("pure same ok\n");
 
     // tie-break: value tuple with an error-set-typed slot is the value list

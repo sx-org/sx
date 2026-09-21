@@ -332,7 +332,7 @@
         },
         {
           "name": "constant.numeric.float.sx",
-          "match": "\\b[0-9][0-9_]*\\.[0-9][0-9_]*"
+          "match": "\\b[0-9][0-9_]*(?:\\.[0-9][0-9_]*(?:[eE][+-]?[0-9][0-9_]*)?|[eE][+-]?[0-9][0-9_]*)"
         },
         {
           "name": "constant.numeric.integer.sx",

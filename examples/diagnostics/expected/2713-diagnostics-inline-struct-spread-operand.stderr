@@ -1,0 +1,5 @@
+error: struct member spread requires a pack or struct type
+  --> examples/diagnostics/2713-diagnostics-inline-struct-spread-operand.sx:1:27
+   |
+ 1 | main :: () { v : struct { ..i32; } = ---; }
+   |                           ^^^^^

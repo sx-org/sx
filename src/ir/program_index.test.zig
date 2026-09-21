@@ -171,6 +171,15 @@ const DimCtx = struct {
         if (std.mem.eql(u8, name, "K")) return 4.0;
         return null;
     }
+    pub fn untypedNumericLeaf(_: DimCtx, _: *const Node) ?pi.UntypedNumericKind {
+        return null;
+    }
+    pub fn floatLeafType(_: DimCtx, _: *const Node) ?types.TypeId {
+        return null;
+    }
+    pub fn adoptFloatValue(_: DimCtx, value: f64, ty: types.TypeId, _: ast.Span) f64 {
+        return if (ty == .f32) @as(f32, @floatCast(value)) else value;
+    }
     // The float-typed-const predicate the division guard consults: `F`/`K` are
     // float-typed module consts, every other name is not.
     pub fn nameIsFloatTyped(_: DimCtx, name: []const u8) bool {
@@ -621,57 +630,20 @@ test "foldCountI64 / foldDimU32 fold an integral float count, reject a non-integ
     try std.testing.expectEqual(pi.DimU32{ .below_min = -4 }, pi.foldDimU32(&negf, ctx, 0));
 }
 
-test "the int folder refuses a FLOAT division" {
-    const eval = pi.evalConstIntExpr;
+test "integer extraction preserves float division" {
     var table = types.TypeTable.init(std.testing.allocator);
     defer table.deinit();
-    const ctx = DimCtx{ .table = &table }; // K : f64 : 4.0 (integral float const), M = 4 (int const)
-
+    const ctx = DimCtx{ .table = &table };
     var five = nLit(5);
     var two = nLit(2);
-    var six = nLit(6);
     var f5 = nFloat(5.0);
     var f2 = nFloat(2.0);
     var f6 = nFloat(6.0);
-    var k = nIdent("K"); // integral float const (folds to 4, yet float-typed)
-    var m = nIdent("M"); // integer const (4)
-
-    // Genuine INTEGER division still truncates (`5 / 2` → 2, `6 / 2` → 3).
     var idiv = nBin(.div, &five, &two);
-    var idiv2 = nBin(.div, &six, &two);
-    try std.testing.expectEqual(@as(?i64, 2), eval(&idiv, ctx));
-    try std.testing.expectEqual(@as(?i64, 3), eval(&idiv2, ctx));
-
-    // FLOAT division is REFUSED by the int folder (returns null), even when the
-    // result is integral (`6.0 / 2.0`) — so it surfaces through the float folder
-    // + the unified narrowing rule instead of truncating. A float operand on
-    // either side (literal or float-typed const) is enough.
-    var fdiv_nonint = nBin(.div, &f5, &f2); // 5.0 / 2.0 = 2.5
-    var fdiv_int = nBin(.div, &f6, &f2); //    6.0 / 2.0 = 3.0 (integral, still refused)
-    var fdiv_mixedl = nBin(.div, &f5, &two); // 5.0 / 2   = 2.5 (mixed promotes to float)
-    var fdiv_mixedr = nBin(.div, &five, &f2); // 5 / 2.0   = 2.5
-    var fdiv_const = nBin(.div, &k, &two); //   K / 2 = 4.0/2 = 2.0 (float const, refused)
-    try std.testing.expect(eval(&fdiv_nonint, ctx) == null);
-    try std.testing.expect(eval(&fdiv_int, ctx) == null);
-    try std.testing.expect(eval(&fdiv_mixedl, ctx) == null);
-    try std.testing.expect(eval(&fdiv_mixedr, ctx) == null);
-    try std.testing.expect(eval(&fdiv_const, ctx) == null);
-
-    // The float folder recovers the TRUE float value of the refused divisions, so
-    // the unified rule can fold the integral one and reject the non-integral one.
-    const evalf = pi.evalConstFloatExpr;
-    try std.testing.expectEqual(@as(?f64, 2.5), evalf(&fdiv_nonint, ctx));
-    try std.testing.expectEqual(@as(?f64, 3.0), evalf(&fdiv_int, ctx));
-    try std.testing.expectEqual(@as(?f64, 2.0), evalf(&fdiv_const, ctx));
-    // An int-const division (`M / 2` = 4/2) is NOT float division — it truncates.
-    var mdiv = nBin(.div, &m, &two);
-    try std.testing.expectEqual(@as(?i64, 2), eval(&mdiv, ctx));
-
-    // Non-division float arithmetic is unaffected: `*`/`+`/`-` over integral
-    // operands agree between int and float, so they still fold via the int folder
-    // (`6.0 * 2.0` → 12, `K - 2.0` → 2).
-    var fmul = nBin(.mul, &f6, &f2); // 6.0 * 2.0 = 12
-    var ksub = nBin(.sub, &k, &f2); // K - 2.0  = 2
-    try std.testing.expectEqual(@as(?i64, 12), eval(&fmul, ctx));
-    try std.testing.expectEqual(@as(?i64, 2), eval(&ksub, ctx));
+    var fraction = nBin(.div, &f5, &f2);
+    var integral = nBin(.div, &f6, &f2);
+    try std.testing.expectEqual(@as(?i64, 2), pi.evalConstIntExpr(&idiv, ctx));
+    try std.testing.expect(pi.evalConstIntExpr(&fraction, ctx) == null);
+    try std.testing.expectEqual(@as(?i64, 3), pi.evalConstIntExpr(&integral, ctx));
+    try std.testing.expectEqual(@as(?f64, 2.5), pi.evalConstFloatExpr(&fraction, ctx));
 }

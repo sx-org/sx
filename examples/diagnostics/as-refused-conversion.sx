@@ -1,0 +1,6 @@
+main :: () {
+    text: string = "hi";
+    number := @as(i64, text);
+    bytes: [*]u8 = ---;
+    terminated := @as([*:0]u8, bytes);
+}

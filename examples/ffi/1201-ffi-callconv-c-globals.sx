@@ -49,6 +49,6 @@ main :: () {
     pipe := Pipe{ pw = 0, ph = 0, frame = 0 };
     gPipe = *pipe;
 
-    callbackInline(xx 0, 320);
-    callbackWrapper(xx 0, 640);
+    callbackInline(null, 320);
+    callbackWrapper(null, 640);
 }

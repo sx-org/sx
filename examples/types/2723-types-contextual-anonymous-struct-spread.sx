@@ -1,0 +1,9 @@
+@import "modules/std.sx";
+
+Base :: struct { b: i32; a: i32; }
+
+main :: () {
+    s := Base{ a = 1, b = 2 };
+    v: struct { a: i32; b: i32; c: i32 = 7; } = .{ ..s, b = 3 };
+    print("{} {} {}\n", v.a, v.b, v.c);
+}

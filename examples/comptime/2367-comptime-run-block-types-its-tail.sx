@@ -11,7 +11,7 @@ S :: @run { t := "hi"; t };
 
 E :: error { Bad }
 parse :: (n: i32) -> (i32, !E) { if n < 0 { raise .Bad; } return n * 2; }
-F :: @run { x := parse(5); x };
+F :: @run { x: i32 = 5; parse(x) };
 
 main :: () {
     print("{}\n", N);

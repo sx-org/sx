@@ -9,7 +9,7 @@ help: write `Set.Broken`, or `.Broken` where the channel is already in hand
  9 |     raise error.Broken;    // error: `error.X` names no value
    |           ^^^^^^^^^^^^
 
-error: an error-set value compares only with a `.X` shorthand, a `Set.X` member, or another error-set value; coerce with `xx` to compare the raw id
+error: an error-set value compares only with a `.X` shorthand, a `Set.X` member, or another error-set value; coerce with `.(i64)` to compare the raw id
   --> examples/diagnostics/1208-diagnostics-error-value-spelling.sx:14:13
    |
 14 |     if e == error.Broken { return 1; }   // error: same spelling on the compare

@@ -16,6 +16,42 @@ fn node(data: ast.Node.Data) Node {
     return .{ .span = .{ .start = 0, .end = 0 }, .data = data };
 }
 
+test "expr_typer: anonymous spread shape needs no IR function" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var module = ir_mod.Module.init(alloc);
+    defer module.deinit();
+    var l = Lowering.init(&module);
+    const fields = [_]ir_mod.types.TypeInfo.StructInfo.Field{
+        .{ .name = module.types.internString("px"), .ty = .i16 },
+        .{ .name = module.types.internString("py"), .ty = .i32 },
+    };
+    const source_ty = module.types.internAnonStruct(&fields);
+    var scope = Scope.init(alloc, null, &l.next_binding_id);
+    defer scope.deinit();
+    l.scope = &scope;
+    scope.put("a", .{ .ref = Ref.none, .ty = source_ty, .is_alloca = false });
+    var source = node(.{ .identifier = .{ .name = "a" } });
+    var spread = node(.{ .spread_expr = .{ .operand = &source } });
+    var value = node(.{ .int_literal = .{ .value = 70000 } });
+    var inits = [_]ast.StructFieldInit{
+        .{ .name = null, .value = &value },
+        .{ .name = null, .value = &spread },
+        .{ .name = "px", .value = &value },
+    };
+    var literal = node(.{ .struct_literal = .{ .struct_name = null, .field_inits = &inits } });
+    const expected_fields = [_]ir_mod.types.TypeInfo.StructInfo.Field{
+        .{ .name = fields[0].name, .ty = .i64 },
+        fields[1],
+        .{ .name = module.types.internString("2"), .ty = .i64 },
+    };
+    l.target_type = .i32;
+    try std.testing.expectEqual(module.types.internAnonStruct(&expected_fields), l.inferExprType(&literal));
+    try std.testing.expectEqual(@as(?TypeId, .i32), l.target_type);
+    try std.testing.expectEqual(@as(usize, 0), module.functions.items.len);
+}
+
 test "expr_typer: literal shapes" {
     const alloc = std.testing.allocator;
     var module = ir_mod.Module.init(alloc);

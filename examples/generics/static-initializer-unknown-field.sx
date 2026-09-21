@@ -1,0 +1,11 @@
+Value :: struct { n: i64; }
+
+Box :: struct ($T: Type) {
+    value: T;
+
+    init :: (value: T) -> Box(T) { Box(T){ value = value } }
+}
+
+main :: () {
+    box := Box(Value).init(.{ missing = 2 });
+}

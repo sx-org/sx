@@ -31,12 +31,12 @@ mixedImp :: (self: *void, _cmd: *void, a: i64, r: ProbeRegion, b: i64) -> u64 ab
 main :: () {
     nsObject := objc_getClass("NSObject".ptr);
     cls := objc_allocateClassPair(nsObject, "SxStructProbe".ptr, 0);
-    class_addMethod(cls, sel_registerName("takeRegion:".ptr), xx regionImp, "Q@:{ProbeRegion=QQQQQQ}".ptr);
-    class_addMethod(cls, sel_registerName("takeSize:".ptr), xx sizeImp, "d@:{ProbeSize=dd}".ptr);
-    class_addMethod(cls, sel_registerName("takeMixed:region:tail:".ptr), xx mixedImp, "Q@:q{ ProbeRegion=QQQQQQ}q".ptr);
+    class_addMethod(cls, sel_registerName("takeRegion:".ptr), @reinterpret(*void, regionImp), "Q@:{ProbeRegion=QQQQQQ}".ptr);
+    class_addMethod(cls, sel_registerName("takeSize:".ptr), @reinterpret(*void, sizeImp), "d@:{ProbeSize=dd}".ptr);
+    class_addMethod(cls, sel_registerName("takeMixed:region:tail:".ptr), @reinterpret(*void, mixedImp), "Q@:q{ ProbeRegion=QQQQQQ}q".ptr);
     objc_registerClassPair(cls);
 
-    inst : *SxStructProbe = xx class_createInstance(cls, 0);
+    inst : *SxStructProbe = class_createInstance(cls, 0);
 
     r := ProbeRegion{ a = 1, b = 2, c = 3, d = 4, e = 5, f = 6 };
     print("region sum: {}\n", inst.takeRegion(r));

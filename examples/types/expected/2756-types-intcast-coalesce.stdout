@@ -1,0 +1,10 @@
+attempt 300
+default 7
+attempt 300
+attempt 42
+chain 42
+attempt 12
+first 12
+attempt 300
+attempt 400
+exhausted IntCastError.OutOfRange

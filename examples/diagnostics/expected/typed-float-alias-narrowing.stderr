@@ -1,0 +1,11 @@
+error: cannot implicitly convert 'f64' to 'f32'; use an explicit cast (`.(f32)`)
+  --> examples/diagnostics/typed-float-alias-narrowing.sx:6:5
+   |
+ 6 |     fromAlias: f32 = Alias;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+error: cannot implicitly convert 'f64' to 'f32'; use an explicit cast (`.(f32)`)
+  --> examples/diagnostics/typed-float-alias-narrowing.sx:7:5
+   |
+ 7 |     fromAnnotated: f32 = Annotated;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

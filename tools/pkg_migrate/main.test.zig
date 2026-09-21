@@ -92,9 +92,8 @@ test "a backticked name is a word with its backtick excluded" {
 
 test "numbers terminate by the numeric grammar, exposing their identifier tail" {
     try expectWords("1package\n", &.{"package"});
-    try expectWords("1e9\n", &.{"e9"});
     try expectWords("0xg\n", &.{"g"});
-    try expectWords("0x1f 0b10 0o7 1_000.5\n", &.{});
+    try expectWords("0x1f 0b10 0o7 1_000.5 1e9\n", &.{});
 }
 
 test "an unrecognized directive exposes its word; a real one is opaque" {

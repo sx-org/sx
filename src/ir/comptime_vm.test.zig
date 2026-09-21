@@ -84,6 +84,35 @@ test "comptime_vm exec: integer add of two params" {
     try std.testing.expectEqual(@as(i64, 43), toI64(out));
 }
 
+test "comptime Type comparisons ignore annotation defaults" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var table = types.TypeTable.init(alloc);
+    defer table.deinit();
+    const ast = @import("../ast.zig");
+    const value = ast.Node{ .span = .{ .start = 0, .end = 1 }, .data = .{ .int_literal = .{ .value = 5 } } };
+    const fields = [_]types.TypeInfo.StructInfo.Field{.{ .name = table.internString("p"), .ty = .i32 }};
+    const shape: types.TypeInfo = .{ .@"struct" = .{ .name = table.internString("__anon"), .fields = &fields } };
+    const annotated = table.internAnonStructDefaults(shape, &.{&value});
+    const plain = table.internAnonShape(shape);
+    try std.testing.expect(annotated != plain);
+
+    const params = [_]Function.Param{ param(.type_value), param(.type_value) };
+    var fb = Fb.init(alloc, &params, .bool);
+    defer fb.deinit();
+    const block = fb.block(&.{});
+    const equal = fb.add(block, inst(.{ .call_builtin = .{ .builtin = .rt_type_eq, .args = &.{ ref(0), ref(1) } } }, .bool));
+    const compared = fb.add(block, inst(.{ .cmp_eq = .{ .lhs = ref(0), .rhs = ref(1) } }, .bool));
+    const both = fb.add(block, inst(.{ .bool_and = .{ .lhs = ref(equal), .rhs = ref(compared) } }, .bool));
+    _ = fb.add(block, inst(.{ .ret = .{ .operand = ref(both) } }, .void));
+    var machine = vm.Vm.init(alloc);
+    machine.table = &table;
+    defer machine.deinit();
+    try std.testing.expectEqual(@as(vm.Reg, 1), try machine.run(&fb.func, &.{ annotated.index(), plain.index() }));
+    try std.testing.expectEqual(@as(vm.Reg, 0), try machine.run(&fb.func, &.{ annotated.index(), TypeId.i32.index() }));
+}
+
 test "comptime_vm exec: f64 arithmetic (a*2.0 + 1.0)" {
     var table = types.TypeTable.init(std.testing.allocator);
     defer table.deinit();
@@ -349,7 +378,6 @@ test "comptime_vm exec: struct_init + struct_get (mixed i64/f64 product)" {
     };
     const tup = table.intern(.{ .@"struct" = .{ .name = table.internString("__anon"), .fields = &flds } });
 
-    // t := .{5, 2.5}; return t.0 + int(t.1)  → 5 + 2 = 7
     var fb = Fb.init(alloc, &.{}, .i64);
     defer fb.deinit();
     const b0 = fb.block(&.{});
@@ -1252,7 +1280,8 @@ test "comptime_vm exec: func_ref + call_indirect dispatch" {
     // fn main() = call_indirect(func_ref(dbl), [21])   → 42
     var fb = Fb.init(alloc, &.{}, .i64);
     const b0 = fb.block(&.{});
-    const fr = fb.add(b0, inst(.{ .func_ref = dbl_id }, .i64));
+    const fn_ty = module.types.functionType(&.{.i64}, .i64);
+    const fr = fb.add(b0, inst(.{ .func_ref = dbl_id }, fn_ty));
     const c21 = fb.add(b0, inst(.{ .const_int = 21 }, .i64));
     const cargs = [_]Ref{ref(c21)};
     const r = fb.add(b0, inst(.{ .call_indirect = .{ .callee = ref(fr), .args = &cargs } }, .i64));

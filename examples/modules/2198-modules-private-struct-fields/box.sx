@@ -5,16 +5,6 @@ Box :: struct {
     set :: (self: *Box, v: i64) { self.secret = v; }
 }
 
-Peek :: struct {
-    @using Box;
-    doubled :: (self: *Peek) -> i64 { self.secret * 2 }
-}
-
-Wrap :: struct ($T: Type) {
-    @using Box;
-    t: T = ---;
-}
-
 // A method may carry the name of a private data field: the call spelling
 // dispatches to the method, so the foreign caller never mentions the field.
 Coll :: struct {
@@ -24,13 +14,6 @@ Coll :: struct {
 }
 
 makeColl :: () -> Coll { Coll{} }
-
-promotedSum :: (n: i64) -> i64 {
-    p := Peek{ secret = n };
-    w : Wrap(i64) = ---;
-    w.secret = n;
-    p.doubled() + w.secret
-}
 
 sameFileSum :: (n: i64) -> i64 {
     local := Box{ secret = n };

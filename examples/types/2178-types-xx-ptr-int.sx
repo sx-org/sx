@@ -1,11 +1,9 @@
-// Dest-inferred `xx` reinterprets pointer ↔ integer. Arithmetic that
-// produces a number writes the dest on the value: `p.(i64)`.
 @import "modules/std.sx";
 
 main :: () {
     n := 1;
     p := *n;
-    addr : i64 = xx p;
-    back : *i64 = xx addr;
+    addr : i64 = @reinterpret(isize, p).(i64);
+    back : *i64 = @reinterpret(*i64, addr.(usize));
     print("{} {}\n", addr != 0, back.*);
 }

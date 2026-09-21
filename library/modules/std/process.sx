@@ -53,8 +53,8 @@ ProcessResult :: struct {
 // containing spaces or shell metacharacters. To capture stderr along
 // with stdout, append " 2>&1" to the command.
 run :: (cmd: [:0]u8) -> ?ProcessResult {
-    f := popen(cmd.ptr.([*:0]u8), "r");
-    if f.(i64) == 0 { return null; }
+    f := popen(cmd, "r");
+    if f == null { return null; }
 
     out : string = "";
     buf := allocString(4096);
@@ -80,7 +80,7 @@ run :: (cmd: [:0]u8) -> ?ProcessResult {
 decodeStatus :: (raw: i32) -> i32 {
     code := (raw >> 8) & 0xFF;
     sig := raw & 0x7F;
-    if code == 0 and sig != 0 { return 128 + sig; }
+    if code == 0 and sig != 0 { return 128.(i32) + sig; }
     code
 }
 

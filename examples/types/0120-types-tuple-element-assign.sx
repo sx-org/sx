@@ -1,15 +1,11 @@
-// Product element assignment.
-// - `t.0 = v` writes one element in place on a positional anonymous product.
-// - Named products `struct { x: T; y: U }` are read/written by name only.
-
 @import "modules/std.sx";
 
 main :: () -> i32 {
     // Positional element assignment.
     a := .{0, ""};
-    a.0 = 11;
-    a.1 = "x";
-    print("a: {} {}\n", a.0, a.1);
+    @field(a, 0) = 11;
+    @field(a, 1) = "x";
+    print("a: {} {}\n", @field(a, 0), @field(a, 1));
 
     // Named product: write + read by name.
     p : struct { x: i32; y: string } = ---;

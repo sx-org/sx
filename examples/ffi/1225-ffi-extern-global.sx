@@ -9,7 +9,7 @@
 __stdinp : *void extern;
 
 main :: () -> i32 {
-    addrBits : u64 = xx *__stdinp;
+    addrBits : u64 = @reinterpret(usize, *__stdinp).(u64);
     print("stdin extern global non-null: {}\n", addrBits != 0);
     0
 }

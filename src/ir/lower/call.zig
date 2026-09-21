@@ -135,7 +135,7 @@ fn receiverFitsFirstParam(self: *Lowering, fd: *const ast.FnDecl, recv_ty: TypeI
     if (recv_ty == .unresolved) return false;
     const want = self.resolveTypeArg(fd.params[0].type_expr);
     if (want == .unresolved) return true;
-    if (want == recv_ty) return true;
+    if (self.module.types.sameType(want, recv_ty)) return true;
     const pi = self.getProtocolInfo(want) orelse return false;
     if (!pi.isErased()) return false;
     const cname = self.resolveConcreteTypeName(recv_ty) orelse return false;
@@ -404,17 +404,24 @@ pub fn callableLocalShadow(self: *Lowering, name: []const u8) bool {
 
 /// Call the function a unique lambda's env `env_addr` belongs to. The value IS
 /// the env, so the address stands in for the fat pointer a `Closure` carries.
-fn callUniqueLambda(self: *Lowering, u: lower_closure.UniqueLambda, env_addr: Ref, args: []Ref) Ref {
+fn callUniqueLambda(self: *Lowering, template: lower_closure.UniqueLambda, env_addr: Ref, args: []Ref) Ref {
+    const u = if (template.func == .formation) blk: {
+        const arg_types = self.alloc.alloc(TypeId, args.len) catch unreachable;
+        defer self.alloc.free(arg_types);
+        for (args, arg_types) |arg, *ty| ty.* = self.builder.getRefType(arg);
+        break :blk lower_closure.specializeFormationLambda(self, template, arg_types);
+    } else template;
+    const fid = u.func.lowered;
     coerceClosureCallArgs(self, args, u.params);
     var call_args = std.ArrayList(Ref).empty;
     defer call_args.deinit(self.alloc);
-    if (self.module.functions.items[u.func.index()].has_implicit_ctx) {
+    if (self.module.functions.items[fid.index()].has_implicit_ctx) {
         call_args.append(self.alloc, self.current_ctx_ref) catch unreachable;
     }
     call_args.append(self.alloc, env_addr) catch unreachable;
     call_args.appendSlice(self.alloc, args) catch unreachable;
     const owned = self.alloc.dupe(Ref, call_args.items) catch unreachable;
-    return self.builder.emit(.{ .call = .{ .callee = u.func, .args = owned } }, u.ret);
+    return self.builder.emit(.{ .call = .{ .callee = fid, .args = owned } }, u.ret);
 }
 
 /// Call the `call` that `impl (sig) for T` declares. The callee expression IS
@@ -567,7 +574,7 @@ fn coerceGlobalFnPointerArgs(self: *Lowering, args: []Ref, info: types.TypeInfo.
         const src_ty = self.builder.getRefType(arg.*);
         if (!dst_ty.isBuiltin()) {
             const dti = self.module.types.get(dst_ty);
-            if (dti == .pointer and dti.pointer.pointee == src_ty and src_ty != .void) {
+            if (dti == .pointer and self.module.types.sameType(dti.pointer.pointee, src_ty) and src_ty != .void) {
                 if (ai < c.args.len and c.args[ai].data == .identifier) {
                     if (self.scope) |scope| {
                         if (scope.lookup(c.args[ai].data.identifier.name)) |binding| {
@@ -1338,7 +1345,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     const local = if (self.scope) |scope| scope.lookup(nm) else null;
                     if (local) |binding| {
                         // Only apply when the binding type matches the pointee type
-                        if (binding.is_alloca and binding.ty == pti.pointer.pointee) {
+                        if (binding.is_alloca and self.module.types.sameType(binding.ty, pti.pointer.pointee)) {
                             const ptr_ty = self.module.types.ptrTo(binding.ty);
                             args.append(self.alloc, self.builder.emit(.{ .addr_of = .{ .operand = binding.ref } }, ptr_ty)) catch unreachable;
                             continue;
@@ -1351,7 +1358,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         // A `::` const global is excluded (no `*T` into `.rodata`
                         // — would SIGBUS / slip past the const-write guard); it
                         // falls through to the value copy below.
-                        if (gi.ty == pti.pointer.pointee and !self.rootIsConstant(nm)) {
+                        if (self.module.types.sameType(gi.ty, pti.pointer.pointee) and !self.rootIsConstant(nm)) {
                             const ptr_ty = self.module.types.ptrTo(gi.ty);
                             const place = self.lowerExprAsPtr(arg);
                             const place_ty = self.builder.getRefType(place);
@@ -1372,7 +1379,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         // reference semantics as the identifier case above. Without this the
         // arg would be loaded into a temporary and the callee would mutate a
         // throwaway copy (silent data loss — e.g. `make_move(self.board, m)`).
-        if (pt != null and (arg.data == .field_access or arg.data == .index_expr or arg.data == .deref_expr)) {
+        if (pt != null and (arg.data == .field_access or arg.data == .index_expr or arg.data == .deref_expr or (self.fieldCall(arg) != null and self.exprHasAddressableStorage(arg)))) {
             const ptv = pt.?;
             if (!ptv.isBuiltin()) {
                 const pti = self.module.types.get(ptv);
@@ -1413,7 +1420,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         // address-of arms above; rvalue args never reach here (no lvalue
         // shape) and are refused at the node-less layer (coerceCallArgs).
         if (pt != null and (arg.data == .identifier or arg.data == .field_access or
-            arg.data == .index_expr or arg.data == .deref_expr))
+            arg.data == .index_expr or arg.data == .deref_expr or (self.fieldCall(arg) != null and self.exprHasAddressableStorage(arg))))
         {
             const ptv = pt.?;
             if (!ptv.isBuiltin()) {
@@ -1456,7 +1463,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         if (pt) |ptv| {
             const vt = self.builder.getRefType(val);
             const vti = self.module.types.get(vt);
-            if (vti == .pointer and vti.pointer.pointee == ptv) {
+            if (vti == .pointer and self.module.types.sameType(vti.pointer.pointee, ptv)) {
                 if (self.diagnostics) |d| {
                     const tn = self.formatTypeName(ptv);
                     if (arg.data == .identifier) {
@@ -1774,7 +1781,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                                         if (ord < variants.len) {
                                             const field_ty = variants[ord].payload;
                                             if (field_ty != .void) {
-                                                const payload_ty = self.inferExprType(c.args[0]);
+                                                const payload_ty = self.builder.getRefType(payload);
                                                 if (field_ty != payload_ty) {
                                                     payload = self.coerceToType(payload, payload_ty, field_ty);
                                                 }
@@ -2001,7 +2008,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                                 const variants = type_info.@"enum".variants;
                                 if (ord < variants.len and variants[ord].payload != .void) {
                                     const field_ty = variants[ord].payload;
-                                    const payload_ty = self.inferExprType(c.args[0]);
+                                    const payload_ty = self.builder.getRefType(payload);
                                     if (field_ty != payload_ty) {
                                         payload = self.coerceToType(payload, payload_ty, field_ty);
                                     }
@@ -2787,6 +2794,7 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .@"@as",
         .@"@convert",
         .@"@coerce",
+        .@"@intCast",
         .@"@reinterpret",
         .@"@anyElement",
         .@"@rawAnyData",
@@ -2962,7 +2970,7 @@ fn bindCallableBinders(
             if (Lowering.callableBound(param.type_expr) == null) continue;
             if (!self.matchTypeParam(param.type_expr, tp.name)) continue;
             const arg_ref = lowered_args[arg_idx];
-            const arg_ty = self.valueTypeOfRef(arg_ref, self.builder.getRefType(arg_ref));
+            const arg_ty = self.builder.getRefType(arg_ref);
             if (self.callableSigOf(arg_ty) == null) continue;
             if (self.extractTypeParam(param.type_expr, arg_ty, tp.name)) |ty| {
                 bindings.put(tp.name, ty) catch {};
@@ -3045,6 +3053,7 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .@"@as",
         .@"@convert",
         .@"@coerce",
+        .@"@intCast",
         .@"@reinterpret",
         .@"@anyElement",
         .@"@rawAnyData",
@@ -3289,6 +3298,7 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .@"@as",
         .@"@convert",
         .@"@coerce",
+        .@"@intCast",
         .@"@reinterpret",
         .@"@anyElement",
         .@"@rawAnyData",
@@ -3620,6 +3630,7 @@ fn isReflectionCall(name: []const u8) bool {
         .@"@as",
         .@"@convert",
         .@"@coerce",
+        .@"@intCast",
         .@"@reinterpret",
         .@"@anyElement",
         .@"@rawAnyData",
@@ -3880,7 +3891,7 @@ const tag_width_types = [_]struct { width: i64, ty: TypeId }{
 /// A view of a boxed enum's tag word, typed by its tag type.
 fn boxedTagView(self: *Lowering, av: Ref) Ref {
     const b = &self.builder;
-    const type_word = b.structGet(av, 1, .i64);
+    const type_word = b.structGet(av, 1, .type_value);
     const width_args = self.alloc.dupe(Ref, &.{type_word}) catch return Ref.none;
     const width = b.callBuiltin(.rt_variant_tag_width, width_args, .i64);
     const slot = b.alloca(.type_value);
@@ -3930,19 +3941,8 @@ fn lowerAsIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
     // Interface re-erasure is not a conversion: it is the assertion `p.(Q)`.
     const xx_plan = self.coercionResolver().classifyXX(src_ty, dst);
     if (xx_plan == .reerase_protocol or xx_plan == .reerase_protocol_wrap) return refuseAs(self, src_ty, dst, c.callee.span);
-    switch (self.coercionResolver().classify(src_ty, dst)) {
-        .no_op => return val,
-        .unbox_any => unreachable,
-        .closure_to_fn_reject, .unique_to_closure_reject, .lambda_ptr_to_closure_reject, .optional_to_bool_reject, .many_to_slice_reject => return refuseAs(self, src_ty, dst, c.callee.span),
-        else => {
-            // The explicit ladder carries the modeled puns (same-width integer
-            // signedness, pointer words); a value it passes through untyped has
-            // no conversion.
-            const converted = self.coerceExplicit(val, src_ty, dst);
-            if (self.builder.getRefType(converted) != dst) return refuseAs(self, src_ty, dst, c.callee.span);
-            return converted;
-        },
-    }
+    if (!self.conversionAvailable(src_ty, dst, .explicit)) return refuseAs(self, src_ty, dst, c.callee.span);
+    return self.coerceExplicit(val, src_ty, dst);
 }
 
 fn refuseAs(self: *Lowering, src_ty: TypeId, dst: TypeId, span: ast.Span) Ref {
@@ -3953,12 +3953,10 @@ fn refuseAs(self: *Lowering, src_ty: TypeId, dst: TypeId, span: ast.Span) Ref {
 const boxed_as_sources = [_]TypeId{ .bool, .f32, .f64 };
 
 /// Whether a boxed source of type `s` converts to `dst` without a diagnostic:
-/// the modeled scalar plans, the same-width integer pun the explicit ladder
-/// bitcasts, and an optional target whose payload the source converts to.
+/// modeled scalar plans and optional payload conversions.
 fn boxedAsConverts(self: *Lowering, s: TypeId, dst: TypeId) bool {
     return switch (self.coercionResolver().classify(s, dst)) {
-        .no_op, .widen, .narrow, .int_to_float, .float_to_int, .int_to_enum, .enum_to_int => true,
-        .none => self.isIntEx(s) and self.isIntEx(dst) and self.typeBitsEx(s) == self.typeBitsEx(dst),
+        .no_op, .integer_retype, .widen, .narrow, .int_to_float, .float_to_int, .int_to_enum, .enum_to_int, .error_to_int => true,
         .optional_wrap => boxedAsConverts(self, s, self.module.types.get(dst).optional.child),
         else => false,
     };
@@ -3966,7 +3964,7 @@ fn boxedAsConverts(self: *Lowering, s: TypeId, dst: TypeId) bool {
 
 fn boxedAs(self: *Lowering, av: Ref, dst: TypeId, span: ast.Span) Ref {
     const b = &self.builder;
-    const type_word = b.structGet(av, 1, .i64);
+    const type_word = b.structGet(av, 1, .type_value);
     const slot = b.alloca(dst);
     const merge_bb = self.freshBlock("as.merge");
     const refuse_bb = self.freshBlock("as.refuse");
@@ -3992,7 +3990,7 @@ fn boxedAs(self: *Lowering, av: Ref, dst: TypeId, span: ast.Span) Ref {
         if (self.module.types.integerLayout(s) != null) continue;
         if (!boxedAsConverts(self, s, dst)) continue;
         const bb = self.freshBlock("as.from");
-        cases.append(self.alloc, .{ .value = @intCast(s.index()), .target = bb, .args = &.{} }) catch return Ref.none;
+        cases.append(self.alloc, .{ .value = @intCast(self.module.types.canonicalType(s).index()), .target = bb, .args = &.{} }) catch return Ref.none;
         srcs.append(self.alloc, s) catch return Ref.none;
         blocks.append(self.alloc, bb) catch return Ref.none;
     }
@@ -4137,6 +4135,151 @@ fn lowerReinterpretIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
     return self.builder.load(slot, dst);
 }
 
+pub fn intCastErrorSet(self: *Lowering) ?TypeId {
+    const set = self.module.types.findByName(self.module.types.internString("IntCastError")) orelse return null;
+    if (self.module.types.get(set) != .@"error") return null;
+    return if (self.module.types.errorSetMember(set, "OutOfRange") == .one) set else null;
+}
+
+fn integerValue(layout: types.IntLayout, raw: i64) i128 {
+    const bits = layout.normalize(@bitCast(raw));
+    return if (layout.signed) @as(i64, @bitCast(bits)) else bits;
+}
+
+fn lowerIntCastIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
+    if (c.args.len != 2) {
+        if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "@intCast takes 2 arguments, got {d}", .{c.args.len});
+        return self.builder.constUndef(.unresolved);
+    }
+    const dst = if (self.isStaticTypeArg(c.args[0])) self.resolveTypeArg(c.args[0]) else TypeId.unresolved;
+    if (dst == .unresolved) {
+        if (self.diagnostics) |d| d.addFmt(.err, c.args[0].span, "@intCast expects a type known at compile time", .{});
+        return self.builder.constUndef(.unresolved);
+    }
+    const dst_layout = self.module.types.integerLayout(dst) orelse {
+        if (self.diagnostics) |d| d.addFmt(.err, c.args[0].span, "@intCast expects an integer destination type, got '{s}'", .{self.formatTypeName(dst)});
+        return self.builder.constUndef(.unresolved);
+    };
+    const saved_target = self.target_type;
+    self.target_type = null;
+    const val = self.lowerExpr(c.args[1]);
+    self.target_type = saved_target;
+    const src = self.builder.getRefType(val);
+    const src_layout = self.module.types.integerLayout(src) orelse {
+        if (self.diagnostics) |d| d.addFmt(.err, c.args[1].span, "@intCast expects an integer value, got '{s}'", .{self.formatTypeName(src)});
+        return self.builder.constUndef(.unresolved);
+    };
+    const dst_min = integerValue(dst_layout, dst_layout.limit(false));
+    const dst_max = integerValue(dst_layout, dst_layout.limit(true));
+    if (self.foldedInt(val)) |raw| {
+        const value = integerValue(src_layout, raw);
+        if (value < dst_min or value > dst_max) {
+            if (self.diagnostics) |d| d.addFmt(.err, c.args[1].span, "@intCast value {d} is out of range for '{s}' ({d}..{d})", .{ value, self.formatTypeName(dst), dst_min, dst_max });
+        }
+    }
+    const set = self.intCastErrorSet() orelse {
+        if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "@intCast needs 'IntCastError' in scope — @import \"modules/std/core.sx\"", .{});
+        return self.builder.constUndef(.unresolved);
+    };
+    const result_ty = self.module.types.internFailable(dst, set);
+    var fits = self.builder.constBool(true);
+    // Only bounds inside the source range can fail; their comparisons retain the source signedness.
+    if (integerValue(src_layout, src_layout.limit(false)) < dst_min) {
+        fits = self.builder.emit(.{ .cmp_ge = .{ .lhs = val, .rhs = self.builder.constInt(dst_layout.limit(false), src) } }, .bool);
+    }
+    if (integerValue(src_layout, src_layout.limit(true)) > dst_max) {
+        const upper = self.builder.emit(.{ .cmp_le = .{ .lhs = val, .rhs = self.builder.constInt(dst_layout.limit(true), src) } }, .bool);
+        fits = self.builder.emit(.{ .bool_and = .{ .lhs = fits, .rhs = upper } }, .bool);
+    }
+    const ok_bb = self.freshBlock("intcast.ok");
+    const fail_bb = self.freshBlock("intcast.fail");
+    const merge_bb = self.freshBlockWithParams("intcast.merge", &.{result_ty});
+    self.builder.condBr(fits, ok_bb, &.{}, fail_bb, &.{});
+    self.builder.switchToBlock(ok_bb);
+    const conversion = inst_mod.Conversion{ .operand = val, .from = src, .to = dst };
+    const value = self.builder.emit(if (dst_layout.width < src_layout.width)
+        .{ .narrow = conversion }
+    else if (dst_layout.width > src_layout.width)
+        .{ .widen = conversion }
+    else
+        .{ .bitcast = conversion }, dst);
+    const ok_result = self.buildFailableTuple(result_ty, &.{value}, self.builder.constInt(0, set));
+    self.builder.br(merge_bb, &.{ok_result});
+    self.builder.switchToBlock(fail_bb);
+    self.emitTracePush(self.placeholderTraceFrame());
+    const tag = self.builder.constInt(@intCast(self.module.types.errorSetMember(set, "OutOfRange").one), set);
+    const fail_result = self.buildFailableTuple(result_ty, &.{self.builder.constUndef(dst)}, tag);
+    self.builder.br(merge_bb, &.{fail_result});
+    self.builder.switchToBlock(merge_bb);
+    return self.builder.blockParam(merge_bb, 0, result_ty);
+}
+
+pub fn fieldCall(_: *Lowering, node: *const Node) ?ast.Call {
+    if (node.data != .call) return null;
+    const c = node.data.call;
+    if (c.callee.data != .identifier or !std.mem.eql(u8, c.callee.data.identifier.name, "@field") or c.args.len != 2) return null;
+    return c;
+}
+
+pub const FieldProjection = struct {
+    object: *const Node,
+    object_ty: TypeId,
+    index: u32,
+    ty: TypeId,
+};
+
+const FieldSelection = union(enum) {
+    dynamic,
+    field: FieldProjection,
+    out_of_bounds: struct { object_ty: TypeId, index: i64 },
+};
+
+fn selectField(self: *Lowering, c: ast.Call) FieldSelection {
+    if (c.args.len != 2) return .dynamic;
+    const saved_target = self.target_type;
+    self.target_type = null;
+    defer self.target_type = saved_target;
+    const ty = self.inferExprType(c.args[0]);
+    if (self.module.types.get(ty) != .@"struct") return .dynamic;
+    const index = self.comptimeIndexOf(c.args[1]) orelse self.evalComptimeInt(c.args[1]) orelse return .dynamic;
+    const field_ty = self.module.types.memberType(ty, index) orelse return .{ .out_of_bounds = .{ .object_ty = ty, .index = index } };
+    return .{ .field = .{ .object = c.args[0], .object_ty = ty, .index = @intCast(index), .ty = field_ty } };
+}
+
+pub fn fieldProjection(self: *Lowering, c: ast.Call) ?FieldProjection {
+    return switch (selectField(self, c)) {
+        .field => |field| field,
+        else => null,
+    };
+}
+
+fn diagFieldBounds(self: *Lowering, ty: TypeId, index: i64, span: ast.Span) void {
+    if (self.diagnostics) |d| d.addFmt(.err, span, "field index {d} out of bounds — '{s}' has {d} fields", .{ index, self.formatTypeName(ty), self.module.types.get(ty).@"struct".fields.len });
+}
+
+pub const FieldPlace = struct { ptr: Ref, ty: TypeId };
+
+pub fn resolveFieldPlace(self: *Lowering, field: FieldProjection) ?FieldPlace {
+    if (!self.exprHasAddressableStorage(field.object)) return null;
+    const base = self.getExprAlloca(field.object) orelse self.lowerExprAsPtr(field.object);
+    return .{ .ptr = self.builder.structGepTyped(base, field.index, self.module.types.ptrTo(field.ty), field.object_ty), .ty = field.ty };
+}
+
+pub fn lowerFieldPlace(self: *Lowering, node: *const Node) ?FieldPlace {
+    if (self.fieldCall(node)) |c| {
+        switch (selectField(self, c)) {
+            .field => |field| if (self.resolveFieldPlace(field)) |place| return place,
+            .out_of_bounds => |bad| {
+                diagFieldBounds(self, bad.object_ty, bad.index, c.args[1].span);
+                return null;
+            },
+            .dynamic => {},
+        }
+    }
+    if (self.diagnostics) |d| d.add(.err, "field access needs a compile-time index and addressable struct storage", node.span);
+    return null;
+}
+
 fn lowerBoxedViewIntrinsic(self: *Lowering, id: intrinsics.Id, c: *const ast.Call) Ref {
     const entry = intrinsics.byId(id);
     const sentinel = self.builder.constInt(0, if (id == .@"@len") .i64 else .any);
@@ -4145,6 +4288,21 @@ fn lowerBoxedViewIntrinsic(self: *Lowering, id: intrinsics.Id, c: *const ast.Cal
             entry.name, entry.arity, if (entry.arity == 1) @as([]const u8, "") else "s", c.args.len,
         });
         return sentinel;
+    }
+    if (id == .@"@field") {
+        switch (selectField(self, c.*)) {
+            .field => |field| {
+                const saved_target = self.target_type;
+                self.target_type = null;
+                defer self.target_type = saved_target;
+                return self.builder.structGet(self.lowerExpr(field.object), field.index, field.ty);
+            },
+            .out_of_bounds => |bad| {
+                diagFieldBounds(self, bad.object_ty, bad.index, c.args[1].span);
+                return self.builder.constUndef(.unresolved);
+            },
+            .dynamic => {},
+        }
     }
     // A spelled type folds to its part count. A partless spelled type is an
     // error, where a runtime tag of that kind answers 0. A module-scope value
@@ -4389,19 +4547,10 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         return self.builder.callBuiltin(.type_name, args_owned, .string);
     }
     if (std.mem.eql(u8, name, "@typeEq")) {
-        // @typeEq(T1, T2) → const_bool — comptime TypeId equality.
-        // TypeIds are interned per structural shape so equality on
-        // them matches the user's intuition: `@typeEq(i64, i64)` is
-        // true, `@typeEq(*i64, *i64)` is true, distinct shapes are
-        // false. Pack-indexed types (`$args[0]`) resolve through
-        // `resolveTypeArg` → `resolveTypeWithBindings`.
         if (c.args.len < 2) return self.builder.constBool(false);
         const a_static = self.isStaticTypeArg(c.args[0]);
         const b_static = self.isStaticTypeArg(c.args[1]);
         if (!a_static or !b_static) {
-            // Runtime tag compare: Type is an i64 tag at runtime, so
-            // equality is a plain integer compare — no table involved. A
-            // static side lowers to its constant tag.
             const ra = if (a_static) self.builder.constType(self.resolveTypeArg(c.args[0])) else self.lowerExpr(c.args[0]);
             const rb = if (b_static) self.builder.constType(self.resolveTypeArg(c.args[1])) else self.lowerExpr(c.args[1]);
             const args_owned = self.alloc.dupe(Ref, &.{ ra, rb }) catch return self.builder.constBool(false);
@@ -4409,7 +4558,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         }
         const a = self.resolveTypeArg(c.args[0]);
         const b = self.resolveTypeArg(c.args[1]);
-        return self.builder.constBool(a == b);
+        return self.builder.constBool(self.module.types.sameType(a, b));
     }
     if (std.mem.eql(u8, name, "@isFlags")) {
         if (!self.isStaticTypeArg(c.args[0])) {
@@ -4471,6 +4620,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         .@"@as" => return lowerAsIntrinsic(self, c),
         .@"@convert" => return lowerConvertIntrinsic(self, c),
         .@"@coerce" => return lowerCoerceIntrinsic(self, c),
+        .@"@intCast" => return lowerIntCastIntrinsic(self, c),
         .@"@reinterpret" => return lowerReinterpretIntrinsic(self, c),
         else => {},
     };
@@ -5674,6 +5824,17 @@ fn coerceDemands(self: *Lowering, tys: []const TypeId) []const ParamDemand {
     return out;
 }
 
+fn variantParamTypes(self: *Lowering, ty: TypeId, name: []const u8) ?[]const ParamDemand {
+    if (ty.isBuiltin()) return null;
+    const info = self.module.types.get(ty);
+    if (info != .@"enum") return null;
+    for (info.@"enum".variants) |variant| {
+        if (std.mem.eql(u8, self.module.types.getString(variant.name), name))
+            return if (variant.payload == .void) &.{} else coerceDemands(self, &.{variant.payload});
+    }
+    return null;
+}
+
 pub fn resolveCallParamTypes(
     self: *Lowering,
     c: *const ast.Call,
@@ -5706,11 +5867,25 @@ pub fn resolveCallParamTypes(
         // Args map directly to all declared params (no receiver prepend).
         if (qualified_selected) return astCalleeParamTypes(self, sel_author.?.decl, c.args);
 
+        if (fa.object.data == .call and self.isTypeReturningCallNode(fa.object)) {
+            if (variantParamTypes(self, self.resolveTypeArg(fa.object), fa.field)) |params| return params;
+        }
+        if (self.genericStaticHeadMethod(fa.object, fa.field)) |method| {
+            var scope = generics_mod.installTypeBindings(self, method.bindings.*);
+            defer scope.exit();
+            var demands = std.ArrayList(ParamDemand).empty;
+            for (method.fd.params, 0..) |_, i| {
+                demands.append(self.alloc, lower_bound.paramDemand(self, method.fd, i)) catch unreachable;
+            }
+            return demands.items;
+        }
+
         // Static plain-struct method: all declared params are user args. Select
         // by the source-aware type head before namespace/global name lookup.
         if (!self.callResolver().objectIsValue(fa.object)) {
             switch (self.staticStructHead(fa.object)) {
                 .resolved => |owner_ty| {
+                    if (variantParamTypes(self, owner_ty, fa.field)) |params| return params;
                     if (self.plainStructMethod(owner_ty, fa.field)) |method|
                         return astCalleeParamTypes(self, method.fd, c.args);
                     if (self.hasPlainStructAuthor(owner_ty)) return &.{};
@@ -5725,8 +5900,8 @@ pub fn resolveCallParamTypes(
         // — no self prepend — so target_type for arg lowering must include
         // the leading param. Skipping it would lose the protocol context
         // for `xx ptr` inline-cast args.
-        if (fa.object.data == .identifier) {
-            const obj_name = fa.object.data.identifier.name;
+        if (fa.object.data == .identifier or fa.object.data == .type_expr) {
+            const obj_name = if (fa.object.data == .identifier) fa.object.data.identifier.name else fa.object.data.type_expr.name;
             var selected_namespace_fd: ?*const ast.FnDecl = null;
             const is_value = self.identifierBindsVisibleValue(obj_name);
             if (!is_value) {
@@ -5774,6 +5949,19 @@ pub fn resolveCallParamTypes(
         }
 
         const obj_ty = self.inferExprType(fa.object);
+        if (openSetReceiver(self, obj_ty)) |set_ty| {
+            if (self.openSetOf(set_ty)) |set| {
+                if (lower_open_set.requiredMethod(set, fa.field)) |method| {
+                    const saved_source = self.current_source_file;
+                    self.setCurrentSourceFile(set.source_file);
+                    defer self.setCurrentSourceFile(saved_source);
+                    const demands = self.alloc.alloc(ParamDemand, method.params.len) catch return &.{};
+                    for (method.params, 0..) |param, i|
+                        demands[i] = .{ .coerce = self.resolveTypeWithBindings(param) };
+                    return demands;
+                }
+            }
+        }
         // Protocol-typed receiver: look up the method on the protocol decl. The
         // protocol's ProtocolMethodInfo.param_types already excludes self.
         // The receiver may be erased directly (`P`), a view (`*P`), or the

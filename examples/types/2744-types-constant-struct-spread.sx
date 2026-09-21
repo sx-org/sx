@@ -1,0 +1,39 @@
+@import "modules/std.sx";
+source :: @import "2744-types-constant-struct-spread/source.sx";
+N :: 7;
+
+A :: struct { pz: i64; }
+CA :: A{pz = 2};
+K :: A{pz = 7, ..CA};
+Anon :: .{pz = 7, ..CA};
+Only :: A{..CA};
+Pair :: struct { first: i64; second: i64; extra: i64 = 5; }
+Pos :: .{3, 4};
+Overridden :: Pair{..Pos, second = 9};
+Copy: Pair = .{..Overridden, extra = 6};
+Rows: [1]A = .[A{pz = 8, ..Only}];
+Imported :: A{..source.Value};
+Narrow :: struct { n: u8; f: f32; flag: bool; label: string; child: A; }
+Wide :: struct { n: i16; f: f64; flag: bool; label: string; child: A; }
+Small :: Narrow{n = 255, f = 1.5, flag = true, label = "ok", child = A{pz = 4}};
+Widened: Wide = .{..Small};
+count: i64 = 0;
+mark :: () -> i64 { count += 1; 8 }
+Deferred :: A{pz = mark(), ..CA};
+
+main :: () {
+    named: [K.pz]i64 = ---;
+    anonymous: [Anon.pz]i64 = ---;
+    only: [Only.pz]i64 = ---;
+    overridden: [Overridden.extra]i64 = ---;
+    print("named: {} {}\n", K.pz, @sizeOf(@typeOf(named)));
+    print("anonymous: {} {}\n", Anon.pz, @sizeOf(@typeOf(anonymous)));
+    print("only: {} {}\n", Only.pz, @sizeOf(@typeOf(only)));
+    print("overridden: {} {} {} {}\n", Overridden.first, Overridden.second, Overridden.extra, @sizeOf(@typeOf(overridden)));
+    imported: [Imported.pz]i64 = ---;
+    print("imported: {} {}\n", Imported.pz, @sizeOf(@typeOf(imported)));
+    print("widened: {} {} {} {} {}\n", Widened.n, Widened.f, Widened.flag, Widened.label, Widened.child.pz);
+    deferred := Deferred;
+    print("evaluated: {} {}\n", deferred.pz, count);
+    print("static: {} {} {} {}\n", Copy.first, Copy.second, Copy.extra, Rows[0].pz);
+}

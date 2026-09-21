@@ -31,7 +31,7 @@ main :: () -> i32 {
     got := invokeFn(blk);
     if got != 42 { print("FAIL: escaped block saw {}\n", got); return 1; }
 
-    inside := blk.(*BlockHead);
+    inside := @reinterpret(*BlockHead, blk);
     if inside.header.descriptor != *inside.shape { print("FAIL: descriptor is not the block's own\n"); return 1; }
 
     print("escaped block ok: {}\n", got);

@@ -1,6 +1,4 @@
-// A typed failable local takes a value whose members its channel holds. `!A`
-// and `!B` share no member, and two authors of one spelling are two channels,
-// so neither value reaches its slot.
+// A failable slot accepts only values whose error members its channel holds.
 
 @import "modules/std.sx";
 lib :: @import "lib.sx";
@@ -9,8 +7,10 @@ B :: error { Y }
 IoErr :: error { Failed }
 
 main :: () -> i32 {
-    v: (i32, !B) = lib.failsA();
-    w: (i32, !IoErr) = lib.failsIo();
+    sourceA: (i32, !lib.A) = .{0, lib.A.X};
+    sourceIo: (i32, !lib.IoErr) = .{0, lib.IoErr.Down};
+    v: (i32, !B) = sourceA;
+    w: (i32, !IoErr) = sourceIo;
     a := v catch |e| -1;
     b := w catch |e| -1;
     print("{} {}\n", a, b);

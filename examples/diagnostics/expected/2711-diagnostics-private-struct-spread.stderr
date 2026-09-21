@@ -1,0 +1,5 @@
+error: cannot spread a struct containing a private field
+  --> examples/diagnostics/2711-diagnostics-private-struct-spread.sx:1:18
+   |
+ 1 | Peek :: struct { ..Box; }
+   |                  ^^^^^

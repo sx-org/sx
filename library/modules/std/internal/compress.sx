@@ -877,7 +877,7 @@ private emitTdeflDynamic :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Allo
                 }
             }
         }
-        outputWords : [*]u64 = (*outputPtr[outputAt]).([*]u64);
+        outputWords : [*]u64 = @reinterpret([*]u64, *outputPtr[outputAt]);
         outputWords[0] = bitBuffer.(u64);
         outputAt += bitsIn >> 3;
         bitBuffer = bitBuffer >> (bitsIn & ~7);
@@ -886,7 +886,7 @@ private emitTdeflDynamic :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Allo
     }
     bitBuffer = bitBuffer | (litCodes[256].(i64) << bitsIn);
     bitsIn += litLengths[256];
-    outputWords : [*]u64 = (*outputPtr[outputAt]).([*]u64);
+    outputWords : [*]u64 = @reinterpret([*]u64, *outputPtr[outputAt]);
     outputWords[0] = bitBuffer.(u64);
     outputAt += bitsIn >> 3;
     bitBuffer = bitBuffer >> (bitsIn & ~7);
@@ -977,7 +977,7 @@ private emitTdeflFixed :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Alloca
                 }
             }
         }
-        outputWords : [*]u64 = (*outputPtr[outputAt]).([*]u64);
+        outputWords : [*]u64 = @reinterpret([*]u64, *outputPtr[outputAt]);
         outputWords[0] = bitBuffer.(u64);
         outputAt += bitsIn >> 3;
         bitBuffer = bitBuffer >> (bitsIn & ~7);
@@ -986,7 +986,7 @@ private emitTdeflFixed :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Alloca
     }
     bitBuffer = bitBuffer | (reverseBits(0, 7) << bitsIn);
     bitsIn += 7;
-    outputWords : [*]u64 = (*outputPtr[outputAt]).([*]u64);
+    outputWords : [*]u64 = @reinterpret([*]u64, *outputPtr[outputAt]);
     outputWords[0] = bitBuffer.(u64);
     outputAt += bitsIn >> 3;
     bitBuffer = bitBuffer >> (bitsIn & ~7);
@@ -1565,8 +1565,8 @@ Deflater :: struct {
             alloc = alloc,
         };
         if actualLevel > 0 and !nondeterministic and !failed {
-            heads : [*]u16 = result.hash.ptr.([*]u16);
-            links : [*]u16 = result.next.ptr.([*]u16);
+            heads : [*]u16 = @reinterpret([*]u16, result.hash.ptr);
+            links : [*]u16 = @reinterpret([*]u16, result.next.ptr);
             // tdefl's tables are uint16_t arrays cleared to zero. Code zero
             // is the chain terminator even when an absolute position wraps to
             // zero; preserving that quirk is required for byte identity.
@@ -1650,8 +1650,8 @@ Deflater :: struct {
         if take <= 0 { return; }
 
         dict := self.dict.ptr;
-        heads : [*]u16 = self.hash.ptr.([*]u16);
-        links : [*]u16 = self.next.ptr.([*]u16);
+        heads : [*]u16 = @reinterpret([*]u16, self.hash.ptr);
+        links : [*]u16 = @reinterpret([*]u16, self.next.ptr);
         lookahead := self.lookaheadSize;
         absolute := self.lookaheadPos + lookahead;
         history := lookahead + self.dictSize;
@@ -1719,16 +1719,16 @@ Deflater :: struct {
         lookaheadSize := self.lookaheadSize.(u32);
         initial := initialLength.(u32);
         if lookaheadSize <= initial { return result; }
-        links : [*]u16 = self.next.ptr.([*]u16);
+        links : [*]u16 = @reinterpret([*]u16, self.next.ptr);
         dict := self.dict.ptr;
         lookaheadPos := self.lookaheadPos.(u32);
         dictSize := self.dictSize.(u32);
         pos := lookaheadPos & 32767;
         probePos := pos;
-        sourceWords : [*]u16 = (*dict[pos]).([*]u16);
+        sourceWords : [*]u16 = @reinterpret([*]u16, *dict[pos]);
         sourceFirst := sourceWords[0];
         tailAt := pos + initial - 1;
-        tailWords : [*]u16 = (*dict[tailAt]).([*]u16);
+        tailWords : [*]u16 = @reinterpret([*]u16, *dict[tailAt]);
         tail := tailWords[0];
         configured := self.maxProbes.(u32);
         // tdefl probes up to three chain entries for the two-byte tail
@@ -1748,7 +1748,7 @@ Deflater :: struct {
                 distance = (lookaheadPos - nextProbe) & 65535;
                 if distance > dictSize { return result; }
                 probePos = nextProbe & 32767;
-                candidateTail : [*]u16 = (*dict[probePos + result.length.(u32) - 1]).([*]u16);
+                candidateTail : [*]u16 = @reinterpret([*]u16, *dict[probePos + result.length.(u32) - 1]);
                 if candidateTail[0] == tail {
                     found = true;
                     break;
@@ -1757,12 +1757,12 @@ Deflater :: struct {
             }
             if found {
                 if distance == 0 { return result; }
-                candidateWords : [*]u16 = (*dict[probePos]).([*]u16);
+                candidateWords : [*]u16 = @reinterpret([*]u16, *dict[probePos]);
                 if candidateWords[0] != sourceFirst { continue; }
                 // Compare a full group on the hot equal path, then recover
                 // tdefl's exact 16-bit mismatch boundary inside that group.
-                sourceGroups : [*]u64 = (*sourceWords[1]).([*]u64);
-                candidateGroups : [*]u64 = (*candidateWords[1]).([*]u64);
+                sourceGroups : [*]u64 = @reinterpret([*]u64, *sourceWords[1]);
+                candidateGroups : [*]u64 = @reinterpret([*]u64, *candidateWords[1]);
                 pair : u32 = 0;
                 group : u32 = 0;
                 compareGroups : u32 = 32;
@@ -1794,7 +1794,7 @@ Deflater :: struct {
                     result.distance = distance.(i64);
                     if length == lookaheadSize { break; }
                     tailAt = pos + length - 1;
-                    tailWords = (*dict[tailAt]).([*]u16);
+                    tailWords = @reinterpret([*]u16, *dict[tailAt]);
                     tail = tailWords[0];
                 }
             }
@@ -1810,7 +1810,7 @@ Deflater :: struct {
     }
 
     processFast :: (self: *Deflater) {
-        heads : [*]u16 = self.hash.ptr.([*]u16);
+        heads : [*]u16 = @reinterpret([*]u16, self.hash.ptr);
         dict := self.dict.ptr;
         codes := self.lz.codes.ptr;
         lookaheadPos := self.lookaheadPos;
@@ -1824,7 +1824,7 @@ Deflater :: struct {
         codeLimit := self.lz.codes.len - 8;
         while lookaheadSize >= 4 and codeLen <= codeLimit {
             pos := lookaheadPos & 32767;
-            firstAt : [*]u32 = (*dict[pos]).([*]u32);
+            firstAt : [*]u32 = @reinterpret([*]u32, *dict[pos]);
             first := firstAt[0].(i64) & 0xffffff;
             h := (first ^ (first >> 17)) & 4095;
             probe := heads[h].(i64);
@@ -1832,14 +1832,14 @@ Deflater :: struct {
             distance := ((lookaheadPos & 65535) - probe) & 65535;
             length := 1;
             probePos := probe & 32767;
-            candidateAt : [*]u32 = (*dict[probePos]).([*]u32);
+            candidateAt : [*]u32 = @reinterpret([*]u32, *dict[probePos]);
             if distance <= dictSize and (candidateAt[0].(i64) & 0xffffff) == first {
-                sourceWords : [*]u16 = (*dict[pos]).([*]u16);
-                candidateWords : [*]u16 = (*dict[probePos]).([*]u16);
+                sourceWords : [*]u16 = @reinterpret([*]u16, *dict[pos]);
+                candidateWords : [*]u16 = @reinterpret([*]u16, *dict[probePos]);
                 // Compare a full group on the hot equal path, then recover
                 // tdefl's exact 16-bit mismatch boundary inside that group.
-                sourceGroups : [*]u64 = (*sourceWords[1]).([*]u64);
-                candidateGroups : [*]u64 = (*candidateWords[1]).([*]u64);
+                sourceGroups : [*]u64 = @reinterpret([*]u64, *sourceWords[1]);
+                candidateGroups : [*]u64 = @reinterpret([*]u64, *candidateWords[1]);
                 pair := 0;
                 group := 0;
                 groups := 32;

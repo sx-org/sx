@@ -1,0 +1,5 @@
+error: unknown type 'Bse'
+  --> examples/diagnostics/2717-diagnostics-unknown-composite-struct-spread.sx:4:41
+   |
+ 4 |     return [2]union { inner: struct { ..Bse; value: T; }; };
+   |                                         ^^^

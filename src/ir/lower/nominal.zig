@@ -455,23 +455,9 @@ pub fn reserveShadowSlot(self: *Lowering, td: ShadowTypeDecl) void {
     }
 }
 
-/// Register (or re-register) a top-level NAMED type decl under a per-source
-/// nominal identity, returning its TypeId. `decl_key` is the decl's
-/// stable pointer (the import raw-facts identity); `info` carries the full
-/// body; `nominal_id` is the slot's identity (0 for a single / first author,
-/// nonzero for a later same-name shadow) — computed once by the caller
-/// (`registerStructDecl`), which reuses the id reserved up-front in `scanDecls`
-/// for a genuine shadow (so its fields' self / forward / mutual refs already
-/// resolved against it). This stamps the id and records the `decl_key → TypeId`
-/// map (`type_decl_tids`, the `fn_decl_fids` analogue).
-///
-/// A `nominal_id == 0` author adopts any forward-reference stub (`findByName`
-/// orelse intern). For a genuinely multi-authored name, the FIRST source keeps
-/// id 0 and later sources get fresh ids → DISTINCT TypeIds, so the authors do
-/// not collapse last-wins. Idempotent per `decl_key`: a re-registration — OR an up-front
-/// shadow reservation — reuses the recorded slot, refreshing its body via
-/// `updatePreservingKey` (key-stable because a struct's intern key is its
-/// name + nominal id, not its fields).
+/// A named type declaration reuses its per-author nominal slot on re-registration.
+/// The first author (nominal_id == 0) adopts a forward stub; shadow authors keep
+/// distinct slots keyed by declaration identity.
 pub fn internNamedTypeDecl(self: *Lowering, decl_key: *const anyopaque, name_id: types.StringId, info: types.TypeInfo, nominal_id: u32) TypeId {
     const table = &self.module.types;
     // Slot already recorded (re-registration, or a reserve-before-fields shadow
@@ -922,24 +908,22 @@ pub fn registerGenericStructAlias(self: *Lowering, cd: *const ast.ConstDecl, tmp
     self.putTypeAlias(self.declId(.{ .const_decl = cd }, self.current_source_file), self.current_source_file, cd.name, inst_id);
 }
 
-pub const PromotedPrivate = struct { name: types.StringId, source: ?[]const u8 };
-
-/// Note a private field a `@using` promotion is copying out of `used_ty`, so
-/// the promoted copy keeps answering to the base's declaring file.
-pub fn notePromotedPrivate(
-    self: *Lowering,
-    out: *std.ArrayList(PromotedPrivate),
-    used_ty: TypeId,
-    f: types.TypeInfo.StructInfo.Field,
-) void {
-    if (f.visibility != .private) return;
-    out.append(self.alloc, .{ .name = f.name, .source = self.fieldDeclaringSource(used_ty, f.name) }) catch unreachable;
-}
-
-pub fn recordPromotedPrivate(self: *Lowering, struct_ty: TypeId, promoted: []const PromotedPrivate) void {
-    for (promoted) |p| {
-        self.promoted_field_authority.put(.{ .ty = struct_ty, .name = p.name }, p.source) catch @panic("out of memory");
+pub fn reserveStructLayout(self: *Lowering, sd: *const ast.StructDecl, source_file: ?[]const u8) TypeId {
+    const table = &self.module.types;
+    const decl_key: *const anyopaque = @ptrCast(sd);
+    const name_id = table.internString(sd.name);
+    const ty = table.type_decl_tids.get(decl_key) orelse blk: {
+        const id = table.internNominal(.{ .@"struct" = .{ .name = name_id, .fields = &.{} } }, self.shadowNominalId(name_id));
+        table.type_decl_tids.put(decl_key, id) catch @panic("out of memory");
+        break :blk id;
+    };
+    if (!self.plain_struct_authors.contains(ty) and !self.pending_struct_layouts.contains(ty)) {
+        self.pending_struct_layouts.put(ty, .{ .author = .{
+            .decl = sd,
+            .source = source_file orelse self.current_source_file,
+        } }) catch @panic("out of memory");
     }
+    return ty;
 }
 
 pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_file: ?[]const u8) void {
@@ -967,102 +951,24 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
         return;
     }
 
-    // Per-decl nominal identity. EACH author of a GENUINE same-name STRUCT
-    // shadow already reserved its distinct slot up-front in `scanDecls` (the
-    // first at id 0, the rest at nonzero ids), so a self / forward / mutual
-    // reference to the shadow name bound to ITS nominal TypeId via
-    // `type_decl_tids`, not the global findByName first-author fallback:
-    // reuse that reserved id. A single-author name (or a phantom
-    // over-counted by the raw import facts) is NOT reserved — it keeps id 0 and
-    // the post-field registration.
-    // `shadowNominalId` here only fires for the non-scanDecls registration paths
-    // (comptime `lowerDecls`, block-local), where module facts are unwired so it
-    // returns 0.
-    const decl_key: *const anyopaque = @ptrCast(sd);
-    const nominal_id: u32 = if (table.type_decl_tids.get(decl_key)) |id| nominalIdOf(table.get(id)) else self.shadowNominalId(name_id);
-
-    // Build field list, expanding @using entries. Defaults are built IN THE
-    // SAME interleave so they stay aligned with the FLATTENED layout — an
-    // embedded base field holds null (base defaults do not flow through
-    // `@using`, matching generic instantiation), and an explicit
-    // field's declared default lands at its flattened position.
-    var fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
-    var layout_defaults = std.ArrayList(?*const Node).empty;
-    var promoted_private = std.ArrayList(PromotedPrivate).empty;
-    var field_idx: usize = 0;
-    var using_idx: usize = 0;
-    const using_authority: ?[]const u8 = source_file orelse self.current_source_file;
-    const total_explicit = sd.field_names.len;
-    while (field_idx < total_explicit or using_idx < sd.using_entries.len) {
-        // Insert @using fields at their declared positions
-        while (using_idx < sd.using_entries.len and sd.using_entries[using_idx].insert_index == fields.items.len) {
-            const ue = sd.using_entries[using_idx];
-            if (self.resolveUsingBase(ue.type_name, using_authority, sd.name)) |used_ty| {
-                const used_info = table.get(used_ty);
-                if (used_info == .@"struct") {
-                    for (used_info.@"struct".fields) |f| {
-                        notePromotedPrivate(self, &promoted_private, used_ty, f);
-                        fields.append(self.alloc, f) catch unreachable;
-                        layout_defaults.append(self.alloc, null) catch unreachable;
-                    }
-                }
-            }
-            using_idx += 1;
-        }
-        if (field_idx < total_explicit) {
-            if (sd.field_types[field_idx].data == .spread_expr) {
-                if (self.expandTypeSpread(sd.field_types[field_idx])) |tys| {
-                    for (tys) |ty| {
-                        const n = std.fmt.allocPrint(self.alloc, "{d}", .{fields.items.len}) catch unreachable;
-                        fields.append(self.alloc, .{
-                            .name = table.internString(n),
-                            .ty = ty,
-                            .visibility = if (field_idx < sd.field_visibilities.len) sd.field_visibilities[field_idx] else .public,
-                        }) catch unreachable;
-                        layout_defaults.append(self.alloc, null) catch unreachable;
-                    }
-                    field_idx += 1;
-                    continue;
-                }
-            }
-            _ = self.rejectMultiReturnValueType(sd.field_types[field_idx], "field");
-            const field_ty = self.resolveType(sd.field_types[field_idx]);
-            _ = self.refuseValuelessProtocol(field_ty, sd.field_types[field_idx].span, "declare a field of type");
-            _ = self.refuseCursorEscape(field_ty, sd.field_types[field_idx].span, "declare a field of type");
-            _ = self.refuseCursorSignature(field_ty, sd.field_types[field_idx].span);
-            fields.append(self.alloc, .{
-                .name = table.internString(sd.field_names[field_idx]),
-                .ty = field_ty,
-                .visibility = if (field_idx < sd.field_visibilities.len) sd.field_visibilities[field_idx] else .public,
-            }) catch unreachable;
-            layout_defaults.append(self.alloc, if (field_idx < sd.field_defaults.len) sd.field_defaults[field_idx] else null) catch unreachable;
-            field_idx += 1;
-        } else break;
-    }
-    // Append remaining @using entries after all explicit fields
-    while (using_idx < sd.using_entries.len) {
-        const ue = sd.using_entries[using_idx];
-        if (self.resolveUsingBase(ue.type_name, using_authority, sd.name)) |used_ty| {
-            const used_info = table.get(used_ty);
-            if (used_info == .@"struct") {
-                for (used_info.@"struct".fields) |f| {
-                    notePromotedPrivate(self, &promoted_private, used_ty, f);
-                    fields.append(self.alloc, f) catch unreachable;
-                    layout_defaults.append(self.alloc, null) catch unreachable;
-                }
-            }
-        }
-        using_idx += 1;
-    }
-
-    // Qualify inline __anon type names: __anon → StructName.field_name
-    for (sd.field_names, 0..) |fname, fi| {
-        if (fi < fields.items.len) {
-            const field_ty = fields.items[fi].ty;
-            if (!field_ty.isBuiltin()) {
-                self.qualifyAnonType(table, field_ty, sd.name, fname);
-            }
-        }
+    const saved_source = self.current_source_file;
+    self.setCurrentSourceFile(source_file orelse saved_source);
+    defer self.setCurrentSourceFile(saved_source);
+    const struct_ty = self.reserveStructLayout(sd, self.current_source_file);
+    self.pending_struct_layouts.put(struct_ty, .{
+        .author = .{ .decl = sd, .source = self.current_source_file },
+        .state = .resolving,
+    }) catch @panic("out of memory");
+    defer _ = self.pending_struct_layouts.remove(struct_ty);
+    const layout = type_bridge.buildStructLayout(sd, table, self) orelse return;
+    for (layout.fields, layout.explicit_members) |field, member| {
+        const i = member orelse continue;
+        const node = sd.field_types[i];
+        _ = self.rejectMultiReturnValueType(node, "field");
+        _ = self.refuseValuelessProtocol(field.ty, node.span, "declare a field of type");
+        _ = self.refuseCursorEscape(field.ty, node.span, "declare a field of type");
+        _ = self.refuseCursorSignature(field.ty, node.span);
+        if (!field.ty.isBuiltin()) self.qualifyAnonType(table, field.ty, sd.name, sd.field_names[i]);
     }
 
     // The C-variadic cursor carries the target's `va_list` storage. Substituting
@@ -1070,53 +976,16 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
     // type its size and alignment while leaving the sx surface empty: nothing
     // downstream — layout, ABI classification, the local's alloca — needs a
     // second notion of what a cursor is.
-    const layout_fields = if (cvariadic.isCursorDecl(sd)) self.cursorStorageFields() else fields.items;
+    const layout_fields = if (cvariadic.isCursorDecl(sd)) self.cursorStorageFields() else layout.fields;
 
-    // Register under the per-decl nominal identity computed above. A non-first
-    // shadow author's slot was already reserved before fields resolved, so this
-    // fills it (key-stable updatePreservingKey); a first / single author adopts
-    // any forward-reference stub. Same-name structs in DIFFERENT sources get
-    // distinct TypeIds instead of last-wins clobbering the first.
     const info: types.TypeInfo = .{ .@"struct" = .{ .name = name_id, .fields = layout_fields } };
-    const struct_ty = self.internNamedTypeDecl(decl_key, name_id, info, nominal_id);
+    table.updatePreservingKey(struct_ty, stampNominalId(info, nominalIdOf(table.get(struct_ty))));
     // Couple the nominal layout identity to its authoring declaration. Method
     // calls must select through this TypeId-keyed provenance, never through the
     // process-global `StructName.method` spelling.
     self.plain_struct_authors.put(struct_ty, .{ .decl = sd, .source = source_file orelse self.current_source_file }) catch @panic("out of memory");
-    recordPromotedPrivate(self, struct_ty, promoted_private.items);
 
-    // Store field defaults for struct literal lowering — the LAYOUT-ALIGNED
-    // array, keyed by the concrete TypeId (authoritative) and by
-    // display name (fallback for consumers without a nominal identity;
-    // last-wins across same-name authors).
-    {
-        var has_any_default = false;
-        for (layout_defaults.items) |d| {
-            if (d != null) {
-                has_any_default = true;
-                break;
-            }
-        }
-        if (has_any_default) {
-            // A default is an expression the DECLARING module wrote, and it is
-            // lowered wherever a literal leaves the field out. Stamp the
-            // author's source on it so lowerExpr's per-node source switch
-            // resolves its bare names over THAT module's import edges — a
-            // consumer that reaches the struct through a namespace never
-            // imported what the default names.
-            if (source_file orelse self.current_source_file) |author_source| {
-                for (layout_defaults.items) |maybe_default| {
-                    if (maybe_default) |default_node| {
-                        const mutable: *ast.Node = @constCast(default_node);
-                        if (mutable.source_file == null) mutable.source_file = author_source;
-                    }
-                }
-            }
-            const owned_defaults = layout_defaults.toOwnedSlice(self.alloc) catch &.{};
-            self.struct_defaults_by_tid.put(struct_ty, owned_defaults) catch {};
-            self.struct_defaults_map.put(sd.name, owned_defaults) catch {};
-        }
-    }
+    self.recordStructDefaults(struct_ty, layout.defaults);
 
     // Register struct methods as StructName.method in fn_ast_map
     for (sd.methods) |method_node| {
@@ -1152,27 +1021,6 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
             self.struct_const_map.put(qualified, info_entry) catch {};
         }
     }
-}
-
-/// Resolve a `@using` base name from the DECLARING struct's own source
-/// authority (the global `findByName` first/last-match let a
-/// different module's same-name base win). `.resolved` wins; any other
-/// verdict falls back to the global lookup, which covers forward references and
-/// unwired-facts registration. When BOTH miss,
-/// the base is genuinely unknown — diagnose loudly instead of silently
-/// registering a layout without the embedded fields.
-pub fn resolveUsingBase(self: *Lowering, base_name: []const u8, authority: ?[]const u8, struct_name: []const u8) ?TypeId {
-    const table = &self.module.types;
-    if (authority) |from| {
-        switch (self.selectNominalLeaf(base_name, from, false)) {
-            .resolved => |ty| if (!ty.isBuiltin()) return ty,
-            else => {},
-        }
-    }
-    if (table.findByName(table.internString(base_name))) |ty| return ty;
-    if (self.diagnostics) |d|
-        d.addFmt(.err, .{ .start = 0, .end = 0 }, "unknown type '{s}' in @using inside struct '{s}'", .{ base_name, struct_name });
-    return null;
 }
 
 /// Register a top-level ENUM decl under a per-decl nominal identity — the

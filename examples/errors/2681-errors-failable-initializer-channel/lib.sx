@@ -1,4 +1,2 @@
 A :: error { X }
-failsA :: () -> (i32, !A) { 0 }
 IoErr :: error { Down }
-failsIo :: () -> (i32, !IoErr) { 0 }

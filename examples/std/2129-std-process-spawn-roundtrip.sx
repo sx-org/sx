@@ -9,7 +9,7 @@ main :: () -> i32 {
 
     msg := "ping\n";
     wrote := child.stdinWrite(msg);
-    if wrote != xx msg.len { print("write: {}\n", wrote); return 1; }
+    if wrote != msg.len { print("write: {}\n", wrote); return 1; }
 
     buf := allocString(64);
     got := child.stdoutRead(buf);

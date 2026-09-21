@@ -3,6 +3,7 @@ const ast = @import("../ast.zig");
 const types = @import("types.zig");
 const program_index_mod = @import("program_index.zig");
 const lower = @import("lower.zig");
+const lower_closure = @import("lower/closure.zig");
 
 const Node = ast.Node;
 const TypeId = types.TypeId;
@@ -26,6 +27,7 @@ pub const ExprTyper = struct {
     /// Recurses through `Lowering.inferExprType` so a nested call node is typed
     /// by its one owner.
     pub fn inferType(self: ExprTyper, node: *const Node) TypeId {
+        if (self.l.isAdaptableFloat(node)) return .f64;
         return switch (node.data) {
             // Call result typing is owned by `CallResolver` (`calls.zig`);
             // delegate through `Lowering.inferExprType` so a call node reaching
@@ -49,14 +51,10 @@ pub const ExprTyper = struct {
                     break :blk .bool;
                 },
                 .and_op, .or_op, .in_op, .is_op => .bool,
-                // Arithmetic / bitwise / shift ops: infer the PROMOTED result
-                // of (lhs, rhs), not the LHS alone — `Lowering.arithResultType`
-                // is the same rule `lowerBinaryOp` applies, so `M + 0.5` types
-                // as `f64` regardless of operand order.
-                else => self.l.arithResultType(
-                    self.l.operandType(self.l.inferExprType(bop.lhs)),
-                    self.l.operandType(self.l.inferExprType(bop.rhs)),
-                ),
+                else => blk: {
+                    const operands = program_index_mod.floatOperandTypes(bop, self.l.operandType(self.l.inferExprType(bop.lhs)), self.l.operandType(self.l.inferExprType(bop.rhs)), self.l);
+                    break :blk self.l.arithResultType(operands.lhs.?, operands.rhs.?);
+                },
             },
             .unary_op => |uop| switch (uop.op) {
                 .not => .bool,
@@ -64,6 +62,7 @@ pub const ExprTyper = struct {
                 .xx => self.l.target_type orelse .unresolved,
                 .address_of => blk: {
                     const inner = self.l.inferExprType(uop.operand);
+                    if (uop.operand.data == .index_expr) break :blk self.l.module.types.manyPtrTo(inner);
                     break :blk self.l.module.types.ptrTo(inner);
                 },
                 .pre_decrement => self.l.inferExprType(uop.operand),
@@ -541,38 +540,7 @@ pub const ExprTyper = struct {
                     };
                     if (usable) return tt;
                 }
-                // No usable target: infer the anonymous-struct SHAPE the
-                // lowering's synthesis will mint (same rules: all-positional
-                // fields "0"/"1"/… or all-named; shorthand is named; spreads
-                // and mixed forms stay unresolved — lowering handles them).
-                // Interning makes this idempotent and identical to lowering.
-                {
-                    var named_n: usize = 0;
-                    var pos_n: usize = 0;
-                    for (sl.field_inits) |fi| {
-                        if (fi.value.data == .spread_expr) return .unresolved;
-                        if (fi.name != null) named_n += 1 else pos_n += 1;
-                    }
-                    if (named_n > 0 and pos_n > 0) return .unresolved;
-                    var fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
-                    defer fields.deinit(self.l.alloc);
-                    const saved_tt = self.l.target_type;
-                    self.l.target_type = null;
-                    defer self.l.target_type = saved_tt;
-                    for (sl.field_inits, 0..) |fi, i| {
-                        const vty = self.l.inferExprType(fi.value);
-                        if (vty == .unresolved or vty == .void) return .unresolved;
-                        var name_buf: [24]u8 = undefined;
-                        const fname = fi.name orelse (std.fmt.bufPrint(&name_buf, "{d}", .{i}) catch return .unresolved);
-                        fields.append(self.l.alloc, .{
-                            .name = self.l.module.types.internString(fname),
-                            .ty = vty,
-                        }) catch return .unresolved;
-                    }
-                    return self.l.module.types.internAnonStruct(
-                        self.l.module.types.slice_arena.allocator().dupe(types.TypeInfo.StructInfo.Field, fields.items) catch return .unresolved,
-                    );
-                }
+                return self.l.inferAnonStructType(&sl);
             },
             .tuple_literal => |tl| {
                 // Explicitly-typed construction with a type prefix: the literal's type is
@@ -631,22 +599,6 @@ pub const ExprTyper = struct {
                 // A guard-narrowed container local indexes its payload — the
                 // lockstep partner of `lowerIndexExpr`'s narrowing peel.
                 const obj_ty = self.l.narrowedContainerChild(ie.object) orelse self.l.inferExprType(ie.object);
-                // Comptime-constant index into a tuple VALUE — `tup[i]` where `i`
-                // folds to a compile-time integer (an `inline for` cursor or a
-                // literal). Mirrors the lowering in `lowerIndexExpr`: the result is
-                // the i-th tuple field's CONCRETE type (heterogeneous elements, so
-                // no single runtime element type). Without this the inference path
-                // returned `.unresolved` for `tup[i]`, so a following `.field` /
-                // method / comparison on it could not resolve (the `race` runtime's
-                // `tasks[i].state == .ready`). A runtime index falls through to the
-                // generic element-type path below.
-                if (!obj_ty.isBuiltin() and self.l.module.types.get(obj_ty) == .@"struct") {
-                    // Struct parity (aggregate ladder): `s[comptime i]` types
-                    // as the i-th field, exactly like tuples.
-                    if (self.l.comptimeIndexOf(ie.index)) |ci| {
-                        if (self.l.module.types.memberType(obj_ty, ci)) |fty| return fty;
-                    }
-                }
                 // Optional-chain index `opt?.xs[i]`: the object types as an
                 // optional container (`?[N]T` / `?[]T` / `?[*]T`), so the whole
                 // index expression is `?ElemType` (flattened if the element is
@@ -719,7 +671,9 @@ pub const ExprTyper = struct {
             // lambda's declared return type. An unannotated param /
             // body-inferred return stays `.unresolved` here — that arg simply
             // doesn't contribute a binding, exactly as before.
-            .lambda => |lam| blk: {
+            .lambda => |*lam| blk: {
+                if (lower_closure.hasFormationParam(lam))
+                    break :blk self.l.lambdaEnvType(lam) orelse .unresolved;
                 var pbuf = std.ArrayList(TypeId).empty;
                 defer pbuf.deinit(self.l.alloc);
                 for (lam.params) |p| {

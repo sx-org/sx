@@ -10,8 +10,8 @@ main :: () {
     p : *i64 = *x;
     q : *i64 = p.(*i64);        // no-op pointer cast
     print("a: {}\n", q.*);
-    addr : i64 = xx p;
-    r : *i64 = addr.(*i64);     // int → ptr through compound cast
+    addr : i64 = @reinterpret(isize, p).(i64);
+    r : *i64 = @reinterpret(*i64, addr.(usize));
     print("b: {}\n", r.*);
     mp : [*]i64 = p.([*]i64);   // ptr → many-pointer
     print("c: {}\n", mp[0]);

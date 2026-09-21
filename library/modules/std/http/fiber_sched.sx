@@ -40,15 +40,15 @@ SchedRunner :: struct {
 impl FiberRunner for SchedRunner {
     spawn :: (self: *SchedRunner, entry: *void, arg: *void) -> usize {
         f := self.s.spawn(||_{ entry, arg } {
-            entryFn := entry.((*void) -> void);
+            entryFn := @reinterpret((*void) -> void, entry);
             entryFn(arg);
         });
-        return f.(usize);
+        return @reinterpret(usize, f);
     }
 
     wake :: (self: *SchedRunner, handle: usize) {
         if handle == 0 { return; }
-        f : *sched.Fiber = handle.(*sched.Fiber);
+        f : *sched.Fiber = @reinterpret(*sched.Fiber, handle);
         self.s.wake(f);
     }
 

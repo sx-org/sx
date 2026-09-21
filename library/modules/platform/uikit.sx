@@ -390,7 +390,7 @@ impl Platform for UIKitPlatform {
             NSLog(nsstring("[sx] UIKitPlatform.runFrameLoop: delegateClassName unset — boot through uikitAppRun (platform/uikit_app.sx) or set your own delegate class first\n"));
             return;
         }
-        UIApplicationMain(0, (0).(*void), (0).(*NSString), nsstring(self.delegateClassName));
+        UIApplicationMain(0, null, null, nsstring(self.delegateClassName));
     }
 
     pollEvents :: (self: *UIKitPlatform) -> []PlatformEvent {
@@ -462,23 +462,23 @@ impl Platform for UIKitPlatform {
     refreshSafeInsets :: (self: *UIKitPlatform) {
         if glView := self.glView {
             i := glView.safeAreaInsets();
-            self.safeTop    = i.top;
-            self.safeLeft   = i.left;
-            self.safeBottom = i.bottom;
-            self.safeRight  = i.right;
+            self.safeTop    = i.top.(f32);
+            self.safeLeft   = i.left.(f32);
+            self.safeBottom = i.bottom.(f32);
+            self.safeRight  = i.right.(f32);
         }
     }
 
     readScreenScale :: (self: *UIKitPlatform) {
         screen := UIScreen.mainScreen();
-        self.dpiScale = screen.nativeScale();
+        self.dpiScale = screen.nativeScale().(f32);
     }
 
     createGlContext :: (self: *UIKitPlatform) {
         // Read the screen scale up-front so callers can size font caches and
         // textures with the right DPI before the window even exists.
         screen := UIScreen.mainScreen();
-        self.dpiScale = screen.nativeScale();
+        self.dpiScale = screen.nativeScale().(f32);
 
         ctx := EAGLContext.alloc().initWithAPI(EAGL_API_GLES3);
         self.glCtx = ctx;
@@ -546,14 +546,14 @@ impl Platform for UIKitPlatform {
 
             wPts : f64 = b.width;
             hPts : f64 = b.height;
-            self.viewportW = wPts;
-            self.viewportH = hPts;
+            self.viewportW = wPts.(f32);
+            self.viewportH = hPts.(f32);
 
             scale64 : f64 = self.dpiScale.(f64);
             pw : f64 = wPts * scale64;
             ph : f64 = hPts * scale64;
-            self.pixelW = pw;
-            self.pixelH = ph;
+            self.pixelW = pw.(i32);
+            self.pixelH = ph.(i32);
         }
     }
 
@@ -572,7 +572,7 @@ impl Platform for UIKitPlatform {
         view : *UIView = ---;
         if v := self.glView { view = v; } else { return; }
         viewBounds := view.bounds();
-        viewH : f32 = viewBounds.height;
+        viewH : f32 = viewBounds.height.(f32);
 
         // The spring is evaluated at the frame's target timestamp, one
         // vsync ahead of the presentation layer.
@@ -608,7 +608,7 @@ impl Platform for UIKitPlatform {
                     live := layer.presentationLayer();
                     if live != null {
                         inView := view.convertRect_fromView(live.frame(), kbView.superview());
-                        top = inView.y;
+                        top = inView.y.(f32);
                     }
                 }
             }
@@ -660,9 +660,9 @@ impl Platform for UIKitPlatform {
         }
 
         bounds := view.bounds();
-        viewH : f32 = bounds.height;
+        viewH : f32 = bounds.height.(f32);
         inView := view.convertRect_fromView(end, null);
-        overlap : f32 = viewH - inView.y;
+        overlap : f32 = viewH - inView.y.(f32);
         if overlap < 0.0 { overlap = 0.0; }
         if overlap > viewH { overlap = viewH; }
 
@@ -713,9 +713,9 @@ impl Platform for UIKitPlatform {
         view : *UIView = ---;
         if v := self.glView { view = v; } else { return; }
         bounds := view.bounds();
-        viewH : f32 = bounds.height;
+        viewH : f32 = bounds.height.(f32);
         location := recognizer.locationInView(view);
-        y : f32 = location.y;
+        y : f32 = location.y.(f32);
         state := recognizer.state();
         if state == UI_GESTURE_BEGAN {
             if view.isFirstResponder() == 0 { return; }
@@ -726,7 +726,7 @@ impl Platform for UIKitPlatform {
             self.kb.track(y, viewH);
         } else if state == UI_GESTURE_ENDED {
             velocity := recognizer.velocityInView(view);
-            self.kb.letGo(velocity.y);
+            self.kb.letGo(velocity.y.(f32));
         } else if state == UI_GESTURE_CANCELLED or state == UI_GESTURE_FAILED {
             self.kb.letGo(0.0);
         }
@@ -776,7 +776,7 @@ impl Platform for UIKitPlatform {
             dict := NSMutableDictionary.dictionary();
             dict.setObject_forKey(nsNo, retainedKey);
             dict.setObject_forKey(rgba8Value, colorformatKey);
-            eaglLayer : *CAEAGLLayer = glLayer.(*CAEAGLLayer);
+            eaglLayer : *CAEAGLLayer = @reinterpret(*CAEAGLLayer, glLayer);
             eaglLayer.setDrawableProperties(dict);
         }
 
@@ -785,7 +785,7 @@ impl Platform for UIKitPlatform {
         // on 64-bit Apple platforms; reading as f32 would clobber the value.
         screen2 := win.screen();
         scale := screen2.nativeScale();
-        self.dpiScale = scale;
+        self.dpiScale = scale.(f32);
         glView.setContentScaleFactor(scale);
 
         // Renderbuffer is allocated lazily in -[SxGLView layoutSubviews] once
@@ -826,7 +826,7 @@ impl Platform for UIKitPlatform {
     // and draws in the layer's commit-phase -display, after this cycle's
     // touches and notifications; GLES has no display phase and draws here.
     glViewTick :: (self: *UIKitPlatform, link: *CADisplayLink) {
-        self.deltaTime = link.duration();
+        self.deltaTime = link.duration().(f32);
         self.lastTargetTs = link.targetTimestamp();
 
         if self.pendingResponder != .none {
@@ -914,7 +914,7 @@ impl Platform for UIKitPlatform {
 
     insertText :: (self: *UIKitPlatform, text: *NSString) {
         if session := self.session {
-            session.insert(fromCstring(text.UTF8String().([*:0]u8)));
+            session.insert(fromCstring(text.UTF8String()));
         }
     }
 
@@ -929,7 +929,7 @@ impl Platform for UIKitPlatform {
     setMarkedText :: (self: *UIKitPlatform, text: ?*NSString, selectedRange: _NSRange) {
         if session := self.session {
             run : string = "";
-            if t := text { run = fromCstring(t.UTF8String().([*:0]u8)); }
+            if t := text { run = fromCstring(t.UTF8String()); }
             selStart := utf16OffsetToBytes(run, selectedRange.location.(i64));
             selEnd := utf16OffsetToBytes(run, (selectedRange.location + selectedRange.length).(i64));
             session.setMarked(run, selStart, selEnd);
@@ -982,7 +982,7 @@ uikitPointer :: (pos: Point) -> PointerEvent {
 // dlsym(RTLD_DEFAULT, name) — Apple platforms. RTLD_DEFAULT is (void*)-2.
 // abi(.c) so this is callable from `loadGl`'s C-conv proc-loader slot.
 iosGlProc :: (name: [*:0]u8) -> *void abi(.c) {
-    rtldDefault : *void = (0 - 2).(*void);
+    rtldDefault : *void = @reinterpret(*void, (0 - 2).(usize));
     dlsym(rtldDefault, name)
 }
 
@@ -990,7 +990,7 @@ iosGlProc :: (name: [*:0]u8) -> *void abi(.c) {
 // extern variable holds a pointer to the NSString instance — dlsym returns
 // the address of that variable, which we dereference.
 uikitExternNsstring :: (name: [*]u8) -> *void {
-    rtldDefault : *void = (0 - 2).(*void);
+    rtldDefault : *void = @reinterpret(*void, (0 - 2).(usize));
     p := dlsym(rtldDefault, name);
     if p == null { return null; }
     pp : **void = p.(**void);
@@ -1015,7 +1015,7 @@ uikitChdirToBundle :: () {
 uikitTouchLocation :: (touch: *void, view: *void) -> Point {
     t : *UITouch = touch.(*UITouch);
     p := t.locationInView(view);
-    Point{ x = p.x, y = p.y }
+    Point{ x = p.x.(f32), y = p.y.(f32) }
 }
 
 uikitFirstTouch :: (touches: *void) -> *void {

@@ -27,6 +27,6 @@ main :: () -> i32 {
     sc := StrCell{ s = "hi" };
     c.sources = .{ic.(VL(i64)), sc.(VL(string))};
     c.value = 99;
-    print("{} {} {}\n", c.sources.0.get(), c.sources.1.get(), c.value);  // 10 hi 99
+    print("{} {} {}\n", @field(c.sources, 0).get(), @field(c.sources, 1).get(), c.value);  // 10 hi 99
     0
 }

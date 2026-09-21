@@ -1,0 +1,5 @@
+error: field 'missing' not found on type 'Value'
+  --> examples/generics/static-initializer-unknown-field.sx:10:41
+   |
+10 |     box := Box(Value).init(.{ missing = 2 });
+   |                                         ^

@@ -1,0 +1,14 @@
+@import "modules/std.sx";
+
+verify :: (n: i64) -> bool {
+    word: isize = n;
+    alias: i64 = word;
+    wrapped := (-alias).(u64);
+    checked := @intCast(u8, n) catch { 7 };
+    f: f32 = 1.0;
+    return n.(u8) == 44 and wrapped == 18446744073709551316 and checked == 7 and @reinterpret(u32, f) == 1065353216;
+}
+
+CHECK :: @run verify(300);
+
+main :: () { print("{} {}\n", verify(300), CHECK); }

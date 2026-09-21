@@ -39,12 +39,12 @@ main :: () -> i32 {
 
         // alloc + release — synthesized -dealloc IMP fires inside.
         selAlloc : SEL = sel_registerName("alloc".ptr);
-        allocFn : (cls: *void, sel: *void) -> *void abi(.c) = xx objc_msgSend;
+        allocFn : (cls: *void, sel: *void) -> *void abi(.c) = objc_msgSend;
         instance : *void = allocFn(cls, selAlloc);
         if instance == null { print("FAIL: +alloc returned null\n"); return 1; }
 
         selRelease : SEL = sel_registerName("release".ptr);
-        releaseFn : (obj: *void, sel: *void) -> void abi(.c) = xx objc_msgSend;
+        releaseFn : (obj: *void, sel: *void) -> void abi(.c) = @reinterpret((*void, *void) -> void abi(.c), objc_msgSend);
         releaseFn(instance, selRelease);
 
         // Run another cycle to confirm dealloc didn't corrupt runtime state.

@@ -1,0 +1,2 @@
+Point :: struct { px: i32; py: i32; }
+Box :: struct ($T: Type) { px: T; py: T; extra: i32; }

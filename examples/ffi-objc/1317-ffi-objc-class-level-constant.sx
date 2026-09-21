@@ -38,13 +38,13 @@ main :: () -> i32 {
 
         // [SxThing answer] → 42
         selAnswer : SEL = sel_registerName("answer".ptr);
-        msgInt : (cls: *void, sel: *void) -> i32 abi(.c) = xx objc_msgSend;
+        msgInt : (cls: *void, sel: *void) -> i32 abi(.c) = @reinterpret((*void, *void) -> i32 abi(.c), objc_msgSend);
         r := msgInt(cls, selAnswer);
         if r != 42 { print("FAIL: answer expected 42, got {}\n", r); return 1; }
 
         // [SxThing seedClass] returns a non-null NSObject.
         selSeed : SEL = sel_registerName("seedClass".ptr);
-        msgPtr : (cls: *void, sel: *void) -> *void abi(.c) = xx objc_msgSend;
+        msgPtr : (cls: *void, sel: *void) -> *void abi(.c) = objc_msgSend;
         seed := msgPtr(cls, selSeed);
         if seed == null { print("FAIL: seedClass returned null\n"); return 1; }
 

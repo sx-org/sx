@@ -1308,6 +1308,7 @@ pub const Vm = struct {
                 const v = frame.get(u.operand.index());
                 if (oty.isBuiltin()) return .{ .value = v }; // already an integer tag
                 const table = try self.requireTable();
+                if (table.get(oty) == .@"error") return .{ .value = v };
                 if (table.get(oty) == .@"enum") {
                     const tu = table.get(oty).@"enum";
                     if (!tu.hasPayload()) return .{ .value = v }; // the word IS the tag
@@ -1548,7 +1549,11 @@ pub const Vm = struct {
             // type-category match where the operand is a `.type_value` whose word IS
             // its `TypeId` index (so the same i64 compare covers both).
             .switch_br => |sb| {
-                const operand: i64 = @bitCast(frame.get(sb.operand.index()));
+                const raw = frame.get(sb.operand.index());
+                const operand: i64 = if (try self.refTy(ref_types, sb.operand) == .type_value)
+                    (try self.requireTable()).canonicalType(TypeId.fromIndex(try self.typeIdxOf(raw))).index()
+                else
+                    @bitCast(raw);
                 for (sb.cases) |case| {
                     if (operand == case.value) return .{ .jump = .{ .target = case.target, .args = case.args } };
                 }
@@ -1678,6 +1683,10 @@ pub const Vm = struct {
     }
 
     fn cmp(self: *Vm, tag: OpTag, lty: TypeId, l: Reg, r: Reg) Error!bool {
+        if (lty == .type_value and (tag == .cmp_eq or tag == .cmp_ne)) {
+            const equal = (try self.requireTable()).sameType(TypeId.fromIndex(try self.typeIdxOf(l)), TypeId.fromIndex(try self.typeIdxOf(r)));
+            return if (tag == .cmp_eq) equal else !equal;
+        }
         if (isFloat(lty)) {
             const lf: f64 = @bitCast(l);
             const rf: f64 = @bitCast(r);
@@ -2420,7 +2429,7 @@ pub const Vm = struct {
                 if (bi.args.len < 2) return self.failMsg("comptime @typeEq: expected two arguments");
                 const ta = try self.reflectArgTypeId(try self.refTy(ref_types, bi.args[0]), frame.get(bi.args[0].index()));
                 const tb = try self.reflectArgTypeId(try self.refTy(ref_types, bi.args[1]), frame.get(bi.args[1].index()));
-                return @as(Reg, @intFromBool(ta == tb));
+                return @as(Reg, @intFromBool((try self.requireTable()).sameType(ta, tb)));
             },
             // `@typeInfo($T)` → reflect a type INTO a TypeInfo VALUE (the inverse
             // of define's decode). The arg folded to a `const_type` (a
@@ -3089,6 +3098,7 @@ pub const Vm = struct {
         if (sty == .any) return if (idx == 0) 0 else 8;
         switch (table.get(sty)) {
             .string, .slice => return if (idx == 0) 0 else 8,
+            .optional => |o| return if (idx == 0) 0 else table.typeSizeBytes(o.child),
             .failable => |f| {
                 const n = table.failableValueSlotCount(f);
                 var off: usize = 0;
@@ -3140,13 +3150,11 @@ pub const Vm = struct {
         return raw;
     }
 
-    /// The pointee of a single-element pointer type (the result of `index_gep` is
-    /// `*element`). Falls back to `ty` if it isn't a `.pointer` (the caller only
-    /// uses the result for an element-size query).
     fn pointeeOf(table: *const types.TypeTable, ty: TypeId) TypeId {
         if (!ty.isBuiltin()) {
             const info = table.get(ty);
             if (info == .pointer) return info.pointer.pointee;
+            if (info == .many_pointer) return info.many_pointer.element;
         }
         return ty;
     }

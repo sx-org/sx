@@ -418,7 +418,7 @@ Router :: struct {
 //
 // Use it as:  srv, e := http.Server.init(cfg, http.dispatch, @router);
 dispatch :: (req: *types.Request, resp: *types.Response, ctx: usize) {
-    self : *Router = ctx.(*Router);
+    self : *Router = @reinterpret(*Router, ctx);
     path := pathOnly(req.path);    
 
     rc : RouteCtx = .{ req = req, resp = resp, appCtx = self.appCtx };

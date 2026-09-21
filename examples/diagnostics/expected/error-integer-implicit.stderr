@@ -1,0 +1,11 @@
+error: cannot initialize 'n' of type 'i32' with a value of type 'Fault'
+  --> examples/diagnostics/error-integer-implicit.sx:7:14
+   |
+ 7 |     n: i32 = e;
+   |              ^
+
+error: cannot coerce a value of type 'Fault' to 'i64': no implicit conversion applies
+  --> examples/diagnostics/error-integer-implicit.sx:8:5
+   |
+ 8 |     takes(e);
+   |     ^^^^^^^^

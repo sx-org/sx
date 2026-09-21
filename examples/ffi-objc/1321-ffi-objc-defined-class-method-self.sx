@@ -47,8 +47,8 @@ SxIssue44Foo :: @ObjcClass("SxIssue44Foo") {
         bus := SxIssue44Bus.defaultCenter();
         bus.addObserver_selector_name_object(
             this,
-            xx 0,
-            xx 0,
+            null,
+            null,
             null);
         return 1;
     }
@@ -88,7 +88,7 @@ main :: () -> i32 {
         // Truncating `xx this` to i8 makes captureObserver receive
         // (lowByteOfF) cast back to *void, which won't equal fVoid.
         gObserver = null;
-        _ = f.captureSelf_options(xx 0, xx 0);
+        _ = f.captureSelf_options(null, null);
         if gObserver == fVoid {
             print("captureSelf-from-BOOL: ok\n");
         } else {

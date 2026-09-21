@@ -8,10 +8,8 @@ const Node = ast.Node;
 const TypeId = types.TypeId;
 const Lowering = lower.Lowering;
 
-/// An argument whose type is its default, not its meaning: an integer, float
-/// or string literal, and a negated numeric one. Generic binding lets the
-/// other arguments decide `$T` first and fits the literal to it.
-fn flexibleLiteral(node: *const Node) bool {
+fn isContextualArgument(l: *Lowering, node: *const Node) bool {
+    if (l.isAdaptableFloat(node)) return true;
     return switch (node.data) {
         .int_literal, .float_literal, .string_literal => true,
         .unary_op => |uo| uo.op == .negate and switch (uo.operand.data) {
@@ -22,13 +20,13 @@ fn flexibleLiteral(node: *const Node) bool {
     };
 }
 
-/// Whether a flexible literal converts to the type the other arguments bound.
-fn literalFits(l: *Lowering, node: *const Node, ty: TypeId) bool {
+fn contextualArgumentFits(l: *Lowering, node: *const Node, ty: TypeId) bool {
+    if (l.isAdaptableFloat(node)) return Lowering.isFloat(ty);
     return switch (node.data) {
         .int_literal => l.isIntEx(ty) or Lowering.isFloat(ty),
         .float_literal => Lowering.isFloat(ty),
         .string_literal => ty == .string or ty == .cstring or l.literalKeepsArray(ty),
-        .unary_op => |uo| literalFits(l, uo.operand, ty),
+        .unary_op => |uo| contextualArgumentFits(l, uo.operand, ty),
         else => false,
     };
 }
@@ -55,6 +53,12 @@ pub const GenericResolver = struct {
     /// Mangle a TypeId into its mono-key fragment ("i64", "ptr_T", "SL_T",
     /// "AR_n_T", struct name, "tu_X_Y", …). Recursive for compound shapes.
     pub fn mangleTypeName(self: GenericResolver, ty: TypeId) []const u8 {
+        if (self.l.module.types.canonicalType(ty) != ty) {
+            const info = self.l.module.types.get(ty);
+            const is_instance = info == .@"struct" and self.l.struct_instance_template.contains(self.l.module.types.getString(info.@"struct".name));
+            if (!is_instance)
+                return std.fmt.allocPrint(self.l.alloc, "annotation_{d}", .{ty.index()}) catch @panic("out of memory while mangling type");
+        }
         // Builtin types
         if (ty == .i8) return "i8";
         if (ty == .i16) return "i16";
@@ -372,8 +376,8 @@ pub const GenericResolver = struct {
                     if (matched) {
                         if (s2_arg_idx < args_ast.len) {
                             const arg_node = args_ast[s2_arg_idx];
-                            if (flexibleLiteral(arg_node) != literal_round) continue;
-                            if (literal_round and inferred_ty != null and literalFits(self.l, arg_node, inferred_ty.?)) continue;
+                            if (isContextualArgument(self.l, arg_node) != literal_round) continue;
+                            if (literal_round and inferred_ty != null and contextualArgumentFits(self.l, arg_node, inferred_ty.?)) continue;
                             // A written lambda literal IS its env struct; the
                             // binder takes that type before the literal lowers.
                             if (Lowering.boundOnBinder(param.type_expr, tp.name) and arg_node.data == .lambda and arg_node.data.lambda.has_env) {

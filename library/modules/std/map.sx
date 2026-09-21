@@ -99,7 +99,7 @@ mapHashInto :: (v: $T, h: u64) -> u64 {
         }
         return hh;
     }
-    return fnv1aFold(h, *v, @sizeOf(T));   // scalar/enum/bool/pointer leaf
+    return fnv1aFold(h, @reinterpret([*]u8, *v), @sizeOf(T));
 }
 
 // Loud tripwire for the "no free bucket after a full probe walk" terminal —

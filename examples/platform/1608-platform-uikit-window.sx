@@ -47,15 +47,15 @@ sceneWillConnect :: (self: *void, _cmd: *void, scene: *void, session: *void, opt
     selSetRootVc        := sel_registerName("setRootViewController:".ptr);
     selMakeKeyVisible   := sel_registerName("makeKeyAndVisible".ptr);
 
-    msgO   : (*void, *void)               -> *void abi(.c) = xx objc_msgSend;
-    msgV   : (*void, *void)               -> void abi(.c) = xx objc_msgSend;
-    msgOo  : (*void, *void, *void)        -> void abi(.c) = xx objc_msgSend;
-    msgOoo : (*void, *void, *void)        -> *void abi(.c) = xx objc_msgSend;
+    msgO   : (*void, *void)               -> *void abi(.c) = objc_msgSend;
+    msgV   : (*void, *void)               -> void abi(.c) = @reinterpret((*void, *void) -> void abi(.c), objc_msgSend);
+    msgOo  : (*void, *void, *void)        -> void abi(.c) = @reinterpret((*void, *void, *void) -> void abi(.c), objc_msgSend);
+    msgOoo : (*void, *void, *void)        -> *void abi(.c) = @reinterpret((*void, *void, *void) -> *void abi(.c), objc_msgSend);
 
     // UIKit invokes this callback only after the UIWindowScene exists, unlike
     // application:didFinishLaunchingWithOptions: where connectedScenes is still
     // empty on current iOS releases.
-    if scene == xx 0 { NSLog(nsstring("[sx] scene NULL\n")); return; }
+    if scene == null { NSLog(nsstring("[sx] scene NULL\n")); return; }
     NSLog(nsstring("[sx] scene: ok\n"));
 
     winRaw := msgO(UIWindow, selAlloc);
@@ -90,7 +90,7 @@ main :: () -> i32 {
 
     class_addMethod(SxAppDelegate,
         sel_registerName("application:didFinishLaunchingWithOptions:".ptr),
-        xx didFinishLaunching, "c@:@@".ptr);
+        @reinterpret(*void, didFinishLaunching), "c@:@@".ptr);
     objc_registerClassPair(SxAppDelegate);
 
     // The bundler's UIApplicationSceneManifest names `SxSceneDelegate`.
@@ -102,14 +102,14 @@ main :: () -> i32 {
     if windowSceneProto != null { class_addProtocol(SxSceneDelegate, windowSceneProto); }
     class_addMethod(SxSceneDelegate,
         sel_registerName("scene:willConnectToSession:options:".ptr),
-        xx sceneWillConnect, "v@:@@@".ptr);
+        @reinterpret(*void, sceneWillConnect), "v@:@@@".ptr);
     class_addMethod(SxSceneDelegate,
         sel_registerName("window".ptr),
-        xx windowGetter, "@@:".ptr);
+        @reinterpret(*void, windowGetter), "@@:".ptr);
     class_addMethod(SxSceneDelegate,
         sel_registerName("setWindow:".ptr),
-        xx windowSetter, "v@:@".ptr);
+        @reinterpret(*void, windowSetter), "v@:@".ptr);
     objc_registerClassPair(SxSceneDelegate);
 
-    return UIApplicationMain(0, xx 0, xx 0, nsstring("SxAppDelegate"));
+    return UIApplicationMain(0, null, null, nsstring("SxAppDelegate"));
 }

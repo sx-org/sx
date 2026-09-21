@@ -1,0 +1,10 @@
+@import "modules/std.sx";
+
+Wrap :: struct (..$Ts: []Type) {
+    callback: Closure(..$Ts) -> [@sizeOf(struct { ..Bse; z: i32; })]i32;
+}
+
+main :: () {
+    v: Wrap(i32) = ---;
+    print("{}\n", @sizeOf(@typeOf(v)));
+}

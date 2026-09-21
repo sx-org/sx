@@ -38,7 +38,7 @@ sumBytes :: (buf: [*]u8) -> i64 {
 }
 
 runU8 :: () -> i64 {
-    buf : [*]u8 = xx c.libcMalloc(BUF_SIZE);
+    buf : [*]u8 = c.libcMalloc(BUF_SIZE);
     fill(buf);
     p : *u8 = *buf[TARGET];
     p.* = 0x42;
@@ -48,9 +48,9 @@ runU8 :: () -> i64 {
 }
 
 runU16 :: () -> i64 {
-    buf : [*]u8 = xx c.libcMalloc(BUF_SIZE);
+    buf : [*]u8 = c.libcMalloc(BUF_SIZE);
     fill(buf);
-    p : *u16 = xx *buf[TARGET];
+    p : *u16 = @reinterpret(*u16, *buf[TARGET]);
     p.* = 0x0102;
     s := sumBytes(buf);
     c.libcFree(buf);
@@ -58,9 +58,9 @@ runU16 :: () -> i64 {
 }
 
 runU32 :: () -> i64 {
-    buf : [*]u8 = xx c.libcMalloc(BUF_SIZE);
+    buf : [*]u8 = c.libcMalloc(BUF_SIZE);
     fill(buf);
-    p : *u32 = xx *buf[TARGET];
+    p : *u32 = @reinterpret(*u32, *buf[TARGET]);
     p.* = 0x01020304;
     s := sumBytes(buf);
     c.libcFree(buf);
@@ -68,9 +68,9 @@ runU32 :: () -> i64 {
 }
 
 runU64 :: () -> i64 {
-    buf : [*]u8 = xx c.libcMalloc(BUF_SIZE);
+    buf : [*]u8 = c.libcMalloc(BUF_SIZE);
     fill(buf);
-    p : *u64 = xx *buf[TARGET];
+    p : *u64 = @reinterpret(*u64, *buf[TARGET]);
     p.* = 0x0102030405060708;
     s := sumBytes(buf);
     c.libcFree(buf);
@@ -78,9 +78,9 @@ runU64 :: () -> i64 {
 }
 
 runI8 :: () -> i64 {
-    buf : [*]u8 = xx c.libcMalloc(BUF_SIZE);
+    buf : [*]u8 = c.libcMalloc(BUF_SIZE);
     fill(buf);
-    p : *i8 = xx *buf[TARGET];
+    p : *i8 = @reinterpret(*i8, *buf[TARGET]);
     p.* = 0x42;
     s := sumBytes(buf);
     c.libcFree(buf);
@@ -88,9 +88,9 @@ runI8 :: () -> i64 {
 }
 
 runI16 :: () -> i64 {
-    buf : [*]u8 = xx c.libcMalloc(BUF_SIZE);
+    buf : [*]u8 = c.libcMalloc(BUF_SIZE);
     fill(buf);
-    p : *i16 = xx *buf[TARGET];
+    p : *i16 = @reinterpret(*i16, *buf[TARGET]);
     p.* = 0x0102;
     s := sumBytes(buf);
     c.libcFree(buf);
@@ -98,9 +98,9 @@ runI16 :: () -> i64 {
 }
 
 runI32 :: () -> i64 {
-    buf : [*]u8 = xx c.libcMalloc(BUF_SIZE);
+    buf : [*]u8 = c.libcMalloc(BUF_SIZE);
     fill(buf);
-    p : *i32 = xx *buf[TARGET];
+    p : *i32 = @reinterpret(*i32, *buf[TARGET]);
     p.* = 0x01020304;
     s := sumBytes(buf);
     c.libcFree(buf);
@@ -108,9 +108,9 @@ runI32 :: () -> i64 {
 }
 
 runI64 :: () -> i64 {
-    buf : [*]u8 = xx c.libcMalloc(BUF_SIZE);
+    buf : [*]u8 = c.libcMalloc(BUF_SIZE);
     fill(buf);
-    p : *i64 = xx *buf[TARGET];
+    p : *i64 = @reinterpret(*i64, *buf[TARGET]);
     p.* = 0x0102030405060708;
     s := sumBytes(buf);
     c.libcFree(buf);
@@ -118,9 +118,9 @@ runI64 :: () -> i64 {
 }
 
 runBool :: () -> i64 {
-    buf : [*]u8 = xx c.libcMalloc(BUF_SIZE);
+    buf : [*]u8 = c.libcMalloc(BUF_SIZE);
     fill(buf);
-    p : *bool = xx *buf[TARGET];
+    p : *bool = @reinterpret(*bool, *buf[TARGET]);
     p.* = true;
     s := sumBytes(buf);
     c.libcFree(buf);
@@ -128,9 +128,9 @@ runBool :: () -> i64 {
 }
 
 runF32 :: () -> i64 {
-    buf : [*]u8 = xx c.libcMalloc(BUF_SIZE);
+    buf : [*]u8 = c.libcMalloc(BUF_SIZE);
     fill(buf);
-    p : *f32 = xx *buf[TARGET];
+    p : *f32 = @reinterpret(*f32, *buf[TARGET]);
     p.* = 1.0;
     s := sumBytes(buf);
     c.libcFree(buf);
@@ -138,9 +138,9 @@ runF32 :: () -> i64 {
 }
 
 runF64 :: () -> i64 {
-    buf : [*]u8 = xx c.libcMalloc(BUF_SIZE);
+    buf : [*]u8 = c.libcMalloc(BUF_SIZE);
     fill(buf);
-    p : *f64 = xx *buf[TARGET];
+    p : *f64 = @reinterpret(*f64, *buf[TARGET]);
     p.* = 1.0;
     s := sumBytes(buf);
     c.libcFree(buf);

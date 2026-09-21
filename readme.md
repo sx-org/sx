@@ -10,7 +10,7 @@ interfaces, and an LLVM backend — compiled to native code.
 
 Point :: struct {
     x, y: i32;
-    magnitude :: (self: *@This()) -> f32 { @sqrt(self.x * self.x + self.y * self.y); }
+    magnitude :: (self: *@This()) -> f32 { @sqrt(self.x * self.x + self.y * self.y).(f32); }
 }
 
 main :: () {
@@ -70,7 +70,7 @@ sx lsp                   # start language server
 
 `[N]T` coerces to `[]T`. A `[*]T` has no length — slice it with `ptr[0..len]`.
 
-A typed store needs a coercion. Different width with no coercion (`x : i32 = "hi"`) is an error. Same-width reinterpret (`*T → [*]T`) is allowed. `xx` / `x.(T)` is the explicit ladder: `1000.(i8)` truncates; `dog.(Speaker)` builds an interface handle over `dog`. On `any`: `try av.(i64)` / `av.(i64)` / `av.(?i64)`. `o?.(T)` maps over an optional.
+A typed store needs a modeled conversion; equal storage size grants none. Byte views use `@reinterpret(T, value)`. `x.(T)` is the explicit ladder: `1000.(i8)` truncates; `dog.(Speaker)` builds an interface handle over `dog`. On `any`: `try av.(i64)` / `av.(i64)` / `av.(?i64)`. `o?.(T)` maps over an optional.
 
 Limits fold: `i64.max`, `u8.min`, `f64.inf`. See specs → Numeric Limits.
 
@@ -137,7 +137,7 @@ v2 := Vec3{ 1, 2, 3 };
 Shape :: enum { circle: f32; rect: struct { w, h: f32; }; none; }
 area :: (s: Shape) -> f32 {
     match s {
-        case .circle: |r| 3.14159 * r * r;
+        case .circle: |r| (3.14159 * r * r).(f32);
         case .rect: |r| r.w * r.h;
         case .none: 0;
     }
@@ -155,7 +155,7 @@ name := node?.name ?? "unknown";
 if n != null { takeI32(n); }    // narrowed; a bare `takeI32(n)` is an error
 ```
 
-`@using` composes structs. Methods live in the body.
+`..Base` in a struct body splices Base’s fields. Methods live in the body.
 
 ### Generics and closures
 

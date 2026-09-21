@@ -1,0 +1,5 @@
+error: literal spread requires a pack, struct or fixed-length array value
+  --> examples/diagnostics/2736-diagnostics-nonaggregate-value-spread.sx:2:25
+   |
+ 2 | main :: () { value := P{..42}; }
+   |                         ^^^^

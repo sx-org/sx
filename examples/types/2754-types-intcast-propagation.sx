@@ -1,0 +1,24 @@
+@import "modules/std.sx";
+
+byte :: (n: i64) -> (u8, !IntCastError) {
+    defer print("cleanup {}\n", n);
+    v := try @intCast(u8, n);
+    print("after {}\n", n);
+    return v;
+}
+
+relay :: (n: i64) -> (u8, !) {
+    return try byte(n);
+}
+
+main :: () {
+    a := relay(42) catch { return; };
+    print("success {}\n", a);
+    b := relay(300) catch |e| match e {
+        case .OutOfRange: {
+            print("caught {}\n", e);
+            7
+        }
+    };
+    print("recovered {}\n", b);
+}

@@ -120,7 +120,7 @@ Router :: struct {
         self.snap = snap;
         i := 0;
         while i < self.sequences.len {
-            s := *self.sequences.items[i];
+            s: *PointerSequence = *self.sequences.items[i];
             if e := s.element { if !Router.declares(snap, e) { s.element = null; } }
             if sc := s.scroller { if !Router.declaresScroll(snap, sc) { s.scroller = null; } }
             if s.scroller == null and (s.dragging or s.element == null) {
@@ -151,7 +151,7 @@ Router :: struct {
         if self.snap == null then return null;
         i := self.snap.hitList.len - 1;
         while i >= 0 {
-            r := *self.snap.hitList.items[i];
+            r: *HitRegion = *self.snap.hitList.items[i];
             if r.frame.contains(p) {
                 allowed : HitPolicy = .tap;
                 if pf := r.policy {
@@ -171,7 +171,7 @@ Router :: struct {
         if self.snap == null then return null;
         i := self.snap.scrollList.len - 1;
         while i >= 0 {
-            r := *self.snap.scrollList.items[i];
+            r: *ScrollRegion = *self.snap.scrollList.items[i];
             if r.frame.contains(p) { return r.id; }
             i -= 1;
         }
@@ -262,7 +262,7 @@ Router :: struct {
             case .pointerMove: |p| {
                 i := self.find(p.pointer);
                 if i < 0 then return;
-                s := *self.sequences.items[i];
+                s: *PointerSequence = *self.sequences.items[i];
                 if s.dragging {
                     self.scroll(s.scroller?!, .dragMove, p.position.sub(s.last), p.header.timeNs);
                     s.last = p.position;

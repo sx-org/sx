@@ -7,6 +7,7 @@ const mod_mod = @import("../module.zig");
 const type_bridge = @import("../type_bridge.zig");
 const program_index_mod = @import("../program_index.zig");
 const unescape = @import("../../unescape.zig");
+const literal_fields = @import("../../literal_fields.zig");
 const contracts = @import("../../contracts.zig");
 const errors = @import("../../errors.zig");
 const TypeResolver = @import("../type_resolver.zig").TypeResolver;
@@ -43,7 +44,163 @@ pub fn refuseVoidElement(self: *Lowering, src_ty: TypeId, slot_ty: TypeId, field
     return true;
 }
 
-const InferredLiteral = struct { ty: TypeId, refs: []const Ref };
+const LoweredLiteralInitializer = union(enum) {
+    value: Ref,
+    spread: []LiteralSpreadField,
+};
+const InferredLiteral = struct { ty: TypeId, initializers: []const LoweredLiteralInitializer };
+
+fn routeLiteralContribution(self: *Lowering, route: *literal_fields.Typed, name: ?[]const u8, origin: literal_fields.Origin, span: ast.Span, type_name: []const u8) ?usize {
+    return route.contribute(name, origin) catch |err| {
+        if ((err == error.UnknownField or err == error.TooManyValues) and self.externalErrorsExist()) return null;
+        if (self.diagnostics) |d| switch (err) {
+            error.UnknownField => d.addFmt(.err, span, "field '{s}' not found on type '{s}'", .{ name.?, type_name }),
+            error.TooManyValues => d.addFmt(.err, span, "positional initializer {d} exceeds the {d} fields of '{s}'", .{ route.position - 1, route.names.len, type_name }),
+            error.UnnamedAfterNamed => d.add(.err, "unnamed contribution after a named field", span),
+            error.DirectCollision => d.addFmt(.err, span, "field '{s}' already initialized by a directly written value", .{name.?}),
+            error.DuplicateName => d.addFmt(.err, span, "field '{s}' initialized twice", .{name.?}),
+        };
+        return null;
+    };
+}
+
+pub const StructLiteralIndices = struct {
+    route: literal_fields.Typed,
+    ty: TypeId,
+
+    pub fn init(self: *Lowering, sl: *const ast.StructLiteral, ty: TypeId) StructLiteralIndices {
+        const fields = self.getStructFields(ty);
+        const names = self.alloc.alloc([]const u8, fields.len) catch unreachable;
+        for (fields, names) |field, *name| name.* = self.module.types.getString(field.name);
+        const layout: literal_fields.Typed.Layout = layout: {
+            if (sl.struct_name == null and sl.type_expr == null and self.module.types.isAnonStruct(ty)) {
+                for (names) |name| {
+                    if (literal_fields.spreadName(name) == null) break :layout .anonymous;
+                }
+            }
+            break :layout .declaration;
+        };
+        return .{ .route = literal_fields.Typed.init(self.alloc, names, layout), .ty = ty };
+    }
+
+    pub fn deinit(self: *StructLiteralIndices, alloc: std.mem.Allocator) void {
+        alloc.free(self.route.names);
+        self.route.deinit(alloc);
+    }
+
+    pub fn plain(self: *StructLiteralIndices, l: *Lowering, fi: ast.StructFieldInit) ?u32 {
+        const name = self.route.plainName(fi.name, fi.was_shorthand);
+        return self.contribute(l, name, .direct, fi.value.span);
+    }
+
+    pub fn spread(self: *StructLiteralIndices, l: *Lowering, name: ?[]const u8, span: ast.Span) ?u32 {
+        return self.contribute(l, name, .spread, span);
+    }
+
+    fn contribute(self: *StructLiteralIndices, l: *Lowering, name: ?[]const u8, origin: literal_fields.Origin, span: ast.Span) ?u32 {
+        const index = routeLiteralContribution(l, &self.route, name, origin, span, l.formatTypeName(self.ty)) orelse return null;
+        if (name) |n| _ = l.mentionField(self.ty, n, span);
+        return @intCast(index);
+    }
+};
+
+fn bindGenericLiteralField(self: *Lowering, tmpl: *const program_index_mod.StructTemplate, k: usize, arg_ty: TypeId, tb: *std.StringHashMap(TypeId), diagnostic: ?struct { bound_by: *std.StringHashMap([]const u8), span: ast.Span }) bool {
+    if (arg_ty == .unresolved) return false;
+    const node = tmpl.field_type_nodes[k];
+    var ok = true;
+    for (tmpl.type_params) |tp| {
+        if (!self.matchTypeParam(node, tp.name)) continue;
+        const ety = self.extractTypeParam(node, arg_ty, tp.name) orelse continue;
+        if (tb.get(tp.name)) |prev| {
+            if (prev != ety) {
+                if (diagnostic) |context| {
+                    if (self.diagnostics) |d| d.addFmt(.err, context.span, "'{s}' binds '${s}' to '{s}', but '{s}' bound it to '{s}'", .{
+                        tmpl.field_names[k], tp.name, self.formatTypeName(ety), context.bound_by.get(tp.name) orelse "an earlier field", self.formatTypeName(prev),
+                    });
+                }
+                ok = false;
+            }
+        } else {
+            tb.put(tp.name, ety) catch unreachable;
+            if (diagnostic) |context| context.bound_by.put(tp.name, tmpl.field_names[k]) catch unreachable;
+        }
+    }
+    return ok;
+}
+
+const literalSpreadName = literal_fields.spreadName;
+
+const LiteralSpreadType = struct { name: ?[]const u8, ty: TypeId };
+
+pub fn literalSpreadTypes(self: *Lowering, operand: *const Node) ?[]LiteralSpreadType {
+    const saved_tt = self.target_type;
+    self.target_type = null;
+    defer self.target_type = saved_tt;
+    var fields = std.ArrayList(LiteralSpreadType).empty;
+    defer fields.deinit(self.alloc);
+    const pack: ?struct { name: []const u8, method: ?[]const u8 } = switch (operand.data) {
+        .identifier => |id| .{ .name = id.name, .method = null },
+        .field_access => |fa| if (fa.object.data == .identifier)
+            .{ .name = fa.object.data.identifier.name, .method = fa.field }
+        else
+            null,
+        else => null,
+    };
+    if (pack) |p| {
+        const element_types = if (self.pack_arg_types) |pat| pat.get(p.name) else null;
+        if (element_types) |ts| {
+            for (ts, 0..) |element_ty, i| {
+                if (p.method == null) {
+                    fields.append(self.alloc, .{ .name = null, .ty = element_ty }) catch unreachable;
+                    continue;
+                }
+                const object = self.alloc.create(Node) catch unreachable;
+                object.* = .{ .span = operand.span, .data = .{ .identifier = .{ .name = p.name } } };
+                const index = self.alloc.create(Node) catch unreachable;
+                index.* = .{ .span = operand.span, .data = .{ .int_literal = .{ .value = @intCast(i) } } };
+                const element = self.alloc.create(Node) catch unreachable;
+                element.* = .{ .span = operand.span, .data = .{ .index_expr = .{ .object = object, .index = index } } };
+                const member = self.alloc.create(Node) catch unreachable;
+                member.* = .{ .span = operand.span, .data = .{ .field_access = .{ .object = element, .field = p.method.? } } };
+                const call = self.alloc.create(Node) catch unreachable;
+                call.* = .{ .span = operand.span, .data = .{ .call = .{ .callee = member, .args = &.{} } } };
+                fields.append(self.alloc, .{ .name = null, .ty = self.inferExprType(call) }) catch unreachable;
+            }
+            return fields.toOwnedSlice(self.alloc) catch unreachable;
+        }
+    }
+    const ty = self.inferExprType(operand);
+    switch (self.module.types.get(ty)) {
+        .@"struct" => {
+            const source_fields = type_bridge.structSpreadFields(&self.module.types, ty) catch return null;
+            for (source_fields) |field| {
+                fields.append(self.alloc, .{ .name = literalSpreadName(self.module.types.getString(field.name)), .ty = field.ty }) catch unreachable;
+            }
+        },
+        .array => |array| {
+            for (0..array.length) |_| fields.append(self.alloc, .{ .name = null, .ty = array.element }) catch unreachable;
+        },
+        else => return null,
+    }
+    return fields.toOwnedSlice(self.alloc) catch unreachable;
+}
+
+pub fn checkPlainInitializerNames(self: *Lowering, sl: *const ast.StructLiteral, ty: TypeId) bool {
+    var names = std.StringHashMap(void).init(self.alloc);
+    defer names.deinit();
+    var valid = true;
+    for (sl.field_inits) |fi| {
+        const name = fi.name orelse continue;
+        if (fi.was_shorthand and ty != .unresolved and self.lookupField(ty, name) == .missing) continue;
+        const entry = names.getOrPut(name) catch unreachable;
+        if (entry.found_existing) {
+            if (self.diagnostics) |d|
+                d.addFmt(.err, fi.name_span orelse fi.value.span, "field '{s}' initialized twice", .{name});
+            valid = false;
+        }
+    }
+    return valid;
+}
 
 /// The instance a bare generic literal names, read without lowering it: each
 /// written field's initializer is typed as an expression, and a written lambda
@@ -54,26 +211,25 @@ const InferredLiteral = struct { ty: TypeId, refs: []const Ref };
 pub fn genericLiteralType(self: *Lowering, sl: *const ast.StructLiteral, tmpl: *const program_index_mod.StructTemplate) ?TypeId {
     for (tmpl.type_params) |tp| if (!tp.is_type_param) return null;
     var tb = std.StringHashMap(TypeId).init(self.alloc);
-    for (sl.field_inits, 0..) |fi, i| {
-        const idx: ?usize = if (fi.name) |n| blk: {
-            for (tmpl.field_names, 0..) |fname, k| if (std.mem.eql(u8, fname, n)) break :blk k;
-            const punned = fi.value.data == .identifier and std.mem.eql(u8, fi.value.data.identifier.name, n);
-            break :blk if (punned and i < tmpl.field_names.len) i else null;
-        } else if (i < tmpl.field_names.len) i else null;
-        const k = idx orelse continue;
-        const node = tmpl.field_type_nodes[k];
+    var route = literal_fields.Typed.init(self.alloc, tmpl.field_names, .declaration);
+    defer route.deinit(self.alloc);
+    for (sl.field_inits) |fi| {
+        if (fi.value.data == .spread_expr) {
+            const fields = literalSpreadTypes(self, fi.value.data.spread_expr.operand) orelse return null;
+            defer self.alloc.free(fields);
+            for (fields) |field| {
+                const idx = route.contribute(field.name, .spread) catch return null;
+                if (!bindGenericLiteralField(self, tmpl, idx, field.ty, &tb, null)) return null;
+            }
+            continue;
+        }
+        const name = route.plainName(fi.name, fi.was_shorthand);
+        const idx = route.contribute(name, .direct) catch return null;
         const arg_ty = if (fi.value.data == .lambda) blk: {
             if (!fi.value.data.lambda.has_env) return null;
             break :blk self.lambdaEnvType(&fi.value.data.lambda) orelse return null;
         } else self.inferExprType(fi.value);
-        if (arg_ty == .unresolved) return null;
-        for (tmpl.type_params) |tp| {
-            if (!self.matchTypeParam(node, tp.name)) continue;
-            const ety = self.extractTypeParam(node, arg_ty, tp.name) orelse continue;
-            if (tb.get(tp.name)) |prev| {
-                if (prev != ety) return null;
-            } else tb.put(tp.name, ety) catch {};
-        }
+        if (!bindGenericLiteralField(self, tmpl, idx, arg_ty, &tb, null)) return null;
     }
     for (tmpl.type_params) |tp| if (tb.get(tp.name) == null) return null;
     const mangled = self.mangledInstanceName(tmpl, &tb);
@@ -89,9 +245,15 @@ pub fn genericLiteralType(self: *Lowering, sl: *const ast.StructLiteral, tmpl: *
 /// parameter binds. A parameter no written field carries, two fields that
 /// disagree on one, or a value parameter refuse at the literal.
 fn inferGenericLiteral(self: *Lowering, sl: *const ast.StructLiteral, tmpl: *const program_index_mod.StructTemplate, span: ast.Span) InferredLiteral {
-    const failed = InferredLiteral{ .ty = .unresolved, .refs = &.{} };
+    const failed = InferredLiteral{ .ty = .unresolved, .initializers = &.{} };
     var tb = std.StringHashMap(TypeId).init(self.alloc);
-    var refs = std.ArrayList(Ref).empty;
+    var initializers = std.ArrayList(LoweredLiteralInitializer).empty;
+    defer {
+        for (initializers.items) |initializer| {
+            if (initializer == .spread) self.alloc.free(initializer.spread);
+        }
+        initializers.deinit(self.alloc);
+    }
     // Which parameter bound from which field, for the conflict diagnostic.
     var bound_by = std.StringHashMap([]const u8).init(self.alloc);
     defer bound_by.deinit();
@@ -106,19 +268,24 @@ fn inferGenericLiteral(self: *Lowering, sl: *const ast.StructLiteral, tmpl: *con
         }
     }
 
-    for (sl.field_inits, 0..) |fi, i| {
-        // A punned bare identifier that names no field is a positional
-        // element the parser named (`Pair{ x, y }`).
-        const idx: ?usize = if (fi.name) |n| blk: {
-            for (tmpl.field_names, 0..) |fname, k| if (std.mem.eql(u8, fname, n)) break :blk k;
-            const punned = fi.value.data == .identifier and std.mem.eql(u8, fi.value.data.identifier.name, n);
-            break :blk if (punned and i < tmpl.field_names.len) i else null;
-        } else if (i < tmpl.field_names.len) i else null;
+    var route = literal_fields.Typed.init(self.alloc, tmpl.field_names, .declaration);
+    defer route.deinit(self.alloc);
+    for (sl.field_inits) |fi| {
+        if (fi.value.data == .spread_expr) {
+            const contributions = lowerLiteralSpread(self, fi.value) orelse return failed;
+            initializers.append(self.alloc, .{ .spread = contributions }) catch unreachable;
+            for (contributions) |contribution| {
+                const idx = routeLiteralContribution(self, &route, contribution.name, .spread, fi.value.span, tmpl.name) orelse return failed;
+                const arg_ty = self.builder.getRefType(contribution.value);
+                if (!bindGenericLiteralField(self, tmpl, idx, arg_ty, &tb, .{ .bound_by = &bound_by, .span = span })) ok = false;
+            }
+            continue;
+        }
+        const name = route.plainName(fi.name, fi.was_shorthand);
+        const idx = routeLiteralContribution(self, &route, name, .direct, fi.name_span orelse fi.value.span, tmpl.name) orelse return failed;
         var target: ?TypeId = null;
-        var type_node: ?*const Node = null;
-        if (idx) |k| {
-            const node = tmpl.field_type_nodes[k];
-            type_node = node;
+        {
+            const node = tmpl.field_type_nodes[idx];
             var generic = false;
             for (tmpl.type_params) |tp| {
                 if (self.matchTypeParam(node, tp.name)) generic = true;
@@ -134,25 +301,9 @@ fn inferGenericLiteral(self: *Lowering, sl: *const ast.StructLiteral, tmpl: *con
         self.target_type = target;
         const val = self.lowerExpr(fi.value);
         self.target_type = saved_tt;
-        refs.append(self.alloc, val) catch unreachable;
-
-        const node = type_node orelse continue;
-        const arg_ty = self.valueTypeOfRef(val, self.builder.getRefType(val));
-        for (tmpl.type_params) |tp| {
-            if (!tp.is_type_param or !self.matchTypeParam(node, tp.name)) continue;
-            const ety = self.extractTypeParam(node, arg_ty, tp.name) orelse continue;
-            if (tb.get(tp.name)) |prev| {
-                if (prev != ety) {
-                    if (self.diagnostics) |d| d.addFmt(.err, span, "'{s}' binds '${s}' to '{s}', but '{s}' bound it to '{s}'", .{
-                        tmpl.field_names[idx.?], tp.name, self.formatTypeName(ety), bound_by.get(tp.name) orelse "an earlier field", self.formatTypeName(prev),
-                    });
-                    ok = false;
-                }
-            } else {
-                tb.put(tp.name, ety) catch {};
-                bound_by.put(tp.name, tmpl.field_names[idx.?]) catch {};
-            }
-        }
+        initializers.append(self.alloc, .{ .value = val }) catch unreachable;
+        const arg_ty = self.builder.getRefType(val);
+        if (!bindGenericLiteralField(self, tmpl, idx, arg_ty, &tb, .{ .bound_by = &bound_by, .span = span })) ok = false;
     }
 
     for (tmpl.type_params) |tp| {
@@ -167,7 +318,94 @@ fn inferGenericLiteral(self: *Lowering, sl: *const ast.StructLiteral, tmpl: *con
     const cvb = std.StringHashMap(i64).init(self.alloc);
     const pb = std.StringHashMap([]const TypeId).init(self.alloc);
     const ty = self.instantiateGenericStructBound(tmpl, tb, cvb, pb, mangled, span);
-    return .{ .ty = ty, .refs = refs.items };
+    if (ty == .unresolved) return failed;
+    return .{ .ty = ty, .initializers = initializers.toOwnedSlice(self.alloc) catch unreachable };
+}
+
+const LiteralSpreadField = struct {
+    name: ?[]const u8,
+    value: Ref,
+    node: *const Node,
+};
+
+fn lowerLiteralSpread(self: *Lowering, spread: *const Node) ?[]LiteralSpreadField {
+    const operand = spread.data.spread_expr.operand;
+    const saved_tt = self.target_type;
+    self.target_type = null;
+    defer self.target_type = saved_tt;
+    var fields = std.ArrayList(LiteralSpreadField).empty;
+    defer fields.deinit(self.alloc);
+    if (self.packSpreadRefs(operand, spread.span)) |refs| {
+        defer self.alloc.free(refs);
+        const arg_nodes: ?[]const *const Node = if (operand.data == .identifier and self.pack_arg_nodes != null)
+            self.pack_arg_nodes.?.get(operand.data.identifier.name)
+        else
+            null;
+        for (refs, 0..) |ref, i| {
+            fields.append(self.alloc, .{
+                .name = null,
+                .value = ref,
+                .node = if (arg_nodes) |nodes| (if (i < nodes.len) nodes[i] else spread) else spread,
+            }) catch unreachable;
+        }
+        return fields.toOwnedSlice(self.alloc) catch unreachable;
+    }
+
+    const value = self.lowerExpr(operand);
+    const ty = self.builder.getRefType(value);
+    switch (self.module.types.get(ty)) {
+        .@"struct" => {
+            const source_fields = type_bridge.structSpreadFields(&self.module.types, ty) catch {
+                if (self.diagnostics) |d| d.add(.err, "cannot spread a struct containing a private field", spread.span);
+                return null;
+            };
+            for (source_fields, 0..) |field, i| {
+                const name = self.module.types.getString(field.name);
+                const node = self.alloc.create(Node) catch unreachable;
+                node.* = .{
+                    .span = spread.span,
+                    .source_file = spread.source_file,
+                    .data = .{ .field_access = .{ .object = @constCast(operand), .field = name } },
+                };
+                fields.append(self.alloc, .{
+                    .name = literalSpreadName(name),
+                    .value = self.builder.structGet(value, @intCast(i), field.ty),
+                    .node = node,
+                }) catch unreachable;
+            }
+        },
+        .array => |array| {
+            const storage = self.refStorageAddress(value) orelse blk: {
+                const slot = self.builder.alloca(ty);
+                self.builder.store(slot, value);
+                break :blk slot;
+            };
+            const ptr_ty = self.module.types.ptrTo(array.element);
+            for (0..array.length) |i| {
+                const index = self.builder.constInt(@intCast(i), .i64);
+                const ptr = self.builder.emit(.{ .index_gep = .{ .lhs = storage, .rhs = index } }, ptr_ty);
+                fields.append(self.alloc, .{
+                    .name = null,
+                    .value = self.builder.load(ptr, array.element),
+                    .node = spread,
+                }) catch unreachable;
+            }
+        },
+        else => {
+            if (self.diagnostics) |d| d.add(.err, "literal spread requires a pack, struct or fixed-length array value", spread.span);
+            return null;
+        },
+    }
+    return fields.toOwnedSlice(self.alloc) catch unreachable;
+}
+
+fn coerceStructInitializer(self: *Lowering, value: Ref, field: types.TypeInfo.StructInfo.Field, index: usize, node: *const Node, span: ast.Span) Ref {
+    const saved_span = self.builder.current_span;
+    self.builder.current_span = .{ .start = span.start, .end = span.end };
+    defer self.builder.current_span = saved_span;
+    const src_ty = self.builder.getRefType(value);
+    if (refuseVoidElement(self, src_ty, field.ty, field.name, index, node.span)) return self.zeroValue(field.ty);
+    return self.coerceOrErase(value, src_ty, field.ty, node);
 }
 
 pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: ast.Span) Ref {
@@ -317,7 +555,13 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
 
     // A bare generic head (`Pair{ a = 1, b = "x" }`) infers its type arguments
     // from the written fields; the initializers it lowered are reused below.
-    var prelowered: ?[]const Ref = null;
+    var prelowered: ?[]const LoweredLiteralInitializer = null;
+    defer if (prelowered) |initializers| {
+        for (initializers) |initializer| {
+            if (initializer == .spread) self.alloc.free(initializer.spread);
+        }
+        self.alloc.free(initializers);
+    };
     var inferred_ty: TypeId = .unresolved;
     if (sl.struct_name) |name| {
         // The source-aware leaf answers first: a concrete struct this file can
@@ -335,7 +579,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
                     const inferred = inferGenericLiteral(self, sl, &tmpl, span);
                     if (inferred.ty == .unresolved) return self.builder.constUndef(.unresolved);
                     inferred_ty = inferred.ty;
-                    prelowered = inferred.refs;
+                    prelowered = inferred.initializers;
                 },
                 .poisoned => return self.builder.constUndef(.unresolved),
                 .not_generic => {},
@@ -395,6 +639,8 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         return self.coerceToType(reloaded, child, ty);
     }
 
+    if (!checkPlainInitializerNames(self, sl, ty)) return self.builder.constUndef(ty);
+
     // No inferable target at all (`t := .{ 1, 2, 3 };` — `ty` stayed
     // `.unresolved`): the literal's type can never be resolved, and an
     // `.unresolved`-typed `struct_init` flows to codegen and panics LLVM
@@ -438,7 +684,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
             // stay silent — or an element whose type genuinely cannot be
             // inferred — diagnose.)
             if (self.target_type == null) {
-                return self.synthesizeAnonStruct(sl, span);
+                return self.synthesizeAnonStruct(sl);
             }
             if (self.diagnostics) |d| {
                 if (!d.hasErrors())
@@ -467,16 +713,17 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     // produces garbage. Diagnose and return a typed zero
     // placeholder — the diagnostic aborts the build before codegen; the
     // placeholder only keeps the remaining lowering coherent.
-    // A TUPLE-targeted bare `.{ … }` routes through the tuple-literal
-    // machinery for the shapes the positional struct path can't do:
-    // spreads (`c.sources = .{..sources}`, `t : Tuple(..xs.T) = .{..xs.get}`)
-    // and arity MISMATCHES (a 2-element literal against a 3-field failable
-    // tuple must self-type as its own 2-tuple — adopting the full target
-    // would leave the error slot uninitialized). An exact-arity literal
-    // keeps the struct-literal path below, which owns void-slot skipping
-    // and named-against-tuple-names resolution.
+    // A failable product's shorter value tuple must keep its own arity so
+    // coercion can add the error slot. Struct spreads retain their field names.
     if (sl.struct_name == null and sl.type_expr == null and !ty.isBuiltin()) {
         const tgt = self.module.types.get(ty);
+        const positional_anon = self.module.types.isAnonStruct(ty) and blk: {
+            for (tgt.@"struct".fields, 0..) |field, i| {
+                const position = std.fmt.parseInt(usize, self.module.types.getString(field.name), 10) catch break :blk false;
+                if (position != i) break :blk false;
+            }
+            break :blk true;
+        };
         const route_len: ?usize = if (self.module.types.isAnonStruct(ty))
             tgt.@"struct".fields.len
         else if (tgt == .failable)
@@ -488,7 +735,9 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
             if (fi.value.data == .spread_expr) has_spread = true;
         }
         if (route_len) |n| {
-            if (has_spread or sl.field_inits.len != n) {
+            if ((tgt == .failable and has_spread) or
+                (!has_spread and (positional_anon or tgt == .failable) and sl.field_inits.len != n))
+            {
                 var elems = std.ArrayList(ast.TupleElement).empty;
                 defer elems.deinit(self.alloc);
                 for (sl.field_inits) |fi| {
@@ -539,26 +788,12 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     // Get struct field types for coercion and ordering
     const struct_fields = self.getStructFields(ty);
 
-    // Defaults and type-param bindings key off the RESOLVED type's own struct
-    // name: a generic instance registers both under its mangled name, which an
-    // alias of it (`BI :: Box(i64)`) never spells.
-    const struct_name_for_defaults: ?[]const u8 = if (ty.isBuiltin()) null else blk: {
+    // Generic bindings use the resolved instance name, including through aliases.
+    const instance_name: ?[]const u8 = if (ty.isBuiltin()) null else blk: {
         const ti = self.module.types.get(ty);
         break :blk if (ti == .@"struct") self.module.types.getString(ti.@"struct".name) else null;
     };
-    // The concrete TypeId selects the AUTHORING declaration's defaults. For
-    // an author-tracked type the identity map is AUTHORITATIVE — a miss means
-    // "this struct declares no defaults", never "borrow a same-name author's".
-    // The display-name map remains only for names without a nominal identity
-    // entry (generic instances, whose mangled names are unique) — its key is
-    // last-wins across same-name authors.
-    const field_defaults: []const ?*const Node = blk: {
-        if (!ty.isBuiltin()) {
-            if (self.struct_defaults_by_tid.get(ty)) |d| break :blk d;
-            if (self.plain_struct_authors.contains(ty)) break :blk &.{};
-        }
-        break :blk if (struct_name_for_defaults) |sn| (self.struct_defaults_map.get(sn) orelse &.{}) else &.{};
-    };
+    const field_defaults: []const ?*const Node = self.struct_defaults_by_tid.get(ty) orelse &.{};
 
     // A generic instance's defaults may REFERENCE its type params — `sz: i64 =
     // @sizeOf(T)` (dependent defaults). Those default AST nodes are
@@ -569,123 +804,54 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     // THIS instantiation. A non-generic struct has no entry and its defaults
     // lower in the ambient binding context.
     const default_bindings: ?std.StringHashMap(TypeId) =
-        if (struct_name_for_defaults) |sn| self.struct_instance_bindings.get(sn) else null;
+        if (instance_name) |sn| self.struct_instance_bindings.get(sn) else null;
 
-    // Check if any field_init has a name (named literal).
-    //
-    // The parser PUNS a bare identifier element `.{ x, ... }` into a named
-    // field `x = x` (the shorthand `Vec4{ w, z }` form, specs §Struct
-    // Literals), because it cannot know — without the struct definition —
-    // whether `x` names a field or is a positional value. A POSITIONAL literal
-    // whose first element is a bare variable (`.{ x, 2 }`, `x` not a field of
-    // the target) therefore arrives here as `[name=x][name=null]` — a spurious
-    // mix that the named branch below mis-reorders (the unmatched punned name
-    // leaves every real field at its default, zeroing the value).
-    //
-    // Disambiguate using the struct definition we now have: a punned bare-ident
-    // field whose name does NOT match any declared field is not a real named
-    // field — it is a positional element the parser over-eagerly named. If ANY
-    // such non-field punned name is present, treat the whole literal as
-    // positional (the only consistent reading: a true named literal names only
-    // real fields). An explicit `name = expr` (value ≠ bare ident of same name)
-    // that misses a field is still a genuine — and erroneous — named field, so
-    // it is NOT reclassified here.
-    const has_names = blk: {
-        if (sl.field_inits.len == 0 or sl.field_inits[0].name == null) break :blk false;
-        if (struct_fields.len > 0) {
-            for (sl.field_inits) |fi| {
-                const fname = fi.name orelse continue;
-                const is_punned = fi.value.data == .identifier and
-                    std.mem.eql(u8, fi.value.data.identifier.name, fname);
-                if (!is_punned) continue;
-                // A punned name that is not a field name → this was a positional
-                // element the parser named; the literal is positional.
-                if (self.lookupField(ty, fname) == .missing) break :blk false;
-            }
-        }
-        break :blk true;
-    };
-
-    if (has_names and struct_fields.len > 0) {
-        // Named literal: reorder fields to match struct declaration order
-        // First, lower all field values in source order (to preserve evaluation order)
-        var lowered = std.ArrayList(struct { val: Ref, index: ?u32, node: *const Node }).empty;
-        defer lowered.deinit(self.alloc);
+    if (self.module.types.get(ty) == .@"struct") {
+        const selected = self.alloc.alloc(?Ref, struct_fields.len) catch unreachable;
+        defer self.alloc.free(selected);
+        @memset(selected, null);
+        var indices = StructLiteralIndices.init(self, sl, ty);
+        defer indices.deinit(self.alloc);
         for (sl.field_inits, 0..) |fi, k| {
-            const saved_tt = self.target_type;
-            var index: ?u32 = null;
-            // Set target_type to the field's declared type so array literals
-            // know if the target is a vector, etc.
-            if (fi.name) |fname| {
-                switch (self.mentionField(ty, fname, fi.value.span)) {
-                    .hit, .private => |h| {
-                        self.target_type = h.ty;
-                        index = h.index;
-                    },
-                    // An explicit `name = expr` naming no real field is an error —
-                    // not silently dropped. (A punned bare-ident that misses a field
-                    // was already reclassified as positional by `has_names` above, so
-                    // anything unmatched here is a genuine, mistaken named field — a
-                    // typo or a field removed by an `inline if @host.os` branch.)
-                    .missing => if (self.diagnostics) |d|
-                        d.addFmt(.err, fi.value.span, "field '{s}' not found on type '{s}'", .{ fname, self.formatTypeName(ty) }),
+            if (fi.value.data == .spread_expr) {
+                const contributions = if (prelowered) |pl| pl[k].spread else lowerLiteralSpread(self, fi.value) orelse continue;
+                defer if (prelowered == null) self.alloc.free(contributions);
+                for (contributions) |contribution| {
+                    const index = indices.spread(self, contribution.name, fi.value.span);
+                    if (index) |idx| {
+                        selected[idx] = coerceStructInitializer(self, contribution.value, struct_fields[idx], idx, contribution.node, fi.value.span);
+                    }
                 }
+                continue;
             }
-            const val = if (prelowered) |pl| pl[k] else self.lowerExpr(fi.value);
+            const index = indices.plain(self, fi);
+            const saved_tt = self.target_type;
+            self.target_type = if (index) |idx| struct_fields[idx].ty else null;
+            const val = if (prelowered) |pl|
+                pl[k].value
+            else if (index) |idx|
+                self.foldComptimeFloatInit(fi.value, struct_fields[idx].ty) orelse self.lowerExpr(fi.value)
+            else
+                self.lowerExpr(fi.value);
             self.target_type = saved_tt;
-            lowered.append(self.alloc, .{
-                .val = val,
-                .index = index,
-                .node = fi.value,
-            }) catch unreachable;
+            if (index) |idx| {
+                selected[idx] = coerceStructInitializer(self, val, struct_fields[idx], idx, fi.value, span);
+            }
         }
 
-        // Build fields in declaration order
         var fields = std.ArrayList(Ref).empty;
         defer fields.deinit(self.alloc);
-        for (struct_fields, 0..) |sf, fi| {
-            const sf_index: u32 = @intCast(fi);
-            // Find the matching lowered value
-            var found = false;
-            for (lowered.items) |l| {
-                if (l.index == sf_index) {
-                    var val = l.val;
-                    const src_ty = self.builder.getRefType(val);
-                    // An interface field erases NODE-AWARE, so an lvalue
-                    // initializer BORROWS (`.{ allocator = gpa }` aliases
-                    // `gpa`); the node-less path cannot tell the lvalue from
-                    // an rvalue.
-                    val = if (refuseVoidElement(self, src_ty, sf.ty, sf.name, fi, l.node.span))
-                        self.zeroValue(sf.ty)
-                    else if (self.getProtocolInfo(sf.ty) != null)
-                        self.coerceOrErase(val, src_ty, sf.ty, l.node)
-                    else
-                        self.coerceToType(val, src_ty, sf.ty);
-                    fields.append(self.alloc, val) catch unreachable;
-                    found = true;
-                    break;
-                }
-            }
-            if (!found) {
-                // Field not specified — use default if available, else zero
-                if (fi < field_defaults.len) {
-                    if (field_defaults[fi]) |default_expr| {
-                        // Coerce the default to the field type at the IR
-                        // level (the implicit narrowing rule) so a float
-                        // default folds/errors here instead of being
-                        // silently bit-coerced by the backend. A generic
-                        // instance's default may reference a type param —
-                        // lower it with this instance's bindings.
-                        fields.append(self.alloc, self.lowerDefaultWithBindings(default_expr, sf.ty, default_bindings)) catch unreachable;
-                    } else {
-                        fields.append(self.alloc, self.zeroValue(sf.ty)) catch unreachable;
+        for (struct_fields, selected, 0..) |sf, value, i| {
+            const val = value orelse blk: {
+                if (i < field_defaults.len) {
+                    if (field_defaults[i]) |default_expr| {
+                        break :blk self.lowerDefaultWithBindings(default_expr, sf.ty, default_bindings);
                     }
-                } else {
-                    fields.append(self.alloc, self.zeroValue(sf.ty)) catch unreachable;
                 }
-            }
+                break :blk self.zeroValue(sf.ty);
+            };
+            fields.append(self.alloc, val) catch unreachable;
         }
-
         const result = self.builder.structInit(fields.items, ty);
         if (sl.init_block) |ib| return self.lowerInitBlock(result, ty, ib, sl.init_block_self.?);
         return result;
@@ -737,7 +903,10 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         else
             fatPointerSlotType(self, ty, fi.name, i) orelse .unresolved;
         if (elem_target != .unresolved) self.target_type = elem_target;
-        var val = if (prelowered) |pl| pl[i] else self.lowerExpr(fi.value);
+        var val = if (prelowered) |pl|
+            pl[i].value
+        else
+            self.foldComptimeFloatInit(fi.value, elem_target) orelse self.lowerExpr(fi.value);
         self.target_type = saved_tt;
         // Coerce field value to match the destination field/element type.
         // Coerce from the value's ACTUAL lowered type (`getRefType`) rather
@@ -825,14 +994,6 @@ pub fn structDeclaringSource(self: *Lowering, ty: TypeId) ?[]const u8 {
     return author.source;
 }
 
-/// The file that may mention `field` on `ty`. A `@using` promotion carries the
-/// base's authority; every other field answers to the struct's own declaration.
-pub fn fieldDeclaringSource(self: *Lowering, ty: TypeId, field: StringId) ?[]const u8 {
-    const owner = self.plainStructOwnerType(ty);
-    if (self.promoted_field_authority.get(.{ .ty = owner, .name = field })) |source| return source;
-    return self.structDeclaringSource(owner);
-}
-
 pub fn privateFieldHere(self: *Lowering, ty: TypeId, field: []const u8) bool {
     const wanted = self.module.types.internString(field);
     var vis: ast.Visibility = .public;
@@ -846,7 +1007,7 @@ pub fn privateFieldHere(self: *Lowering, ty: TypeId, field: []const u8) bool {
     const from = self.current_source_file orelse return false;
     // Only a named declaration or a generic instance can carry a private field
     // — the parser refuses one on an anonymous body — and both stamp an author.
-    const declaring = self.fieldDeclaringSource(ty, wanted) orelse
+    const declaring = self.structDeclaringSource(ty) orelse
         std.debug.panic("private field '{s}' on a struct type with no declaring file", .{field});
     return !std.mem.eql(u8, from, declaring);
 }
@@ -1019,8 +1180,12 @@ pub fn fixupMethodReceiver(self: *Lowering, method_args: *std.ArrayList(Ref), fu
                 const local = if (self.scope) |scope| scope.lookup(nm) else null;
                 if (local) |binding| {
                     if (binding.is_alloca) {
-                        const ptr_ty = self.module.types.ptrTo(binding.ty);
-                        method_args.items[0] = self.builder.emit(.{ .addr_of = .{ .operand = binding.ref } }, ptr_ty);
+                        const binding_info = self.module.types.get(binding.ty);
+                        method_args.items[0] = if (binding_info == .optional and
+                            binding_info.optional.child == obj_ty and !self.module.types.optionalIsSentinel(obj_ty))
+                            self.builder.structGepTyped(binding.ref, 0, self.module.types.ptrTo(obj_ty), binding.ty)
+                        else
+                            receiverPointer(self, binding.ref, obj_ty);
                         return;
                     }
                     // A non-alloca local (SSA value / by-value param) has no
@@ -1041,6 +1206,12 @@ pub fn fixupMethodReceiver(self: *Lowering, method_args: *std.ArrayList(Ref), fu
                     // still sees the right value via the copy; a mutating one
                     // harmlessly scribbles the throwaway, never the `.rodata`.
                     method_args.items[0] = receiverPointer(self, self.lowerExprAsPtr(obj_node), obj_ty);
+                    return;
+                }
+            }
+            if (self.fieldCall(obj_node) != null) {
+                if (self.refStorageAddress(method_args.items[0])) |address| {
+                    method_args.items[0] = receiverPointer(self, address, obj_ty);
                     return;
                 }
             }
@@ -1071,7 +1242,7 @@ pub fn fixupMethodReceiver(self: *Lowering, method_args: *std.ArrayList(Ref), fu
             // `for *x in xs` by-ref capture) — deref to pass the value.
             if (!obj_ty.isBuiltin()) {
                 const oi = self.module.types.get(obj_ty);
-                if (oi == .pointer and oi.pointer.pointee == first_param_ty) {
+                if (oi == .pointer and self.module.types.sameType(oi.pointer.pointee, first_param_ty)) {
                     method_args.items[0] = self.builder.load(method_args.items[0], first_param_ty);
                 }
             }
@@ -1710,21 +1881,10 @@ pub fn literalKeepsArray(self: *Lowering, target: ?TypeId) bool {
 
 /// Lower a struct-level constant value (e.g., Phys.GRAVITY).
 pub fn lowerStructConstant(self: *Lowering, info: StructConstInfo) Ref {
-    const val_node = info.value;
-    return switch (val_node.data) {
-        .int_literal => |lit| blk: {
-            self.checkIntLiteralMagnitudeFits(lit.value, info.ty orelse .i64, val_node.span);
-            break :blk self.builder.constInt(lit.value, info.ty orelse .i64);
-        },
-        .char_literal => |lit| blk: {
-            if (info.ty) |t| self.checkCharLiteralFits(lit, t, val_node.span);
-            break :blk self.builder.constInt(lit.value, info.ty orelse .i64);
-        },
-        .float_literal => |lit| self.builder.constFloat(lit.value, info.ty orelse .f64),
-        .bool_literal => |lit| self.builder.constBool(lit.value),
-        .string_literal => |lit| self.lowerStringLiteral(lit),
-        else => self.lowerExpr(val_node),
-    };
+    var demand = self.enterDemand(if (info.ty) |ty| .{ .coerce = ty } else null);
+    defer demand.restore();
+    const value = self.lowerExpr(info.value);
+    return if (info.ty) |ty| self.coerceToType(value, self.builder.getRefType(value), ty) else value;
 }
 
 /// Lower optional chaining: `p?.field` where p is ?T
@@ -2899,40 +3059,6 @@ pub fn lowerIndexExpr(self: *Lowering, ie: *const ast.IndexExpr) Ref {
     }
     // Infer element type from the object's slice/array type
     const obj_ty = self.inferExprType(ie.object);
-    // Comptime-constant index into a tuple VALUE — `tup[i]` where `i` folds
-    // to a compile-time integer (an `inline for` cursor or a literal). A tuple
-    // has heterogeneous element types, so there is no runtime element-indexing
-    // op; treat it exactly like the `.N` field-access path (a `structGet` of
-    // the i-th field), yielding the field's CONCRETE type. This is what the
-    // `race`/reflection loops need: read the i-th `*Task(T_i)` from a
-    // named-tuple param with its real type, not a type-erased `Any`. A
-    // *runtime* index into a tuple value falls through to the generic guard
-    // below ("cannot index a value of type '(...)'") — there is no single
-    // element type to index by at runtime.
-    // Comptime-constant index into a STRUCT value — `s[i]` where `i` folds
-    // (exact parity with the tuple path above — the field itself, typed; a
-    // runtime index does NOT apply to structs, use `@field(s, j)`).
-    // This is what gives a positional anonymous struct (`t := .{1, 2}`) the
-    // same `t[i]` walks a tuple literal has.
-    if (!obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .@"struct") {
-        const sinfo = self.module.types.get(obj_ty).@"struct";
-        if (self.comptimeIndexOf(ie.index)) |ci| {
-            if (ci >= 0 and @as(usize, @intCast(ci)) < sinfo.fields.len) {
-                const fi: u32 = @intCast(ci);
-                const obj = self.lowerExpr(ie.object);
-                return self.builder.structGet(obj, fi, sinfo.fields[fi].ty);
-            }
-            if (self.diagnostics) |d| {
-                d.addFmt(.err, ie.index.span, "struct index {} out of bounds — '{s}' has {} field{s}", .{
-                    ci,
-                    self.formatTypeName(obj_ty),
-                    sinfo.fields.len,
-                    if (sinfo.fields.len == 1) "" else "s",
-                });
-            }
-            return self.builder.constInt(0, .i64); // placeholder — hasErrors() aborts before codegen
-        }
-    }
     // A guard-narrowed container local indexes its PAYLOAD: the guard proved
     // presence, so `o[i]` is the element, not an optional chain.
     if (self.narrowedContainerChild(ie.object)) |child| {
@@ -3118,7 +3244,7 @@ pub fn lowerSliceExpr(self: *Lowering, se: *const ast.SliceExpr) Ref {
     const len_ty = blk: {
         if (self.target_type) |tgt| {
             if (self.module.types.sliceInfoOf(tgt)) |ts| {
-                const same_elem = ts.element == elem_ty or (elem_ty == .void and ts.element == .u8);
+                const same_elem = self.module.types.sameType(ts.element, elem_ty) or (elem_ty == .void and ts.element == .u8);
                 if (same_elem) break :blk ts.len_type;
             }
         }
@@ -3179,76 +3305,79 @@ pub fn lowerSliceExpr(self: *Lowering, se: *const ast.SliceExpr) Ref {
     return self.builder.emit(.{ .subslice = .{ .base = obj, .lo = lo, .hi = hi, .base_ty = obj_ty } }, slice_ty);
 }
 
-/// Self-type an UNTYPED `.{ ... }` literal as an anonymous STRUCTURAL
-/// struct: every element is
-/// positional (fields "0"/"1"/…) or every element is named — the
-/// bare-identifier shorthand `.{ x }` counts as NAMED (field `x`;
-/// `.{ (x) }` is the positional escape), a spread splices positionally.
-/// Mixing the two is a compile error. The struct type interns
-/// STRUCTURALLY, so identical shapes at different sites share a TypeId.
-pub fn synthesizeAnonStruct(self: *Lowering, sl: *const ast.StructLiteral, span: ast.Span) Ref {
-    var named_n: usize = 0;
-    var pos_n: usize = 0;
-    for (sl.field_inits) |fi| {
-        if (fi.name != null) named_n += 1 else pos_n += 1;
-    }
-    if (named_n > 0 and pos_n > 0) {
-        if (self.diagnostics) |d| {
-            d.addFmt(.err, span, "an untyped '.{{ }}' literal cannot mix positional and named elements — name all elements or none", .{});
-        }
-        return self.builder.constUndef(.unresolved);
-    }
+const AnonLiteralValue = struct { ty: TypeId, value: ?Ref = null };
+const AnonLiteralShape = literal_fields.Anonymous(AnonLiteralValue);
 
-    var elems = std.ArrayList(Ref).empty;
-    defer elems.deinit(self.alloc);
-    var fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
-    defer fields.deinit(self.alloc);
+fn internAnonLiteral(self: *Lowering, shape: *const AnonLiteralShape) TypeId {
+    const fields = self.module.types.slice_arena.allocator().alloc(types.TypeInfo.StructInfo.Field, shape.named.items.len + shape.unnamed.items.len) catch unreachable;
+    for (shape.named.items, fields[0..shape.named.items.len]) |field, *dest| {
+        dest.* = .{ .name = self.module.types.internString(field.name), .ty = field.value.ty };
+    }
+    for (shape.unnamed.items, fields[shape.named.items.len..], shape.named.items.len..) |value, *dest, i| {
+        var buf: [24]u8 = undefined;
+        dest.* = .{ .name = self.module.types.internString(std.fmt.bufPrint(&buf, "{d}", .{i}) catch unreachable), .ty = value.ty };
+    }
+    return self.module.types.internAnonStruct(fields);
+}
 
+pub fn inferAnonStructType(self: *Lowering, sl: *const ast.StructLiteral) TypeId {
+    var shape = AnonLiteralShape{};
+    defer shape.deinit(self.alloc);
     const saved_target = self.target_type;
-    var out_idx: usize = 0;
+    self.target_type = null;
+    defer self.target_type = saved_target;
+    const saved_diag = self.diagnostics;
+    self.diagnostics = null;
+    defer self.diagnostics = saved_diag;
     for (sl.field_inits) |fi| {
         if (fi.value.data == .spread_expr) {
-            const sp_operand = fi.value.data.spread_expr.operand;
-            // Pack spread (`stored := .{ ..xs };`) — splice the pack's
-            // materialized element values as positional fields.
-            if (self.packSpreadRefs(sp_operand, fi.value.span)) |refs| {
-                defer self.alloc.free(refs);
-                for (refs) |r| {
-                    elems.append(self.alloc, r) catch unreachable;
-                    const fname = std.fmt.allocPrint(self.alloc, "{d}", .{out_idx}) catch unreachable;
-                    fields.append(self.alloc, .{ .name = self.module.types.internString(fname), .ty = self.builder.getRefType(r) }) catch unreachable;
-                    out_idx += 1;
-                }
-                continue;
+            const contributions = literalSpreadTypes(self, fi.value.data.spread_expr.operand) orelse return .unresolved;
+            defer self.alloc.free(contributions);
+            for (contributions) |contribution| {
+                if (contribution.ty == .unresolved or contribution.ty == .void) return .unresolved;
+                shape.contribute(self.alloc, contribution.name, .spread, .{ .ty = contribution.ty }) catch return .unresolved;
             }
-            // Value spread (`.{ ..t, 3 }` over a tuple/array/anon struct).
-            if (self.valueSpreadRefs(sp_operand, fi.value.span)) |refs| {
-                defer self.alloc.free(refs);
-                for (refs) |r| {
-                    elems.append(self.alloc, r) catch unreachable;
-                    const fname = std.fmt.allocPrint(self.alloc, "{d}", .{out_idx}) catch unreachable;
-                    fields.append(self.alloc, .{ .name = self.module.types.internString(fname), .ty = self.builder.getRefType(r) }) catch unreachable;
-                    out_idx += 1;
-                }
-                continue;
-            }
-            _ = self.lowerExpr(fi.value); // surfaces the spread_expr diagnostic
-            continue;
+        } else {
+            const ty = self.inferExprType(fi.value);
+            if (ty == .unresolved or ty == .void) return .unresolved;
+            shape.contribute(self.alloc, fi.name, .direct, .{ .ty = ty }) catch return .unresolved;
         }
-        self.target_type = null;
-        const val = self.lowerExpr(fi.value);
-        self.target_type = saved_target;
-        const vty = self.builder.getRefType(val);
-        const fname = fi.name orelse (std.fmt.allocPrint(self.alloc, "{d}", .{out_idx}) catch unreachable);
-        elems.append(self.alloc, val) catch unreachable;
-        fields.append(self.alloc, .{ .name = self.module.types.internString(fname), .ty = vty }) catch unreachable;
-        out_idx += 1;
     }
+    return internAnonLiteral(self, &shape);
+}
 
-    const sty = self.module.types.internAnonStruct(
-        self.alloc.dupe(types.TypeInfo.StructInfo.Field, fields.items) catch unreachable,
-    );
-    return self.builder.structInit(elems.items, sty);
+pub fn synthesizeAnonStruct(self: *Lowering, sl: *const ast.StructLiteral) Ref {
+    var shape = AnonLiteralShape{};
+    defer shape.deinit(self.alloc);
+    const saved_target = self.target_type;
+    self.target_type = null;
+    defer self.target_type = saved_target;
+    for (sl.field_inits) |fi| {
+        if (fi.value.data == .spread_expr) {
+            const contributions = lowerLiteralSpread(self, fi.value) orelse return self.builder.constUndef(.unresolved);
+            defer self.alloc.free(contributions);
+            for (contributions) |contribution| {
+                shape.contribute(self.alloc, contribution.name, .spread, .{
+                    .ty = self.builder.getRefType(contribution.value),
+                    .value = contribution.value,
+                }) catch unreachable;
+            }
+        } else {
+            const value = self.lowerExpr(fi.value);
+            shape.contribute(self.alloc, fi.name, .direct, .{ .ty = self.builder.getRefType(value), .value = value }) catch {
+                if (self.diagnostics) |d| d.addFmt(.err, fi.name_span orelse fi.value.span, "field '{s}' initialized twice", .{fi.name.?});
+                return self.builder.constUndef(.unresolved);
+            };
+        }
+    }
+    var values = std.ArrayList(Ref).empty;
+    defer values.deinit(self.alloc);
+    for (shape.named.items) |field| values.append(self.alloc, field.value.value.?) catch unreachable;
+    for (shape.unnamed.items) |value| values.append(self.alloc, value.value.?) catch unreachable;
+    const ty = internAnonLiteral(self, &shape);
+    const result = self.builder.structInit(values.items, ty);
+    if (sl.init_block) |ib| return self.lowerInitBlock(result, ty, ib, sl.init_block_self.?);
+    return result;
 }
 
 pub fn lowerTupleLiteral(self: *Lowering, tl: *const ast.TupleLiteral) Ref {
@@ -3513,12 +3642,12 @@ pub fn lowerNullCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
     self.target_type = inner_ty;
     var rhs = self.lowerExpr(nc.rhs);
     self.target_type = saved_tt;
+    if (self.currentBlockHasTerminator()) {
+        self.builder.switchToBlock(merge_bb);
+        return self.builder.blockParam(merge_bb, 0, inner_ty);
+    }
     const rhs_ty = self.builder.getRefType(rhs);
-    // Skip the coerce entirely when the pair has NO modeled coercion and a
-    // width mismatch: `coerceToType` would be a passthrough no-op anyway, and
-    // its weld guard would fire a generic "cannot coerce" ahead of the
-    // focused `'??' default has type ...` diagnostic below (double error).
-    if (rhs_ty != inner_ty and rhs_ty != .void and inner_ty != .void and !self.noneReinterpretIsUnsafe(rhs_ty, inner_ty)) {
+    if (rhs_ty != inner_ty and self.conversionAvailable(rhs_ty, inner_ty, .implicit)) {
         rhs = self.coerceToType(rhs, rhs_ty, inner_ty);
     }
     // The merge-block param, the unwrapped LHS, and the coerced RHS must all
@@ -3530,7 +3659,7 @@ pub fn lowerNullCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
     // verifier. Diagnose loudly and br with a typed placeholder so
     // the PHI stays well-formed; `hasErrors()` aborts before codegen anyway.
     const coerced_ty = self.builder.getRefType(rhs);
-    if (coerced_ty != inner_ty and coerced_ty != .void and inner_ty != .void) {
+    if (coerced_ty != inner_ty) {
         if (self.diagnostics) |d| {
             d.addFmt(.err, nc.rhs.span, "'??' default has type '{s}', but the optional's payload is '{s}'", .{ self.formatTypeName(coerced_ty), self.formatTypeName(inner_ty) });
         }
@@ -3552,6 +3681,29 @@ pub fn resolveOptionalInner(self: *Lowering, ty: TypeId) TypeId {
 }
 
 // ── Core expression dispatch ───────────────────────────────────
+
+pub fn lowerMarkedExpr(self: *Lowering, node: *const Node, pure_only: bool) Ref {
+    const saved = self.marked_error_expr;
+    self.marked_error_expr = .{ .node = node, .pure_only = pure_only };
+    defer self.marked_error_expr = saved;
+    return self.lowerExpr(node);
+}
+
+/// Only result paths inherit a marker; arguments and prefix statements do not.
+fn errorPathContains(root: *const Node, node: *const Node) bool {
+    if (root == node) return true;
+    return switch (root.data) {
+        .block => |b| b.produces_value and b.stmts.len > 0 and errorPathContains(b.stmts[b.stmts.len - 1], node),
+        .if_expr => |ie| errorPathContains(ie.then_branch, node) or
+            (if (ie.else_branch) |eb| errorPathContains(eb, node) else false),
+        .match_expr => |me| blk: {
+            for (me.arms) |arm| if (errorPathContains(arm.body, node)) break :blk true;
+            break :blk false;
+        },
+        .null_coalesce => |nc| errorPathContains(nc.lhs, node) or errorPathContains(nc.rhs, node),
+        else => false,
+    };
+}
 
 pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
     // A named-argument value pre-lowered in written order by `mapNamedArgs`
@@ -3589,6 +3741,38 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
     // the body's defining-module pin for the whole recursive lowering.
     const author = Lowering.AuthorScope.enter(self, node);
     defer author.leave();
+    const result = lowerExprInner(self, node);
+    const ty = self.builder.getRefType(result);
+    const produces_failable = blk: {
+        if (self.errorChannelOf(ty) == null) break :blk false;
+        if (node.data == .call) break :blk true;
+        if (node.data == .null_coalesce) break :blk self.coalesceIsFailable(&node.data.null_coalesce);
+        if (node.data != .field_access) break :blk false;
+        const fa = node.data.field_access;
+        var recv_ty = self.inferExprType(fa.object);
+        if (self.module.types.get(recv_ty) == .pointer)
+            recv_ty = self.module.types.get(recv_ty).pointer.pointee;
+        break :blk self.getAccessorFor(recv_ty, fa.field) != null;
+    };
+    if (produces_failable and !(if (self.marked_error_expr) |marker|
+        (!marker.pure_only or self.module.types.get(ty) == .@"error") and errorPathContains(marker.node, node)
+    else
+        false))
+    {
+        if (self.diagnostics) |d| d.add(.err, if (self.module.types.get(ty) == .@"error")
+            "a pure failable expression needs an error-path marker; use `catch` to handle the error"
+        else
+            "a failable expression needs an error-path marker: `try`, `catch`, `??` with a value, a destructure binding, or a forwarded call", node.span);
+    }
+    return result;
+}
+
+fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
+    if (self.isAdaptableFloat(node)) {
+        const ty = self.floatContext(self.target_type) orelse .f64;
+        if (program_index_mod.evalConstFloatInit(node, self, ty)) |value|
+            return self.builder.constFloat(value, ty);
+    }
     return switch (node.data) {
         // Bare `$<pack>` in expression position → an `[]Type` slice
         // value where each element is a `const_type(arg_types[i])`.
@@ -3686,7 +3870,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
         },
         .float_literal => |lit| {
             const fty: TypeId = if (self.target_type) |tt| (if (tt == .f32 or tt == .f64) tt else .f64) else .f64;
-            return self.builder.constFloat(lit.value, fty);
+            return self.builder.constFloat(self.adoptFloatValue(lit.value, fty, node.span), fty);
         },
         .bool_literal => |lit| self.builder.constBool(lit.value),
         .string_literal => |lit| self.lowerStringLiteral(lit),
@@ -3789,7 +3973,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 // pick. `.none` after a visible name is the registration-only
                 // author (no per-source partition) — emit its global value.
                 switch (self.selectModuleConst(id.name)) {
-                    .resolved => |sel| break :blk self.emitModuleConst(sel.info, sel.source),
+                    .resolved => |sel| break :blk self.emitModuleConst(id.name, sel.info, sel.source),
                     // Own const author with no materialized value (unsupported
                     // shape, e.g. an array const) — fall through; the tail of
                     // identifier lowering diagnoses it as unresolved.
@@ -3799,7 +3983,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                             d.addFmt(.err, node.span, "'{s}' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import", .{id.name});
                         break :blk self.emitPlaceholder(id.name);
                     },
-                    .none => break :blk self.emitModuleConst(ci_global, null),
+                    .none => break :blk self.emitModuleConst(id.name, ci_global, null),
                 }
             }
             // Check if it's a function name — produce function pointer reference
@@ -3946,34 +4130,10 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                                     break :blk self.emitPlaceholder(eff_fn_name);
                                 }
                             }
-                            // `xx <sx_fn> : *void` (e.g.
-                            // `class_addMethod(_, _, xx my_imp, _)`)
-                            // is intentionally NOT diagnosed here.
-                            // Manually-constructed Closure values
-                            // legitimately store default-conv sx fns
-                            // into a `*void` slot for sx-side dispatch
-                            // through the closure trampoline ABI. The
-                            // compiler can't distinguish C-side vs
-                            // sx-side use from the cast alone.
                         }
                     }
-                    // A callable binder takes the value's OWN shape, and a bare
-                    // function's shape is its signature — the integer-shaped
-                    // word below answers no bound and calls through nothing.
-                    if (self.lambda_sig_target != null) {
-                        if (self.bareFnNameSignature(node)) |sig_ty|
-                            break :blk self.builder.emit(.{ .func_ref = fid }, sig_ty);
-                    }
-                    // A bare function value keeps the integer-shaped IR
-                    // used by the async/fiber lowering paths, but
-                    // that word must match the target pointer width. Hard-coded
-                    // i64 fails an otherwise exact callback assignment on
-                    // wasm32: the destination function slot is 4 bytes while the
-                    // synthetic source type claims 8. Keep i64
-                    // on 64-bit targets; use the canonical signed
-                    // pointer word on narrower targets.
-                    const func_ref_ty: TypeId = if (self.module.types.pointer_size == 8) .i64 else .isize;
-                    break :blk self.builder.emit(.{ .func_ref = fid }, func_ref_ty);
+                    const sig_ty = self.functionSignatureType(fid) orelse return Ref.none;
+                    break :blk self.builder.emit(.{ .func_ref = fid }, sig_ty);
                 }
             }
             // Type-as-value: a name that resolves to a TypeId
@@ -4036,30 +4196,6 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 const ie = &uop.operand.data.index_expr;
                 const narrowed_child = self.narrowedContainerChild(ie.object);
                 const obj_ty = narrowed_child orelse self.inferExprType(ie.object);
-                // Comptime-constant index into a tuple VALUE — `@tup[i]`. A tuple is
-                // heterogeneous: the element address is a typed `structGep` of the
-                // i-th field, never an `index_gep` (whose `ptrTo(.unresolved)`
-                // element type panics at LLVM emit). Out-of-range diagnoses loudly,
-                // mirroring the read path.
-                if (!obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .@"struct") {
-                    // Struct parity (aggregate ladder): `@s[comptime i]` is the
-                    // i-th field's address, exactly like tuples.
-                    const nfields: usize = @intCast(self.module.types.memberCount(obj_ty) orelse 0);
-                    if (self.comptimeIndexOf(ie.index)) |ci| {
-                        if (ci >= 0 and @as(usize, @intCast(ci)) < nfields) {
-                            const fi: u32 = @intCast(ci);
-                            const fld_ty = self.module.types.memberType(obj_ty, ci) orelse .unresolved;
-                            const base = self.getExprAlloca(ie.object) orelse self.lowerExprAsPtr(ie.object);
-                            break :blk self.builder.structGepTyped(base, fi, self.module.types.ptrTo(fld_ty), obj_ty);
-                        }
-                        if (self.diagnostics) |d| {
-                            d.addFmt(.err, ie.index.span, "tuple index {} out of bounds — tuple '{s}' has {} field{s}", .{
-                                ci, self.formatTypeName(obj_ty), nfields, if (nfields == 1) "" else "s",
-                            });
-                        }
-                        break :blk self.builder.constInt(0, .i64); // placeholder — hasErrors() aborts
-                    }
-                }
                 const idx = self.lowerIndexOperand(ie.index);
                 const elem_ty = self.ptrToArrayElem(obj_ty) orelse self.ptrToSliceElem(obj_ty) orelse self.getElementType(obj_ty);
                 // Non-indexable base (`@pc[i]` on a `*T`, a struct, ...): an
@@ -4069,13 +4205,13 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                     self.diagNonIndexable(obj_ty, ie.object.span);
                     break :blk self.builder.constInt(0, .i64); // placeholder — hasErrors() aborts
                 }
-                const ptr_ty = self.module.types.ptrTo(elem_ty);
+                const ptr_ty = self.module.types.manyPtrTo(elem_ty);
                 const base = self.indexBase(ie.object, obj_ty, narrowed_child);
                 break :blk self.builder.emit(.{ .index_gep = .{ .lhs = base, .rhs = idx } }, ptr_ty);
             }
             // address_of(field_access) → use lowerExprAsPtr for GEP chain
             // Handles all cases: pointer-based, index-based, nested field access
-            if (uop.op == .address_of and uop.operand.data == .field_access) {
+            if (uop.op == .address_of and (uop.operand.data == .field_access or self.fieldCall(uop.operand) != null)) {
                 const inner_ty = self.inferExprType(uop.operand);
                 const ptr_ty = self.module.types.ptrTo(inner_ty);
                 const ptr = self.lowerExprAsPtr(uop.operand);
@@ -4143,7 +4279,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             if (uop.op == .negate and uop.operand.data == .float_literal) {
                 const lit = uop.operand.data.float_literal;
                 const fty: TypeId = if (self.target_type) |tt| (if (tt == .f32 or tt == .f64) tt else .f64) else .f64;
-                break :blk self.builder.constFloat(-lit.value, fty);
+                break :blk self.builder.constFloat(-self.adoptFloatValue(lit.value, fty, node.span), fty);
             }
             // Prefix `*` on a TYPE-valued operand is the pointer TYPE, not
             // address-of: `@sizeOf(*T)`, Type-arg positions, and nested
@@ -5261,7 +5397,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         if (self.isStaticTypeRef(bop.lhs) and self.isStaticTypeRef(bop.rhs)) {
             const lhs_ty = self.resolveTypeArg(bop.lhs);
             const rhs_ty = self.resolveTypeArg(bop.rhs);
-            const eq_result = lhs_ty == rhs_ty;
+            const eq_result = self.module.types.sameType(lhs_ty, rhs_ty);
             return self.builder.constBool(if (bop.op == .eq) eq_result else !eq_result);
         }
     }
@@ -5349,7 +5485,11 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         const peer_ty = self.inferExprType(bop.rhs);
         if (isCompareNumericPeer(self, peer_ty)) self.target_type = peer_ty;
     }
+    const float_operands = program_index_mod.floatOperandTypes(bop.*, self.operandType(self.inferExprType(bop.lhs)), self.operandType(self.inferExprType(bop.rhs)), self);
+    const operand_tt = self.target_type;
+    if (self.isAdaptableFloat(bop.lhs)) self.target_type = float_operands.lhs;
     var lhs = self.lowerExpr(bop.lhs);
+    self.target_type = operand_tt;
     if (comparison) self.target_type = null;
     // A `for *x in xs` capture is a pointer; in a value position (here, an
     // operand) it auto-derefs to the element.
@@ -5360,6 +5500,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     // the lowered operand's concrete type rather than a guess.
     const lhs_ty = blk: {
         if (lhs_ref_pointee) |p| break :blk p;
+        if (self.isAdaptableFloat(bop.lhs)) break :blk self.builder.getRefType(lhs);
         const it = self.inferExprType(bop.lhs);
         break :blk if (it == .unresolved) self.builder.getRefType(lhs) else it;
     };
@@ -5401,6 +5542,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
             break :blk lhs_ty;
         };
     }
+    if (self.isAdaptableFloat(bop.rhs)) self.target_type = float_operands.rhs;
     var rhs = self.lowerExpr(bop.rhs);
     const rhs_ref_pointee = self.refCapturePointee(bop.rhs);
     if (rhs_ref_pointee) |p| rhs = self.builder.load(rhs, p);
@@ -5417,6 +5559,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     if (bop.op == .eq or bop.op == .neq) {
         const l_actual = if (lhs_ty == .unresolved) self.builder.getRefType(lhs) else lhs_ty;
         const r_actual = blk: {
+            if (self.isAdaptableFloat(bop.rhs)) break :blk self.builder.getRefType(rhs);
             const it = rhs_ref_pointee orelse self.inferExprType(bop.rhs);
             break :blk if (it == .unresolved) self.builder.getRefType(rhs) else it;
         };
@@ -5455,6 +5598,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     // so static typing agrees with the value produced here.
     const rhs_ty = blk: {
         if (rhs_ref_pointee) |p| break :blk p;
+        if (self.isAdaptableFloat(bop.rhs)) break :blk self.builder.getRefType(rhs);
         const it = self.inferExprType(bop.rhs);
         break :blk if (it == .unresolved) self.builder.getRefType(rhs) else it;
     };
@@ -5475,7 +5619,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         const r_ty = refTypeOr(self, rhs, rhs_ty);
         const l_elem = sequenceElement(self, l_ty);
         const r_elem = sequenceElement(self, r_ty);
-        if (l_elem != null and l_elem == r_elem) {
+        if (l_elem != null and r_elem != null and self.module.types.sameType(l_elem.?, r_elem.?)) {
             return lowerSequenceEquality(self, lhs, rhs, l_elem.?, bop.op == .eq, bop.lhs.span);
         }
         if (l_elem != null or r_elem != null) {
@@ -5521,7 +5665,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         const eq_info = self.module.types.get(ty);
         if (eq_info == .@"struct" and !eq_info.@"struct".is_protocol) {
             const other_ty = if (rhs_ty == .unresolved) self.builder.getRefType(rhs) else rhs_ty;
-            if (other_ty != ty) {
+            if (!self.module.types.sameType(other_ty, ty)) {
                 if (self.diagnostics) |d| d.addFmt(.err, bop.rhs.span, "cannot compare values of distinct types '{s}' and '{s}'", .{
                     self.formatTypeName(ty), self.formatTypeName(other_ty),
                 });
@@ -5533,11 +5677,6 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
 
     if (self.diagOperandTypes(bop.op, ty, self.operandType(rhs_ty), bop.lhs.span)) return self.emitPlaceholder("operand-type-mismatch");
 
-    // Comparison operands meet at a comparison type — not a store.
-    // Numeric pairs widen / promote to float; two pointers meet at `*void`;
-    // a pointer and an integer meet at the pointer (the integer is an
-    // address-sized bit pattern). Signed vs unsigned of the same width
-    // is refused.
     switch (bop.op) {
         .eq, .neq, .lt, .lte, .gt, .gte => {
             const span = ast.Span{ .start = bop.lhs.span.start, .end = bop.rhs.span.end };
@@ -5929,6 +6068,12 @@ fn meetCompareOperands(
                 .rhs = coerceCompareOperand(self, rhs, rhs_ty, meet_ty),
             };
         },
+        .incompatible => {
+            if (self.diagnostics) |d| {
+                d.addFmt(.err, span, "cannot compare values of type '{s}' and '{s}'", .{ self.formatTypeName(lhs_ty), self.formatTypeName(rhs_ty) });
+            }
+            return null;
+        },
         .signedness => {
             if (constIntOf(self, lhs)) |n| {
                 if (self.isIntEx(rhs_ty)) {
@@ -5966,11 +6111,6 @@ fn meetCompareOperands(
 
 fn coerceCompareOperand(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId) Ref {
     if (src_ty == dst_ty) return val;
-    // Pointer ↔ integer is a store-time explicit conversion; a comparison
-    // still uses that IR (inttoptr / ptrtoint) without requiring a glyph.
-    if (self.coercionResolver().classify(src_ty, dst_ty) == .ptr_int_bitcast) {
-        return self.coerceExplicit(val, src_ty, dst_ty);
-    }
     return self.coerceToType(val, src_ty, dst_ty);
 }
 

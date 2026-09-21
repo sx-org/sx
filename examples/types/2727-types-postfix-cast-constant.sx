@@ -1,0 +1,9 @@
+@import "modules/std.sx";
+
+FLAG :: (1 << 25).(i32);
+
+read :: (value: $T) -> i32 { FLAG + value }
+
+main :: () {
+    print("{}\n", read(2.(i32)));
+}

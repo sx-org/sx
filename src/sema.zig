@@ -15,6 +15,7 @@
 //! `SemaResult`) name an editor index, not compiler authority.
 
 const std = @import("std");
+const literal_fields = @import("literal_fields.zig");
 const ast = @import("ast.zig");
 const Node = ast.Node;
 const Span = ast.Span;
@@ -45,6 +46,7 @@ pub const Symbol = struct {
     ty: ?Type,
     def_span: Span,
     scope_depth: u32,
+    int_constant: ?i64 = null,
     /// null = defined in the current file. Non-null = absolute path of the origin file.
     origin: ?[]const u8 = null,
     /// Module-scope declaration visibility. A `.private` top-level symbol is
@@ -238,9 +240,11 @@ pub const Analyzer = struct {
                 });
             },
             .const_decl => |cd| {
-                const ty = self.resolveTypeAnnotation(cd.type_annotation) orelse inferValueType(cd.value);
+                const ty = self.resolveTypeAnnotation(cd.type_annotation) orelse self.inferValueType(cd.value);
                 const kind = classifyConstDecl(cd);
+                const int_constant = self.constIndexValue(cd.value);
                 try self.addSymbol(cd.name, kind, ty, node.span);
+                self.symbols.items[self.symbols.items.len - 1].int_constant = int_constant;
                 // Record integer-literal consts so a named array dimension
                 // (`MAX :: 4; [MAX]u8`) can fold to a concrete length.
                 if (cd.value.data == .int_literal) {
@@ -304,48 +308,30 @@ pub const Analyzer = struct {
                     try tp_names.append(self.allocator, p.name);
                 }
                 const tp_slice = try tp_names.toOwnedSlice(self.allocator);
-                // Populate struct_types registry, expanding @using entries
-                if (sd.using_entries.len > 0) {
-                    var all_names = std.ArrayList([]const u8).empty;
-                    var all_types = std.ArrayList(Type).empty;
-                    var using_idx: usize = 0;
-                    for (0..sd.field_names.len + 1) |i| {
-                        while (using_idx < sd.using_entries.len and
-                            sd.using_entries[using_idx].insert_index == i)
-                        {
-                            const entry = sd.using_entries[using_idx];
-                            if (self.struct_types.get(entry.type_name)) |used| {
-                                for (used.field_names, 0..) |fname, fi| {
-                                    try all_names.append(self.allocator, fname);
-                                    try all_types.append(self.allocator, used.field_types[fi]);
-                                }
+                var field_names = std.ArrayList([]const u8).empty;
+                var field_types = std.ArrayList(Type).empty;
+                for (sd.field_names, sd.field_types) |name, node_type| {
+                    if (node_type.data == .spread_expr) {
+                        const operand_ty = self.fieldType(node_type.data.spread_expr.operand);
+                        if (operand_ty == .struct_type) {
+                            if (self.struct_types.get(operand_ty.struct_type)) |base| {
+                                try field_names.appendSlice(self.allocator, base.field_names);
+                                try field_types.appendSlice(self.allocator, base.field_types);
                             }
-                            using_idx += 1;
                         }
-                        if (i < sd.field_names.len) {
-                            try all_names.append(self.allocator, sd.field_names[i]);
-                            const resolved = self.fieldType(sd.field_types[i]);
-                            try all_types.append(self.allocator, resolved);
-                        }
+                        continue;
                     }
-                    try self.struct_types.put(sd.name, .{
-                        .field_names = try all_names.toOwnedSlice(self.allocator),
-                        .field_types = try all_types.toOwnedSlice(self.allocator),
-                        .type_params = tp_slice,
-                    });
-                } else {
-                    var field_types = std.ArrayList(Type).empty;
-                    for (sd.field_types) |ft| {
-                        const resolved = self.fieldType(ft);
-                        try field_types.append(self.allocator, resolved);
-                    }
-                    try self.struct_types.put(sd.name, .{
-                        .field_names = sd.field_names,
-                        .field_types = try field_types.toOwnedSlice(self.allocator),
-                        .type_params = tp_slice,
-                    });
+                    try field_names.append(self.allocator, name);
+                    try field_types.append(self.allocator, self.fieldType(node_type));
                 }
-                for (sd.field_names) |fname| self.recordMemberRef(fname, sd.name, true);
+                try self.struct_types.put(sd.name, .{
+                    .field_names = try field_names.toOwnedSlice(self.allocator),
+                    .field_types = try field_types.toOwnedSlice(self.allocator),
+                    .type_params = tp_slice,
+                });
+                for (sd.field_names, sd.field_types) |fname, field_type| {
+                    if (field_type.data != .spread_expr) self.recordMemberRef(fname, sd.name, true);
+                }
                 for (sd.methods) |mnode| {
                     if (mnode.data == .fn_decl) {
                         try self.registerMethodSig(mnode.data.fn_decl.name, sd.name, mnode.data.fn_decl.return_type);
@@ -446,6 +432,38 @@ pub const Analyzer = struct {
         return @intCast(v);
     }
 
+    fn constIndexValue(self: *Analyzer, node: *const Node) ?i64 {
+        return switch (node.data) {
+            .int_literal => |lit| lit.value,
+            .char_literal => |lit| lit.value,
+            .identifier => |id| blk: {
+                const indices = self.symbol_index.get(id.name) orelse break :blk null;
+                var i = indices.items.len;
+                while (i > 0) {
+                    i -= 1;
+                    const symbol = self.symbols.items[indices.items[i]];
+                    if (symbol.scope_depth <= self.scope_depth) break :blk symbol.int_constant;
+                }
+                break :blk null;
+            },
+            .unary_op => |u| if (u.op == .negate)
+                std.math.negate(self.constIndexValue(u.operand) orelse return null) catch null
+            else
+                null,
+            .binary_op => |b| blk: {
+                const lhs = self.constIndexValue(b.lhs) orelse break :blk null;
+                const rhs = self.constIndexValue(b.rhs) orelse break :blk null;
+                break :blk switch (b.op) {
+                    .add => std.math.add(i64, lhs, rhs) catch null,
+                    .sub => std.math.sub(i64, lhs, rhs) catch null,
+                    .mul => std.math.mul(i64, lhs, rhs) catch null,
+                    else => null,
+                };
+            },
+            else => null,
+        };
+    }
+
     /// Resolve a type annotation node to an editor `Type` (metadata only — the
     /// compiler resolves type nodes to canonical `TypeId` in `src/ir/`).
     /// Handles primitives, type_expr, array_type_expr, parameterized_type_expr,
@@ -476,11 +494,11 @@ pub const Analyzer = struct {
                 return .{ .optional_type = .{ .child_name = inner_name, .is_raw = typeExprIsRaw(ote.inner_type) } };
             }
             // Pointer type: *T
-            if (tn.data == .pointer_type_expr) {
-                const pte = tn.data.pointer_type_expr;
-                const pointee_type = self.resolveTypeNode(pte.pointee_type);
+            if (tn.data == .pointer_type_expr or (tn.data == .unary_op and tn.data.unary_op.op == .address_of)) {
+                const pointee = if (tn.data == .pointer_type_expr) tn.data.pointer_type_expr.pointee_type else tn.data.unary_op.operand;
+                const pointee_type = self.resolveTypeNode(pointee);
                 const pointee_name = pointee_type.displayName(self.allocator) catch return .void_type;
-                return .{ .pointer_type = .{ .pointee_name = pointee_name, .is_raw = typeExprIsRaw(pte.pointee_type) } };
+                return .{ .pointer_type = .{ .pointee_name = pointee_name, .is_raw = typeExprIsRaw(pointee) } };
             }
             // Many-pointer type: [*]T
             if (tn.data == .many_pointer_type_expr) {
@@ -505,6 +523,21 @@ pub const Analyzer = struct {
                     .abi = fte.abi,
                     .is_c_variadic = fte.is_c_variadic,
                 } };
+            }
+            const int_args: ?[]const *Node = switch (tn.data) {
+                .parameterized_type_expr => |pt| if (std.mem.eql(u8, pt.name, "@int")) pt.args else null,
+                .call => |c| if (self.resolveCalleeName(c)) |name| (if (std.mem.eql(u8, name, "@int")) c.args else null) else null,
+                else => null,
+            };
+            if (int_args) |args| {
+                if (args.len != 2) return .unresolved;
+                const width = self.constIndexValue(args[0]) orelse return .unresolved;
+                if (width < 1 or width > @import("ir/types.zig").max_int_width) return .unresolved;
+                if (args[1].data != .enum_literal) return .unresolved;
+                const sign = args[1].data.enum_literal.name;
+                if (std.mem.eql(u8, sign, "signed")) return .{ .signed = @intCast(width) };
+                if (std.mem.eql(u8, sign, "unsigned")) return .{ .unsigned = @intCast(width) };
+                return .unresolved;
             }
             // Sema does not resolve generics; codegen handles instantiation
             if (tn.data == .parameterized_type_expr) {
@@ -778,6 +811,25 @@ pub const Analyzer = struct {
                     }
                 }
                 const callee_name = self.resolveCalleeName(call_node) orelse return Type.unresolved;
+                if (std.mem.eql(u8, callee_name, "@intCast") and call_node.args.len == 2) {
+                    const fields = self.allocator.dupe(Type, &.{
+                        self.resolveTypeNode(call_node.args[0]),
+                        .{ .error_type = "IntCastError" },
+                    }) catch return .unresolved;
+                    return .{ .tuple_type = .{ .field_types = fields, .field_names = null } };
+                }
+                if (std.mem.eql(u8, callee_name, "@field") and call_node.args.len == 2) {
+                    const obj_ty = self.inferExprType(call_node.args[0]);
+                    const index = self.constIndexValue(call_node.args[1]) orelse return .any_type;
+                    const fields = switch (obj_ty) {
+                        .struct_type => |name| (self.struct_types.get(name) orelse return .unresolved).field_types,
+                        .tuple_type => |tt| tt.field_types,
+                        else => return .any_type,
+                    };
+                    return if (index >= 0 and index < fields.len) fields[@intCast(index)] else .unresolved;
+                }
+                if (std.mem.eql(u8, callee_name, "@reinterpret") and call_node.args.len == 2)
+                    return self.resolveTypeNode(call_node.args[0]);
                 // Check fn_signatures registry
                 if (self.fn_signatures.get(callee_name)) |sig| {
                     return sig.return_type;
@@ -794,7 +846,14 @@ pub const Analyzer = struct {
                 return Type.unresolved;
             },
             .unary_op => |unop| {
-                return self.inferExprType(unop.operand);
+                const inner = self.inferExprType(unop.operand);
+                if (unop.op == .address_of) {
+                    const name = inner.displayName(self.allocator) catch return .unresolved;
+                    const is_raw = innerNameIsRaw(inner);
+                    if (unop.operand.data == .index_expr) return .{ .many_pointer_type = .{ .element_name = name, .is_raw = is_raw } };
+                    return .{ .pointer_type = .{ .pointee_name = name, .is_raw = is_raw } };
+                }
+                return inner;
             },
             .field_access => |fa| {
                 var obj_ty = self.inferExprType(fa.object);
@@ -823,13 +882,24 @@ pub const Analyzer = struct {
                         if (self.context_members.get(fa.field)) |ty| return ty;
                     }
                 }
+                if (obj_ty == .tuple_type) {
+                    if (obj_ty.tuple_type.field_names) |names| {
+                        for (names, obj_ty.tuple_type.field_types) |name, ty| {
+                            if (std.mem.eql(u8, name, fa.field)) return ty;
+                        }
+                    }
+                }
                 if (obj_ty.isArray()) {
                     return self.resolveTypeNameStr(obj_ty.array_type.element_name, obj_ty.array_type.is_raw);
                 }
                 return Type.unresolved;
             },
             .index_expr => |ie| {
-                const obj_ty = self.inferExprType(ie.object);
+                var obj_ty = self.inferExprType(ie.object);
+                if (obj_ty.isPointer()) {
+                    obj_ty = self.resolveTypeNameStr(obj_ty.pointer_type.pointee_name, obj_ty.pointer_type.is_raw);
+                    if (!obj_ty.isArray() and !obj_ty.isSlice()) return .unresolved;
+                }
                 if (obj_ty == .string_type) return Type.u(8);
                 if (obj_ty.isArray()) return self.resolveTypeNameStr(obj_ty.array_type.element_name, obj_ty.array_type.is_raw);
                 if (obj_ty.isManyPointer()) return self.resolveTypeNameStr(obj_ty.many_pointer_type.element_name, obj_ty.many_pointer_type.is_raw);
@@ -871,7 +941,40 @@ pub const Analyzer = struct {
                     }
                     return self.inferExprType(te);
                 }
-                return .void_type;
+                var shape = literal_fields.Anonymous(Type){};
+                defer shape.deinit(self.allocator);
+                for (sl.field_inits) |fi| {
+                    if (fi.value.data == .spread_expr) {
+                        const ty = self.inferExprType(fi.value.data.spread_expr.operand);
+                        const source: StructTypeInfo = switch (ty) {
+                            .struct_type => |name| self.struct_types.get(name) orelse return .unresolved,
+                            .tuple_type => |tt| .{ .field_names = tt.field_names orelse &.{}, .field_types = tt.field_types },
+                            .array_type => |array| {
+                                const element = self.resolveTypeNameStr(array.element_name, array.is_raw);
+                                for (0..(array.length orelse return .unresolved)) |_| shape.contribute(self.allocator, null, .spread, element) catch unreachable;
+                                continue;
+                            },
+                            else => return .unresolved,
+                        };
+                        for (source.field_types, 0..) |field, i| {
+                            const name = if (i < source.field_names.len) literal_fields.spreadName(source.field_names[i]) else null;
+                            shape.contribute(self.allocator, name, .spread, field) catch unreachable;
+                        }
+                    } else {
+                        shape.contribute(self.allocator, fi.name, .direct, self.inferExprType(fi.value)) catch return .unresolved;
+                    }
+                }
+                const fields = self.allocator.alloc(Type, shape.named.items.len + shape.unnamed.items.len) catch return .unresolved;
+                const names = self.allocator.alloc([]const u8, fields.len) catch return .unresolved;
+                for (shape.named.items, 0..) |field, i| {
+                    fields[i] = field.value;
+                    names[i] = field.name;
+                }
+                for (shape.unnamed.items, shape.named.items.len..) |field, i| {
+                    fields[i] = field;
+                    names[i] = std.fmt.allocPrint(self.allocator, "{d}", .{i}) catch return .unresolved;
+                }
+                return .{ .tuple_type = .{ .field_types = fields, .field_names = names } };
             },
             .force_unwrap => |fu| {
                 const opt_ty = self.inferExprType(fu.operand);
@@ -880,9 +983,12 @@ pub const Analyzer = struct {
             },
             .null_coalesce => |nc| {
                 const opt_ty = self.inferExprType(nc.lhs);
+                if (opt_ty.failableSuccess()) |success| return success;
                 if (opt_ty.isOptional()) return self.resolveTypeNameStr(opt_ty.optional_type.child_name, opt_ty.optional_type.is_raw);
                 return self.inferExprType(nc.rhs);
             },
+            .try_expr => |te| self.inferExprType(te.operand).failableSuccess() orelse .unresolved,
+            .catch_expr => |ce| self.inferExprType(ce.operand).failableSuccess() orelse .unresolved,
             .deref_expr => |de| {
                 const ptr_ty = self.inferExprType(de.operand);
                 if (ptr_ty.isPointer()) return self.resolveTypeNameStr(ptr_ty.pointer_type.pointee_name, ptr_ty.pointer_type.is_raw);
@@ -1188,9 +1294,11 @@ pub const Analyzer = struct {
             .const_decl => |cd| {
                 // Analyze value first (so it can't reference itself)
                 try self.analyzeNode(cd.value);
-                const ty = self.resolveTypeAnnotation(cd.type_annotation) orelse inferValueType(cd.value);
+                const ty = self.resolveTypeAnnotation(cd.type_annotation) orelse self.inferValueType(cd.value);
                 const kind = classifyConstDecl(cd);
+                const int_constant = self.constIndexValue(cd.value);
                 try self.addSymbol(cd.name, kind, ty, node.span);
+                self.symbols.items[self.symbols.items.len - 1].int_constant = int_constant;
             },
             .var_decl => |vd| {
                 if (vd.value) |val| {
@@ -1390,6 +1498,14 @@ pub const Analyzer = struct {
             },
             .destructure_decl => |dd| {
                 try self.analyzeNode(dd.value);
+                const ty = self.inferExprType(dd.value);
+                for (dd.names, dd.name_spans, 0..) |name, span, i| {
+                    const field_ty: ?Type = if (ty == .tuple_type and i < ty.tuple_type.field_types.len)
+                        ty.tuple_type.field_types[i]
+                    else
+                        null;
+                    try self.addSymbol(name, .variable, field_ty, span);
+                }
             },
             .return_stmt => |ret| {
                 if (ret.value) |val| {
@@ -1411,7 +1527,11 @@ pub const Analyzer = struct {
                 try self.analyzeNode(ce.operand);
                 try self.pushScope();
                 if (ce.binding) |bname| {
-                    try self.addSymbol(bname, .variable, null, node.span);
+                    const ty = self.inferExprType(ce.operand);
+                    const error_ty: ?Type = if (ty == .tuple_type and ty.failableSuccess() != null)
+                        ty.tuple_type.field_types[ty.tuple_type.field_types.len - 1]
+                    else if (ty == .error_type) ty else null;
+                    try self.addSymbol(bname, .variable, error_ty, node.span);
                 }
                 try self.analyzeNode(ce.body);
                 self.popScope();
@@ -1760,8 +1880,9 @@ pub const Analyzer = struct {
         }
     }
 
-    fn inferValueType(value: *Node) ?Type {
+    fn inferValueType(self: *Analyzer, value: *Node) ?Type {
         return switch (value.data) {
+            .struct_literal => self.inferExprType(value),
             .int_literal => Type.s(64),
             .float_literal => .f64,
             .bool_literal => .boolean,
@@ -2757,4 +2878,57 @@ test "sema: top-level ufcs_alias registers symbol" {
         }
     }
     try std.testing.expect(found_sum);
+}
+
+test "sema: an expanded named field is indexed and types a member expression" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        "Base :: struct { x: i32; y: bool; } " ++
+        "Derived :: struct { ..Base; z: i64; } " ++
+        "main :: () { d := Derived{}; value := d.x; }";
+    var parser = try @import("parser.zig").Parser.init(alloc, source);
+    var analyzer = Analyzer.init(alloc);
+    analyzer.source = source;
+    const result = try analyzer.analyze(try parser.parse());
+    const derived = result.struct_types.get("Derived") orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(@as(usize, 3), derived.field_names.len);
+    try std.testing.expectEqualStrings("x", derived.field_names[0]);
+    try std.testing.expectEqual(Type{ .signed = 32 }, derived.field_types[0]);
+    for (result.symbols) |symbol| {
+        if (std.mem.eql(u8, symbol.name, "value")) {
+            try std.testing.expectEqual(Type{ .signed = 32 }, symbol.ty.?);
+            return;
+        }
+    }
+    return error.TestUnexpectedResult;
+}
+
+test "sema: mixed contributions retain named layout and last types" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        "A :: struct { px: i16; py: i32; } " ++
+        "B :: struct { py: i32; px: i64; } " ++
+        "tuple :: .{true}; " ++
+        "main :: () { a := A{}; b := B{}; " ++
+        "mixed :: .{..tuple, ..a, 7, ..b}; " ++
+        "first := @field(mixed, 0); last := @field(mixed, 2); member := mixed.px; }";
+    var parser = try @import("parser.zig").Parser.init(alloc, source);
+    var analyzer = Analyzer.init(alloc);
+    analyzer.source = source;
+    const result = try analyzer.analyze(try parser.parse());
+    var found: usize = 0;
+    for (result.symbols) |symbol| {
+        if (std.mem.eql(u8, symbol.name, "first") or std.mem.eql(u8, symbol.name, "member")) {
+            try std.testing.expectEqual(Type.s(64), symbol.ty.?);
+            found += 1;
+        } else if (std.mem.eql(u8, symbol.name, "last")) {
+            try std.testing.expectEqual(Type.boolean, symbol.ty.?);
+            found += 1;
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 3), found);
 }

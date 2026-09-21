@@ -86,10 +86,10 @@ main :: () -> ! {
     report("nested-pair", sub.items[0].key == "k" and sub.items[0].val.str == "v");
 
     // ── 2. Ownership: view vs decoded ────────────────────────────────
-    base : i64 = xx src.ptr;
+    base : i64 = @reinterpret(isize, src.ptr).(i64);
     stop := base + src.len;
-    pPlain : i64 = xx o.items[0].val.str.ptr;   // "plain": no escape -> VIEW into src
-    pEsc   : i64 = xx o.items[1].val.str.ptr;   // "a\nb": escaped -> DECODED into arena
+    pPlain : i64 = @reinterpret(isize, o.items[0].val.str.ptr).(i64);   // "plain": no escape -> VIEW into src
+    pEsc   : i64 = @reinterpret(isize, o.items[1].val.str.ptr).(i64);   // "a\nb": escaped -> DECODED into arena
     report("plain-is-view",     inRange(pPlain, base, stop));
     report("escaped-allocated", !inRange(pEsc, base, stop));
 

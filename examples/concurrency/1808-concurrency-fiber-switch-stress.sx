@@ -228,11 +228,11 @@ STACK :: 131072;
 
 boot :: (f: *Fiber) {
     base : *void = context.allocator.allocBytes(STACK);
-    top : u64 = (xx base) + STACK;
+    top : u64 = (@reinterpret(usize, base).(u64)) + STACK;
     top = top - (top % 16);
-    f.ctx.regs[0]  = xx f;            // x19 = self
+    f.ctx.regs[0]  = @reinterpret(usize, f).(u64);            // x19 = self
     f.ctx.regs[10] = 0;              // fp
-    f.ctx.regs[11] = xx fib_tramp;   // lr → trampoline
+    f.ctx.regs[11] = @reinterpret(u64, fib_tramp);   // lr → trampoline
     f.ctx.regs[12] = top;            // sp
     // Zero the FP save slots so the first switch-to loads 0 (not garbage) into
     // d8-d15 — removes the first-entry foot-gun.

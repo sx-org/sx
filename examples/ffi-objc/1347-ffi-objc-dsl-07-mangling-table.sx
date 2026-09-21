@@ -38,17 +38,17 @@ main :: () -> i32 {
         cls := objc_allocateClassPair(nsObject, "SxManglingProbe".ptr, 0);
 
         // Register one IMP per selector we'll dispatch to.
-        class_addMethod(cls, sel_registerName("length".ptr),                              xx universalImp, "i@:".ptr);
-        class_addMethod(cls, sel_registerName("addObject:".ptr),                          xx universalImp, "i@:i".ptr);
-        class_addMethod(cls, sel_registerName("combine:and:".ptr),                        xx universalImp, "i@:ii".ptr);
-        class_addMethod(cls, sel_registerName("insert:after:index:".ptr),                 xx universalImp, "i@:iii".ptr);
-        class_addMethod(cls, sel_registerName("add:observer:for:event:".ptr),             xx universalImp, "i@:iiii".ptr);
-        class_addMethod(cls, sel_registerName("initWithFrame:options:".ptr),              xx universalImp, "i@:ii".ptr);
-        class_addMethod(cls, sel_registerName("actualSelectorName".ptr),                  xx universalImp, "i@:".ptr);
+        class_addMethod(cls, sel_registerName("length".ptr),                              @reinterpret(*void, universalImp), "i@:".ptr);
+        class_addMethod(cls, sel_registerName("addObject:".ptr),                          @reinterpret(*void, universalImp), "i@:i".ptr);
+        class_addMethod(cls, sel_registerName("combine:and:".ptr),                        @reinterpret(*void, universalImp), "i@:ii".ptr);
+        class_addMethod(cls, sel_registerName("insert:after:index:".ptr),                 @reinterpret(*void, universalImp), "i@:iii".ptr);
+        class_addMethod(cls, sel_registerName("add:observer:for:event:".ptr),             @reinterpret(*void, universalImp), "i@:iiii".ptr);
+        class_addMethod(cls, sel_registerName("initWithFrame:options:".ptr),              @reinterpret(*void, universalImp), "i@:ii".ptr);
+        class_addMethod(cls, sel_registerName("actualSelectorName".ptr),                  @reinterpret(*void, universalImp), "i@:".ptr);
 
         objc_registerClassPair(cls);
 
-        inst : *SxManglingProbe = xx class_createInstance(cls, 0);
+        inst : *SxManglingProbe = class_createInstance(cls, 0);
 
         // One call per mangling shape; the IR snapshot pins what
         // selector string each sx name resolves to.

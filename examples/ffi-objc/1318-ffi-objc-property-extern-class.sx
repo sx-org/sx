@@ -42,11 +42,11 @@ main :: () -> i32 {
         // Register the class + the two IMPs.
         nsObject := objc_getClass("NSObject".ptr);
         cls := objc_allocateClassPair(nsObject, "SxPropProbe".ptr, 0);
-        class_addMethod(cls, sel_registerName("tag".ptr),    xx probeGetTag, "i@:".ptr);
-        class_addMethod(cls, sel_registerName("setTag:".ptr), xx probeSetTag, "v@:i".ptr);
+        class_addMethod(cls, sel_registerName("tag".ptr),    @reinterpret(*void, probeGetTag), "i@:".ptr);
+        class_addMethod(cls, sel_registerName("setTag:".ptr), @reinterpret(*void, probeSetTag), "v@:i".ptr);
         objc_registerClassPair(cls);
 
-        inst : *SxPropProbe = xx class_createInstance(cls, 0);
+        inst : *SxPropProbe = class_createInstance(cls, 0);
 
         // `inst.tag` → [inst tag] → probeGetTag → reads g_probe_storage
         v0 := inst.tag;

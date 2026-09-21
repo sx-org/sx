@@ -26,15 +26,15 @@ main :: () -> i32 {
     SxThing  := objc_allocateClassPair(NSObject, "SxThing".ptr, 0);
     selHello := sel_registerName("hello".ptr);
 
-    ok := class_addMethod(SxThing, selHello, xx helloImp, "v@:".ptr);
+    ok := class_addMethod(SxThing, selHello, @reinterpret(*void, helloImp), "v@:".ptr);
     if !ok { return 1; }
     objc_registerClassPair(SxThing);
 
     obj := class_createInstance(SxThing, 0);
-    if obj == xx 0 { return 2; }
+    if obj == null { return 2; }
 
     // [obj hello]
-    msg : (*void, *void) -> void abi(.c) = xx objc_msgSend;
+    msg : (*void, *void) -> void abi(.c) = @reinterpret((*void, *void) -> void abi(.c), objc_msgSend);
     msg(obj, selHello);
 
     return gMarker; // 42 if helloImp ran

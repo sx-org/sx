@@ -1,3 +1,9 @@
+error: '$T' cannot introduce a type parameter in a struct field; declare it in the struct header with `struct ($T: Type) { ... }` and reference it as `T`
+  --> examples/diagnostics/2372-diagnostics-lambda-signature-refuses-unbound-binders.sx:13:37
+   |
+13 |     inlineStruct := |x: struct { v: $T; }| 3;
+   |                                     ^^
+
 error: lambda parameter 'x' cannot be generic; a lambda is a value, so give '$T' a concrete type
   --> examples/diagnostics/2372-diagnostics-lambda-signature-refuses-unbound-binders.sx:7:20
    |

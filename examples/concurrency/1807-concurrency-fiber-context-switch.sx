@@ -100,12 +100,12 @@ fibBody :: (self: *Fiber) export "fib_body" {
         swapContext(*self.ctx, self.finish);
         return;
     }
-    canary : u64 = 0xCA11AB1E0000 + (xx self.id);
+    canary : u64 = 0xCA11AB1E0000.(u64) + (xx self.id);
     i := 0;
     while i < self.rounds {
         self.count.* = self.count.* + 1;
         swapContext(*self.ctx, self.peer);
-        if canary != (0xCA11AB1E0000 + (xx self.id)).(u64) { self.canaryFail = self.canaryFail + 1; }
+        if canary != (0xCA11AB1E0000.(u64) + (xx self.id)).(u64) { self.canaryFail = self.canaryFail + 1; }
         i = i + 1;
     }
     swapContext(*self.ctx, self.finish);
@@ -115,11 +115,11 @@ STACK :: 131072;
 
 boot :: (f: *Fiber) {
     base : *void = context.allocator.allocBytes(STACK);
-    top : u64 = (xx base) + STACK;
+    top : u64 = (@reinterpret(usize, base).(u64)) + STACK;
     top = top - (top % 16);          // 16-byte aligned stack top (AAPCS)
-    f.ctx.regs[0]  = xx f;           // x19 = self
+    f.ctx.regs[0]  = @reinterpret(usize, f).(u64);           // x19 = self
     f.ctx.regs[10] = 0;              // fp
-    f.ctx.regs[11] = xx fib_tramp;   // lr → trampoline
+    f.ctx.regs[11] = @reinterpret(u64, fib_tramp);   // lr → trampoline
     f.ctx.regs[12] = top;            // sp
     f.canaryFail = 0;
     f.depthFail = 0;

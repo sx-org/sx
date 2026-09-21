@@ -1,0 +1,4 @@
+main :: () {
+    raw: *void = null;
+    f: (i64) -> i64 abi(.c) = raw;
+}

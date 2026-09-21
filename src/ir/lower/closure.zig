@@ -34,10 +34,31 @@ pub const LambdaKind = enum { literal, init_recipe };
 /// with the function that reads it. The value carries no pointer, so a call
 /// hands the function the ADDRESS of whatever storage holds the value.
 pub const UniqueLambda = struct {
-    func: FuncId,
+    func: union(enum) {
+        lowered: FuncId,
+        formation: *FormationLambda,
+    },
     params: []const TypeId,
     ret: TypeId,
 };
+
+const FormationLambda = struct {
+    lam: *const ast.Lambda,
+    env_ty: TypeId,
+    bindings: std.StringHashMap(TypeId),
+    pack_bindings: ?std.StringHashMap([]const TypeId),
+    pack_arg_types: ?std.StringHashMap([]const TypeId),
+    scope: Scope,
+    source_file: ?[]const u8,
+    instances: std.ArrayList(UniqueLambda) = .empty,
+};
+
+pub fn hasFormationParam(lam: *const ast.Lambda) bool {
+    for (lam.params) |p| {
+        if (lower_init_plan.boundTargetNode(p.type_expr) != null) return true;
+    }
+    return false;
+}
 
 /// The unique lambda `ty` IS, or null when `ty` is any other type.
 pub fn uniqueLambdaOf(self: *Lowering, ty: TypeId) ?UniqueLambda {
@@ -194,13 +215,20 @@ const LambdaFn = struct {
     wants_ctx: bool,
 };
 
-fn lowerLambdaFunction(self: *Lowering, lam: *const ast.Lambda, name: []const u8, env_struct_ty: TypeId, capture_list: []const CaptureInfo, sig_target: ?CallableSig) LambdaFn {
-    // Save current builder state
-    const saved_func = self.builder.func;
-    const saved_block = self.builder.current_block;
-    const saved_counter = self.builder.inst_counter;
-    const saved_scope = self.scope;
+const LambdaSignature = struct {
+    params: []const Function.Param,
+    ret: TypeId,
+    wants_ctx: bool,
 
+    fn userParams(self: LambdaSignature, alloc: std.mem.Allocator) []const TypeId {
+        const base: usize = if (self.wants_ctx) 2 else 1;
+        const result = alloc.alloc(TypeId, self.params.len - base) catch unreachable;
+        for (self.params[base..], result) |p, *ty| ty.* = p.ty;
+        return result;
+    }
+};
+
+fn lambdaSignature(self: *Lowering, lam: *const ast.Lambda, sig_target: ?CallableSig) LambdaSignature {
     // Build param list. Convention when implicit_ctx is enabled:
     //   slot 0 = __sx_ctx: *void
     //   slot 1 = env: *void
@@ -333,8 +361,28 @@ fn lowerLambdaFunction(self: *Lowering, lam: *const ast.Lambda, name: []const u8
         temp_scope.deinit();
         break :blk inferred;
     };
+    return .{ .params = params.items, .ret = ret_ty, .wants_ctx = lambda_wants_ctx };
+}
+
+fn lambdaOwner(self: *Lowering) ?FuncId {
+    const func = self.builder.func orelse return null;
+    return self.init_recipe_owners.get(func) orelse func;
+}
+
+fn lowerLambdaFunction(self: *Lowering, lam: *const ast.Lambda, name: []const u8, env_struct_ty: TypeId, sig_target: ?CallableSig, kind: LambdaKind) LambdaFn {
+    const saved_func = self.builder.func;
+    const owner = lambdaOwner(self);
+    const saved_block = self.builder.current_block;
+    const saved_counter = self.builder.inst_counter;
+    const saved_scope = self.scope;
+
+    const signature = lambdaSignature(self, lam, sig_target);
+    const ret_ty = signature.ret;
+    const lambda_wants_ctx = signature.wants_ctx;
+    const user_param_base: usize = if (lambda_wants_ctx) 2 else 1;
     const name_id = self.module.types.internString(name);
-    const func_id = self.builder.beginFunction(name_id, params.items, ret_ty);
+    const func_id = self.builder.beginFunction(name_id, signature.params, ret_ty);
+    if (kind == .init_recipe) self.init_recipe_owners.put(func_id, owner) catch unreachable;
     self.builder.currentFunc().has_implicit_ctx = lambda_wants_ctx;
 
     // Param-slot layout: ctx at 0 (if present), env at ctx_slots,
@@ -395,11 +443,12 @@ fn lowerLambdaFunction(self: *Lowering, lam: *const ast.Lambda, name: []const u8
     // A unique value IS its env, so the body binds each field straight through
     // the caller's storage: a write reaches the value the caller holds, and
     // nothing is snapshotted per call.
-    if (capture_list.len > 0) {
+    if (env_struct_ty != .void) {
         const env_param_ref = Ref.fromIndex(env_param_idx);
-        for (capture_list, 0..) |cap, i| {
-            const field_ptr = self.builder.structGepTyped(env_param_ref, @intCast(i), self.module.types.ptrTo(cap.ty), env_struct_ty);
-            lambda_scope.put(cap.name, .{ .ref = field_ptr, .ty = cap.ty, .is_alloca = true });
+        const fields = self.module.types.get(env_struct_ty).@"struct".fields;
+        for (fields, 0..) |field, i| {
+            const field_ptr = self.builder.structGepTyped(env_param_ref, @intCast(i), self.module.types.ptrTo(field.ty), env_struct_ty);
+            lambda_scope.put(self.module.types.getString(field.name), .{ .ref = field_ptr, .ty = field.ty, .is_alloca = true });
         }
     }
 
@@ -423,7 +472,7 @@ fn lowerLambdaFunction(self: *Lowering, lam: *const ast.Lambda, name: []const u8
     // applied contextual typing from the target closure to untyped params —
     // `resolveParamType` alone would drop it and default each to i64.
     for (lam.params, 0..) |p, i| {
-        const pty = params.items[user_param_base + i].ty;
+        const pty = signature.params[user_param_base + i].ty;
         const slot = self.builder.alloca(pty);
         const param_ref = Ref.fromIndex(user_param_base_lam + @as(u32, @intCast(i)));
         self.builder.store(slot, param_ref);
@@ -468,30 +517,116 @@ fn lowerLambdaFunction(self: *Lowering, lam: *const ast.Lambda, name: []const u8
     self.builder.inst_counter = saved_counter;
     self.current_ctx_ref = saved_ctx_ref_lam;
 
-    const user_base: usize = if (lambda_wants_ctx) 2 else 1;
-    var user_params = std.ArrayList(TypeId).empty;
-    for (params.items[user_base..]) |p| user_params.append(self.alloc, p.ty) catch unreachable;
-    return .{ .func_id = func_id, .user_params = user_params.items, .ret_ty = ret_ty, .wants_ctx = lambda_wants_ctx };
+    return .{ .func_id = func_id, .user_params = signature.userParams(self.alloc), .ret_ty = ret_ty, .wants_ctx = lambda_wants_ctx };
+}
+
+fn formationLambda(self: *Lowering, lam: *const ast.Lambda, env_ty: TypeId, sig_target: ?CallableSig) UniqueLambda {
+    if (self.unique_lambdas.get(env_ty)) |u| return u;
+    const signature = lambdaSignature(self, lam, sig_target);
+    const params = signature.userParams(self.alloc);
+    const formation = self.alloc.create(FormationLambda) catch unreachable;
+    formation.* = .{
+        .lam = lam,
+        .env_ty = env_ty,
+        .bindings = if (self.type_bindings) |b| b.clone() catch unreachable else std.StringHashMap(TypeId).init(self.alloc),
+        .pack_bindings = if (self.pack_bindings) |b| b.clone() catch unreachable else null,
+        .pack_arg_types = if (self.pack_arg_types) |b| b.clone() catch unreachable else null,
+        .scope = Scope.init(self.alloc, null, &self.next_binding_id),
+        .source_file = lam.body.source_file orelse self.current_source_file,
+    };
+    var scope = self.scope;
+    while (scope) |s| : (scope = s.parent) {
+        var names = s.fn_names.iterator();
+        while (names.next()) |e| {
+            if (!formation.scope.fn_names.contains(e.key_ptr.*))
+                formation.scope.fn_names.put(e.key_ptr.*, e.value_ptr.*) catch unreachable;
+        }
+        var bindings = s.map.iterator();
+        while (bindings.next()) |e| {
+            if (!formation.scope.map.contains(e.key_ptr.*))
+                formation.scope.map.put(e.key_ptr.*, e.value_ptr.*) catch unreachable;
+        }
+    }
+    const u = UniqueLambda{ .func = .{ .formation = formation }, .params = params, .ret = signature.ret };
+    self.unique_lambdas.put(env_ty, u) catch unreachable;
+    return u;
+}
+
+/// Formation binders belong to the argument's implementor, including its source site.
+pub fn specializeFormationLambda(self: *Lowering, u: UniqueLambda, arg_types: []const TypeId) UniqueLambda {
+    const formation = switch (u.func) {
+        .lowered => return u,
+        .formation => |f| f,
+    };
+    const params = self.alloc.dupe(TypeId, u.params) catch unreachable;
+    defer self.alloc.free(params);
+    var bindings = formation.bindings.clone() catch unreachable;
+    defer bindings.deinit();
+    for (formation.lam.params, params, arg_types) |p, *ty, arg_ty| {
+        if (lower_init_plan.boundTargetNode(p.type_expr) == null) continue;
+        ty.* = arg_ty;
+        bindings.put(p.type_expr.data.type_expr.name, ty.*) catch unreachable;
+    }
+    for (formation.instances.items) |instance| {
+        if (std.mem.eql(TypeId, instance.params, params)) return instance;
+    }
+
+    var guard = Lowering.NestedBodyGuard.enterCached(self);
+    defer guard.restore();
+    const saved_scope = self.scope;
+    const saved_source = self.current_source_file;
+    const saved_bindings = self.type_bindings;
+    const saved_packs = self.pack_bindings;
+    const saved_pack_types = self.pack_arg_types;
+    const saved_target = self.target_type;
+    self.scope = &formation.scope;
+    self.setCurrentSourceFile(formation.source_file);
+    self.type_bindings = bindings;
+    self.pack_bindings = formation.pack_bindings;
+    self.pack_arg_types = formation.pack_arg_types;
+    self.target_type = null;
+    defer {
+        self.scope = saved_scope;
+        self.setCurrentSourceFile(saved_source);
+        self.type_bindings = saved_bindings;
+        self.pack_bindings = saved_packs;
+        self.pack_arg_types = saved_pack_types;
+        self.target_type = saved_target;
+    }
+    const name = std.fmt.allocPrint(self.alloc, "__lambda_{d}", .{self.block_counter}) catch unreachable;
+    self.block_counter += 1;
+    const fnp = lowerLambdaFunction(self, formation.lam, name, formation.env_ty, .{ .params = u.params, .ret = .unresolved }, .literal);
+    const instance = UniqueLambda{ .func = .{ .lowered = fnp.func_id }, .params = fnp.user_params, .ret = fnp.ret_ty };
+    formation.instances.append(self.alloc, instance) catch unreachable;
+    return instance;
+}
+
+pub fn formationCallResult(self: *Lowering, u: UniqueLambda, args: []const *const Node) TypeId {
+    if (u.func == .lowered or args.len != u.params.len) return u.ret;
+    const arg_types = self.alloc.dupe(TypeId, u.params) catch unreachable;
+    defer self.alloc.free(arg_types);
+    for (u.params, args, arg_types) |param, arg, *ty| {
+        if (self.initTargetOf(param)) |target| ty.* = lower_init_plan.argumentType(self, arg, target, self.inferExprType(arg));
+    }
+    return specializeFormationLambda(self, u, arg_types).ret;
 }
 
 /// The function of a written literal whose env type is known but whose literal
 /// has not lowered yet: a member holding it may compile first.
 pub fn materializeLambdaFunction(self: *Lowering, env_ty: TypeId) ?UniqueLambda {
     const lam = self.env_lambdas.get(env_ty) orelse return null;
+    if (hasFormationParam(lam)) return formationLambda(self, lam, env_ty, null);
     if (self.materializing_lambda != null) return null;
     self.materializing_lambda = env_ty;
     defer self.materializing_lambda = null;
-    const fields = self.module.types.get(env_ty).@"struct".fields;
-    const caps = self.alloc.alloc(CaptureInfo, fields.len) catch unreachable;
-    for (fields, 0..) |f, i| caps[i] = .{ .name = self.module.types.getString(f.name), .ty = f.ty, .ref = Ref.none, .is_alloca = false };
     var buf: [64]u8 = undefined;
     const name = std.fmt.bufPrint(&buf, "__lambda_{d}", .{self.block_counter}) catch "__lambda";
     self.block_counter += 1;
     const saved_target = self.target_type;
     self.target_type = null;
     defer self.target_type = saved_target;
-    const fnp = lowerLambdaFunction(self, lam, name, env_ty, caps, null);
-    const u = UniqueLambda{ .func = fnp.func_id, .params = fnp.user_params, .ret = fnp.ret_ty };
+    const fnp = lowerLambdaFunction(self, lam, name, env_ty, null, .literal);
+    const u = UniqueLambda{ .func = .{ .lowered = fnp.func_id }, .params = fnp.user_params, .ret = fnp.ret_ty };
     self.unique_lambdas.put(env_ty, u) catch {};
     return u;
 }
@@ -501,7 +636,7 @@ pub fn materializeLambdaFunction(self: *Lowering, env_ty: TypeId) ?UniqueLambda 
 /// Null when an entry's type is not known before lowering; the literal then
 /// names its env struct as it lowers.
 pub fn lambdaEnvType(self: *Lowering, lam: *const ast.Lambda) ?TypeId {
-    const key = lower.LambdaKey{ .lam = lam, .func = if (self.builder.func) |f| @intFromEnum(f) else std.math.maxInt(u32) };
+    const key = lower.LambdaKey{ .lam = lam, .func = lambdaOwner(self) };
     if (self.lambda_env_types.get(key)) |ty| return ty;
     const fields = self.alloc.alloc(types.TypeInfo.StructInfo.Field, lam.env.len) catch unreachable;
     const saved_target = self.target_type;
@@ -533,7 +668,7 @@ pub fn lowerLambda(self: *Lowering, lam: *const ast.Lambda) Ref {
 /// carries. `result_ty` must have the same closure shape the lambda lowers to —
 /// it renames the value (`@Init(V)` instead of `Closure(*V)`), never reshapes it.
 pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, kind: LambdaKind, result_ty: ?TypeId) Ref {
-    const saved_func_for_key = self.builder.func;
+    const memo_key = lower.LambdaKey{ .lam = lam, .func = lambdaOwner(self) };
     // A written `_{ … }` makes the literal's value its own env struct. Every
     // field is evaluated HERE, in the forming frame, before the guard below
     // retires the enclosing flow state.
@@ -603,13 +738,12 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, kind: LambdaKin
 
     // The env struct. A unique literal always has one — an empty env is a
     // zero-field struct, which is the whole value.
-    const is_unique = lam.has_env or capture_list.len > 0;
+    const is_unique = lam.has_env or capture_list.len > 0 or (kind == .literal and hasFormationParam(lam));
     var env_struct_ty: TypeId = .void;
     // A written literal the planner already named keeps that env type, its
     // captured values taking the fields' shapes; otherwise the env is the
     // captures as lowered, and the name is recorded for anyone asking later.
-    const memo_key = lower.LambdaKey{ .lam = lam, .func = if (saved_func_for_key) |f| @intFromEnum(f) else std.math.maxInt(u32) };
-    if (is_unique and kind == .literal and lam.has_env and self.lambda_env_types.get(memo_key) != null) {
+    if (is_unique and kind == .literal and (lam.has_env or hasFormationParam(lam)) and self.lambda_env_types.get(memo_key) != null) {
         env_struct_ty = self.lambda_env_types.get(memo_key).?;
         const env_fields = self.module.types.get(env_struct_ty).@"struct".fields;
         for (capture_list, 0..) |*cap, i| {
@@ -635,17 +769,22 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, kind: LambdaKin
             .name = env_name_id,
             .fields = env_field_data,
         } });
-        if (kind == .literal and lam.has_env) {
+        if (kind == .literal and (lam.has_env or hasFormationParam(lam))) {
             self.lambda_env_types.put(memo_key, env_struct_ty) catch {};
             self.env_lambdas.put(env_struct_ty, lam) catch {};
         }
     }
 
+    if (kind == .literal and hasFormationParam(lam)) {
+        _ = formationLambda(self, lam, env_struct_ty, sig_target);
+        return lambdaEnvValue(self, env_struct_ty, capture_list);
+    }
+
     // A literal whose function already lowered on demand keeps it.
     const fnp: LambdaFn = if (is_unique and kind == .literal and lam.has_env and self.unique_lambdas.get(env_struct_ty) != null) blk: {
         const u = self.unique_lambdas.get(env_struct_ty).?;
-        break :blk .{ .func_id = u.func, .user_params = u.params, .ret_ty = u.ret, .wants_ctx = self.implicit_ctx_enabled };
-    } else lowerLambdaFunction(self, lam, name, env_struct_ty, capture_list, sig_target);
+        break :blk .{ .func_id = u.func.lowered, .user_params = u.params, .ret_ty = u.ret, .wants_ctx = self.implicit_ctx_enabled };
+    } else lowerLambdaFunction(self, lam, name, env_struct_ty, sig_target, kind);
     const func_id = fnp.func_id;
     const ret_ty = fnp.ret_ty;
 
@@ -694,20 +833,24 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, kind: LambdaKin
     // The unique value: the env struct itself, filled where it was written.
     if (is_unique) {
         self.unique_lambdas.put(env_struct_ty, .{
-            .func = func_id,
+            .func = .{ .lowered = func_id },
             .params = fnp.user_params,
             .ret = ret_ty,
         }) catch {};
-        const env_local = self.builder.alloca(env_struct_ty);
-        for (capture_list, 0..) |cap, i| {
-            const gep = self.builder.structGepTyped(env_local, @intCast(i), self.module.types.ptrTo(cap.ty), env_struct_ty);
-            const val = if (cap.is_alloca) self.builder.load(cap.ref, cap.ty) else cap.ref;
-            self.builder.store(gep, val);
-        }
-        return self.builder.load(env_local, env_struct_ty);
+        return lambdaEnvValue(self, env_struct_ty, capture_list);
     }
 
     return self.builder.closureCreate(func_id, Ref.none, closure_ty);
+}
+
+fn lambdaEnvValue(self: *Lowering, env_ty: TypeId, captures: []const CaptureInfo) Ref {
+    const env = self.builder.alloca(env_ty);
+    for (captures, 0..) |cap, i| {
+        const field = self.builder.structGepTyped(env, @intCast(i), self.module.types.ptrTo(cap.ty), env_ty);
+        const value = if (cap.is_alloca) self.builder.load(cap.ref, cap.ty) else cap.ref;
+        self.builder.store(field, value);
+    }
+    return self.builder.load(env, env_ty);
 }
 
 /// The environment a value of callable type `ty` IS — what `closure` copies
@@ -731,7 +874,10 @@ pub fn envTypeOf(self: *Lowering, ty: TypeId) ?TypeId {
 /// already carries that shape; a callable nominal and a bare function get one
 /// synthesized around the env `envTypeOf` names.
 pub fn callTrampolineOf(self: *Lowering, ty: TypeId) ?FuncId {
-    if (uniqueLambdaOf(self, ty)) |u| return u.func;
+    if (uniqueLambdaOf(self, ty)) |u| return switch (u.func) {
+        .lowered => |fid| fid,
+        .formation => null,
+    };
     if (self.persist_trampolines.get(ty)) |fid| return fid;
     const fid = blk: {
         if (self.callable_nominals.get(ty)) |cn| break :blk nominalTrampoline(self, cn) orelse return null;

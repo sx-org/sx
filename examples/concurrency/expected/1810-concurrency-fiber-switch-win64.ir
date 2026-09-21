@@ -75,14 +75,17 @@ entry:
 define internal void @boot(ptr %0, ptr %1) #0 {
 entry:
   %alloca = alloca ptr, align 8
+  %allocaN = alloca ptr, align 8
   store ptr %1, ptr %alloca, align 8
   %allocaN = alloca ptr, align 8
   %call = call ptr @VirtualAlloc(ptr null, i64 131072, i32 12288, i32 4)
   store ptr %call, ptr %allocaN, align 8
   %allocaN = alloca i64, align 8
   %load = load ptr, ptr %allocaN, align 8
-  %pti = ptrtoint ptr %load to i64
-  %add = add i64 %pti, 131072
+  %allocaN = alloca ptr, align 8
+  store ptr %load, ptr %allocaN, align 8
+  %loadN = load i64, ptr %allocaN, align 8
+  %add = add i64 %loadN, 131072
   store i64 %add, ptr %allocaN, align 8
   %loadN = load i64, ptr %allocaN, align 8
   %loadN = load i64, ptr %allocaN, align 8
@@ -92,10 +95,15 @@ entry:
   %allocaN = alloca ptr, align 8
   %loadN = load i64, ptr %allocaN, align 8
   %subN = sub i64 %loadN, 8
-  %itp = inttoptr i64 %subN to ptr
-  store ptr %itp, ptr %allocaN, align 8
+  %allocaN = alloca i64, align 8
+  store i64 %subN, ptr %allocaN, align 8
   %loadN = load ptr, ptr %allocaN, align 8
-  store i64 ptrtoint (ptr @fib_tramp to i64), ptr %loadN, align 8
+  store ptr %loadN, ptr %allocaN, align 8
+  %allocaN = alloca ptr, align 8
+  store ptr @fib_tramp, ptr %allocaN, align 8
+  %loadN = load i64, ptr %allocaN, align 8
+  %loadN = load ptr, ptr %allocaN, align 8
+  store i64 %loadN, ptr %loadN, align 8
   %allocaN = alloca i64, align 8
   store i64 0, ptr %allocaN, align 8
   br label %while.hdr.0
@@ -119,19 +127,20 @@ while.body.1:                                     ; preds = %while.hdr.0
 
 while.exit.2:                                     ; preds = %while.hdr.0
   %loadN = load ptr, ptr %alloca, align 8
-  %ptiN = ptrtoint ptr %loadN to i64
+  store ptr %loadN, ptr %allocaN, align 8
+  %loadN = load i64, ptr %allocaN, align 8
   %loadN = load ptr, ptr %alloca, align 8
   %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %loadN, i32 0, i32 0
   %gepN = getelementptr inbounds nuw { [30 x i64] }, ptr %gepN, i32 0, i32 0
-  %igp.ptr21 = getelementptr i64, ptr %gepN, i64 0
-  store i64 %ptiN, ptr %igp.ptr21, align 8
+  %igp.ptr28 = getelementptr i64, ptr %gepN, i64 0
+  store i64 %loadN, ptr %igp.ptr28, align 8
   %loadN = load i64, ptr %allocaN, align 8
   %subN = sub i64 %loadN, 8
   %loadN = load ptr, ptr %alloca, align 8
   %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %loadN, i32 0, i32 0
   %gepN = getelementptr inbounds nuw { [30 x i64] }, ptr %gepN, i32 0, i32 0
-  %igp.ptr27 = getelementptr i64, ptr %gepN, i64 8
-  store i64 %subN, ptr %igp.ptr27, align 8
+  %igp.ptr34 = getelementptr i64, ptr %gepN, i64 8
+  store i64 %subN, ptr %igp.ptr34, align 8
   %loadN = load ptr, ptr %alloca, align 8
   %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %loadN, i32 0, i32 4
   store i64 0, ptr %gepN, align 8

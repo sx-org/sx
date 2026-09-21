@@ -19,10 +19,10 @@ main :: () -> i32 {
         nsObject := objc_getClass("NSObject".ptr);
         cls := objc_allocateClassPair(nsObject, "SxProbeOneArg".ptr, 0);
         sel := sel_registerName("addObject:".ptr);
-        class_addMethod(cls, sel, xx addObjectImp, "i@:i".ptr);
+        class_addMethod(cls, sel, @reinterpret(*void, addObjectImp), "i@:i".ptr);
         objc_registerClassPair(cls);
 
-        inst : *SxProbeOneArg = xx class_createInstance(cls, 0);
+        inst : *SxProbeOneArg = class_createInstance(cls, 0);
         n := inst.addObject(21);
         print("addObject(21) = {}\n", n);
     }

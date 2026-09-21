@@ -31,8 +31,8 @@ main :: () -> i32 {
         // on arm64 and works for runtime-registered IMPs.
         selYes := sel_registerName("yes".ptr);
         selNo  := sel_registerName("no".ptr);
-        class_addMethod(myCls, selYes, xx yesImp, "B@:".ptr);
-        class_addMethod(myCls, selNo,  xx noImp,  "B@:".ptr);
+        class_addMethod(myCls, selYes, @reinterpret(*void, yesImp), "B@:".ptr);
+        class_addMethod(myCls, selNo,  @reinterpret(*void, noImp),  "B@:".ptr);
         objc_registerClassPair(myCls);
 
         instance := class_createInstance(myCls, 0);

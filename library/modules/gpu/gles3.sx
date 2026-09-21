@@ -171,7 +171,7 @@ impl GPU for Gles3Gpu {
             bonesLoc = glGetUniformLocation(prog, "uBones".ptr),
         };
         self.shaders.append(slot, self.parentAllocator);
-        self.shaders.len
+        self.shaders.len.(u32)
     }
 
     createBuffer :: (self: *Gles3Gpu, sizeBytes: i64) -> BufferHandle {
@@ -182,7 +182,7 @@ impl GPU for Gles3Gpu {
         glBindBuffer(GL_ARRAY_BUFFER, b);
         glBufferData(GL_ARRAY_BUFFER, sizeBytes, null, GL_DYNAMIC_DRAW);
         self.buffers.append(b, self.parentAllocator);
-        self.buffers.len
+        self.buffers.len.(u32)
     }
 
     createIndexBuffer :: (self: *Gles3Gpu, sizeBytes: i64) -> IndexHandle {
@@ -196,7 +196,7 @@ impl GPU for Gles3Gpu {
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, b);
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeBytes, null, GL_DYNAMIC_DRAW);
         self.indices.append(b, self.parentAllocator);
-        self.indices.len
+        self.indices.len.(u32)
     }
 
     updateIndexBuffer :: (self: *Gles3Gpu, handle: IndexHandle, data: *void, sizeBytes: i64) {
@@ -261,7 +261,7 @@ impl GPU for Gles3Gpu {
 
         slot : Gles3TextureSlot = .{ tex = t, bytesPerPixel = bpp };
         self.textures.append(slot, self.parentAllocator);
-        self.textures.len
+        self.textures.len.(u32)
     }
 
     updateTextureRegion :: (self: *Gles3Gpu, handle: TextureHandle, x: i32, y: i32, w: i32, h: i32, pixels: *void) {
@@ -337,15 +337,15 @@ impl GPU for Gles3Gpu {
         // GL_ARRAY_BUFFER into the VAO state. Reconfigure each frame
         // so the VAO knows about the live buffer; otherwise drawing
         // sources attribs from the zero-buffer (invisible geometry).
-        glVertexAttribPointer(0, 2, GL_FLOAT, 0, 64, (0).(*void));
+        glVertexAttribPointer(0, 2, GL_FLOAT, 0, 64, null);
         glEnableVertexAttribArray(0);
-        glVertexAttribPointer(1, 2, GL_FLOAT, 0, 64, (8).(*void));
+        glVertexAttribPointer(1, 2, GL_FLOAT, 0, 64, @reinterpret(*void, 8.(usize)));
         glEnableVertexAttribArray(1);
-        glVertexAttribPointer(2, 4, GL_FLOAT, 0, 64, (16).(*void));
+        glVertexAttribPointer(2, 4, GL_FLOAT, 0, 64, @reinterpret(*void, 16.(usize)));
         glEnableVertexAttribArray(2);
-        glVertexAttribPointer(3, 4, GL_FLOAT, 0, 64, (32).(*void));
+        glVertexAttribPointer(3, 4, GL_FLOAT, 0, 64, @reinterpret(*void, 32.(usize)));
         glEnableVertexAttribArray(3);
-        glVertexAttribPointer(4, 4, GL_FLOAT, 0, 64, (48).(*void));
+        glVertexAttribPointer(4, 4, GL_FLOAT, 0, 64, @reinterpret(*void, 48.(usize)));
         glEnableVertexAttribArray(4);
     }
 
@@ -381,7 +381,7 @@ impl GPU for Gles3Gpu {
         if self.currentShader == 0 { return; }
         cs64 : i64 = self.currentShader.(i64);
         if cs64 > self.shaders.len { return; }
-        shader := *self.shaders.items[self.currentShader - 1];
+        shader: *Gles3ShaderSlot = *self.shaders.items[self.currentShader - 1];
 
         if slot == 1 and sizeBytes == 64 {
             if shader.projLoc < 0 { return; }
@@ -436,16 +436,16 @@ impl GPU for Gles3Gpu {
         glBindVertexArray(self.meshVao);
         glBindBuffer(GL_ARRAY_BUFFER, self.currentVbo);
         // MeshVertex: position at 0, normal at 12, uv at 24, stride 32.
-        glVertexAttribPointer(0, 3, GL_FLOAT, 0, 32, (0).(*void));
+        glVertexAttribPointer(0, 3, GL_FLOAT, 0, 32, null);
         glEnableVertexAttribArray(0);
-        glVertexAttribPointer(1, 3, GL_FLOAT, 0, 32, (12).(*void));
+        glVertexAttribPointer(1, 3, GL_FLOAT, 0, 32, @reinterpret(*void, 12.(usize)));
         glEnableVertexAttribArray(1);
-        glVertexAttribPointer(2, 2, GL_FLOAT, 0, 32, (24).(*void));
+        glVertexAttribPointer(2, 2, GL_FLOAT, 0, 32, @reinterpret(*void, 24.(usize)));
         glEnableVertexAttribArray(2);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self.currentIbo);
 
         byteOffset : i64 = (indexOffset * 4).(i64);
-        glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, byteOffset.(*void));
+        glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, @reinterpret(*void, byteOffset.(usize)));
     }
 
     drawSkinned :: (self: *Gles3Gpu, indexOffset: i32, indexCount: i32) {
@@ -460,25 +460,25 @@ impl GPU for Gles3Gpu {
         glBindBuffer(GL_ARRAY_BUFFER, self.currentVbo);
         // SkinnedVertex: position at 0, normal at 12, uv at 24, joints at
         // 32, weights at 48, stride 64.
-        glVertexAttribPointer(0, 3, GL_FLOAT, 0, 64, (0).(*void));
+        glVertexAttribPointer(0, 3, GL_FLOAT, 0, 64, null);
         glEnableVertexAttribArray(0);
-        glVertexAttribPointer(1, 3, GL_FLOAT, 0, 64, (12).(*void));
+        glVertexAttribPointer(1, 3, GL_FLOAT, 0, 64, @reinterpret(*void, 12.(usize)));
         glEnableVertexAttribArray(1);
-        glVertexAttribPointer(2, 2, GL_FLOAT, 0, 64, (24).(*void));
+        glVertexAttribPointer(2, 2, GL_FLOAT, 0, 64, @reinterpret(*void, 24.(usize)));
         glEnableVertexAttribArray(2);
-        glVertexAttribPointer(3, 4, GL_FLOAT, 0, 64, (32).(*void));
+        glVertexAttribPointer(3, 4, GL_FLOAT, 0, 64, @reinterpret(*void, 32.(usize)));
         glEnableVertexAttribArray(3);
-        glVertexAttribPointer(4, 4, GL_FLOAT, 0, 64, (48).(*void));
+        glVertexAttribPointer(4, 4, GL_FLOAT, 0, 64, @reinterpret(*void, 48.(usize)));
         glEnableVertexAttribArray(4);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self.currentIbo);
 
         bonesLoc := gles3BonesLoc(self);
         if bonesLoc >= 0 {
-            glUniform4fv(bonesLoc, 3 * self.boneCount, *self.bonePalette[0]);
+            glUniform4fv(bonesLoc, 3.(i32) * self.boneCount, @reinterpret([*]f32, *self.bonePalette[0]));
         }
 
         byteOffset : i64 = (indexOffset * 4).(i64);
-        glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, byteOffset.(*void));
+        glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, @reinterpret(*void, byteOffset.(usize)));
     }
 }
 
@@ -499,10 +499,10 @@ gles3ApplyDepthMode :: (self: *Gles3Gpu) {
 }
 
 gles3BonesLoc :: (self: *Gles3Gpu) -> i32 {
-    inline if @host.os != .android { return 0 - 1; }
-    if self.currentShader == 0 { return 0 - 1; }
+    inline if @host.os != .android { return -1; }
+    if self.currentShader == 0 { return -1; }
     cs64 : i64 = self.currentShader.(i64);
-    if cs64 > self.shaders.len { return 0 - 1; }
+    if cs64 > self.shaders.len { return -1; }
     self.shaders.items[self.currentShader - 1].bonesLoc
 }
 

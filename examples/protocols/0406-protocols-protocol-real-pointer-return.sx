@@ -22,7 +22,7 @@ main :: () -> i32 {
   imp : Impl = .{};
   p := imp.(Proto);
   raw : *u8 = p.get();
-  addrWord : u64 = xx raw;
+  addrWord : u64 = @reinterpret(usize, raw).(u64);
   print("got pointer: {}\n", addrWord != 0);
   0
 }

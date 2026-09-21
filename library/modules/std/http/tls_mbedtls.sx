@@ -37,8 +37,8 @@ mbedtls :: @import "vendors/mbedtls/mbedtls.sx";
 tlsBioSend :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
     s : *TlsSession = ctx.(*TlsSession);
     while true {
-        n := socket.write(s.fd, buf, len);
-        if n >= 0 { return n; }
+        n := socket.write(s.fd, buf, len.(i64));
+        if n >= 0 { return n.(i32); }
         e := socket.errno();
         if e == posix.EINTR { continue; }
         if socket.isWouldblock(e) { return mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE; }
@@ -50,8 +50,8 @@ tlsBioSend :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
 tlsBioRecv :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
     s : *TlsSession = ctx.(*TlsSession);
     while true {
-        n := socket.read(s.fd, buf, len);
-        if n > 0 { return n; }
+        n := socket.read(s.fd, buf, len.(i64));
+        if n > 0 { return n.(i32); }
         if n == 0 { return 0; }   // orderly EOF — mbedTLS treats as conn closed
         e := socket.errno();
         if e == posix.EINTR { continue; }
@@ -82,7 +82,7 @@ impl TlsConn for TlsSession {
 
     read :: (self: *TlsSession, buf: [*]u8, cap: i64) -> (i64, TlsStep) {
         while true {
-            r := mbedtls.mbedtls_ssl_read(*self.ssl, buf, cap);
+            r := mbedtls.mbedtls_ssl_read(*self.ssl, buf, cap.(usize));
             if r > 0 { return r, TlsStep.Done; }
             if r == mbedtls.MBEDTLS_ERR_SSL_WANT_READ  { return 0, TlsStep.WantRead; }
             if r == mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE { return 0, TlsStep.WantWrite; }
@@ -99,7 +99,7 @@ impl TlsConn for TlsSession {
     }
 
     write :: (self: *TlsSession, buf: [*]u8, len: i64) -> (i64, TlsStep) {
-        r := mbedtls.mbedtls_ssl_write(*self.ssl, buf, len);
+        r := mbedtls.mbedtls_ssl_write(*self.ssl, buf, len.(usize));
         if r > 0 { return r, TlsStep.Done; }
         if r == mbedtls.MBEDTLS_ERR_SSL_WANT_READ  { return 0, TlsStep.WantRead; }
         if r == mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE { return 0, TlsStep.WantWrite; }
@@ -472,7 +472,7 @@ nulDup :: (a: Allocator, src: []u8) -> ([*]u8, usize) {
     p : [*]u8 = a.alloc(u8, n + 1).ptr;
     if n > 0 { clib.memcpy(p, src.ptr, n); }
     p[n] = 0;
-    return p, (n + 1);
+    return p, (n + 1).(usize);
 }
 
 impl TlsAcceptor for TlsServer {

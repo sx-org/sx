@@ -4,7 +4,7 @@ error: error member '.NotInSet' is not in error set 'ParseErr'
 13 |     c : ParseErr = .NotInSet;   // error: NotInSet not in ParseErr
    |                    ^^^^^^^^^
 
-error: an error-set value compares only with a `.X` shorthand, a `Set.X` member, or another error-set value; coerce with `xx` to compare the raw id
+error: an error-set value compares only with a `.X` shorthand, a `Set.X` member, or another error-set value; coerce with `.(i64)` to compare the raw id
   --> examples/errors/1001-errors-set-typing.sx:14:13
    |
 14 |     if c == 42 { return 1; }         // error: error-set value vs raw integer

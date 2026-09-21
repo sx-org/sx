@@ -1,0 +1,11 @@
+partial: 3 4 7 0
+contextual: 3 4 7 2
+ordered: 1234 4 4 4 4
+spread order: 6 8 7 6
+overridden: 3 9 7 5
+plain config: localhost 8080 3
+plain modes: 1 2 9 0 9 7
+array borrow: 9
+positional: 4 5 9 7 1 2
+heads: 3 9 6 8
+widen: 255 1.500000 true

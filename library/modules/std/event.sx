@@ -202,7 +202,7 @@ Loop :: struct {
     wake :: (self: *Loop) {
         if self.wakeFd < 0 { return; }
         one : u64 = 1;
-        socket.write(self.wakeFd, *one, 8);
+        socket.write(self.wakeFd, @reinterpret([*]u8, *one), 8);
     }
 
     // Fill `out` with ready events, waiting at most `timeoutMs`
@@ -211,7 +211,9 @@ Loop :: struct {
         raw : [64]ep.EpollEvent = ---;
         cap : i64 = 64;
         if out.len < cap { cap = out.len; }
-        n := ep.epWait(self.epfd, .{ ptr = *raw[0], len = cap }, cap, timeoutMs);
+        timeout: i32 = if timeoutMs < 0 then -1
+            else if timeoutMs > i32.max then i32.max else timeoutMs.(i32);
+        n := ep.epWait(self.epfd, .{ ptr = *raw[0], len = cap }, cap.(i32), timeout);
         if n < 0 { raise .Wait; }
         i := 0;
         while i < n {
@@ -221,7 +223,7 @@ Loop :: struct {
             if self.wakeFd >= 0 and fd == self.wakeFd {
                 // Drain the eventfd counter so it doesn't re-fire immediately.
                 drain : u64 = 0;
-                socket.read(self.wakeFd, *drain, 8);
+                socket.read(self.wakeFd, @reinterpret([*]u8, *drain), 8);
                 e.user = true;
                 e.udata = self.wakeUdata;
             } else {
@@ -293,12 +295,12 @@ Loop :: struct {
         raw : [64]kqb.Kevent = ---;
         cap : i64 = 64;
         if out.len < cap { cap = out.len; }
-        n := kqb.kqWait(self.kq, *raw[0], cap, timeoutMs);
+        n := kqb.kqWait(self.kq, *raw[0], cap.(i32), timeoutMs);
         if n < 0 { raise .Wait; }
         i := 0;
         while i < n {
             ev := raw[i];
-            e : Event = .{ fd = ev.ident, udata = ev.udata, nbytes = ev.data };
+            e : Event = .{ fd = ev.ident.(i32), udata = ev.udata, nbytes = ev.data };
             if ev.filter == kqb.EVFILT_READ  { e.readable = true; }
             if ev.filter == kqb.EVFILT_WRITE { e.writable = true; }
             if ev.filter == kqb.EVFILT_USER  { e.user = true; }

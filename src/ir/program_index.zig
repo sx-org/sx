@@ -137,6 +137,7 @@ pub const ProtocolDeclInfo = struct {
 pub const ModuleConstInfo = struct {
     value: *const Node,
     ty: TypeId,
+    declared_type: ?TypeId = null,
 };
 
 /// A finite, INTEGRAL `f64` (`4.0`) → its exact `i64` value; a non-integral
@@ -256,10 +257,24 @@ const ModuleConstCtx = struct {
     pub fn qualifiedNodeIsFloatTyped(_: ModuleConstCtx, _: *const Node) bool {
         return false;
     }
-    /// Float counterpart of `lookupDimName`, so `evalConstFloatExpr` resolves a
-    /// float-const leaf whose value references another const
-    /// (`G : f64 : 2.0; F : f64 : G + 0.5`) recursively through the SAME
-    /// cycle-guarded frame.
+    pub fn untypedNumericLeaf(self: ModuleConstCtx, node: *const Node) ?UntypedNumericKind {
+        const name = switch (node.data) {
+            .identifier => |id| id.name,
+            .type_expr => |te| te.name,
+            else => return null,
+        };
+        if (moduleConstFrameContains(self.frame, name)) return null;
+        const ci = self.index.lookup(.module_const, name) orelse return null;
+        if (ci.declared_type != null) return null;
+        const frame = ModuleConstFrame{ .name = name, .parent = self.frame };
+        return untypedNumericKind(ci.value, ModuleConstCtx{ .index = self.index, .table = self.table, .frame = &frame });
+    }
+    pub fn floatLeafType(self: ModuleConstCtx, node: *const Node) ?TypeId {
+        return moduleFloatLeafType(self.index, node);
+    }
+    pub fn adoptFloatValue(_: ModuleConstCtx, value: f64, ty: TypeId, _: ast.Span) f64 {
+        return if (ty == .f32) @as(f32, @floatCast(value)) else value;
+    }
     pub fn lookupFloatName(self: ModuleConstCtx, name: []const u8) ?f64 {
         return moduleConstFloatFramed(self.index, self.table, name, self.frame);
     }
@@ -276,6 +291,84 @@ const ModuleConstCtx = struct {
 /// `f32` / `f64`.
 pub fn isFloatConstType(ty: TypeId) bool {
     return ty == .f32 or ty == .f64;
+}
+
+pub const UntypedNumericKind = enum { integer, float };
+
+pub fn untypedNumericKind(node: *const Node, ctx: anytype) ?UntypedNumericKind {
+    return switch (node.data) {
+        .int_literal => .integer,
+        .float_literal => .float,
+        .unary_op => |u| if (u.op == .negate) untypedNumericKind(u.operand, ctx) else null,
+        .binary_op => |b| switch (b.op) {
+            .add, .sub, .mul, .div, .mod => blk: {
+                const lhs = untypedNumericKind(b.lhs, ctx) orelse break :blk null;
+                const rhs = untypedNumericKind(b.rhs, ctx) orelse break :blk null;
+                break :blk if (lhs == .float or rhs == .float) .float else .integer;
+            },
+            else => null,
+        },
+        .identifier, .type_expr, .field_access => ctx.untypedNumericLeaf(node),
+        else => null,
+    };
+}
+
+pub fn isAdaptableFloat(node: *const Node, ctx: anytype) bool {
+    return untypedNumericKind(node, ctx) == .float;
+}
+
+pub fn floatOperandTypes(b: ast.BinaryOp, lhs: ?TypeId, rhs: ?TypeId, ctx: anytype) struct { lhs: ?TypeId, rhs: ?TypeId } {
+    const adapts = switch (b.op) {
+        .add, .sub, .mul, .div, .mod, .eq, .neq, .lt, .lte, .gt, .gte => true,
+        else => false,
+    };
+    const left = adapts and isAdaptableFloat(b.lhs, ctx);
+    const right = adapts and isAdaptableFloat(b.rhs, ctx);
+    return .{
+        .lhs = if (left and !right and (rhs == .f32 or rhs == .f64)) rhs else lhs,
+        .rhs = if (right and !left and (lhs == .f32 or lhs == .f64)) lhs else rhs,
+    };
+}
+
+pub fn constFloatType(node: *const Node, ctx: anytype) ?TypeId {
+    return switch (node.data) {
+        .float_literal => .f64,
+        .unary_op => |u| if (u.op == .negate) constFloatType(u.operand, ctx) else null,
+        .binary_op => |b| blk: {
+            const operands = floatOperandTypes(b, constFloatType(b.lhs, ctx), constFloatType(b.rhs, ctx), ctx);
+            break :blk operands.lhs orelse operands.rhs;
+        },
+        else => ctx.floatLeafType(node),
+    };
+}
+
+pub fn moduleUntypedNumericLeaf(index: *const ProgramIndex, table: *types.TypeTable, node: *const Node) ?UntypedNumericKind {
+    return (ModuleConstCtx{ .index = index, .table = table, .frame = null }).untypedNumericLeaf(node);
+}
+
+pub fn moduleFloatLeafType(index: *const ProgramIndex, node: *const Node) ?TypeId {
+    const name = switch (node.data) {
+        .identifier => |id| id.name,
+        .type_expr => |te| te.name,
+        .field_access => |fa| {
+            const receiver = switch (fa.object.data) {
+                .type_expr => |te| if (te.is_raw) return null else te.name,
+                .identifier => |id| if (id.is_raw) return null else id.name,
+                else => return null,
+            };
+            if (type_resolver.TypeResolver.floatLimitFor(receiver, fa.field) == null) return null;
+            return type_resolver.TypeResolver.resolvePrimitive(receiver);
+        },
+        else => return null,
+    };
+    const ci = index.lookup(.module_const, name) orelse return null;
+    return if (isFloatConstType(ci.ty)) ci.ty else null;
+}
+
+pub fn evalConstFloatInit(node: *const Node, ctx: anytype, ty: TypeId) ?f64 {
+    const value = evalConstFloatExpr(node, ctx) orelse return null;
+    if (isAdaptableFloat(node, ctx)) return ctx.adoptFloatValue(value, ty, node.span);
+    return if (ty == .f32) @as(f32, @floatCast(value)) else value;
 }
 
 /// True iff `name` is a FLOAT-valued module const — judged by the const's VALUE,
@@ -317,7 +410,9 @@ fn moduleConstIntFramed(index: *const ProgramIndex, table: *types.TypeTable, nam
     const ci = index.lookup(.module_const, name) orelse return null;
     if (!isCountableConstType(table, ci.ty)) return null;
     var frame = ModuleConstFrame{ .name = name, .parent = parent };
-    return evalConstIntExpr(ci.value, ModuleConstCtx{ .index = index, .table = table, .frame = &frame });
+    const ctx = ModuleConstCtx{ .index = index, .table = table, .frame = &frame };
+    if (ci.ty == .f32) return floatToIntExact(evalConstFloatInit(ci.value, ctx, ci.ty) orelse return null);
+    return evalConstIntExpr(ci.value, ctx);
 }
 
 /// A name bound to a module-global integer constant → its value, else null.
@@ -337,22 +432,12 @@ pub fn moduleConstInt(index: *const ProgramIndex, table: *types.TypeTable, name:
     return moduleConstIntFramed(index, table, name, null);
 }
 
-/// FLOAT counterpart of `moduleConstInt`: a name bound to a NUMERIC module const
-/// → its compile-time `f64` value (`F : f64 : 2.5` → 2.5), else null. Mirrors
-/// `moduleConstIntFramed` exactly — same `isCountableConstType` gate, same cyclic-
-/// definition frame — but recovers the value through `evalConstFloatExpr`, so the
-/// unified float→int narrowing rule resolves a NON-INTEGRAL float-const leaf
-/// (`y : i64 = F + 0.25`) the same way the int folder resolves an int-const leaf
-/// (`M :: 2; y : i64 = M + 0.5`). An integral float / integer const folds through
-/// the int path inside `evalConstFloatExpr` and never reaches the leaf arm that
-/// calls this; this surfaces the genuinely non-integral float so `floatToIntExact`
-/// can reject it.
 fn moduleConstFloatFramed(index: *const ProgramIndex, table: *types.TypeTable, name: []const u8, parent: ?*const ModuleConstFrame) ?f64 {
     if (moduleConstFrameContains(parent, name)) return null;
     const ci = index.lookup(.module_const, name) orelse return null;
     if (!isCountableConstType(table, ci.ty)) return null;
     var frame = ModuleConstFrame{ .name = name, .parent = parent };
-    return evalConstFloatExpr(ci.value, ModuleConstCtx{ .index = index, .table = table, .frame = &frame });
+    return evalConstFloatInit(ci.value, ModuleConstCtx{ .index = index, .table = table, .frame = &frame }, ci.ty);
 }
 
 pub fn moduleConstFloat(index: *const ProgramIndex, table: *types.TypeTable, name: []const u8) ?f64 {
@@ -369,24 +454,6 @@ pub fn moduleConstIsFloatTyped(index: *const ProgramIndex, table: *types.TypeTab
     return moduleConstFloatValuedFramed(index, table, name, null);
 }
 
-/// True iff `node` is a FLOAT-valued compile-time expression — a float literal,
-/// a float-typed const leaf (`F : f64 : 2.5`, `K : f64 : 4.0`), a builtin float
-/// numeric-limit (`f64.max`), or arithmetic over any of those. THE predicate the
-/// int folder's division arm consults: `/` with a float operand is FLOAT division
-/// (`5.0 / 2.0` = 2.5), and folding it with integer truncating division would
-/// silently accept a non-integral float at a count / typed binding.
-/// `+ - *` agree between int and float arithmetic for the integral
-/// operands the int folder ever sees (a non-integral operand folds to null first),
-/// so ONLY `/` needs this guard. A leaf name resolves through `ctx.nameIsFloatTyped`
-/// — the same ctx that supplies `lookupDimName`/`lookupFloatName` — so an INTEGRAL
-/// float const (`K : f64 : 4.0`, which folds to 4 as a standalone count) is still
-/// recognised as float-valued inside a division.
-///
-/// Also the precise "is this a compile-time float-valued initializer" test the
-/// typed-binding narrowing path (`Lowering.foldComptimeFloatInit`) uses alongside
-/// `inferExprType`, so an untyped float-EXPRESSION const (`ME :: 4.0 + 1.0`,
-/// placeholder type `i64`) flowing into an integer binding (`x : i64 = ME / 2`)
-/// is judged float-valued even though `inferExprType` reads its placeholder type.
 pub fn isFloatValuedExpr(node: *const Node, ctx: anytype) bool {
     return switch (node.data) {
         .float_literal => true,
@@ -477,6 +544,7 @@ fn qualifiedDottedIsFloat(name: []const u8, ctx: anytype) bool {
 /// by zero: the caller then emits the clean compile-halting diagnostic, never a
 /// fabricated length / lane count / value-param.
 pub fn evalConstIntExpr(node: *const Node, ctx: anytype) ?i64 {
+    if (isFloatValuedExpr(node, ctx)) return floatToIntExact(evalConstFloatExpr(node, ctx) orelse return null);
     return switch (node.data) {
         .int_literal => |lit| lit.value,
         .char_literal => |lit| lit.value,
@@ -564,17 +632,7 @@ pub fn evalConstIntExpr(node: *const Node, ctx: anytype) ?i64 {
                 .add => std.math.add(i64, l, r) catch null,
                 .sub => std.math.sub(i64, l, r) catch null,
                 .mul => std.math.mul(i64, l, r) catch null,
-                // A division with a FLOAT operand is FLOAT division (`5.0 / 2.0`
-                // = 2.5, `K / 3` with `K : f64 : 4.0` = 1.333…), NOT integer
-                // truncating division — refuse to fold it here so the value
-                // surfaces through `evalConstFloatExpr` + the unified float→int
-                // rule (integral folds, non-integral errors) instead of silently
-                // truncating to an integer. A genuine
-                // integer `/` (both operands integer-valued) still truncates.
-                .div => if (isFloatValuedExpr(b.lhs, ctx) or isFloatValuedExpr(b.rhs, ctx))
-                    null
-                else
-                    std.math.divTrunc(i64, l, r) catch null,
+                .div => std.math.divTrunc(i64, l, r) catch null,
                 .mod => if (r == 0) null else @rem(l, r),
                 else => null,
             };
@@ -583,44 +641,13 @@ pub fn evalConstIntExpr(node: *const Node, ctx: anytype) ?i64 {
     };
 }
 
-/// Compile-time FLOAT value of a numeric expression, or null when it is not a
-/// compile-time constant (some leaf is a runtime value) or is not a numeric
-/// shape. THE float counterpart to `evalConstIntExpr`, used by the unified
-/// float→int narrowing rule to (1) tell a compile-time float initializer apart
-/// from a runtime one and (2) recover its value for `floatToIntExact` (integral
-/// → fold) / the non-integral diagnostic.
-///
-/// An all-integer-foldable subtree is delegated to `evalConstIntExpr` (so module
-/// / comptime consts, `<IntType>.min`/`.max`, and integer arithmetic resolve
-/// through the SINGLE int folder — no parallel integer logic here); only the
-/// genuinely float-producing shapes — a float literal, a NON-INTEGRAL float-const
-/// leaf, a builtin FLOAT numeric-limit accessor (`f64.max`, `f32.epsilon`,
-/// `f64.trueMin`, …), a unary negate, and `+ - * / %` arithmetic involving a
-/// float — are evaluated here in `f64`. A comparison or any other shape is not a
-/// compile-time float leaf → null.
-///
-/// This evaluator is at PARITY with `evalConstIntExpr` — every leaf / node kind
-/// the int folder recognises (literal, named const leaf, numeric-limit
-/// field-access, unary negate, `+ - * / %`) is mirrored here in `f64` (delegating
-/// integer subtrees), so no compile-time-const float shape escapes the unified
-/// float→int narrowing rule at one site while folding at another.
-///
-/// A NAMED-const leaf resolves through `ctx.lookupFloatName`, the float twin of
-/// the `lookupDimName` the int folder uses: a numeric module const whose value is
-/// a non-integral float (`F : f64 : 2.5`) surfaces here so `F + 0.25` (= 2.75) is
-/// recognised as a compile-time float and rejected by the narrowing rule, exactly
-/// as `M + 0.5` (with `M :: 2`) already is. An INTEGRAL float / integer const
-/// (`K : f64 : 4.0`, `M :: 2`) is resolved by the `evalConstIntExpr` delegation
-/// above and never reaches the leaf arm.
+/// Float operations retain their width; only integer-valued subtrees use integer arithmetic.
 pub fn evalConstFloatExpr(node: *const Node, ctx: anytype) ?f64 {
-    // Delegate any integer-foldable subtree (incl. an INTEGRAL float like `4.0`
-    // / `M + 2.0`) to the single int folder, then promote — keeps named consts
-    // and `.min`/`.max` resolution in one place.
-    if (evalConstIntExpr(node, ctx)) |iv| return @floatFromInt(iv);
+    if (!isFloatValuedExpr(node, ctx)) {
+        if (evalConstIntExpr(node, ctx)) |iv| return @floatFromInt(iv);
+    }
     return switch (node.data) {
         .float_literal => |lit| lit.value,
-        // A name bound to a numeric module const whose value is a non-integral
-        // float (the integral / integer cases were caught by the int delegation).
         .identifier => |id| ctx.lookupFloatName(id.name) orelse qualifiedDottedFloat(id.name, ctx),
         .type_expr => |te| ctx.lookupFloatName(te.name) orelse qualifiedDottedFloat(te.name, ctx),
         .field_access => |fa| blk: {
@@ -659,8 +686,21 @@ pub fn evalConstFloatExpr(node: *const Node, ctx: anytype) ?f64 {
             else => null,
         },
         .binary_op => |b| {
-            const l = evalConstFloatExpr(b.lhs, ctx) orelse return null;
-            const r = evalConstFloatExpr(b.rhs, ctx) orelse return null;
+            const operands = floatOperandTypes(b, constFloatType(b.lhs, ctx), constFloatType(b.rhs, ctx), ctx);
+            const l = evalConstFloatInit(b.lhs, ctx, operands.lhs orelse .f64) orelse return null;
+            const r = evalConstFloatInit(b.rhs, ctx, operands.rhs orelse .f64) orelse return null;
+            if (constFloatType(node, ctx) == .f32) {
+                const lf: f32 = @floatCast(l);
+                const rf: f32 = @floatCast(r);
+                return switch (b.op) {
+                    .add => lf + rf,
+                    .sub => lf - rf,
+                    .mul => lf * rf,
+                    .div => if (rf == 0.0) null else lf / rf,
+                    .mod => if (rf == 0.0) null else @rem(lf, rf),
+                    else => null,
+                };
+            }
             return switch (b.op) {
                 .add => l + r,
                 .sub => l - r,

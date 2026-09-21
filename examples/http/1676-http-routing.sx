@@ -158,7 +158,7 @@ runSuite :: (scratch: [*]u8, cap: i64) -> bool {
         requestCount = 100,
         maxConn = 8,
     };
-    srv, se := http.Server.init(cfg, http.dispatch, xx *router);
+    srv, se := http.Server.init(cfg, http.dispatch, @reinterpret(usize, *router));
     if se { print("server init failed\n"); return false; }
 
     c := dialPort(PORT);
@@ -212,7 +212,7 @@ main :: () -> i32 {
     okall := false;
     push .{ allocator = gpa } {
         cap : i64 = 16384;
-        scratch : [*]u8 = xx context.allocator.allocBytes(cap);
+        scratch : [*]u8 = context.allocator.allocBytes(cap);
         okall = runSuite(scratch, cap);
         context.allocator.deallocBytes(scratch);
         leaked = gpa.allocCount;

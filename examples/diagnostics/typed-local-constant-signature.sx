@@ -1,0 +1,8 @@
+@import "modules/std.sx";
+
+one :: (x: i64) -> i64 { return x; }
+
+main :: () {
+    F : () -> i64 : one;
+    print("{}\n", F());
+}

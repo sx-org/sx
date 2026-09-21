@@ -1,0 +1,11 @@
+error: @as has no conversion from 'string' to 'i64'
+  --> examples/diagnostics/as-refused-conversion.sx:3:15
+   |
+ 3 |     number := @as(i64, text);
+   |               ^^^
+
+error: @as has no conversion from '[*]u8' to '[*:0]u8'
+  --> examples/diagnostics/as-refused-conversion.sx:5:19
+   |
+ 5 |     terminated := @as([*:0]u8, bytes);
+   |                   ^^^

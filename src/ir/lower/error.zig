@@ -509,7 +509,7 @@ pub fn tryLowerErrorSetEquality(self: *Lowering, bop: *const ast.BinaryOp) ?Ref 
     if (!l_ok or !r_ok) {
         if (self.diagnostics) |diags| {
             const bad = if (!l_ok) bop.lhs else bop.rhs;
-            diags.addFmt(.err, bad.span, "an error-set value compares only with a `.X` shorthand, a `Set.X` member, or another error-set value; coerce with `xx` to compare the raw id", .{});
+            diags.addFmt(.err, bad.span, "an error-set value compares only with a `.X` shorthand, a `Set.X` member, or another error-set value; coerce with `.(i64)` to compare the raw id", .{});
         }
         return self.builder.constBool(false);
     }
@@ -761,6 +761,19 @@ fn checkMemberInSet(self: *Lowering, qm: QualifiedErrorMember, dst: TypeId, span
     }
 }
 
+/// The caller proves the member or channel belongs to the destination.
+fn retypeProvenError(self: *Lowering, value: Ref, src: TypeId, dst: TypeId) Ref {
+    if (src == dst) return value;
+    const info = self.module.types.get(src);
+    if (info == .optional) {
+        const child = info.optional.child;
+        const unwrapped = self.coerceChecked(value, src, child);
+        if (unwrapped.refused) return unwrapped.ref;
+        return retypeProvenError(self, unwrapped.ref, child, dst);
+    }
+    return self.builder.emit(.{ .bitcast = .{ .operand = value, .from = src, .to = dst } }, dst);
+}
+
 /// The channel value `Set.Member{ … }` / `.Member{ … }` builds: `member`'s tag
 /// over a copy of its declared payload, typed as `set_ty`.
 pub fn lowerErrorMemberConstruction(self: *Lowering, sl: *const ast.StructLiteral, set_ty: TypeId, member_name: []const u8, span: ast.Span) Ref {
@@ -917,7 +930,7 @@ pub fn lowerRaise(self: *Lowering, rs: *const ast.RaiseStmt, span: ast.Span) voi
     //     member). The variable form `raise e` is subset-checked below.
     const saved_target = self.target_type;
     self.target_type = err_set;
-    const tag_ref = self.lowerExpr(rs.tag);
+    const tag_ref = self.lowerMarkedExpr(rs.tag, false);
     self.target_type = saved_target;
 
     if (!inferred) {
@@ -938,7 +951,7 @@ pub fn lowerRaise(self: *Lowering, rs: *const ast.RaiseStmt, span: ast.Span) voi
     //     relationship here, so the tag move into the channel bypasses the
     //     implicit value-coercion membership guard.
     const tag_ty = self.builder.getRefType(tag_ref);
-    const coerced = if (tag_ty != err_set) self.coerceExplicit(tag_ref, tag_ty, err_set) else tag_ref;
+    const coerced = if (tag_ty != err_set) retypeProvenError(self, tag_ref, tag_ty, err_set) else tag_ref;
     emitErrorExit(self, exit, coerced);
 }
 
@@ -1038,7 +1051,7 @@ fn lowerFailableForwardReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, val_ty:
         vals.append(self.alloc, cf) catch unreachable;
     }
     const tag = self.builder.emit(.{ .struct_get = .{ .base = ref, .field_index = @intCast(dn), .base_type = val_ty } }, src.err);
-    const coerced_tag = if (src.err != err_ty) self.coerceExplicit(tag, src.err, err_ty) else tag;
+    const coerced_tag = if (src.err != err_ty) retypeProvenError(self, tag, src.err, err_ty) else tag;
     const tup = self.buildFailableTuple(ret_ty, vals.items, coerced_tag);
     self.emitTupleRet(ret_ty, tup);
 }
@@ -1088,7 +1101,7 @@ pub fn coercePureFailableReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, span:
                 }
                 // `checkForwardSetCompat` is the membership gate, so the
                 // coercion skips the implicit preamble's.
-                return self.coerceExplicit(ref, val_ty, ret_ty);
+                return retypeProvenError(self, ref, val_ty, ret_ty);
             },
             .failable => |vf| {
                 const n = self.module.types.failableValueSlotCount(vf);
@@ -1429,16 +1442,16 @@ fn lowerTryBoundary(self: *Lowering, block: *const Node, span: ast.Span) Ref {
 
 /// The failable an attempt consumes, evaluated. A `try { … }` boundary is
 /// lowered here rather than typed first: its success type is the block's tail,
-/// which only the block's own lowering settles. `.none` marks a non-failable
-/// operand — the caller diagnoses it and nothing was lowered.
-fn lowerAttempt(self: *Lowering, a: Attempted, span: ast.Span) struct { ty: TypeId, ref: Ref } {
+/// which only the block's own lowering settles. A non-failable operand has
+/// no lowered ref; the caller diagnoses its type.
+fn lowerAttempt(self: *Lowering, a: Attempted, span: ast.Span, marked: bool) struct { ty: TypeId, ref: ?Ref } {
     if (a.boundary) {
         const ref = lowerTryBoundary(self, a.node, span);
         return .{ .ty = self.builder.getRefType(ref), .ref = ref };
     }
     const ty = self.inferExprType(a.node);
-    if (self.errorChannelOf(ty) == null) return .{ .ty = ty, .ref = .none };
-    return .{ .ty = ty, .ref = self.lowerExpr(a.node) };
+    if (self.errorChannelOf(ty) == null) return .{ .ty = ty, .ref = null };
+    return .{ .ty = ty, .ref = if (marked) self.lowerMarkedExpr(a.node, false) else self.lowerExpr(a.node) };
 }
 
 /// Where an error leaving the current position goes: the innermost
@@ -1463,7 +1476,7 @@ fn emitErrorExit(self: *Lowering, exit: ErrorExit, err: Ref) void {
         return;
     };
     const ety = self.builder.getRefType(err);
-    const coerced = if (ety != b.chan) self.coerceExplicit(err, ety, b.chan) else err;
+    const coerced = if (ety != b.chan) retypeProvenError(self, err, ety, b.chan) else err;
     self.emitDefers(b.defer_base);
     self.builder.br(b.fail_bb, &.{coerced});
 }
@@ -1487,7 +1500,7 @@ pub fn lowerTry(self: *Lowering, operand_in: *const Node, span: ast.Span) Ref {
 
     // (2) The operand must be failable. This is the sole failable-operand
     //     check (the parser imposes none).
-    const attempt = lowerAttempt(self, attempted, span);
+    const attempt = lowerAttempt(self, attempted, span, true);
     const op_ty = attempt.ty;
     const callee_set = self.errorChannelOf(op_ty) orelse {
         if (self.diagnostics) |diags| {
@@ -1508,7 +1521,7 @@ pub fn lowerTry(self: *Lowering, operand_in: *const Node, span: ast.Span) Ref {
 
     // (4) Branch on the operand's error tag — the bare result for a pure
     //     callee, the last tuple slot for a value-carrying one.
-    const result = attempt.ref;
+    const result = attempt.ref.?;
     const err_val = if (callee_value_carrying)
         self.extractErrorSlot(result, op_ty, callee_set)
     else
@@ -1547,7 +1560,7 @@ pub fn emitErrorReturn(self: *Lowering, caller_ret: TypeId, caller_set: TypeId, 
     // The channel's own subset rule (`checkEscapeWidening` / `checkErrorSetSubset`
     // at the raise / propagate / forward site) owns this move, so it bypasses the
     // implicit value-coercion membership guard rather than being reported twice.
-    const coerced = if (ety != caller_set) self.coerceExplicit(err, ety, caller_set) else err;
+    const coerced = if (ety != caller_set) retypeProvenError(self, err, ety, caller_set) else err;
     if (caller_ret == caller_set) {
         self.emitBodyExit(coerced, caller_set, .return_like);
     } else {
@@ -1594,7 +1607,7 @@ pub fn lowerCatch(self: *Lowering, ce_in: *const ast.CatchExpr, span: ast.Span) 
         return self.lowerCatchOverChain(ce, span);
     }
 
-    const attempt = lowerAttempt(self, attempted, span);
+    const attempt = lowerAttempt(self, attempted, span, true);
     const op_ty = attempt.ty;
     const err_set = self.errorChannelOf(op_ty) orelse {
         if (self.diagnostics) |diags| {
@@ -1605,7 +1618,7 @@ pub fn lowerCatch(self: *Lowering, ce_in: *const ast.CatchExpr, span: ast.Span) 
     // Pure-failable LHS (`-> !`): no success value. Run the body on the
     // error path; both paths fall through to a value-less merge.
     if (op_ty == err_set) {
-        const err_val = attempt.ref;
+        const err_val = attempt.ref.?;
         const err_ty = self.builder.getRefType(err_val);
         const is_err = self.builder.emit(.{ .cmp_ne = .{ .lhs = err_val, .rhs = self.builder.constInt(0, err_ty) } }, .bool);
         const handle_bb = self.freshBlock("catch.handle");
@@ -1632,7 +1645,7 @@ pub fn lowerCatch(self: *Lowering, ce_in: *const ast.CatchExpr, span: ast.Span) 
     // the handler body's value. The paths merge through a block-parameter
     // (phi).
     const succ_ty = self.failableSuccessType(op_ty);
-    const result = attempt.ref;
+    const result = attempt.ref.?;
     const err_val = self.extractErrorSlot(result, op_ty, err_set);
     const succ_val = self.extractSuccessValue(result, op_ty, succ_ty);
     const is_err = self.builder.emit(.{ .cmp_ne = .{ .lhs = err_val, .rhs = self.builder.constInt(0, err_set) } }, .bool);
@@ -1761,6 +1774,9 @@ pub fn runCatchBody(self: *Lowering, ce: *const ast.CatchExpr, err_val: Ref, err
         if (ce.body.data == .block) self.lowerBlock(ce.body) else _ = self.lowerExpr(ce.body);
         return null;
     }
+    const saved_target = self.target_type;
+    self.target_type = want_ty;
+    defer self.target_type = saved_target;
     const saved_fbv = self.force_block_value;
     self.force_block_value = true;
     defer self.force_block_value = saved_fbv;
@@ -1989,7 +2005,10 @@ pub fn lowerFailableCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
     if (!last_is_value and fail_target == null) {
         exit = errorExit(self);
         if (exit == null) {
-            if (self.diagnostics) |d| d.addFmt(.err, span, "a failable `??` chain propagates on total failure, so it is only valid inside a failable function — add a value terminator (`… ?? value`) or wrap with `catch`", .{});
+            if (self.diagnostics) |d| d.add(.err, if (has_value)
+                "a failable `??` chain propagates on total failure, so it is only valid inside a failable function — add a value terminator (`… ?? value`) or wrap with `catch`"
+            else
+                "a pure failable `??` chain propagates on total failure, so it is only valid inside a failable function — use `catch` to handle the error", span);
             return self.builder.constInt(0, .void);
         }
     }
@@ -2015,7 +2034,8 @@ pub fn lowerFailableCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
         }
 
         const attempted = attemptedExpr(operand);
-        const attempt = lowerAttempt(self, attempted, operand.span);
+        const marked = !is_last or fail_target != null or operand.data == .try_expr;
+        const attempt = lowerAttempt(self, attempted, operand.span, marked);
         const op_ty = attempt.ty;
         const op_set = self.errorChannelOf(op_ty) orelse {
             if (self.diagnostics) |d| d.addFmt(.err, operand.span, "operand of a failable `??` chain must be failable; got '{s}'", .{self.formatTypeName(op_ty)});
@@ -2027,7 +2047,7 @@ pub fn lowerFailableCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
         // error exit (no absorbing consumer); a `catch` target absorbs it.
         if (is_last and fail_target == null) self.checkEscapeWidening(attempted.node, op_set, exit.?.set, operand.span);
 
-        const result = attempt.ref;
+        const result = attempt.ref.?;
         const err_val = if (op_value_carrying) self.extractErrorSlot(result, op_ty, op_set) else result;
         const err_ty = self.builder.getRefType(err_val);
         const is_err = self.builder.emit(.{ .cmp_ne = .{ .lhs = err_val, .rhs = self.builder.constInt(0, err_ty) } }, .bool);
