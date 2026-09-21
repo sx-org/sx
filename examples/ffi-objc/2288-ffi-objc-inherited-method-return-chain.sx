@@ -22,7 +22,7 @@ main :: () -> i32 {
         p := leaf.point();
         print("chained {} bound {}\n", leaf.point().y, p.y);
         selRelease : SEL = sel_registerName("release".ptr);
-        releaseFn : (obj: *void, sel: *void) -> void abi(.c) = xx objc_msgSend;
+        releaseFn : (obj: *void, sel: *void) -> void abi(.c) = @reinterpret((*void, *void) -> void abi(.c), objc_msgSend);
         releaseFn(leaf, selRelease);
     }
     inline if @host.os != .macos {

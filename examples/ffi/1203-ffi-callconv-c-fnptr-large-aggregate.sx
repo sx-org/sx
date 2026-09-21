@@ -1,12 +1,4 @@
-// Fn-pointer path.
-//
-// When a fn-pointer's type is spelled with `abi(.c)`, the indirect call applies
-// the same C-ABI byval coercion a direct C-ABI call does at the call site:
-// >16-byte non-HFA aggregates are passed as `ptr byval(<T>)`.
-//
-// The opt-in is the `abi(.c)` on the fn-pointer type spelling. Pure-sx
-// fn-pointer casts (no abi suffix) keep their default calling convention —
-// 1204 pins that arm.
+// C function pointers pass large non-HFA aggregates through the C byval ABI.
 
 @import "modules/std.sx";
 
@@ -25,7 +17,7 @@ main :: () -> i32 {
     w := Wide{ a = 1, b = 10, c = 100, d = 1000 };
     if acceptC(w) != 1111 { return 1; }
 
-    fnPtr : (Wide) -> i64 abi(.c) = xx acceptC;
+    fnPtr : (Wide) -> i64 abi(.c) = acceptC;
     if fnPtr(w) != 1111 { return 2; }
 
     0

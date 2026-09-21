@@ -2935,7 +2935,7 @@ pair := 0.0 - 1.0;
 ### Type Conversions
 
 **Implicit (widening)** — allowed without annotation:
-- Integer to wider integer of same signedness (`u8` → `u16`, `i8` → `i32`)
+- Integer to equal-width or wider integer of the same signedness; widths follow the target (`i64` → `isize` on a 64-bit target)
 - Unsigned to strictly wider signed (`u8` → `i16`)
 - Any integer to any float (`u8` → `f32`, `i32` → `f64`)
 - Float to wider float (`f32` → `f64`)
@@ -2967,6 +2967,13 @@ without `xx` / `.(T)`:
 - Float to any integer (`f64` → `u16`) — always **truncates**, integral or not
   (`y : i64 = xx 1.5` → 1); this is the escape hatch from the implicit rule above
 - Unsigned to signed of same or narrower width (`u8` → `i8`)
+
+Function values carry their parameter types, return type, calling convention and
+C-variadic tail. A matching function slot takes the value unchanged. Raw function
+addresses use `@reinterpret(T, function)` with a pointer-sized destination.
+
+An error value's `.(T)` conversion to an integer reads its `i32` discriminant,
+then applies the integer conversion to `T`; a member's payload is not read.
 
 The three explicit integer operations have distinct contracts:
 
@@ -3026,11 +3033,10 @@ An explicit cast pair with **no conversion** is a compile error
 (`no conversion from 'A' to 'B'`). Dest-inferred `xx` is also an error
 when the value is already the slot type (`already 'i64'`) and when an
 implicit conversion already applies (`already converts to '*void'`).
-The remaining reinterprets are modeled: pointer
-↔ integer, same-size aggregate pun (e.g. `string` ↔ `@Slice`), pointer
-or function-pointer pun, and same-width integer pun. There is no spill
-fallback. User `Into` conversions run when the built-in ladder makes no
-progress.
+The conversion ladder also admits pointer ↔ integer conversion, same-size
+aggregate views (e.g. `string` ↔ `@Slice`), pointer-to-pointer and
+pointer-to-function conversion, and equal-width integer conversion. User `Into`
+conversions run when the built-in ladder makes no progress.
 
 ### Postfix Cast `expr.(T)`
 

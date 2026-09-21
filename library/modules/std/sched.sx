@@ -217,9 +217,9 @@ Scheduler :: struct {
 
         top := bootStack(f, STACK);
         f.ctx.regs[0]  = f.(u64);             // x19 = self (→ x0 in the tramp)
-        f.ctx.regs[1]  = fibDispatch.(u64);  // x20 = dispatch entry (tramp `br`s to it)
+        f.ctx.regs[1]  = @reinterpret(u64, fibDispatch);  // x20 = dispatch entry (tramp `br`s to it)
         f.ctx.regs[10] = 0;                // fp
-        f.ctx.regs[11] = fibTramp.(u64);     // lr → trampoline
+        f.ctx.regs[11] = @reinterpret(u64, fibTramp);     // lr → trampoline
         f.ctx.regs[12] = top;              // sp
 
         f.state = .ready;

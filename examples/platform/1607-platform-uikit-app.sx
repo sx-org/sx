@@ -36,7 +36,7 @@ main :: () -> i32 {
     SxAppDelegate := objc_allocateClassPair(UIResponder, "SxAppDelegate".ptr, 0);
 
     sel := sel_registerName("application:didFinishLaunchingWithOptions:".ptr);
-    class_addMethod(SxAppDelegate, sel, xx didFinishLaunching, "c@:@@".ptr);
+    class_addMethod(SxAppDelegate, sel, @reinterpret(*void, didFinishLaunching), "c@:@@".ptr);
 
     objc_registerClassPair(SxAppDelegate);
 

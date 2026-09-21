@@ -85,7 +85,7 @@ main :: () -> i32 {
         print("conforms: {}\n", class_conformsToProtocol(object_getClass(a), proto));
 
         selRelease : SEL = sel_registerName("release".ptr);
-        releaseFn : (obj: *void, sel: *void) -> void abi(.c) = xx objc_msgSend;
+        releaseFn : (obj: *void, sel: *void) -> void abi(.c) = @reinterpret((*void, *void) -> void abi(.c), objc_msgSend);
         releaseFn(a, selRelease);
         releaseFn(b, selRelease);
     }

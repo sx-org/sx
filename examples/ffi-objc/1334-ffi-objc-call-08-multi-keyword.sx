@@ -26,7 +26,7 @@ main :: () -> i32 {
         // Method type encoding: i@:ii → returns int, implicit (self, _cmd),
         // takes two ints. (`i` = int, `@` = id, `:` = SEL.)
         sel := sel_registerName("combine:and:".ptr);
-        ok := class_addMethod(myCls, sel, xx combineImp, "i@:ii".ptr);
+        ok := class_addMethod(myCls, sel, @reinterpret(*void, combineImp), "i@:ii".ptr);
         print("addMethod = {}\n", ok);
         objc_registerClassPair(myCls);
 

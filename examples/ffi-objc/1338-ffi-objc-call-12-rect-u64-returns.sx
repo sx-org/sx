@@ -37,8 +37,8 @@ main :: () -> i32 {
         // type-encoding's nested-struct structure.
         selRect := sel_registerName("rect".ptr);
         selUval := sel_registerName("uval".ptr);
-        class_addMethod(myCls, selRect, xx rectImp, "{CGRect=dddd}@:".ptr);
-        class_addMethod(myCls, selUval, xx u64Imp,  "Q@:".ptr);
+        class_addMethod(myCls, selRect, @reinterpret(*void, rectImp), "{CGRect=dddd}@:".ptr);
+        class_addMethod(myCls, selUval, @reinterpret(*void, u64Imp),  "Q@:".ptr);
         objc_registerClassPair(myCls);
 
         instance := class_createInstance(myCls, 0);

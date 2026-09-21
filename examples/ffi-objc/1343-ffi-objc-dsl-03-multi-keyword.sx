@@ -18,7 +18,7 @@ main :: () -> i32 {
         nsObject := objc_getClass("NSObject".ptr);
         cls := objc_allocateClassPair(nsObject, "SxProbeMultiKeyword".ptr, 0);
         sel := sel_registerName("combine:and:".ptr);
-        class_addMethod(cls, sel, xx combineImp, "i@:ii".ptr);
+        class_addMethod(cls, sel, @reinterpret(*void, combineImp), "i@:ii".ptr);
         objc_registerClassPair(cls);
 
         inst : *SxProbeMultiKeyword = xx class_createInstance(cls, 0);

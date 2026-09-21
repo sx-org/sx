@@ -276,7 +276,7 @@ fn inferGenericLiteral(self: *Lowering, sl: *const ast.StructLiteral, tmpl: *con
             initializers.append(self.alloc, .{ .spread = contributions }) catch unreachable;
             for (contributions) |contribution| {
                 const idx = routeLiteralContribution(self, &route, contribution.name, .spread, fi.value.span, tmpl.name) orelse return failed;
-                const arg_ty = self.valueTypeOfRef(contribution.value, self.builder.getRefType(contribution.value));
+                const arg_ty = self.builder.getRefType(contribution.value);
                 if (!bindGenericLiteralField(self, tmpl, idx, arg_ty, &tb, .{ .bound_by = &bound_by, .span = span })) ok = false;
             }
             continue;
@@ -302,7 +302,7 @@ fn inferGenericLiteral(self: *Lowering, sl: *const ast.StructLiteral, tmpl: *con
         const val = self.lowerExpr(fi.value);
         self.target_type = saved_tt;
         initializers.append(self.alloc, .{ .value = val }) catch unreachable;
-        const arg_ty = self.valueTypeOfRef(val, self.builder.getRefType(val));
+        const arg_ty = self.builder.getRefType(val);
         if (!bindGenericLiteralField(self, tmpl, idx, arg_ty, &tb, .{ .bound_by = &bound_by, .span = span })) ok = false;
     }
 
@@ -4135,34 +4135,10 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                                     break :blk self.emitPlaceholder(eff_fn_name);
                                 }
                             }
-                            // `xx <sx_fn> : *void` (e.g.
-                            // `class_addMethod(_, _, xx my_imp, _)`)
-                            // is intentionally NOT diagnosed here.
-                            // Manually-constructed Closure values
-                            // legitimately store default-conv sx fns
-                            // into a `*void` slot for sx-side dispatch
-                            // through the closure trampoline ABI. The
-                            // compiler can't distinguish C-side vs
-                            // sx-side use from the cast alone.
                         }
                     }
-                    // A callable binder takes the value's OWN shape, and a bare
-                    // function's shape is its signature — the integer-shaped
-                    // word below answers no bound and calls through nothing.
-                    if (self.lambda_sig_target != null) {
-                        if (self.bareFnNameSignature(node)) |sig_ty|
-                            break :blk self.builder.emit(.{ .func_ref = fid }, sig_ty);
-                    }
-                    // A bare function value keeps the integer-shaped IR
-                    // used by the async/fiber lowering paths, but
-                    // that word must match the target pointer width. Hard-coded
-                    // i64 fails an otherwise exact callback assignment on
-                    // wasm32: the destination function slot is 4 bytes while the
-                    // synthetic source type claims 8. Keep i64
-                    // on 64-bit targets; use the canonical signed
-                    // pointer word on narrower targets.
-                    const func_ref_ty: TypeId = if (self.module.types.pointer_size == 8) .i64 else .isize;
-                    break :blk self.builder.emit(.{ .func_ref = fid }, func_ref_ty);
+                    const sig_ty = self.functionSignatureType(fid) orelse return Ref.none;
+                    break :blk self.builder.emit(.{ .func_ref = fid }, sig_ty);
                 }
             }
             // Type-as-value: a name that resolves to a TypeId

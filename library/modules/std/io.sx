@@ -238,7 +238,7 @@ async :: ufcs (io: Io, worker: $F/() -> ($R, !), alloc: Allocator = context.allo
         futRelease(f);             // last touch of `f`
     }, alloc);
     // Pass the cancel-flag address so the worker fiber's `suspendRaw` can consult it.
-    f.task = io.spawnRaw(sxRunBoxedClosure.(*void), b, .{ cancelFlag = *f.canceled });
+    f.task = io.spawnRaw(@reinterpret(*void, sxRunBoxedClosure), b, .{ cancelFlag = *f.canceled });
     return f;
 }
 

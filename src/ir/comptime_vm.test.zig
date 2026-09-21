@@ -1280,7 +1280,8 @@ test "comptime_vm exec: func_ref + call_indirect dispatch" {
     // fn main() = call_indirect(func_ref(dbl), [21])   → 42
     var fb = Fb.init(alloc, &.{}, .i64);
     const b0 = fb.block(&.{});
-    const fr = fb.add(b0, inst(.{ .func_ref = dbl_id }, .i64));
+    const fn_ty = module.types.functionType(&.{.i64}, .i64);
+    const fr = fb.add(b0, inst(.{ .func_ref = dbl_id }, fn_ty));
     const c21 = fb.add(b0, inst(.{ .const_int = 21 }, .i64));
     const cargs = [_]Ref{ref(c21)};
     const r = fb.add(b0, inst(.{ .call_indirect = .{ .callee = ref(fr), .args = &cargs } }, .i64));
