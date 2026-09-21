@@ -444,9 +444,8 @@ pub fn nameVisibleOverEdges(
 
 // ── Lowering ────────────────────────────────────────────────────────────
 
-/// A written literal in the function it is lowered in: one instantiation of a
-/// generic body types its literals apart from another's.
-pub const LambdaKey = struct { lam: *const ast.Lambda, func: u32 };
+/// A literal belongs to its source function's specialization, including inside initializer thunks.
+pub const LambdaKey = struct { lam: *const ast.Lambda, func: ?FuncId };
 
 pub const Lowering = struct {
     module: *Module,
@@ -708,6 +707,7 @@ pub const Lowering = struct {
     /// A written lambda literal's env struct, interned once for the typer and
     /// the lowering alike, keyed by the literal.
     lambda_env_types: std.AutoHashMap(LambdaKey, TypeId),
+    init_recipe_owners: std.AutoHashMap(FuncId, ?FuncId),
     /// The literal each such env type was named for.
     env_lambdas: std.AutoHashMap(TypeId, *const ast.Lambda),
     /// The env type whose function is being materialized on demand.
@@ -1431,6 +1431,7 @@ pub const Lowering = struct {
             .narrowed = std.AutoHashMap(BindingId, void).init(module.alloc),
             .diag_enclosing_seen = std.StringHashMap(void).init(module.alloc),
             .lambda_env_types = std.AutoHashMap(LambdaKey, TypeId).init(module.alloc),
+            .init_recipe_owners = std.AutoHashMap(FuncId, ?FuncId).init(module.alloc),
             .env_lambdas = std.AutoHashMap(TypeId, *const ast.Lambda).init(module.alloc),
             .alias_cycle_diagnosed = std.AutoHashMap(usize, void).init(module.alloc),
             .narrowed_refs = std.AutoHashMap(Ref, void).init(module.alloc),

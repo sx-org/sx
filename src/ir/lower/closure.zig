@@ -364,8 +364,14 @@ fn lambdaSignature(self: *Lowering, lam: *const ast.Lambda, sig_target: ?Callabl
     return .{ .params = params.items, .ret = ret_ty, .wants_ctx = lambda_wants_ctx };
 }
 
-fn lowerLambdaFunction(self: *Lowering, lam: *const ast.Lambda, name: []const u8, env_struct_ty: TypeId, sig_target: ?CallableSig) LambdaFn {
+fn lambdaOwner(self: *Lowering) ?FuncId {
+    const func = self.builder.func orelse return null;
+    return self.init_recipe_owners.get(func) orelse func;
+}
+
+fn lowerLambdaFunction(self: *Lowering, lam: *const ast.Lambda, name: []const u8, env_struct_ty: TypeId, sig_target: ?CallableSig, kind: LambdaKind) LambdaFn {
     const saved_func = self.builder.func;
+    const owner = lambdaOwner(self);
     const saved_block = self.builder.current_block;
     const saved_counter = self.builder.inst_counter;
     const saved_scope = self.scope;
@@ -376,6 +382,7 @@ fn lowerLambdaFunction(self: *Lowering, lam: *const ast.Lambda, name: []const u8
     const user_param_base: usize = if (lambda_wants_ctx) 2 else 1;
     const name_id = self.module.types.internString(name);
     const func_id = self.builder.beginFunction(name_id, signature.params, ret_ty);
+    if (kind == .init_recipe) self.init_recipe_owners.put(func_id, owner) catch unreachable;
     self.builder.currentFunc().has_implicit_ctx = lambda_wants_ctx;
 
     // Param-slot layout: ctx at 0 (if present), env at ctx_slots,
@@ -588,7 +595,7 @@ pub fn specializeFormationLambda(self: *Lowering, u: UniqueLambda, arg_types: []
     }
     const name = std.fmt.allocPrint(self.alloc, "__lambda_{d}", .{self.block_counter}) catch unreachable;
     self.block_counter += 1;
-    const fnp = lowerLambdaFunction(self, formation.lam, name, formation.env_ty, .{ .params = u.params, .ret = .unresolved });
+    const fnp = lowerLambdaFunction(self, formation.lam, name, formation.env_ty, .{ .params = u.params, .ret = .unresolved }, .literal);
     const instance = UniqueLambda{ .func = .{ .lowered = fnp.func_id }, .params = fnp.user_params, .ret = fnp.ret_ty };
     formation.instances.append(self.alloc, instance) catch unreachable;
     return instance;
@@ -618,7 +625,7 @@ pub fn materializeLambdaFunction(self: *Lowering, env_ty: TypeId) ?UniqueLambda 
     const saved_target = self.target_type;
     self.target_type = null;
     defer self.target_type = saved_target;
-    const fnp = lowerLambdaFunction(self, lam, name, env_ty, null);
+    const fnp = lowerLambdaFunction(self, lam, name, env_ty, null, .literal);
     const u = UniqueLambda{ .func = .{ .lowered = fnp.func_id }, .params = fnp.user_params, .ret = fnp.ret_ty };
     self.unique_lambdas.put(env_ty, u) catch {};
     return u;
@@ -629,7 +636,7 @@ pub fn materializeLambdaFunction(self: *Lowering, env_ty: TypeId) ?UniqueLambda 
 /// Null when an entry's type is not known before lowering; the literal then
 /// names its env struct as it lowers.
 pub fn lambdaEnvType(self: *Lowering, lam: *const ast.Lambda) ?TypeId {
-    const key = lower.LambdaKey{ .lam = lam, .func = if (self.builder.func) |f| @intFromEnum(f) else std.math.maxInt(u32) };
+    const key = lower.LambdaKey{ .lam = lam, .func = lambdaOwner(self) };
     if (self.lambda_env_types.get(key)) |ty| return ty;
     const fields = self.alloc.alloc(types.TypeInfo.StructInfo.Field, lam.env.len) catch unreachable;
     const saved_target = self.target_type;
@@ -661,7 +668,7 @@ pub fn lowerLambda(self: *Lowering, lam: *const ast.Lambda) Ref {
 /// carries. `result_ty` must have the same closure shape the lambda lowers to —
 /// it renames the value (`@Init(V)` instead of `Closure(*V)`), never reshapes it.
 pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, kind: LambdaKind, result_ty: ?TypeId) Ref {
-    const saved_func_for_key = self.builder.func;
+    const memo_key = lower.LambdaKey{ .lam = lam, .func = lambdaOwner(self) };
     // A written `_{ … }` makes the literal's value its own env struct. Every
     // field is evaluated HERE, in the forming frame, before the guard below
     // retires the enclosing flow state.
@@ -736,7 +743,6 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, kind: LambdaKin
     // A written literal the planner already named keeps that env type, its
     // captured values taking the fields' shapes; otherwise the env is the
     // captures as lowered, and the name is recorded for anyone asking later.
-    const memo_key = lower.LambdaKey{ .lam = lam, .func = if (saved_func_for_key) |f| @intFromEnum(f) else std.math.maxInt(u32) };
     if (is_unique and kind == .literal and (lam.has_env or hasFormationParam(lam)) and self.lambda_env_types.get(memo_key) != null) {
         env_struct_ty = self.lambda_env_types.get(memo_key).?;
         const env_fields = self.module.types.get(env_struct_ty).@"struct".fields;
@@ -778,7 +784,7 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, kind: LambdaKin
     const fnp: LambdaFn = if (is_unique and kind == .literal and lam.has_env and self.unique_lambdas.get(env_struct_ty) != null) blk: {
         const u = self.unique_lambdas.get(env_struct_ty).?;
         break :blk .{ .func_id = u.func.lowered, .user_params = u.params, .ret_ty = u.ret, .wants_ctx = self.implicit_ctx_enabled };
-    } else lowerLambdaFunction(self, lam, name, env_struct_ty, sig_target);
+    } else lowerLambdaFunction(self, lam, name, env_struct_ty, sig_target, kind);
     const func_id = fnp.func_id;
     const ret_ty = fnp.ret_ty;
 

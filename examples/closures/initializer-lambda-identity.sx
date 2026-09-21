@@ -1,0 +1,33 @@
+@import "modules/std.sx";
+
+observe :: (value: $L/() -> i64, seen: *?Type) -> L {
+    seen.* = L;
+    value
+}
+
+form :: (value: $I/@Init($V)) -> V {
+    dest: V = ---;
+    value.write(*dest);
+    dest
+}
+
+sample :: (tag: $Marker) -> Type {
+    seen: ?Type = null;
+    seen_ptr := *seen;
+    n := 42;
+    value := form(observe(||_{ n } -> i64 n + @sizeOf(Marker), seen_ptr));
+    print("specialization identity {} value {}\n", seen == @typeOf(value), value());
+    @typeOf(value)
+}
+
+main :: () {
+    seen: ?Type = null;
+    seen_ptr := *seen;
+    n := 42;
+    value := form(form(observe(||_{ n } n, seen_ptr)));
+    print("nested identity {} value {}\n", seen == @typeOf(value), value());
+
+    first := form(sample(0.(i32)));
+    second := form(sample(0.(i64)));
+    print("distinct {}\n", first != second);
+}
