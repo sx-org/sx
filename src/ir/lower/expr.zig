@@ -10,6 +10,7 @@ const unescape = @import("../../unescape.zig");
 const literal_fields = @import("../../literal_fields.zig");
 const contracts = @import("../../contracts.zig");
 const errors = @import("../../errors.zig");
+const imports_mod = @import("../../imports.zig");
 const TypeResolver = @import("../type_resolver.zig").TypeResolver;
 const CallResolver = @import("../calls.zig").CallResolver;
 
@@ -3729,7 +3730,9 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
     defer author.leave();
     if (self.isScopeDesignator(node)) {
         if (self.diagnostics) |d| d.add(.err, "a scope is not a value", node.span);
-        return Ref.none;
+        const name = imports_mod.aliasPath(self.alloc, node).?;
+        defer self.alloc.free(name);
+        return self.emitPlaceholder(name);
     }
     const result = lowerExprInner(self, node);
     const ty = self.builder.getRefType(result);

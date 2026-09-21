@@ -3060,8 +3060,8 @@ pub const Lowering = struct {
         not_qualified,
         /// An already-proved namespace lacks the next alias/member.
         missing: MissingMember,
-        /// The named root/intermediate alias is carried from multiple direct
-        /// flat imports to distinct targets.
+        /// A namespace alias with distinct imported targets, or a scope member
+        /// declared in multiple reachable files.
         ambiguous: AmbiguousQualified,
         selected: QualifiedMember,
     };
