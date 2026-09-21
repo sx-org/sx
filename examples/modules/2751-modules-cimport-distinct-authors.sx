@@ -1,0 +1,4 @@
+@import "2751-modules-cimport-distinct-authors/a.sx";
+@import "2751-modules-cimport-distinct-authors/b.sx";
+
+main :: () -> i32 { abs(-7) - 7 }

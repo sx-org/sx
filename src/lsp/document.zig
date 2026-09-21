@@ -236,18 +236,18 @@ pub const DocumentStore = struct {
     /// (`inline if` / comptime `match` / `inline for`). Every branch
     /// contributes, whichever one the driver would select: the editor answers
     /// for the whole file, including the arms this target does not compile.
-    fn collectImports(self: *DocumentStore, list: *std.ArrayList(Import), decls: []const *sx.ast.Node, base_dir: []const u8) anyerror!void {
+    fn collectImports(self: *DocumentStore, list: *std.ArrayList(Import), decls: []const *sx.ast.Node, base_dir: []const u8, file_path: []const u8) anyerror!void {
         for (decls) |decl| {
             if (sx.imports.isModuleDriver(decl)) {
                 switch (decl.data) {
                     .if_expr => |ie| {
-                        try self.collectBranchImports(list, ie.then_branch, base_dir);
-                        if (ie.else_branch) |eb| try self.collectBranchImports(list, eb, base_dir);
+                        try self.collectBranchImports(list, ie.then_branch, base_dir, file_path);
+                        if (ie.else_branch) |eb| try self.collectBranchImports(list, eb, base_dir, file_path);
                     },
                     .match_expr => |me| {
-                        for (me.arms) |arm| try self.collectBranchImports(list, arm.body, base_dir);
+                        for (me.arms) |arm| try self.collectBranchImports(list, arm.body, base_dir, file_path);
                     },
-                    .for_expr => |fe| try self.collectBranchImports(list, fe.body, base_dir),
+                    .for_expr => |fe| try self.collectBranchImports(list, fe.body, base_dir, file_path),
                     else => {},
                 }
                 continue;
@@ -262,9 +262,11 @@ pub const DocumentStore = struct {
         }
     }
 
-    fn collectBranchImports(self: *DocumentStore, list: *std.ArrayList(Import), body: *sx.ast.Node, base_dir: []const u8) anyerror!void {
+    fn collectBranchImports(self: *DocumentStore, list: *std.ArrayList(Import), body: *sx.ast.Node, base_dir: []const u8, file_path: []const u8) anyerror!void {
         const stmts: []const *sx.ast.Node = if (body.data == .block) body.data.block.stmts else &[_]*sx.ast.Node{body};
-        try self.collectImports(list, stmts, base_dir);
+        const expanded = try sx.imports.expandDirectoryImports(self.allocator, self.io, stmts, base_dir, file_path, self.rootPathOpt(), self.stdlib_paths, null);
+        if (body.data == .block) body.data.block.stmts = expanded;
+        try self.collectImports(list, expanded, base_dir, file_path);
     }
 
     /// Analyze a document: parse, resolve imports, run sema with imported symbols pre-registered.
@@ -284,34 +286,52 @@ pub const DocumentStore = struct {
         doc.c_source_locations = std.StringHashMap(sx.c_import.CSourceLocation).init(self.allocator);
         if (doc.root) |parsed_root| {
             if (parsed_root.data == .root) {
+                parsed_root.data.root.decls = try sx.imports.expandDirectoryImports(self.allocator, self.io, parsed_root.data.root.decls, sx.imports.dirName(doc.path), doc.path, self.rootPathOpt(), self.stdlib_paths, null);
                 var expanded = std.ArrayList(*sx.ast.Node).empty;
                 for (parsed_root.data.root.decls) |decl| {
                     if (decl.data == .c_import_decl) {
                         const ci = decl.data.c_import_decl;
+                        const includes = try self.allocator.alloc([]const u8, ci.includes.len);
+                        for (ci.includes, includes) |include, *resolved| {
+                            resolved.* = try sx.imports.resolveImportPath(self.allocator, self.io, sx.imports.dirName(doc.path), include, self.rootPathOpt(), self.stdlib_paths);
+                        }
                         if (sx.c_import.processCImport(
                             self.allocator,
-                            ci.includes,
+                            includes,
                             ci.defines,
                             ci.flags,
                         )) |result| {
                             for (result.fn_decls, result.locations) |fd, loc| {
-                                try expanded.append(self.allocator, fd);
+                                if (ci.name == null) {
+                                    fd.source_file = doc.path;
+                                    try expanded.append(self.allocator, fd);
+                                }
                                 if (fd.data == .fn_decl) {
                                     try doc.c_source_locations.put(fd.data.fn_decl.name, loc);
                                 }
+                            }
+                            if (ci.name) |name| {
+                                const ns = try self.allocator.create(sx.ast.Node);
+                                ns.* = .{
+                                    .span = decl.span,
+                                    .source_file = doc.path,
+                                    .visibility = decl.visibility,
+                                    .data = .{ .namespace_decl = .{
+                                        .name = name,
+                                        .decls = result.fn_decls,
+                                        .own_decls = result.fn_decls,
+                                        .target_module_path = doc.path,
+                                        .is_raw = ci.is_raw,
+                                    } },
+                                };
+                                try expanded.append(self.allocator, ns);
+                                continue;
                             }
                         } else |_| {}
                     }
                     try expanded.append(self.allocator, decl);
                 }
-                if (expanded.items.len != parsed_root.data.root.decls.len) {
-                    const new_root = try self.allocator.create(sx.ast.Node);
-                    new_root.* = .{
-                        .span = parsed_root.span,
-                        .data = .{ .root = .{ .decls = try expanded.toOwnedSlice(self.allocator) } },
-                    };
-                    doc.root = new_root;
-                }
+                parsed_root.data.root.decls = try expanded.toOwnedSlice(self.allocator);
             }
         }
 
@@ -328,12 +348,16 @@ pub const DocumentStore = struct {
         var import_list = std.ArrayList(Import).empty;
         const base_dir = sx.imports.dirName(doc.path);
         if (root.data == .root) {
-            try self.collectImports(&import_list, root.data.root.decls, base_dir);
+            try self.collectImports(&import_list, root.data.root.decls, base_dir, doc.path);
         }
+        var duplicate_imports = std.ArrayList(sx.ast.Span).empty;
         if (root.data == .root) for (root.data.root.decls) |decl| {
             if (decl.data != .import_decl) continue;
             const name = decl.data.import_decl.name orelse continue;
-            if (!try table.claimNamed(environment, name, decl)) continue;
+            if (!try table.claimNamed(environment, name, decl)) {
+                try duplicate_imports.append(self.allocator, decl.span);
+                continue;
+            }
             const id = table.environment(environment).names.get(name).?;
             for (import_list.items) |*imp| {
                 if (imp.ns) |alias| if (std.mem.eql(u8, alias, name)) {
@@ -347,54 +371,12 @@ pub const DocumentStore = struct {
         // Recursively analyze imported documents and pre-register their symbols
         var analyzer = sx.sema.Analyzer.init(self.allocator);
         analyzer.declarations = doc.declarations;
+        for (duplicate_imports.items) |span| {
+            try analyzer.diagnostics.append(self.allocator, .{ .span = span, .message = "duplicate declaration", .level = .err });
+        }
 
         for (doc.imports) |imp| {
-            // Try as file first; if that fails, try as directory import
-            const imp_doc = self.getOrLoad(imp.path) catch {
-                // Directory import: load each .sx file and merge their symbols
-                const dir_files = self.listDirectoryFiles(imp.path) orelse continue;
-                for (dir_files) |file_path| {
-                    const file_doc = self.getOrLoad(file_path) catch continue;
-                    if (file_doc.sema == null) {
-                        self.analyzeDocument(file_doc) catch {};
-                    }
-                    const file_sema = file_doc.sema orelse continue;
-                    try analyzer.selection.addImport(imp.ns, file_sema.selection);
-                    try analyzer.mergeMetadata(file_sema);
-                    if (imp.ns) |ns_name| {
-                        // Only register namespace symbol once (first file)
-                        if (!analyzer.hasSymbol(ns_name)) {
-                            try analyzer.preRegisterSymbol(.{
-                                .declaration = imp.declaration,
-                                .name = ns_name,
-                                .kind = .namespace,
-                                .ty = null,
-                                .def_span = .{ .start = 0, .end = 0 },
-                                .scope_depth = 0,
-                                .origin = imp.path,
-                            });
-                        }
-                    } else {
-                        for (file_sema.symbols) |sym| {
-                            if (sym.scope_depth == 0) {
-                                // Private module-scope symbols never cross a
-                                // flat import into another file.
-                                if (sym.visibility == .private) continue;
-                                try analyzer.preRegisterSymbol(.{
-                                    .declaration = sym.declaration,
-                                    .name = sym.name,
-                                    .kind = sym.kind,
-                                    .ty = sym.ty,
-                                    .def_span = sym.def_span,
-                                    .scope_depth = 0,
-                                    .origin = sym.origin orelse file_path,
-                                });
-                            }
-                        }
-                    }
-                }
-                continue;
-            };
+            const imp_doc = self.getOrLoad(imp.path) catch continue;
 
             // Ensure imported doc is analyzed
             if (imp_doc.sema == null) {

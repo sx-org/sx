@@ -341,10 +341,6 @@ pub const ResolvedModule = struct {
         if (decl.data.declName()) |name| {
             if (!try table.claim(self.environment, decl)) return false;
             if (seen_list.contains(name)) {
-                // A cross-module name collision: drop from the global list
-                // (first-wins) UNLESS this is a per-source decl (a type, alias,
-                // or non-function const), which must reach registration as a
-                // distinct author of its own module.
                 append_to_global = isPerSourceDecl(decl);
             } else {
                 try seen_list.put(name, {});
@@ -368,15 +364,6 @@ pub const ResolvedModule = struct {
             if (seen_nodes.contains(decl)) continue;
             if (decl.data.declName()) |name| {
                 if (seen_list.contains(name)) {
-                    // First-wins on a cross-module name collision — EXCEPT a
-                    // per-source decl (a named type, or any non-function const:
-                    // type alias + value const), each of which must reach
-                    // registration as a distinct same-name author of its own
-                    // module (types, aliases and value consts). Only
-                    // FUNCTIONS keep first-wins (the shadowed author
-                    // stays reachable via its qualified name / SelectedFunc).
-                    // Node identity (above) still de-dups a diamond import of the
-                    // SAME decl.
                     if (!isPerSourceDecl(decl)) continue;
                 } else {
                     try seen_list.put(name, {});
@@ -387,28 +374,15 @@ pub const ResolvedModule = struct {
         }
     }
 
-    /// A decl that must register PER-SOURCE: each same-name author across modules
-    /// registers against its OWN module rather than collapsing to a single
-    /// first-wins winner. NAMED types and every non-function `const_decl` (type
-    /// aliases + inline type decls + VALUE consts, source-keyed via the alias /
-    /// const caches) are per-source — that is what prevents same-name collapse for
-    /// types/aliases and supports same-name value consts. So is every
-    /// compiler-gated declaration — an `@` name — whose
-    /// declaration-site gate (the contract registry, the intrinsic registry) runs
-    /// in lowering and must see each author. Everything
-    /// else keeps the first-wins name-merge: FUNCTIONS (the shadowed
-    /// author stays reachable via its qualified name / SelectedFunc), and crucially
-    /// `var_decl`s, including a `extern` extern global declared in two files
-    /// (e.g. `__stdinp : *void extern;`) that MUST resolve to the ONE libSystem
-    /// symbol, not split into a duplicate `__stdinp.1`.
     pub fn isPerSourceDecl(decl: *const Node) bool {
         if (decl.data.declName()) |name| {
             if (name.len > 0 and name[0] == '@') return true;
         }
         return switch (decl.data) {
             .struct_decl, .enum_decl, .union_decl, .error_set_decl, .protocol_decl, .open_set_decl, .runtime_class_decl => true,
-            .fn_decl => |fd| fd.body.data == .intrinsic_expr,
-            .const_decl => |cd| cd.value.data != .fn_decl or cd.value.data.fn_decl.body.data == .intrinsic_expr,
+            .fn_decl => |fd| fd.extern_export == .extern_ or fd.body.data == .intrinsic_expr,
+            .const_decl => |cd| cd.value.data != .fn_decl or isPerSourceDecl(cd.value),
+            .var_decl => true,
             else => false,
         };
     }
@@ -499,25 +473,25 @@ pub const RawDeclRef = union(enum) {
     namespace_decl: *const ast.NamespaceDecl,
 };
 
-/// A raw declaration paired with the source file that authors it.
-/// `visibility` is the declaration's module-scope visibility; `vis_source` is
-/// the privacy AUTHORITY — the exact declaring source file when it differs
-/// from `source` (a directory-import module aggregates several files). Null
-/// means `source` IS the authority. Only privacy checks read these; every
-/// registration lookup stays keyed by `source`.
 pub const RawAuthor = struct {
     id: DeclId,
     raw: RawDeclRef,
     source: []const u8,
     visibility: ast.Visibility = .public,
-    vis_source: ?[]const u8 = null,
-
-    /// The exact source file whose declarations may use this author when it
-    /// is private.
-    pub fn visAuthority(self: RawAuthor) []const u8 {
-        return self.vis_source orelse self.source;
-    }
 };
+
+pub fn aliasPath(allocator: std.mem.Allocator, node: *const Node) ?[]const u8 {
+    return switch (node.data) {
+        .identifier => |id| allocator.dupe(u8, id.name) catch @panic("out of memory"),
+        .type_expr => |te| allocator.dupe(u8, te.name) catch @panic("out of memory"),
+        .field_access => |fa| blk: {
+            const object = aliasPath(allocator, fa.object) orelse break :blk null;
+            defer allocator.free(object);
+            break :blk std.fmt.allocPrint(allocator, "{s}.{s}", .{ object, fa.field }) catch @panic("out of memory");
+        },
+        else => null,
+    };
+}
 
 pub const EnvironmentId = enum(u32) { _ };
 
@@ -632,7 +606,7 @@ pub fn authorNodePtrOf(ref: RawDeclRef) usize {
 /// The declaration a `const_decl` wrapper defines (`S :: struct { … }` wraps a
 /// `struct_decl`), or null when the ref is not a wrapper. Wrapper and inner
 /// author share one identity.
-fn innerDeclRef(ref: RawDeclRef) ?RawDeclRef {
+pub fn innerDeclRef(ref: RawDeclRef) ?RawDeclRef {
     if (ref != .const_decl) return null;
     return rawDeclRefOf(ref.const_decl.value);
 }
@@ -912,7 +886,7 @@ pub const DeclTable = struct {
 
     pub fn author(self: *const DeclTable, id: DeclId, source: []const u8) ?RawAuthor {
         const info = self.get(id);
-        return .{ .id = id, .raw = info.ref orelse return null, .source = source, .visibility = info.visibility, .vis_source = info.source };
+        return .{ .id = id, .raw = info.ref orelse return null, .source = info.source orelse source, .visibility = info.visibility };
     }
 };
 
@@ -1084,6 +1058,8 @@ pub fn resolveImports(
         return mod;
     }
 
+    root.data.root.decls = try expandDirectoryImports(allocator, io, root.data.root.decls, base_dir, file_path, null, stdlib_paths, diagnostics);
+
     var decl_list = std.ArrayList(*Node).empty;
     var own_decl_list = std.ArrayList(*Node).empty;
     var seen_in_list = std.StringHashMap(void).init(allocator);
@@ -1192,7 +1168,7 @@ pub fn resolveImports(
         }
         const imp = decl.data.import_decl;
 
-        const resolved_path = try resolveImportPath(allocator, io, base_dir, imp.path, null, stdlib_paths);
+        const resolved_path = imp.path;
 
         // Record direct-import edge file_path → resolved_path. Self-imports
         // and chain duplicates are still recorded so the graph reflects what
@@ -1202,10 +1178,6 @@ pub fn resolveImports(
                 set.put(resolved_path, {}) catch {};
             }
         }
-        // The same edge, FLAT-only: recorded only for a bare `@import`
-        // (`imp.name == null`), excluding a namespaced `ns :: @import`. Covers
-        // both a flat file import and a flat directory import (`resolved_path`
-        // is the directory in the latter case).
         if (imp.name == null) {
             if (flat_import_graph) |g| {
                 if (g.getPtr(canonical_file)) |set| {
@@ -1214,7 +1186,7 @@ pub fn resolveImports(
             }
         }
 
-        const imported_mod = (try loadImport(allocator, io, resolved_path, file_path, decl, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph)) orelse continue;
+        const imported_mod = (try loadImport(allocator, io, resolved_path, decl, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph)) orelse continue;
 
         if (imp.name) |ns_name| {
             const added = try mod.addNamespace(allocator, &cache.declarations, &decl_list, &own_decl_list, &seen_in_list, ns_name, imported_mod, decl.span, imp.is_raw, decl.visibility);
@@ -1228,14 +1200,10 @@ pub fn resolveImports(
     return mod;
 }
 
-/// Load the module an already-resolved `@import` path names — from the cache,
-/// as a file, or as a directory aggregate — and cache it. Null when the path
-/// is on the current chain (a cycle): the caller adds nothing.
 fn loadImport(
     allocator: std.mem.Allocator,
     io: std.Io,
     resolved_path: []const u8,
-    file_path: []const u8,
     decl: *const Node,
     chain: *std.StringHashMap(void),
     cache: *ModuleCache,
@@ -1248,45 +1216,9 @@ fn loadImport(
     if (chain.contains(resolved_path)) return null;
     if (cache.modules.get(resolved_path)) |cached| return cached;
 
-    if (try loadFileModule(allocator, io, resolved_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph)) |result| {
-        return result;
-    } else {
-        // File read failed — try as directory import. An extensionless
-        // path that names a directory next to a same-named `.sx` file
-        // is ambiguous: require the explicit `.sx` spelling for the
-        // file rather than silently picking the directory. Exception:
-        // when the sibling `.sx` is the importing file itself (a test
-        // importing its own companion directory), the directory is the
-        // only sensible target.
-        const raw_spelling = decl.data.import_decl.path;
-        const sibling_sx = try std.fmt.allocPrint(allocator, "{s}.sx", .{resolved_path});
-        const sibling_exists = if (std.mem.eql(u8, sibling_sx, file_path))
-            false
-        else if (std.Io.Dir.readFileAlloc(.cwd(), io, sibling_sx, allocator, .limited(10 * 1024 * 1024))) |_|
-            true
-        else |_|
-            false;
-        if (sibling_exists) {
-            const is_dir = if (std.Io.Dir.openDir(.cwd(), io, resolved_path, .{})) |d| dir_blk: {
-                d.close(io);
-                break :dir_blk true;
-            } else |_| false;
-            if (is_dir) {
-                if (diagnostics) |diags| {
-                    diags.addFmt(.err, decl.span, "ambiguous import '{s}': both a file '{s}.sx' and a directory '{s}' exist — write \"{s}.sx\" to import the file", .{ raw_spelling, raw_spelling, raw_spelling, raw_spelling });
-                }
-                return error.ImportError;
-            }
-        }
-        const result = resolveDirectoryImport(allocator, io, resolved_path, chain, cache, source_map, diagnostics, decl.span, stdlib_paths, import_graph, flat_import_graph) catch {
-            if (diagnostics) |diags| {
-                diags.addFmt(.err, decl.span, "cannot read import '{s}' (not a file or directory)", .{resolved_path});
-            }
-            return error.ImportError;
-        };
-        try cache.modules.put(resolved_path, result);
-        return result;
-    }
+    if (try loadFileModule(allocator, io, resolved_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph)) |result| return result;
+    if (diagnostics) |diags| diags.addFmt(.err, decl.span, "cannot read import '{s}' (not a file or directory)", .{resolved_path});
+    return error.ImportError;
 }
 
 /// Parse and resolve the module file at `resolved_path` and cache it. Null when
@@ -1425,148 +1357,88 @@ fn resolveBranchBodyImports(
     import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
     flat_import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
 ) anyerror!void {
-    const stmts: []const *Node = if (body.data == .block) body.data.block.stmts else &[_]*Node{body};
+    const original: []const *Node = if (body.data == .block) body.data.block.stmts else &[_]*Node{body};
+    const stmts = try expandDirectoryImports(allocator, io, original, base_dir, file_path, null, stdlib_paths, diagnostics);
+    if (body.data == .block) {
+        body.data.block.stmts = stmts;
+    } else if (body.data == .import_decl) {
+        body.data = .{ .block = .{ .stmts = stmts } };
+    }
     for (stmts) |stmt| {
         if (isModuleDriver(stmt)) {
             try resolveBranchImports(allocator, io, stmt, base_dir, file_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
             continue;
         }
         if (stmt.data != .import_decl) continue;
-        const resolved_path = try resolveImportPath(allocator, io, base_dir, stmt.data.import_decl.path, null, stdlib_paths);
-        _ = try loadImport(allocator, io, resolved_path, file_path, stmt, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
-        stmt.data.import_decl.path = resolved_path;
+        const resolved_path = stmt.data.import_decl.path;
+        _ = try loadImport(allocator, io, resolved_path, stmt, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
     }
 }
 
-/// Resolve a directory import by aggregating all .sx files in the directory.
-fn resolveDirectoryImport(
+pub fn expandDirectoryImports(
     allocator: std.mem.Allocator,
     io: std.Io,
-    dir_path: []const u8,
-    chain: *std.StringHashMap(void),
-    cache: *ModuleCache,
-    source_map: ?*std.StringHashMap([:0]const u8),
-    diagnostics: ?*errors.DiagnosticList,
-    span: ast.Span,
+    nodes: []const *Node,
+    base_dir: []const u8,
+    file_path: []const u8,
+    root_path: ?[]const u8,
     stdlib_paths: []const []const u8,
-    import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
-    flat_import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
-) anyerror!ResolvedModule {
-    // Open the directory with iteration capability
-    const dir = std.Io.Dir.openDir(.cwd(), io, dir_path, .{ .iterate = true }) catch {
-        return error.ImportError;
+    diagnostics: ?*errors.DiagnosticList,
+) ![]const *Node {
+    var expanded = std.ArrayList(*Node).empty;
+    for (nodes) |node| {
+        if (node.data != .import_decl) {
+            try expanded.append(allocator, node);
+            continue;
+        }
+        const resolved = try resolveImportPath(allocator, io, base_dir, node.data.import_decl.path, root_path, stdlib_paths);
+        const paths = try importFiles(allocator, io, resolved, file_path, node, diagnostics);
+        for (paths) |path| {
+            const imported = try allocator.create(Node);
+            imported.* = node.*;
+            imported.data.import_decl.path = path;
+            try expanded.append(allocator, imported);
+        }
+    }
+    return expanded.toOwnedSlice(allocator);
+}
+
+fn importFiles(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    path: []const u8,
+    file_path: []const u8,
+    node: *const Node,
+    diagnostics: ?*errors.DiagnosticList,
+) ![]const []const u8 {
+    const dir = std.Io.Dir.openDir(.cwd(), io, path, .{ .iterate = true }) catch {
+        const files = try allocator.alloc([]const u8, 1);
+        files[0] = path;
+        return files;
     };
     defer dir.close(io);
-
-    // Collect all .sx file names
-    var file_names = std.ArrayList([]const u8).empty;
-    var it = dir.iterate();
-    while (it.next(io) catch null) |entry| {
-        if (entry.kind != .file) continue;
-        if (!std.mem.endsWith(u8, entry.name, ".sx")) continue;
-        const name_copy = try allocator.dupe(u8, entry.name);
-        try file_names.append(allocator, name_copy);
+    const sibling = try std.fmt.allocPrint(allocator, "{s}.sx", .{path});
+    const importer = try canonicalizePath(allocator, file_path);
+    if (!std.mem.eql(u8, sibling, importer)) {
+        if (std.Io.Dir.readFileAlloc(.cwd(), io, sibling, allocator, .limited(10 * 1024 * 1024))) |_| {
+            if (diagnostics) |diags| {
+                const spelling = node.data.import_decl.path;
+                diags.addFmt(.err, node.span, "ambiguous import '{s}': both a file '{s}.sx' and a directory '{s}' exist — write \"{s}.sx\" to import the file", .{ spelling, spelling, spelling, spelling });
+            }
+            return error.ImportError;
+        } else |_| {}
     }
-
-    // Sort alphabetically for deterministic ordering
-    std.mem.sort([]const u8, file_names.items, {}, struct {
+    var paths = std.ArrayList([]const u8).empty;
+    var it = dir.iterate();
+    while (try it.next(io)) |entry| {
+        if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".sx")) continue;
+        const joined = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ path, entry.name });
+        try paths.append(allocator, try canonicalizePath(allocator, joined));
+    }
+    std.mem.sort([]const u8, paths.items, {}, struct {
         fn lessThan(_: void, a: []const u8, b: []const u8) bool {
             return std.mem.order(u8, a, b) == .lt;
         }
     }.lessThan);
-
-    // Add directory to chain for circular import detection
-    try chain.put(dir_path, {});
-    defer _ = chain.remove(dir_path);
-
-    // Merge all files into a combined module. From an importer's perspective
-    // a directory is one big module: the combined module's `own_decls` is
-    // the union of every file's `own_decls`, so flat-importing the directory
-    // exposes everything the files themselves authored — but not what those
-    // files transitively imported from outside the directory.
-    var combined = ResolvedModule{
-        .path = dir_path,
-        .decls = &.{},
-        .own_decls = &.{},
-        .environment = try cache.declarations.internEnvironment(dir_path, &.{}),
-    };
-    var decl_list = std.ArrayList(*Node).empty;
-    var own_decl_list = std.ArrayList(*Node).empty;
-    var seen_in_list = std.StringHashMap(void).init(allocator);
-    var seen_nodes = std.AutoHashMap(*Node, void).init(allocator);
-
-    for (file_names.items) |file_name| {
-        // `dir_path` arrives canonical from `resolveImportPath`, but the join
-        // can still de-canonicalize (e.g. a `.` dir_path → `./x.sx`), so the
-        // per-file key goes through the same chokepoint.
-        const file_path = try canonicalizePath(allocator, try std.fmt.allocPrint(allocator, "{s}/{s}", .{ dir_path, file_name }));
-
-        if (chain.contains(file_path)) continue;
-
-        const file_mod = if (cache.modules.get(file_path)) |cached|
-            cached
-        else file_blk: {
-            const imp_bytes = std.Io.Dir.readFileAlloc(.cwd(), io, file_path, allocator, .limited(10 * 1024 * 1024)) catch {
-                if (diagnostics) |diags| {
-                    diags.addFmt(.err, span, "cannot read '{s}' in directory import", .{file_path});
-                }
-                return error.ImportError;
-            };
-            const imp_source = try allocator.dupeZ(u8, imp_bytes);
-
-            if (source_map) |sm| {
-                sm.put(file_path, imp_source) catch {};
-            }
-
-            var p = try parser.Parser.init(allocator, imp_source);
-            const imp_root = p.parse() catch {
-                if (diagnostics) |diags| {
-                    diags.addFmtInFile(.err, file_path, importErrSpan(&p), "parse error in '{s}': {s}", .{ file_path, p.err_msg orelse "unknown" });
-                }
-                return error.ImportError;
-            };
-
-            const result = try resolveImports(allocator, io, imp_root, dir_path, file_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
-
-            try cache.modules.put(file_path, result);
-            break :file_blk result;
-        };
-
-        // Source-order matters: a file's own decls (e.g. `impl Foo` blocks)
-        // may reference types defined in OTHER files that THIS file imports.
-        // `file_mod.decls` already lists transitive-imported decls before
-        // the file's own decls (resolveImports processes `@import` lines in
-        // source order, and @imports usually come first), so iterating it
-        // directly preserves the scan order the lowering pass needs to
-        // register `Event` (a payload enum) before `handle_event(e: *Event)`
-        // triggers the placeholder-struct fallback in `resolveTypeName`.
-        for (file_mod.decls) |decl| {
-            if (seen_nodes.contains(decl)) continue;
-            if (decl.data.declName()) |name| {
-                if (seen_in_list.contains(name)) continue;
-                try seen_in_list.put(name, {});
-            }
-            try seen_nodes.put(decl, {});
-            try decl_list.append(allocator, decl);
-        }
-        // Separately track which decls the directory `re-exports` to its
-        // flat-importers. Position in `own_decl_list` doesn't matter — it's
-        // only consumed by the importer-side visibility join (`isNameVisible`
-        // in lower.zig) which treats it as a set.
-        for (file_mod.own_decls) |decl| {
-            if (decl.data.declName()) |name| {
-                const table = &cache.declarations;
-                if (table.environment(combined.environment).names.contains(name)) continue;
-                const id = table.environment(file_mod.environment).names.get(name).?;
-                try table.environment(combined.environment).names.put(name, id);
-                if (table.environment(file_mod.environment).namespaces.get(name)) |target| {
-                    try table.environment(combined.environment).namespaces.put(name, target);
-                }
-            }
-            try own_decl_list.append(allocator, decl);
-        }
-    }
-
-    try combined.finalize(allocator, &decl_list, &own_decl_list);
-    return combined;
+    return paths.toOwnedSlice(allocator);
 }

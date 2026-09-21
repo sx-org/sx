@@ -3,7 +3,9 @@
 @import "modules/math";
 @import "modules/build.sx";
 @import "modules/std/test.sx";
-pkg :: @import "tests/fixtures/testpkg";
+pkg :: @import "tests/fixtures/testpkg/math.sx";
+greetings :: @import "tests/fixtures/testpkg/greet.sx";
+cwd :: @import "tests/fixtures/testpkg/cwd_test.sx";
 
 Point :: struct { x, y: i32; }
 
@@ -51,13 +53,12 @@ main :: () {
         print("{}\n", t12 != t12);     // false
     }
 
-    // --- Directory imports ---
     {
-        print("--- directory imports ---\n");
+        print("--- file imports ---\n");
         print("{}\n", pkg.add(3, 4));         // 7
         print("{}\n", pkg.mul(5, 6));         // 30
-        print("{}\n", pkg.hello());           // hello from testpkg
-        print("{}\n", pkg.cwdGreet());        // cwd-import-ok
+        print("{}\n", greetings.hello());
+        print("{}\n", cwd.cwdGreet());
     }
 
     // ── allocSlice ──────────────────────────────────────────

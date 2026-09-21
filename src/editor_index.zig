@@ -104,13 +104,131 @@ pub const Selection = struct {
         return if (decl.info().visibility == .public) decl else null;
     }
 
-    fn one(candidates: []const *Selection, name: []const u8) ?Declaration {
-        var selected: ?Declaration = null;
+    const Located = struct { selection: *const Selection, declaration: Declaration };
+    const Entity = union(enum) {
+        declaration: Declaration,
+        expression: struct { selection: *const Selection, node: *const ast.Node },
+    };
+
+    fn entity(located: Located, visiting: *std.ArrayList(Declaration)) ?Entity {
+        const decl = located.declaration;
+        const self = located.selection;
+        for (visiting.items) |previous| if (std.meta.eql(previous, decl)) return null;
+        visiting.append(self.alloc, decl) catch @panic("out of memory");
+        defer _ = visiting.pop();
+        const ref = decl.info().ref orelse return .{ .declaration = decl };
+        if (ref != .const_decl) return .{ .declaration = decl };
+        const node = ref.const_decl.value;
+        if (imports.aliasPath(self.alloc, node)) |path| {
+            defer self.alloc.free(path);
+            if (self.locate(path, visiting)) |target| return entity(target, visiting);
+            if (@import("types.zig").Type.fromTypeExpr(node) != null)
+                return .{ .expression = .{ .selection = self, .node = node } };
+            return null;
+        }
+        if (node.data == .call) {
+            const path = imports.aliasPath(self.alloc, node.data.call.callee) orelse return .{ .declaration = decl };
+            defer self.alloc.free(path);
+            const target = self.locate(path, visiting) orelse return null;
+            const resolved = entity(target, visiting) orelse return null;
+            if (resolved == .declaration) {
+                const raw = resolved.declaration.info().ref orelse return null;
+                const inner = imports.innerDeclRef(raw) orelse raw;
+                if (inner == .struct_decl and inner.struct_decl.type_params.len > 0)
+                    return .{ .expression = .{ .selection = self, .node = node } };
+            }
+        }
+        return switch (node.data) {
+            .function_type_expr, .closure_type_expr, .pointer_type_expr, .many_pointer_type_expr, .slice_type_expr, .array_type_expr, .optional_type_expr, .tuple_type_expr, .parameterized_type_expr => .{ .expression = .{ .selection = self, .node = node } },
+            else => .{ .declaration = decl },
+        };
+    }
+
+    fn sameEntity(a: Entity, b: Entity, visiting: *std.ArrayList(Declaration)) bool {
+        if (std.meta.activeTag(a) != std.meta.activeTag(b)) return false;
+        return switch (a) {
+            .declaration => |d| std.meta.eql(d, b.declaration),
+            .expression => |e| sameExpression(e.selection, e.node, b.expression.selection, b.expression.node, visiting),
+        };
+    }
+
+    fn sameExpression(a: *const Selection, x: *const ast.Node, b: *const Selection, y: *const ast.Node, visiting: *std.ArrayList(Declaration)) bool {
+        if (imports.aliasPath(a.alloc, x)) |xp| {
+            defer a.alloc.free(xp);
+            const yp = imports.aliasPath(b.alloc, y) orelse return false;
+            defer b.alloc.free(yp);
+            const xl = a.locate(xp, visiting);
+            const yl = b.locate(yp, visiting);
+            if (xl != null or yl != null) {
+                const left: Entity = if (xl) |l| entity(l, visiting) orelse return false else .{ .expression = .{ .selection = a, .node = x } };
+                const right: Entity = if (yl) |r| entity(r, visiting) orelse return false else .{ .expression = .{ .selection = b, .node = y } };
+                return sameEntity(left, right, visiting);
+            }
+            return std.mem.eql(u8, xp, yp);
+        }
+        if (std.meta.activeTag(x.data) != std.meta.activeTag(y.data)) return false;
+        return switch (x.data) {
+            .function_type_expr => |t| t.abi == y.data.function_type_expr.abi and
+                t.is_c_variadic == y.data.function_type_expr.is_c_variadic and
+                sameExpressions(a, t.param_types, b, y.data.function_type_expr.param_types, visiting) and
+                sameOptionalExpression(a, t.return_type, b, y.data.function_type_expr.return_type, visiting),
+            .closure_type_expr => |t| std.meta.eql(t.pack_name, y.data.closure_type_expr.pack_name) and
+                std.meta.eql(t.pack_projection, y.data.closure_type_expr.pack_projection) and
+                sameExpressions(a, t.param_types, b, y.data.closure_type_expr.param_types, visiting) and
+                sameOptionalExpression(a, t.return_type, b, y.data.closure_type_expr.return_type, visiting),
+            .tuple_type_expr => |t| sameExpressions(a, t.field_types, b, y.data.tuple_type_expr.field_types, visiting) and sameFieldNames(t.field_names, y.data.tuple_type_expr.field_names),
+            .parameterized_type_expr => |t| blk: {
+                const left = ast.Node{ .span = x.span, .data = .{ .identifier = .{ .name = t.name, .is_raw = t.is_raw } } };
+                const right = ast.Node{ .span = y.span, .data = .{ .identifier = .{ .name = y.data.parameterized_type_expr.name, .is_raw = y.data.parameterized_type_expr.is_raw } } };
+                break :blk sameExpression(a, &left, b, &right, visiting) and sameExpressions(a, t.args, b, y.data.parameterized_type_expr.args, visiting);
+            },
+            .pointer_type_expr => |t| sameExpression(a, t.pointee_type, b, y.data.pointer_type_expr.pointee_type, visiting),
+            .many_pointer_type_expr => |t| t.sentinel == y.data.many_pointer_type_expr.sentinel and sameExpression(a, t.element_type, b, y.data.many_pointer_type_expr.element_type, visiting),
+            .slice_type_expr => |t| t.sentinel == y.data.slice_type_expr.sentinel and sameExpression(a, t.element_type, b, y.data.slice_type_expr.element_type, visiting),
+            .optional_type_expr => |t| sameExpression(a, t.inner_type, b, y.data.optional_type_expr.inner_type, visiting),
+            .array_type_expr => |t| t.sentinel == y.data.array_type_expr.sentinel and sameExpression(a, t.length, b, y.data.array_type_expr.length, visiting) and sameExpression(a, t.element_type, b, y.data.array_type_expr.element_type, visiting),
+            .call => |c| sameExpression(a, c.callee, b, y.data.call.callee, visiting) and sameExpressions(a, c.args, b, y.data.call.args, visiting),
+            .int_literal => |v| v.value == y.data.int_literal.value,
+            else => x == y,
+        };
+    }
+
+    fn sameFieldNames(a: ?[]const []const u8, b: ?[]const []const u8) bool {
+        const left = a orelse return b == null;
+        const right = b orelse return false;
+        if (left.len != right.len) return false;
+        for (left, right) |x, y| if (!std.mem.eql(u8, x, y)) return false;
+        return true;
+    }
+
+    fn sameOptionalExpression(a: *const Selection, x: ?*ast.Node, b: *const Selection, y: ?*ast.Node, visiting: *std.ArrayList(Declaration)) bool {
+        if (x) |node| return sameExpression(a, node, b, y orelse return false, visiting);
+        return y == null;
+    }
+
+    fn sameExpressions(a: *const Selection, x: []const *ast.Node, b: *const Selection, y: []const *ast.Node, visiting: *std.ArrayList(Declaration)) bool {
+        if (x.len != y.len) return false;
+        for (x, y) |left, right| if (!sameExpression(a, left, b, right, visiting)) return false;
+        return true;
+    }
+
+    fn equivalent(a: Located, b: Located, visiting: *std.ArrayList(Declaration)) bool {
+        if (std.meta.eql(a.declaration, b.declaration)) return true;
+        const left = entity(a, visiting) orelse return false;
+        const right = entity(b, visiting) orelse return false;
+        visiting.appendSlice(a.selection.alloc, &.{ a.declaration, b.declaration }) catch @panic("out of memory");
+        defer visiting.shrinkRetainingCapacity(visiting.items.len - 2);
+        return sameEntity(left, right, visiting);
+    }
+
+    fn one(candidates: []const *Selection, name: []const u8, visiting: *std.ArrayList(Declaration)) ?Located {
+        var selected: ?Located = null;
         for (candidates) |candidate| {
             const decl = candidate.publicOwn(name) orelse continue;
+            const current = Located{ .selection = candidate, .declaration = decl };
             if (selected) |previous| {
-                if (!std.meta.eql(previous, decl)) return null;
-            } else selected = decl;
+                if (!equivalent(previous, current, visiting)) return null;
+            } else selected = current;
         }
         return selected;
     }
@@ -128,21 +246,28 @@ pub const Selection = struct {
         return selected;
     }
 
-    pub fn select(self: *const Selection, name: []const u8) ?Declaration {
+    fn locate(self: *const Selection, name: []const u8, visiting: *std.ArrayList(Declaration)) ?Located {
         if (std.mem.indexOfScalar(u8, name, '.')) |dot| {
             const targets = self.namespace(name[0..dot]) orelse return null;
             const rest = name[dot + 1 ..];
-            if (std.mem.indexOfScalar(u8, rest, '.') == null) return one(targets, rest);
-            var selected: ?Declaration = null;
+            if (std.mem.indexOfScalar(u8, rest, '.') == null) return one(targets, rest, visiting);
+            var selected: ?Located = null;
             for (targets) |target| {
-                const decl = target.select(rest) orelse continue;
+                const current = target.locate(rest, visiting) orelse continue;
                 if (selected) |previous| {
-                    if (!std.meta.eql(previous, decl)) return null;
-                } else selected = decl;
+                    if (!equivalent(previous, current, visiting)) return null;
+                } else selected = current;
             }
             return selected;
         }
-        return self.own.get(name) orelse one(self.flat.items, name);
+        if (self.own.get(name)) |decl| return .{ .selection = self, .declaration = decl };
+        return one(self.flat.items, name, visiting);
+    }
+
+    pub fn select(self: *const Selection, name: []const u8) ?Declaration {
+        var visiting = std.ArrayList(Declaration).empty;
+        defer visiting.deinit(self.alloc);
+        return (self.locate(name, &visiting) orelse return null).declaration;
     }
 };
 

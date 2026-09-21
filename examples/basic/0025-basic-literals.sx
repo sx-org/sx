@@ -2,7 +2,6 @@
 @import "modules/math";
 @import "modules/build.sx";
 @import "modules/std/test.sx";
-pkg :: @import "tests/fixtures/testpkg";
 
 Color :: enum { red; green; blue; }
 

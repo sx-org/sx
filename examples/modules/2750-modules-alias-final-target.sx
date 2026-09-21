@@ -1,0 +1,8 @@
+@import "modules/std.sx";
+@import "2750-modules-alias-final-target/a.sx";
+@import "2750-modules-alias-final-target/b.sx";
+
+main :: () -> i32 {
+    print("{} {} {} {}\n", answer(), N, @sizeOf(Cb), @sizeOf(IB));
+    0
+}

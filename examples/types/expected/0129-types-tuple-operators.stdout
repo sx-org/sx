@@ -3,7 +3,7 @@ true
 false
 true
 false
---- directory imports ---
+--- file imports ---
 7
 30
 hello from testpkg

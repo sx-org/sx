@@ -1818,27 +1818,7 @@ fn qualifiedStoreTerminalSpan(node: *const Node, member: []const u8) ast.Span {
 }
 
 fn selectedQualifiedGlobal(self: *Lowering, selected: Lowering.QualifiedMember) ?program_index_mod.GlobalInfo {
-    if (selected.author.raw == .var_decl) {
-        if (self.global_decl_infos.get(selected.author.raw.var_decl)) |global| return global;
-    }
-    if (self.program_index.get(.global, selected.author.id)) |global| return global;
-
-    // Some registrations are deliberately deduplicated (notably extern
-    // globals), so the per-source partition may have no row. Re-run only the
-    // source-aware author selector while pinned to the exact selected module;
-    // never consume the process-global winner directly.
-    const saved_source = self.lexicalContext();
-    self.setCurrentEnvironment(self.program_index.declaration(selected.author.id).environment);
-    const resolved: ?program_index_mod.GlobalInfo = if (self.program_index.lookup(.global, selected.member)) |fallback|
-        switch (self.selectGlobalAuthor(selected.member)) {
-            .resolved => |global| global,
-            .untracked => if (selected.author.raw == .var_decl) fallback else null,
-            .not_a_global, .ambiguous, .not_visible => null,
-        }
-    else
-        null;
-    self.restoreLexicalContext(saved_source);
-    return resolved;
+    return self.program_index.get(.global, selected.author.id);
 }
 
 /// Diagnostic-free preselection for a namespace-qualified mutable global. It

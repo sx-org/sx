@@ -2216,7 +2216,7 @@ pub fn recordClosureShape(self: *Lowering, lam: *const ast.Lambda) void {
 /// single author is visible there.
 pub fn edgeCalleeDecl(self: *Lowering, name: []const u8, from: ?[]const u8) ?*const ast.FnDecl {
     if (from) |file| {
-        switch (self.selectCallableAuthor(name, self.environmentForSource(file).?, .any_body)) {
+        switch (self.selectCallableAuthor(name, self.environmentForSource(file).?, .all)) {
             .func => |f| return f.decl,
             .ambiguous, .not_callable => return null,
             .none => {},

@@ -5866,9 +5866,11 @@ std :: @import "modules/std.sx";
 **Directory import** — performs one import per `.sx` file in the directory,
 for plain, named, and spread imports. Each file retains its identity:
 ```sx
-pkg :: @import "modules/math";
 @import "modules/math";
 ```
+
+A named directory import declares its handle once per member file. With more
+than one `.sx` file, those declarations violate the duplicate-name rule.
 
 Directory imports scan only the top level of the specified directory (non-recursive). Files are processed in alphabetical order for deterministic builds. Files within the directory may `@import` each other or external files.
 

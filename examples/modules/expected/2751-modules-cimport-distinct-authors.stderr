@@ -1,0 +1,5 @@
+error: 'abs' is ambiguous; declared by multiple imported modules — qualify the call
+  --> examples/modules/2751-modules-cimport-distinct-authors.sx:4:21
+   |
+ 4 | main :: () -> i32 { abs(-7) - 7 }
+   |                     ^^^

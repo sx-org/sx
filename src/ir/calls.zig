@@ -814,11 +814,11 @@ pub const CallResolver = struct {
                     scoped;
                 if (!std.mem.eql(u8, name, bare_name)) return .none;
                 if (self.l.scope) |scope| if (scope.lookup(bare_name) != null) return .none;
-                return self.l.selectCallableAuthor(bare_name, self.l.environmentForSource(caller_file).?, .any_body);
+                return self.l.selectCallableAuthor(bare_name, self.l.environmentForSource(caller_file).?, .all);
             },
             .field_access => |cfa| {
                 if (!self.objectIsValue(cfa.object)) return .none;
-                return self.l.selectCallableAuthor(cfa.field, self.l.environmentForSource(caller_file).?, .plain_free);
+                return self.l.selectCallableAuthor(cfa.field, self.l.environmentForSource(caller_file).?, .non_generic);
             },
             else => return .none,
         }

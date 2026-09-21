@@ -703,3 +703,73 @@ test "document declarations follow the analyzed source snapshot" {
     try std.testing.expect(doc.declarations == null);
     try std.testing.expect(doc.last_good_sema.?.declarations.?.table == context.table);
 }
+
+test "editor alias candidates share their final target" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const doc = try store.getOrLoad("examples/modules/2750-modules-alias-final-target.sx");
+    try store.analyzeDocument(doc);
+    const index = doc.sema orelse return error.MissingAnalysis;
+    try std.testing.expect(index.selection.select("answer") != null);
+    try std.testing.expect(index.selection.select("N") != null);
+    try std.testing.expect(index.selection.select("Cb") != null);
+    try std.testing.expect(index.selection.select("IB") != null);
+    try std.testing.expect(index.fn_signatures.get("answer") != null);
+}
+
+test "editor directory imports preserve file candidates" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const doc = try store.getOrLoad("examples/modules/2752-modules-directory-distinct-authors.sx");
+    try store.analyzeDocument(doc);
+    try std.testing.expectEqual(@as(usize, 2), doc.imports.len);
+    try std.testing.expect(doc.sema.?.selection.select("answer") == null);
+    const named = try store.getOrLoad("examples/modules/2753-modules-named-directory-imports.sx");
+    try store.analyzeDocument(named);
+    var duplicate = false;
+    for (named.sema.?.diagnostics) |diag| {
+        if (std.mem.eql(u8, diag.message, "duplicate declaration")) duplicate = true;
+    }
+    try std.testing.expect(duplicate);
+}
+
+test "editor C imports retain file and namespace identity" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const doc = try store.getOrLoad("examples/modules/2751-modules-cimport-distinct-authors.sx");
+    try store.analyzeDocument(doc);
+    const index = doc.sema.?.selection;
+    try std.testing.expect(index.flat.items[0].select("abs") != null);
+    try std.testing.expect(index.flat.items[1].select("abs") != null);
+    try std.testing.expect(index.select("abs") == null);
+    const scoped = try store.openOrUpdate("c-namespaces.sx",
+        \\a :: @import c { @include "examples/modules/2751-modules-cimport-distinct-authors/abs.h"; };
+        \\b :: @import c { @include "examples/modules/2751-modules-cimport-distinct-authors/abs.h"; };
+    , 1);
+    try store.analyzeDocument(scoped);
+    const left = scoped.sema.?.selection.select("a.abs").?;
+    const right = scoped.sema.?.selection.select("b.abs").?;
+    try std.testing.expect(left.id != right.id);
+    try std.testing.expect(left.info().environment != right.info().environment);
+}
+
+test "editor structural alias cycles do not form an identity" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    _ = try store.openOrUpdate("cycle-a.sx", "Loop :: *Loop;", 1);
+    _ = try store.openOrUpdate("cycle-b.sx", "Loop :: *Loop;", 1);
+    const doc = try store.openOrUpdate("cycle-reader.sx",
+        \\@import "cycle-a.sx";
+        \\@import "cycle-b.sx";
+    , 1);
+    try store.analyzeDocument(doc);
+    try std.testing.expect(doc.sema.?.selection.select("Loop") == null);
+}

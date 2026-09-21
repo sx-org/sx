@@ -292,9 +292,7 @@ test "flat import declarations retain distinct raw authors" {
     try std.testing.expect(!hasErr(&facts.diags, "duplicate top-level"));
 }
 
-// Directory import: the combined module (keyed by the directory path) carries
-// the UNION of every file's authored decls in its scalar index.
-test "directory import unions member-file decls under the dir path" {
+test "directory import keeps member-file environments" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -311,14 +309,15 @@ test "directory import unions member-file decls under the dir path" {
     var dirbuf: [4096]u8 = undefined;
     const absdir = dirbuf[0..try tmp.dir.realPath(io, &dirbuf)];
     const main_path = try std.fmt.allocPrint(alloc, "{s}/main.sx", .{absdir});
-    // Canonical key for the imported directory module.
-    const lib_path = try imports.canonicalizePath(alloc, try std.fmt.allocPrint(alloc, "{s}/lib", .{absdir}));
-
+    const one_path = try imports.canonicalizePath(alloc, try std.fmt.allocPrint(alloc, "{s}/lib/one.sx", .{absdir}));
+    const two_path = try imports.canonicalizePath(alloc, try std.fmt.allocPrint(alloc, "{s}/lib/two.sx", .{absdir}));
+    const lib_path = try std.fmt.allocPrint(alloc, "{s}/lib", .{absdir});
     var facts = try buildFacts(alloc, io, absdir, main_path);
-
-    const lib_idx = facts.table.fileScope(lib_path) orelse return error.MissingLibIndex;
-    try expectTag(facts.table.get(lib_idx.names.get("from_one") orelse return error.MissingFromOne).ref.?, .fn_decl);
-    try expectTag(facts.table.get(lib_idx.names.get("Two") orelse return error.MissingTwo).ref.?, .struct_decl);
+    try std.testing.expect(facts.table.fileScope(lib_path) == null);
+    const one = facts.table.fileScope(one_path) orelse return error.MissingEnvironment;
+    const two = facts.table.fileScope(two_path) orelse return error.MissingEnvironment;
+    try expectTag(facts.table.get(one.names.get("from_one").?).ref.?, .fn_decl);
+    try expectTag(facts.table.get(two.names.get("Two").?).ref.?, .struct_decl);
 }
 
 // Namespaced file import (`g :: @import "point.sx"`): recorded as a namespace
@@ -356,8 +355,7 @@ test "namespaced file import captures target_module_path" {
     try expectTag(facts.table.get(m_idx.names.get("g") orelse return error.MissingGRef).ref.?, .namespace_decl);
 }
 
-// Namespaced directory import: same edge capture, target is the directory path.
-test "namespaced directory import captures dir path as target" {
+test "namespaced directory import targets its member file" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -373,8 +371,7 @@ test "namespaced directory import captures dir path as target" {
     var dirbuf: [4096]u8 = undefined;
     const absdir = dirbuf[0..try tmp.dir.realPath(io, &dirbuf)];
     const main_path = try std.fmt.allocPrint(alloc, "{s}/main.sx", .{absdir});
-    // Canonical key for the imported directory module.
-    const pkg_path = try imports.canonicalizePath(alloc, try std.fmt.allocPrint(alloc, "{s}/pkg", .{absdir}));
+    const pkg_path = try imports.canonicalizePath(alloc, try std.fmt.allocPrint(alloc, "{s}/pkg/m.sx", .{absdir}));
 
     var facts = try buildFacts(alloc, io, absdir, main_path);
 

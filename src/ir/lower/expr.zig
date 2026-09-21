@@ -3983,7 +3983,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                 std.mem.eql(u8, eff_fn_name, id.name) and
                 (if (self.scope) |scope| scope.lookup(id.name) == null else true) and
                 self.current_source_file != null and
-                self.selectCallableAuthor(id.name, self.environmentForSource(self.current_source_file.?).?, .plain_free) == .func;
+                self.selectCallableAuthor(id.name, self.environmentForSource(self.current_source_file.?).?, .non_generic) == .func;
             if (self.program_index.contains(.function, eff_fn_name) or fn_author_only) {
                 // Visibility check only for user-typed bare names (id.name
                 // == eff_fn_name) without a UFCS alias. Mangled local-
@@ -4004,7 +4004,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                 // as Any.
                 if (self.target_type == .any or self.target_type == .type_value) {
                     const fd_any: ?*const ast.FnDecl = self.program_index.lookup(.function, eff_fn_name) orelse fd_blk: {
-                        switch (self.selectCallableAuthor(id.name, self.environmentForSource(self.current_source_file.?).?, .plain_free)) {
+                        switch (self.selectCallableAuthor(id.name, self.environmentForSource(self.current_source_file.?).?, .non_generic)) {
                             .func => |sf| break :fd_blk sf.decl,
                             else => break :fd_blk null,
                         }
@@ -4034,7 +4034,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                         (if (self.scope) |scope| scope.lookup(id.name) == null else true))
                     {
                         if (self.current_source_file) |caller_file| {
-                            switch (self.selectCallableAuthor(id.name, self.environmentForSource(caller_file).?, .plain_free)) {
+                            switch (self.selectCallableAuthor(id.name, self.environmentForSource(caller_file).?, .non_generic)) {
                                 .func => |sf| {
                                     var selected = sf;
                                     break :blk_fv self.selectedFuncId(&selected);
