@@ -1,0 +1,5 @@
+error: unexpected token in expression
+  --> examples/modules/2784-modules-scope-value-placement.sx:1:11
+   |
+ 1 | value :: (scope {});
+   |           ^^^^^

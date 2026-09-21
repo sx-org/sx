@@ -1,0 +1,5 @@
+error: scope spreads are not supported
+  --> examples/modules/2782-modules-spread-path.sx:1:1
+   |
+ 1 | ..geo.scope;
+   | ^^^^^^^^^^^^

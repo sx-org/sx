@@ -1,0 +1,2 @@
+private geo :: scope {}
+main :: () -> i32 { 0 }

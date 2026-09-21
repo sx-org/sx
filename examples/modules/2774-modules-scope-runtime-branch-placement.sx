@@ -1,0 +1,4 @@
+inline if true {
+    if true { geo :: scope {} }
+}
+main :: () -> i32 { 0 }

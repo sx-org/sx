@@ -14,6 +14,8 @@ const errors = @import("errors.zig");
 const print = @import("print.zig");
 const unescape = @import("unescape.zig");
 
+const Placement = enum { module, local };
+
 const named_aggregate_dot_msg = "a named aggregate literal places '{' directly after its type";
 
 /// A statement header's claim on the brace group written at `depth`.
@@ -134,6 +136,7 @@ pub const Parser = struct {
                     return self.fail("'private' is not allowed on '@error'"),
                 .at_context_extend => return self.fail("'private' is not allowed on '@context.extend'"),
                 .kw_inline => return self.fail("'private' is not allowed on 'inline if'; mark the declarations inside its branches instead"),
+                .dot_dot => return self.fail("'private' is not allowed on a spread"),
                 .kw_private => return self.fail("duplicate 'private'"),
                 else => {},
             }
@@ -141,27 +144,13 @@ pub const Parser = struct {
                 return self.fail("expected a declaration name after 'private'");
             }
             const node = try self.parseTopLevelNamedDecl();
+            if (node.data == .scope_decl) return self.failAt(node.span, "'private' is not allowed on a scope block");
             node.visibility = .private;
             return node;
         }
 
-        // Top-level flat import: @import "path"; or @import c { ... };
-        if (self.tokens.tag(self.tok) == .at_import) {
-            self.advance();
-            // Check for @import c { ... } (C import block)
-            if (self.tokens.tag(self.tok) == .identifier and std.mem.eql(u8, self.tokens.slice(self.tok), "c") and self.peekNext() == .l_brace) {
-                self.advance(); // consume 'c'
-                return self.parseCImportBlock(start, null, false);
-            }
-            if (self.tokens.tag(self.tok) != .string_literal) {
-                return self.fail("expected string path after '@import'");
-            }
-            const raw = self.tokens.slice(self.tok);
-            const path = raw[1 .. raw.len - 1];
-            self.advance();
-            try self.expectStatementEnd();
-            return try self.createNode(start, .{ .import_decl = .{ .path = path, .name = null } });
-        }
+        if (self.tokens.tag(self.tok) == .dot_dot) return self.parseSpreadDecl();
+        if (self.tokens.tag(self.tok) == .at_import) return self.parseFlatImport();
 
         // Top-level (module-scope) global assembly: `asm { "tmpl", };`
         // (template only — no operands/volatile/clobbers). The in-function
@@ -205,7 +194,7 @@ pub const Parser = struct {
                 const saved_module_expansion = self.in_module_expansion;
                 self.in_module_expansion = true;
                 defer self.in_module_expansion = saved_module_expansion;
-                const expr = try self.parseIfExpr(.bit_or);
+                const expr = try self.parseIfExpr(.bit_or, .module);
                 expr.data.if_expr.is_comptime = true;
                 return expr;
             }
@@ -223,7 +212,7 @@ pub const Parser = struct {
                 const saved_module_expansion = self.in_module_expansion;
                 self.in_module_expansion = true;
                 defer self.in_module_expansion = saved_module_expansion;
-                const expr = try self.parseForExpr();
+                const expr = try self.parseForExpr(.module);
                 expr.data.for_expr.is_inline = true;
                 return expr;
             }
@@ -249,6 +238,63 @@ pub const Parser = struct {
         return self.parseTopLevelNamedDecl();
     }
 
+    fn parseFlatImport(self: *Parser) anyerror!*Node {
+        const start = self.tokens.start(self.tok);
+        try self.expect(.at_import);
+        if (self.tokens.tag(self.tok) == .identifier and std.mem.eql(u8, self.tokens.slice(self.tok), "c") and self.peekNext() == .l_brace) {
+            self.advance();
+            return self.parseCImportBlock(start, null, false);
+        }
+        if (self.tokens.tag(self.tok) != .string_literal) {
+            return self.fail("expected string path after '@import'");
+        }
+        const raw = self.tokens.slice(self.tok);
+        const path = raw[1 .. raw.len - 1];
+        self.advance();
+        try self.expectStatementEnd();
+        return self.createNode(start, .{ .import_decl = .{ .path = path, .name = null } });
+    }
+
+    fn parseSpreadDecl(self: *Parser) anyerror!*Node {
+        const start = self.tokens.start(self.tok);
+        try self.expect(.dot_dot);
+        const source = if (self.tokens.tag(self.tok) == .at_import)
+            try self.parseFlatImport()
+        else blk: {
+            if (!self.isIdentLike()) return self.fail("expected a scope path or '@import' after '..'");
+            const path_start = self.tokens.start(self.tok);
+            const name = self.tokens.slice(self.tok);
+            const is_raw = self.tokens.flagsOf(self.tok).is_raw;
+            self.advance();
+            var path = try self.createNode(path_start, .{ .identifier = .{ .name = name, .is_raw = is_raw } });
+            while (self.tokens.tag(self.tok) == .dot) {
+                self.advance();
+                const field = self.dotMemberName() orelse return self.fail("expected a name after '.' in a scope path");
+                path = try self.createNode(path_start, .{ .field_access = .{ .object = path, .field = field } });
+            }
+            try self.expectStatementEnd();
+            break :blk path;
+        };
+        return self.createNode(start, .{ .spread_decl = .{ .source = source } });
+    }
+
+    fn parseScopeDecl(self: *Parser, name: []const u8, name_span: ast.Span, start: u32, is_raw: bool) anyerror!*Node {
+        try self.expect(.kw_scope);
+        try self.expect(.l_brace);
+        var decls = std.ArrayList(*Node).empty;
+        while (self.tokens.tag(self.tok) != .r_brace and !self.atEof()) {
+            try decls.append(self.allocator, try self.parseTopLevel());
+        }
+        try self.expect(.r_brace);
+        if (self.tokens.tag(self.tok) == .semicolon) self.advance();
+        return self.createNode(start, .{ .scope_decl = .{
+            .name = name,
+            .name_span = name_span,
+            .decls = try decls.toOwnedSlice(self.allocator),
+            .is_raw = is_raw,
+        } });
+    }
+
     /// The identifier-headed module-scope declaration tail (`NAME :: …`,
     /// `NAME : T [:|=] …`, `NAME := …`). Shared by the plain and
     /// `private`-prefixed top-level paths; the caller has already verified an
@@ -263,7 +309,7 @@ pub const Parser = struct {
         // IDENT :: ...
         if (self.tokens.tag(self.tok) == .colon_colon) {
             self.advance();
-            return self.parseConstBinding(name, name_span, start, name_is_raw);
+            return self.parseConstBinding(name, name_span, start, name_is_raw, .module);
         }
 
         // IDENT : type : value; (typed constant)
@@ -284,7 +330,12 @@ pub const Parser = struct {
         return self.fail("expected '::', ':=', or ':' after identifier");
     }
 
-    fn parseConstBinding(self: *Parser, name: []const u8, name_span: ast.Span, start_pos: u32, name_is_raw: bool) anyerror!*Node {
+    fn parseConstBinding(self: *Parser, name: []const u8, name_span: ast.Span, start_pos: u32, name_is_raw: bool, placement: Placement) anyerror!*Node {
+        if (self.tokens.tag(self.tok) == .kw_scope) {
+            if (placement != .module) return self.fail("a scope block is only allowed at file top level or inside another scope");
+            return self.parseScopeDecl(name, name_span, start_pos, name_is_raw);
+        }
+
         // After `::`
         // Could be: @run expr, enum { ... }, (params) -> type { body }, or expr;
 
@@ -973,7 +1024,7 @@ pub const Parser = struct {
         while (self.tokens.tag(self.tok) == .dot) {
             const dot_saved = self.tok;
             self.advance();
-            if (self.isIdentLike() or self.tokens.tag(self.tok).isTypeKeyword()) {
+            if (self.tokens.tag(self.tok) == .identifier or self.tokens.tag(self.tok).isKeyword()) {
                 name = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ name, self.tokens.slice(self.tok) });
                 self.advance();
             } else {
@@ -2335,8 +2386,7 @@ pub const Parser = struct {
         if (protocol_fn_type == null and self.tokens.tag(self.tok) != .identifier and self.tokens.tag(self.tok) != .at_identifier) {
             return self.fail("expected a constraint, interface, or function-type head after 'impl'");
         }
-        const protocol_name = if (protocol_fn_type != null) "" else self.tokens.slice(self.tok);
-        if (protocol_fn_type == null) self.advance();
+        const protocol_name = if (protocol_fn_type != null) "" else try self.parseQualifiedName();
 
         // Optional protocol type args: impl Into(Block) for ...
         var protocol_type_args = std.ArrayList(*Node).empty;
@@ -2358,9 +2408,7 @@ pub const Parser = struct {
         }
         self.advance();
 
-        // Source-type spelling. For parameterised protocols we accept any TypeExpr
-        // (`Closure(...) -> R`, `*T`, etc.). For nullary protocols the source is
-        // an identifier alone, so the parser doesn't over-parse trailing tokens.
+        // Nullary impl targets bind generic parameters; parameterized heads take a type expression.
         var target_type: []const u8 = "";
         var target_type_expr: ?*Node = null;
         var target_type_params = std.ArrayList(ast.StructTypeParam).empty;
@@ -2376,12 +2424,10 @@ pub const Parser = struct {
                 target_type = target_type_expr.?.data.type_expr.name;
             }
         } else {
-            // Nullary protocol: single identifier source.
             if (self.tokens.tag(self.tok) != .identifier and !self.tokens.tag(self.tok).isTypeKeyword()) {
                 return self.fail("expected type name after 'for'");
             }
-            target_type = self.tokens.slice(self.tok);
-            self.advance();
+            target_type = try self.parseQualifiedName();
 
             // Optional type params: impl Protocol for List($T)
             if (self.tokens.tag(self.tok) == .l_paren) {
@@ -2943,19 +2989,23 @@ pub const Parser = struct {
     }
 
     fn parseBlock(self: *Parser) anyerror!*Node {
+        return self.parseBlockAt(.local);
+    }
+
+    fn parseBlockAt(self: *Parser, placement: Placement) anyerror!*Node {
         const start = self.tokens.start(self.tok);
         try self.expect(.l_brace);
-        return self.parseBlockBody(start);
+        return self.parseBraceBody(start, false, placement);
     }
 
     /// The statements of a block whose `{` — at `start` — is already consumed.
     fn parseBlockBody(self: *Parser, start: u32) anyerror!*Node {
-        return self.parseBraceBody(start, false);
+        return self.parseBraceBody(start, false, .local);
     }
 
     /// The items of a brace group whose `{` — at `start` — is already consumed.
     /// `commas` marks a juxtaposition's group, where `,` ends an item too.
-    fn parseBraceBody(self: *Parser, start: u32, commas: bool) anyerror!*Node {
+    fn parseBraceBody(self: *Parser, start: u32, commas: bool, placement: Placement) anyerror!*Node {
         const saved_commas = self.comma_separates_items;
         self.comma_separates_items = commas;
         defer self.comma_separates_items = saved_commas;
@@ -2966,7 +3016,7 @@ pub const Parser = struct {
         var stmts = std.ArrayList(*Node).empty;
         var produces_value = false;
         while (self.tokens.tag(self.tok) != .r_brace and self.tokens.tag(self.tok) != .eof) {
-            const stmt = if (commas) try self.parseBraceItem() else try self.parseStmt();
+            const stmt = if (commas) try self.parseBraceItem() else try self.parseStmtAt(placement);
             try stmts.append(self.allocator, stmt);
             // The block's value-ness is its LAST statement's value-ness.
             produces_value = self.last_stmt_produces_value;
@@ -3024,7 +3074,7 @@ pub const Parser = struct {
         const block = blk: {
             const boundary = self.beginFunctionBoundary();
             defer self.endFunctionBoundary(boundary);
-            break :blk try self.parseBraceBody(start, true);
+            break :blk try self.parseBraceBody(start, true, .local);
         };
         const node = try self.createNode(head.span.start, .{ .juxtaposition = .{
             .expr = head,
@@ -3106,6 +3156,10 @@ pub const Parser = struct {
     }
 
     pub fn parseStmt(self: *Parser) anyerror!*Node {
+        return self.parseStmtAt(.local);
+    }
+
+    fn parseStmtAt(self: *Parser, placement: Placement) anyerror!*Node {
         // Default: a statement carries no value unless `expectSemicolonAfter`
         // marks it an expression statement. Non-expression statements (decls,
         // return/raise, break/continue, defer) never set it, so they
@@ -3147,6 +3201,7 @@ pub const Parser = struct {
                 return self.fail("'private' is only allowed on module-scope declarations");
             }
             self.advance();
+            if (self.tokens.tag(self.tok) == .dot_dot) return self.fail("'private' is not allowed on a spread");
             if (!self.isIdentLike() and self.tokens.tag(self.tok) != .kw_Self) {
                 return self.fail("expected a declaration name after 'private'");
             }
@@ -3158,7 +3213,7 @@ pub const Parser = struct {
             const node = switch (self.tokens.tag(self.tok)) {
                 .colon_colon => blk: {
                     self.advance();
-                    break :blk try self.parseConstBinding(decl_name, decl_name_span, decl_start, decl_is_raw);
+                    break :blk try self.parseConstBinding(decl_name, decl_name_span, decl_start, decl_is_raw, placement);
                 },
                 .colon => blk: {
                     self.advance();
@@ -3172,8 +3227,13 @@ pub const Parser = struct {
                 },
                 else => return self.fail("expected '::', ':=', or ':' after the 'private' declaration name"),
             };
+            if (node.data == .scope_decl) return self.failAt(node.span, "'private' is not allowed on a scope block");
             node.visibility = .private;
             return node;
+        }
+        if (self.tokens.tag(self.tok) == .dot_dot) {
+            if (placement != .module) return self.fail("a scope spread is only allowed at file top level or inside another scope");
+            return self.parseSpreadDecl();
         }
         // Check if this is a declaration (IDENT followed by ::, :=, or : type)
         if (self.isIdentLike()) {
@@ -3186,7 +3246,7 @@ pub const Parser = struct {
 
             if (self.tokens.tag(self.tok) == .colon_colon) {
                 self.advance();
-                return self.parseConstBinding(name, name_span, start, name_is_raw);
+                return self.parseConstBinding(name, name_span, start, name_is_raw, placement);
             }
             if (self.tokens.tag(self.tok) == .colon_equal) {
                 self.advance();
@@ -3357,7 +3417,7 @@ pub const Parser = struct {
         if (self.tokens.tag(self.tok) == .kw_inline) {
             if (self.peekNext() == .kw_if) {
                 self.advance(); // skip 'inline'
-                const expr = try self.parseIfExpr(.bit_or);
+                const expr = try self.parseIfExpr(.bit_or, placement);
                 expr.data.if_expr.is_comptime = true;
                 try self.endExprStatement(expr);
                 return expr;
@@ -3371,7 +3431,7 @@ pub const Parser = struct {
             }
             if (self.peekNext() == .kw_for) {
                 self.advance(); // skip 'inline'
-                const expr = try self.parseForExpr();
+                const expr = try self.parseForExpr(placement);
                 expr.data.for_expr.is_inline = true;
                 try self.endExprStatement(expr);
                 return expr;
@@ -3381,7 +3441,7 @@ pub const Parser = struct {
         // Block-form if/while/for as statements — parse directly to prevent
         // postfix chaining (e.g. `if cond { ... }.field` being misparsed)
         if (self.tokens.tag(self.tok) == .kw_if) {
-            const expr = try self.parseIfExpr(.bit_or);
+            const expr = try self.parseIfExpr(.bit_or, .local);
             try self.endExprStatement(expr);
             return expr;
         }
@@ -4189,7 +4249,7 @@ pub const Parser = struct {
                 return try self.parseUnionDecl("__anon", start, false);
             },
             .kw_if => {
-                return self.parseIfExpr(pipe);
+                return self.parseIfExpr(pipe, .local);
             },
             .kw_match => {
                 return self.parseMatchExpr();
@@ -4198,7 +4258,7 @@ pub const Parser = struct {
                 return self.parseWhileExpr();
             },
             .kw_for => {
-                return self.parseForExpr();
+                return self.parseForExpr(.local);
             },
             .kw_push => {
                 return self.parsePushStmt();
@@ -4280,7 +4340,7 @@ pub const Parser = struct {
         } });
     }
 
-    fn parseIfExpr(self: *Parser, pipe: PipeRole) anyerror!*Node {
+    fn parseIfExpr(self: *Parser, pipe: PipeRole, placement: Placement) anyerror!*Node {
         const start = self.tokens.start(self.tok);
         self.advance(); // skip 'if'
 
@@ -4296,14 +4356,14 @@ pub const Parser = struct {
             self.header = .{ .kind = .if_condition, .depth = self.tokens.depth(self.tok) };
             const source_expr = try self.parseExpr();
             self.header = saved_if_cond;
-            const then_branch = try self.parseBlock();
+            const then_branch = try self.parseBlockAt(placement);
             var else_branch: ?*Node = null;
             if (self.atChainingElse()) {
                 self.advance();
                 if (self.tokens.tag(self.tok) == .kw_if) {
-                    else_branch = try self.parseIfExpr(pipe);
+                    else_branch = try self.parseIfExpr(pipe, placement);
                 } else {
-                    else_branch = try self.parseBlock();
+                    else_branch = try self.parseBlockAt(placement);
                 }
             }
             return try self.createNode(start, .{ .if_expr = .{
@@ -4377,14 +4437,14 @@ pub const Parser = struct {
         }
 
         // Block form: if cond { ... } else { ... }
-        const then_branch = try self.parseBlock();
+        const then_branch = try self.parseBlockAt(placement);
         var else_branch: ?*Node = null;
         if (self.atChainingElse()) {
             self.advance();
             if (self.tokens.tag(self.tok) == .kw_if) {
-                else_branch = try self.parseIfExpr(pipe);
+                else_branch = try self.parseIfExpr(pipe, placement);
             } else {
-                else_branch = try self.parseBlock();
+                else_branch = try self.parseBlockAt(placement);
             }
         }
         return try self.createNode(start, .{ .if_expr = .{
@@ -4452,7 +4512,7 @@ pub const Parser = struct {
         } });
     }
 
-    fn parseForExpr(self: *Parser) anyerror!*Node {
+    fn parseForExpr(self: *Parser, placement: Placement) anyerror!*Node {
         const start = self.tokens.start(self.tok);
         self.advance(); // skip 'for'
 
@@ -4535,9 +4595,9 @@ pub const Parser = struct {
             // one statement parsed in place, so it isolates it here.
             const saved_produces = self.last_stmt_produces_value;
             defer self.last_stmt_produces_value = saved_produces;
-            body = try self.parseStmt();
+            body = try self.parseStmtAt(placement);
         } else {
-            body = try self.parseBlock();
+            body = try self.parseBlockAt(placement);
         }
 
         return try self.createNode(start, .{ .for_expr = .{
@@ -5122,6 +5182,7 @@ pub const Parser = struct {
             .kw_export,
             .kw_asm,
             .kw_private,
+            .kw_scope,
             .colon,
             .colon_colon,
             .colon_equal,
@@ -5337,6 +5398,7 @@ pub const Parser = struct {
             .kw_export,
             .kw_asm,
             .kw_private,
+            .kw_scope,
             .colon,
             .colon_colon,
             .colon_equal,

@@ -1,0 +1,2 @@
+..@import c { @include "stdint.h"; };
+main :: () -> i32 { 0 }

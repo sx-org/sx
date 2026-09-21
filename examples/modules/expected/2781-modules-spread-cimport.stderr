@@ -1,0 +1,5 @@
+error: scope spreads are not supported
+  --> examples/modules/2781-modules-spread-cimport.sx:1:1
+   |
+ 1 | ..@import c { @include "stdint.h"; };
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -1,0 +1,5 @@
+error: 'private' is not allowed on a scope block
+  --> examples/modules/2775-modules-scope-private-rejected.sx:1:9
+   |
+ 1 | private geo :: scope {}
+   |         ^^^^^^^^^^^^^^^

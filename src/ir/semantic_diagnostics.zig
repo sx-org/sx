@@ -438,6 +438,7 @@ pub const UnknownTypeChecker = struct {
             .library_decl => |ld| self.checkDeclName(node, ld.name, ld.is_raw),
             .import_decl => |imp| if (imp.name) |n| self.checkDeclName(node, n, imp.is_raw),
             .c_import_decl => |cid| if (cid.name) |n| self.checkDeclName(node, n, cid.is_raw),
+            .scope_decl, .spread_decl => {},
             // ── Leaves & pure type-expression nodes: no binding sites below. ──
             // Type-expression subtrees carry only type names (no value
             // bindings). Listing each tag explicitly (rather than an `else`) is

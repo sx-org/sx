@@ -1,0 +1,15 @@
+error: scope blocks are not supported
+  --> examples/modules/2778-modules-scope-nested.sx:1:1
+   |
+ 1 | geo :: scope {
+   | ^^^^^^^^^^^^^^
+ 2 |     axes :: scope { X :: 0; }
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 3 |     @import "modules/std.sx";
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 4 |     impl http.TlsAcceptor for MyServer {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 5 |     impl P for geo.Vec2 {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 6 | }
+   | ^

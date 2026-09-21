@@ -1,0 +1,5 @@
+error: 'private' is not allowed on a spread
+  --> examples/modules/2777-modules-spread-path-private-rejected.sx:1:9
+   |
+ 1 | private ..geo;
+   |         ^^

@@ -723,6 +723,8 @@ fn walk(b: *Builder, node: *const Node) anyerror!void {
             if (c.default_expr) |d| try walk(b, d);
         },
 
+        .scope_decl, .spread_decl => {},
+
         // Leaves: indexed above, nothing below them.
         .int_literal,
         .float_literal,

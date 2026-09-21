@@ -268,7 +268,7 @@ usage := \\usage: sx <file>
 ```
 
 ### Keywords
-`if`, `else`, `then`, `while`, `for`, `break`, `continue`, `true`, `false`, `enum`, `struct`, `union`, `case`, `return`, `defer`, `push`, `ufcs`, `in`, `is`, `xx`, `and`, `or`, `raise`, `try`, `catch`, `error`, `private`
+`if`, `else`, `then`, `while`, `for`, `break`, `continue`, `true`, `false`, `enum`, `struct`, `union`, `case`, `return`, `defer`, `push`, `ufcs`, `in`, `is`, `xx`, `and`, `or`, `raise`, `try`, `catch`, `error`, `private`, `scope`
 
 > Note: `enum` is used for both payload-less and payload-bearing sum types (payload enums). `union` is reserved for C-style unions (memory overlays).
 

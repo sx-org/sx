@@ -1,0 +1,2 @@
+private ..geo;
+main :: () -> i32 { 0 }
