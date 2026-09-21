@@ -144,7 +144,7 @@ test "lower: writable slice ptr keeps pointer type on wasm32" {
     try std.testing.expect(!diagnostics.hasErrors());
 }
 
-test "lower: bare function values use a pointer-width word on wasm32" {
+test "lower: function values reach a matching callable slot on wasm32" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
