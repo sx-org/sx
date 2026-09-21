@@ -201,3 +201,106 @@ test "generics: a function type's mono key is injective over its identity fields
     const d_pack_r = tt.functionTypePack(&.{}, r, .default, 0);
     try std.testing.expect(!std.mem.eql(u8, gr.mangleTypeName(d_fixed_rps0), gr.mangleTypeName(d_pack_r)));
 }
+
+test "generic layouts and method bodies follow declaration identity despite equal instance labels" {
+    const parser = @import("../parser.zig");
+    const imports = @import("../imports.zig");
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var a_parser = try parser.Parser.init(alloc, "Box :: struct ($T: Type) { value: T; tag :: () -> i64 { 11 } }");
+    var b_parser = try parser.Parser.init(alloc, "Box :: struct ($T: Type) { other: T; tag :: () -> i64 { 22 } }");
+    const a = (try a_parser.parse()).data.root.decls[0];
+    const b = (try b_parser.parse()).data.root.decls[0];
+    var table = imports.DeclTable.init(alloc);
+    const a_env = try table.internEnvironment("same.sx", &.{"a"});
+    const b_env = try table.internEnvironment("same.sx", &.{"b"});
+    try std.testing.expect(try table.claim(a_env, a));
+    try std.testing.expect(try table.claim(b_env, b));
+    var module = ir_mod.Module.init(alloc);
+    defer module.deinit();
+    var l = Lowering.init(&module);
+    l.program_index.decl_table = &table;
+    l.scanDecls(&.{ a, b });
+    const ta = l.buildGenericStructTemplate(&a.data.struct_decl, "same.sx").?;
+    const tb = l.buildGenericStructTemplate(&b.data.struct_decl, "same.sx").?;
+    var bindings = std.StringHashMap(TypeId).init(alloc);
+    try bindings.put("T", .i64);
+    const values = std.StringHashMap(i64).init(alloc);
+    const packs = std.StringHashMap([]const TypeId).init(alloc);
+    const ia = l.instantiateGenericStructBound(&ta, try bindings.clone(), values, packs, "Box__i64", a.span);
+    const ib = l.instantiateGenericStructBound(&tb, try bindings.clone(), values, packs, "Box__i64", b.span);
+    try std.testing.expect(ia != ib);
+    try std.testing.expectEqual(ia, l.instantiateGenericStructBound(&ta, try bindings.clone(), values, packs, "another label", a.span));
+    try std.testing.expectEqualStrings("value", module.types.getString(module.types.get(ia).@"struct".fields[0].name));
+    try std.testing.expectEqualStrings("other", module.types.getString(module.types.get(ib).@"struct".fields[0].name));
+    const ma = l.genericInstanceMethod(l.formatTypeName(ia), "tag").?;
+    const mb = l.genericInstanceMethod(l.formatTypeName(ib), "tag").?;
+    try std.testing.expectEqual(&a.data.struct_decl.methods[0].data.fn_decl, ma.fd);
+    try std.testing.expectEqual(&b.data.struct_decl.methods[0].data.fn_decl, mb.fd);
+    const fa = l.ensureGenericInstanceMethodLowered(ma).?;
+    const fb = l.ensureGenericInstanceMethodLowered(mb).?;
+    try std.testing.expect(fa != fb);
+    try std.testing.expectEqual(fa, l.ensureGenericInstanceMethodLowered(ma).?);
+    var body_values: [2]?i64 = .{ null, null };
+    for ([_]ir_mod.FuncId{ fa, fb }, &body_values) |fid, *value| {
+        for (module.getFunction(fid).blocks.items) |block| {
+            for (block.insts.items) |instruction| {
+                if (instruction.op == .const_int) value.* = instruction.op.const_int;
+            }
+        }
+    }
+    try std.testing.expectEqual(@as(?i64, 11), body_values[0]);
+    try std.testing.expectEqual(@as(?i64, 22), body_values[1]);
+}
+
+test "monomorph arguments retain type and pack boundaries independently of symbol spelling" {
+    const parser = @import("../parser.zig");
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var p = try parser.Parser.init(alloc, "f :: ($T: Type) -> i64 { 1 } pack :: (..$args) -> i64 { 2 }");
+    const decls = (try p.parse()).data.root.decls;
+    var module = ir_mod.Module.init(alloc);
+    defer module.deinit();
+    var l = Lowering.init(&module);
+    const one = module.types.internProduct(&.{.i64}, null);
+    const two = module.types.internProduct(&.{ .i64, .i64 }, null);
+    try std.testing.expectEqualStrings(l.mangleTypeName(one), l.mangleTypeName(two));
+    var bindings = std.StringHashMap(TypeId).init(alloc);
+    try bindings.put("T", one);
+    const fd = &decls[0].data.fn_decl;
+    const f1 = l.monomorphizeFunction(fd, "f__anon", &bindings).?;
+    try bindings.put("T", two);
+    const f2 = l.monomorphizeFunction(fd, "f__anon", &bindings).?;
+    try std.testing.expect(f1 != f2);
+    try bindings.put("T", one);
+    try std.testing.expectEqual(f1, l.monomorphizeFunction(fd, "renamed", &bindings).?);
+    const empty = std.StringHashMap(TypeId).init(alloc);
+    const call = ast.Call{ .callee = typeKeyword(alloc, "pack"), .args = &.{} };
+    const pack_fd = &decls[1].data.fn_decl;
+    const p1 = l.monomorphizePackFn(pack_fd, "pack__anon", &.{one}, &call, &empty).?;
+    const p2 = l.monomorphizePackFn(pack_fd, "pack__anon", &.{two}, &call, &empty).?;
+    try std.testing.expect(p1 != p2);
+    try std.testing.expectEqual(p1, l.monomorphizePackFn(pack_fd, "renamed", &.{one}, &call, &empty).?);
+}
+
+test "type function result reuse includes empty layouts and alias-first calls" {
+    const parser = @import("../parser.zig");
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var p = try parser.Parser.init(alloc, "Make :: ($T: Type) -> Type { return struct {}; }");
+    const fd = &(try p.parse()).data.root.decls[0].data.fn_decl;
+    var module = ir_mod.Module.init(alloc);
+    defer module.deinit();
+    var l = Lowering.init(&module);
+    const args = [_]*const Node{typeKeyword(alloc, "i64")};
+    const first = l.instantiateTypeFunction("Alias", "Make", fd, &args).?;
+    const count = module.types.infos.items.len;
+    try std.testing.expectEqual(first, l.instantiateTypeFunction("Make", "Make", fd, &args).?);
+    try std.testing.expectEqual(count, module.types.infos.items.len);
+    var other = fd.*;
+    const second = l.instantiateTypeFunction("Alias", "Make", &other, &args).?;
+    try std.testing.expect(first != second);
+}

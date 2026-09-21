@@ -2216,10 +2216,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         defer gbindings.deinit();
                         const base = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ gm.inst_name, self.accessorEffName(gm.fd) }) catch fa.field;
                         const gmangled = self.genericResolver().mangleGenericName(base, gm.fd, &gbindings);
-                        if (!self.lowered_functions.contains(gmangled)) {
-                            self.monomorphizeFunction(gm.fd, gmangled, &gbindings);
-                        }
-                        if (self.resolveFuncByName(gmangled)) |fid| {
+                        if (self.monomorphizeFunction(gm.fd, gmangled, &gbindings)) |fid| {
                             const func = &self.module.functions.items[@intFromEnum(fid)];
                             self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty, null);
                             self.appendDefaultArgs(gm.fd, &method_args, c.callee);
@@ -2262,10 +2259,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
 
                         const generic_base = if (nominal_method) |m| self.plainStructMethodName(m) else qualified;
                         const gmangled = self.genericResolver().mangleGenericName(generic_base, gen_fd, &gbindings);
-                        if (!self.lowered_functions.contains(gmangled)) {
-                            self.monomorphizeFunction(gen_fd, gmangled, &gbindings);
-                        }
-                        if (self.resolveFuncByName(gmangled)) |gfid| {
+                        if (self.monomorphizeFunction(gen_fd, gmangled, &gbindings)) |gfid| {
                             const gfunc = &self.module.functions.items[@intFromEnum(gfid)];
                             const gret_ty = gfunc.ret;
                             const gparams = gfunc.params;
@@ -2430,10 +2424,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         var gbindings = callBindings(self, fd, eff_args.items, method_args.items);
                         defer gbindings.deinit();
                         const gmangled = self.genericResolver().mangleGenericName(eff_field, fd, &gbindings);
-                        if (!self.lowered_functions.contains(gmangled)) {
-                            self.monomorphizeFunction(fd, gmangled, &gbindings);
-                        }
-                        if (self.resolveFuncByName(gmangled)) |gfid| {
+                        if (self.monomorphizeFunction(fd, gmangled, &gbindings)) |gfid| {
                             const gfunc = &self.module.functions.items[@intFromEnum(gfid)];
                             const gret_ty = gfunc.ret;
                             const gparams = gfunc.params;
@@ -2857,20 +2848,16 @@ pub fn lowerGenericCall(self: *Lowering, fd: *const ast.FnDecl, base_name: []con
     const types_passed_explicitly = self.genericResolver().typesPassedExplicitly(fd, call_node.args);
     const mangled_name = self.genericResolver().mangleGenericName(base_name, fd, &bindings);
 
-    if (!self.lowered_functions.contains(mangled_name)) {
-        // Record this call as the instantiation site for the mono's body:
-        // a surviving `@error` inside it anchors HERE (outermost frame of
-        // the chain), not at the library-internal directive line.
+    const instance = blk: {
         self.mono_sites.append(self.alloc, .{
             .source = call_node.callee.source_file orelse self.current_source_file,
             .span = call_node.callee.span,
             .caller_func = self.builder.func,
         }) catch {};
         defer self.mono_sites.items.len -= 1;
-        self.monomorphizeFunction(fd, mangled_name, &bindings);
-    }
-
-    if (self.resolveFuncByName(mangled_name)) |fid| {
+        break :blk self.monomorphizeFunction(fd, mangled_name, &bindings);
+    };
+    if (instance) |fid| {
         const func = &self.module.functions.items[@intFromEnum(fid)];
         const ret_ty = func.ret;
         const params = func.params;

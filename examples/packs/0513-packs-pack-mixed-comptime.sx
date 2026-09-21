@@ -11,8 +11,11 @@ tagged :: ($tag: i32, ..$args) -> i64 {
     return tag * 100 + args.len;
 }
 
+packCount :: ($tag: i64, ..xs: i64) -> i64 { xs.len }
+
 main :: () -> i32 {
     print("{}\n", tagged(7, 1, 2, 3));   // 7*100 + 3 = 703
     print("{}\n", tagged(9));             // 9*100 + 0 = 900
+    if packCount() != 0 { return 1; }
     return 0;
 }

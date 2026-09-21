@@ -9,6 +9,7 @@ const type_bridge = @import("../type_bridge.zig");
 const program_index_mod = @import("../program_index.zig");
 const resolver_mod = @import("../resolver.zig");
 const StructTemplate = program_index_mod.StructTemplate;
+const instances = @import("../instances.zig");
 const generics_mod = @import("../generics.zig");
 const GenericResolver = generics_mod.GenericResolver;
 const init_plan = @import("init_plan.zig");
@@ -29,11 +30,30 @@ const isNamedTypeKind = Lowering.isNamedTypeKind;
 const resolveBuiltin = Lowering.resolveBuiltin;
 const structMethodFn = Lowering.structMethodFn;
 
-pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name: []const u8, bindings: *std.StringHashMap(TypeId)) void {
-    // Mark as lowered before lowering (prevents infinite recursion)
-    // Need to dupe the name since mangled_name may be stack-allocated
-    const owned_name = self.alloc.dupe(u8, mangled_name) catch return;
-    self.lowered_functions.put(owned_name, {}) catch {};
+pub fn instanceName(self: *Lowering, preferred: []const u8) []const u8 {
+    var name = preferred;
+    var ordinal: usize = self.instance_names.count();
+    while (self.instance_names.contains(name) or
+        self.module.types.findByName(self.module.types.internString(name)) != null or
+        self.program_index.contains(.function, name)) : (ordinal += 1)
+    {
+        name = std.fmt.allocPrint(self.alloc, "{s}__i{d}", .{ preferred, ordinal }) catch @panic("out of memory");
+    }
+    const owned = self.alloc.dupe(u8, name) catch @panic("out of memory");
+    self.instance_names.put(owned, {}) catch @panic("out of memory");
+    return owned;
+}
+
+pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name: []const u8, bindings: *std.StringHashMap(TypeId)) ?FuncId {
+    var arguments = std.ArrayList(instances.Argument).empty;
+    defer arguments.deinit(self.alloc);
+    instances.appendBindings(self.alloc, &arguments, bindings);
+    const key: instances.Key = .{
+        .declaration = self.declId(.{ .fn_decl = fd }, fd.body.source_file),
+        .arguments = arguments.items,
+    };
+    if (self.function_instances.get(key)) |fid| return fid;
+    const owned_name = self.instanceName(mangled_name);
 
     // Flow narrowing is per-function: this monomorphized body has
     // its own `Ref` space (overlapping the caller's), so isolate it from the
@@ -126,7 +146,7 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
     // Create the monomorphized function
     const name_id = self.module.types.internString(owned_name);
     const func_id = self.builder.beginFunction(name_id, params.items, ret_ty);
-    _ = func_id;
+    self.function_instances.put(instances.ownKey(self.alloc, key), func_id) catch @panic("out of memory");
     self.builder.currentFunc().has_implicit_ctx = wants_ctx;
     self.builder.currentFunc().is_naked = (fd.abi == .naked);
     self.builder.currentFunc().is_get = fd.is_get;
@@ -237,6 +257,7 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
     self.builder.func = saved_func;
     self.builder.current_block = saved_block;
     self.builder.inst_counter = saved_counter;
+    return func_id;
 }
 
 // ── Type-arg resolution & matching ─────────────────────────────
@@ -2279,19 +2300,11 @@ pub fn genericStaticHeadMethod(self: *Lowering, head: *const Node, method: []con
     return self.genericInstanceMethod(self.formatTypeName(inst_ty), method);
 }
 
-/// Monomorphize (once) the selected generic-instance method under
-/// `<inst_name>.<method>` and return its FuncId. The source-pin follows the
-/// selected `fd` for free: `monomorphizeFunction` pins to `fd.body.source_file`,
-/// which is the template's defining module (the author's own method node).
-/// Null when the function fails to resolve post-monomorphization.
 pub fn ensureGenericInstanceMethodLowered(self: *Lowering, m: GenericStructMethod) ?FuncId {
     // A `@set` accessor mangles as `Inst.name$set` so its monomorph never
     // collides with the same-name `@get`'s `Inst.name` (coexistence).
     const mangled = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ m.inst_name, self.accessorEffName(m.fd) }) catch return null;
-    if (!self.lowered_functions.contains(mangled)) {
-        self.monomorphizeFunction(m.fd, mangled, m.bindings);
-    }
-    return self.resolveFuncByName(mangled);
+    return self.monomorphizeFunction(m.fd, mangled, m.bindings);
 }
 
 /// Dispatch a generic-struct-instance method that declares COMPTIME params
@@ -2390,7 +2403,7 @@ pub fn mangledInstanceName(self: *Lowering, tmpl: *const StructTemplate, tb: *co
 fn recordStructInstanceShape(self: *Lowering, id: TypeId, tmpl: *const StructTemplate, tb: std.StringHashMap(TypeId), cvb: std.StringHashMap(i64), pb: std.StringHashMap([]const TypeId)) void {
     var key = std.ArrayList(u8).empty;
     defer key.deinit(self.alloc);
-    const author = @intFromPtr(tmpl.decl);
+    const author = self.declId(.{ .struct_decl = tmpl.decl }, tmpl.source_file);
     key.appendSlice(self.alloc, std.mem.asBytes(&author)) catch unreachable;
     for (tmpl.type_params) |tp| {
         if (tp.is_variadic) {
@@ -2513,25 +2526,24 @@ pub fn instantiateGenericStructBound(
     const saved_pack_bindings = self.pack_bindings;
     const saved_pack_arg_types = self.pack_arg_types;
 
-    // Check if already instantiated
-    const name_id = table.internString(mangled_name);
-    if (table.findByName(name_id)) |existing| {
-        // Already registered — check if it has fields
-        const info = table.get(existing);
-        if (info == .@"struct" and info.@"struct".fields.len > 0) {
-            // A confirmed generic instance must never be returned without an
-            // author stamp — the body axis (CP-4) keys method selection off
-            // it. The template/bindings were written at first instantiation;
-            // re-stamp the author from THIS `tmpl` if the dedup fast-path is
-            // the first to reach this mangled name (e.g. a layout interned by
-            // a forward reference before any method dispatch).
-            if (!self.struct_instance_author.contains(mangled_name)) {
-                const owned = self.alloc.dupe(u8, mangled_name) catch return existing;
-                self.struct_instance_author.put(owned, tmpl.decl) catch {};
-            }
-            return existing;
-        }
+    var arguments = std.ArrayList(instances.Argument).empty;
+    defer arguments.deinit(self.alloc);
+    for (tmpl.type_params) |tp| {
+        const arg: instances.Argument = if (tp.is_variadic)
+            .{ .pack = pb.get(tp.name) orelse &.{} }
+        else if (tp.is_type_param)
+            .{ .type_id = tb.get(tp.name) orelse return .unresolved }
+        else
+            .{ .integer = cvb.get(tp.name) orelse return .unresolved };
+        arguments.append(self.alloc, arg) catch @panic("out of memory");
     }
+    const key: instances.Key = .{
+        .declaration = self.declId(.{ .struct_decl = tmpl.decl }, tmpl.source_file),
+        .arguments = arguments.items,
+    };
+    if (self.struct_instances.get(key)) |existing| return existing;
+    const owned_mangled = self.instanceName(mangled_name);
+    const name_id = table.internString(owned_mangled);
 
     // Set up bindings and resolve fields. `pack_bindings` makes a
     // pack-shaped field type like `(..$Ts)` resolve to the bound type list.
@@ -2568,8 +2580,8 @@ pub fn instantiateGenericStructBound(
 
     // Register the monomorphized struct
     const info: types.TypeInfo = .{ .@"struct" = .{ .name = name_id, .fields = resolved_layout.fields } };
-    const id = if (table.findByName(name_id)) |existing| existing else table.intern(info);
-    table.updatePreservingKey(id, info);
+    const id = table.intern(info);
+    self.struct_instances.put(instances.ownKey(self.alloc, key), id) catch @panic("out of memory");
     recordStructInstanceShape(self, id, tmpl, tb, cvb, pb);
 
     // Bind the template name to this concrete instance so a method's
@@ -2581,7 +2593,6 @@ pub fn instantiateGenericStructBound(
     // resolution. The author is stamped from the SAME `tmpl` that built the
     // layout above, so the body axis (CP-4) selects this instance's methods
     // via the layout author — never the global last-wins `fn_ast_map`.
-    const owned_mangled = self.alloc.dupe(u8, mangled_name) catch return id;
     self.struct_instance_bindings.put(owned_mangled, tb) catch {};
     self.struct_instance_template.put(owned_mangled, tmpl.name) catch {};
     self.struct_instance_author.put(owned_mangled, tmpl.decl) catch {};
@@ -2619,6 +2630,8 @@ pub fn instantiateTypeFunction(self: *Lowering, alias_name: []const u8, template
     const saved_value_bindings = self.comptime_value_bindings;
     var tb = std.StringHashMap(TypeId).init(self.alloc);
     var cvb = std.StringHashMap(i64).init(self.alloc);
+    var arguments = std.ArrayList(instances.Argument).empty;
+    defer arguments.deinit(self.alloc);
 
     // Build mangled name. Two namespace targets may author the same
     // type-function spelling and receive the same type arguments; the base
@@ -2640,6 +2653,7 @@ pub fn instantiateTypeFunction(self: *Lowering, alias_name: []const u8, template
         if (is_type_param) {
             const ty = self.resolveTypeWithBindings(args[i]);
             tb.put(tp.name, ty) catch {};
+            arguments.append(self.alloc, .{ .type_id = ty }) catch @panic("out of memory");
             const tname = self.mangleTypeName(ty);
             name_parts.appendSlice(self.alloc, tname) catch @panic("out of memory while mangling type function");
         } else {
@@ -2653,22 +2667,20 @@ pub fn instantiateTypeFunction(self: *Lowering, alias_name: []const u8, template
             const vp_type: ?[]const u8 = if (tp.constraint.data == .type_expr) tp.constraint.data.type_expr.name else null;
             const val = self.resolveValueParamArg(args[i], tp.name, vp_type) orelse return .unresolved;
             cvb.put(tp.name, val) catch {};
+            arguments.append(self.alloc, .{ .integer = val }) catch @panic("out of memory");
             var val_buf: [32]u8 = undefined;
             const val_str = std.fmt.bufPrint(&val_buf, "{d}", .{val}) catch unreachable;
             name_parts.appendSlice(self.alloc, val_str) catch @panic("out of memory while mangling type function");
         }
     }
 
-    const mangled_name = name_parts.items;
-
-    // Check if already instantiated
+    const key: instances.Key = .{
+        .declaration = self.declId(.{ .fn_decl = fd }, fd.body.source_file),
+        .arguments = arguments.items,
+    };
+    if (self.type_function_instances.get(key)) |existing| return existing;
+    const mangled_name = self.instanceName(name_parts.items);
     const mangled_name_id = table.internString(mangled_name);
-    if (table.findByName(mangled_name_id)) |existing| {
-        const info = table.get(existing);
-        if ((info == .@"struct" and info.@"struct".fields.len > 0) or info == .@"union" or (info == .@"enum" and info.@"enum".hasPayload())) {
-            return existing;
-        }
-    }
 
     // Activate bindings
     self.type_bindings = tb;
@@ -2699,43 +2711,34 @@ pub fn instantiateTypeFunction(self: *Lowering, alias_name: []const u8, template
             .name = mangled_name_id,
             .fields = layout.fields,
         } };
-        const mangled_id = if (table.findByName(mangled_name_id)) |existing| existing else table.intern(mangled_info);
-        table.updatePreservingKey(mangled_id, mangled_info);
+        const mangled_id = table.intern(mangled_info);
         self.recordStructDefaults(mangled_id, layout.defaults);
         self.struct_instance_bindings.put(mangled_name, tb) catch @panic("out of memory");
 
         // If there's a real alias, also register under alias name and in alias map
         if (has_alias) {
-            const alias_name_id = table.internString(alias_name);
+            const alias_name_id = table.internString(self.instanceName(alias_name));
             const alias_info: types.TypeInfo = .{ .@"struct" = .{
                 .name = alias_name_id,
                 .fields = layout.fields,
             } };
-            const alias_id = if (table.findByName(alias_name_id)) |existing| existing else table.intern(alias_info);
-            table.updatePreservingKey(alias_id, alias_info);
+            const alias_id = table.intern(alias_info);
 
             self.recordStructDefaults(alias_id, layout.defaults);
-            self.struct_instance_bindings.put(alias_name, tb) catch @panic("out of memory");
+            self.struct_instance_bindings.put(table.getString(alias_name_id), tb) catch @panic("out of memory");
 
-            return alias_id;
+            return rememberTypeFunction(self, key, alias_id);
         }
 
-        return mangled_id;
+        return rememberTypeFunction(self, key, mangled_id);
     }
 
     // Try payload enum/union
     if (findUnionInBody(fd.body)) |enum_decl| {
-        return self.instantiateTypeUnion(if (has_alias) alias_name else mangled_name, mangled_name, &enum_decl);
+        const ty = self.instantiateTypeUnion(if (has_alias) self.instanceName(alias_name) else mangled_name, mangled_name, &enum_decl) orelse return null;
+        return rememberTypeFunction(self, key, ty);
     }
 
-    // A type-fn body that returns a COMPUTED Type — a call to a non-generic,
-    // bodied, Type-returning fn (a comptime type constructor). Comptime-evaluate
-    // the return expression with the type bindings active (so a payload `= T`
-    // resolves to the bound arg) and mint under THIS instantiation's name. The
-    // rename to the mangled name lets the cache check at the top return the
-    // SAME TypeId on a second instantiation — `Foo(i64)` at two sites is ONE
-    // type (nominal identity). Must precede the general static case below, whose
-    // `resolveTypeWithBindings` can't evaluate a Type-returning call.
     if (findReturnTypeExpr(fd.body)) |ret_node| {
         if (self.returnExprMintsType(ret_node)) {
             // A body with LOCALS before its `return` (e.g. `vs := …; return
@@ -2753,10 +2756,8 @@ pub fn instantiateTypeFunction(self: *Lowering, alias_name: []const u8, template
                 self.evalComptimeTypeBody(fd.body, ret_node)
             else
                 self.evalComptimeType(ret_node)) orelse return .unresolved;
-            // Re-key to the instantiation's mangled (or alias) name so the
-            // cache check at the top dedups a second instantiation — Contract 1.
-            self.renameNominalType(tid, if (has_alias) alias_name else mangled_name);
-            return tid;
+            self.renameNominalType(tid, if (has_alias) self.instanceName(alias_name) else mangled_name);
+            return rememberTypeFunction(self, key, tid);
         }
     }
 
@@ -2770,10 +2771,15 @@ pub fn instantiateTypeFunction(self: *Lowering, alias_name: []const u8, template
     // the caller's fallback rather than fabricating a type.
     if (findReturnTypeExpr(fd.body)) |ret_node| {
         const ty = self.resolveTypeWithBindings(ret_node);
-        if (ty != .unresolved) return ty;
+        if (ty != .unresolved) return rememberTypeFunction(self, key, ty);
     }
 
     return null;
+}
+
+fn rememberTypeFunction(self: *Lowering, key: instances.Key, ty: TypeId) TypeId {
+    self.type_function_instances.put(instances.ownKey(self.alloc, key), ty) catch @panic("out of memory");
+    return ty;
 }
 
 /// The type expression a type-returning function yields: the value of its
@@ -2836,8 +2842,7 @@ pub fn instantiateTypeUnion(self: *Lowering, alias_name: []const u8, mangled_nam
         .name = alias_name_id,
         .variants = variant_fields.items,
     } };
-    const id = if (table.findByName(alias_name_id)) |existing| existing else table.intern(info);
-    table.updatePreservingKey(id, info);
+    const id = table.intern(info);
 
     // Also register under mangled name
     if (!std.mem.eql(u8, alias_name, mangled_name)) {
@@ -2846,8 +2851,7 @@ pub fn instantiateTypeUnion(self: *Lowering, alias_name: []const u8, mangled_nam
             .name = mangled_name_id,
             .variants = variant_fields.items,
         } };
-        const mid = if (table.findByName(mangled_name_id)) |existing| existing else table.intern(mangled_info);
-        table.updatePreservingKey(mid, mangled_info);
+        _ = table.intern(mangled_info);
     }
 
     return id;

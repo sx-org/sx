@@ -1,4 +1,5 @@
 const std = @import("std");
+const instances = @import("instances.zig");
 const ast = @import("../ast.zig");
 const types = @import("types.zig");
 const type_bridge = @import("type_bridge.zig");
@@ -118,7 +119,7 @@ pub const ProtocolResolver = struct {
             return self.l.program_index.contains(.protocol, written) or
                 self.l.program_index.contains(.protocol_ast, written);
         }
-        return self.canonicalProtocolName(written, source) != null;
+        return self.resolveProtocol(written, source) != null;
     }
 
     pub fn protocolConcreteKey(self: ProtocolResolver, proto_ty: ?TypeId, p_name: []const u8, ty: TypeId) lower.ProtocolConcreteKey {
@@ -154,18 +155,23 @@ pub const ProtocolResolver = struct {
         return self.l.declIdentityName(pd.name, pd);
     }
 
-    /// Internal runtime name for one parameterized protocol instance. `p_name`
-    /// is the declaration's identity name and type arguments use nominal-aware
-    /// mangles, so neither two same-spelled protocols nor `P(a.Thing)` and
-    /// `P(b.Thing)` can share a protocol type, impl key, thunk set, or vtable.
-    pub fn paramProtocolInstanceName(self: ProtocolResolver, p_name: []const u8, arg_tys: []const TypeId) []const u8 {
+    pub fn paramProtocolKey(self: ProtocolResolver, pd: *const ast.ProtocolDecl, arguments: []const instances.Argument) instances.Key {
+        return .{ .declaration = self.l.declId(.{ .protocol_decl = pd }, pd.source_file), .arguments = arguments };
+    }
+
+    pub fn paramProtocolInstanceName(self: ProtocolResolver, pd: *const ast.ProtocolDecl, arg_tys: []const TypeId) []const u8 {
+        const key = self.paramProtocolKey(pd, &.{.{ .pack = arg_tys }});
+        if (self.l.protocol_instance_names.get(key)) |name| return name;
         var buf = std.ArrayList(u8).empty;
-        buf.appendSlice(self.l.alloc, p_name) catch @panic("out of memory");
+        defer buf.deinit(self.l.alloc);
+        buf.appendSlice(self.l.alloc, self.protocolIdentityName(pd)) catch @panic("out of memory");
         for (arg_tys) |ty| {
             buf.appendSlice(self.l.alloc, "__") catch @panic("out of memory");
             buf.appendSlice(self.l.alloc, self.l.mangleTypeName(ty)) catch @panic("out of memory");
         }
-        return buf.items;
+        const name = self.l.instanceName(buf.items);
+        self.l.protocol_instance_names.put(instances.ownKey(self.l.alloc, key), name) catch @panic("out of memory");
+        return name;
     }
 
     /// Exact explicit impl method for a protocol + nominal concrete TypeId.
@@ -260,12 +266,6 @@ pub const ProtocolResolver = struct {
         } else self.resolveProtocol(base_name, self.l.current_source_file);
         const pd = (resolved orelse return null).decl;
         return if (pd.type_params.len > 0) pd else null;
-    }
-
-    fn canonicalProtocolName(self: ProtocolResolver, written: []const u8, source: ?[]const u8) ?[]const u8 {
-        if (self.resolveProtocol(written, source)) |resolved| return resolved.name;
-        if (self.l.program_index.decl_table == null or self.l.program_index.flat_import_graph == null) return written;
-        return null;
     }
 
     fn concreteImplTarget(self: ProtocolResolver, ib: *const ast.ImplBlock, source: ?[]const u8) ?TypeId {
@@ -889,9 +889,9 @@ pub const ProtocolResolver = struct {
         // Methods are NOT registered in fn_ast_map — they're monomorphised lazily
         // per (Source, Target) pair at the xx call site.
         if (ib.protocol_type_args.len > 0) {
-            const proto_name = self.canonicalProtocolName(ib.protocol_name, source) orelse return;
+            const proto = self.resolveProtocol(ib.protocol_name, source) orelse return;
             if (!self.concreteParamImplTypesReady(ib, decl)) return;
-            self.registerParamImpl(ib, decl, proto_name);
+            self.registerParamImpl(ib, decl, proto.decl);
             self.l.registered_protocol_impls.put(ib, {}) catch @panic("out of memory");
             return;
         }
@@ -1321,7 +1321,8 @@ pub const ProtocolResolver = struct {
     /// `pack_start != null`) are additionally registered into
     /// `param_impl_pack_map` keyed without the source suffix — the matching
     /// site walks that map to bind packs against any concrete closure shape.
-    pub fn registerParamImpl(self: ProtocolResolver, ib: *const ast.ImplBlock, decl: *const Node, proto_name: []const u8) void {
+    pub fn registerParamImpl(self: ProtocolResolver, ib: *const ast.ImplBlock, decl: *const Node, pd: *const ast.ProtocolDecl) void {
+        const proto_name = self.protocolIdentityName(pd);
         const table = &self.l.module.types;
         const source = decl.source_file orelse self.l.current_source_file;
         const saved_source = self.l.lexicalContext();
@@ -1413,7 +1414,7 @@ pub const ProtocolResolver = struct {
             const si = table.get(src_ty);
             if (!src_ty.isBuiltin() and si == .@"struct") {
                 const src_name = self.l.formatTypeName(src_ty);
-                const instance_name = self.paramProtocolInstanceName(proto_name, arg_tys.items);
+                const instance_name = self.paramProtocolInstanceName(pd, arg_tys.items);
                 // A generic-struct source (`impl VL($R) for Combined($R, ..$Ts)`)
                 // registers each method as a TEMPLATE only: its signature
                 // references unbound type params (`-> $R`), so declaring it as a

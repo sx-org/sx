@@ -16,6 +16,46 @@ pub const DeclarationContext = struct {
     environment: imports.EnvironmentId,
 };
 
+pub const InstanceArgument = union(enum) {
+    declaration: Declaration,
+    name: []const u8,
+};
+
+pub const InstanceKey = struct {
+    declaration: Declaration,
+    arguments: []const InstanceArgument,
+
+    pub const Context = struct {
+        pub fn hash(_: Context, key: InstanceKey) u64 {
+            var h = std.hash.Wyhash.init(0);
+            std.hash.autoHash(&h, key.declaration);
+            for (key.arguments) |arg| {
+                std.hash.autoHash(&h, std.meta.activeTag(arg));
+                switch (arg) {
+                    .declaration => |d| std.hash.autoHash(&h, d),
+                    .name => |n| {
+                        std.hash.autoHash(&h, n.len);
+                        h.update(n);
+                    },
+                }
+            }
+            return h.final();
+        }
+
+        pub fn eql(_: Context, a: InstanceKey, b: InstanceKey) bool {
+            if (!std.meta.eql(a.declaration, b.declaration) or a.arguments.len != b.arguments.len) return false;
+            for (a.arguments, b.arguments) |x, y| {
+                if (std.meta.activeTag(x) != std.meta.activeTag(y)) return false;
+                switch (x) {
+                    .declaration => |d| if (!std.meta.eql(d, y.declaration)) return false,
+                    .name => |n| if (!std.mem.eql(u8, n, y.name)) return false,
+                }
+            }
+            return true;
+        }
+    };
+};
+
 pub const Selection = struct {
     alloc: std.mem.Allocator,
     context: ?DeclarationContext = null,

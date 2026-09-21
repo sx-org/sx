@@ -195,6 +195,10 @@ test "protocols: registerParamImpl flags a same-file duplicate impl" {
     const pr = ProtocolResolver{ .l = &l };
     _ = module.types.intern(.{ .@"struct" = .{ .name = module.types.internString("IntCell"), .fields = &.{} } });
 
+    const type_params = [_]ast.StructTypeParam{.{ .name = "Target", .constraint = typeExpr(alloc, "Type") }};
+    const pd = ast.ProtocolDecl{ .name = "Into", .type_params = &type_params, .methods = &.{} };
+    l.registerProtocolDecl(&pd);
+
     // impl Into(i64) for IntCell { ... } — a parameterised-protocol impl.
     const args = [_]*Node{typeExpr(alloc, "i64")};
     const conv = mk(alloc, .{ .fn_decl = .{ .name = "convert", .params = &.{}, .return_type = null, .body = emptyBody(alloc) } });
@@ -319,4 +323,32 @@ test "protocols: matchPackImpl selects a pack impl whose prefix + return match" 
     // A non-closure source does not match; an unknown key does not match.
     try std.testing.expect(pr.matchPackImpl(.i64, pack_key) == null);
     try std.testing.expect(pr.matchPackImpl(src, "Into\x00Nope") == null);
+}
+
+test "parameterized protocol arguments use TypeIds even when their mangles agree" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var module = ir_mod.Module.init(alloc);
+    defer module.deinit();
+    var l = Lowering.init(&module);
+    const params = [_]ast.StructTypeParam{.{ .name = "T", .constraint = typeExpr(alloc, "Type") }};
+    const pd = ast.ProtocolDecl{ .name = "P", .type_params = &params, .methods = &.{} };
+    var other = pd;
+    const one = module.types.internProduct(&.{.i64}, null);
+    const two = module.types.internProduct(&.{ .i64, .i64 }, null);
+    try std.testing.expectEqualStrings(l.mangleTypeName(one), l.mangleTypeName(two));
+    var bindings = std.StringHashMap(TypeId).init(alloc);
+    try bindings.put("A", one);
+    l.type_bindings = bindings;
+    const args = [_]*const Node{typeExpr(alloc, "A")};
+    const a = l.instantiateParamProtocol(&pd, &args);
+    try bindings.put("A", two);
+    l.type_bindings = bindings;
+    const b = l.instantiateParamProtocol(&pd, &args);
+    try std.testing.expect(a != b);
+    const c = l.instantiateParamProtocol(&other, &args);
+    try std.testing.expect(b != c);
+    try std.testing.expectEqual(b, l.instantiateParamProtocol(&pd, &args));
+    try std.testing.expectEqual(&pd, l.param_protocol_instances.get(a).?.decl);
 }
