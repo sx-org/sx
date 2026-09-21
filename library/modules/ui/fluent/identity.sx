@@ -38,10 +38,10 @@ ElementId :: struct { value: u64 = 0; }
 ELEMENT_DOMAIN :: "ui.fluent.element.v1";
 
 // Resumes the hash from the site fingerprint the compiler already folded.
-siteHasher :: (site: SiteId, domain: string, scope: u64) -> SourceSiteHasher {
+siteHasher :: (site: SiteId, domain: string, scopeKey: u64) -> SourceSiteHasher {
     hasher := SourceSiteHasher{ state = site.key };
     hasher.writeString(domain);
-    hasher.writeU64Le(scope);
+    hasher.writeU64Le(scopeKey);
     hasher
 }
 
@@ -55,7 +55,7 @@ SiteCount :: struct {
 // the root's memory, never the frame's.
 Identity :: struct {
     counts: List(SiteCount) = .{};
-    scope: u64 = 0;
+    scopeKey: u64 = 0;
     gpa: Allocator;
 
     init :: (gpa: Allocator) -> Identity => .{ gpa = gpa };
@@ -71,20 +71,20 @@ Identity :: struct {
     // Scopes nest: the new scope is the one in force folded with `key`, and
     // what comes back restores it.
     enterKey :: (self: *Identity, key: u64) -> u64 {
-        prev := self.scope;
+        prev := self.scopeKey;
         hasher := SourceSiteHasher{ state = prev };
         hasher.writeU64Le(key);
-        self.scope = hasher.state;
+        self.scopeKey = hasher.state;
         prev
     }
 
     leaveKey :: (self: *Identity, prev: u64) {
-        self.scope = prev;
+        self.scopeKey = prev;
     }
 
     nextOccurrence :: (self: *Identity, site: u64) -> i64 {
         hasher := SourceSiteHasher{ state = site };
-        hasher.writeU64Le(self.scope);
+        hasher.writeU64Le(self.scopeKey);
         key := hasher.state;
         for c, i in self.counts, 0.. {
             if c.key == key {
@@ -110,7 +110,7 @@ Identity :: struct {
 elementId :: (site: SiteId = siteOf(@caller)) -> ElementId {
     process.assert(context.fluentUi != null, "elementId outside a fluent build — push .{ fluentUi = *root.identity }");
     occurrence := context.fluentUi.nextOccurrence(site.key);
-    hasher := siteHasher(site, ELEMENT_DOMAIN, context.fluentUi.scope);
+    hasher := siteHasher(site, ELEMENT_DOMAIN, context.fluentUi.scopeKey);
     hasher.writeU64Le(occurrence.(u64));
     ElementId{ value = hasher.state }
 }

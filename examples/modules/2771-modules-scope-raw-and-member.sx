@@ -1,0 +1,10 @@
+@import "modules/std.sx";
+
+Box :: struct { `scope: i64; }
+`scope :: (value: i64) -> i64 { value + 1 }
+
+main :: () -> i32 {
+    box := Box{ `scope = `scope(6) };
+    print("{}\n", box.scope);
+    0
+}

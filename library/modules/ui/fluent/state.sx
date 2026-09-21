@@ -99,7 +99,7 @@ useState :: ($T: Type, default: T, site: SiteId = siteOf(@caller)) -> State(T) {
     store := context.fluentState;
     process.assert(store.inBuild, "useState outside a build transaction — call beginBuild first");
 
-    hasher := siteHasher(site, STATE_DOMAIN, context.fluentUi.scope);
+    hasher := siteHasher(site, STATE_DOMAIN, context.fluentUi.scopeKey);
     hasher.writeU64Le(context.fluentUi.nextOccurrence(site.key).(u64));
     key := hasher.state;
 

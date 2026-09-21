@@ -773,3 +773,17 @@ test "editor structural alias cycles do not form an identity" {
     try store.analyzeDocument(doc);
     try std.testing.expect(doc.sema.?.selection.select("Loop") == null);
 }
+
+test "parsed scopes and spreads report unsupported semantics" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const doc = try store.openOrUpdate("scope.sx", "geo :: scope { X :: 1; } ..geo;", 1);
+    try store.analyzeDocument(doc);
+    const sema = doc.sema orelse return error.MissingAnalysis;
+    try std.testing.expectEqual(@as(usize, 2), sema.diagnostics.len);
+    try std.testing.expectEqualStrings("scope blocks are not supported", sema.diagnostics[0].message);
+    try std.testing.expectEqualStrings("scope spreads are not supported", sema.diagnostics[1].message);
+    try std.testing.expectEqual(@as(usize, 0), sema.symbols.len);
+}

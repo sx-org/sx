@@ -1,0 +1,7 @@
+geo :: scope {
+    axes :: scope { X :: 0; }
+    @import "modules/std.sx";
+    impl http.TlsAcceptor for MyServer {}
+    impl P for geo.Vec2 {}
+}
+main :: () -> i32 { 0 }

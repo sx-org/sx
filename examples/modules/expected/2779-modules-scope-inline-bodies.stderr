@@ -1,0 +1,11 @@
+error: scope blocks are not supported
+  --> examples/modules/2779-modules-scope-inline-bodies.sx:2:30
+   |
+ 2 |     inline for T in .[i32] { geo :: scope { X :: T; } }
+   |                              ^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: scope blocks are not supported
+  --> examples/modules/2779-modules-scope-inline-bodies.sx:6:27
+   |
+ 6 | inline for T in .[i32] => arrows :: scope {}
+   |                           ^^^^^^^^^^^^^^^^^^

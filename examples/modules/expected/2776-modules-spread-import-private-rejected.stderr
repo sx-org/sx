@@ -1,0 +1,5 @@
+error: 'private' is not allowed on a spread
+  --> examples/modules/2776-modules-spread-import-private-rejected.sx:1:9
+   |
+ 1 | private ..@import "modules/std.sx";
+   |         ^^

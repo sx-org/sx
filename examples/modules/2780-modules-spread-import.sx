@@ -1,0 +1,2 @@
+..@import "modules/std.sx";
+main :: () -> i32 { 0 }

@@ -378,6 +378,8 @@ fn walk(self: *Lowering, node: *const Node) void {
         .enum_literal,
         .error_set_decl,
         .error_directive,
+        .scope_decl,
+        .spread_decl,
         .import_decl,
         .c_import_decl,
         .library_decl,

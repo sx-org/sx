@@ -1,0 +1,5 @@
+error: a scope block is only allowed at file top level or inside another scope
+  --> examples/modules/2774-modules-scope-runtime-branch-placement.sx:2:22
+   |
+ 2 |     if true { geo :: scope {} }
+   |                      ^^^^^

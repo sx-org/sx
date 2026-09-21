@@ -1802,6 +1802,13 @@ pub const Analyzer = struct {
                     try self.analyzeNode(d);
                 }
             },
+            .scope_decl, .spread_decl => {
+                try self.diagnostics.append(self.allocator, .{
+                    .level = .err,
+                    .span = node.span,
+                    .message = if (node.data == .scope_decl) "scope blocks are not supported" else "scope spreads are not supported",
+                });
+            },
             .root => {
                 // Should not appear nested
             },
@@ -2253,6 +2260,14 @@ pub fn findNodeAtOffset(node: *Node, offset: u32) ?*Node {
         .postfix_cast => |pc| {
             if (findNodeAtOffset(pc.operand, offset)) |found| return found;
             if (findNodeAtOffset(pc.type_expr, offset)) |found| return found;
+        },
+        .scope_decl => |scope| {
+            for (scope.decls) |decl| {
+                if (findNodeAtOffset(decl, offset)) |found| return found;
+            }
+        },
+        .spread_decl => |spread| {
+            if (findNodeAtOffset(spread.source, offset)) |found| return found;
         },
         .namespace_decl => |ns| {
             for (ns.decls) |d| {

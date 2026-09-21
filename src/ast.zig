@@ -65,6 +65,8 @@ pub const Node = struct {
         return_stmt: ReturnStmt,
         import_decl: ImportDecl,
         namespace_decl: NamespaceDecl,
+        scope_decl: ScopeDecl,
+        spread_decl: SpreadDecl,
         array_type_expr: ArrayTypeExpr,
         slice_type_expr: SliceTypeExpr,
         array_literal: ArrayLiteral,
@@ -131,6 +133,7 @@ pub const Node = struct {
                 .union_decl => |d| d.name,
                 .error_set_decl => |d| d.name,
                 .namespace_decl => |d| d.name,
+                .scope_decl => |d| d.name,
                 .ufcs_alias => |d| d.name,
                 .c_import_decl => |d| d.name,
                 .protocol_decl => |d| d.name,
@@ -799,6 +802,17 @@ pub const InsertExpr = struct {
 
 pub const ReturnStmt = struct {
     value: ?*Node,
+};
+
+pub const ScopeDecl = struct {
+    name: []const u8,
+    name_span: Span,
+    decls: []const *Node,
+    is_raw: bool = false,
+};
+
+pub const SpreadDecl = struct {
+    source: *Node,
 };
 
 pub const ImportDecl = struct {
