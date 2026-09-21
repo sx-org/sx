@@ -1542,7 +1542,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         // function already takes the env slot, so the pair is {fn, null}.
         .unique_to_closure => {
             const u = self.uniqueLambdaOf(src_ty).?;
-            return self.builder.closureCreate(u.func, Ref.none, dst_ty);
+            return self.builder.closureCreate(u.func.lowered, Ref.none, dst_ty);
         },
         .unique_to_closure_reject => {
             if (self.diagnostics) |d| {
@@ -1557,7 +1557,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         // where the pointer says, for as long as it does.
         .lambda_ptr_to_closure => {
             const u = self.uniqueLambdaThrough(src_ty).?;
-            return self.builder.closureCreate(u.func, val, dst_ty);
+            return self.builder.closureCreate(u.func.lowered, val, dst_ty);
         },
         .lambda_ptr_to_closure_reject => {
             if (self.diagnostics) |d| {

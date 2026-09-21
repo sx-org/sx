@@ -1180,8 +1180,12 @@ pub fn fixupMethodReceiver(self: *Lowering, method_args: *std.ArrayList(Ref), fu
                 const local = if (self.scope) |scope| scope.lookup(nm) else null;
                 if (local) |binding| {
                     if (binding.is_alloca) {
-                        const ptr_ty = self.module.types.ptrTo(binding.ty);
-                        method_args.items[0] = self.builder.emit(.{ .addr_of = .{ .operand = binding.ref } }, ptr_ty);
+                        const binding_info = self.module.types.get(binding.ty);
+                        method_args.items[0] = if (binding_info == .optional and
+                            binding_info.optional.child == obj_ty and !self.module.types.optionalIsSentinel(obj_ty))
+                            self.builder.structGepTyped(binding.ref, 0, self.module.types.ptrTo(obj_ty), binding.ty)
+                        else
+                            receiverPointer(self, binding.ref, obj_ty);
                         return;
                     }
                     // A non-alloca local (SSA value / by-value param) has no
