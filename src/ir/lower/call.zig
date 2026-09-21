@@ -5862,6 +5862,16 @@ pub fn resolveCallParamTypes(
         // Args map directly to all declared params (no receiver prepend).
         if (qualified_selected) return astCalleeParamTypes(self, sel_author.?.decl, c.args);
 
+        if (self.genericStaticHeadMethod(fa.object, fa.field)) |method| {
+            var scope = generics_mod.installTypeBindings(self, method.bindings.*);
+            defer scope.exit();
+            var demands = std.ArrayList(ParamDemand).empty;
+            for (method.fd.params, 0..) |_, i| {
+                demands.append(self.alloc, lower_bound.paramDemand(self, method.fd, i)) catch unreachable;
+            }
+            return demands.items;
+        }
+
         // Static plain-struct method: all declared params are user args. Select
         // by the source-aware type head before namespace/global name lookup.
         if (!self.callResolver().objectIsValue(fa.object)) {
