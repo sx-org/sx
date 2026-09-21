@@ -3098,6 +3098,7 @@ pub const Vm = struct {
         if (sty == .any) return if (idx == 0) 0 else 8;
         switch (table.get(sty)) {
             .string, .slice => return if (idx == 0) 0 else 8,
+            .optional => |o| return if (idx == 0) 0 else table.typeSizeBytes(o.child),
             .failable => |f| {
                 const n = table.failableValueSlotCount(f);
                 var off: usize = 0;
