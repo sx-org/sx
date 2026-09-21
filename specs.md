@@ -5922,9 +5922,10 @@ by its branch follows that scheduling discipline.
 
 ### Lookup and Name Rules
 
-For a bare name inside a block of scope `S`, the first tier with a hit wins:
+For a bare name inside a block of scope `S`, the first step (or sub-step,
+where specified) with a hit wins:
 
-1. `S`'s own declarations, in two successive precedence tiers: first this
+1. `S`'s own declarations, in two successive sub-steps: first this
    file's blocks; only if those have no hit, other reachable files' blocks.
 2. `S`'s spreads from all reachable blocks.
 3. Plain imports written in this block.
@@ -5941,10 +5942,10 @@ The following name rules apply to every identifier:
 
 1. **Duplicate:** two declarations of one name in the same file and namespace
    are an error at the second. Scope blocks merge by path as defined above.
-2. **Hiding:** an earlier lookup tier silently wins over a later one.
-3. **Ambiguity:** two or more distinct declarations in the same tier are an
-   error only when the name is used. Candidate identity follows Identity and
-   Scope Views.
+2. **Hiding:** an earlier lookup step or sub-step silently wins over a later one.
+3. **Ambiguity:** two or more distinct declarations found together in the
+   winning step (or its winning sub-step) are an error only when the name is
+   used. Candidate identity follows Identity and Scope Views.
 
 ### Visibility: `private`
 
@@ -5996,7 +5997,7 @@ and scope-body declarations and on the fields of a NAMED struct declaration
 (a generic template included). It is rejected on: anonymous struct fields (a field's
 inline `struct { … }`, a type function's returned `struct { … }`), locals,
 parameters, union and runtime-class fields, enum cases and error tags,
-struct / `constraint` / `interface` / `impl` methods and requirements, flat
+struct / `constraint` / `interface` / `impl` methods and requirements, plain
 `@import`, scope blocks, `..@import`, `..path;`, `impl` blocks,
 `@context.extend`, struct spread members, standalone `@run`, global `asm`,
 and `@framework`.
