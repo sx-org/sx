@@ -91,10 +91,6 @@ test "flat-import authors retain identities and exclude namespace edges" {
     const absdir = dirbuf[0..dirlen];
 
     const main_path = try std.fmt.allocPrint(alloc, "{s}/main.sx", .{absdir});
-    // Imported modules are keyed by their CANONICAL path — e.g.
-    // re-relativized against the CWD when the tmp dir lives under it — so the
-    // expected keys go through the same chokepoint. `main_path` stays as
-    // passed: the entry is keyed literally.
     const a_path = try imports.canonicalizePath(alloc, try std.fmt.allocPrint(alloc, "{s}/a.sx", .{absdir}));
     const b_path = try imports.canonicalizePath(alloc, try std.fmt.allocPrint(alloc, "{s}/b.sx", .{absdir}));
     const ns_path = try imports.canonicalizePath(alloc, try std.fmt.allocPrint(alloc, "{s}/nsmod.sx", .{absdir}));
@@ -157,14 +153,14 @@ test "flat-import authors retain identities and exclude namespace edges" {
 
     // flat_import_graph carries the two bare `@import` edges, NOT the
     // namespaced `ns :: @import` edge.
-    const flat = flat_import_graph.get(main_path) orelse return error.MissingFlatEdges;
+    const flat = facts.table.directImports(&flat_import_graph, mod.environment) orelse return error.MissingFlatEdges;
     try std.testing.expect(flat.contains(a_path));
     try std.testing.expect(flat.contains(b_path));
     try std.testing.expect(!flat.contains(ns_path));
 
     // The full import_graph DOES record the namespaced edge (the contrast that
     // makes the flat-graph exclusion meaningful).
-    const full = import_graph.get(main_path) orelse return error.MissingFullEdges;
+    const full = facts.table.directImports(&import_graph, mod.environment) orelse return error.MissingFullEdges;
     try std.testing.expect(full.contains(a_path));
     try std.testing.expect(full.contains(b_path));
     try std.testing.expect(full.contains(ns_path));

@@ -86,9 +86,9 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
     // instantiation; without it the non-transitive bare-TYPE gate would
     // reject a 2-flat-hop library type the call site cannot see directly.
     // A synthesized / sourceless body keeps the caller's context.
-    const saved_source_mono = self.current_source_file;
-    defer self.setCurrentSourceFile(saved_source_mono);
-    if (fd.body.source_file) |src| self.setCurrentSourceFile(src);
+    const saved_source_mono = self.lexicalContext();
+    defer self.restoreLexicalContext(saved_source_mono);
+    if (self.functionEnvironment(fd)) |env| self.setCurrentEnvironment(env);
 
     // The bounds this instance's bindings have to satisfy. Asked here rather
     // than at the call site because this is where the concrete binding for each
@@ -285,7 +285,7 @@ fn staticTypeName(self: *Lowering, name: []const u8) bool {
 /// Whether `source` (the main file when null) registered `name` as a type alias.
 fn aliasAuthoredIn(self: *Lowering, source: ?[]const u8, name: []const u8) bool {
     const src = source orelse self.main_file orelse return self.program_index.contains(.type_alias, name);
-    return self.program_index.containsInSource(.type_alias, src, name);
+    return self.program_index.containsInEnvironment(.type_alias, self.environmentForSource(src), name);
 }
 
 pub fn isStaticTypeArg(self: *Lowering, node: *const Node) bool {
@@ -699,10 +699,10 @@ pub fn qualifiedNominalTypeArg(self: *Lowering, path: []const u8, span: ast.Span
         .selected => |s| s,
         .not_qualified, .missing, .ambiguous => return null,
     };
-    const saved_src = self.current_source_file;
-    self.setCurrentSourceFile(sel.target.target_module_path);
+    const saved_src = self.lexicalContext();
+    self.setCurrentEnvironment(self.program_index.declaration(sel.author.id).environment);
     const ty = self.resolveNominalLeaf(sel.member, false, span);
-    self.setCurrentSourceFile(saved_src);
+    self.restoreLexicalContext(saved_src);
     return if (ty == .unresolved) null else ty;
 }
 
@@ -1694,13 +1694,13 @@ pub fn headTypeGate(self: *Lowering, name: []const u8, span: ?ast.Span) HeadType
     const from = self.current_source_file orelse return .proceed;
 
     var res_walk = self.resolver();
-    const author_set = res_walk.collectVisibleAuthors(name, from, .user_bare_flat);
+    const author_set = res_walk.collectVisibleAuthors(name, self.environmentForSource(from).?, .user_bare_flat);
     defer if (author_set.flat.len > 0) self.alloc.free(author_set.flat);
 
     // Own author wins outright (own-wins, 0754). Pending / unregistered → .proceed.
     if (author_set.own) |own| switch (own.raw) {
         .const_decl => {
-            if (self.program_index.lookupInSource(.type_alias, own.source, name)) |tid| return .{ .resolved = tid };
+            if (self.program_index.get(.type_alias, own.id)) |tid| return .{ .resolved = tid };
             return .proceed;
         },
         else => if (isNamedTypeKind(own.raw)) {
@@ -1715,13 +1715,13 @@ pub fn headTypeGate(self: *Lowering, name: []const u8, span: ?ast.Span) HeadType
     var flat_tid_count: usize = 0;
     for (author_set.flat) |fa| {
         const is_type = switch (fa.raw) {
-            .const_decl => self.program_index.containsInSource(.type_alias, fa.source, name),
+            .const_decl => self.program_index.get(.type_alias, fa.id) != null,
             else => isNamedTypeKind(fa.raw),
         };
         if (!is_type) continue;
         flat_type_count += 1;
         const fa_tid: ?TypeId = switch (fa.raw) {
-            .const_decl => self.program_index.lookupInSource(.type_alias, fa.source, name),
+            .const_decl => self.program_index.get(.type_alias, fa.id),
             else => self.namedRefTid(fa.raw, name),
         };
         if (fa_tid) |t| {
@@ -1820,7 +1820,7 @@ fn typeFnOfAuthor(self: *Lowering, author: resolver_mod.RawAuthor) ?*const ast.F
 /// type / template heads.
 pub fn flatFnAuthorAmbiguous(self: *Lowering, name: []const u8, from: []const u8) bool {
     var res = self.resolver();
-    const set = res.collectVisibleAuthors(name, from, .user_bare_flat);
+    const set = res.collectVisibleAuthors(name, self.environmentForSource(from).?, .user_bare_flat);
     defer if (set.flat.len > 0) self.alloc.free(set.flat);
     if (set.own != null) return false; // own-wins
     var fn_authors: usize = 0;
@@ -1843,7 +1843,7 @@ pub fn flatFnAuthorAmbiguous(self: *Lowering, name: []const u8, from: []const u8
 /// type-fn-only author view.
 pub fn flatFnAuthorVisible(self: *Lowering, name: []const u8, from: []const u8) bool {
     var res = self.resolver();
-    const set = res.collectVisibleAuthors(name, from, .user_bare_flat);
+    const set = res.collectVisibleAuthors(name, self.environmentForSource(from).?, .user_bare_flat);
     defer if (set.flat.len > 0) self.alloc.free(set.flat);
     if (set.own) |own| {
         if (typeFnOfAuthor(self, own) != null) return true;
@@ -1876,7 +1876,7 @@ pub fn visibleTypeFnHead(self: *Lowering, name: []const u8) ?*const ast.FnDecl {
     if (self.program_index.decl_table == null or self.program_index.flat_import_graph == null) return mapped;
 
     var res = self.resolver();
-    const set = res.collectVisibleAuthors(name, from, .user_bare_flat);
+    const set = res.collectVisibleAuthors(name, self.environmentForSource(from).?, .user_bare_flat);
     defer if (set.flat.len > 0) self.alloc.free(set.flat);
     if (set.own) |own| {
         if (typeFnOfAuthor(self, own)) |fd| return fd;
@@ -2221,9 +2221,9 @@ pub fn genericInstanceMethodReturnType(self: *Lowering, gm: GenericStructMethod)
     const saved = self.type_bindings;
     self.type_bindings = gm.bindings.*;
     defer self.type_bindings = saved;
-    const saved_src = self.current_source_file;
-    defer self.setCurrentSourceFile(saved_src);
-    if (gm.fd.body.source_file) |src| self.setCurrentSourceFile(src);
+    const saved_src = self.lexicalContext();
+    defer self.restoreLexicalContext(saved_src);
+    self.setCurrentEnvironment(self.functionEnvironment(gm.fd));
     return self.resolveTypeWithBindings(rt_node);
 }
 
@@ -2549,16 +2549,13 @@ pub fn instantiateGenericStructBound(
     // (the leaf for an imported template, the `UnknownTypeChecker` for a
     // main-file one) instead of silently fabricating a stub / poisoning with
     // `.unresolved` that panics at LLVM emission.
-    const saved_src = self.current_source_file;
+    const saved_src = self.lexicalContext();
     const saved_diag_src = if (self.diagnostics) |d| d.current_source_file else null;
-    if (tmpl.source_file) |sf| {
-        self.current_source_file = sf;
-        if (self.diagnostics) |d| d.current_source_file = sf;
-    }
+    if (self.declarationEnvironment(.{ .struct_decl = tmpl.decl }, tmpl.source_file)) |env| self.setCurrentEnvironment(env);
 
     const layout = type_bridge.buildStructLayout(tmpl.decl, table, self);
 
-    self.current_source_file = saved_src;
+    self.restoreLexicalContext(saved_src);
     if (self.diagnostics) |d| d.current_source_file = saved_diag_src;
 
     // Restore bindings
@@ -2589,9 +2586,9 @@ pub fn instantiateGenericStructBound(
     self.struct_instance_template.put(owned_mangled, tmpl.name) catch {};
     self.struct_instance_author.put(owned_mangled, tmpl.decl) catch {};
 
-    self.setCurrentSourceFile(tmpl.source_file orelse saved_src);
+    self.setCurrentEnvironment(self.declarationEnvironment(.{ .struct_decl = tmpl.decl }, tmpl.source_file));
     self.recordStructDefaults(id, resolved_layout.defaults);
-    self.setCurrentSourceFile(saved_src);
+    self.restoreLexicalContext(saved_src);
 
     // A GENERIC open-set member is measured per instantiation: the template has
     // no layout, so `max` / `align` / finiteness are checked here, against the
@@ -2601,9 +2598,9 @@ pub fn instantiateGenericStructBound(
     if (tmpl.decl.open_variant_of != null) {
         // The head names what the TEMPLATE's module can see, not what this
         // instantiation's site can: a member joins the set it was declared into.
-        const saved_head_source = self.current_source_file;
-        defer self.setCurrentSourceFile(saved_head_source);
-        if (tmpl.source_file) |src| self.setCurrentSourceFile(src);
+        const saved_head_source = self.lexicalContext();
+        defer self.restoreLexicalContext(saved_head_source);
+        self.setCurrentEnvironment(self.declarationEnvironment(.{ .struct_decl = tmpl.decl }, tmpl.source_file));
         self.admitOpenVariant(tmpl.decl, id, site);
     }
 
@@ -2685,9 +2682,9 @@ pub fn instantiateTypeFunction(self: *Lowering, alias_name: []const u8, template
     // type expression) in its OWN module, so a 2-flat-hop library type
     // named there is bare-visible — not the cross-module call site. The arg
     // exprs above were already resolved in the caller's context.
-    const saved_tf_src = self.current_source_file;
-    defer self.setCurrentSourceFile(saved_tf_src);
-    if (fd.body.source_file) |src| self.setCurrentSourceFile(src);
+    const saved_tf_src = self.lexicalContext();
+    defer self.restoreLexicalContext(saved_tf_src);
+    if (self.functionEnvironment(fd)) |env| self.setCurrentEnvironment(env);
 
     // Determine if alias_name is a real alias (e.g., "Foo" for "Complex(u32)")
     // or just the template name itself (inline use like "Sx(f32)")

@@ -154,14 +154,14 @@ test "TypeResolver.resolveNamed: alias, string-prefix, unknown→stub" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
     defer table.deinit();
-    try std.testing.expectEqual(@as(TypeId, .i8), TypeResolver.resolveNamed("i8", &table, null, false));
-    try std.testing.expectEqual(table.ptrTo(.i64), TypeResolver.resolveNamed("*i64", &table, null, false));
+    try std.testing.expectEqual(@as(TypeId, .i8), TypeResolver.resolveNamed("i8", &table, null, null, false));
+    try std.testing.expectEqual(table.ptrTo(.i64), TypeResolver.resolveNamed("*i64", &table, null, null, false));
     // Unknown name, no alias map → empty-struct stub (preserved behavior;
     // never `.unresolved`, which is reserved for failed *generic* resolution).
-    try std.testing.expect(TypeResolver.resolveNamed("Unknown", &table, null, false) != .unresolved);
+    try std.testing.expect(TypeResolver.resolveNamed("Unknown", &table, null, null, false) != .unresolved);
     // A width no alias names is an ordinary unknown name, not the 7-bit int.
     const stub = table.intern(.{ .@"struct" = .{ .name = table.internString("i7"), .fields = &.{} } });
-    try std.testing.expectEqual(stub, TypeResolver.resolveNamed("i7", &table, null, false));
+    try std.testing.expectEqual(stub, TypeResolver.resolveNamed("i7", &table, null, null, false));
 }
 
 test "TypeResolver.resolveNamed: skip_builtin resolves a raw reserved-name type, not the builtin" {
@@ -172,8 +172,8 @@ test "TypeResolver.resolveNamed: skip_builtin resolves a raw reserved-name type,
     const name_id = table.internString("i8");
     const user_i8 = table.intern(.{ .@"struct" = .{ .name = name_id, .fields = &.{} } });
     // Bare lookup → the builtin 8-bit signed int; raw lookup → the user type.
-    try std.testing.expectEqual(@as(TypeId, .i8), TypeResolver.resolveNamed("i8", &table, null, false));
-    try std.testing.expectEqual(user_i8, TypeResolver.resolveNamed("i8", &table, null, true));
+    try std.testing.expectEqual(@as(TypeId, .i8), TypeResolver.resolveNamed("i8", &table, null, null, false));
+    try std.testing.expectEqual(user_i8, TypeResolver.resolveNamed("i8", &table, null, null, true));
 }
 
 test "TypeResolver.isIntLimitField: the two limits an integer carries" {

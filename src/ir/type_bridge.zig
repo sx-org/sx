@@ -276,7 +276,7 @@ pub fn resolveAstType(node: ?*const Node, table: *TypeTable, facts: Facts) TypeI
 /// caller-threaded `facts`.
 /// `skip_builtin` carries the backtick raw escape.
 fn resolveTypeName(name: []const u8, table: *TypeTable, facts: Facts, skip_builtin: bool) TypeId {
-    return type_resolver.TypeResolver.resolveNamed(name, table, facts, skip_builtin);
+    return type_resolver.TypeResolver.resolveNamed(name, table, facts, null, skip_builtin);
 }
 
 /// Builtin primitive keyword → TypeId. The keyword table lives in

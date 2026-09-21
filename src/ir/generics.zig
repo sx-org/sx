@@ -482,9 +482,9 @@ pub const GenericResolver = struct {
         // planned call result carries a channel `errorChannelOf` can read.
         // The binding-building above
         // stays in the call-site context (its args are typed there).
-        const saved_src = self.l.current_source_file;
-        defer self.l.setCurrentSourceFile(saved_src);
-        if (fd.body.source_file) |src| self.l.setCurrentSourceFile(src);
+        const saved_src = self.l.lexicalContext();
+        defer self.l.restoreLexicalContext(saved_src);
+        if (self.l.functionEnvironment(fd)) |env| self.l.setCurrentEnvironment(env);
         return self.l.resolveTypeWithBindings(fd.return_type.?);
     }
 };

@@ -400,9 +400,9 @@ fn walk(self: *Lowering, node: *const Node) void {
 /// A declaration carrying its own source file walks under that file, so a
 /// module's heads resolve where they were written.
 fn walkIn(self: *Lowering, node: *const Node) void {
-    const saved_source = self.current_source_file;
-    defer self.setCurrentSourceFile(saved_source);
-    if (node.source_file) |sf| self.setCurrentSourceFile(sf);
+    const saved_source = self.lexicalContext();
+    defer self.restoreLexicalContext(saved_source);
+    self.setDeclarationContext(node);
     walk(self, node);
 }
 

@@ -41,15 +41,11 @@ pub const SymbolKind = enum {
     namespace,
 };
 
-pub const Declaration = struct {
-    table: *const imports.DeclTable,
-    id: imports.DeclId,
-};
-
-pub const DeclarationContext = struct {
-    table: *const imports.DeclTable,
-    environment: imports.EnvironmentId,
-};
+const editor_index = @import("editor_index.zig");
+pub const Declaration = editor_index.Declaration;
+pub const DeclarationContext = editor_index.DeclarationContext;
+pub const Selection = editor_index.Selection;
+pub const Registry = editor_index.Registry;
 
 pub const Symbol = struct {
     declaration: ?Declaration = null,
@@ -99,18 +95,19 @@ pub const TypeMap = std.AutoHashMap(*const Node, Type);
 /// by the compiler pipeline (see module doc).
 pub const SemaResult = struct {
     declarations: ?DeclarationContext = null,
+    selection: *Selection,
     symbols: []const Symbol,
     references: []const Reference,
     member_refs: []const MemberRef,
     diagnostics: []const Diagnostic,
-    fn_signatures: std.StringHashMap(FnSignature),
-    struct_types: std.StringHashMap(StructTypeInfo),
-    enum_types: std.StringHashMap([]const []const u8),
+    fn_signatures: Registry(FnSignature),
+    struct_types: Registry(StructTypeInfo),
+    enum_types: Registry([]const []const u8),
     /// `@context.extend` field name → declared type. The Context is assembled
     /// program-wide, so this is a union across every analyzed document rather
     /// than a member list on one declaration.
     context_members: std.StringHashMap(Type),
-    type_aliases: std.StringHashMap([]const u8),
+    type_aliases: Registry([]const u8),
     type_map: TypeMap,
 };
 
@@ -118,6 +115,7 @@ pub const SemaResult = struct {
 /// semantic pass — its `Type` results are editor metadata, not compiler truth.
 pub const Analyzer = struct {
     declarations: ?DeclarationContext = null,
+    selection: *Selection,
     allocator: std.mem.Allocator,
     symbols: std.ArrayList(Symbol),
     references: std.ArrayList(Reference),
@@ -134,11 +132,11 @@ pub const Analyzer = struct {
     /// Hash index: name → list of indices into symbols array for O(1) lookup
     symbol_index: std.StringHashMap(std.ArrayList(u32)),
     // Type registries
-    fn_signatures: std.StringHashMap(FnSignature),
-    struct_types: std.StringHashMap(StructTypeInfo),
-    enum_types: std.StringHashMap([]const []const u8),
+    fn_signatures: Registry(FnSignature),
+    struct_types: Registry(StructTypeInfo),
+    enum_types: Registry([]const []const u8),
     context_members: std.StringHashMap(Type),
-    type_aliases: std.StringHashMap([]const u8),
+    type_aliases: Registry([]const u8),
     /// Module-global integer consts, by bare name → value. Lets an array
     /// dimension written as a named const (`MAX :: 4; [MAX]u8`) fold to a
     /// concrete editor length instead of panicking on the `.int_literal`
@@ -152,7 +150,10 @@ pub const Analyzer = struct {
     pending_visibility: ast.Visibility = .public,
 
     pub fn init(allocator: std.mem.Allocator) Analyzer {
+        const selection = allocator.create(Selection) catch @panic("out of memory");
+        selection.* = Selection.init(allocator);
         return .{
+            .selection = selection,
             .allocator = allocator,
             .symbols = std.ArrayList(Symbol).empty,
             .references = std.ArrayList(Reference).empty,
@@ -161,11 +162,11 @@ pub const Analyzer = struct {
             .scope_depth = 0,
             .scope_starts = std.ArrayList(u32).empty,
             .symbol_index = std.StringHashMap(std.ArrayList(u32)).init(allocator),
-            .fn_signatures = std.StringHashMap(FnSignature).init(allocator),
-            .struct_types = std.StringHashMap(StructTypeInfo).init(allocator),
+            .fn_signatures = Registry(FnSignature).init(allocator, selection),
+            .struct_types = Registry(StructTypeInfo).init(allocator, selection),
             .context_members = std.StringHashMap(Type).init(allocator),
-            .enum_types = std.StringHashMap([]const []const u8).init(allocator),
-            .type_aliases = std.StringHashMap([]const u8).init(allocator),
+            .enum_types = Registry([]const []const u8).init(allocator, selection),
+            .type_aliases = Registry([]const u8).init(allocator, selection),
             .const_int_values = std.StringHashMap(i64).init(allocator),
             .type_map = TypeMap.init(allocator),
         };
@@ -173,6 +174,8 @@ pub const Analyzer = struct {
 
     pub fn analyze(self: *Analyzer, root: *Node) !SemaResult {
         if (root.data != .root) return error.InvalidRoot;
+        self.selection.context = self.declarations;
+        try self.selection.register(root.data.root.decls);
 
         // Pass 1: Register all top-level declarations so forward references work.
         for (root.data.root.decls) |decl| {
@@ -191,18 +194,9 @@ pub const Analyzer = struct {
             try self.analyzeTopLevelDecl(decl);
         }
 
-        if (self.declarations) |context| {
-            const env = context.table.environment(context.environment);
-            for (self.symbols.items) |*symbol| {
-                if (symbol.origin != null or symbol.scope_depth != 0) continue;
-                const id = env.names.get(symbol.name) orelse continue;
-                if (!std.meta.eql(context.table.get(id).span, @as(?Span, symbol.def_span))) continue;
-                symbol.declaration = .{ .table = context.table, .id = id };
-            }
-        }
-
         return .{
             .declarations = self.declarations,
+            .selection = self.selection,
             .symbols = try self.symbols.toOwnedSlice(self.allocator),
             .references = try self.references.toOwnedSlice(self.allocator),
             .member_refs = try self.member_refs.toOwnedSlice(self.allocator),
@@ -214,6 +208,23 @@ pub const Analyzer = struct {
             .type_aliases = self.type_aliases,
             .type_map = self.type_map,
         };
+    }
+
+    pub fn mergeMetadata(self: *Analyzer, other: SemaResult) !void {
+        try self.fn_signatures.merge(other.fn_signatures);
+        try self.struct_types.merge(other.struct_types);
+        try self.enum_types.merge(other.enum_types);
+        try self.type_aliases.merge(other.type_aliases);
+        var context = other.context_members.iterator();
+        while (context.next()) |entry| try self.context_members.put(entry.key_ptr.*, entry.value_ptr.*);
+    }
+
+    fn setSelection(self: *Analyzer, selection: *Selection) void {
+        self.selection = selection;
+        self.fn_signatures.selection = selection;
+        self.struct_types.selection = selection;
+        self.enum_types.selection = selection;
+        self.type_aliases.selection = selection;
     }
 
     /// Pass 1: register the name/kind/type of a top-level declaration without
@@ -387,12 +398,11 @@ pub const Analyzer = struct {
             },
             .namespace_decl => |ns| {
                 try self.addSymbol(ns.name, .namespace, null, node.span);
-                // Recurse into namespace decls with qualified prefix (in own scope
-                // so inner names don't collide with flat imports of the same names)
+                const saved = self.selection;
+                defer self.setSelection(saved);
+                self.setSelection(self.selection.namespace(ns.name).?[0]);
                 try self.pushScope();
-                for (ns.decls) |d| {
-                    try self.registerTopLevelDeclPrefixed(d, ns.name);
-                }
+                for (ns.decls) |d| try self.registerTopLevelDeclPrefixed(d, null);
                 self.popScope();
             },
             .context_extend_decl => |ce| {
@@ -785,17 +795,7 @@ pub const Analyzer = struct {
             },
             .chained_comparison => .boolean,
             .identifier => |ident| {
-                // Use symbol index for O(1) name lookup
-                if (self.symbol_index.get(ident.name)) |indices| {
-                    var j = indices.items.len;
-                    while (j > 0) {
-                        j -= 1;
-                        const sym = self.symbols.items[indices.items[j]];
-                        if (sym.scope_depth <= self.scope_depth) {
-                            return sym.ty orelse Type.unresolved;
-                        }
-                    }
-                }
+                if (self.selectedSymbol(ident.name)) |index| return self.symbols.items[index].ty orelse .unresolved;
                 // The implicit `context` is not a declared symbol; it types as
                 // the Context struct so `context.field` records a member ref
                 // with owner "Context" (definition/hover/references ride the
@@ -1132,6 +1132,9 @@ pub const Analyzer = struct {
             },
             .enum_decl, .union_decl, .array_type_expr, .slice_type_expr, .array_literal, .parameterized_type_expr, .index_expr, .slice_expr, .insert_expr, .ufcs_alias => {},
             .namespace_decl => |ns| {
+                const saved = self.selection;
+                defer self.setSelection(saved);
+                self.setSelection(self.selection.namespace(ns.name).?[0]);
                 try self.pushScope();
                 for (ns.decls) |d| {
                     try self.registerTopLevelDecl(d);
@@ -1194,6 +1197,10 @@ pub const Analyzer = struct {
         };
 
         try self.symbols.append(self.allocator, .{
+            .declaration = if (self.selection.own.get(name)) |decl|
+                (if (std.meta.eql(decl.info().span, @as(?Span, span))) decl else null)
+            else
+                null,
             .name = name,
             .kind = kind,
             .ty = ty,
@@ -1244,6 +1251,23 @@ pub const Analyzer = struct {
         self.member_refs.append(self.allocator, .{ .span = span, .name = name, .owner = owner, .is_def = is_def }) catch {};
     }
 
+    fn selectedSymbol(self: *Analyzer, name: []const u8) ?u32 {
+        const selected = self.selection.select(name);
+        const indices = self.symbol_index.get(name) orelse return null;
+        var i = indices.items.len;
+        while (i > 0) {
+            i -= 1;
+            const index = indices.items[i];
+            const symbol = self.symbols.items[index];
+            if (symbol.scope_depth > self.scope_depth) continue;
+            if (symbol.declaration) |decl| {
+                if (selected == null or !std.meta.eql(selected.?, decl)) continue;
+            }
+            return index;
+        }
+        return null;
+    }
+
     fn resolveIdentifier(self: *Analyzer, name: []const u8, span: Span) !void {
         if (self.in_c_conv and std.mem.eql(u8, name, "context")) {
             try self.diagnostics.append(self.allocator, .{
@@ -1253,21 +1277,9 @@ pub const Analyzer = struct {
             });
             return;
         }
-        // Use symbol index for O(1) name lookup, then walk backwards through indices
-        if (self.symbol_index.get(name)) |indices| {
-            var j = indices.items.len;
-            while (j > 0) {
-                j -= 1;
-                const idx = indices.items[j];
-                const sym = self.symbols.items[idx];
-                if (sym.scope_depth <= self.scope_depth) {
-                    try self.references.append(self.allocator, .{
-                        .span = span,
-                        .symbol_index = idx,
-                    });
-                    return;
-                }
-            }
+        if (self.selectedSymbol(name)) |index| {
+            try self.references.append(self.allocator, .{ .span = span, .symbol_index = index });
+            return;
         }
 
         // Built-in names that aren't declared in source
@@ -1837,13 +1849,10 @@ pub const Analyzer = struct {
                 const name = tn.data.type_expr.name;
                 // Check type aliases first
                 const resolved = self.type_aliases.get(name) orelse name;
-                if (self.symbol_index.get(resolved)) |indices| {
-                    for (indices.items) |idx| {
-                        if (self.symbols.items[idx].ty) |ty| {
-                            // Register a reference so go-to-definition works on type names
-                            self.tryAddReference(resolved, tn.span);
-                            return ty;
-                        }
+                if (self.selectedSymbol(resolved)) |index| {
+                    if (self.symbols.items[index].ty) |ty| {
+                        self.tryAddReference(resolved, tn.span);
+                        return ty;
                     }
                 }
             }
@@ -1862,20 +1871,8 @@ pub const Analyzer = struct {
     /// Try to create a reference for a name without emitting diagnostics.
     /// Used for type names where missing symbols are expected (primitives, builtins).
     fn tryAddReference(self: *Analyzer, name: []const u8, span: Span) void {
-        if (self.symbol_index.get(name)) |indices| {
-            var j = indices.items.len;
-            while (j > 0) {
-                j -= 1;
-                const idx = indices.items[j];
-                const sym = self.symbols.items[idx];
-                if (sym.scope_depth <= self.scope_depth) {
-                    self.references.append(self.allocator, .{
-                        .span = span,
-                        .symbol_index = idx,
-                    }) catch {};
-                    return;
-                }
-            }
+        if (self.selectedSymbol(name)) |index| {
+            self.references.append(self.allocator, .{ .span = span, .symbol_index = index }) catch {};
         }
     }
 
@@ -2567,8 +2564,8 @@ test "sema: generic index resolves with pre-registered (imported) struct types" 
     // Main analyzer pre-loaded with the imported struct_types (bare names),
     // mirroring DocumentStore.analyzeDocument's flat-import merge.
     var main_an = Analyzer.init(alloc);
-    var it = lib_res.struct_types.iterator();
-    while (it.next()) |e| try main_an.struct_types.put(e.key_ptr.*, e.value_ptr.*);
+    try main_an.selection.addImport(null, lib_res.selection);
+    try main_an.struct_types.merge(lib_res.struct_types);
 
     const main_src = "main :: () { legal := List(Move){}; m := legal.items[0]; }";
     var main_parser = try parser_mod.Parser.init(alloc, main_src);
@@ -2605,10 +2602,9 @@ test "sema: generic index resolves with realistic List/Move (methods, cross-refs
     const lib_res = try lib.analyze(lib_root);
 
     var main_an = Analyzer.init(alloc);
-    var sit = lib_res.struct_types.iterator();
-    while (sit.next()) |e| try main_an.struct_types.put(e.key_ptr.*, e.value_ptr.*);
-    var eit = lib_res.enum_types.iterator();
-    while (eit.next()) |e| try main_an.enum_types.put(e.key_ptr.*, e.value_ptr.*);
+    try main_an.selection.addImport(null, lib_res.selection);
+    try main_an.struct_types.merge(lib_res.struct_types);
+    try main_an.enum_types.merge(lib_res.enum_types);
 
     const main_src = "main :: () { legal := List(Move){}; m := legal.items[0]; f := m.from; }";
     var main_parser = try parser_mod.Parser.init(alloc, main_src);

@@ -266,7 +266,6 @@ pub const Server = struct {
             if (ref.symbol_index == target_idx.?) try self.appendRefLoc(&buf, &first, doc, ref.span);
         }
 
-        // Other documents — match a top-level name by string.
         if (cross_file) {
             var it = self.documents.by_path.iterator();
             while (it.next()) |entry| {
@@ -275,14 +274,14 @@ pub const Server = struct {
                 const osema = odoc.sema orelse continue;
                 if (include_decl) {
                     for (osema.symbols) |sym| {
-                        if (sym.scope_depth == 0 and sym.origin == null and std.mem.eql(u8, sym.name, target.name)) {
+                        if (sym.scope_depth == 0 and sym.origin == null and sameDeclaration(sym, target)) {
                             try self.appendRefLoc(&buf, &first, odoc, sym.def_span);
                         }
                     }
                 }
                 for (osema.references) |ref| {
                     const rs = osema.symbols[ref.symbol_index];
-                    if (rs.scope_depth == 0 and std.mem.eql(u8, rs.name, target.name)) {
+                    if (rs.scope_depth == 0 and sameDeclaration(rs, target)) {
                         try self.appendRefLoc(&buf, &first, odoc, ref.span);
                     }
                 }
@@ -291,6 +290,12 @@ pub const Server = struct {
 
         try buf.append(self.allocator, ']');
         return buf.items;
+    }
+
+    fn sameDeclaration(a: sx.sema.Symbol, b: sx.sema.Symbol) bool {
+        const left = a.declaration orelse return false;
+        const right = b.declaration orelse return false;
+        return std.meta.eql(left, right);
     }
 
     /// The name-token span of a member declaration (struct field, method, enum
@@ -363,35 +368,9 @@ pub const Server = struct {
             if (std.mem.eql(u8, qn.ns, "context") and findSymbolByName(sema.symbols, "context") == null) {
                 if (try self.sendContextFieldDef(id_json, doc, qn.member, qn_origin)) return;
             }
-            // Namespace import member
-            if (self.findImportByNs(doc, qn.ns)) |imp| {
-                if (self.documents.get(imp.path)) |imp_doc| {
-                    // C import source location: jump to the C header
-                    if (imp_doc.c_source_locations.get(qn.member)) |cloc| {
-                        if (try self.sendCSourceLocation(id_json, cloc, qn_origin, doc.source)) return;
-                    }
-                    // Single-file import
-                    if (imp_doc.sema) |imp_sema| {
-                        if (findSymbolByName(imp_sema.symbols, qn.member)) |si| {
-                            const sym = imp_sema.symbols[si];
-                            if (try self.sendSymbolLocationWithOrigin(id_json, imp_doc, sym, qn_origin)) return;
-                        }
-                    }
-                } else {
-                    // Directory import: search all documents whose path starts with the import directory
-                    const dir_prefix = try std.fmt.allocPrint(self.allocator, "{s}/", .{imp.path});
-                    var it = self.documents.by_path.iterator();
-                    while (it.next()) |entry| {
-                        if (!std.mem.startsWith(u8, entry.key_ptr.*, dir_prefix)) continue;
-                        const dir_doc = entry.value_ptr.*;
-                        if (dir_doc.sema) |dir_sema| {
-                            if (findSymbolByName(dir_sema.symbols, qn.member)) |si| {
-                                const sym = dir_sema.symbols[si];
-                                if (try self.sendSymbolLocationWithOrigin(id_json, dir_doc, sym, qn_origin)) return;
-                            }
-                        }
-                    }
-                }
+            const qualified = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ qn.ns, qn.member });
+            if (sema.selection.select(qualified)) |decl| {
+                if (try self.sendDeclarationLocation(id_json, doc, decl, qn_origin)) return;
             }
 
             // Struct method/field: obj.method or Type.method or obj.field.
@@ -1368,7 +1347,7 @@ pub const Server = struct {
         allocator: std.mem.Allocator,
         node: *const sx.ast.Node,
         symbols: []const sx.sema.Symbol,
-        fn_signatures: std.StringHashMap(sx.sema.FnSignature),
+        fn_signatures: sx.sema.Registry(sx.sema.FnSignature),
         source: [:0]const u8,
         hints: *std.ArrayList(lsp.InlayHint),
     ) void {
@@ -2033,6 +2012,14 @@ pub const Server = struct {
 
     // ---- Symbol resolution helpers ----
 
+    fn sendDeclarationLocation(self: *Server, id_json: []const u8, doc: *const Document, decl: sx.sema.Declaration, origin_span: sx.ast.Span) !bool {
+        const info = decl.info();
+        const target = if (info.source) |source| self.documents.get(source) orelse return false else doc;
+        if (target.c_source_locations.get(info.name)) |location|
+            return self.sendCSourceLocation(id_json, location, origin_span, doc.source);
+        return self.sendSpanLocation(id_json, target, info.span orelse return false, doc, origin_span);
+    }
+
     /// Send a Location response for a symbol, resolving to the correct file via origin.
     fn sendSymbolLocation(self: *Server, id_json: []const u8, doc: *const Document, sym: sx.sema.Symbol) !bool {
         return self.sendSymbolLocationWithOrigin(id_json, doc, sym, null);
@@ -2104,20 +2091,11 @@ pub const Server = struct {
     /// Given a type name, find its AST declaration node and the document it lives in.
     /// Works for struct_decl, enum_decl, union_decl, and protocol_decl across files.
     fn findTypeDeclNode(self: *Server, sema: SemaResult, doc: *const Document, type_name: []const u8) ?TypeDeclLookup {
-        for (sema.symbols) |sym| {
-            if (!std.mem.eql(u8, sym.name, type_name)) continue;
-            if (sym.kind != .struct_type and sym.kind != .enum_type and
-                sym.kind != .constraint_type and sym.kind != .interface_type) continue;
-
-            const lookup_doc = self.resolveSymbolDoc(doc, sym);
-            const lookup_root = lookup_doc.root orelse return null;
-
-            if (sx.sema.findNodeAtOffset(lookup_root, sym.def_span.start)) |node| {
-                return .{ .node = node, .doc = lookup_doc };
-            }
-            return null;
-        }
-        return null;
+        const decl = sema.selection.select(type_name) orelse return null;
+        const info = decl.info();
+        const node = info.node orelse return null;
+        const target = if (info.source) |source| self.documents.get(source) orelse return null else doc;
+        return .{ .node = @constCast(node), .doc = target };
     }
 
     /// Send a go-to-definition response for a struct method, field, or enum variant.
@@ -3475,7 +3453,7 @@ test "analyzeDocument: namespaced import registers namespace symbol" {
     try std.testing.expectEqual(sx.sema.SymbolKind.namespace, sema.symbols[idx].kind);
 }
 
-test "analyzeDocument: namespaced import fn_signatures have prefix" {
+test "analyzeDocument: namespace signature selects its declaration" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -3494,7 +3472,6 @@ test "analyzeDocument: namespaced import fn_signatures have prefix" {
     try store.analyzeDocument(main_doc);
 
     const sema = main_doc.sema orelse return error.SkipZigTest;
-    // fn_signatures should contain "pkg.add"
     try std.testing.expect(sema.fn_signatures.contains("pkg.add"));
 }
 
@@ -4541,4 +4518,38 @@ test "lsp/hover: a site with no source start yields no doc" {
     // A site that spells another name belongs to another source.
     try std.testing.expectEqual(null, doc.docFor(11, "y"));
     try std.testing.expectEqualStrings("// A note.", doc.docFor(11, "x").?);
+}
+
+test "editor namespace signatures types and navigation select the same declarations" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const left = try store.openOrUpdate("left.sx", "Item :: struct { value: i64; } read :: () -> i64 { 1 }", 1);
+    const right = try store.openOrUpdate("right.sx", "Item :: struct { value: bool; } read :: () -> bool { true }", 1);
+    try store.analyzeDocument(left);
+    try store.analyzeDocument(right);
+    const doc = try store.openOrUpdate("main.sx",
+        \\a :: @import "left.sx";
+        \\b :: @import "right.sx";
+        \\main :: () { x := a.read(); y := b.read(); }
+    , 1);
+    try store.analyzeDocument(doc);
+    const sema = doc.sema.?;
+    const a = sema.selection.select("a.read").?;
+    const b = sema.selection.select("b.read").?;
+    try std.testing.expect(!std.meta.eql(a, b));
+    try std.testing.expect(std.meta.eql(a, left.sema.?.selection.select("read").?));
+    try std.testing.expect(std.meta.eql(b, right.sema.?.selection.select("read").?));
+    try std.testing.expectEqual(@as(u8, 64), sema.fn_signatures.get("a.read").?.return_type.signed);
+    try std.testing.expect(sema.fn_signatures.get("b.read").?.return_type == .boolean);
+    try std.testing.expectEqual(@as(u8, 64), sema.struct_types.get("a.Item").?.field_types[0].signed);
+    try std.testing.expect(sema.struct_types.get("b.Item").?.field_types[0] == .boolean);
+    try std.testing.expect(!sema.fn_signatures.local.contains("a.read"));
+    try std.testing.expect(!sema.struct_types.local.contains("b.Item"));
+    var server: Server = undefined;
+    server.documents = store;
+    const lookup = server.findTypeDeclNode(sema, doc, "b.Item").?;
+    try std.testing.expect(lookup.doc == right);
+    try std.testing.expect(lookup.node == sema.selection.select("b.Item").?.info().node.?);
 }

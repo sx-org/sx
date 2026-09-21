@@ -1300,8 +1300,8 @@ pub fn monomorphizePackFn(
     // bare-visible — mirrors the body pin further down and the
     // `monomorphizeFunction` pin. The comptime call-site args below are
     // lowered AFTER this restore, in the caller's context.
-    const saved_sig_src = self.current_source_file;
-    if (fd.body.source_file) |src| self.setCurrentSourceFile(src);
+    const saved_sig_src = self.lexicalContext();
+    if (self.functionEnvironment(fd)) |env| self.setCurrentEnvironment(env);
 
     const declared_is_generic_ret = blk: {
         const rt = fd.return_type orelse break :blk false;
@@ -1342,7 +1342,7 @@ pub fn monomorphizePackFn(
             .ty = ty,
         }) catch return;
     }
-    self.setCurrentSourceFile(saved_sig_src);
+    self.restoreLexicalContext(saved_sig_src);
 
     const name_id = self.module.types.internString(owned_name);
     _ = self.builder.beginFunction(name_id, params.items, ret_ty);
@@ -1388,11 +1388,6 @@ pub fn monomorphizePackFn(
             ct_arg_idx += 1;
             continue;
         }
-        // Pin to the pack fn's OWN module: a fixed-prefix param whose
-        // type is bare-visible only in the defining module must resolve
-        // there, not in the caller's restored context. Mirrors the
-        // signature build above and `resolveParamTypeInSource` at the
-        // cross-module call-arg typing sites.
         const pty = self.resolveDeclParamType(fd, i);
         const slot = self.builder.alloca(pty);
         self.builder.store(slot, Ref.fromIndex(param_idx));
@@ -1435,9 +1430,9 @@ pub fn monomorphizePackFn(
     // Mirrors `lowerFunctionBodyInto`, which switches to `func.source_file`;
     // the defining path is stamped on the body node by `resolveImports`. A
     // synthesized/sourceless body keeps the caller's context.
-    const saved_source = self.current_source_file;
-    defer self.setCurrentSourceFile(saved_source);
-    if (fd.body.source_file) |src| self.setCurrentSourceFile(src);
+    const saved_source = self.lexicalContext();
+    defer self.restoreLexicalContext(saved_source);
+    if (self.functionEnvironment(fd)) |env| self.setCurrentEnvironment(env);
 
     // Delegate to the shared body owner (mirrors the decl + generic paths) so
     // this pack-fn instance can't drift from them.

@@ -44,7 +44,7 @@ fn staticHeadInSource(self: *Lowering, name: []const u8, source: ?[]const u8) St
         const sid = self.module.types.internString(name);
         return if (self.module.types.findByName(sid)) |ty| .{ .resolved = ty } else .none;
     };
-    return switch (self.selectNominalLeaf(name, from, false)) {
+    return switch (self.selectNominalLeaf(name, self.environmentForSource(from).?, false)) {
         .resolved => |ty| .{ .resolved = ty },
         .ambiguous => .ambiguous,
         // A privately-authored-elsewhere head is exactly as unreachable as a
@@ -690,7 +690,7 @@ fn constAliasOfRaw(ref: resolver_mod.RawDeclRef) ?*const ast.ConstDecl {
 /// (the use site then diagnoses the unresolved head; no silent pick).
 fn singleVisibleAuthor(self: *Lowering, name: []const u8, from: []const u8) ?resolver_mod.RawAuthor {
     var res = self.resolver();
-    const set = res.collectVisibleAuthors(name, from, .user_bare_flat);
+    const set = res.collectVisibleAuthors(name, self.environmentForSource(from).?, .user_bare_flat);
     defer if (set.flat.len > 0) self.alloc.free(set.flat);
     if (set.own) |o| return o;
     if (set.flat.len == 1) return set.flat[0];
@@ -731,8 +731,11 @@ fn followToTemplate(self: *Lowering, author: resolver_mod.RawAuthor) ?StructTemp
 pub fn followAliasChain(self: *Lowering, author: resolver_mod.RawAuthor) ?resolver_mod.RawAuthor {
     var visited: std.ArrayList(*const ast.ConstDecl) = .empty;
     defer visited.deinit(self.alloc);
+    const saved_context = self.lexicalContext();
+    defer self.restoreLexicalContext(saved_context);
     var cur = author;
     while (true) {
+        self.setCurrentEnvironment(self.program_index.declaration(cur.id).environment);
         const cd = constAliasOfRaw(cur.raw) orelse return cur;
         for (visited.items, 0..) |seen, i| {
             if (seen == cd) {
@@ -818,7 +821,7 @@ fn diagnoseAliasCycle(self: *Lowering, cycle: []const *const ast.ConstDecl) void
 /// `cd` itself seeds the chain (it IS the first alias hop), `from` is its
 /// declaring source.
 pub fn aliasedFnDecl(self: *Lowering, cd: *const ast.ConstDecl, from: []const u8) ?*const ast.FnDecl {
-    const terminal = followAliasChain(self, .{ .id = self.program_index.internRef(.{ .const_decl = cd }, from), .raw = .{ .const_decl = cd }, .source = from }) orelse return null;
+    const terminal = followAliasChain(self, .{ .id = self.program_index.internRef(.{ .const_decl = cd }, self.environmentForSource(from)), .raw = .{ .const_decl = cd }, .source = from }) orelse return null;
     return Lowering.fnDeclOfRaw(terminal.raw);
 }
 
@@ -842,7 +845,7 @@ pub fn bareVisibleStructDecl(self: *Lowering, name: []const u8) ?VisibleStructAu
     const canon_src = canon.source_file orelse "";
 
     var res_walk = self.resolver();
-    const set = res_walk.collectVisibleAuthors(name, from, .user_bare_flat);
+    const set = res_walk.collectVisibleAuthors(name, self.environmentForSource(from).?, .user_bare_flat);
     defer if (set.flat.len > 0) self.alloc.free(set.flat);
 
     // Own author wins — must be a generic struct to count.
@@ -891,7 +894,7 @@ pub fn registerGenericStructAlias(self: *Lowering, cd: *const ast.ConstDecl, tmp
     if (self.module.types.get(inst_id) != .@"struct") return;
     // A generic-struct instantiation alias IS a type author: route it through
     // the unified writer so the bare-TYPE gate treats it like any other alias.
-    self.putTypeAlias(self.declId(.{ .const_decl = cd }, self.current_source_file), self.current_source_file, cd.name, inst_id);
+    self.putTypeAlias(self.declId(.{ .const_decl = cd }, self.current_source_file), cd.name, inst_id);
 }
 
 pub fn reserveStructLayout(self: *Lowering, sd: *const ast.StructDecl, source_file: ?[]const u8) TypeId {
@@ -931,15 +934,15 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
                 // clobbers a same-name `@get` (issue: get+set coexistence).
                 const eff = self.accessorEffName(method_fd);
                 const qualified = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ sd.name, eff }) catch continue;
-                self.program_index.registerFunction(qualified, method_fd, self.current_source_file);
+                self.program_index.registerFunction(qualified, method_fd, self.functionEnvironment(method_fd));
             }
         }
         return;
     }
 
-    const saved_source = self.current_source_file;
-    self.setCurrentSourceFile(source_file orelse saved_source);
-    defer self.setCurrentSourceFile(saved_source);
+    const saved_source = self.lexicalContext();
+    self.setCurrentEnvironment(self.declarationEnvironment(.{ .struct_decl = sd }, source_file));
+    defer self.restoreLexicalContext(saved_source);
     const struct_ty = self.reserveStructLayout(sd, self.current_source_file);
     self.pending_struct_layouts.put(struct_ty, .{
         .author = .{ .decl = sd, .source = self.current_source_file },
@@ -987,7 +990,7 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
             // later same-name method remains reachable through its decl-
             // identity `fn_decl_fids` slot and nominal author dispatch.
             if (!self.program_index.contains(.function, qualified))
-                self.program_index.registerFunction(qualified, method_fd, self.current_source_file);
+                self.program_index.registerFunction(qualified, method_fd, self.functionEnvironment(method_fd));
             // Declare extern stub (body is lowered lazily on demand)
             self.declareFunction(method_fd, qualified);
         }

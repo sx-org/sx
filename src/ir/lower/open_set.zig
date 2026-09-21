@@ -227,9 +227,9 @@ pub fn setDeclVerdict(self: *Lowering, path: []const u8, from: ?[]const u8) Head
                 // A facade re-exports by naming, so what it publishes is an ALIAS
                 // of the declaration — the set is what the alias names.
                 .const_decl => |cd| blk: {
-                    const saved = self.current_source_file;
-                    defer self.setCurrentSourceFile(saved);
-                    self.setCurrentSourceFile(sel.author.source);
+                    const saved = self.lexicalContext();
+                    defer self.restoreLexicalContext(saved);
+                    self.setCurrentEnvironment(self.program_index.declaration(sel.author.id).environment);
                     const ty = self.resolveTypeArg(cd.value);
                     if (ty == .unresolved) break :blk .none;
                     const set = setOf(self, ty) orelse break :blk .none;
@@ -241,7 +241,7 @@ pub fn setDeclVerdict(self: *Lowering, path: []const u8, from: ?[]const u8) Head
         };
     }
     var r = self.resolver();
-    const res = r.resolveBare(path, source, .bare_type);
+    const res = r.resolveBare(path, self.environmentForSource(source).?, .bare_type);
     defer self.alloc.free(res.set.flat);
     const chosen: ?resolver_mod.RawAuthor = switch (res.verdict) {
         .own_wins => res.set.own,
@@ -271,7 +271,7 @@ pub const TargetVerdict = union(enum) {
 pub fn bareTypeVerdict(self: *Lowering, name: []const u8, from: ?[]const u8) TargetVerdict {
     const source = from orelse self.current_source_file orelse self.main_file orelse "";
     var r = self.resolver();
-    const res = r.resolveBare(name, source, .bare_type);
+    const res = r.resolveBare(name, self.environmentForSource(source).?, .bare_type);
     defer self.alloc.free(res.set.flat);
     const chosen: ?resolver_mod.RawAuthor = switch (res.verdict) {
         .own_wins => res.set.own,
@@ -623,13 +623,13 @@ fn signatureFault(
             }) catch "",
         };
     }
-    const impl_src = impl.body.source_file;
+    const impl_env = self.functionEnvironment(impl);
     const saved = self.type_bindings;
     defer self.type_bindings = saved;
     if (bindings) |b| self.type_bindings = b.*;
     for (declared.params, extra) |want_node, got| {
         const want = self.resolveDeclaredTypeSubSelf(want_node, variant, set.source_file);
-        const got_ty = resolveMemberTypeIn(self, impl_src, got.type_expr, bindings != null);
+        const got_ty = resolveMemberTypeIn(self, impl_env, got.type_expr, bindings != null);
         if (!self.typesClearlyDiffer(want, got_ty)) continue;
         return .{
             .method = declared.name,
@@ -640,7 +640,7 @@ fn signatureFault(
         };
     }
     const want_ret: TypeId = if (declared.return_type) |rt| self.resolveDeclaredTypeSubSelf(rt, variant, set.source_file) else .void;
-    const got_ret: TypeId = if (impl.return_type) |rt| resolveMemberTypeIn(self, impl_src, rt, bindings != null) else .void;
+    const got_ret: TypeId = if (impl.return_type) |rt| resolveMemberTypeIn(self, impl_env, rt, bindings != null) else .void;
     if (self.typesClearlyDiffer(want_ret, got_ret)) {
         return .{
             .method = declared.name,
@@ -656,11 +656,11 @@ fn signatureFault(
 /// One type in a member's method signature. A generic member's spelling is
 /// resolved against the instantiation's bindings; a plain member's in its own
 /// module, where a module-local type name is visible.
-fn resolveMemberTypeIn(self: *Lowering, src: ?[]const u8, node: *const Node, bound: bool) TypeId {
-    if (!bound) return self.resolveTypeInSource(src, node);
-    const saved = self.current_source_file;
-    defer self.setCurrentSourceFile(saved);
-    self.setCurrentSourceFile(src);
+fn resolveMemberTypeIn(self: *Lowering, environment: ?@import("../../imports.zig").EnvironmentId, node: *const Node, bound: bool) TypeId {
+    if (!bound) return self.resolveTypeInEnvironment(environment, node);
+    const saved = self.lexicalContext();
+    defer self.restoreLexicalContext(saved);
+    self.setCurrentEnvironment(environment);
     return self.resolveTypeWithBindings(node);
 }
 
@@ -1230,9 +1230,9 @@ pub fn requiredMethod(set: *const Set, name: []const u8) ?ast.ProtocolMethodDecl
 /// source so its spellings resolve where they were written.
 pub fn methodReturnType(self: *Lowering, set: *const Set, method: ast.ProtocolMethodDecl) TypeId {
     const rt = method.return_type orelse return .void;
-    const saved = self.current_source_file;
-    defer self.setCurrentSourceFile(saved);
-    self.setCurrentSourceFile(set.source_file);
+    const saved = self.lexicalContext();
+    defer self.restoreLexicalContext(saved);
+    self.setCurrentEnvironment(self.declarationEnvironment(.{ .open_set_decl = set.decl }, set.source_file));
     return self.resolveTypeWithBindings(rt);
 }
 
@@ -1522,9 +1522,9 @@ pub fn emitDispatch(
 fn dispatchRoutine(self: *Lowering, set: *Set, method: ast.ProtocolMethodDecl, span: ast.Span) ?PendingDispatch {
     const key = MethodKey{ .set = set.ty, .method = self.module.types.internString(method.name) };
     if (self.open_set_dispatch.get(key)) |at| return self.open_set_pending.items[at];
-    const saved = self.current_source_file;
-    defer self.setCurrentSourceFile(saved);
-    self.setCurrentSourceFile(set.source_file);
+    const saved = self.lexicalContext();
+    defer self.restoreLexicalContext(saved);
+    self.setCurrentEnvironment(self.declarationEnvironment(.{ .open_set_decl = set.decl }, set.source_file));
 
     const void_ptr = self.module.types.ptrTo(.void);
     var params = std.ArrayList(inst_mod.Function.Param).empty;
@@ -1578,7 +1578,7 @@ fn dispatchRoutine(self: *Lowering, set: *Set, method: ast.ProtocolMethodDecl, s
         .fid = fid,
         .ret = ret,
         .site = span,
-        .source_file = saved,
+        .source_file = saved.source_file,
     };
     self.open_set_pending.append(self.alloc, job) catch {};
     return job;

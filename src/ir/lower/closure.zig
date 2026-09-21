@@ -49,7 +49,7 @@ const FormationLambda = struct {
     pack_bindings: ?std.StringHashMap([]const TypeId),
     pack_arg_types: ?std.StringHashMap([]const TypeId),
     scope: Scope,
-    source_file: ?[]const u8,
+    context: Lowering.LexicalContext,
     instances: std.ArrayList(UniqueLambda) = .empty,
 };
 
@@ -532,7 +532,7 @@ fn formationLambda(self: *Lowering, lam: *const ast.Lambda, env_ty: TypeId, sig_
         .pack_bindings = if (self.pack_bindings) |b| b.clone() catch unreachable else null,
         .pack_arg_types = if (self.pack_arg_types) |b| b.clone() catch unreachable else null,
         .scope = Scope.init(self.alloc, null, &self.next_binding_id),
-        .source_file = lam.body.source_file orelse self.current_source_file,
+        .context = self.lexicalContext(),
     };
     var scope = self.scope;
     while (scope) |s| : (scope = s.parent) {
@@ -574,20 +574,20 @@ pub fn specializeFormationLambda(self: *Lowering, u: UniqueLambda, arg_types: []
     var guard = Lowering.NestedBodyGuard.enterCached(self);
     defer guard.restore();
     const saved_scope = self.scope;
-    const saved_source = self.current_source_file;
+    const saved_source = self.lexicalContext();
     const saved_bindings = self.type_bindings;
     const saved_packs = self.pack_bindings;
     const saved_pack_types = self.pack_arg_types;
     const saved_target = self.target_type;
     self.scope = &formation.scope;
-    self.setCurrentSourceFile(formation.source_file);
+    self.restoreLexicalContext(formation.context);
     self.type_bindings = bindings;
     self.pack_bindings = formation.pack_bindings;
     self.pack_arg_types = formation.pack_arg_types;
     self.target_type = null;
     defer {
         self.scope = saved_scope;
-        self.setCurrentSourceFile(saved_source);
+        self.restoreLexicalContext(saved_source);
         self.type_bindings = saved_bindings;
         self.pack_bindings = saved_packs;
         self.pack_arg_types = saved_pack_types;

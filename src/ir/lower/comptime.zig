@@ -98,9 +98,10 @@ const NumericConstLeaf = struct {
     value: *const Node,
     declared_type: ?TypeId,
     source: ?[]const u8,
+    environment: ?@import("../../imports.zig").EnvironmentId,
 
     fn fromSelected(sel: SelectedConst) NumericConstLeaf {
-        return .{ .value = sel.info.value, .declared_type = sel.info.declared_type, .source = sel.source };
+        return .{ .value = sel.info.value, .declared_type = sel.info.declared_type, .source = sel.source, .environment = sel.environment };
     }
 };
 
@@ -127,13 +128,13 @@ fn numericConstLeaf(self: *Lowering, node: *const Node) ?NumericConstLeaf {
         const head = fa.object.data.identifier.name;
         if (self.scope) |scope| if (scope.lookup(head) != null) return null;
         const from = self.current_source_file orelse self.main_file orelse return null;
-        const ty = switch (self.selectNominalLeaf(head, from, false)) {
+        const ty = switch (self.selectNominalLeaf(head, self.environmentForSource(from).?, false)) {
             .resolved => |t| t,
             else => return null,
         };
         const author = self.plain_struct_authors.get(ty) orelse return null;
         const info = self.struct_const_by_tid.get(.{ .ty = ty, .name = self.module.types.internString(fa.field) }) orelse return null;
-        return .{ .source = author.source, .value = info.value, .declared_type = info.ty };
+        return .{ .source = author.source, .environment = self.program_index.declaration(self.declIdOf(.{ .struct_decl = author.decl }).?).environment, .value = info.value, .declared_type = info.ty };
     }
     return null;
 }
@@ -147,7 +148,7 @@ fn untypedSelectedNumeric(self: *Lowering, sel: NumericConstLeaf) ?program_index
     const next = Lowering.UntypedConstFrame{ .value = sel.value, .parent = self.untyped_const_frame };
     self.untyped_const_frame = &next;
     defer self.untyped_const_frame = next.parent;
-    const pin = self.pinConstAuthorSource(sel.source);
+    const pin = self.pinConstEnvironment(sel.environment);
     defer pin.unpin();
     const saved_scope = self.scope;
     self.scope = null;
@@ -299,9 +300,9 @@ pub fn foldFieldInt(self: *Lowering, node: *const Node, frame: ?*const ConstFold
 }
 
 fn constSelectedValue(self: *Lowering, name: []const u8, sel: SelectedConst, expected_ty: TypeId, frame: ?*const ConstFoldFrame) ?inst_mod.ConstantValue {
-    if (constFoldFrameContains(frame, name, sel.source)) return null;
-    const f = ConstFoldFrame{ .name = name, .source = sel.source, .parent = frame };
-    const pin = self.pinConstAuthorSource(sel.source);
+    if (constFoldFrameContains(frame, name, sel.environment)) return null;
+    const f = ConstFoldFrame{ .name = name, .environment = sel.environment, .parent = frame };
+    const pin = self.pinConstEnvironment(sel.environment);
     defer pin.unpin();
     const value = if (sel.info.declared_type != null)
         constExprValueInner(self, sel.info.value, sel.info.ty, &f) orelse return null
@@ -772,7 +773,7 @@ pub fn evalComptimeInt(self: *Lowering, node: *const Node) ?i64 {
 ///   NAME :: @run expr;
 /// Creates a comptime function wrapping the expression (for later
 /// interpretation), plus a global constant to hold the result.
-pub fn lowerComptimeGlobal(self: *Lowering, name: []const u8, expr: *const Node, type_ann: ?*const Node) void {
+pub fn lowerComptimeGlobal(self: *Lowering, declaration: @import("../../imports.zig").DeclId, name: []const u8, expr: *const Node, type_ann: ?*const Node) void {
     // When the user writes `NAME :: @run expr;` with no type annotation,
     // infer the global's type from the comptime expression's return
     // shape. `resolveType(null)` returns `.i64` — good for primitive
@@ -813,7 +814,7 @@ pub fn lowerComptimeGlobal(self: *Lowering, name: []const u8, expr: *const Node,
     });
 
     // Register for runtime lookup: identifier resolution emits global_get
-    self.putGlobal(self.program_index.synthetic(name, self.current_source_file), self.current_source_file, name, .{ .id = gid, .ty = global_ty });
+    self.putGlobal(declaration, name, .{ .id = gid, .ty = global_ty });
 }
 
 /// Lower a standalone `@run expr;` at the top level (side-effect only).
@@ -940,7 +941,7 @@ fn scanDeclareNames(self: *Lowering, node: *const Node, depth: u32) void {
                 // resolves through the forward-ALIAS path — which checks
                 // `type_aliases_by_source`, not `findByName`. Without this the
                 // alias path returns a pending empty-struct stub instead.
-                self.putTypeAlias(self.program_index.synthetic(nm, self.current_source_file), self.current_source_file, nm, tid);
+                self.putTypeAlias(self.program_index.synthetic(nm, self.environmentForSource(self.current_source_file)), nm, tid);
             }
             for (c.args) |a| scanDeclareNames(self, a, depth + 1);
         },
@@ -1756,9 +1757,9 @@ fn lowerComptimeCallArgsMode(
     // which switches to `func.source_file`. The defining path is stamped on
     // the body node by `resolveImports`; a sourceless body keeps the
     // caller's context.
-    const saved_source = self.current_source_file;
-    defer self.setCurrentSourceFile(saved_source);
-    if (fd.body.source_file) |src| self.setCurrentSourceFile(src);
+    const saved_source = self.lexicalContext();
+    defer self.restoreLexicalContext(saved_source);
+    if (self.functionEnvironment(fd)) |env| self.setCurrentEnvironment(env);
 
     // An inlined comptime body is still a function boundary for cleanup. Its
     // explicit `return` may emit defers declared inside the body, but must not
@@ -1890,7 +1891,7 @@ pub fn bindComptimeValueParams(
 
         // Resolve the param's declared constraint type in the function's own
         // defining module (the enum/union may be bare-visible only there).
-        const constraint_ty = self.resolveParamTypeInSource(fd.body.source_file, &param);
+        const constraint_ty = self.resolveParamTypeInEnvironment(self.functionEnvironment(fd), &param);
         if (constraint_ty.isBuiltin()) continue;
         const info = self.module.types.get(constraint_ty);
         switch (info) {
@@ -2251,10 +2252,10 @@ pub fn comptimeValueRefNamed(self: *Lowering, name: []const u8) ?Ref {
 pub fn foldSourceConstInt(self: *Lowering, name: []const u8, frame: ?*const ConstFoldFrame) ?i64 {
     return switch (self.selectModuleConst(name)) {
         .resolved => |sel| {
-            if (constFoldFrameContains(frame, name, sel.source)) return null;
+            if (constFoldFrameContains(frame, name, sel.environment)) return null;
             if (!program_index_mod.isCountableConstType(&self.module.types, sel.info.ty)) return null;
-            var f = ConstFoldFrame{ .name = name, .source = sel.source, .parent = frame };
-            const restore = self.pinConstAuthorSource(sel.source);
+            var f = ConstFoldFrame{ .name = name, .environment = sel.environment, .parent = frame };
+            const restore = self.pinConstEnvironment(sel.environment);
             defer restore.unpin();
             const ctx = SourceConstCtx{ .lowering = self, .frame = &f };
             if (sel.info.ty == .f32) return program_index_mod.floatToIntExact(program_index_mod.evalConstFloatInit(sel.info.value, ctx, sel.info.ty) orelse return null);
@@ -2285,8 +2286,8 @@ pub fn selectQualifiedConst(self: *Lowering, ns: []const u8, field: []const u8) 
         .not_qualified, .missing, .ambiguous => return null,
     };
     const src = sel.target.target_module_path;
-    const ci = self.sourceModuleConst(src, sel.member) orelse return null;
-    return .{ .info = ci, .source = src };
+    const ci = self.program_index.get(.module_const, sel.author.id) orelse return null;
+    return .{ .info = ci, .source = src, .environment = self.program_index.declaration(sel.author.id).environment };
 }
 
 /// Source-aware INTEGER fold of a qualified const `ns.field`: the
@@ -2297,10 +2298,10 @@ pub fn selectQualifiedConst(self: *Lowering, ns: []const u8, field: []const u8) 
 /// author-source) cycle-guards a const whose value references another const.
 pub fn foldQualifiedConstInt(self: *Lowering, ns: []const u8, field: []const u8, frame: ?*const ConstFoldFrame) ?i64 {
     const sel = self.selectQualifiedConst(ns, field) orelse return null;
-    if (constFoldFrameContains(frame, field, sel.source)) return null;
+    if (constFoldFrameContains(frame, field, sel.environment)) return null;
     if (!program_index_mod.isCountableConstType(&self.module.types, sel.info.ty)) return null;
-    var f = ConstFoldFrame{ .name = field, .source = sel.source, .parent = frame };
-    const restore = self.pinConstAuthorSource(sel.source);
+    var f = ConstFoldFrame{ .name = field, .environment = sel.environment, .parent = frame };
+    const restore = self.pinConstEnvironment(sel.environment);
     defer restore.unpin();
     const ctx = SourceConstCtx{ .lowering = self, .frame = &f };
     if (sel.info.ty == .f32) return program_index_mod.floatToIntExact(program_index_mod.evalConstFloatInit(sel.info.value, ctx, sel.info.ty) orelse return null);
@@ -2312,10 +2313,10 @@ pub fn foldQualifiedConstInt(self: *Lowering, ns: []const u8, field: []const u8,
 /// (`m.PI`) folds the same way its bare-name sibling does.
 pub fn foldQualifiedConstFloat(self: *Lowering, ns: []const u8, field: []const u8, frame: ?*const ConstFoldFrame) ?f64 {
     const sel = self.selectQualifiedConst(ns, field) orelse return null;
-    if (constFoldFrameContains(frame, field, sel.source)) return null;
+    if (constFoldFrameContains(frame, field, sel.environment)) return null;
     if (!program_index_mod.isCountableConstType(&self.module.types, sel.info.ty)) return null;
-    var f = ConstFoldFrame{ .name = field, .source = sel.source, .parent = frame };
-    const restore = self.pinConstAuthorSource(sel.source);
+    var f = ConstFoldFrame{ .name = field, .environment = sel.environment, .parent = frame };
+    const restore = self.pinConstEnvironment(sel.environment);
     defer restore.unpin();
     return program_index_mod.evalConstFloatInit(sel.info.value, SourceConstCtx{ .lowering = self, .frame = &f }, sel.info.ty);
 }
@@ -2326,10 +2327,10 @@ pub fn foldQualifiedConstFloat(self: *Lowering, ns: []const u8, field: []const u
 /// division exactly as a bare `K / 3` is.
 pub fn qualifiedConstIsFloatTyped(self: *Lowering, ns: []const u8, field: []const u8, frame: ?*const ConstFoldFrame) bool {
     const sel = self.selectQualifiedConst(ns, field) orelse return false;
-    if (constFoldFrameContains(frame, field, sel.source)) return false;
+    if (constFoldFrameContains(frame, field, sel.environment)) return false;
     if (program_index_mod.isFloatConstType(sel.info.ty)) return true;
-    var f = ConstFoldFrame{ .name = field, .source = sel.source, .parent = frame };
-    const restore = self.pinConstAuthorSource(sel.source);
+    var f = ConstFoldFrame{ .name = field, .environment = sel.environment, .parent = frame };
+    const restore = self.pinConstEnvironment(sel.environment);
     defer restore.unpin();
     return program_index_mod.isFloatValuedExpr(sel.info.value, SourceConstCtx{ .lowering = self, .frame = &f });
 }
@@ -2349,9 +2350,9 @@ pub fn foldQualifiedConstNodeFloat(self: *Lowering, node: *const Node, frame: ?*
     const sel = numericConstLeaf(self, node) orelse return null;
     const path = self.qualifiedTypeName(node) orelse return null;
     defer self.alloc.free(path);
-    if (constFoldFrameContains(frame, path, sel.source)) return null;
-    const f = ConstFoldFrame{ .name = path, .source = sel.source, .parent = frame };
-    const restore = self.pinConstAuthorSource(sel.source);
+    if (constFoldFrameContains(frame, path, sel.environment)) return null;
+    const f = ConstFoldFrame{ .name = path, .environment = sel.environment, .parent = frame };
+    const restore = self.pinConstEnvironment(sel.environment);
     defer restore.unpin();
     return program_index_mod.evalConstFloatInit(sel.value, SourceConstCtx{ .lowering = self, .frame = &f }, sel.declared_type orelse .f64);
 }
@@ -2361,9 +2362,9 @@ pub fn qualifiedConstNodeIsFloatTyped(self: *Lowering, node: *const Node, frame:
     if (sel.declared_type) |ty| return isFloat(ty);
     const path = self.qualifiedTypeName(node) orelse return false;
     defer self.alloc.free(path);
-    if (constFoldFrameContains(frame, path, sel.source)) return false;
-    const f = ConstFoldFrame{ .name = path, .source = sel.source, .parent = frame };
-    const restore = self.pinConstAuthorSource(sel.source);
+    if (constFoldFrameContains(frame, path, sel.environment)) return false;
+    const f = ConstFoldFrame{ .name = path, .environment = sel.environment, .parent = frame };
+    const restore = self.pinConstEnvironment(sel.environment);
     defer restore.unpin();
     return program_index_mod.isFloatValuedExpr(sel.value, SourceConstCtx{ .lowering = self, .frame = &f });
 }
@@ -2372,10 +2373,10 @@ pub fn qualifiedConstNodeIsFloatTyped(self: *Lowering, node: *const Node, frame:
 pub fn foldSourceConstFloat(self: *Lowering, name: []const u8, frame: ?*const ConstFoldFrame) ?f64 {
     return switch (self.selectModuleConst(name)) {
         .resolved => |sel| {
-            if (constFoldFrameContains(frame, name, sel.source)) return null;
+            if (constFoldFrameContains(frame, name, sel.environment)) return null;
             if (!program_index_mod.isCountableConstType(&self.module.types, sel.info.ty)) return null;
-            var f = ConstFoldFrame{ .name = name, .source = sel.source, .parent = frame };
-            const restore = self.pinConstAuthorSource(sel.source);
+            var f = ConstFoldFrame{ .name = name, .environment = sel.environment, .parent = frame };
+            const restore = self.pinConstEnvironment(sel.environment);
             defer restore.unpin();
             return program_index_mod.evalConstFloatInit(sel.info.value, SourceConstCtx{ .lowering = self, .frame = &f }, sel.info.ty);
         },
@@ -2388,10 +2389,10 @@ pub fn foldSourceConstFloat(self: *Lowering, name: []const u8, frame: ?*const Co
 pub fn sourceConstIsFloatTyped(self: *Lowering, name: []const u8, frame: ?*const ConstFoldFrame) bool {
     return switch (self.selectModuleConst(name)) {
         .resolved => |sel| {
-            if (constFoldFrameContains(frame, name, sel.source)) return false;
+            if (constFoldFrameContains(frame, name, sel.environment)) return false;
             if (program_index_mod.isFloatConstType(sel.info.ty)) return true;
-            var f = ConstFoldFrame{ .name = name, .source = sel.source, .parent = frame };
-            const restore = self.pinConstAuthorSource(sel.source);
+            var f = ConstFoldFrame{ .name = name, .environment = sel.environment, .parent = frame };
+            const restore = self.pinConstEnvironment(sel.environment);
             defer restore.unpin();
             return program_index_mod.isFloatValuedExpr(sel.info.value, SourceConstCtx{ .lowering = self, .frame = &f });
         },
@@ -2408,6 +2409,7 @@ pub fn sourceConstIsFloatTyped(self: *Lowering, name: []const u8, frame: ?*const
 pub const SelectedConst = struct {
     info: ModuleConstInfo,
     source: ?[]const u8,
+    environment: ?@import("../../imports.zig").EnvironmentId,
 };
 
 const ConstAuthor = union(enum) {
@@ -2439,14 +2441,14 @@ const ConstAuthor = union(enum) {
 /// comptime-host path.
 pub fn selectModuleConst(self: *Lowering, name: []const u8) ConstAuthor {
     const from = self.current_source_file orelse self.main_file orelse {
-        if (self.program_index.lookup(.module_const, name)) |ci| return .{ .resolved = .{ .info = ci, .source = null } };
+        if (self.program_index.lookup(.module_const, name)) |ci| return .{ .resolved = .{ .info = ci, .source = null, .environment = null } };
         return .none;
     };
     var res = self.resolver();
-    const set = res.collectVisibleAuthors(name, from, .user_bare_flat);
+    const set = res.collectVisibleAuthors(name, self.environmentForSource(from).?, .user_bare_flat);
     defer if (set.flat.len > 0) self.alloc.free(set.flat);
     if (set.own) |o| {
-        if (self.sourceModuleConst(o.source, name)) |ci| return .{ .resolved = .{ .info = ci, .source = o.source } };
+        if (self.program_index.get(.module_const, o.id)) |ci| return .{ .resolved = .{ .info = ci, .source = o.source, .environment = self.program_index.declaration(o.id).environment } };
         // The reader's own module authors `name` as a const that never
         // materialized a per-source value (unsupported shape). Owning the
         // name blocks borrowing a flat import's / the global registration's
@@ -2456,10 +2458,10 @@ pub fn selectModuleConst(self: *Lowering, name: []const u8) ConstAuthor {
     var the_one: ?SelectedConst = null;
     var count: usize = 0;
     for (set.flat) |fa| {
-        const ci = self.sourceModuleConst(fa.source, name) orelse continue;
+        const ci = self.program_index.get(.module_const, fa.id) orelse continue;
         count += 1;
         if (count >= 2) return .ambiguous;
-        the_one = .{ .info = ci, .source = fa.source };
+        the_one = .{ .info = ci, .source = fa.source, .environment = self.program_index.declaration(fa.id).environment };
     }
     if (the_one) |sc| return .{ .resolved = sc };
     return .none;
@@ -2476,7 +2478,7 @@ fn selectShapedConst(self: *Lowering, name: []const u8) ?SelectedConst {
     // Each hop resolves from the PREVIOUS hop's author, so a chain whose middle
     // link is visible only inside its own module still follows. The pin is
     // restored on every exit path, including the terminal return.
-    const entry = self.pinConstAuthorSource(self.current_source_file);
+    const entry = self.pinConstEnvironment(self.current_environment);
     defer entry.unpin();
 
     var current = name;
@@ -2489,7 +2491,7 @@ fn selectShapedConst(self: *Lowering, name: []const u8) ?SelectedConst {
         if (sel.info.value.data != .identifier) return sel;
         const id = sel.info.value.data.identifier;
         if (id.is_raw) return null;
-        if (sel.source) |s| self.setCurrentSourceFile(s);
+        if (sel.environment) |env| self.setCurrentEnvironment(env);
         current = id.name;
     }
     return null;
@@ -2513,9 +2515,9 @@ pub fn foldConstArrayElem(self: *Lowering, name: []const u8, idx: i64, span: ?as
             d.addFmt(.err, span, "index {d} is out of bounds for constant '{s}' ({d} elements)", .{ idx, name, elems.len });
         return null;
     }
-    if (constFoldFrameContains(frame, name, sel.source)) return null;
-    var f = ConstFoldFrame{ .name = name, .source = sel.source, .parent = frame };
-    const restore = self.pinConstAuthorSource(sel.source);
+    if (constFoldFrameContains(frame, name, sel.environment)) return null;
+    var f = ConstFoldFrame{ .name = name, .environment = sel.environment, .parent = frame };
+    const restore = self.pinConstEnvironment(sel.environment);
     defer restore.unpin();
     return program_index_mod.evalConstIntExpr(elems[@intCast(idx)], SourceConstCtx{ .lowering = self, .frame = &f });
 }
@@ -2553,9 +2555,9 @@ pub fn foldConstStructField(self: *Lowering, name: []const u8, field: []const u8
     };
     const field_ty = self.getStructFields(sel.info.ty)[index].ty;
     if (!program_index_mod.isCountableConstType(&self.module.types, field_ty)) return null;
-    if (constFoldFrameContains(frame, name, sel.source)) return null;
-    const f = ConstFoldFrame{ .name = name, .source = sel.source, .parent = frame };
-    const restore = self.pinConstAuthorSource(sel.source);
+    if (constFoldFrameContains(frame, name, sel.environment)) return null;
+    const f = ConstFoldFrame{ .name = name, .environment = sel.environment, .parent = frame };
+    const restore = self.pinConstEnvironment(sel.environment);
     defer restore.unpin();
     const value = constStructLiteralInner(self, sl, sel.info.ty, &f, index, sel.info.declared_type != null) orelse return null;
     return switch (value) {
@@ -2568,7 +2570,7 @@ pub fn foldConstStructField(self: *Lowering, name: []const u8, field: []const u8
 
 /// The module const `name` names as written in `source`, or null.
 pub fn sourceModuleConst(self: *Lowering, source: []const u8, name: []const u8) ?ModuleConstInfo {
-    return self.program_index.lookupInSource(.module_const, source, name);
+    return self.program_index.lookupInEnvironment(.module_const, self.environmentForSource(source), name);
 }
 
 pub const GlobalAuthor = union(enum) {
@@ -2597,7 +2599,7 @@ pub const GlobalAuthor = union(enum) {
 pub fn selectGlobalAuthor(self: *Lowering, name: []const u8) GlobalAuthor {
     const from = self.current_source_file orelse self.main_file orelse return .untracked;
     var res = self.resolver();
-    const set = res.collectVisibleAuthors(name, from, .user_bare_flat);
+    const set = res.collectVisibleAuthors(name, self.environmentForSource(from).?, .user_bare_flat);
     defer if (set.flat.len > 0) self.alloc.free(set.flat);
     if (set.own) |o| return globalAuthorAt(self, o, name);
     if (set.flat.len >= 2) return .ambiguous;
@@ -2606,7 +2608,7 @@ pub fn selectGlobalAuthor(self: *Lowering, name: []const u8) GlobalAuthor {
 }
 
 fn globalAuthorAt(self: *Lowering, author: resolver_mod.RawAuthor, name: []const u8) GlobalAuthor {
-    if (self.program_index.lookupInSource(.global, author.source, name)) |g| return .{ .resolved = g };
+    if (self.program_index.get(.global, author.id)) |g| return .{ .resolved = g };
     // A var_decl author with no per-source registration: the decl was deduped
     // at flat-merge (two modules declaring the same extern symbol), so the
     // global registered under the surviving author's source. The author IS a
@@ -2664,29 +2666,19 @@ fn anyRawAuthor(self: *Lowering, name: []const u8) bool {
     return false;
 }
 
-/// Saved `current_source_file` for a const-author pin; `unpin()` restores it.
-const ConstSourcePin = struct {
+const ConstEnvironmentPin = struct {
     lowering: *Lowering,
-    saved: ?[]const u8,
-    active: bool,
-    pub fn unpin(self: ConstSourcePin) void {
-        if (self.active) self.lowering.setCurrentSourceFile(self.saved);
+    saved: Lowering.LexicalContext,
+
+    pub fn unpin(self: ConstEnvironmentPin) void {
+        self.lowering.restoreLexicalContext(self.saved);
     }
 };
 
-/// Pin `current_source_file` to a SELECTED const's AUTHOR source while its RHS
-/// is folded / lowered, so nested same-name leaves resolve in the author's
-/// visibility context: `K :: M + 1` selected from `a.sx` always folds `M`
-/// against `a.sx`, regardless of which module read `K`. A null author (the
-/// fully-unwired fallback) leaves the context untouched. Single-author programs
-/// pin to the source they were already in → byte-identical.
-pub fn pinConstAuthorSource(self: *Lowering, source: ?[]const u8) ConstSourcePin {
-    if (source) |s| {
-        const saved = self.current_source_file;
-        self.setCurrentSourceFile(s);
-        return .{ .lowering = self, .saved = saved, .active = true };
-    }
-    return .{ .lowering = self, .saved = self.current_source_file, .active = false };
+pub fn pinConstEnvironment(self: *Lowering, environment: ?@import("../../imports.zig").EnvironmentId) ConstEnvironmentPin {
+    const pin = ConstEnvironmentPin{ .lowering = self, .saved = self.lexicalContext() };
+    if (environment) |env| self.setCurrentEnvironment(env);
+    return pin;
 }
 
 /// Fold integral compile-time floats into integer initializers and diagnose
