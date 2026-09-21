@@ -1,0 +1,10 @@
+@import "modules/std.sx";
+@import "types.sx";
+implementation :: scope {
+    defaultValue :: 4;
+    @context.extend scopeValue: i64 = defaultValue;
+    impl api.Read for api.Item {
+        read :: (self: *api.Item) -> i64 { self.value + context.scopeValue }
+    }
+    twice :: (x: i64) -> i64 export "scope_twice" { x * 2 }
+}

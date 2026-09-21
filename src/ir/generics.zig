@@ -459,7 +459,7 @@ pub const GenericResolver = struct {
         // stays in the call-site context (its args are typed there).
         const saved_src = self.l.lexicalContext();
         defer self.l.restoreLexicalContext(saved_src);
-        if (self.l.functionEnvironment(fd)) |env| self.l.setCurrentEnvironment(env);
+        self.l.setFunctionContext(fd);
         return self.l.resolveTypeWithBindings(fd.return_type.?);
     }
 };

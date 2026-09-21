@@ -151,7 +151,7 @@ fn namespacedPrefixType(self: *Lowering, object: *const Node) ?TypeId {
         .selected => |s| s,
         else => return null,
     };
-    const ty = switch (self.selectNominalLeaf(sel.member, sel.target.environment, false)) {
+    const ty = switch (self.selectNominalLeaf(sel.member, self.program_index.declaration(sel.author.id).environment.?, false)) {
         .resolved => |tid| tid,
         else => return null,
     };
@@ -2120,7 +2120,7 @@ pub fn declaredChannelTags(self: *Lowering, fd: *const ast.FnDecl) []const u32 {
     const node = astChannelNode(fd.return_type) orelse return &.{};
     const saved = self.lexicalContext();
     defer self.restoreLexicalContext(saved);
-    self.setCurrentEnvironment(self.functionEnvironment(fd));
+    self.setFunctionContext(fd);
     const ty = self.resolveType(node);
     if (ty.isBuiltin()) return &.{};
     const info = self.module.types.get(ty);

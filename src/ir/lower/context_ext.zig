@@ -312,7 +312,7 @@ pub fn contextExtensionDefault(self: *Lowering, fname: []const u8, fty: types_mo
         const de = e.default_expr orelse return null;
         const saved = self.lexicalContext();
         defer self.restoreLexicalContext(saved);
-        self.setCurrentSourceFile(e.module_path);
+        self.setDeclarationContext(de);
         const vd = ast.VarDecl{
             .name = e.name,
             .name_span = e.name_span,
@@ -359,6 +359,7 @@ fn gatherEntries(
             // `ns :: @import "m"` still contributes m's context fields —
             // imports gate existence, never visibility.
             .namespace_decl => |ns| gatherEntries(self, ns.decls, entries, seen_nodes),
+            .scope_decl => |scope| gatherEntries(self, scope.decls, entries, seen_nodes),
             else => {},
         }
     }
@@ -390,6 +391,7 @@ fn findContextStructDecl(decls: []const *const Node) ?ContextStructRef {
             .const_decl => |cd| if (std.mem.eql(u8, cd.name, "Context") and cd.value.data == .struct_decl)
                 return .{ .node = decl, .decl = cd.value.data.struct_decl },
             .namespace_decl => |ns| if (findContextStructDecl(ns.decls)) |found| return found,
+            .scope_decl => |scope| if (findContextStructDecl(scope.decls)) |found| return found,
             else => {},
         }
     }

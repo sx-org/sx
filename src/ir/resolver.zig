@@ -216,6 +216,7 @@ pub fn runtimeClassWinsType(set: AuthorSet, verdict: Verdict) bool {
 pub const Resolver = struct {
     index: *ProgramIndex,
     alloc: std.mem.Allocator,
+    context: ?LookupContext = null,
 
     pub fn init(index: *ProgramIndex, alloc: std.mem.Allocator) Resolver {
         return .{ .index = index, .alloc = alloc };
@@ -246,7 +247,8 @@ pub const Resolver = struct {
             .impl_transitive, .lowering_internal => @panic("collectVisibleAuthors: visibility mode has no single-hop author walk"),
         }
         const table = self.index.decl_table orelse return .{ .own = null, .flat = &.{} };
-        return self.collectInContext(name, .{ .table = table, .environment = from });
+        const context = if (self.context) |ctx| (if (ctx.environment == from) ctx else LookupContext{ .table = table, .environment = from }) else LookupContext{ .table = table, .environment = from };
+        return self.collectInContext(name, context);
     }
 
     pub fn collectInContext(self: *Resolver, name: []const u8, context: LookupContext) AuthorSet {
@@ -407,7 +409,7 @@ pub const Resolver = struct {
             .scope => |scope| scope.context,
         };
         const candidates: lookup.Candidates = switch (target) {
-            .namespace => |context| .{ .own = lookup.own(context, name, requester) },
+            .namespace => |context| lookup.namespaceMembers(self, context, name, requester, self.alloc) catch @panic("out of memory"),
             .scope => |scope| lookup.scopeMembers(self, scope, name, requester, self.alloc) catch @panic("out of memory"),
         };
         defer self.alloc.free(candidates.imported);

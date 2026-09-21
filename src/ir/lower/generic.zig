@@ -108,7 +108,7 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
     // A synthesized / sourceless body keeps the caller's context.
     const saved_source_mono = self.lexicalContext();
     defer self.restoreLexicalContext(saved_source_mono);
-    if (self.functionEnvironment(fd)) |env| self.setCurrentEnvironment(env);
+    self.setFunctionContext(fd);
 
     // The bounds this instance's bindings have to satisfy. Asked here rather
     // than at the call site because this is where the concrete binding for each
@@ -695,7 +695,7 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
                 },
                 .ambiguous => |alias| {
                     if (self.diagnostics) |diags|
-                        diags.addFmt(.err, node.span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{alias});
+                        alias.diagnose(diags, node.span);
                     return .unresolved;
                 },
                 .not_qualified => {},
@@ -721,7 +721,7 @@ pub fn qualifiedNominalTypeArg(self: *Lowering, path: []const u8, span: ast.Span
         .not_qualified, .missing, .ambiguous => return null,
     };
     const saved_src = self.lexicalContext();
-    self.setCurrentEnvironment(self.program_index.declaration(sel.author.id).environment);
+    self.setAuthorContext(sel.author.id);
     const ty = self.resolveNominalLeaf(sel.member, false, span);
     self.restoreLexicalContext(saved_src);
     return if (ty == .unresolved) null else ty;
@@ -1624,7 +1624,7 @@ pub fn selectGenericStructHead(self: *Lowering, name: []const u8, qualified_path
             },
             .ambiguous => |alias| {
                 if (self.diagnostics) |d|
-                    d.addFmt(.err, span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{alias});
+                    alias.diagnose(d, span);
                 return .poisoned;
             },
             .not_qualified => return .not_generic,
@@ -2244,7 +2244,7 @@ pub fn genericInstanceMethodReturnType(self: *Lowering, gm: GenericStructMethod)
     defer self.type_bindings = saved;
     const saved_src = self.lexicalContext();
     defer self.restoreLexicalContext(saved_src);
-    self.setCurrentEnvironment(self.functionEnvironment(gm.fd));
+    self.setFunctionContext(gm.fd);
     return self.resolveTypeWithBindings(rt_node);
 }
 
@@ -2696,7 +2696,7 @@ pub fn instantiateTypeFunction(self: *Lowering, alias_name: []const u8, template
     // exprs above were already resolved in the caller's context.
     const saved_tf_src = self.lexicalContext();
     defer self.restoreLexicalContext(saved_tf_src);
-    if (self.functionEnvironment(fd)) |env| self.setCurrentEnvironment(env);
+    self.setFunctionContext(fd);
 
     // Determine if alias_name is a real alias (e.g., "Foo" for "Complex(u32)")
     // or just the template name itself (inline use like "Sx(f32)")

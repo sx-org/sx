@@ -72,6 +72,18 @@ fn imported(backend: anytype, context: Context, name: []const u8, requester: []c
     return .{ .imported = try candidates.toOwnedSlice(alloc) };
 }
 
+pub fn namespaceMembers(backend: anytype, context: Context, name: []const u8, requester: []const u8, alloc: std.mem.Allocator) !Candidates {
+    if (own(context, name, requester)) |decl| return .{ .own = decl };
+    const candidates = try imported(backend, context, name, requester, alloc);
+    defer alloc.free(candidates.imported);
+    var aliases = std.ArrayList(Declaration).empty;
+    errdefer aliases.deinit(alloc);
+    for (candidates.imported) |decl| {
+        if (decl.info().kind == .namespace) try aliases.append(alloc, decl);
+    }
+    return .{ .imported = try aliases.toOwnedSlice(alloc) };
+}
+
 pub fn scopeMembers(backend: anytype, view: ScopeView, name: []const u8, requester: []const u8, alloc: std.mem.Allocator) !Candidates {
     const context = view.context;
     if (context.table.findEnvironment(context.source(), view.path)) |env| {

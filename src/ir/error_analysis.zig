@@ -198,7 +198,7 @@ pub const ErrorAnalysis = struct {
         const qualified = std.fmt.allocPrint(self.l.alloc, "{s}.{s}", .{ head, method }) catch return null;
         defer self.l.alloc.free(qualified);
         return switch (self.l.qualifiedMemberVerdict(qualified)) {
-            .selected => |selected| self.l.namespaceFnMember(&selected.target, selected.member),
+            .selected => |selected| self.l.selectedFunction(selected),
             .missing, .ambiguous => null,
             .not_qualified => self.l.edgeCalleeDecl(qualified, self.l.current_source_file),
         };
@@ -609,7 +609,7 @@ pub const ErrorAnalysis = struct {
                 var tags = std.ArrayList(u32).empty;
                 var edges = std.ArrayList(*const ast.FnDecl).empty;
                 var dyn = false;
-                self.l.setCurrentEnvironment(self.l.functionEnvironment(fd));
+                self.l.setFunctionContext(fd);
                 self.collectEscapes(fd.body, &tags, &edges, &dyn, fd);
                 work.put(id, .{
                     .fd = fd,
@@ -713,7 +713,7 @@ pub const ErrorAnalysis = struct {
         const authors = self.functionAuthors();
         defer self.l.alloc.free(authors);
         for (authors) |author| {
-            self.l.setCurrentEnvironment(self.l.functionEnvironment(author.decl));
+            self.l.setFunctionContext(author.decl);
             self.collectClosureShapes(author.decl.body);
         }
     }

@@ -867,7 +867,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         },
         .ambiguous => |amb| {
             if (self.diagnostics) |d|
-                d.addFmt(.err, amb.span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{amb.alias});
+                amb.alias.diagnose(d, amb.span);
             return Ref.none;
         },
         .non_callable => |nc| {
@@ -1818,7 +1818,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     const fid: FuncId = if (fd.extern_export == .extern_ or fd.body.data == .intrinsic_expr)
                         self.declFuncId(fd) orelse declared: {
                             const saved_source = self.lexicalContext();
-                            self.setCurrentEnvironment(self.functionEnvironment(fd));
+                            self.setFunctionContext(fd);
                             self.declareFunction(fd, fd.name);
                             self.restoreLexicalContext(saved_source);
                             break :declared self.declFuncId(fd) orelse return self.emitError(fd.name, c.callee.span);

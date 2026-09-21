@@ -132,7 +132,7 @@ pub const CallResolver = struct {
         non_callable: struct { member: []const u8, span: ast.Span },
         missing: struct { namespace: []const u8, member: []const u8, span: ast.Span },
         not_visible: struct { alias: []const u8, span: ast.Span },
-        ambiguous: struct { alias: []const u8, span: ast.Span },
+        ambiguous: struct { alias: Lowering.AmbiguousQualified, span: ast.Span },
     };
 
     /// Infer the IR type a call expression evaluates to (without lowering it).
@@ -914,7 +914,7 @@ pub const CallResolver = struct {
 
         switch (self.l.qualifiedMemberVerdict(path)) {
             .selected => |sel| {
-                if (self.l.namespaceFnMember(&sel.target, sel.member)) |fd| {
+                if (self.l.selectedFunction(sel)) |fd| {
                     self.l.alloc.free(path);
                     return .{ .func = .{
                         .decl = fd,
@@ -942,7 +942,7 @@ pub const CallResolver = struct {
             .ambiguous => |alias| {
                 return .{ .ambiguous = .{
                     .alias = alias,
-                    .span = pathSliceSpan(c.callee, path, alias),
+                    .span = pathSliceSpan(c.callee, path, alias.name),
                 } };
             },
             .not_qualified => {},
@@ -970,7 +970,7 @@ pub const CallResolver = struct {
             } },
             .ambiguous => |alias| return .{ .ambiguous = .{
                 .alias = alias,
-                .span = pathSliceSpan(fa.object, object_path, alias),
+                .span = pathSliceSpan(fa.object, object_path, alias.name),
             } },
             .not_qualified => self.l.alloc.free(object_path),
         }
@@ -1039,7 +1039,7 @@ pub const CallResolver = struct {
             self.l.module.functions.items[@intFromEnum(fid)].ret
         else blk: {
             const saved = self.l.lexicalContext();
-            self.l.setCurrentEnvironment(self.l.functionEnvironment(fd));
+            self.l.setFunctionContext(fd);
             const ret = self.l.resolveReturnType(fd);
             self.l.restoreLexicalContext(saved);
             break :blk ret;

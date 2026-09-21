@@ -774,7 +774,7 @@ test "editor structural alias cycles do not form an identity" {
     try std.testing.expect(doc.sema.?.selection.select("Loop") == null);
 }
 
-test "parsed scopes and spreads report unsupported semantics" {
+test "scope declarations are indexed while spreads remain unsupported" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -782,10 +782,9 @@ test "parsed scopes and spreads report unsupported semantics" {
     const doc = try store.openOrUpdate("scope.sx", "geo :: scope { X :: 1; } ..geo;", 1);
     try store.analyzeDocument(doc);
     const sema = doc.sema orelse return error.MissingAnalysis;
-    try std.testing.expectEqual(@as(usize, 2), sema.diagnostics.len);
-    try std.testing.expectEqualStrings("scope blocks are not supported", sema.diagnostics[0].message);
-    try std.testing.expectEqualStrings("scope spreads are not supported", sema.diagnostics[1].message);
-    try std.testing.expectEqual(@as(usize, 0), sema.symbols.len);
+    try std.testing.expectEqual(@as(usize, 1), sema.diagnostics.len);
+    try std.testing.expectEqualStrings("scope spreads are not supported", sema.diagnostics[0].message);
+    try std.testing.expectEqual(@as(usize, 2), sema.symbols.len);
 }
 
 const CompilerFacts = struct {
@@ -899,7 +898,8 @@ test "compiler and editor retain scope block imports without file-level leakage"
     for (doc.sema.?.symbols) |symbol| {
         try std.testing.expect(!std.mem.eql(u8, symbol.name, "left") and !std.mem.eql(u8, symbol.name, "right"));
     }
-    const read = compiler.root.data.root.decls[1].data.scope_decl.decls[3].data.scope_decl.decls[0];
+    const detail = compiler.table.findEnvironment(path, &.{ "geo", "detail" }).?;
+    const read = compiler.table.get(compiler.table.environment(detail).names.get("read").?).node.?;
     try std.testing.expectEqual(read.lexical_block.?, read.data.fn_decl.body.lexical_block.?);
     var subst = @import("../ast.zig").Substitution.init(alloc);
     const cloned = try @import("../ast.zig").cloneWithSubst(alloc, read, &subst);
@@ -918,7 +918,8 @@ test "scope merge duplicates and scope-name collisions diagnose the second decla
         \\plain :: scope {}
     ;
     var compiler = try compilerFacts(alloc, "duplicate-scopes.sx", source);
-    const nodes = compiler.root.data.root.decls;
+    var original_parser = try @import("../parser.zig").Parser.init(alloc, source);
+    const nodes = (try original_parser.parse()).data.root.decls;
     const spans = [_]@import("../ast.zig").Span{ nodes[1].data.scope_decl.decls[0].span, nodes[2].span, nodes[4].span };
     try std.testing.expectEqual(spans.len, compiler.diagnostics.items.items.len);
     for (spans, compiler.diagnostics.items.items) |span, diagnostic| {
@@ -1134,4 +1135,60 @@ test "scope aliases preserve target identity and requester private authority" {
     try std.testing.expectEqual(.single, authors.verdict);
     const doc = probe.store.get(root.source()).?;
     try std.testing.expect(doc.sema.?.selection.select("answer") != null);
+}
+
+test "scope bodies and alias paths navigate to their authored declarations" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const source =
+        \\N :: 9;
+        \\geo :: scope {
+        \\    N :: 3;
+        \\    read :: () -> i64 { N }
+        \\}
+        \\geo :: scope { more :: () -> i64 { N } }
+        \\Saved :: geo;
+        \\main :: () { x := Saved.read(); Saved := .{ read = 7 }; y := Saved.read; }
+    ;
+    const doc = try store.openOrUpdate("scope-navigation.sx", source, 1);
+    try store.analyzeDocument(doc);
+    const sema = doc.sema orelse return error.MissingAnalysis;
+    try std.testing.expectEqual(@as(usize, 0), sema.diagnostics.len);
+    const number = sema.selection.select("geo.N").?;
+    const read = sema.selection.select("geo.read").?;
+    const first_use = std.mem.indexOf(u8, source, "{ N }").? + 2;
+    const call_use = std.mem.indexOf(u8, source, "Saved.read").? + "Saved.".len;
+    const local_use = std.mem.lastIndexOf(u8, source, "Saved.read").? + "Saved.".len;
+    var found_number = false;
+    var found_call = false;
+    for (sema.references) |reference| {
+        const symbol = sema.symbols[reference.symbol_index];
+        try std.testing.expect(reference.span.start != local_use);
+        if (reference.span.start == first_use) {
+            try std.testing.expectEqualDeep(number, symbol.declaration.?);
+            found_number = true;
+        }
+        if (reference.span.start == call_use) {
+            try std.testing.expectEqualDeep(read, symbol.declaration.?);
+            found_call = true;
+        }
+    }
+    try std.testing.expect(found_number and found_call);
+    try std.testing.expectEqual(@as(u8, 64), sema.fn_signatures.get("Saved.read").?.return_type.signed);
+}
+
+test "scope aliases are designators and cannot initialize a value" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const source = "geo :: scope { N :: 3; } Saved :: geo; main :: () { value := Saved; }";
+    const doc = try store.openOrUpdate("scope-value.sx", source, 1);
+    try store.analyzeDocument(doc);
+    const diagnostics = doc.sema.?.diagnostics;
+    try std.testing.expectEqual(@as(usize, 1), diagnostics.len);
+    try std.testing.expectEqualStrings("a scope is not a value", diagnostics[0].message);
+    try std.testing.expectEqual(std.mem.lastIndexOf(u8, source, "Saved").?, diagnostics[0].span.?.start);
 }

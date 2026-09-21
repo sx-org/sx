@@ -325,7 +325,7 @@ pub const ExprTyper = struct {
                             .selected => |sel| {
                                 const synth = Node{ .span = node.span, .data = .{ .identifier = .{ .name = sel.member } } };
                                 const saved_src = self.l.lexicalContext();
-                                self.l.setCurrentEnvironment(self.l.program_index.declaration(sel.author.id).environment);
+                                self.l.setAuthorContext(sel.author.id);
                                 defer self.l.restoreLexicalContext(saved_src);
                                 return self.l.inferExprType(&synth);
                             },
@@ -345,7 +345,7 @@ pub const ExprTyper = struct {
                         switch (self.l.qualifiedMemberVerdict(path)) {
                             .selected => |sel| {
                                 const saved_src = self.l.lexicalContext();
-                                self.l.setCurrentEnvironment(self.l.program_index.declaration(sel.author.id).environment);
+                                self.l.setAuthorContext(sel.author.id);
                                 var global_info: ?program_index_mod.GlobalInfo = null;
                                 if (self.l.program_index.lookup(.global, sel.member)) |fallback| {
                                     switch (self.l.selectGlobalAuthor(sel.member)) {
@@ -356,7 +356,7 @@ pub const ExprTyper = struct {
                                 }
                                 self.l.restoreLexicalContext(saved_src);
                                 if (global_info) |gi| return self.l.resolveFieldType(gi.ty, fa.field);
-                                switch (self.l.selectNominalLeaf(sel.member, sel.target.environment, false)) {
+                                switch (self.l.selectNominalLeaf(sel.member, self.l.program_index.declaration(sel.author.id).environment.?, false)) {
                                     .resolved => |ty| if (!ty.isBuiltin() and self.l.isPayloadlessVariant(ty, fa.field)) return ty,
                                     else => {},
                                 }
@@ -479,7 +479,7 @@ pub const ExprTyper = struct {
                         if (self.l.qualifiedTypeName(fa.object)) |path| {
                             defer self.l.alloc.free(path);
                             switch (self.l.qualifiedMemberVerdict(path)) {
-                                .selected => |sel| switch (self.l.selectNominalLeaf(sel.member, sel.target.environment, false)) {
+                                .selected => |sel| switch (self.l.selectNominalLeaf(sel.member, self.l.program_index.declaration(sel.author.id).environment.?, false)) {
                                     .resolved => |oty| if (!oty.isBuiltin() and self.l.module.types.get(oty) == .@"enum" and self.l.module.types.get(oty).@"enum".hasPayload()) return oty,
                                     else => {},
                                 },

@@ -1796,7 +1796,7 @@ const QualifiedGlobalStoreVerdict = union(enum) {
     not_applicable,
     target: QualifiedGlobalStoreTarget,
     missing: struct { namespace: []const u8, member: []const u8, span: ast.Span },
-    ambiguous: struct { alias: []const u8, span: ast.Span },
+    ambiguous: struct { alias: Lowering.AmbiguousQualified, span: ast.Span },
     immutable: struct { name: []const u8, span: ast.Span },
     non_lvalue: struct { name: []const u8, span: ast.Span, is_function: bool },
     private_field: struct { name: []const u8, span: ast.Span },
@@ -1849,7 +1849,7 @@ fn selectQualifiedGlobalStoreTarget(self: *Lowering, node: *const Node) Qualifie
         } },
         .ambiguous => |alias| return .{ .ambiguous = .{
             .alias = alias,
-            .span = qualifiedStorePathSpan(node, full_path, alias),
+            .span = qualifiedStorePathSpan(node, full_path, alias.name),
         } },
         .not_qualified => {
             const object_path = self.qualifiedTypeName(fa.object) orelse return .not_applicable;
@@ -1870,7 +1870,7 @@ fn selectQualifiedGlobalStoreTarget(self: *Lowering, node: *const Node) Qualifie
                 } },
                 .ambiguous => |alias| return .{ .ambiguous = .{
                     .alias = alias,
-                    .span = qualifiedStorePathSpan(fa.object, object_path, alias),
+                    .span = qualifiedStorePathSpan(fa.object, object_path, alias.name),
                 } },
             }
         },
@@ -1951,7 +1951,7 @@ fn diagnoseQualifiedStoreVerdict(self: *Lowering, verdict: QualifiedGlobalStoreV
         .missing => |m| if (self.diagnostics) |d|
             d.addFmt(.err, m.span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member }),
         .ambiguous => |amb| if (self.diagnostics) |d|
-            d.addFmt(.err, amb.span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{amb.alias}),
+            amb.alias.diagnose(d, amb.span),
         .immutable => |bad| if (self.diagnostics) |d|
             d.addFmt(.err, bad.span, "cannot assign to '{s}' — it is a constant, not a mutable global", .{bad.name}),
         .non_lvalue => |bad| if (self.diagnostics) |d| {
@@ -2051,7 +2051,7 @@ fn tryLowerQualifiedGlobalStore(
         },
         .ambiguous => |alias| {
             if (self.diagnostics) |d|
-                d.addFmt(.err, span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{alias});
+                alias.diagnose(d, span);
             return .handled;
         },
         .not_qualified => blk: {
@@ -2067,7 +2067,7 @@ fn tryLowerQualifiedGlobalStore(
                 },
                 .ambiguous => |alias| {
                     if (self.diagnostics) |d|
-                        d.addFmt(.err, span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{alias});
+                        alias.diagnose(d, span);
                     return .handled;
                 },
                 .not_qualified => return .not_applicable,
@@ -2076,7 +2076,6 @@ fn tryLowerQualifiedGlobalStore(
             break :blk sel;
         },
     };
-    const target = selected.target;
     const member = selected.member;
     const qualified_name = object_path orelse full_path;
 
@@ -2092,8 +2091,8 @@ fn tryLowerQualifiedGlobalStore(
     // `selectGlobalAuthor` — which emits nothing — then restore, then
     // diagnose/store with correct attribution.
     const saved_src = self.lexicalContext();
-    self.setCurrentEnvironment(self.program_index.declaration(selected.author.id).environment);
-    const is_fn = self.namespaceFnMember(&target, member) != null;
+    self.setAuthorContext(selected.author.id);
+    const is_fn = self.selectedFunction(selected) != null;
     const is_const = !is_fn and rootIsConstant(self, member);
     var resolved: ?program_index_mod.GlobalInfo = null;
     var member_ambiguous = false;

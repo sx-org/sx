@@ -249,6 +249,9 @@ pub const Analyzer = struct {
     }
 
     fn registerTopLevelDeclPrefixed(self: *Analyzer, node: *Node, ns_prefix: ?[]const u8) !void {
+        const saved_selection = self.selection;
+        defer self.setSelection(saved_selection);
+        if (node.lexical_block) |block| self.setSelection(try self.selection.inBlock(block));
         self.pending_visibility = node.visibility;
         defer self.pending_visibility = .public;
         switch (node.data) {
@@ -412,6 +415,10 @@ pub const Analyzer = struct {
             },
             .union_decl => |ud| {
                 try self.addSymbol(ud.name, .enum_type, .{ .union_type = ud.name }, node.span);
+            },
+            .scope_decl => |scope| {
+                try self.addSymbol(scope.name, .namespace, null, node.span);
+                for (scope.decls) |decl| try self.registerTopLevelDeclPrefixed(decl, null);
             },
             .namespace_decl => |ns| {
                 try self.addSymbol(ns.name, .namespace, null, node.span);
@@ -1126,7 +1133,10 @@ pub const Analyzer = struct {
 
     /// Pass 2: analyse the body/value of a top-level declaration.
     /// The symbol itself was already registered in Pass 1.
-    fn analyzeTopLevelDecl(self: *Analyzer, node: *Node) !void {
+    fn analyzeTopLevelDecl(self: *Analyzer, node: *Node) std.mem.Allocator.Error!void {
+        const saved_selection = self.selection;
+        defer self.setSelection(saved_selection);
+        if (node.lexical_block) |block| self.setSelection(try self.selection.inBlock(block));
         switch (node.data) {
             .fn_decl => |fd| {
                 const saved_cc = self.in_c_conv;
@@ -1138,7 +1148,7 @@ pub const Analyzer = struct {
                 self.in_c_conv = saved_cc;
             },
             .const_decl => |cd| {
-                try self.analyzeNode(cd.value);
+                try self.analyzeDesignator(cd.value);
             },
             .var_decl => |vd| {
                 if (vd.value) |val| {
@@ -1162,6 +1172,9 @@ pub const Analyzer = struct {
                 }
             },
             .enum_decl, .union_decl, .array_type_expr, .slice_type_expr, .array_literal, .parameterized_type_expr, .index_expr, .slice_expr, .insert_expr, .ufcs_alias => {},
+            .scope_decl => |scope| {
+                for (scope.decls) |decl| try self.analyzeTopLevelDecl(decl);
+            },
             .namespace_decl => |ns| {
                 const saved = self.selection;
                 defer self.setSelection(saved);
@@ -1215,6 +1228,12 @@ pub const Analyzer = struct {
                     const sym = self.symbols.items[idx];
                     // Skip imported symbols — local declarations are allowed to shadow them
                     if (sym.origin != null) continue;
+                    if (sym.declaration) |previous| {
+                        if (self.selection.context) |context| {
+                            if (previous.table != context.table or previous.info().environment != context.environment) continue;
+                            if (previous.info().scope != null and kind == .namespace) continue;
+                        }
+                    }
                     if (sym.scope_depth == self.scope_depth) {
                         try self.diagnostics.append(self.allocator, .{
                             .level = .warn,
@@ -1229,7 +1248,7 @@ pub const Analyzer = struct {
 
         try self.symbols.append(self.allocator, .{
             .declaration = if (self.selection.own.get(name)) |decl|
-                (if (std.meta.eql(decl.info().span, @as(?Span, span))) decl else null)
+                (if (decl.info().scope != null or std.meta.eql(decl.info().span, @as(?Span, span))) decl else null)
             else
                 null,
             .name = name,
@@ -1288,7 +1307,7 @@ pub const Analyzer = struct {
 
     fn selectedSymbol(self: *Analyzer, name: []const u8) ?u32 {
         const selected = self.selection.select(name);
-        const indices = self.symbol_index.get(name) orelse return null;
+        const indices = self.symbol_index.get(if (selected) |decl| decl.info().name else name) orelse return null;
         var i = indices.items.len;
         while (i > 0) {
             i -= 1;
@@ -1330,7 +1349,23 @@ pub const Analyzer = struct {
         });
     }
 
-    fn analyzeNode(self: *Analyzer, node: *Node) !void {
+    fn pathRootIsLocalValue(self: *Analyzer, path: []const u8) bool {
+        const head = path[0 .. std.mem.indexOfScalar(u8, path, '.') orelse path.len];
+        const index = self.selectedSymbol(head) orelse return false;
+        return self.symbols.items[index].scope_depth > 0;
+    }
+
+    fn analyzeNode(self: *Analyzer, node: *Node) std.mem.Allocator.Error!void {
+        if (self.qualifiedTypeName(node)) |path| {
+            if (!self.pathRootIsLocalValue(path) and self.selection.isScope(path)) {
+                try self.diagnostics.append(self.allocator, .{ .level = .err, .span = node.span, .message = "a scope is not a value" });
+                return;
+            }
+        }
+        try self.analyzeDesignator(node);
+    }
+
+    fn analyzeDesignator(self: *Analyzer, node: *Node) std.mem.Allocator.Error!void {
         switch (node.data) {
             .fn_decl => |fd| {
                 const local_ret_ty = self.resolveReturnType(fd) orelse
@@ -1365,7 +1400,7 @@ pub const Analyzer = struct {
             },
             .const_decl => |cd| {
                 // Analyze value first (so it can't reference itself)
-                try self.analyzeNode(cd.value);
+                try self.analyzeDesignator(cd.value);
                 const ty = self.resolveTypeAnnotation(cd.type_annotation) orelse self.inferValueType(cd.value);
                 const kind = classifyConstDecl(cd);
                 const int_constant = self.constIndexValue(cd.value);
@@ -1451,8 +1486,14 @@ pub const Analyzer = struct {
                     try self.analyzeNode(arg);
                 }
             },
-            .field_access => |fa| {
-                try self.analyzeNode(fa.object);
+            .field_access => |fa| field: {
+                try self.analyzeDesignator(fa.object);
+                if (self.qualifiedTypeName(node)) |path| {
+                    if (!self.pathRootIsLocalValue(path)) if (self.selectedSymbol(path)) |index| {
+                        try self.references.append(self.allocator, .{ .span = self.spanOf(fa.field), .symbol_index = index });
+                        break :field;
+                    };
+                }
                 var owner_ty = self.inferExprType(fa.object);
                 if (owner_ty.isPointer()) owner_ty = self.pointerType(owner_ty.pointer_type);
                 self.recordTypedMemberRef(fa.field, owner_ty.toName() orelse "", false, if (owner_ty == .struct_instance) owner_ty.struct_instance else null);
@@ -1802,11 +1843,14 @@ pub const Analyzer = struct {
                     try self.analyzeNode(d);
                 }
             },
-            .scope_decl, .spread_decl => {
+            .scope_decl => |scope| {
+                for (scope.decls) |decl| try self.analyzeTopLevelDecl(decl);
+            },
+            .spread_decl => {
                 try self.diagnostics.append(self.allocator, .{
                     .level = .err,
                     .span = node.span,
-                    .message = if (node.data == .scope_decl) "scope blocks are not supported" else "scope spreads are not supported",
+                    .message = "scope spreads are not supported",
                 });
             },
             .root => {

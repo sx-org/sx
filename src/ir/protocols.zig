@@ -200,7 +200,7 @@ pub const ProtocolResolver = struct {
         var protocol_ty: ?TypeId = null;
         if (pd.type_params.len == 0) {
             const saved = self.l.lexicalContext();
-            self.l.setCurrentEnvironment(self.l.program_index.declaration(terminal.id).environment);
+            self.l.setAuthorContext(terminal.id);
             self.registerProtocolDecl(pd);
             self.l.restoreLexicalContext(saved);
             protocol_ty = self.l.namedRefTid(terminal.raw, pd.name) orelse return null;
@@ -226,6 +226,13 @@ pub const ProtocolResolver = struct {
             else
                 null;
             return .{ .name = self.protocolIdentityName(pd), .ty = ty, .decl = pd };
+        }
+        if (std.mem.indexOfScalar(u8, written, '.') != null) {
+            const from = source orelse self.l.current_source_file orelse return null;
+            return switch (self.l.qualifiedMemberVerdictFrom(written, from)) {
+                .selected => |member| self.resolvedProtocolAuthor(member.author),
+                else => null,
+            };
         }
         const src = source orelse self.l.current_source_file;
         if (src) |from| {
@@ -273,6 +280,7 @@ pub const ProtocolResolver = struct {
         // instance machinery only after Box is instantiated.
         if (ib.target_type_params.len > 0 or ib.target_type.len == 0) return null;
         if (source orelse self.l.current_source_file) |from| {
+            if (std.mem.indexOfScalar(u8, ib.target_type, '.') != null) return self.l.namespacedLeafTypeFrom(ib.target_type, from);
             return switch (self.l.selectNominalLeaf(ib.target_type, self.l.environmentForSource(from).?, false)) {
                 .resolved => |ty| ty,
                 else => null,
@@ -985,11 +993,15 @@ pub const ProtocolResolver = struct {
     /// see (an `xx` site silently degrades to the reinterpret spill). Runs at
     /// the end of `lowerRoot`; walks exactly where registration walked
     /// (top-level decls, plus namespace decls in full-program hosts).
-    pub fn diagnoseUnregisteredImpls(self: ProtocolResolver, decls: []const *const Node) void {
+    pub fn diagnoseUnregisteredImpls(self: ProtocolResolver, authored: []const *const Node) void {
+        const saved_context = self.l.lexicalContext();
+        defer self.l.restoreLexicalContext(saved_context);
+        const decls = ast.scopeDeclarations(self.l.alloc, authored) catch @panic("out of memory");
         const diags = self.l.diagnostics orelse return;
         for (decls) |decl| {
             switch (decl.data) {
                 .impl_block => {
+                    self.l.setDeclarationContext(decl);
                     const ib = &decl.data.impl_block;
                     if (self.l.registered_protocol_impls.contains(ib)) continue;
                     const source = decl.source_file orelse self.l.current_source_file;

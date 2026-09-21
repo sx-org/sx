@@ -148,7 +148,7 @@ fn untypedSelectedNumeric(self: *Lowering, sel: NumericConstLeaf) ?program_index
     const next = Lowering.UntypedConstFrame{ .value = sel.value, .parent = self.untyped_const_frame };
     self.untyped_const_frame = &next;
     defer self.untyped_const_frame = next.parent;
-    const pin = self.pinConstEnvironment(sel.environment);
+    const pin = self.pinConstValue(sel.value, sel.environment);
     defer pin.unpin();
     const saved_scope = self.scope;
     self.scope = null;
@@ -302,7 +302,7 @@ pub fn foldFieldInt(self: *Lowering, node: *const Node, frame: ?*const ConstFold
 fn constSelectedValue(self: *Lowering, name: []const u8, sel: SelectedConst, expected_ty: TypeId, frame: ?*const ConstFoldFrame) ?inst_mod.ConstantValue {
     if (constFoldFrameContains(frame, name, sel.environment)) return null;
     const f = ConstFoldFrame{ .name = name, .environment = sel.environment, .parent = frame };
-    const pin = self.pinConstEnvironment(sel.environment);
+    const pin = self.pinConstValue(sel.info.value, sel.environment);
     defer pin.unpin();
     const value = if (sel.info.declared_type != null)
         constExprValueInner(self, sel.info.value, sel.info.ty, &f) orelse return null
@@ -1759,7 +1759,7 @@ fn lowerComptimeCallArgsMode(
     // caller's context.
     const saved_source = self.lexicalContext();
     defer self.restoreLexicalContext(saved_source);
-    if (self.functionEnvironment(fd)) |env| self.setCurrentEnvironment(env);
+    self.setFunctionContext(fd);
 
     // An inlined comptime body is still a function boundary for cleanup. Its
     // explicit `return` may emit defers declared inside the body, but must not
@@ -2255,7 +2255,7 @@ pub fn foldSourceConstInt(self: *Lowering, name: []const u8, frame: ?*const Cons
             if (constFoldFrameContains(frame, name, sel.environment)) return null;
             if (!program_index_mod.isCountableConstType(&self.module.types, sel.info.ty)) return null;
             var f = ConstFoldFrame{ .name = name, .environment = sel.environment, .parent = frame };
-            const restore = self.pinConstEnvironment(sel.environment);
+            const restore = self.pinConstValue(sel.info.value, sel.environment);
             defer restore.unpin();
             const ctx = SourceConstCtx{ .lowering = self, .frame = &f };
             if (sel.info.ty == .f32) return program_index_mod.floatToIntExact(program_index_mod.evalConstFloatInit(sel.info.value, ctx, sel.info.ty) orelse return null);
@@ -2285,7 +2285,7 @@ pub fn selectQualifiedConst(self: *Lowering, ns: []const u8, field: []const u8) 
         .selected => |s| s,
         .not_qualified, .missing, .ambiguous => return null,
     };
-    const src = sel.target.target_module_path;
+    const src = sel.author.source;
     const ci = self.program_index.get(.module_const, sel.author.id) orelse return null;
     return .{ .info = ci, .source = src, .environment = self.program_index.declaration(sel.author.id).environment };
 }
@@ -2301,7 +2301,7 @@ pub fn foldQualifiedConstInt(self: *Lowering, ns: []const u8, field: []const u8,
     if (constFoldFrameContains(frame, field, sel.environment)) return null;
     if (!program_index_mod.isCountableConstType(&self.module.types, sel.info.ty)) return null;
     var f = ConstFoldFrame{ .name = field, .environment = sel.environment, .parent = frame };
-    const restore = self.pinConstEnvironment(sel.environment);
+    const restore = self.pinConstValue(sel.info.value, sel.environment);
     defer restore.unpin();
     const ctx = SourceConstCtx{ .lowering = self, .frame = &f };
     if (sel.info.ty == .f32) return program_index_mod.floatToIntExact(program_index_mod.evalConstFloatInit(sel.info.value, ctx, sel.info.ty) orelse return null);
@@ -2316,7 +2316,7 @@ pub fn foldQualifiedConstFloat(self: *Lowering, ns: []const u8, field: []const u
     if (constFoldFrameContains(frame, field, sel.environment)) return null;
     if (!program_index_mod.isCountableConstType(&self.module.types, sel.info.ty)) return null;
     var f = ConstFoldFrame{ .name = field, .environment = sel.environment, .parent = frame };
-    const restore = self.pinConstEnvironment(sel.environment);
+    const restore = self.pinConstValue(sel.info.value, sel.environment);
     defer restore.unpin();
     return program_index_mod.evalConstFloatInit(sel.info.value, SourceConstCtx{ .lowering = self, .frame = &f }, sel.info.ty);
 }
@@ -2330,7 +2330,7 @@ pub fn qualifiedConstIsFloatTyped(self: *Lowering, ns: []const u8, field: []cons
     if (constFoldFrameContains(frame, field, sel.environment)) return false;
     if (program_index_mod.isFloatConstType(sel.info.ty)) return true;
     var f = ConstFoldFrame{ .name = field, .environment = sel.environment, .parent = frame };
-    const restore = self.pinConstEnvironment(sel.environment);
+    const restore = self.pinConstValue(sel.info.value, sel.environment);
     defer restore.unpin();
     return program_index_mod.isFloatValuedExpr(sel.info.value, SourceConstCtx{ .lowering = self, .frame = &f });
 }
@@ -2352,7 +2352,7 @@ pub fn foldQualifiedConstNodeFloat(self: *Lowering, node: *const Node, frame: ?*
     defer self.alloc.free(path);
     if (constFoldFrameContains(frame, path, sel.environment)) return null;
     const f = ConstFoldFrame{ .name = path, .environment = sel.environment, .parent = frame };
-    const restore = self.pinConstEnvironment(sel.environment);
+    const restore = self.pinConstValue(sel.value, sel.environment);
     defer restore.unpin();
     return program_index_mod.evalConstFloatInit(sel.value, SourceConstCtx{ .lowering = self, .frame = &f }, sel.declared_type orelse .f64);
 }
@@ -2364,7 +2364,7 @@ pub fn qualifiedConstNodeIsFloatTyped(self: *Lowering, node: *const Node, frame:
     defer self.alloc.free(path);
     if (constFoldFrameContains(frame, path, sel.environment)) return false;
     const f = ConstFoldFrame{ .name = path, .environment = sel.environment, .parent = frame };
-    const restore = self.pinConstEnvironment(sel.environment);
+    const restore = self.pinConstValue(sel.value, sel.environment);
     defer restore.unpin();
     return program_index_mod.isFloatValuedExpr(sel.value, SourceConstCtx{ .lowering = self, .frame = &f });
 }
@@ -2376,7 +2376,7 @@ pub fn foldSourceConstFloat(self: *Lowering, name: []const u8, frame: ?*const Co
             if (constFoldFrameContains(frame, name, sel.environment)) return null;
             if (!program_index_mod.isCountableConstType(&self.module.types, sel.info.ty)) return null;
             var f = ConstFoldFrame{ .name = name, .environment = sel.environment, .parent = frame };
-            const restore = self.pinConstEnvironment(sel.environment);
+            const restore = self.pinConstValue(sel.info.value, sel.environment);
             defer restore.unpin();
             return program_index_mod.evalConstFloatInit(sel.info.value, SourceConstCtx{ .lowering = self, .frame = &f }, sel.info.ty);
         },
@@ -2392,7 +2392,7 @@ pub fn sourceConstIsFloatTyped(self: *Lowering, name: []const u8, frame: ?*const
             if (constFoldFrameContains(frame, name, sel.environment)) return false;
             if (program_index_mod.isFloatConstType(sel.info.ty)) return true;
             var f = ConstFoldFrame{ .name = name, .environment = sel.environment, .parent = frame };
-            const restore = self.pinConstEnvironment(sel.environment);
+            const restore = self.pinConstValue(sel.info.value, sel.environment);
             defer restore.unpin();
             return program_index_mod.isFloatValuedExpr(sel.info.value, SourceConstCtx{ .lowering = self, .frame = &f });
         },
@@ -2492,6 +2492,7 @@ fn selectShapedConst(self: *Lowering, name: []const u8) ?SelectedConst {
         const id = sel.info.value.data.identifier;
         if (id.is_raw) return null;
         if (sel.environment) |env| self.setCurrentEnvironment(env);
+        if (sel.info.value.lexical_block != null) self.setDeclarationContext(sel.info.value);
         current = id.name;
     }
     return null;
@@ -2517,7 +2518,7 @@ pub fn foldConstArrayElem(self: *Lowering, name: []const u8, idx: i64, span: ?as
     }
     if (constFoldFrameContains(frame, name, sel.environment)) return null;
     var f = ConstFoldFrame{ .name = name, .environment = sel.environment, .parent = frame };
-    const restore = self.pinConstEnvironment(sel.environment);
+    const restore = self.pinConstValue(sel.info.value, sel.environment);
     defer restore.unpin();
     return program_index_mod.evalConstIntExpr(elems[@intCast(idx)], SourceConstCtx{ .lowering = self, .frame = &f });
 }
@@ -2557,7 +2558,7 @@ pub fn foldConstStructField(self: *Lowering, name: []const u8, field: []const u8
     if (!program_index_mod.isCountableConstType(&self.module.types, field_ty)) return null;
     if (constFoldFrameContains(frame, name, sel.environment)) return null;
     const f = ConstFoldFrame{ .name = name, .environment = sel.environment, .parent = frame };
-    const restore = self.pinConstEnvironment(sel.environment);
+    const restore = self.pinConstValue(sel.info.value, sel.environment);
     defer restore.unpin();
     const value = constStructLiteralInner(self, sl, sel.info.ty, &f, index, sel.info.declared_type != null) orelse return null;
     return switch (value) {
@@ -2671,6 +2672,12 @@ const ConstEnvironmentPin = struct {
 pub fn pinConstEnvironment(self: *Lowering, environment: ?@import("../../imports.zig").EnvironmentId) ConstEnvironmentPin {
     const pin = ConstEnvironmentPin{ .lowering = self, .saved = self.lexicalContext() };
     if (environment) |env| self.setCurrentEnvironment(env);
+    return pin;
+}
+
+pub fn pinConstValue(self: *Lowering, node: *const Node, environment: ?@import("../../imports.zig").EnvironmentId) ConstEnvironmentPin {
+    const pin = self.pinConstEnvironment(environment);
+    if (node.lexical_block != null) self.setDeclarationContext(node);
     return pin;
 }
 

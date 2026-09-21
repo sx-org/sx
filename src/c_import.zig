@@ -347,6 +347,7 @@ fn collectExternRefTargets(valid: *std.StringHashMap(void), decls: []const *Node
     for (decls) |d| {
         switch (d.data) {
             .library_decl => |ld| try valid.put(ld.name, {}),
+            .scope_decl => |scope| try collectExternRefTargets(valid, scope.decls),
             .namespace_decl => |ns| {
                 // A NAMED `@import c` unit lowers to a namespace wrapping
                 // its c_import_decl — the namespace name is the unit ref.
@@ -372,10 +373,11 @@ fn checkExternRefs(valid: *const std.StringHashMap(void), decls: []const *Node, 
                 if (fd.extern_export != .extern_) continue;
                 const ref = fd.extern_lib orelse continue;
                 if (!valid.contains(ref)) {
-                    diags.addFmt(.err, d.span, "extern library '{s}' is not declared; expected a @library constant or a named '@import c' unit", .{ref});
+                    diags.addFmtInFile(.err, d.source_file, d.span, "extern library '{s}' is not declared; expected a @library constant or a named '@import c' unit", .{ref});
                 }
             },
             .namespace_decl => |ns| checkExternRefs(valid, ns.decls, diags),
+            .scope_decl => |scope| checkExternRefs(valid, scope.decls, diags),
             else => {},
         }
     }
@@ -950,6 +952,7 @@ pub fn collectCImportSources(allocator: std.mem.Allocator, root: *const Node) ![
                         }
                     },
                     .namespace_decl => |ns| try walk(infos_, seen_, alloc, ns.decls),
+                    .scope_decl => |scope| try walk(infos_, seen_, alloc, scope.decls),
                     else => {},
                 }
             }

@@ -1,0 +1,10 @@
+@import "modules/std.sx";
+@import "2785-modules-scope-views/lib.sx";
+@import "2785-modules-scope-views/other.sx";
+ns :: @import "2785-modules-scope-views/lib.sx";
+geo :: scope { value :: 30; }
+Local :: geo;
+main :: () {
+    print("{} {} {} {} {} {} {}\n", geo.value, geo.read(), ns.geo.value,
+        Saved.value, Local.value, geo.otherOnly, geo.generic(i64, 2));
+}

@@ -1,0 +1,5 @@
+error: duplicate top-level declaration 'value'
+  --> examples/modules/2788-modules-scope-duplicate.sx:2:16
+   |
+ 2 | geo :: scope { value :: 2; }
+   |                ^^^^^^^^^^^

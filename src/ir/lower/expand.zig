@@ -215,6 +215,10 @@ const Expansion = struct {
                 ex.self.expansion.registerDriver(decl, ex.self.current_environment, ex.self.program_index.module_cache);
                 continue;
             }
+            if (decl.data == .scope_decl) {
+                ex.registerDriversIn(decl.data.scope_decl.decls, seen);
+                continue;
+            }
             if (decl.data != .namespace_decl) continue;
             if (seen.contains(decl)) continue;
             seen.put(decl, {}) catch {};
@@ -240,8 +244,9 @@ const Expansion = struct {
         defer seen.deinit();
         ex.registerTargetEnums(decls, &seen);
         ex.self.injectComptimeConstants();
-        ex.self.registerLiteralModuleConsts(decls);
-        ex.self.registerConstAliases(decls);
+        const authored = ast.scopeDeclarations(ex.self.alloc, decls) catch @panic("out of memory");
+        ex.self.registerLiteralModuleConsts(authored);
+        ex.self.registerConstAliases(authored);
     }
 
     fn registerTargetEnums(ex: *Expansion, decls: []const *Node, seen: *std.AutoHashMap(*const Node, void)) void {
@@ -258,6 +263,7 @@ const Expansion = struct {
                     ex.self.setDeclarationContext(decl);
                     ex.self.registerEnumDecl(&decl.data.enum_decl);
                 },
+                .scope_decl => |scope| ex.registerTargetEnums(scope.decls, seen),
                 .namespace_decl => |ns| {
                     if (seen.contains(decl)) continue;
                     seen.put(decl, {}) catch {};
@@ -315,6 +321,12 @@ const Expansion = struct {
 
     fn expandNamespaceNodes(ex: *Expansion, list: []const *Node, seen: *std.AutoHashMap(*const Node, void)) void {
         for (list) |decl| {
+            if (decl.data == .scope_decl) {
+                const scope = &decl.data.scope_decl;
+                ex.expandListInto(scope.decls, .transitive, .{ .slot = &scope.decls });
+                ex.expandNamespaceNodes(scope.decls, seen);
+                continue;
+            }
             if (decl.data != .namespace_decl) continue;
             if (seen.contains(decl)) continue;
             seen.put(decl, {}) catch {};
@@ -708,13 +720,9 @@ const Expansion = struct {
         const from = src orelse ex.self.main_file orelse return null;
         switch (ex.self.qualifiedMemberVerdictFrom(path, from)) {
             .selected => |sel| {
-                for (sel.target.member_ids) |id| {
-                    const decl = ex.self.program_index.declaration(id).node.?;
-                    if (decl.data != .const_decl) continue;
-                    if (!std.mem.eql(u8, decl.data.const_decl.name, sel.member)) continue;
-                    return ex.driveCondition(decl.data.const_decl.value, sel.target.target_module_path, depth + 1);
-                }
-                return null;
+                const decl = ex.self.program_index.declaration(sel.author.id).node.?;
+                if (decl.data != .const_decl) return null;
+                return ex.driveCondition(decl.data.const_decl.value, sel.author.source, depth + 1);
             },
             .missing => |m| {
                 ex.awaitName(m.environment, m.namespace, m.member);

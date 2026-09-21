@@ -137,6 +137,8 @@ pub const Node = struct {
                 .error_set_decl => |d| d.name,
                 .namespace_decl => |d| d.name,
                 .scope_decl => |d| d.name,
+                .library_decl => |d| d.name,
+                .framework_decl => |d| d.name,
                 .ufcs_alias => |d| d.name,
                 .c_import_decl => |d| d.name,
                 .protocol_decl => |d| d.name,
@@ -1437,4 +1439,19 @@ fn holdsNode(comptime T: type) bool {
         },
         else => false,
     };
+}
+
+pub fn scopeDeclarations(alloc: std.mem.Allocator, decls: []const *const Node) std.mem.Allocator.Error![]const *const Node {
+    var out: std.ArrayList(*const Node) = .empty;
+    errdefer out.deinit(alloc);
+    try appendScopeDeclarations(alloc, decls, &out);
+    return out.toOwnedSlice(alloc);
+}
+
+fn appendScopeDeclarations(alloc: std.mem.Allocator, decls: []const *const Node, out: *std.ArrayList(*const Node)) std.mem.Allocator.Error!void {
+    for (decls) |decl| {
+        if (decl.data == .scope_decl) {
+            try appendScopeDeclarations(alloc, decl.data.scope_decl.decls, out);
+        } else try out.append(alloc, decl);
+    }
 }

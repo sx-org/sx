@@ -1,15 +1,11 @@
-error: scope blocks are not supported
-  --> examples/modules/2778-modules-scope-nested.sx:1:1
+error: unknown constraint or interface 'http.TlsAcceptor' in impl — not declared or imported in this module
+  --> examples/modules/2778-modules-scope-nested.sx:4:5
    |
- 1 | geo :: scope {
-   | ^^^^^^^^^^^^^^
- 2 |     axes :: scope { X :: 0; }
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
- 3 |     @import "modules/std.sx";
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
  4 |     impl http.TlsAcceptor for MyServer {}
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: unknown constraint or interface 'P' in impl — not declared or imported in this module
+  --> examples/modules/2778-modules-scope-nested.sx:5:5
+   |
  5 |     impl P for geo.Vec2 {}
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^
- 6 | }
-   | ^
+   |     ^^^^^^^^^^^^^^^^^^^^^^

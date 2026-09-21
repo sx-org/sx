@@ -33,7 +33,6 @@ const Module = mod_mod.Module;
 const lower = @import("../lower.zig");
 const Lowering = lower.Lowering;
 const Scope = lower.Scope;
-const nameVisibleOverEdges = lower.nameVisibleOverEdges;
 const SelectedConst = Lowering.SelectedConst;
 const FnBodyReentry = Lowering.FnBodyReentry;
 const hasComptimeParams = Lowering.hasComptimeParams;
@@ -232,8 +231,9 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
     // before a branch was selected. From here on `decls` IS the program's
     // declaration list — the root carries it too, so every later consumer
     // (extern-ref validation, C-import collection) sees the expanded program.
-    const decls = self.expandModuleDrivers(source_decls);
-    root.data.root.decls = decls;
+    const expanded = self.expandModuleDrivers(source_decls);
+    root.data.root.decls = expanded;
+    const decls = ast.scopeDeclarations(self.alloc, expanded) catch @panic("out of memory");
     // Pass 0b: collect every `@context.extend` declaration program-wide into
     // ProgramIndex (sorted, validated). Runs UNCONDITIONALLY — in a
     // no-context build the declarations are inert but the collected list
@@ -296,13 +296,13 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
             .main_file = self.main_file,
             .lowering = self,
         };
-        checker.run(decls);
+        checker.run(expanded);
     }
     // Pass 1f': index every source site, so `@caller` can read a call's
     // (file, declaration, ordinal, id) without consulting lowering state — the
     // index is a function of the parsed declarations alone, which is what makes
     // a site stable across instantiation order and optimization level.
-    if (source_site.build(self.alloc, decls, .{
+    if (source_site.build(self.alloc, expanded, .{
         .stdlib_roots = self.stdlib_paths,
         .main_dir = self.mainDir(),
         .main_file = self.main_file,
@@ -532,7 +532,8 @@ pub fn lowerDeferredTypeFns(self: *Lowering) void {
 }
 
 /// Lower a list of top-level declarations (used by irComptimeEval — non-lazy path).
-pub fn lowerDecls(self: *Lowering, decls: []const *const Node) void {
+pub fn lowerDecls(self: *Lowering, authored: []const *const Node) void {
+    const decls = ast.scopeDeclarations(self.alloc, authored) catch @panic("out of memory");
     for (decls) |decl| {
         self.setDeclarationContext(decl);
         const is_imported = if (self.main_file) |mf|
@@ -582,11 +583,8 @@ pub fn lowerDecls(self: *Lowering, decls: []const *const Node) void {
             .impl_block => {
                 self.protocolResolver().registerImplBlock(&decl.data.impl_block, decl);
             },
-            .scope_decl, .spread_decl => {
-                if (self.diagnostics) |d| d.add(.err, if (decl.data == .scope_decl)
-                    "scope blocks are not supported"
-                else
-                    "scope spreads are not supported", decl.span);
+            .spread_decl => {
+                if (self.diagnostics) |d| d.add(.err, "scope spreads are not supported", decl.span);
             },
             .runtime_class_decl => {
                 self.registerRuntimeClassDecl(&decl.data.runtime_class_decl);
@@ -632,6 +630,7 @@ fn admitOpenVariants(self: *Lowering, decls: []const *const Node) void {
             // has as members is what the program declares, not how a consumer
             // spelled the import that reached it.
             .namespace_decl => |ns| admitOpenVariants(self, ns.decls),
+            .scope_decl => |scope| admitOpenVariants(self, scope.decls),
             else => {},
         }
     }
@@ -652,6 +651,7 @@ pub fn detectContextDecl(decls: []const *const Node) bool {
             .struct_decl => |sd| std.mem.eql(u8, sd.name, "Context"),
             .const_decl => |cd| std.mem.eql(u8, cd.name, "Context") and cd.value.data == .struct_decl,
             .namespace_decl => |ns| detectContextDecl(ns.decls),
+            .scope_decl => |scope| detectContextDecl(scope.decls),
             else => false,
         };
         if (found) return true;
@@ -744,6 +744,7 @@ pub fn registerLiteralModuleConsts(self: *Lowering, decls: []const *const Node) 
     // Eager array dimensions need numeric constants before type aliases resolve.
     for (decls) |decl| {
         if (decl.data != .const_decl) continue;
+        self.setDeclarationContext(decl);
         const cd = decl.data.const_decl;
         const float_annotation: ?TypeId = if (cd.type_annotation) |ta| blk: {
             const name = switch (ta.data) {
@@ -827,7 +828,7 @@ fn claimDecl(self: *Lowering, decl: *const Node) bool {
 
 /// Pass 1: Scan declarations — register ASTs and extern stubs, but don't lower bodies.
 pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
-    const decls = freshDecls(self, all_decls);
+    const decls = freshDecls(self, ast.scopeDeclarations(self.alloc, all_decls) catch @panic("out of memory"));
     if (decls.len == 0) return;
     registerLiteralModuleConsts(self, decls);
     // Pass 0a': const ALIASES of consts (`B :: A`, chains of any depth /
@@ -1004,7 +1005,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                                     // nested const folding re-prove the same path.
                                     if (self.program_index.get(.module_const, sel.author.id)) |target| {
                                         self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, .{ .value = cd.value, .ty = target.ty });
-                                    } else switch (self.selectNominalLeaf(sel.member, sel.target.environment, false)) {
+                                    } else switch (self.selectNominalLeaf(sel.member, self.program_index.declaration(sel.author.id).environment.?, false)) {
                                         .resolved => |tid| self.putTypeAlias(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, tid),
                                         .pending, .forward, .undeclared, .not_visible, .private_elsewhere, .ambiguous => {},
                                     }
@@ -1014,7 +1015,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                                         d.addFmt(.err, cd.value.span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member });
                                 },
                                 .ambiguous => |alias| if (self.diagnostics) |d|
-                                    d.addFmt(.err, cd.value.span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{alias}),
+                                    alias.diagnose(d, cd.value.span),
                                 .not_qualified => {},
                             }
                         }
@@ -1167,11 +1168,8 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
             .impl_block => {
                 self.protocolResolver().registerImplBlock(&decl.data.impl_block, decl);
             },
-            .scope_decl, .spread_decl => {
-                if (self.diagnostics) |d| d.add(.err, if (decl.data == .scope_decl)
-                    "scope blocks are not supported"
-                else
-                    "scope spreads are not supported", decl.span);
+            .spread_decl => {
+                if (self.diagnostics) |d| d.add(.err, "scope spreads are not supported", decl.span);
             },
             .runtime_class_decl => {
                 self.registerRuntimeClassDecl(&decl.data.runtime_class_decl);
@@ -1901,7 +1899,8 @@ pub fn diagnoseNonConstGlobal(self: *Lowering, vd: *const ast.VarDecl, v: *const
     return null;
 }
 
-fn reserveStructLayouts(self: *Lowering, decls: []const *const Node) void {
+fn reserveStructLayouts(self: *Lowering, authored: []const *const Node) void {
+    const decls = ast.scopeDeclarations(self.alloc, authored) catch @panic("out of memory");
     const saved_source = self.lexicalContext();
     defer self.restoreLexicalContext(saved_source);
     for (decls) |decl| {
@@ -1921,7 +1920,8 @@ fn reserveStructLayouts(self: *Lowering, decls: []const *const Node) void {
 /// keeps a member-less placeholder. Each level's own declarations reserve
 /// before the namespaces it carries, so a same-name namespaced set never takes
 /// a nearer author's slot.
-fn reserveErrorSetSlots(self: *Lowering, decls: []const *const Node) void {
+fn reserveErrorSetSlots(self: *Lowering, authored: []const *const Node) void {
+    const decls = ast.scopeDeclarations(self.alloc, authored) catch @panic("out of memory");
     for (decls) |decl| {
         const esd = switch (topLevelTypeDecl(decl) orelse continue) {
             .@"error" => |e| e,
@@ -2020,7 +2020,7 @@ pub fn resolveForwardIdentifierAliases(self: *Lowering, decls: []const *const No
                         .selected => |s| s,
                         .not_qualified, .missing, .ambiguous => continue,
                     };
-                    break :blk .{ sel.target.environment, sel.member, false };
+                    break :blk .{ self.program_index.declaration(sel.author.id).environment.?, sel.member, false };
                 },
                 else => continue,
             };
@@ -2483,7 +2483,8 @@ fn aliasResolved(self: *Lowering, cd: *const ast.ConstDecl) bool {
 }
 
 /// Pass 2: Lower main function body and comptime side-effects.
-pub fn lowerMainAndComptime(self: *Lowering, decls: []const *const Node) void {
+pub fn lowerMainAndComptime(self: *Lowering, authored: []const *const Node) void {
+    const decls = ast.scopeDeclarations(self.alloc, authored) catch @panic("out of memory");
     for (decls) |decl| {
         // A `@run` body lowers in its OWN module's source context: `NAME :: @run f()` written in an imported module must
         // resolve a bare `f` from that module's flat imports, not the main
@@ -2793,7 +2794,7 @@ fn resolvePendingAliasType(self: *Lowering, author: resolver_mod.RawAuthor, alia
         // types, so they cannot satisfy a plain alias annotation here.
         if (pd.type_params.len > 0) return null;
         const saved_source = self.lexicalContext();
-        self.setCurrentEnvironment(self.program_index.declaration(terminal.id).environment);
+        self.setAuthorContext(terminal.id);
         self.protocolResolver().registerProtocolDecl(pd);
         self.restoreLexicalContext(saved_source);
     }
@@ -3300,6 +3301,7 @@ pub fn bareAuthorFuncId(self: *Lowering, fd: *const ast.FnDecl, name: []const u8
     }
     const saved_src = self.lexicalContext();
     self.setCurrentEnvironment(self.functionEnvironment(fd) orelse self.environmentForSource(path));
+    self.current_lexical_block = fd.body.lexical_block;
     self.declareFunction(fd, name);
     self.restoreLexicalContext(saved_src);
     const fid = self.declFuncId(fd).?;
@@ -3618,7 +3620,12 @@ pub fn isVisible(self: *Lowering, name: []const u8, vis: resolver_mod.Visibility
 /// responsible for restricting the check to names that ARE known top-level
 /// decls; otherwise every local variable would be policed.
 pub fn visibleOverEdges(self: *Lowering, name: []const u8) bool {
-    return nameVisibleOverEdges(self.program_index.decl_table, self.program_index.flat_import_graph, self.current_environment, name);
+    const environment = self.current_environment orelse return true;
+    if (self.program_index.decl_table == null or self.program_index.flat_import_graph == null) return true;
+    var resolver = self.resolver();
+    const authors = resolver.collectInContext(name, self.lookupContext(environment));
+    defer self.alloc.free(authors.flat);
+    return authors.distinctCount() != 0;
 }
 
 /// Check if a C-imported function is visible from the current source file.
@@ -3699,7 +3706,7 @@ pub fn lazyLowerFunction(self: *Lowering, name: []const u8) void {
 
     var reentry = FnBodyReentry.enter(self);
     defer reentry.restore();
-    self.setCurrentEnvironment(self.functionEnvironment(fd));
+    self.setFunctionContext(fd);
     self.lowerFunction(fd, name, false);
 }
 
@@ -3743,7 +3750,7 @@ pub fn lowerFunctionBodyInto(self: *Lowering, fd: *const ast.FnDecl, fid: FuncId
     // resolve after this point.
     self.builder.func = fid;
     const func = &self.module.functions.items[@intFromEnum(fid)];
-    self.setCurrentEnvironment(self.functionEnvironment(fd));
+    self.setFunctionContext(fd);
 
     // `extern` imports are pure declarations — never promote the stub to a real
     // function or lower the (empty placeholder) body. Mirrors the declare-only
@@ -3852,7 +3859,7 @@ pub fn lowerFunctionBodyInto(self: *Lowering, fd: *const ast.FnDecl, fid: FuncId
 pub fn lowerFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8, is_imported: bool) void {
     const saved_context = self.lexicalContext();
     defer self.restoreLexicalContext(saved_context);
-    self.setCurrentEnvironment(self.functionEnvironment(fd));
+    self.setFunctionContext(fd);
     // For sx-defined `@ObjcClass` methods (qualified `<Class>.<method>`),
     // set `current_runtime_class` so `*Self` substitutions through
     // `resolveTypeWithBindings` find the state-struct type
@@ -4030,7 +4037,7 @@ pub fn callableReturnBinder(fd: *const ast.FnDecl, ret_ty: TypeId) ?*const Node 
 // ── Module-const emission ───────────────────────────────────────
 
 pub fn emitModuleConst(self: *Lowering, name: []const u8, ci: ModuleConstInfo, environment: ?imports.EnvironmentId) Ref {
-    const author_pin = self.pinConstEnvironment(environment);
+    const author_pin = self.pinConstValue(ci.value, environment);
     defer author_pin.unpin();
     const saved_scope = self.scope;
     self.scope = null;
