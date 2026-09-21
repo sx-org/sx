@@ -363,9 +363,7 @@ pub fn packVariadicCallArgs(self: *Lowering, fd: *const ast.FnDecl, c: *const as
         if (self.module.types.sliceInfoOf(declared)) |declared_slice| {
             const elem = declared_slice.element;
             for (args.items[@min(fixed, args.items.len)..]) |*arg| {
-                // A bare-function value converts by its SIGNATURE, not the
-                // integer word that carries it.
-                const src_ty = self.valueTypeOfRef(arg.*, self.builder.getRefType(arg.*));
+                const src_ty = self.builder.getRefType(arg.*);
                 const checked = self.coerceChecked(arg.*, src_ty, elem);
                 arg.* = if (checked.refused) self.builder.constUndef(elem) else checked.ref;
             }
@@ -1022,10 +1020,7 @@ pub fn lowerPackFnCallNamed(
         pack_refs.append(self.alloc, r) catch return self.builder.constInt(0, .void);
         if (pack_is_comptime) {
             const it = self.inferExprType(a);
-            // The lowered ref is the fallback type source, but a bare fn value
-            // rides in the integer word — take its signature so the
-            // element stays callable in the mono.
-            pack_arg_types.append(self.alloc, if (it == .unresolved) self.valueTypeOfRef(r, self.builder.getRefType(r)) else it) catch return self.builder.constInt(0, .void);
+            pack_arg_types.append(self.alloc, if (it == .unresolved) self.builder.getRefType(r) else it) catch return self.builder.constInt(0, .void);
         } else {
             pack_arg_types.append(self.alloc, self.builder.getRefType(r)) catch return self.builder.constInt(0, .void);
         }

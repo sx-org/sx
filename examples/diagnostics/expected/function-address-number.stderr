@@ -1,0 +1,5 @@
+error: cannot initialize 'address' of type 'i64' with a value of type '() -> i64'
+  --> examples/diagnostics/function-address-number.sx:2:29
+   |
+ 2 | main :: () { address: i64 = value; }
+   |                             ^^^^^

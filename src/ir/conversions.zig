@@ -34,6 +34,7 @@ pub const CoercionResolver = struct {
         box_any, // concrete → any
         closure_to_fn_reject, // closure value → bare fn-ptr (diagnostic, returns operand)
         closure_signature_reject,
+        function_signature_reject,
         unique_to_closure, // empty-env unique lambda → Closure ({fn, null})
         unique_to_closure_reject, // capturing unique lambda → Closure (diagnostic; the env has no home)
         lambda_ptr_to_closure, // *F, F a unique lambda → Closure borrowing the env the pointer names
@@ -50,6 +51,8 @@ pub const CoercionResolver = struct {
         float_to_int,
         int_to_enum, // int → payload-less enum (through the enum's backing type)
         enum_to_int, // payload-less enum → int (through the enum's backing type)
+        integer_retype,
+        error_to_int,
         ptr_int_bitcast, // ptr ↔ int
         ptr_to_void, // *T / [*]T → *void
         widen, // same kind, dst wider
@@ -71,6 +74,7 @@ pub const CoercionResolver = struct {
             return switch (self) {
                 .closure_to_fn_reject,
                 .closure_signature_reject,
+                .function_signature_reject,
                 .unique_to_closure_reject,
                 .lambda_ptr_to_closure_reject,
                 .optional_to_bool_reject,
@@ -145,6 +149,8 @@ pub const CoercionResolver = struct {
         if (dst_ty == .any and src_ty != .any) return .box_any;
 
         if (!src_ty.isBuiltin() and !dst_ty.isBuiltin()) {
+            if (self.l.module.types.get(src_ty) == .function and self.l.module.types.get(dst_ty) == .function)
+                return .function_signature_reject;
             if (self.l.module.types.get(src_ty) == .closure and self.l.module.types.get(dst_ty) == .closure) {
                 const have = self.l.module.types.get(src_ty).closure;
                 const want = self.l.module.types.get(dst_ty).closure;
@@ -292,6 +298,7 @@ pub const CoercionResolver = struct {
         if (src_int and self.l.enumBackingType(dst_ty) != null) return .int_to_enum;
         if (self.l.enumBackingType(src_ty) != null and dst_int) return .enum_to_int;
 
+        if (!src_ty.isBuiltin() and self.l.module.types.get(src_ty) == .@"error" and dst_int) return .error_to_int;
         if (src_int and dst_float) return .int_to_float;
         if (src_float and dst_int) return .float_to_int;
         // Losing a pointee is the destination's request: a single-pointer or
@@ -303,6 +310,7 @@ pub const CoercionResolver = struct {
 
         const src_bits = self.l.typeBitsEx(src_ty);
         const dst_bits = self.l.typeBitsEx(dst_ty);
+        if (src_int and dst_int and src_bits == dst_bits) return .integer_retype;
         if (src_bits > 0 and dst_bits > 0) {
             if (dst_bits < src_bits) return .narrow;
             if (dst_bits > src_bits) return .widen;

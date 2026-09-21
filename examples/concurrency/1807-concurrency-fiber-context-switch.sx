@@ -119,7 +119,7 @@ boot :: (f: *Fiber) {
     top = top - (top % 16);          // 16-byte aligned stack top (AAPCS)
     f.ctx.regs[0]  = xx f;           // x19 = self
     f.ctx.regs[10] = 0;              // fp
-    f.ctx.regs[11] = xx fib_tramp;   // lr → trampoline
+    f.ctx.regs[11] = @reinterpret(u64, fib_tramp);   // lr → trampoline
     f.ctx.regs[12] = top;            // sp
     f.canaryFail = 0;
     f.depthFail = 0;

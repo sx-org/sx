@@ -89,6 +89,30 @@ test "conversions: classify covers the built-in coercion ladder" {
     try std.testing.expectEqual(Plan.none, cr.classify(a, b));
 }
 
+test "conversions: integer aliases use target widths and functions retain their ABI" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var module = ir_mod.Module.init(arena.allocator());
+    defer module.deinit();
+    var l = Lowering.init(&module);
+    const cr = CoercionResolver{ .l = &l };
+    const tt = &module.types;
+
+    try std.testing.expectEqual(Plan.integer_retype, cr.classify(.i64, .isize));
+    try std.testing.expectEqual(Plan.integer_retype, cr.classify(.i64, .u64));
+    tt.pointer_size = 4;
+    try std.testing.expectEqual(Plan.narrow, cr.classify(.i64, .isize));
+    try std.testing.expectEqual(Plan.integer_retype, cr.classify(.i32, .isize));
+
+    const fixed = tt.functionTypeVariadic(&.{.i64}, .i64, .c, false);
+    const variadic = tt.functionTypeVariadic(&.{.i64}, .i64, .c, true);
+    const sx = tt.functionType(&.{.i64}, .i64);
+    try std.testing.expectEqual(Plan.no_op, cr.classify(fixed, fixed));
+    try std.testing.expectEqual(Plan.function_signature_reject, cr.classify(fixed, variadic));
+    try std.testing.expectEqual(Plan.function_signature_reject, cr.classify(fixed, sx));
+    try std.testing.expectEqual(Plan.none, cr.classify(sx, .isize));
+}
+
 test "conversions: classify selects protocol erasure for a concrete source" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -120,6 +144,8 @@ test "conversions: classify selects protocol erasure for a concrete source" {
     const narrow = tt.errorSetType(.empty, &[_]u32{b});
     const both = tt.errorSetType(.empty, &[_]u32{ b, cc });
     try std.testing.expectEqual(Plan.error_set_retype, cr.classify(narrow, both));
+    try std.testing.expectEqual(Plan.error_to_int, cr.classify(both, .u8));
+    try std.testing.expectEqual(Plan.error_to_int, cr.classify(both, .i64));
 }
 
 test "conversions: classifyXX picks the xx-operator head decision" {
@@ -193,8 +219,6 @@ test "conversions: unmodeled width-mismatched coercion is flagged unsafe" {
     const p3 = tt.intern(.{ .@"struct" = .{ .name = tt.internString("P3"), .fields = alloc.dupe(ir_mod.TypeInfo.StructInfo.Field, p3_fields) catch unreachable } });
     try std.testing.expect(l.noneReinterpretIsUnsafe(p3, .i64));
 
-    // SAME-width unmodeled pairs stay allowed — the long-standing legitimate
-    // bit-compatible reinterpretation family (`i64 → isize`-style).
     try std.testing.expect(!l.noneReinterpretIsUnsafe(.i64, .isize));
 
     // Modeled coercions are never "unsafe none": the ladder handles them.

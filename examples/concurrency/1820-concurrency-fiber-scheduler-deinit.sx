@@ -77,7 +77,7 @@ main :: () -> i64 {
             ps.spawn(||_{ ps, pst, rfd } {
                 ps.blockOnFd(rfd, true);
                 n := read(rfd, *pst.bytes[0], 3);
-                pst.readN = xx n;
+                pst.readN = n;
                 pst.readDone = true;
             });
         }

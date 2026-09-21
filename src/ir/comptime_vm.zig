@@ -1308,6 +1308,7 @@ pub const Vm = struct {
                 const v = frame.get(u.operand.index());
                 if (oty.isBuiltin()) return .{ .value = v }; // already an integer tag
                 const table = try self.requireTable();
+                if (table.get(oty) == .@"error") return .{ .value = v };
                 if (table.get(oty) == .@"enum") {
                     const tu = table.get(oty).@"enum";
                     if (!tu.hasPayload()) return .{ .value = v }; // the word IS the tag

@@ -761,6 +761,19 @@ fn checkMemberInSet(self: *Lowering, qm: QualifiedErrorMember, dst: TypeId, span
     }
 }
 
+/// The caller proves the member or channel belongs to the destination.
+fn retypeProvenError(self: *Lowering, value: Ref, src: TypeId, dst: TypeId) Ref {
+    if (src == dst) return value;
+    const info = self.module.types.get(src);
+    if (info == .optional) {
+        const child = info.optional.child;
+        const unwrapped = self.coerceChecked(value, src, child);
+        if (unwrapped.refused) return unwrapped.ref;
+        return retypeProvenError(self, unwrapped.ref, child, dst);
+    }
+    return self.builder.emit(.{ .bitcast = .{ .operand = value, .from = src, .to = dst } }, dst);
+}
+
 /// The channel value `Set.Member{ … }` / `.Member{ … }` builds: `member`'s tag
 /// over a copy of its declared payload, typed as `set_ty`.
 pub fn lowerErrorMemberConstruction(self: *Lowering, sl: *const ast.StructLiteral, set_ty: TypeId, member_name: []const u8, span: ast.Span) Ref {
@@ -938,7 +951,7 @@ pub fn lowerRaise(self: *Lowering, rs: *const ast.RaiseStmt, span: ast.Span) voi
     //     relationship here, so the tag move into the channel bypasses the
     //     implicit value-coercion membership guard.
     const tag_ty = self.builder.getRefType(tag_ref);
-    const coerced = if (tag_ty != err_set) self.coerceExplicit(tag_ref, tag_ty, err_set) else tag_ref;
+    const coerced = if (tag_ty != err_set) retypeProvenError(self, tag_ref, tag_ty, err_set) else tag_ref;
     emitErrorExit(self, exit, coerced);
 }
 
@@ -1038,7 +1051,7 @@ fn lowerFailableForwardReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, val_ty:
         vals.append(self.alloc, cf) catch unreachable;
     }
     const tag = self.builder.emit(.{ .struct_get = .{ .base = ref, .field_index = @intCast(dn), .base_type = val_ty } }, src.err);
-    const coerced_tag = if (src.err != err_ty) self.coerceExplicit(tag, src.err, err_ty) else tag;
+    const coerced_tag = if (src.err != err_ty) retypeProvenError(self, tag, src.err, err_ty) else tag;
     const tup = self.buildFailableTuple(ret_ty, vals.items, coerced_tag);
     self.emitTupleRet(ret_ty, tup);
 }
@@ -1088,7 +1101,7 @@ pub fn coercePureFailableReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, span:
                 }
                 // `checkForwardSetCompat` is the membership gate, so the
                 // coercion skips the implicit preamble's.
-                return self.coerceExplicit(ref, val_ty, ret_ty);
+                return retypeProvenError(self, ref, val_ty, ret_ty);
             },
             .failable => |vf| {
                 const n = self.module.types.failableValueSlotCount(vf);
@@ -1463,7 +1476,7 @@ fn emitErrorExit(self: *Lowering, exit: ErrorExit, err: Ref) void {
         return;
     };
     const ety = self.builder.getRefType(err);
-    const coerced = if (ety != b.chan) self.coerceExplicit(err, ety, b.chan) else err;
+    const coerced = if (ety != b.chan) retypeProvenError(self, err, ety, b.chan) else err;
     self.emitDefers(b.defer_base);
     self.builder.br(b.fail_bb, &.{coerced});
 }
@@ -1547,7 +1560,7 @@ pub fn emitErrorReturn(self: *Lowering, caller_ret: TypeId, caller_set: TypeId, 
     // The channel's own subset rule (`checkEscapeWidening` / `checkErrorSetSubset`
     // at the raise / propagate / forward site) owns this move, so it bypasses the
     // implicit value-coercion membership guard rather than being reported twice.
-    const coerced = if (ety != caller_set) self.coerceExplicit(err, ety, caller_set) else err;
+    const coerced = if (ety != caller_set) retypeProvenError(self, err, ety, caller_set) else err;
     if (caller_ret == caller_set) {
         self.emitBodyExit(coerced, caller_set, .return_like);
     } else {

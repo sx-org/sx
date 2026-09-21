@@ -988,14 +988,7 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
         self.force_block_value = saved_fbv;
         self.target_type = saved_target;
         if (bindDivergingInitializer(self, vd.name, ref)) return;
-        // A bare function reference is deliberately represented by the
-        // `.i64`-typed `func_ref` op because several async/fiber paths consume
-        // that exact IR shape.  For an unannotated local, however, the binding
-        // must carry the user-visible function type so a later `f(...)` is
-        // planned as an indirect function call rather than as a call through an
-        // integer.  Keep the emitted ref unchanged and specialize
-        // only this declaration-inference boundary.
-        const ty = inferBareFnBindingType(self, val) orelse self.builder.getRefType(ref);
+        const ty = self.builder.getRefType(ref);
         // Asked on the LOWERED type, so every shape a block can arrive through
         // is covered — a bare name, an `if` that yields one, anything.
         if (self.rejectBlockBinding(val, vd.name, ty)) return;
@@ -1067,20 +1060,6 @@ fn rejectVoidAnnotation(
 fn bindVoidPlaceholder(self: *Lowering, name: []const u8) void {
     const scope = self.scope orelse return;
     scope.put(name, .{ .ref = self.emitPlaceholder(name), .ty = .unresolved, .is_alloca = false });
-}
-
-fn inferBareFnBindingType(self: *Lowering, value: *const ast.Node) ?TypeId {
-    if (value.data != .identifier) return null;
-    const name = value.data.identifier.name;
-    const effective_name = if (self.scope) |scope| blk: {
-        // A value binding shadows a same-named top-level/local function.  Only
-        // use the function table when the identifier really denotes a fn.
-        if (scope.lookup(name) != null) return null;
-        break :blk scope.lookupFn(name) orelse name;
-    } else name;
-    const fd = self.program_index.lookup(.function, effective_name) orelse return null;
-
-    return self.declSignatureType(fd);
 }
 
 /// Handle a bare fn_decl node as a local function declaration.

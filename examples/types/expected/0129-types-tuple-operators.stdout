@@ -73,7 +73,7 @@ block-lambda: 0
 block-lambda: 100
 hello block
 named-fn-type: 7
-xx-fnptr: 142
+raw-fnptr: 142
 closure-type: fnPtr-nonnull=true
 closure-type: env-null=true
 closure-call: 15

@@ -293,7 +293,7 @@ boot :: (f: *Fiber) {
     top : u64 = (xx raw) + STACK;
     top = top - (top % 16);
     slot : *u64 = xx (top - 8);
-    slot.* = xx fib_tramp;
+    slot.* = @reinterpret(u64, fib_tramp);
     i := 0;
     while i < 30 { f.ctx.regs[i] = 0; i = i + 1; }
     f.ctx.regs[0] = xx f;       // rbx = self

@@ -94,7 +94,7 @@ main :: () -> i64 {
     top := guardedStack(*f, STACK);
     f.ctx.regs[0]  = xx *f;
     f.ctx.regs[10] = 0;
-    f.ctx.regs[11] = xx fib_tramp;
+    f.ctx.regs[11] = @reinterpret(u64, fib_tramp);
     f.ctx.regs[12] = top;
     swapContext(*mainCtx, *f.ctx);
     print("guard armed: {}\n", f.guardOk);    // 1 — mprotect(PROT_NONE) succeeded

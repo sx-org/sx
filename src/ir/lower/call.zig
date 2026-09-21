@@ -2963,7 +2963,7 @@ fn bindCallableBinders(
             if (Lowering.callableBound(param.type_expr) == null) continue;
             if (!self.matchTypeParam(param.type_expr, tp.name)) continue;
             const arg_ref = lowered_args[arg_idx];
-            const arg_ty = self.valueTypeOfRef(arg_ref, self.builder.getRefType(arg_ref));
+            const arg_ty = self.builder.getRefType(arg_ref);
             if (self.callableSigOf(arg_ty) == null) continue;
             if (self.extractTypeParam(param.type_expr, arg_ty, tp.name)) |ty| {
                 bindings.put(tp.name, ty) catch {};
@@ -3937,7 +3937,7 @@ fn lowerAsIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
     switch (self.coercionResolver().classify(src_ty, dst)) {
         .no_op => return self.coerceToType(val, src_ty, dst),
         .unbox_any => unreachable,
-        .closure_to_fn_reject, .closure_signature_reject, .unique_to_closure_reject, .lambda_ptr_to_closure_reject, .optional_to_bool_reject, .many_to_slice_reject => return refuseAs(self, src_ty, dst, c.callee.span),
+        .closure_to_fn_reject, .closure_signature_reject, .function_signature_reject, .unique_to_closure_reject, .lambda_ptr_to_closure_reject, .optional_to_bool_reject, .many_to_slice_reject => return refuseAs(self, src_ty, dst, c.callee.span),
         else => {
             // The explicit ladder carries the modeled puns (same-width integer
             // signedness, pointer words); a value it passes through untyped has
@@ -3957,12 +3957,10 @@ fn refuseAs(self: *Lowering, src_ty: TypeId, dst: TypeId, span: ast.Span) Ref {
 const boxed_as_sources = [_]TypeId{ .bool, .f32, .f64 };
 
 /// Whether a boxed source of type `s` converts to `dst` without a diagnostic:
-/// the modeled scalar plans, the same-width integer pun the explicit ladder
-/// bitcasts, and an optional target whose payload the source converts to.
+/// modeled scalar plans and optional payload conversions.
 fn boxedAsConverts(self: *Lowering, s: TypeId, dst: TypeId) bool {
     return switch (self.coercionResolver().classify(s, dst)) {
-        .no_op, .widen, .narrow, .int_to_float, .float_to_int, .int_to_enum, .enum_to_int => true,
-        .none => self.isIntEx(s) and self.isIntEx(dst) and self.typeBitsEx(s) == self.typeBitsEx(dst),
+        .no_op, .integer_retype, .widen, .narrow, .int_to_float, .float_to_int, .int_to_enum, .enum_to_int, .error_to_int => true,
         .optional_wrap => boxedAsConverts(self, s, self.module.types.get(dst).optional.child),
         else => false,
     };

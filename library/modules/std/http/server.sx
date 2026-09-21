@@ -3464,7 +3464,7 @@ Server :: struct {
                 // runs at this tick's drive). Its readBody suspends on an
                 // empty channel; the pump wakes it. Completion is the
                 // fiber tail + finalizeFibers.
-                c.fiberH = self.cfg.fibers.spawn(runFiberJob.(*void), job);
+                c.fiberH = self.cfg.fibers.spawn(@reinterpret(*void, runFiberJob), job);
                 self.fiberSpawned = true;   // tick re-drives until quiescent
             } else if !self.ps.pool.submit(runHandlerJob, job.(usize)) {
                 // Backlog full: shed 503 — undo the dispatch (the worker
@@ -3645,7 +3645,7 @@ Server :: struct {
                 // cannot preempt a fiber it is hosting (inline semantics;
                 // Request.deadlineMs stays the advisory budget).
                 c.handlerDeadline = 0;
-                c.fiberH = self.cfg.fibers.spawn(runFiberJob.(*void), job);
+                c.fiberH = self.cfg.fibers.spawn(@reinterpret(*void, runFiberJob), job);
                 self.fiberSpawned = true;   // tick re-drives until quiescent
             } else {
                 // Arm the handler deadline as the slot enters

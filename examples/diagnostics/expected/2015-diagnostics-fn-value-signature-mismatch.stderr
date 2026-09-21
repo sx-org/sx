@@ -1,10 +1,10 @@
-error: cannot coerce a value of type '(i64) -> i64' to '() -> i64': no implicit conversion applies
+error: cannot convert '(i64) -> i64' to '() -> i64': function signatures differ
   --> examples/diagnostics/2015-diagnostics-fn-value-signature-mismatch.sx:11:5
    |
 11 |     f : () -> i64 = one;
    |     ^^^^^^^^^^^^^^^^^^^^
 
-error: cannot coerce a value of type '(i64) -> i64' to '() -> i64': no implicit conversion applies
+error: cannot convert '(i64) -> i64' to '() -> i64': function signatures differ
   --> examples/diagnostics/2015-diagnostics-fn-value-signature-mismatch.sx:12:19
    |
 12 |     print("{}\n", takes0(one));

@@ -25,10 +25,9 @@ main :: () -> i32 {
     h := Holder{ e = be };
     print("field: {}\n", h.e);
 
-    // `xx` is the escape hatch for a deliberate cross-set store.
     w, xe := broadSrc();
-    forced : Other = xx xe;
-    print("xx: {}\n", forced);
+    forced : Other = @reinterpret(Other, xe);
+    print("reinterpret: {}\n", forced);
 
     // The contextual `.Name` shorthand types itself from the destination set
     // and is membership-checked against it.

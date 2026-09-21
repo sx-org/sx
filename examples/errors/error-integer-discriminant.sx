@@ -1,0 +1,20 @@
+@import "modules/std.sx";
+
+Fault :: error { Empty; Data: struct { a: i64; b: i64 }; }
+
+code :: (e: Fault) -> i64 { return e.(i64); }
+small :: (e: Fault) -> u8 { return e.(u8); }
+wide :: (e: Fault) -> u64 { return e.(u64); }
+
+forward :: (e: ?Fault) -> !Fault {
+    if e != null { raise e; }
+}
+
+CHECK :: @run code(Fault.Empty) == small(Fault.Empty).(i64);
+
+main :: () {
+    e: Fault = Fault.Data{a = 71, b = 92};
+    forward(e) catch |caught| {
+        print("{} {} {} {}\n", code(caught) == code(Fault.Data), small(caught).(i64) == code(caught), wide(caught).(i64) == code(caught), CHECK);
+    };
+}
