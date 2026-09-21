@@ -3049,10 +3049,7 @@ pub const Lowering = struct {
         member: []const u8,
     };
 
-    /// A name a proved namespace does not declare. `scope` is the exact module
-    /// it would have to come from — which is what the discipline's name-lookup
-    /// wait is a claim about (§7.9).
-    pub const MissingMember = struct { namespace: []const u8, member: []const u8, scope: []const u8 };
+    pub const MissingMember = struct { namespace: []const u8, member: []const u8, environment: imports_mod.EnvironmentId };
 
     /// Diagnostic-free result of resolving a full dotted namespace-member
     /// path (`facade.engine_alias.Member`) from an explicit source authority.
@@ -3147,14 +3144,14 @@ pub const Lowering = struct {
             target = switch (self.namespaceAliasVerdictIn(segment, target.environment)) {
                 .target => |t| t,
                 .ambiguous => return .{ .ambiguous = segment },
-                .none => return .{ .missing = .{ .namespace = namespace_name, .member = segment, .scope = target.target_module_path } },
+                .none => return .{ .missing = .{ .namespace = namespace_name, .member = segment, .environment = target.environment } },
             };
             // Deep traversal keeps the ORIGINAL requester's authority: a
             // private intermediate alias belongs to the file that declared it
             // and is not part of that module's namespace surface for anyone
             // else.
             if (target.visibility == .private and !std.mem.eql(u8, from, target.importer_source)) {
-                return .{ .missing = .{ .namespace = namespace_name, .member = segment, .scope = target.target_module_path } };
+                return .{ .missing = .{ .namespace = namespace_name, .member = segment, .environment = target.environment } };
             }
             namespace_name = segment;
             segment_start = dot + 1;
@@ -3165,10 +3162,10 @@ pub const Lowering = struct {
         if (member.len == 0) return .not_qualified;
         const author = self.namespaceOwnMember(target, member) orelse {
             if (self.namespaceOwnSpecialMember(target, member)) return .not_qualified;
-            return .{ .missing = .{ .namespace = namespace_name, .member = member, .scope = target.target_module_path } };
+            return .{ .missing = .{ .namespace = namespace_name, .member = member, .environment = target.environment } };
         };
         if (author.visibility == .private and !std.mem.eql(u8, from, author.source)) {
-            return .{ .missing = .{ .namespace = namespace_name, .member = member, .scope = target.target_module_path } };
+            return .{ .missing = .{ .namespace = namespace_name, .member = member, .environment = target.environment } };
         }
         return .{ .selected = .{ .target = target, .author = author, .member = member } };
     }
@@ -3180,7 +3177,7 @@ pub const Lowering = struct {
     /// at finality the ordinary namespace diagnostic stands.
     pub fn namespaceMissWaits(self: *Lowering, miss: MissingMember) bool {
         if (!self.expansion.scheduled()) return false;
-        if (!self.expansion.mayDeclare(miss.scope, miss.member)) return false;
+        if (!self.expansion.mayDeclare(miss.environment, miss.member)) return false;
         self.expansion.awaitFact(std.fmt.allocPrint(self.alloc, "'{s}' to declare '{s}'", .{
             miss.namespace, miss.member,
         }) catch "a module scope to be final");

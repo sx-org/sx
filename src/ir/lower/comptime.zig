@@ -1025,7 +1025,7 @@ pub fn runComptimeTypeFunc(self: *Lowering, func_id: FuncId, span: ast.Span) ?Ty
     // mutation, so a failed mint never leaves a partial type.
     const evaluation = comptime_vm.tryEval(self.alloc, self.module, func_id, null, null, self.factScheduler());
     if (evaluation.state == .parked) {
-        self.expansion.parkEvaluation(evaluation, "this compile-time type construction", lower_open_set.describeFact(self, evaluation.state.parked), span);
+        self.expansion.parkEvaluation(evaluation, "this compile-time type construction", lower_open_set.describeFact(self, evaluation.state.parked), span, self.current_source_file);
         return null;
     }
     defer evaluation.destroy();
@@ -1239,7 +1239,7 @@ pub fn evalComptimeString(self: *Lowering, expr: *const Node) ?[:0]const u8 {
     const ct_func_id = self.createComptimeFunction("__insert", .expansion, expr, .string);
     const evaluation = comptime_vm.tryEval(self.alloc, self.module, ct_func_id, null, null, self.factScheduler());
     if (evaluation.state == .parked) {
-        self.expansion.parkEvaluation(evaluation, "this `@insert`", lower_open_set.describeFact(self, evaluation.state.parked), expr.span);
+        self.expansion.parkEvaluation(evaluation, "this `@insert`", lower_open_set.describeFact(self, evaluation.state.parked), expr.span, self.current_source_file);
         return null;
     }
     defer evaluation.destroy();
