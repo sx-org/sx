@@ -112,8 +112,8 @@ main :: () -> i32 {
 
     push .{ allocator = gpa } {
         cap : i64 = 16384;
-        sbuf : [*]u8 = xx context.allocator.allocBytes(cap);   // slow-conn scratch
-        fbuf : [*]u8 = xx context.allocator.allocBytes(cap);   // fast-conn scratch
+        sbuf : [*]u8 = context.allocator.allocBytes(cap);
+        fbuf : [*]u8 = context.allocator.allocBytes(cap);
 
         cfg : http.Config = .{
             port = PORT,

@@ -38,7 +38,7 @@ sumBytes :: (buf: [*]u8) -> i64 {
 }
 
 runU8 :: () -> i64 {
-    buf : [*]u8 = xx c.libcMalloc(BUF_SIZE);
+    buf : [*]u8 = c.libcMalloc(BUF_SIZE);
     fill(buf);
     p : *u8 = *buf[TARGET];
     p.* = 0x42;
@@ -48,7 +48,7 @@ runU8 :: () -> i64 {
 }
 
 runU16 :: () -> i64 {
-    buf : [*]u8 = xx c.libcMalloc(BUF_SIZE);
+    buf : [*]u8 = c.libcMalloc(BUF_SIZE);
     fill(buf);
     p : *u16 = xx *buf[TARGET];
     p.* = 0x0102;
@@ -58,7 +58,7 @@ runU16 :: () -> i64 {
 }
 
 runU32 :: () -> i64 {
-    buf : [*]u8 = xx c.libcMalloc(BUF_SIZE);
+    buf : [*]u8 = c.libcMalloc(BUF_SIZE);
     fill(buf);
     p : *u32 = xx *buf[TARGET];
     p.* = 0x01020304;
@@ -68,7 +68,7 @@ runU32 :: () -> i64 {
 }
 
 runU64 :: () -> i64 {
-    buf : [*]u8 = xx c.libcMalloc(BUF_SIZE);
+    buf : [*]u8 = c.libcMalloc(BUF_SIZE);
     fill(buf);
     p : *u64 = xx *buf[TARGET];
     p.* = 0x0102030405060708;
@@ -78,7 +78,7 @@ runU64 :: () -> i64 {
 }
 
 runI8 :: () -> i64 {
-    buf : [*]u8 = xx c.libcMalloc(BUF_SIZE);
+    buf : [*]u8 = c.libcMalloc(BUF_SIZE);
     fill(buf);
     p : *i8 = xx *buf[TARGET];
     p.* = 0x42;
@@ -88,7 +88,7 @@ runI8 :: () -> i64 {
 }
 
 runI16 :: () -> i64 {
-    buf : [*]u8 = xx c.libcMalloc(BUF_SIZE);
+    buf : [*]u8 = c.libcMalloc(BUF_SIZE);
     fill(buf);
     p : *i16 = xx *buf[TARGET];
     p.* = 0x0102;
@@ -98,7 +98,7 @@ runI16 :: () -> i64 {
 }
 
 runI32 :: () -> i64 {
-    buf : [*]u8 = xx c.libcMalloc(BUF_SIZE);
+    buf : [*]u8 = c.libcMalloc(BUF_SIZE);
     fill(buf);
     p : *i32 = xx *buf[TARGET];
     p.* = 0x01020304;
@@ -108,7 +108,7 @@ runI32 :: () -> i64 {
 }
 
 runI64 :: () -> i64 {
-    buf : [*]u8 = xx c.libcMalloc(BUF_SIZE);
+    buf : [*]u8 = c.libcMalloc(BUF_SIZE);
     fill(buf);
     p : *i64 = xx *buf[TARGET];
     p.* = 0x0102030405060708;
@@ -118,7 +118,7 @@ runI64 :: () -> i64 {
 }
 
 runBool :: () -> i64 {
-    buf : [*]u8 = xx c.libcMalloc(BUF_SIZE);
+    buf : [*]u8 = c.libcMalloc(BUF_SIZE);
     fill(buf);
     p : *bool = xx *buf[TARGET];
     p.* = true;
@@ -128,7 +128,7 @@ runBool :: () -> i64 {
 }
 
 runF32 :: () -> i64 {
-    buf : [*]u8 = xx c.libcMalloc(BUF_SIZE);
+    buf : [*]u8 = c.libcMalloc(BUF_SIZE);
     fill(buf);
     p : *f32 = xx *buf[TARGET];
     p.* = 1.0;
@@ -138,7 +138,7 @@ runF32 :: () -> i64 {
 }
 
 runF64 :: () -> i64 {
-    buf : [*]u8 = xx c.libcMalloc(BUF_SIZE);
+    buf : [*]u8 = c.libcMalloc(BUF_SIZE);
     fill(buf);
     p : *f64 = xx *buf[TARGET];
     p.* = 1.0;

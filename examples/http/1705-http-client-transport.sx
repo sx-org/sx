@@ -71,7 +71,7 @@ chunkyProducer :: (ctx: usize, offset: i64, dst: [*]u8, dstCap: i64) -> i64 {
 }
 
 srvEntry :: (arg: *void) -> *void abi(.c) {
-    srv : *http.Server = xx arg;
+    srv : *http.Server = arg;
     gpa := GPA.init();
     push .{ allocator = gpa } {
         srv.run();
@@ -81,7 +81,7 @@ srvEntry :: (arg: *void) -> *void abi(.c) {
 
 // Case F: accept and hold — never write a byte, never close until told.
 muteEntry :: (arg: *void) -> *void abi(.c) {
-    lfd : *i32 = xx arg;
+    lfd : *i32 = arg;
     c := socket.accept(lfd.*, null, null);
     // hold the conn open until the listener is closed under us
     hold : [1]u8 = ---;
@@ -135,7 +135,7 @@ run :: () -> i32 {
     http.Client.closeConn(*connA);
 
     // ── C. chunked response, then keep-alive reuse on the same conn ──
-    bc : [*]u8 = xx context.allocator.allocBytes(CHUNK_TOTAL + 8192);
+    bc : [*]u8 = context.allocator.allocBytes(CHUNK_TOTAL + 8192);
     connC, ec := http.Client.open("127.0.0.1", PORT_MAIN, optsPlain);
     if ec { context.allocator.deallocBytes(bc); srv.stop(); t.join(); return 13; }
     sc := http.Client.sendOn(*connC, "GET", "/chunky", "t", "", "");

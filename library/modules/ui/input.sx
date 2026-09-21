@@ -153,7 +153,7 @@ InputQueue :: struct {
             else: {}
         }
         if self.events.len > 0 {
-            last := *self.events.items[self.events.len - 1];
+            last: *InputEvent = *self.events.items[self.events.len - 1];
             match ev {
                 case .pointerMove: |p| {
                     match last {

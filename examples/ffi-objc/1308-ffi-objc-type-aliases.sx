@@ -34,7 +34,7 @@ main :: () -> i32 {
 
         // BOOL - Apple's signed-char boolean. Cast the *Self into
         // a *NSObjectAlias for the method call.
-        obj : *NSObjectAlias = xx nsobj;
+        obj : *NSObjectAlias = nsobj;
         flag : BOOL = obj.isKindOfClass(nsCls);
         print("isKindOfClass: {}\n", flag);  // 1 (true)
     }

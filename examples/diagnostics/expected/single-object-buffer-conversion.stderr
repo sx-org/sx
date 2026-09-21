@@ -1,0 +1,5 @@
+error: cannot initialize 'p' of type '[*]i64' with a value of type '*i64'
+  --> examples/diagnostics/single-object-buffer-conversion.sx:3:17
+   |
+ 3 |     p: [*]i64 = *x;
+   |                 ^^

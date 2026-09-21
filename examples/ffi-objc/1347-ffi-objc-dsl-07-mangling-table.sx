@@ -48,7 +48,7 @@ main :: () -> i32 {
 
         objc_registerClassPair(cls);
 
-        inst : *SxManglingProbe = xx class_createInstance(cls, 0);
+        inst : *SxManglingProbe = class_createInstance(cls, 0);
 
         // One call per mangling shape; the IR snapshot pins what
         // selector string each sx name resolves to.

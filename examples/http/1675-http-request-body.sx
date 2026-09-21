@@ -183,7 +183,7 @@ main :: () -> i32 {
         srv, se := http.Server.init(cfg, handler, 0);
         if se { print("server init failed\n"); return 1; }
 
-        scratch : [*]u8 = xx context.allocator.allocBytes(8192);
+        scratch : [*]u8 = context.allocator.allocBytes(8192);
 
         // ── 1. fixed Content-Length body still works (200, exact body) ──
         if rc == 0 {

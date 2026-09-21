@@ -566,7 +566,7 @@ directLane :: (arena: *Arena) -> i64 {
     i := 0;
     while i < ALLOCS {
         p := arena.allocBytes(16);
-        b : [*]u8 = xx p;
+        b : [*]u8 = p;
         b[0] = xx (i % 251);
         sink = sink + b[0];
         i = i + 1;
@@ -583,7 +583,7 @@ borrowLane :: (arena: *Arena) -> i64 {
     i := 0;
     while i < ALLOCS {
         p := a.allocBytes(16);
-        b : [*]u8 = xx p;
+        b : [*]u8 = p;
         b[0] = xx (i % 251);
         sink = sink + b[0];
         i = i + 1;
@@ -600,7 +600,7 @@ ctxLane :: (arena: *Arena) -> i64 {
         i := 0;
         while i < ALLOCS {
             p := context.allocator.allocBytes(16);
-            b : [*]u8 = xx p;
+            b : [*]u8 = p;
             b[0] = xx (i % 251);
             sink = sink + b[0];
             i = i + 1;
@@ -617,7 +617,7 @@ defaultLane :: () -> i64 {
     i := 0;
     while i < ALLOCS {
         p := context.allocator.allocBytes(16);
-        b : [*]u8 = xx p;
+        b : [*]u8 = p;
         b[0] = xx (i % 251);
         sink = sink + b[0];
         escaped = p;
@@ -638,7 +638,7 @@ interleavedLane :: (h: []Allocator, idx: []i64) -> i64 {
     i := 0;
     while i < ALLOCS {
         p := h[idx[i & IDXMASK]].allocBytes(16);
-        b : [*]u8 = xx p;
+        b : [*]u8 = p;
         b[0] = xx (i % 251);
         sink = sink + b[0];
         i = i + 1;
@@ -657,7 +657,7 @@ rotateLane :: (h: []Allocator) -> i64 {
     k := 0;
     while i < ALLOCS {
         p := h[k].allocBytes(16);
-        b : [*]u8 = xx p;
+        b : [*]u8 = p;
         b[0] = xx (i % 251);
         sink = sink + b[0];
         k = k + 1;
@@ -679,7 +679,7 @@ ctxPtrLane :: (arena: *Arena) -> i64 {
         i := 0;
         while i < ALLOCS {
             p := context.ap.allocBytes(16);
-            b : [*]u8 = xx p;
+            b : [*]u8 = p;
             b[0] = xx (i % 251);
             sink = sink + b[0];
             i = i + 1;
@@ -701,7 +701,7 @@ interleavedPtrLane :: (ps: []*Allocator, idx: []i64) -> i64 {
     i := 0;
     while i < ALLOCS {
         p := ps[idx[i & IDXMASK]].allocBytes(16);
-        b : [*]u8 = xx p;
+        b : [*]u8 = p;
         b[0] = xx (i % 251);
         sink = sink + b[0];
         i = i + 1;
@@ -718,7 +718,7 @@ rotatePtrLane :: (ps: []*Allocator) -> i64 {
     k := 0;
     while i < ALLOCS {
         p := ps[k].allocBytes(16);
-        b : [*]u8 = xx p;
+        b : [*]u8 = p;
         b[0] = xx (i % 251);
         sink = sink + b[0];
         k = k + 1;
@@ -740,7 +740,7 @@ pushH16Lane :: (arena: *Arena) -> i64 {
     while i < ALLOCS {
         push .{ allocator = arena } {
             p := context.allocator.allocBytes(16);
-            b : [*]u8 = xx p;
+            b : [*]u8 = p;
             b[0] = xx (i % 251);
             sink = sink + b[0];
         }
@@ -759,7 +759,7 @@ pushPtrLane :: (arena: *Arena) -> i64 {
     while i < ALLOCS {
         push .{ ap = *ah } {
             p := context.ap.allocBytes(16);
-            b : [*]u8 = xx p;
+            b : [*]u8 = p;
             b[0] = xx (i % 251);
             sink = sink + b[0];
         }

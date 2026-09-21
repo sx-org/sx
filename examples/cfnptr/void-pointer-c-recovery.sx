@@ -1,0 +1,9 @@
+@import "modules/std.sx";
+
+twice :: (value: i64) -> i64 abi(.c) { value * 2 }
+
+main :: () {
+    raw := @reinterpret(*void, twice);
+    recovered := raw.((i64) -> i64 abi(.c));
+    print("{}\n", recovered(21));
+}

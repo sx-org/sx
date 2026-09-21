@@ -193,7 +193,7 @@ handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
 }
 
 serverEntry :: (arg: *void) -> *void abi(.c) {
-    srv : *http.Server = xx arg;
+    srv : *http.Server = arg;
     gpa := GPA.init();
     push .{ allocator = gpa } { srv.run(); }
     null
@@ -242,7 +242,7 @@ exactCapacityDecodes :: (plain: string, packed: string) -> bool {
     cap := head.len + plain.len;
     storage := context.allocator.allocBytes(cap);
     if storage == null { socket.close(pair[0]); return false; }
-    response, e := http.Client.recv(pair[0], xx storage, cap);
+    response, e := http.Client.recv(pair[0], storage, cap);
     socket.close(pair[0]);
     ok := !e and response.decodedFrom != null and response.decodedFrom?! == http.ContentCoding.gzip
         and response.header("content-encoding").len == 0
@@ -282,7 +282,7 @@ runServerCases :: (app: *App, poolCount: i64, port: i64) -> bool {
     opts : http.ClientOpts = .{ connectTimeoutMs = 2000, ioTimeoutMs = 5000 };
     conn, oe := http.Client.open("127.0.0.1", port, opts);
     if oe { srv.stop(); t.join(); srv.close(); return false; }
-    storage : [*]u8 = xx context.allocator.allocBytes(BODY_LEN + 4096);
+    storage : [*]u8 = context.allocator.allocBytes(BODY_LEN + 4096);
     ok := true;
 
     // The default client advertises both codings; the server tie-breaks gzip.

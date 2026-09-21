@@ -98,7 +98,7 @@ handlerB :: (req: *http.Request, resp: *http.Response, ctx: usize) {
 }
 
 srvEntry :: (arg: *void) -> *void abi(.c) {
-    srv : *http.Server = xx arg;
+    srv : *http.Server = arg;
     gpa := GPA.init();
     push .{ allocator = gpa } {
         srv.run();

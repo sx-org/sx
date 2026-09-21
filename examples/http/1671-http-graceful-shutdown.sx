@@ -117,7 +117,7 @@ main :: () -> i32 {
     leaked : i64 = 0;
     push .{ allocator = gpa } {
         cap : i64 = 8192;
-        scratch : [*]u8 = xx context.allocator.allocBytes(cap);
+        scratch : [*]u8 = context.allocator.allocBytes(cap);
 
         cfg : http.Config = .{
             port = PORT,

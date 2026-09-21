@@ -1,0 +1,5 @@
+error: a value of type '*void' does not coerce to '[*:0]u8': no conversion adds a terminator
+  --> examples/diagnostics/void-pointer-terminator-conversion.sx:3:10
+   |
+ 3 |     p := raw.([*:0]u8);
+   |          ^^^^^^^^^^^^^

@@ -6,8 +6,8 @@ clib :: @library "c";
 qsort :: (base: [*]u8, nel: usize, width: usize, compar: (*void, *void) -> i32 abi(.c)) extern clib;
 
 cmpI32 :: (a: *void, b: *void) -> i32 abi(.c) {
-    pa : *i32 = xx a;
-    pb : *i32 = xx b;
+    pa : *i32 = a;
+    pb : *i32 = b;
     if pa.* < pb.* { return -1; }
     if pa.* > pb.* { return 1; }
     return 0;

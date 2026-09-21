@@ -1,0 +1,5 @@
+error: cannot initialize 'child' of type '*CAEAGLLayer' with a value of type '*CALayer'
+  --> examples/diagnostics/objc-pointer-downcast.sx:6:27
+   |
+ 6 |     child: *CAEAGLLayer = layer;
+   |                           ^^^^^

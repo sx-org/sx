@@ -1968,6 +1968,9 @@ v := Vec2{1.0, 2.0 };
 ptr := *v;             // *Vec2
 ```
 
+An indexed-element address `*buf[i]` has type `[*]T`. Addressing the
+whole array retains `*[N]T`; addressing a single object retains `*T`.
+
 **Dereference**: `p.*` loads the value through the pointer.
 ```sx
 copy := ptr.*;          // Vec2
@@ -2000,20 +2003,25 @@ op : ?*Vec2 = null;    // same layout; deref demands proof of presence
 index is the only way to step a pointer — `+` / `-` have no pointer form.
 ```sx
 arr : [5]i32 = .[10, 20, 30, 40, 50];
-mp : [*]i32 = *arr[0];   // *i32 → [*]i32 implicit
+mp : [*]i32 = *arr[0];
 val := mp[2];             // 30
 ```
 
 **Implicit conversions**:
-- `*T` → `[*]T` (pointer to element → many-pointer)
+- `[*]T` → `*T` (the first element)
 - `*[N]T` → `[*]T` (pointer to array → many-pointer)
 - `[N]T` → `[*]T` at call sites (array decays to many-pointer)
 - `[]T` → `[*]T` (slice decays to many-pointer, extracts `.ptr`)
 - `T` → `*T` at call sites (implicit address-of)
-- `null` (`*void`) → any `*T`
-- `*T` / `[*]T` → `*void` (losing the pointee). `[]T.ptr` is a
-  many-pointer, so it takes this arm. Gaining a pointee (`*void` → `*T`) is
-  explicit: `raw.(*T)` or `xx raw` at a `*T` slot.
+- `*T` / `[*]T` → `*void`
+- `*void` → `*T` or unterminated `[*]T`
+- `[*:X]T` → `[*]T` (drop the terminator guarantee)
+- An ObjC class pointer → a pointer to a declared ancestor
+
+`*T` → `[*]T` requires `.([*]T)`. Recovering a C-convention function
+from `*void` requires `.((Args) -> Result abi(.c))`. Other code-pointer
+reads and ObjC downcasts use `@reinterpret`. No conversion adds a
+terminator guarantee.
 
 **Unchecked writes (the pointer contract)**: pointers carry no
 read-only qualifier — there is no `const` pointer type in sx (`const` is
@@ -2940,7 +2948,7 @@ pair := 0.0 - 1.0;
 - Any integer to any float (`u8` → `f32`, `i32` → `f64`)
 - Float to wider float (`f32` → `f64`)
 - Integer literals can convert to any numeric type implicitly
-- `*T` / `[*]T` → `*void`
+- Pointer conversions follow §Pointer Types.
 
 **Implicit float → integer** — a float flowing into an integer-typed slot
 without `xx` / `.(T)`:

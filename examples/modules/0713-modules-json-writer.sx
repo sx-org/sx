@@ -33,7 +33,7 @@ build :: (alloc: Allocator) -> Value {
     // `\u00XX` path that has no named shorthand. String values are VIEWS,
     // so the bytes must outlive the writes: back them with `alloc` (the
     // arena), not a local that dies when `build` returns.
-    cbytes : [*]u8 = xx alloc.allocBytes(1);
+    cbytes : [*]u8 = alloc.allocBytes(1);
     cbytes[0] = 1;
     ctrl := string{ ptr = cbytes, len = 1 };
 

@@ -139,7 +139,7 @@ serveOnce :: (port: i64, poolCount: i64, scratch: [*]u8, cap: i64) -> bool {
     bigN := 40000;
     hdr := "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 40000\r\n\r\n";
     reqLen : i64 = hdr.len + bigN;
-    rbuf : [*]u8 = xx context.allocator.allocBytes(reqLen);
+    rbuf : [*]u8 = context.allocator.allocBytes(reqLen);
     cstd.memcpy(rbuf, hdr.ptr, hdr.len);
     f := 0;
     while f < bigN { rbuf[hdr.len + f] = 97.(u8) + (f % 26).(u8); f += 1; }
@@ -213,7 +213,7 @@ main :: () -> i32 {
     leaked : i64 = 0;
     push .{ allocator = gpa } {
         cap : i64 = 50000;
-        scratch : [*]u8 = xx context.allocator.allocBytes(cap);
+        scratch : [*]u8 = context.allocator.allocBytes(cap);
 
         r := 0;
         while r < rounds {

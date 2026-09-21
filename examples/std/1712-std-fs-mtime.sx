@@ -45,7 +45,7 @@ main :: () -> i32 {
             .{ sec = initialAccess, nsec = 0 },
             .{ sec = initialModified, nsec = 0 },
         ];
-        if posixAbi.fsPosixUtimensat(posixAbi.FS_POSIX_AT_FDCWD, path.ptr.([*:0]u8), *initial[0], 0) != 0 {
+        if posixAbi.fsPosixUtimensat(posixAbi.FS_POSIX_AT_FDCWD, path, *initial[0], 0) != 0 {
             fs.deleteFile(path);
             return 2;
         }

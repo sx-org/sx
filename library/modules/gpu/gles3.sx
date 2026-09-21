@@ -381,7 +381,7 @@ impl GPU for Gles3Gpu {
         if self.currentShader == 0 { return; }
         cs64 : i64 = self.currentShader.(i64);
         if cs64 > self.shaders.len { return; }
-        shader := *self.shaders.items[self.currentShader - 1];
+        shader: *Gles3ShaderSlot = *self.shaders.items[self.currentShader - 1];
 
         if slot == 1 and sizeBytes == 64 {
             if shader.projLoc < 0 { return; }

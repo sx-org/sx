@@ -113,8 +113,8 @@ main :: () {
         a3 := a.allocBytes(16);
         print("arena overflow: {}\n", gpa3.allocCount);      // arena overflow: 2
         // Verify memory works across chunks
-        p1 : [*]u8 = xx a1;
-        p3 : [*]u8 = xx a3;
+        p1 : [*]u8 = a1;
+        p3 : [*]u8 = a3;
         p1[0] = 42;
         p3[0] = 99;
         print("arena a1: {}\n", p1[0]);                       // arena a1: 42
@@ -432,7 +432,7 @@ main :: () {
     {
         Env :: struct { n: i32; }
         implFn :: (env: *void, x: i32) -> i32 {
-            e : *Env = xx env;
+            e : *Env = env;
             return x + e.n;
         }
         env := Env{ n = 5 };
@@ -657,7 +657,7 @@ main :: () {
         mapSrc : [5]i32 = .[1, 2, 3, 4, 5];
         mapDst : [5]i32 = .[0, 0, 0, 0, 0];
         factorD1 : i32 = 3;
-        mapCl(xx *mapSrc, 5, |x: i32|_{ factorD1 = factorD1 } -> i32 x * factorD1, xx *mapDst);
+        mapCl(*mapSrc, 5, |x: i32|_{ factorD1 = factorD1 } -> i32 x * factorD1, *mapDst);
         print("closure-map: {} {} {} {} {}\n", mapDst[0], mapDst[1], mapDst[2], mapDst[3], mapDst[4]);
 
         filterCl :: (arr: [*]i32, cnt: i64, pred: $F/(i32) -> bool, result: [*]i32) -> i64 {
@@ -671,7 +671,7 @@ main :: () {
         }
         minVal : i32 = 3;
         filtDst : [5]i32 = .[0, 0, 0, 0, 0];
-        kept := filterCl(xx *mapSrc, 5, |x: i32|_{ minVal = minVal } -> bool x >= minVal, xx *filtDst);
+        kept := filterCl(*mapSrc, 5, |x: i32|_{ minVal = minVal } -> bool x >= minVal, *filtDst);
         print("closure-filter: {} [{} {} {}]\n", kept, filtDst[0], filtDst[1], filtDst[2]);
 
         sortCl :: (arr: [*]i32, cnt: i64, less: $F/(i32, i32) -> bool) {
@@ -691,7 +691,7 @@ main :: () {
         }
         sortArr : [5]i32 = .[5, 3, 1, 4, 2];
         descending := true;
-        sortCl(xx *sortArr, 5, |a: i32, b: i32|_{ descending = descending } -> bool {
+        sortCl(*sortArr, 5, |a: i32, b: i32|_{ descending = descending } -> bool {
             if descending { return a > b; }
             return a < b;
         });
@@ -703,7 +703,7 @@ main :: () {
         }
         feLabel := "item";
         feArr : [3]i32 = .[10, 20, 30];
-        forEachCl(xx *feArr, 3, |val: i32, idx: i64|_{ feLabel = feLabel } {
+        forEachCl(*feArr, 3, |val: i32, idx: i64|_{ feLabel = feLabel } {
             print("closure-fe: {} {}={}\n", feLabel, idx, val);
         });
 
@@ -716,7 +716,7 @@ main :: () {
             return -1;
         }
         target : i32 = 30;
-        foundIdx := findCl(xx *feArr, 3, |x: i32|_{ target = target } -> bool x == target);
+        foundIdx := findCl(*feArr, 3, |x: i32|_{ target = target } -> bool x == target);
         print("closure-find: {}\n", foundIdx);
 
         anyCl :: (arr: [*]i32, cnt: i64, predA: $F/(i32) -> bool) -> bool {
@@ -727,8 +727,8 @@ main :: () {
             }
             return false;
         }
-        hasBig := anyCl(xx *feArr, 3, |x: i32| -> bool x > 100);
-        has20 := anyCl(xx *feArr, 3, |x: i32| -> bool x == 20);
+        hasBig := anyCl(*feArr, 3, |x: i32| -> bool x > 100);
+        has20 := anyCl(*feArr, 3, |x: i32| -> bool x == 20);
         print("closure-any: {} {}\n", hasBig, has20);
 
         Widget :: struct { transform: Closure(i32) -> i32; }
@@ -768,7 +768,7 @@ main :: () {
             return total + baseK2;
         };
         k2Arr : [5]i32 = .[1, 2, 3, 4, 5];
-        print("closure-loop: {}\n", sumFn(xx *k2Arr, 5));
+        print("closure-loop: {}\n", sumFn(*k2Arr, 5));
 
         nM3 : i32 = 1;
         fM3 : Closure(i32) -> i32 = closure(|x: i32|_{ nM3 } -> i32 x + nM3);
@@ -856,7 +856,7 @@ main :: () {
         print("closure-null-env: {}\n", fL3.env == null);
 
         slA7 : [3]i32 = .[10, 20, 30];
-        ptrA7 : [*]i32 = xx *slA7;
+        ptrA7 : [*]i32 = *slA7;
         fA7 := |i: i64|_{ ptrA7 = ptrA7 } -> i32 ptrA7[i];
         print("closure-slice: {} {} {}\n", fA7(0), fA7(1), fA7(2));
 

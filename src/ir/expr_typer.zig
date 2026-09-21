@@ -60,6 +60,7 @@ pub const ExprTyper = struct {
                 .xx => self.l.target_type orelse .unresolved,
                 .address_of => blk: {
                     const inner = self.l.inferExprType(uop.operand);
+                    if (uop.operand.data == .index_expr) break :blk self.l.module.types.manyPtrTo(inner);
                     break :blk self.l.module.types.ptrTo(inner);
                 },
                 .pre_decrement => self.l.inferExprType(uop.operand),

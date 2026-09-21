@@ -21,7 +21,7 @@ main :: () -> i32 {
         class_addMethod(cls, sel, @reinterpret(*void, combineImp), "i@:ii".ptr);
         objc_registerClassPair(cls);
 
-        inst : *SxProbeMultiKeyword = xx class_createInstance(cls, 0);
+        inst : *SxProbeMultiKeyword = class_createInstance(cls, 0);
         n := inst.combine_and(7, 42);
         print("combine_and(7, 42) = {}\n", n);
     }

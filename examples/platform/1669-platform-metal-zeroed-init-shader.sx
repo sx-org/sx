@@ -20,7 +20,7 @@ MSL;
 main :: () -> i32 {
     inline if @host.os != .macos { print("format ok, shader handle: 1\n"); return 0; }
 
-    gpu : *MetalGPU = xx context.allocator.allocBytes(@sizeOf(MetalGPU));
+    gpu : *MetalGPU = context.allocator.allocBytes(@sizeOf(MetalGPU));
     c.memset(gpu, 0, @sizeOf(MetalGPU));
     if !gpu.init(null, 0, 0) { return 1; }
 

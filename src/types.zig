@@ -156,11 +156,17 @@ pub const Type = union(enum) {
             'a' => if (std.mem.eql(u8, name, "any")) .any_type else null,
             'v' => if (std.mem.eql(u8, name, "void")) .void_type else null,
             '[' => {
-                // Many-pointer: [*]T
-                if (name.len >= 4 and name[1] == '*' and name[2] == ']') {
-                    return .{ .many_pointer_type = .{ .element_name = name[3..], .is_raw = false } };
-                }
-                return null;
+                const end = std.mem.indexOfScalar(u8, name, ']') orelse return null;
+                if (end + 1 == name.len) return null;
+                const element = name[end + 1 ..];
+                var parts = std.mem.splitScalar(u8, name[1..end], ':');
+                const shape = parts.next().?;
+                const sentinel: ?i64 = if (parts.next()) |value| std.fmt.parseInt(i64, value, 10) catch return null else null;
+                if (parts.next() != null) return null;
+                if (std.mem.eql(u8, shape, "*")) return .{ .many_pointer_type = .{ .element_name = element, .is_raw = false, .sentinel = sentinel } };
+                if (shape.len == 0) return .{ .slice_type = .{ .element_name = element, .is_raw = false, .sentinel = sentinel } };
+                const length: ?u32 = if (std.mem.eql(u8, shape, "_")) null else std.fmt.parseInt(u32, shape, 10) catch return null;
+                return .{ .array_type = .{ .element_name = element, .length = length, .is_raw = false, .sentinel = sentinel } };
             },
             '*' => if (name.len >= 2) .{ .pointer_type = .{ .pointee_name = name[1..], .is_raw = false } } else null,
             '@' => {

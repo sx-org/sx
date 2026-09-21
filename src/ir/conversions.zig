@@ -55,6 +55,13 @@ pub const CoercionResolver = struct {
         error_to_int,
         ptr_int_bitcast, // ptr ↔ int
         ptr_to_void, // *T / [*]T → *void
+        void_to_ptr,
+        many_to_single,
+        single_to_many,
+        array_ptr_to_many_ptr,
+        many_drop_terminator,
+        objc_upcast,
+        void_to_c_function,
         widen, // same kind, dst wider
         narrow, // same kind, dst narrower
         array_to_slice, // [N]T → []T (materialize backing storage + header)
@@ -81,6 +88,13 @@ pub const CoercionResolver = struct {
                 .many_to_slice_reject,
                 .adds_terminator_reject,
                 => true,
+                else => false,
+            };
+        }
+
+        pub fn implicitPointer(self: CoercionPlan) bool {
+            return switch (self) {
+                .ptr_to_void, .void_to_ptr, .many_to_single, .array_ptr_to_many_ptr, .many_drop_terminator, .objc_upcast => true,
                 else => false,
             };
         }
@@ -127,6 +141,7 @@ pub const CoercionResolver = struct {
 
     pub fn classify(self: CoercionResolver, src_ty: TypeId, dst_ty: TypeId) CoercionPlan {
         if (self.l.module.types.sameType(src_ty, dst_ty)) return .no_op;
+        if (self.classifyPointer(src_ty, dst_ty)) |plan| return plan;
         // A terminated value reaches a pointer that names the same terminator
         // or names none.
         if (self.pointerDestElement(dst_ty)) |dst_elem| {
@@ -255,11 +270,8 @@ pub const CoercionResolver = struct {
                 if (!dst_ty.isBuiltin() and self.l.module.types.get(dst_ty) == .optional) {
                     return .optional_to_optional;
                 }
-                // A `*void` slot takes a proven-present `?*T` exactly as it
-                // takes the `*T`: unwrap, then the payload's own address
-                // conversion. The unwrap arm still gates on flow narrowing,
-                // so an unproven optional is refused there.
-                if (self.classify(child_ty, dst_ty) == .ptr_to_void) return .optional_unwrap;
+                // A proven-present optional uses its payload's implicit pointer conversion.
+                if (self.classify(child_ty, dst_ty).implicitPointer()) return .optional_unwrap;
             }
         }
 
@@ -301,11 +313,6 @@ pub const CoercionResolver = struct {
         if (!src_ty.isBuiltin() and self.l.module.types.get(src_ty) == .@"error" and dst_int) return .error_to_int;
         if (src_int and dst_float) return .int_to_float;
         if (src_float and dst_int) return .float_to_int;
-        // Losing a pointee is the destination's request: a single-pointer or
-        // many-pointer stores into `*void` without a glyph.
-        // The reverse (`*void` → `*T`) is a pointer↔pointer `.none`
-        // (explicit `raw.(*T)` / `xx raw`).
-        if (self.isVoidPointer(dst_ty) and self.isTypedAddress(src_ty)) return .ptr_to_void;
         if ((src_ptr and dst_int) or (src_int and dst_ptr)) return .ptr_int_bitcast;
 
         const src_bits = self.l.typeBitsEx(src_ty);
@@ -329,6 +336,49 @@ pub const CoercionResolver = struct {
         if (self.destSentinel(dst_ty) != null and
             src_ty != .void and src_ty != .noreturn and src_ty != .unresolved) return .adds_terminator_reject;
         return .none;
+    }
+
+    fn classifyPointer(self: CoercionResolver, src_ty: TypeId, dst_ty: TypeId) ?CoercionPlan {
+        const tt = &self.l.module.types;
+        const src = tt.get(src_ty);
+        const dst = tt.get(dst_ty);
+        if (self.isVoidPointer(dst_ty) and self.isTypedAddress(src_ty)) return .ptr_to_void;
+        if (self.isVoidPointer(src_ty)) {
+            if (dst == .pointer or (dst == .many_pointer and dst.many_pointer.sentinel == null)) return .void_to_ptr;
+            if (dst == .function and dst.function.call_conv == .c) return .void_to_c_function;
+        }
+        if (src == .many_pointer) {
+            if (dst == .pointer and tt.sameType(src.many_pointer.element, dst.pointer.pointee)) return .many_to_single;
+            if (dst == .many_pointer and dst.many_pointer.sentinel == null and
+                tt.sameType(src.many_pointer.element, dst.many_pointer.element)) return .many_drop_terminator;
+        }
+        if (src == .pointer) {
+            if (dst == .many_pointer) {
+                const pointee = tt.get(src.pointer.pointee);
+                if (pointee == .array and tt.sameType(pointee.array.element, dst.many_pointer.element) and
+                    (dst.many_pointer.sentinel == null or dst.many_pointer.sentinel == pointee.array.sentinel)) return .array_ptr_to_many_ptr;
+                if (dst.many_pointer.sentinel == null and tt.sameType(src.pointer.pointee, dst.many_pointer.element)) return .single_to_many;
+            }
+            if (dst == .pointer and self.objcAncestor(src.pointer.pointee, dst.pointer.pointee)) return .objc_upcast;
+        }
+        return null;
+    }
+
+    fn objcAncestor(self: CoercionResolver, src_ty: TypeId, dst_ty: TypeId) bool {
+        const tt = &self.l.module.types;
+        const src = tt.get(src_ty);
+        const dst = tt.get(dst_ty);
+        if (src != .@"struct" or dst != .@"struct") return false;
+        var current = self.l.program_index.lookup(.runtime_class, tt.getString(src.@"struct".name)) orelse return false;
+        const target = self.l.program_index.lookup(.runtime_class, tt.getString(dst.@"struct".name)) orelse return false;
+        if (current.runtime != .objc_class or target.runtime != .objc_class) return false;
+        while (true) {
+            const parent = for (current.members) |member| {
+                if (member == .extends) break member.extends;
+            } else return false;
+            current = self.l.program_index.lookup(.runtime_class, parent) orelse return false;
+            if (current == target) return true;
+        }
     }
 
     /// The `xx`-operator head decision for `lowerXX`. `.coerce` defers to the

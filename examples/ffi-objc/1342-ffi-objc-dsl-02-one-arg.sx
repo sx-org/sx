@@ -22,7 +22,7 @@ main :: () -> i32 {
         class_addMethod(cls, sel, @reinterpret(*void, addObjectImp), "i@:i".ptr);
         objc_registerClassPair(cls);
 
-        inst : *SxProbeOneArg = xx class_createInstance(cls, 0);
+        inst : *SxProbeOneArg = class_createInstance(cls, 0);
         n := inst.addObject(21);
         print("addObject(21) = {}\n", n);
     }

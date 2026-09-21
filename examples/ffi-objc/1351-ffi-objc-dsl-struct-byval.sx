@@ -36,7 +36,7 @@ main :: () {
     class_addMethod(cls, sel_registerName("takeMixed:region:tail:".ptr), @reinterpret(*void, mixedImp), "Q@:q{ ProbeRegion=QQQQQQ}q".ptr);
     objc_registerClassPair(cls);
 
-    inst : *SxStructProbe = xx class_createInstance(cls, 0);
+    inst : *SxStructProbe = class_createInstance(cls, 0);
 
     r := ProbeRegion{ a = 1, b = 2, c = 3, d = 4, e = 5, f = 6 };
     print("region sum: {}\n", inst.takeRegion(r));

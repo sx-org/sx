@@ -4210,7 +4210,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                     self.diagNonIndexable(obj_ty, ie.object.span);
                     break :blk self.builder.constInt(0, .i64); // placeholder — hasErrors() aborts
                 }
-                const ptr_ty = self.module.types.ptrTo(elem_ty);
+                const ptr_ty = self.module.types.manyPtrTo(elem_ty);
                 const base = self.indexBase(ie.object, obj_ty, narrowed_child);
                 break :blk self.builder.emit(.{ .index_gep = .{ .lhs = base, .rhs = idx } }, ptr_ty);
             }

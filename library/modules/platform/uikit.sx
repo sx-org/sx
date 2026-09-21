@@ -914,7 +914,7 @@ impl Platform for UIKitPlatform {
 
     insertText :: (self: *UIKitPlatform, text: *NSString) {
         if session := self.session {
-            session.insert(fromCstring(text.UTF8String().([*:0]u8)));
+            session.insert(fromCstring(text.UTF8String()));
         }
     }
 
@@ -929,7 +929,7 @@ impl Platform for UIKitPlatform {
     setMarkedText :: (self: *UIKitPlatform, text: ?*NSString, selectedRange: _NSRange) {
         if session := self.session {
             run : string = "";
-            if t := text { run = fromCstring(t.UTF8String().([*:0]u8)); }
+            if t := text { run = fromCstring(t.UTF8String()); }
             selStart := utf16OffsetToBytes(run, selectedRange.location.(i64));
             selEnd := utf16OffsetToBytes(run, (selectedRange.location + selectedRange.length).(i64));
             session.setMarked(run, selStart, selEnd);

@@ -115,7 +115,7 @@ NSString :: @ObjcClass("NSString", extends = NSObject) extern {
     // Narrows the inherited `NSObject.alloc` return so an `initWith…` chained
     // onto it dispatches against NSString.
     alloc      :: () -> *NSString;
-    UTF8String :: (self: *Self) -> [*]u8;
+    UTF8String :: (self: *Self) -> [*:0]u8;
     initWithBytes_length_encoding :: (self: *Self, bytes: [*]u8, length: usize, encoding: usize) -> *NSString;
 }
 

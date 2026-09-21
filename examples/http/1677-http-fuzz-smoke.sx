@@ -300,8 +300,8 @@ main :: () -> i32 {
         srv, se := http.Server.init(cfg, handler, 0);
         if se { print("server init failed\n"); return 1; }
 
-        mutbuf : [*]u8  = xx context.allocator.allocBytes(MUTBUF);
-        scratch : [*]u8 = xx context.allocator.allocBytes(8192);
+        mutbuf : [*]u8  = context.allocator.allocBytes(MUTBUF);
+        scratch : [*]u8 = context.allocator.allocBytes(8192);
 
         rng : Rng = .{ s = SEED };
 
