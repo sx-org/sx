@@ -404,17 +404,24 @@ pub fn callableLocalShadow(self: *Lowering, name: []const u8) bool {
 
 /// Call the function a unique lambda's env `env_addr` belongs to. The value IS
 /// the env, so the address stands in for the fat pointer a `Closure` carries.
-fn callUniqueLambda(self: *Lowering, u: lower_closure.UniqueLambda, env_addr: Ref, args: []Ref) Ref {
+fn callUniqueLambda(self: *Lowering, template: lower_closure.UniqueLambda, env_addr: Ref, args: []Ref) Ref {
+    const u = if (template.func == .formation) blk: {
+        const arg_types = self.alloc.alloc(TypeId, args.len) catch unreachable;
+        defer self.alloc.free(arg_types);
+        for (args, arg_types) |arg, *ty| ty.* = self.builder.getRefType(arg);
+        break :blk lower_closure.specializeFormationLambda(self, template, arg_types);
+    } else template;
+    const fid = u.func.lowered;
     coerceClosureCallArgs(self, args, u.params);
     var call_args = std.ArrayList(Ref).empty;
     defer call_args.deinit(self.alloc);
-    if (self.module.functions.items[u.func.index()].has_implicit_ctx) {
+    if (self.module.functions.items[fid.index()].has_implicit_ctx) {
         call_args.append(self.alloc, self.current_ctx_ref) catch unreachable;
     }
     call_args.append(self.alloc, env_addr) catch unreachable;
     call_args.appendSlice(self.alloc, args) catch unreachable;
     const owned = self.alloc.dupe(Ref, call_args.items) catch unreachable;
-    return self.builder.emit(.{ .call = .{ .callee = u.func, .args = owned } }, u.ret);
+    return self.builder.emit(.{ .call = .{ .callee = fid, .args = owned } }, u.ret);
 }
 
 /// Call the `call` that `impl (sig) for T` declares. The callee expression IS

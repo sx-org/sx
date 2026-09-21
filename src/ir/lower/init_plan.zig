@@ -126,6 +126,11 @@ fn siteFor(self: *Lowering, arg: *const Node) u32 {
     return id;
 }
 
+pub fn argumentType(self: *Lowering, arg: *const Node, target: TypeId, arg_ty: TypeId) TypeId {
+    if (conforms(self, target, arg_ty)) return arg_ty;
+    return self.module.types.initImplementorType(target, siteFor(self, arg));
+}
+
 /// Form the `@Init(target)` implementor for `arg` (spec §5.2). The argument is
 /// NOT evaluated here: it becomes the body of a thunk
 /// `(dest: *target) { dest.* = <arg>; }`, so it runs when — and each time — the
@@ -147,7 +152,7 @@ pub fn formInitPlan(self: *Lowering, arg: *const Node, target: TypeId) Ref {
     const arg_ty = self.inferExprType(arg);
     if (conforms(self, target, arg_ty)) return self.lowerExpr(arg);
 
-    const impl_ty = self.module.types.initImplementorType(target, siteFor(self, arg));
+    const impl_ty = argumentType(self, arg, target, arg_ty);
 
     const span = arg.span;
     const src = self.current_source_file;
