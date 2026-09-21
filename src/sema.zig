@@ -17,6 +17,7 @@
 const std = @import("std");
 const literal_fields = @import("literal_fields.zig");
 const ast = @import("ast.zig");
+const imports = @import("imports.zig");
 const Node = ast.Node;
 const Span = ast.Span;
 const Type = @import("types.zig").Type;
@@ -40,7 +41,18 @@ pub const SymbolKind = enum {
     namespace,
 };
 
+pub const Declaration = struct {
+    table: *const imports.DeclTable,
+    id: imports.DeclId,
+};
+
+pub const DeclarationContext = struct {
+    table: *const imports.DeclTable,
+    environment: imports.EnvironmentId,
+};
+
 pub const Symbol = struct {
+    declaration: ?Declaration = null,
     name: []const u8,
     kind: SymbolKind,
     ty: ?Type,
@@ -86,6 +98,7 @@ pub const TypeMap = std.AutoHashMap(*const Node, Type);
 /// types, and best-effort diagnostics for navigation/completion. Not consumed
 /// by the compiler pipeline (see module doc).
 pub const SemaResult = struct {
+    declarations: ?DeclarationContext = null,
     symbols: []const Symbol,
     references: []const Reference,
     member_refs: []const MemberRef,
@@ -104,6 +117,7 @@ pub const SemaResult = struct {
 /// Builds the editor symbol/type index (see module doc). Not a compiler
 /// semantic pass — its `Type` results are editor metadata, not compiler truth.
 pub const Analyzer = struct {
+    declarations: ?DeclarationContext = null,
     allocator: std.mem.Allocator,
     symbols: std.ArrayList(Symbol),
     references: std.ArrayList(Reference),
@@ -177,7 +191,18 @@ pub const Analyzer = struct {
             try self.analyzeTopLevelDecl(decl);
         }
 
+        if (self.declarations) |context| {
+            const env = context.table.environment(context.environment);
+            for (self.symbols.items) |*symbol| {
+                if (symbol.origin != null or symbol.scope_depth != 0) continue;
+                const id = env.names.get(symbol.name) orelse continue;
+                if (!std.meta.eql(context.table.get(id).span, @as(?Span, symbol.def_span))) continue;
+                symbol.declaration = .{ .table = context.table, .id = id };
+            }
+        }
+
         return .{
+            .declarations = self.declarations,
             .symbols = try self.symbols.toOwnedSlice(self.allocator),
             .references = try self.references.toOwnedSlice(self.allocator),
             .member_refs = try self.member_refs.toOwnedSlice(self.allocator),

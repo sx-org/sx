@@ -916,11 +916,6 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                 // and through its own identity.
                 if (!self.program_index.contains(.function, fd.name))
                     self.program_index.registerFunction(fd.name, &decl.data.fn_decl, decl.source_file);
-                // Declare extern stub for all functions (bodies lowered
-                // lazily). The author is the STABLE AST field pointer — the
-                // same `&decl.data.fn_decl` the `module_decls` raw facts hold
-                // — not the switch-capture copy `fd`, whose address is a
-                // per-iteration stack temporary addressing no declaration.
                 self.declareFunction(&decl.data.fn_decl, fd.name);
             },
             .const_decl => |cd| {
@@ -2538,43 +2533,22 @@ pub fn lowerMainAndComptime(self: *Lowering, decls: []const *const Node) void {
     }
 }
 
-/// Lower every SHADOWED same-name function author into its OWN FuncId with a
-/// real (non-extern) body — the identity-addressable lowering path. A default
-/// compile never calls it; there the name path is the sole resolver.
-///
-/// The first-wins flat/directory merge keeps exactly one author per name in
-/// the merged decl list; `scanDecls` declares that WINNER (lowered on demand
-/// through the name-keyed `lazyLowerFunction`). The merge retains every
-/// dropped same-name author in the `module_decls` raw facts (path → name →
-/// `RawDeclRef`) without touching resolution; this walks that index, filters
-/// each author to its `*FnDecl` (`fnDeclOfRaw`), and gives each shadowed
-/// author its own slot: `declareFunction` (identity-mapped to a fresh
-/// same-name FuncId) + `lowerFunctionBodyInto` (its body, in its own module's
-/// visibility context). Two same-name authors then carry distinct FuncIds and
-/// distinct bodies, while `resolveFuncByName` still returns the first (winner)
-/// author so existing calls bind first-wins.
-///
-/// Scoped to DIRECT flat imports of the main file: a `module_decls` entry
-/// whose path is the main file or one of its bare `@import` edges. A
-/// namespaced (`ns :: @import`) author has no bare-name winner and is excluded
-/// both by that flat-edge gate and by the `fn_ast_map` winner lookup below.
 pub fn lowerRetainedSameNameAuthors(self: *Lowering) void {
-    const module_decls = self.program_index.module_decls orelse return;
+    const module_decls = self.program_index.decl_table orelse return;
     const main_file = self.main_file orelse return;
     const flat_graph = self.program_index.flat_import_graph orelse return;
     const main_flat_edges = flat_graph.get(main_file);
 
-    var path_it = module_decls.iterator();
-    while (path_it.next()) |path_entry| {
-        const path = path_entry.key_ptr.*;
+    for (module_decls.environments.items) |env| {
+        const path = env.source;
         const is_eligible = std.mem.eql(u8, path, main_file) or
             (main_flat_edges != null and main_flat_edges.?.contains(path));
         if (!is_eligible) continue;
 
-        var fn_it = path_entry.value_ptr.names.iterator();
+        var fn_it = env.names.iterator();
         while (fn_it.next()) |fn_entry| {
             const name = fn_entry.key_ptr.*;
-            const fd = fnDeclOfRaw(fn_entry.value_ptr.*) orelse continue;
+            const fd = fnDeclOfRaw(module_decls.get(fn_entry.value_ptr.*).ref orelse continue) orelse continue;
 
             // A name with no bare winner is namespaced-only (`ns.fn`) — it
             // never participated in the flat merge, so it has no shadow to
@@ -2956,16 +2930,15 @@ pub fn selectNominalLeaf(self: *Lowering, name: []const u8, from: []const u8, ra
     if (self.emitting_default_context) {
         if (registered) |existing| return .{ .resolved = existing };
     }
-    // Import facts unwired (registration / comptime host with no module_decls
-    // or flat graph): there is no querying context to gate against — take the
-    // ungated resolution (registered → existing; else forward-alias /
-    // undeclared).
-    if (self.program_index.module_decls == null or self.program_index.flat_import_graph == null) {
+    if (self.program_index.decl_table == null or self.program_index.flat_import_graph == null) {
         if (registered) |existing| return .{ .resolved = existing };
         // Direct per-source lookup for resolved alias, then pending check.
         if (self.program_index.lookupInSource(.type_alias, from, name)) |tid| return .{ .resolved = tid };
-        if (self.program_index.module_decls) |decls| {
-            if (decls.get(from)) |m| if (m.names.get(name)) |ref| if (ref == .const_decl) return .pending;
+        if (self.program_index.decl_table) |decls| {
+            if (decls.fileScope(from)) |env| if (env.names.get(name)) |id| {
+                const ref = decls.get(id).ref orelse return .undeclared;
+                if (ref == .const_decl) return .pending;
+            };
         }
         return .undeclared;
     }
@@ -3086,13 +3059,12 @@ pub fn selectNominalLeaf(self: *Lowering, name: []const u8, from: []const u8, ra
 /// private declaration and no public author exists anywhere (a public author
 /// would have been served by the earlier own/flat/not-visible steps).
 fn nameAuthoredAsTypeOnlyPrivatelyElsewhere(self: *Lowering, name: []const u8, from: []const u8) bool {
-    const decls = self.program_index.module_decls orelse return false;
+    const decls = self.program_index.decl_table orelse return false;
     var any = false;
-    var it = decls.iterator();
-    while (it.next()) |entry| {
-        const m = entry.value_ptr;
-        if (!m.private_names.contains(name)) continue;
-        if (std.mem.eql(u8, entry.key_ptr.*, from)) continue;
+    for (decls.environments.items) |env| {
+        const info = decls.get(env.names.get(name) orelse continue);
+        if (info.ref == null or info.visibility != .private) continue;
+        if (std.mem.eql(u8, env.source, from)) continue;
         any = true;
     }
     return any;
@@ -3161,25 +3133,12 @@ pub fn namedRefTid(self: *Lowering, ref: resolver_mod.RawDeclRef, name: []const 
     };
 }
 
-/// TRUE iff `name` is authored as a TYPE — a NAMED type OR a type ALIAS — in
-/// ANY module's raw facts. The leak detector: a name that is a type author
-/// somewhere but not flat-visible from the querying module is reachable only
-/// over a namespace edge. Both kinds are checked: named types via
-/// `module_decls`, aliases via the `type_aliases_by_source`. Distinguishes a
-/// real cross-module TYPE author from a LOCAL type / generic-param /
-/// fabricated empty-struct stub (findByName-registered but authored in no
-/// module) and from a same-name VALUE/FUNCTION author (not a type). Unwired
-/// facts → false (nothing to gate; resolve ungated).
 pub fn nameAuthoredAsTypeAnywhere(self: *Lowering, name: []const u8) bool {
-    if (self.program_index.module_decls) |decls| {
-        var it = decls.valueIterator();
-        while (it.next()) |m| {
-            if (m.names.get(name)) |ref| {
-                // A private-only type author must read as undeclared, not as
-                // a not-visible gate: importing its module would not help.
-                if (m.private_names.contains(name)) continue;
-                if (isNamedTypeKind(ref)) return true;
-            }
+    if (self.program_index.decl_table) |decls| {
+        for (decls.environments.items) |env| {
+            const info = decls.get(env.names.get(name) orelse continue);
+            if (info.visibility == .private) continue;
+            if (isNamedTypeKind(info.ref orelse continue)) return true;
         }
     }
     return self.program_index.contains(.type_alias, name);
@@ -3284,11 +3243,6 @@ pub fn resolveNominalLeaf(self: *Lowering, name: []const u8, raw: bool, span: ?a
     };
 }
 
-/// The `*FnDecl` a raw author wraps, or null when the author is not a
-/// function — unwraps a `RawDeclRef` so the collector's all-domain authors
-/// yield a fn-only view (a `const`-wrapped fn unwraps to its inner fn; every
-/// other domain → null). The single place function authors are read out of
-/// the `module_decls` raw facts.
 pub fn fnDeclOfRaw(ref: resolver_mod.RawDeclRef) ?*const ast.FnDecl {
     return switch (ref) {
         .fn_decl => |fd| fd,
@@ -3730,19 +3684,6 @@ pub fn registerQualifiedFn(self: *Lowering, ns_name: []const u8, fd: *const ast.
 /// by `VisibilityMode`. `isNameVisible` / `isCImportVisible` are thin
 /// adapters over it.
 ///
-/// This is the lowering-side GATE: it walks `module_scopes` (the per-file
-/// name set) joined over the edge set the mode selects. It is distinct from
-/// `resolver.collectVisibleAuthors`, which collects raw AUTHORS over
-/// `module_decls` — the single graph-walk that lives in `resolver.zig`. The
-/// two read different facts (name set vs author refs) for different jobs, so
-/// the gate's own iterator stays here, not in the resolver.
-///
-/// `module_scopes[F]` holds ONLY the names authored in F (plus its namespace
-/// aliases); cross-module visibility is joined here at query time. Doing the
-/// join at lookup (instead of pre-merging in `resolveImports`) lets cyclic
-/// imports like std.sx ↔ allocators.sx still resolve, since the cycle's
-/// skipped edge is still recorded in the graph and the partner's scope is
-/// filled in by the time lowering queries it.
 pub fn isVisible(self: *Lowering, name: []const u8, vis: resolver_mod.VisibilityMode) bool {
     switch (vis) {
         // Registration / lazy lowering paths don't police user visibility.
@@ -3773,7 +3714,7 @@ pub fn isVisible(self: *Lowering, name: []const u8, vis: resolver_mod.Visibility
 /// decls; otherwise every local variable would be policed.
 pub fn visibleOverEdges(self: *Lowering, name: []const u8) bool {
     const source = self.current_source_file orelse return true;
-    return nameVisibleOverEdges(self.program_index.module_scopes, self.program_index.flat_import_graph, source, name);
+    return nameVisibleOverEdges(self.program_index.decl_table, self.program_index.flat_import_graph, source, name);
 }
 
 /// Check if a C-imported function is visible from the current source file.

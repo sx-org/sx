@@ -674,3 +674,32 @@ test "analyzeDocument: reinterpretation exposes its destination to the editor" {
     }
     return error.TestUnexpectedResult;
 }
+
+test "document declarations follow the analyzed source snapshot" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const doc = try store.openOrUpdate("snapshot.sx", "old :: 1;", 1);
+    try store.analyzeDocument(doc);
+    const previous = doc.sema.?;
+    const old_symbol = previous.symbols[0].declaration.?;
+    try std.testing.expectEqualStrings("old", old_symbol.table.get(old_symbol.id).name);
+    try std.testing.expectEqual(previous.declarations.?.environment, old_symbol.table.get(old_symbol.id).environment.?);
+
+    _ = try store.openOrUpdate("snapshot.sx", "fresh :: 2;", 2);
+    try std.testing.expect(doc.declarations == null);
+    try store.analyzeDocument(doc);
+    const current = doc.sema.?;
+    const context = current.declarations.?;
+    try std.testing.expect(context.table != previous.declarations.?.table);
+    try std.testing.expect(!context.table.environment(context.environment).names.contains("old"));
+    const fresh = current.symbols[0].declaration.?;
+    try std.testing.expectEqualStrings("fresh", fresh.table.get(fresh.id).name);
+    try std.testing.expectEqualStrings("old", old_symbol.table.get(old_symbol.id).name);
+
+    _ = try store.openOrUpdate("snapshot.sx", "fresh :: (", 3);
+    try store.analyzeDocument(doc);
+    try std.testing.expect(doc.declarations == null);
+    try std.testing.expect(doc.last_good_sema.?.declarations.?.table == context.table);
+}

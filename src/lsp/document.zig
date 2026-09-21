@@ -10,6 +10,7 @@ const sx = struct {
 };
 
 pub const Import = struct {
+    declaration: ?sx.sema.Declaration = null,
     /// Namespace name. null for flat imports.
     ns: ?[]const u8,
     /// Resolved absolute file path.
@@ -29,6 +30,7 @@ pub const Document = struct {
     version: i64,
     /// AST root for this file only (not merged).
     root: ?*sx.ast.Node,
+    declarations: ?sx.sema.DeclarationContext = null,
     /// Editor index for this file — symbols/references/types for navigation,
     /// completion, and hover (references are relative to this source). Not a
     /// diagnostic source; see `sema.zig` module doc.
@@ -186,6 +188,7 @@ pub const DocumentStore = struct {
             try self.setSource(doc, source, version);
             // Invalidate analysis
             doc.root = null;
+            doc.declarations = null;
             doc.sema = null;
             doc.imports = &.{};
             return doc;
@@ -313,6 +316,13 @@ pub const DocumentStore = struct {
         }
 
         const root = doc.root orelse return;
+        const table = try self.allocator.create(sx.imports.DeclTable);
+        table.* = sx.imports.DeclTable.init(self.allocator);
+        const environment = try table.internEnvironment(doc.path, &.{});
+        if (root.data == .root) for (root.data.root.decls) |decl| {
+            _ = try table.claim(environment, decl);
+        };
+        doc.declarations = .{ .table = table, .environment = environment };
 
         // Extract imports from AST — uses shared resolution logic from imports.zig
         var import_list = std.ArrayList(Import).empty;
@@ -320,11 +330,23 @@ pub const DocumentStore = struct {
         if (root.data == .root) {
             try self.collectImports(&import_list, root.data.root.decls, base_dir);
         }
+        if (root.data == .root) for (root.data.root.decls) |decl| {
+            if (decl.data != .import_decl) continue;
+            const name = decl.data.import_decl.name orelse continue;
+            if (!try table.claimNamed(environment, name, decl)) continue;
+            const id = table.environment(environment).names.get(name).?;
+            for (import_list.items) |*imp| {
+                if (imp.ns) |alias| if (std.mem.eql(u8, alias, name)) {
+                    imp.declaration = .{ .table = table, .id = id };
+                };
+            }
+        };
         doc.imports = try import_list.toOwnedSlice(self.allocator);
         doc.last_good_imports = doc.imports;
 
         // Recursively analyze imported documents and pre-register their symbols
         var analyzer = sx.sema.Analyzer.init(self.allocator);
+        analyzer.declarations = doc.declarations;
 
         for (doc.imports) |imp| {
             // Try as file first; if that fails, try as directory import
@@ -341,6 +363,7 @@ pub const DocumentStore = struct {
                         // Only register namespace symbol once (first file)
                         if (!analyzer.hasSymbol(ns_name)) {
                             try analyzer.preRegisterSymbol(.{
+                                .declaration = imp.declaration,
                                 .name = ns_name,
                                 .kind = .namespace,
                                 .ty = null,
@@ -376,6 +399,7 @@ pub const DocumentStore = struct {
                                 // flat import into another file.
                                 if (sym.visibility == .private) continue;
                                 try analyzer.preRegisterSymbol(.{
+                                    .declaration = sym.declaration,
                                     .name = sym.name,
                                     .kind = sym.kind,
                                     .ty = sym.ty,
@@ -416,6 +440,7 @@ pub const DocumentStore = struct {
             if (imp.ns) |ns_name| {
                 // Namespaced import: register one namespace symbol
                 try analyzer.preRegisterSymbol(.{
+                    .declaration = imp.declaration,
                     .name = ns_name,
                     .kind = .namespace,
                     .ty = null,
@@ -454,6 +479,7 @@ pub const DocumentStore = struct {
                         // import into another file.
                         if (sym.visibility == .private) continue;
                         try analyzer.preRegisterSymbol(.{
+                            .declaration = sym.declaration,
                             .name = sym.name,
                             .kind = sym.kind,
                             .ty = sym.ty,

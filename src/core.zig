@@ -24,20 +24,10 @@ pub const Compilation = struct {
     root: ?*Node = null,
     resolved_root: ?*Node = null,
     import_sources: std.StringHashMap([:0]const u8),
-    module_scopes: std.StringHashMap(std.StringHashMap(ast.Visibility)),
     import_graph: std.StringHashMap(std.StringHashMap(void)),
     /// Flat-only subset of `import_graph` (bare `@import` edges, no namespaced
     /// `ns :: @import`). Borrowed by `ProgramIndex.flat_import_graph`.
     flat_import_graph: std.StringHashMap(std.StringHashMap(void)),
-    /// Per-module scalar raw-decl index (`path → name → RawDeclRef`), built by
-    /// `imports.buildImportFacts`. Borrowed by `ProgramIndex.module_decls`.
-    module_decls: imports.ModuleDecls,
-    /// Namespace import edges (`importer → alias → NamespaceTarget`), built by
-    /// `imports.buildImportFacts`. Borrowed by `ProgramIndex.namespace_edges`.
-    namespace_edges: imports.NamespaceEdges,
-    /// Stable `DeclId` for every declaration, built by
-    /// `imports.buildDeclTable`. Borrowed by `ProgramIndex.decl_table`.
-    decl_table: imports.DeclTable,
     /// Every module resolution reached, keyed by canonical path — including the
     /// backends imported inside an unselected module-scope `inline if` branch.
     /// Borrowed by `ProgramIndex.module_cache`: lowering reads a branch-local
@@ -67,12 +57,8 @@ pub const Compilation = struct {
             .source = source,
             .diagnostics = errors.DiagnosticList.init(allocator, source, file_path),
             .import_sources = std.StringHashMap([:0]const u8).init(allocator),
-            .module_scopes = std.StringHashMap(std.StringHashMap(ast.Visibility)).init(allocator),
             .import_graph = std.StringHashMap(std.StringHashMap(void)).init(allocator),
             .flat_import_graph = std.StringHashMap(std.StringHashMap(void)).init(allocator),
-            .module_decls = imports.ModuleDecls.init(allocator),
-            .namespace_edges = imports.NamespaceEdges.init(allocator),
-            .decl_table = imports.DeclTable.init(allocator),
             .module_cache = imports.ModuleCache.init(allocator),
             .target_config = target_config,
             .stdlib_paths = stdlib_paths,
@@ -135,25 +121,6 @@ pub const Compilation = struct {
             &self.import_graph,
             &self.flat_import_graph,
         ) catch return error.CompileError;
-
-        // Preserve per-module visibility scopes for C import access checking
-        self.module_scopes.put(self.file_path, mod.scope) catch {};
-        var cache_it = cache.iterator();
-        while (cache_it.next()) |entry| {
-            self.module_scopes.put(entry.key_ptr.*, entry.value_ptr.scope) catch {};
-        }
-
-        // Raw import facts (the unified-resolver store): scalar per-module
-        // raw-decl index + namespace edges, built from the SAME modules without
-        // IR lowering and borrowed by `ProgramIndex` (and the LSP). Propagate a
-        // build failure rather than leaving the borrowed views empty/stale.
-        const facts = try imports.buildImportFacts(self.allocator, self.file_path, mod, cache);
-        self.module_decls = facts.decls;
-        self.namespace_edges = facts.ns_edges;
-
-        // A stable DeclId for every declaration, built from the SAME modules.
-        // Updates `namespace_edges` in place to record each target's member ids.
-        self.decl_table = try imports.buildDeclTable(self.allocator, self.file_path, mod, cache, &self.module_decls, &self.namespace_edges);
 
         // Build a root node from the resolved module's decls
         const new_root = try self.allocator.create(Node);
@@ -320,12 +287,9 @@ pub const Compilation = struct {
         lowering.resolved_root = root;
         lowering.target_config = self.target_config;
         lowering.diagnostics = &self.diagnostics;
-        lowering.program_index.module_scopes = &self.module_scopes;
         lowering.program_index.import_graph = &self.import_graph;
         lowering.program_index.flat_import_graph = &self.flat_import_graph;
-        lowering.program_index.module_decls = &self.module_decls;
-        lowering.program_index.namespace_edges = &self.namespace_edges;
-        lowering.program_index.decl_table = &self.decl_table;
+        lowering.program_index.decl_table = &self.module_cache.declarations;
         lowering.program_index.module_cache = &self.module_cache;
         lowering.lowerRoot(root);
         // Every `extern <ref>` must name a @library constant or a named

@@ -1032,11 +1032,6 @@ pub const NamespaceDecl = struct {
     /// (`ns.fn`) so `pkg.fn(...)` resolves to a unique FuncId distinct from a
     /// same-named function in another module.
     own_decls: []const *Node = &.{},
-    /// The resolved path of the module this alias targets — the importing file's
-    /// own path for a `@import c` namespace (its members are synthesized there).
-    /// Captured at import-resolution time (the `resolved_path` that is otherwise
-    /// not retained on the node) so `buildImportFacts` can record the namespace
-    /// edge without re-walking the import graph.
     target_module_path: []const u8,
     /// True when the namespace NAME was a backtick raw identifier — exempt
     /// from the reserved-type-name decl check.

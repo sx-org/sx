@@ -2656,15 +2656,10 @@ pub fn resolveGlobalRef(self: *Lowering, name: []const u8, span: ?ast.Span) ?pro
 /// True when ANY module's raw-decl index carries `name` — distinguishes a
 /// user-authored-but-not-visible name from a compiler-synthesized one.
 fn anyRawAuthor(self: *Lowering, name: []const u8) bool {
-    const decls = self.program_index.module_decls orelse return false;
-    var it = decls.valueIterator();
-    while (it.next()) |mod| {
-        if (mod.names.contains(name)) {
-            // A private-only author must read as undeclared, not as a
-            // not-visible leak: importing its module would not help.
-            if (mod.private_names.contains(name)) continue;
-            return true;
-        }
+    const decls = self.program_index.decl_table orelse return false;
+    for (decls.environments.items) |env| {
+        const info = decls.get(env.names.get(name) orelse continue);
+        if (info.ref != null and info.visibility == .public) return true;
     }
     return false;
 }

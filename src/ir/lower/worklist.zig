@@ -396,7 +396,7 @@ const Scan = struct {
     fn module(s: *Scan, path: []const u8, flat: bool, depth: u8) void {
         if (depth > 16) return;
         const cache = s.cache orelse return;
-        const resolved = cache.get(path) orelse return;
+        const resolved = cache.modules.get(path) orelse return;
         const seen = s.counted.getOrPut(path) catch return;
         const first = !seen.found_existing;
         if (!first and (seen.value_ptr.* or !flat)) return;
