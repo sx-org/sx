@@ -1455,14 +1455,13 @@ pub fn externalErrorsExist(self: *Lowering) bool {
     return d.errorCount() > self.assignability_error_count;
 }
 
-/// The core unsafe-store predicate shared by `checkAssignable` and the
-/// named-return-default guard. An unmodeled coercion is unsafe when the types
-/// have incompatible value shapes or different store widths. Same-width scalar
-/// and pointer families are bit-compatible.
+/// Explicit-only error conversions and incompatible unmodeled stores are unsafe.
 /// Callers clear unresolved operands and explicit casts first.
 pub fn noneReinterpretIsUnsafe(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool {
     if (src_ty == dst_ty) return false;
-    if (self.coercionResolver().classify(src_ty, dst_ty) != .none) return false;
+    const plan = self.coercionResolver().classify(src_ty, dst_ty);
+    if (plan == .error_to_int) return true;
+    if (plan != .none) return false;
     const src_optional = !src_ty.isBuiltin() and self.module.types.get(src_ty) == .optional;
     const dst_optional = !dst_ty.isBuiltin() and self.module.types.get(dst_ty) == .optional;
     if (src_optional != dst_optional) return true;
@@ -1944,6 +1943,10 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             return self.builder.emit(.{ .bitcast = .{ .operand = as_backing, .from = backing, .to = dst_ty } }, dst_ty);
         },
         .error_to_int => {
+            if (mode == .implicit) {
+                diagnoseUnmodeledCoercion(self, val, src_ty, dst_ty);
+                return val;
+            }
             const tag = self.builder.enumTag(val, .i32);
             return self.coerceMode(tag, .i32, dst_ty, mode);
         },
