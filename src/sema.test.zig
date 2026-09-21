@@ -373,3 +373,34 @@ test "generic editor instances retain selected declarations behind equal display
     try analyzer.selection.own.put("Box", ar.selection.select("Box").?);
     try std.testing.expectEqual(first, analyzer.instantiateGeneric("Box", &args).?.struct_instance);
 }
+
+test "sema: UFCS call results retain their fields and member references" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\Bag :: struct { n: i64; }
+        \\widen :: (self: *Bag, k: i64) -> Bag { Bag{ n = self.n + k } }
+        \\main :: () {
+        \\    b := Bag{ n = 1 };
+        \\    c := b.widen(2);
+        \\    value := c.n;
+        \\}
+    ;
+    var parser = try Parser.init(alloc, source);
+    var analyzer = sema.Analyzer.init(alloc);
+    analyzer.source = source;
+    const result = try analyzer.analyze(try parser.parse());
+    const c = symType(result, "c") orelse return error.MissingSymbol;
+    try std.testing.expectEqualStrings("Bag", try c.displayName(alloc));
+    try std.testing.expectEqualDeep(Type.s(64), symType(result, "value").?);
+    const field_offset = std.mem.indexOf(u8, source, "c.n").? + 2;
+    for (result.member_refs) |ref| {
+        if (ref.span.start != field_offset) continue;
+        try std.testing.expect(!ref.is_def);
+        try std.testing.expectEqualStrings("Bag", ref.owner);
+        try std.testing.expectEqualStrings("n", ref.name);
+        return;
+    }
+    return error.MissingMemberReference;
+}

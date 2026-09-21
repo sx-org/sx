@@ -1185,7 +1185,11 @@ pub fn monomorphizePackFn(
     instances.appendBindings(self.alloc, &arguments, type_bindings);
     for (fd.params, 0..) |p, i| {
         if (isPackParam(p)) break;
-        if (p.is_comptime) arguments.append(self.alloc, instances.Argument.literal(call_node.args[i]).?) catch @panic("out of memory");
+        if (i >= call_node.args.len) break;
+        if (p.is_comptime) {
+            const argument = instances.Argument.literal(call_node.args[i]) orelse break;
+            arguments.append(self.alloc, argument) catch @panic("out of memory");
+        }
     }
     arguments.append(self.alloc, .{ .pack = arg_types }) catch @panic("out of memory");
     const key: instances.Key = .{

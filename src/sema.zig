@@ -889,6 +889,9 @@ pub const Analyzer = struct {
                 if (self.fn_signatures.get(callee_name)) |sig| {
                     return sig.return_type;
                 }
+                if (call_node.callee.data == .field_access) {
+                    if (self.fn_signatures.get(call_node.callee.data.field_access.field)) |sig| return sig.return_type;
+                }
                 // Built-in: sqrt/sin/cos returns same type as argument
                 const base = baseName(callee_name);
                 if (std.mem.eql(u8, base, "@sqrt") or
