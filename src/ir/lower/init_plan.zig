@@ -246,7 +246,7 @@ pub fn formationWriteValue(self: *Lowering, val: Ref, val_ty: TypeId, target: Ty
 /// wrote.
 fn formationStore(self: *Lowering, val: Ref, val_ty: TypeId, target: TypeId, node: *const Node) ?Ref {
     if (!self.checkFormationWritable(val_ty, target, node.span, node)) return null;
-    if (val_ty == target or val_ty == .void or target == .void) return val;
+    if (val_ty == target) return val;
     return self.coerceToType(val, val_ty, target);
 }
 

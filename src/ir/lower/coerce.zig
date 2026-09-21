@@ -1247,7 +1247,6 @@ fn checkAssignableWith(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: as
     if (self.externalErrorsExist()) return true;
     // An unresolved operand was already diagnosed at its origin.
     if (src_ty == .unresolved or dst_ty == .unresolved) return true;
-    if (src_ty == .void or dst_ty == .void) return true;
     if (setWeldRefused(self, src_ty, dst_ty)) {
         if (src_ty == .any) {
             if (self.refuseSetFromAny(dst_ty, span)) self.assignability_error_count += 1;
@@ -1286,8 +1285,8 @@ fn checkAssignableWith(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: as
 }
 
 fn recoveringConversion(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool {
-    return src_ty == .unresolved or dst_ty == .unresolved or src_ty == .void or
-        dst_ty == .void or src_ty == .noreturn or self.externalErrorsExist();
+    return src_ty == .unresolved or dst_ty == .unresolved or
+        src_ty == .noreturn or self.externalErrorsExist();
 }
 
 /// The SOURCE-LEVEL signature type of the lowered function `fid`: the implicit
@@ -1914,16 +1913,12 @@ pub fn coerceCallArgs(self: *Lowering, args: []Ref, params: []const Function.Par
         if (!src_ty.isBuiltin() and !dst_ty.isBuiltin()) {
             const src_info = self.module.types.get(src_ty);
             const dst_info = self.module.types.get(dst_ty);
-            // Array → many_pointer decay: alloca the array, GEP to first
-            // element. A destination naming a terminator the array does not
-            // carry is no decay — it falls to the classifier's refusal below.
             if (src_info == .array and dst_info == .many_pointer and
-                !self.coercionResolver().classify(src_ty, dst_ty).refuses())
+                self.coercionResolver().classify(self.module.types.ptrTo(src_ty), dst_ty) == .array_ptr_to_many_ptr)
             {
                 const slot = self.builder.alloca(src_ty);
                 self.builder.store(slot, args[i]);
-                const zero = self.builder.constInt(0, .i64);
-                args[i] = self.builder.emit(.{ .index_gep = .{ .lhs = slot, .rhs = zero } }, dst_ty);
+                args[i] = self.coerceToType(slot, self.builder.getRefType(slot), dst_ty);
                 continue;
             }
             // Implicit address-of: passing T value where *T is expected → alloca + store

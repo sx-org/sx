@@ -3656,8 +3656,12 @@ pub fn lowerNullCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
     self.target_type = inner_ty;
     var rhs = self.lowerExpr(nc.rhs);
     self.target_type = saved_tt;
+    if (self.currentBlockHasTerminator()) {
+        self.builder.switchToBlock(merge_bb);
+        return self.builder.blockParam(merge_bb, 0, inner_ty);
+    }
     const rhs_ty = self.builder.getRefType(rhs);
-    if (rhs_ty != inner_ty and rhs_ty != .void and inner_ty != .void and self.conversionAvailable(rhs_ty, inner_ty, .implicit)) {
+    if (rhs_ty != inner_ty and self.conversionAvailable(rhs_ty, inner_ty, .implicit)) {
         rhs = self.coerceToType(rhs, rhs_ty, inner_ty);
     }
     // The merge-block param, the unwrapped LHS, and the coerced RHS must all
@@ -3669,7 +3673,7 @@ pub fn lowerNullCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
     // verifier. Diagnose loudly and br with a typed placeholder so
     // the PHI stays well-formed; `hasErrors()` aborts before codegen anyway.
     const coerced_ty = self.builder.getRefType(rhs);
-    if (coerced_ty != inner_ty and coerced_ty != .void and inner_ty != .void) {
+    if (coerced_ty != inner_ty) {
         if (self.diagnostics) |d| {
             d.addFmt(.err, nc.rhs.span, "'??' default has type '{s}', but the optional's payload is '{s}'", .{ self.formatTypeName(coerced_ty), self.formatTypeName(inner_ty) });
         }
@@ -5681,11 +5685,6 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
 
     if (self.diagOperandTypes(bop.op, ty, self.operandType(rhs_ty), bop.lhs.span)) return self.emitPlaceholder("operand-type-mismatch");
 
-    // Comparison operands meet at a comparison type — not a store.
-    // Numeric pairs widen / promote to float; two pointers meet at `*void`;
-    // a pointer and an integer meet at the pointer (the integer is an
-    // address-sized bit pattern). Signed vs unsigned of the same width
-    // is refused.
     switch (bop.op) {
         .eq, .neq, .lt, .lte, .gt, .gte => {
             const span = ast.Span{ .start = bop.lhs.span.start, .end = bop.rhs.span.end };

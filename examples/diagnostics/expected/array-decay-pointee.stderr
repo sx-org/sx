@@ -1,0 +1,5 @@
+error: cannot coerce a value of type '[2]u8' to '[*]i64': no implicit conversion applies
+  --> examples/diagnostics/array-decay-pointee.sx:4:5
+   |
+ 4 |     consume(bytes);
+   |     ^^^^^^^^^^^^^^

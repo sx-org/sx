@@ -1,0 +1,5 @@
+error: no conversion from 'void' to 'Value'
+  --> examples/diagnostics/void-result-conversion.sx:3:23
+   |
+ 3 | main :: () { value := nothing().(Value); }
+   |                       ^^^^^^^^^^^^^^^^^

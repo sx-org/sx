@@ -1,8 +1,3 @@
-// `val.(T)` inside a conditional, evaluated by the IR interpreter
-// during a post-link callback. The `cast` syntax lowers the type arg
-// (`i64`) as a `placeholder` IR op; the interpreter treats placeholders
-// as undef so the comparison runs through unchanged.
-
 @import "modules/std.sx";
 @import "modules/build.sx";
 
