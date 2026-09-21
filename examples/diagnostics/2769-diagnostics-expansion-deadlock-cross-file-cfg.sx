@@ -1,0 +1,6 @@
+inline if S2 {
+    B :: 1;
+} else {
+    S2 :: false;
+    B :: 0;
+}

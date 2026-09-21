@@ -1,0 +1,28 @@
+error: expansion deadlock — nothing can run: every compile-time unit still waiting needs a fact only another waiting unit could publish, so the expansion depends negatively on a set it feeds
+  --> examples/diagnostics/2769-diagnostics-expansion-deadlock-cross-file.sx:4:11
+   |
+ 4 | inline if SELF {
+   |           ^^^^
+
+note: this `inline if` awaits 'SELF' to be declared
+  --> examples/diagnostics/2769-diagnostics-expansion-deadlock-cross-file.sx:4:11
+   |
+ 4 | inline if SELF {
+   |           ^^^^
+
+note: this `inline if` awaits 'S2' to be declared
+  --> examples/diagnostics/2769-diagnostics-expansion-deadlock-cross-file-cfg.sx:1:11
+   |
+ 1 | inline if S2 {
+   |           ^^
+
+help: decide the declaration outside the set it queries — a question whose answer changes what it asks about has no single answer
+   |
+ 4 | inline if SELF {
+   |           ^^^^
+
+error: unresolved 'A' (in examples/diagnostics/2769-diagnostics-expansion-deadlock-cross-file.sx fn main)
+  --> examples/diagnostics/2769-diagnostics-expansion-deadlock-cross-file.sx:12:19
+   |
+12 |     print("{}\n", A);
+   |                   ^
