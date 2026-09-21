@@ -426,28 +426,21 @@ pub const Scope = struct {
     }
 };
 
-/// Pure non-transitive visibility walk: `name` is visible from `source` when
-/// it's in `source`'s own scope or is a PUBLIC name of any module reachable
-/// over one `graph` edge — a flat import never carries a `private` name out of
-/// its declaring file. The core of the lowering visibility predicate, exposed
-/// so a unit test can exercise the edge-walk without standing up a whole
-/// `Lowering`. Falls open (true) when `scopes`/`graph` are null (scoping infra
-/// unwired).
 pub fn nameVisibleOverEdges(
-    scopes: ?*std.StringHashMap(std.StringHashMap(ast.Visibility)),
+    declarations: ?*imports_mod.DeclTable,
     graph: ?*std.StringHashMap(std.StringHashMap(void)),
     source: []const u8,
     name: []const u8,
 ) bool {
-    const sc = scopes orelse return true;
-    const own_scope = sc.get(source) orelse return true;
-    if (own_scope.contains(name)) return true;
+    const table = declarations orelse return true;
+    const own_scope = table.fileScope(source) orelse return true;
+    if (own_scope.names.contains(name)) return true;
     const g = graph orelse return true;
     const direct = g.get(source) orelse return true;
     var it = direct.iterator();
     while (it.next()) |kv| {
-        const dep = sc.get(kv.key_ptr.*) orelse continue;
-        if (dep.get(name)) |vis| if (vis == .public) return true;
+        const dep = table.fileScope(kv.key_ptr.*) orelse continue;
+        if (dep.names.get(name)) |id| if (table.get(id).visibility == .public) return true;
     }
     return false;
 }
@@ -2867,17 +2860,17 @@ pub const Lowering = struct {
     /// alias decl whose RHS is `ns.X`: `ns` binds in the alias author's file,
     /// not the use site's).
     pub fn namespaceAliasVerdictFrom(self: *Lowering, alias: []const u8, from: []const u8) AliasVerdict {
-        const edges = self.program_index.namespace_edges orelse return .none;
-        if (edges.getPtr(from)) |own| {
-            if (own.get(alias)) |t| return .{ .target = t };
+        const table = self.program_index.decl_table orelse return .none;
+        if (table.fileScope(from)) |own| {
+            if (own.namespaces.get(alias)) |t| return .{ .target = t };
         }
         const flat = self.program_index.flat_import_graph orelse return .none;
         const direct = flat.get(from) orelse return .none;
         var found: ?imports_mod.NamespaceTarget = null;
         var it = direct.keyIterator();
         while (it.next()) |dep| {
-            const dep_edges = edges.getPtr(dep.*) orelse continue;
-            const t = dep_edges.get(alias) orelse continue;
+            const dep_scope = table.fileScope(dep.*) orelse continue;
+            const t = dep_scope.namespaces.get(alias) orelse continue;
             // A private alias works only in its author file — it is never
             // carried over a flat hop.
             if (t.visibility == .private) continue;
@@ -2918,10 +2911,9 @@ pub const Lowering = struct {
     /// edge — distinguishes a not-visible alias (gate error) from a name that
     /// was never an alias at all (fall through to other resolution).
     pub fn aliasDeclaredAnywhere(self: *Lowering, alias: []const u8) bool {
-        const edges = self.program_index.namespace_edges orelse return false;
-        var it = edges.valueIterator();
-        while (it.next()) |per_file| {
-            if (per_file.contains(alias)) return true;
+        const table = self.program_index.decl_table orelse return false;
+        for (table.environments.items) |env| {
+            if (env.namespaces.contains(alias)) return true;
         }
         return false;
     }
@@ -2930,7 +2922,8 @@ pub const Lowering = struct {
     /// or a const-wrapped fn (the same surface `registerNamespaceQualifiedFns`
     /// registers). Null when the member is absent or not a function.
     pub fn namespaceFnMember(self: *Lowering, target: *const imports_mod.NamespaceTarget, name: []const u8) ?*const ast.FnDecl {
-        for (target.own_decls) |decl| {
+        for (target.member_ids) |id| {
+            const decl = self.program_index.declaration(id).node.?;
             // A private member exists only for its declaring file. The
             // full-path verdict has already vetted selected members (and may
             // have legitimately pinned `current_source_file` to the target);
@@ -2977,7 +2970,8 @@ pub const Lowering = struct {
     /// member. In particular stdlib's `libc :: c.libc` re-export is a library
     /// handle alias, not a value/type alias (issue 0325).
     pub fn namespaceOwnSpecialMember(self: *Lowering, target: imports_mod.NamespaceTarget, name: []const u8) bool {
-        for (target.own_decls) |decl| {
+        for (target.member_ids) |id| {
+            const decl = self.program_index.declaration(id).node.?;
             // A private special member (library handle, UFCS alias, …) is not
             // part of the namespace surface for any other source file — the
             // dotted selector must report the member missing rather than fall

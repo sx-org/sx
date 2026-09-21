@@ -543,32 +543,16 @@ pub fn declIdentityName(self: *Lowering, name: []const u8, decl: *const anyopaqu
     return std.fmt.allocPrint(self.alloc, "{s}__d{d}", .{ name, gop.value_ptr.* }) catch @panic("out of memory while keying declaration identity");
 }
 
-/// TRUE iff `name` is authored AS A NAMED TYPE (struct / enum / union /
-/// error-set / protocol / runtime class) by ≥2 DISTINCT modules in the import
-/// raw facts — the authoritative same-name-shadow signal (the only case where
-/// distinct `nominal_id`s are needed). Module distinctness is by LEXICALLY
-/// NORMALIZED path: one logical file reached through several spellings
-/// (`testpkg/../allocators.sx` vs `allocators.sx`) is cached — and so parsed —
-/// twice, landing two `module_decls` entries with two decl pointers for the
-/// SAME source; normalizing collapses them to one author, NOT a false shadow.
-/// False when the facts are unwired (comptime / registration host with no
-/// `module_decls`): the single-author path applies, correct there.
 pub fn nameHasMultipleTypeAuthors(self: *Lowering, name: []const u8) bool {
-    const decls = self.program_index.module_decls orelse return false;
-    var first_norm: ?[]const u8 = null;
-    defer if (first_norm) |f| self.alloc.free(f);
-    var it = decls.iterator();
-    while (it.next()) |entry| {
-        const m = entry.value_ptr;
-        const ref = m.names.get(name) orelse continue;
+    const table = self.program_index.decl_table orelse return false;
+    var first: ?@import("../../imports.zig").DeclId = null;
+    for (table.environments.items) |env| {
+        const id = env.names.get(name) orelse continue;
+        const ref = table.get(id).ref orelse continue;
         if (rawNamedTypePtr(ref) == null) continue;
-        const norm = std.fs.path.resolvePosix(self.alloc, &.{entry.key_ptr.*}) catch continue;
-        if (first_norm) |f| {
-            defer self.alloc.free(norm);
-            if (!std.mem.eql(u8, f, norm)) return true;
-        } else {
-            first_norm = norm;
-        }
+        if (first) |previous| {
+            if (previous != id) return true;
+        } else first = id;
     }
     return false;
 }
@@ -652,7 +636,8 @@ pub fn buildGenericStructTemplate(self: *Lowering, sd: *const ast.StructDecl, so
 /// bare lookup.
 pub fn qualifiedStructTemplate(self: *Lowering, alias: []const u8, member: []const u8) ?StructTemplate {
     const target = self.namespaceAliasTarget(alias, null) orelse return null;
-    for (target.own_decls) |decl| {
+    for (target.member_ids) |id| {
+        const decl = self.program_index.declaration(id).node.?;
         // A top-level struct is authored either as a bare `struct_decl` node
         // or a `const_decl` whose value is one (`Box :: struct($T){...}`).
         const sd: *const ast.StructDecl = switch (decl.data) {
@@ -678,7 +663,8 @@ pub fn qualifiedStructTemplate(self: *Lowering, alias: []const u8, member: []con
 /// kind → the type-fn / named-type arms handle it).
 pub fn qualifiedMemberMissing(self: *Lowering, alias: []const u8, member: []const u8) bool {
     const target = self.namespaceAliasTarget(alias, null) orelse return false;
-    for (target.own_decls) |decl| {
+    for (target.member_ids) |id| {
+        const decl = self.program_index.declaration(id).node.?;
         const dn = decl.data.declName() orelse continue;
         if (std.mem.eql(u8, dn, member)) return false;
     }
@@ -832,7 +818,7 @@ fn diagnoseAliasCycle(self: *Lowering, cycle: []const *const ast.ConstDecl) void
 /// `cd` itself seeds the chain (it IS the first alias hop), `from` is its
 /// declaring source.
 pub fn aliasedFnDecl(self: *Lowering, cd: *const ast.ConstDecl, from: []const u8) ?*const ast.FnDecl {
-    const terminal = followAliasChain(self, .{ .raw = .{ .const_decl = cd }, .source = from }) orelse return null;
+    const terminal = followAliasChain(self, .{ .id = self.program_index.internRef(.{ .const_decl = cd }, from), .raw = .{ .const_decl = cd }, .source = from }) orelse return null;
     return Lowering.fnDeclOfRaw(terminal.raw);
 }
 

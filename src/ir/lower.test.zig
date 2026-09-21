@@ -1776,16 +1776,6 @@ fn countRealBodies(module: *ir_mod.Module, name: []const u8) usize {
     return n;
 }
 
-// Two flat-imported modules each author `greet`. The first-wins merge keeps
-// a.sx's author in the merged decl list (the WINNER) and drops b.sx's, which
-// the `module_decls` raw facts still retain. `main` itself can't bare-call
-// `greet` — two flat authors make it ambiguous — so it calls a.sx's
-// `use_greet` wrapper, whose own-author call to `greet` binds a.sx's winner.
-// Before `lowerRetainedSameNameAuthors` runs, only the winner has a real body;
-// the shadowed author has no slot at all. The pass declares that author its OWN
-// same-name FuncId and lowers its body there, so BOTH authors carry distinct,
-// non-extern bodies, while `resolveFuncByName` still returns the winner (the
-// name-keyed slot).
 test "lower: shadowed same-name author gets its own FuncId + real body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1838,16 +1828,7 @@ test "lower: shadowed same-name author gets its own FuncId + real body" {
 
     // Per-module visibility scopes + authored-function index, wired exactly as
     // `core.zig` does before `lowerRoot`.
-    var module_scopes = std.StringHashMap(std.StringHashMap(@import("../ast.zig").Visibility)).init(alloc);
-    try module_scopes.put(main_path, mod.scope);
-    var cache_it = cache.iterator();
-    while (cache_it.next()) |entry| {
-        try module_scopes.put(entry.key_ptr.*, entry.value_ptr.scope);
-    }
-    // Raw import facts: both `selectCallableAuthor` and
-    // `lowerRetainedSameNameAuthors` read function authors out of `module_decls`.
-    // Wired exactly as `core.zig` does.
-    var facts = try imports.buildImportFacts(alloc, main_path, mod, &cache);
+    const table = &cache.declarations;
 
     const resolved_root = try alloc.create(Node);
     resolved_root.* = .{ .span = root.span, .data = .{ .root = .{ .decls = mod.decls } } };
@@ -1859,10 +1840,9 @@ test "lower: shadowed same-name author gets its own FuncId + real body" {
     lowering.main_file = main_path;
     lowering.resolved_root = resolved_root;
     lowering.diagnostics = &diagnostics;
-    lowering.program_index.module_scopes = &module_scopes;
     lowering.program_index.import_graph = &import_graph;
     lowering.program_index.flat_import_graph = &flat_import_graph;
-    lowering.program_index.module_decls = &facts.decls;
+    lowering.program_index.decl_table = table;
 
     lowering.lowerRoot(resolved_root);
     try std.testing.expect(!diagnostics.hasErrors());
@@ -1890,24 +1870,16 @@ test "lower: shadowed same-name author gets its own FuncId + real body" {
     try std.testing.expect(first != null and second != null);
     try std.testing.expect(first.? != second.?);
 
-    // The identity map must be keyed by the STABLE AST field
-    // pointer for BOTH same-name authors — the exact pointers `fn_ast_map` and
-    // the `module_decls` raw facts carry — not a per-iteration switch-capture
-    // temporary. If the winner were keyed by `&fd` (the scanDecls bug), this
-    // lookup by the stable `fn_ast_map` pointer would miss (null). Bare-call
-    // routing goes through exactly these pointers, so the round-trip must hold.
     const winner_fd = lowering.program_index.lookup(.function, "greet").?;
     const winner_fid = lowering.declFuncId(winner_fd);
     try std.testing.expect(winner_fid != null);
     // Round-trips to the first-wins winner FuncId (resolveFuncByName's pick).
     try std.testing.expectEqual(lowering.resolveFuncByName("greet").?, winner_fid.?);
 
-    // The shadowed author's stable pointer lives in `module_decls`; find the one
-    // that is NOT the winner and confirm IT round-trips to a DISTINCT FuncId.
     var shadow_fd: ?*const ast.FnDecl = null;
-    var md_it = facts.decls.iterator();
-    while (md_it.next()) |path_entry| {
-        if (path_entry.value_ptr.names.get("greet")) |ref| {
+    for (table.environments.items) |env| {
+        if (env.names.get("greet")) |id| {
+            const ref = table.get(id).ref orelse continue;
             if (ref == .fn_decl and ref.fn_decl != winner_fd) shadow_fd = ref.fn_decl;
         }
     }
@@ -1998,13 +1970,7 @@ test "lower: scan populates source-keyed caches per declaring source" {
         &flat_import_graph,
     );
 
-    var module_scopes = std.StringHashMap(std.StringHashMap(@import("../ast.zig").Visibility)).init(alloc);
-    try module_scopes.put(main_path, mod.scope);
-    var cache_it = cache.iterator();
-    while (cache_it.next()) |entry| {
-        try module_scopes.put(entry.key_ptr.*, entry.value_ptr.scope);
-    }
-    var facts = try imports.buildImportFacts(alloc, main_path, mod, &cache);
+    const table = &cache.declarations;
 
     const resolved_root = try alloc.create(Node);
     resolved_root.* = .{ .span = root.span, .data = .{ .root = .{ .decls = mod.decls } } };
@@ -2016,10 +1982,9 @@ test "lower: scan populates source-keyed caches per declaring source" {
     lowering.main_file = main_path;
     lowering.resolved_root = resolved_root;
     lowering.diagnostics = &diagnostics;
-    lowering.program_index.module_scopes = &module_scopes;
     lowering.program_index.import_graph = &import_graph;
     lowering.program_index.flat_import_graph = &flat_import_graph;
-    lowering.program_index.module_decls = &facts.decls;
+    lowering.program_index.decl_table = table;
 
     lowering.lowerRoot(resolved_root);
     try std.testing.expect(!diagnostics.hasErrors());

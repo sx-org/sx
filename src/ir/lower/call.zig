@@ -335,17 +335,17 @@ pub fn selectUfcsGenericByReceiver(self: *Lowering, name: []const u8, args_ast: 
     // Tier 2: receiver-reachable but not flat-visible (namespaced methods defined
     // alongside the receiver type). Pick the unique most-specific binder; on a
     // hidden tie defer to `fd0` rather than reporting a false ambiguity.
-    const decls = self.program_index.module_decls orelse return null;
+    const decls = self.program_index.decl_table orelse return null;
     var best: ?*const ast.FnDecl = null;
     var best_concrete = false;
     var tie = false;
-    var it = decls.iterator();
-    while (it.next()) |entry| {
-        const ref = entry.value_ptr.names.get(name) orelse continue;
+    for (decls.environments.items) |env| {
+        const info = decls.get(env.names.get(name) orelse continue);
+        const ref = info.ref orelse continue;
         // A private method is receiver-reachable only from its own file.
-        if (entry.value_ptr.private_names.contains(name)) {
-            const requester = self.current_source_file orelse self.main_file orelse entry.value_ptr.source;
-            if (!std.mem.eql(u8, requester, entry.value_ptr.source)) continue;
+        if (info.visibility == .private) {
+            const requester = self.current_source_file orelse self.main_file orelse env.source;
+            if (!std.mem.eql(u8, requester, env.source)) continue;
         }
         rankUfcsCand(self, Lowering.fnDeclOfRaw(ref), args_ast, &best, &best_concrete, &tie);
     }
@@ -363,12 +363,12 @@ pub fn selectUfcsGenericByReceiver(self: *Lowering, name: []const u8, args_ast: 
 /// least one does). Steers the visibility-gate diagnostic: "@import the
 /// module that declares it" is useless advice for a private name.
 fn nameAuthoredOnlyPrivately(self: *Lowering, name: []const u8) bool {
-    const decls = self.program_index.module_decls orelse return false;
+    const decls = self.program_index.decl_table orelse return false;
     var any = false;
-    var it = decls.valueIterator();
-    while (it.next()) |m| {
-        if (!m.names.contains(name)) continue;
-        if (!m.private_names.contains(name)) return false;
+    for (decls.environments.items) |env| {
+        const info = decls.get(env.names.get(name) orelse continue);
+        if (info.ref == null) continue;
+        if (info.visibility != .private) return false;
         any = true;
     }
     return any;
@@ -2411,23 +2411,6 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         defer eff_args.deinit(self.alloc);
                         eff_args.append(self.alloc, effective_obj_node) catch unreachable;
                         for (c.args) |arg| eff_args.append(self.alloc, arg) catch unreachable;
-                        // The last-wins `fn_ast_map` winner may be a
-                        // same-named generic ufcs from another module whose
-                        // receiver doesn't match. Only when it fails to bind all
-                        // its type-params for THIS receiver do we re-select the
-                        // receiver-matching author — so a working call is never
-                        // perturbed, and the mismatching path either finds the
-                        // right candidate or emits a clean diagnostic (never an
-                        // `.unresolved` reaching codegen).
-                        // Always resolve the receiver-specific author (not just
-                        // on bind-failure): a fully-generic `(x: $T)` last-wins
-                        // winner BINDS for any receiver, so a failure-gated
-                        // re-select would silently keep it over a more specific
-                        // `*Task($R)` — order-dependent dispatch. `selectUfcsGenericByReceiver`
-                        // picks the most specific binder (or flags a genuine
-                        // tie). Fall back to `fd0` only when it isn't enumerable
-                        // in `module_decls` but still binds; diagnose otherwise
-                        // (never monomorphize an `.unresolved` into LLVM).
                         var fd = fd0;
                         var amb = false;
                         if (self.selectUfcsGenericByReceiver(eff_field, eff_args.items, &amb, fd0)) |sel| {

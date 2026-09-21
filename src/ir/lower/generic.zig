@@ -1690,7 +1690,7 @@ pub fn headTypeGate(self: *Lowering, name: []const u8, span: ?ast.Span) HeadType
         const sid = self.module.types.internString(name);
         if (self.module.types.findByName(sid)) |tid| return .{ .resolved = tid };
     }
-    if (self.program_index.module_decls == null or self.program_index.flat_import_graph == null) return .proceed;
+    if (self.program_index.decl_table == null or self.program_index.flat_import_graph == null) return .proceed;
     const from = self.current_source_file orelse return .proceed;
 
     var res_walk = self.resolver();
@@ -1777,7 +1777,7 @@ pub fn headFnLeak(self: *Lowering, name: []const u8, span: ?ast.Span) bool {
     // directory imports without a main file): the author collector would
     // otherwise return an empty set and wrongly report a genuinely-visible
     // type-fn as not-visible. Mirrors `headTypeGate`'s guard.
-    if (self.program_index.module_decls == null or self.program_index.flat_import_graph == null) return false;
+    if (self.program_index.decl_table == null or self.program_index.flat_import_graph == null) return false;
     // ≥2 distinct direct flat type-fn authors with no own author — a genuine
     // collision the source cannot disambiguate. Diagnose loudly BEFORE the
     // visibility short-circuit, which would otherwise let the single
@@ -1873,7 +1873,7 @@ pub fn visibleTypeFnHead(self: *Lowering, name: []const u8) ?*const ast.FnDecl {
     };
     if (self.scope) |scope| if (scope.lookupFn(name) != null) return mapped;
     const from = self.current_source_file orelse return mapped;
-    if (self.program_index.module_decls == null or self.program_index.flat_import_graph == null) return mapped;
+    if (self.program_index.decl_table == null or self.program_index.flat_import_graph == null) return mapped;
 
     var res = self.resolver();
     const set = res.collectVisibleAuthors(name, from, .user_bare_flat);

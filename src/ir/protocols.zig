@@ -114,7 +114,7 @@ pub const ProtocolResolver = struct {
     /// must not turn a same-spelled local enum/value constraint into a generic
     /// TYPE parameter.
     pub fn isProtocolConstraint(self: ProtocolResolver, written: []const u8, source: ?[]const u8) bool {
-        if (self.l.program_index.module_decls == null or self.l.program_index.flat_import_graph == null) {
+        if (self.l.program_index.decl_table == null or self.l.program_index.flat_import_graph == null) {
             return self.l.program_index.contains(.protocol, written) or
                 self.l.program_index.contains(.protocol_ast, written);
         }
@@ -213,7 +213,7 @@ pub const ProtocolResolver = struct {
         // the hidden foreign declaration hijack the local impl.
         // Unit/comptime registration hosts intentionally omit import facts, so
         // retain their explicit-spelling fallback below.
-        if (self.l.program_index.module_decls == null or self.l.program_index.flat_import_graph == null) {
+        if (self.l.program_index.decl_table == null or self.l.program_index.flat_import_graph == null) {
             const pd = self.l.program_index.lookup(.protocol_ast, written) orelse return null;
             const ty = if (pd.type_params.len == 0)
                 self.l.module.types.type_decl_tids.get(@ptrCast(pd)) orelse self.l.module.types.findByName(self.l.module.types.internString(pd.name))
@@ -264,7 +264,7 @@ pub const ProtocolResolver = struct {
 
     fn canonicalProtocolName(self: ProtocolResolver, written: []const u8, source: ?[]const u8) ?[]const u8 {
         if (self.resolveProtocol(written, source)) |resolved| return resolved.name;
-        if (self.l.program_index.module_decls == null or self.l.program_index.flat_import_graph == null) return written;
+        if (self.l.program_index.decl_table == null or self.l.program_index.flat_import_graph == null) return written;
         return null;
     }
 

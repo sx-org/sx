@@ -1,39 +1,9 @@
-//! The unified sx name/type resolver — the shared author-collection layer.
-//!
-//! A read-only facade over the borrowed import facts on a
-//! `*ProgramIndex` (`module_decls` / `namespace_edges`) and the existing
-//! `import_graph` / `flat_import_graph` views. It OWNS nothing import-derived;
-//! those maps live in `imports.zig`/`core.zig` and are borrowed here.
-//!
-//! Two collectors sit on top of these facts:
-//!   - `collectVisibleAuthors` — own author ∪ the flat-import edge walk. THE one
-//!     graph-walk, and the permanent root of flat-import name resolution.
-//!   - `collectNamespaceAuthors` — a single already-selected namespace target's
-//!     members. NO graph walk.
-//!
-//! Two lazy resolution functions build on the collectors:
-//!   - `resolveBare(name, from, domain)` — collect bare authors + compute verdict.
-//!     The caller owns the returned `ResolvedAuthors.set.flat` slice.
-//!   - `resolveQualified(target, name)` — collect namespace authors + compute verdict.
-//!     Returns no allocation (namespace sets are always single-module, flat=&.{}).
-//!
-//! Both are RAW-author collectors returning verdicts: they say WHO authors a name
-//! and whether that author wins outright, is ambiguous, not-visible, etc.
-//! Per-domain lowering decides what to do with the verdict.
-//!
-//! Falsifiable invariant: there is EXACTLY ONE iterator over
-//! `flat_import_graph`/`import_graph` in this file — inside
-//! `collectVisibleAuthors`. `collectNamespaceAuthors` iterates one
-//! `NamespaceTarget.own_decls` slice and touches no graph. This is what keeps
-//! callable and type resolution on the SAME cross-module edge-walk.
-
 const std = @import("std");
 const ast = @import("../ast.zig");
 const imports = @import("../imports.zig");
 const program_index = @import("program_index.zig");
 const ProgramIndex = program_index.ProgramIndex;
 
-// ── Raw-fact aliases (defined in imports.zig by buildImportFacts) ──────────
 pub const RawDeclRef = imports.RawDeclRef;
 pub const RawAuthor = imports.RawAuthor;
 pub const NamespaceTarget = imports.NamespaceTarget;
@@ -134,8 +104,7 @@ pub const Domain = enum {
 pub fn eligibleKind(domain: Domain, raw: RawDeclRef, field: ?[]const u8) bool {
     return switch (domain) {
         .bare_type => switch (raw) {
-            .struct_decl, .enum_decl, .union_decl, .error_set_decl,
-            .protocol_decl, .open_set_decl, .runtime_class_decl => true,
+            .struct_decl, .enum_decl, .union_decl, .error_set_decl, .protocol_decl, .open_set_decl, .runtime_class_decl => true,
             else => false,
         },
         .value_const => raw == .const_decl,
@@ -215,14 +184,24 @@ pub fn authorSetHasStructConst(set: AuthorSet, field: []const u8) bool {
 /// function, or protocol. Used by lowering's parameterized-head classification.
 pub fn classifyHeadKind(raw: RawDeclRef, gs: *bool, tf: *bool, pr: *bool) void {
     switch (raw) {
-        .struct_decl => |sd| if (sd.type_params.len > 0) { gs.* = true; },
-        .fn_decl => |fd| if (fd.type_params.len > 0) { tf.* = true; },
+        .struct_decl => |sd| if (sd.type_params.len > 0) {
+            gs.* = true;
+        },
+        .fn_decl => |fd| if (fd.type_params.len > 0) {
+            tf.* = true;
+        },
         .const_decl => |cd| switch (cd.value.data) {
-            .struct_decl => |*sd| if (sd.type_params.len > 0) { gs.* = true; },
-            .fn_decl => |*fd| if (fd.type_params.len > 0) { tf.* = true; },
+            .struct_decl => |*sd| if (sd.type_params.len > 0) {
+                gs.* = true;
+            },
+            .fn_decl => |*fd| if (fd.type_params.len > 0) {
+                tf.* = true;
+            },
             else => {},
         },
-        .protocol_decl => { pr.* = true; },
+        .protocol_decl => {
+            pr.* = true;
+        },
         else => {},
     }
 }
@@ -272,14 +251,8 @@ pub const Resolver = struct {
         from: []const u8,
         vis: VisibilityMode,
     ) AuthorSet {
-        const decls = self.index.module_decls orelse return .{ .own = null, .flat = &.{} };
-
-        const own: ?RawAuthor = blk: {
-            const mod = decls.get(from) orelse break :blk null;
-            const ref = mod.names.get(name) orelse break :blk null;
-            const vis_own: ast.Visibility = if (mod.private_names.contains(name)) .private else .public;
-            break :blk .{ .raw = ref, .source = mod.source, .visibility = vis_own };
-        };
+        const table = self.index.decl_table orelse return .{ .own = null, .flat = &.{} };
+        const own = if (table.fileEnvironment(from)) |env| table.rawAuthor(env, name) else null;
 
         const graph = (switch (vis) {
             .user_bare_flat, .c_import_bare => self.index.flat_import_graph,
@@ -293,12 +266,9 @@ pub const Resolver = struct {
         var flat = std.ArrayList(RawAuthor).empty;
         var it = direct.iterator(); // ← the one graph iterator (invariant)
         while (it.next()) |kv| {
-            const dep = decls.get(kv.key_ptr.*) orelse continue;
-            const ref = dep.names.get(name) orelse continue;
-            // A flat import never carries a private declaration out of its
-            // declaring file — the author simply does not exist for `from`.
-            if (dep.private_names.contains(name)) continue;
-            const cand = RawAuthor{ .raw = ref, .source = dep.source };
+            const env = table.fileEnvironment(kv.key_ptr.*) orelse continue;
+            const cand = table.rawAuthor(env, name) orelse continue;
+            if (cand.visibility == .private) continue;
             if (sameAuthor(own, cand)) continue;
             if (containsAuthor(flat.items, cand)) continue;
             flat.append(self.alloc, cand) catch @panic("collectVisibleAuthors: OOM");
@@ -309,29 +279,15 @@ pub const Resolver = struct {
         };
     }
 
-    /// Container collector for ONE already-selected namespace target. Iterates
-    /// the target's `own_decls` and touches NO import graph. A
-    /// namespace's `own_decls` is name-deduped, so a name has at most one author
-    /// here — returned as `own`, sourced to the target's module path.
     pub fn collectNamespaceAuthors(
         self: *Resolver,
         target: NamespaceTarget,
         name: []const u8,
     ) AuthorSet {
-        _ = self;
-        for (target.own_decls) |decl| {
-            const dn = decl.data.declName() orelse continue;
-            if (!std.mem.eql(u8, dn, name)) continue;
-            const ref = imports.rawDeclRefOf(decl) orelse continue;
-            return .{ .own = .{
-                .raw = ref,
-                .source = target.target_module_path,
-                .visibility = decl.visibility,
-                // Privacy authority is the EXACT declaring file — for a
-                // directory-import namespace that is the member file, not the
-                // directory module path.
-                .vis_source = decl.source_file,
-            }, .flat = &.{} };
+        const table = self.index.declarations();
+        for (target.member_ids) |id| {
+            if (!std.mem.eql(u8, table.get(id).name, name)) continue;
+            return .{ .own = table.author(id, target.target_module_path), .flat = &.{} };
         }
         return .{ .own = null, .flat = &.{} };
     }
@@ -406,37 +362,21 @@ pub const Resolver = struct {
         name: []const u8,
         field: ?[]const u8,
     ) bool {
-        const decls = self.index.module_decls orelse return false;
-        var it = decls.valueIterator();
-        while (it.next()) |m| {
-            if (m.names.get(name)) |ref| {
-                // A private-only author is invisible everywhere but its own
-                // file (which the own/flat walk already served), so it must
-                // not turn "undeclared" into a misleading not-visible leak.
-                if (m.private_names.contains(name)) continue;
-                if (eligibleKind(domain, ref, field)) return true;
-            }
+        const table = self.index.decl_table orelse return false;
+        for (table.environments.items) |env| {
+            const info = table.get(env.names.get(name) orelse continue);
+            if (info.visibility == .private) continue;
+            if (eligibleKind(domain, info.ref orelse continue, field)) return true;
         }
         return false;
     }
 };
 
-// ── Private identity helpers ─────────────────────────────────────────────────
-
-fn authorNodePtr(ref: RawDeclRef) usize {
-    return switch (ref) {
-        inline else => |p| @intFromPtr(p),
-    };
-}
-
 fn sameAuthor(a: ?RawAuthor, b: RawAuthor) bool {
-    const aa = a orelse return false;
-    return authorNodePtr(aa.raw) == authorNodePtr(b.raw);
+    return if (a) |author| author.id == b.id else false;
 }
 
 fn containsAuthor(list: []const RawAuthor, b: RawAuthor) bool {
-    for (list) |x| {
-        if (authorNodePtr(x.raw) == authorNodePtr(b.raw)) return true;
-    }
+    for (list) |author| if (author.id == b.id) return true;
     return false;
 }

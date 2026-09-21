@@ -1,13 +1,3 @@
-// The shared author-collection layer of resolver.zig.
-//
-// collectVisibleAuthors is exercised over REAL import facts (parse →
-// resolveImports → buildImportFacts, the exact path core.zig drives) plus one
-// synthetic diamond fixture for pointer-identity dedup. The visibility-adapter
-// tests pin the nameVisibleOverEdges edge-walk that isNameVisible /
-// isCImportVisible run on top of — the flat-edge set vs the full import_graph.
-// resolveBare / resolveQualified tests pin the verdict layer (own_wins / single /
-// ambiguous / not_visible / domain_filtered) over real import facts.
-
 const std = @import("std");
 const ast = @import("../ast.zig");
 const parser = @import("../parser.zig");
@@ -32,8 +22,7 @@ const Graph = std.StringHashMap(std.StringHashMap(void));
 /// the import / flat-import graphs (the collectors need them). `alloc` must be
 /// an arena that outlives the returned views.
 const Facts = struct {
-    decls: imports.ModuleDecls,
-    ns_edges: imports.NamespaceEdges,
+    table: imports.DeclTable,
     import_graph: Graph,
     flat_import_graph: Graph,
 };
@@ -66,10 +55,9 @@ fn buildFacts(alloc: std.mem.Allocator, io: std.Io, absdir: []const u8, main_pat
         &flat_import_graph,
     );
 
-    const facts = try imports.buildImportFacts(alloc, main_path, mod, &cache);
+    _ = mod;
     return .{
-        .decls = facts.decls,
-        .ns_edges = facts.ns_edges,
+        .table = cache.declarations,
         .import_graph = import_graph,
         .flat_import_graph = flat_import_graph,
     };
@@ -106,7 +94,7 @@ test "resolver: collectVisibleAuthors — own author, two distinct flat authors,
 
     var idx = ProgramIndex.init(alloc);
     defer idx.deinit();
-    idx.module_decls = &facts.decls;
+    idx.decl_table = &facts.table;
     idx.flat_import_graph = &facts.flat_import_graph;
     idx.import_graph = &facts.import_graph;
 
@@ -115,7 +103,7 @@ test "resolver: collectVisibleAuthors — own author, two distinct flat authors,
     // Own author (declared in main itself).
     const own_set = r.collectVisibleAuthors("selfauthored", main_path, .user_bare_flat);
     try std.testing.expect(own_set.own != null);
-    try std.testing.expectEqualStrings(main_path, own_set.own.?.source);
+    try std.testing.expectEqualStrings(try imports.canonicalizePath(alloc, main_path), own_set.own.?.source);
     try std.testing.expectEqual(@as(usize, 0), own_set.flat.len);
     try std.testing.expectEqual(@as(usize, 1), own_set.distinctCount());
 
@@ -148,13 +136,12 @@ test "resolver: collectVisibleAuthors — diamond imports of one author dedup to
         .span = .{ .start = 0, .end = 0 },
         .data = .{ .fn_decl = .{ .name = "shared", .params = &.{}, .return_type = null, .body = &body } },
     };
-    const ref = imports.rawDeclRefOf(&shared).?;
-
-    var decls = imports.ModuleDecls.init(alloc);
+    var table = imports.DeclTable.init(alloc);
+    const author_env = try table.internEnvironment("author", &.{});
+    const id = try table.internInEnvironment(author_env, &shared);
     inline for (.{ "p1", "p2" }) |path| {
-        var names = std.StringHashMap(resolver.RawDeclRef).init(alloc);
-        try names.put("shared", ref);
-        try decls.put(path, .{ .source = path, .names = names, .private_names = std.StringHashMap(void).init(alloc) });
+        const env = try table.internEnvironment(path, &.{});
+        try table.environment(env).names.put("shared", id);
     }
 
     var flat = Graph.init(alloc);
@@ -165,7 +152,7 @@ test "resolver: collectVisibleAuthors — diamond imports of one author dedup to
 
     var idx = ProgramIndex.init(alloc);
     defer idx.deinit();
-    idx.module_decls = &decls;
+    idx.decl_table = &table;
     idx.flat_import_graph = &flat;
 
     var r = resolver.Resolver.init(&idx, alloc);
@@ -178,8 +165,6 @@ test "resolver: collectVisibleAuthors — diamond imports of one author dedup to
 
 // ── collectNamespaceAuthors ──────────────────────────────────────────────
 
-// Returns a namespace target's members and touches NO graph: the Resolver here
-// has no graphs (or module_decls) wired at all, yet the member is found.
 test "resolver: collectNamespaceAuthors — returns target members, walks no graph" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -201,14 +186,13 @@ test "resolver: collectNamespaceAuthors — returns target members, walks no gra
 
     var facts = try buildFacts(alloc, io, absdir, main_path);
 
-    const aliases = facts.ns_edges.get(main_path) orelse return error.MissingNsEdges;
+    const aliases = (facts.table.fileScope(main_path) orelse return error.MissingEnvironment).namespaces;
     const target = aliases.get("g") orelse return error.MissingAlias;
     try std.testing.expectEqualStrings(point_path, target.target_module_path);
 
-    // A Resolver over an EMPTY index — no module_decls, no graphs. If
-    // collectNamespaceAuthors touched a graph it would crash / miss; it doesn't.
     var idx = ProgramIndex.init(alloc);
     defer idx.deinit();
+    idx.decl_table = &facts.table;
     try std.testing.expect(idx.flat_import_graph == null);
     try std.testing.expect(idx.import_graph == null);
     var r = resolver.Resolver.init(&idx, alloc);
@@ -239,19 +223,21 @@ test "resolver: visibility edge-walk — own + flat visible; namespaced-only onl
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var scopes = std.StringHashMap(std.StringHashMap(ast.Visibility)).init(alloc);
+    var table = imports.DeclTable.init(alloc);
     inline for (.{
         .{ "main", &[_][]const u8{ "selfauthored", "g" } },
         .{ "a", &[_][]const u8{"dup"} },
         .{ "p", &[_][]const u8{"secret"} },
     }) |entry| {
-        var s = std.StringHashMap(ast.Visibility).init(alloc);
-        for (entry[1]) |n| try s.put(n, .public);
-        try scopes.put(entry[0], s);
+        const env = try table.internEnvironment(entry[0], &.{});
+        for (entry[1]) |n| try table.environment(env).names.put(n, try table.internSynthetic(entry[0], n));
     }
     // `a` also authors a PRIVATE name, and `main` authors a private of its own.
-    try scopes.getPtr("a").?.put("filelocal", .private);
-    try scopes.getPtr("main").?.put("ownpriv", .private);
+    inline for (.{ .{ "a", "filelocal" }, .{ "main", "ownpriv" } }) |entry| {
+        const id = try table.internSynthetic(entry[0], entry[1]);
+        table.entries.items[@intFromEnum(id)].visibility = .private;
+        try table.fileScope(entry[0]).?.names.put(entry[1], id);
+    }
 
     // Flat graph: main flat-imports a only. Import graph: main reaches a + p.
     var flat = Graph.init(alloc);
@@ -266,31 +252,31 @@ test "resolver: visibility edge-walk — own + flat visible; namespaced-only onl
     try all.put("main", all_edges);
 
     // Own-scope name: visible regardless of edge set.
-    try std.testing.expect(lower.nameVisibleOverEdges(&scopes, &flat, "main", "selfauthored"));
-    try std.testing.expect(lower.nameVisibleOverEdges(&scopes, &all, "main", "selfauthored"));
+    try std.testing.expect(lower.nameVisibleOverEdges(&table, &flat, "main", "selfauthored"));
+    try std.testing.expect(lower.nameVisibleOverEdges(&table, &all, "main", "selfauthored"));
 
     // Flat-imported name: visible under both (the flat edge is in both graphs).
-    try std.testing.expect(lower.nameVisibleOverEdges(&scopes, &flat, "main", "dup"));
-    try std.testing.expect(lower.nameVisibleOverEdges(&scopes, &all, "main", "dup"));
+    try std.testing.expect(lower.nameVisibleOverEdges(&table, &flat, "main", "dup"));
+    try std.testing.expect(lower.nameVisibleOverEdges(&table, &all, "main", "dup"));
 
     // Namespaced-only name: NOT visible under the flat set (user_bare_flat),
     // but visible under the full import_graph set.
-    try std.testing.expect(!lower.nameVisibleOverEdges(&scopes, &flat, "main", "secret"));
-    try std.testing.expect(lower.nameVisibleOverEdges(&scopes, &all, "main", "secret"));
+    try std.testing.expect(!lower.nameVisibleOverEdges(&table, &flat, "main", "secret"));
+    try std.testing.expect(lower.nameVisibleOverEdges(&table, &all, "main", "secret"));
 
     // Private names: an own private IS visible to its own file, a flat
     // import's private is NOT carried — under either edge set.
-    try std.testing.expect(lower.nameVisibleOverEdges(&scopes, &flat, "main", "ownpriv"));
-    try std.testing.expect(!lower.nameVisibleOverEdges(&scopes, &flat, "main", "filelocal"));
-    try std.testing.expect(!lower.nameVisibleOverEdges(&scopes, &all, "main", "filelocal"));
-    try std.testing.expect(lower.nameVisibleOverEdges(&scopes, &flat, "a", "filelocal"));
+    try std.testing.expect(lower.nameVisibleOverEdges(&table, &flat, "main", "ownpriv"));
+    try std.testing.expect(!lower.nameVisibleOverEdges(&table, &flat, "main", "filelocal"));
+    try std.testing.expect(!lower.nameVisibleOverEdges(&table, &all, "main", "filelocal"));
+    try std.testing.expect(lower.nameVisibleOverEdges(&table, &flat, "a", "filelocal"));
 
     // Unknown name: not visible.
-    try std.testing.expect(!lower.nameVisibleOverEdges(&scopes, &flat, "main", "nope"));
+    try std.testing.expect(!lower.nameVisibleOverEdges(&table, &flat, "main", "nope"));
 
-    // Falls open when scoping infra is unwired (null scopes/graph).
+    // Falls open when scoping infra is unwired (null table/graph).
     try std.testing.expect(lower.nameVisibleOverEdges(null, &flat, "main", "secret"));
-    try std.testing.expect(lower.nameVisibleOverEdges(&scopes, null, "main", "secret"));
+    try std.testing.expect(lower.nameVisibleOverEdges(&table, null, "main", "secret"));
 }
 
 // ── resolveBare ──────────────────────────────────────────────────────────────
@@ -328,7 +314,7 @@ test "resolver: resolveBare — own_wins / single / ambiguous / not_visible / do
 
     var idx = ProgramIndex.init(alloc);
     defer idx.deinit();
-    idx.module_decls = &facts.decls;
+    idx.decl_table = &facts.table;
     idx.flat_import_graph = &facts.flat_import_graph;
     idx.import_graph = &facts.import_graph;
 
@@ -379,13 +365,12 @@ test "resolver: resolveQualified — single for existing member, domain_filtered
 
     var idx = ProgramIndex.init(alloc);
     defer idx.deinit();
-    idx.module_decls = &facts.decls;
+    idx.decl_table = &facts.table;
     idx.flat_import_graph = &facts.flat_import_graph;
-    idx.namespace_edges = &facts.ns_edges;
 
     var r = resolver.Resolver.init(&idx, alloc);
 
-    const aliases = facts.ns_edges.get(main_path) orelse return error.MissingNsEdges;
+    const aliases = (facts.table.fileScope(main_path) orelse return error.MissingEnvironment).namespaces;
     const target = aliases.get("g") orelse return error.MissingAlias;
 
     // Point is a struct — namespace_member eligible

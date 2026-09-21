@@ -234,11 +234,6 @@ const ModuleConstCtx = struct {
     pub fn evalConstFieldAccessInt(_: ModuleConstCtx, _: *const Node) ?i64 {
         return null;
     }
-    // The GLOBAL-map fold carries no namespace-import facts (no `namespace_edges`
-    // / per-source const cache), so a qualified-member const `m.CAP` can only be
-    // resolved by the SOURCE-AWARE path (`SourceConstCtx` / `Lowering`). Null
-    // here. A qualified const used inside another module const's RHS
-    // folds through `SourceConstCtx`, not this ctx, so this is not a live gap.
     pub fn lookupQualifiedConst(_: ModuleConstCtx, _: []const u8, _: []const u8) ?i64 {
         return null;
     }
@@ -888,25 +883,6 @@ pub fn FactValue(comptime fact: Fact) type {
     return @typeInfo(@FieldType(DeclFacts, @tagName(fact))).optional.child;
 }
 
-/// Single lowering access point for declaration facts and import / visibility
-/// facts. `Lowering` embeds one `ProgramIndex` by value and reaches every
-/// fact through `self.program_index.<accessor>`.
-///
-/// A declaration's facts are stored under its `imports.DeclId` — the identity
-/// of where it is written. A name reaches a fact in two steps: the per-fact
-/// name index selects ONE `DeclId`, then `get` reads that declaration's fact.
-/// Two declarations spelled the same hold separate rows and can never merge.
-///
-/// OWNS `facts`, the name indexes and `owned_decl_table`. BORROWS
-/// `module_scopes` / `import_graph` / `flat_import_graph` / `module_decls` /
-/// `namespace_edges` / `module_cache` (pointers into maps owned by the
-/// compilation driver, `core.zig`) — those are read-only views and are never
-/// freed here. `decl_table` is the driver's table, borrowed and APPENDED to —
-/// `declarations()` interns synthesized and comptime-registered identities
-/// into it.
-///
-/// Every owned map allocates through the compilation allocator passed to
-/// `init` (arena-backed in both the driver and the tests).
 pub const ProgramIndex = struct {
     /// The lowering/compilation allocator (`module.alloc`), retained so the
     /// source-keyed name indexes below can lazily create their inner maps.
@@ -925,8 +901,6 @@ pub const ProgramIndex = struct {
     protocol_types: std.AutoHashMap(TypeId, imports.DeclId),
 
     // ── Import / visibility ──
-    /// Per-module visible names, keyed by source file. Borrowed view.
-    module_scopes: ?*std.StringHashMap(std.StringHashMap(ast.Visibility)) = null,
     /// Module path → set of directly imported paths (param_impl visibility
     /// filter). Borrowed view.
     import_graph: ?*std.StringHashMap(std.StringHashMap(void)) = null,
@@ -935,16 +909,7 @@ pub const ProgramIndex = struct {
     /// `ns :: @import`). The bare-name disambiguation walks this to
     /// decide which same-name authors a flat importer can reach. Borrowed view.
     flat_import_graph: ?*std.StringHashMap(std.StringHashMap(void)) = null,
-    /// Per-module scalar raw-decl index (`path → name → RawDeclRef`), built by
-    /// `imports.buildImportFacts`. The unified resolver's raw-fact store.
-    /// Borrowed view.
-    module_decls: ?*imports.ModuleDecls = null,
-    /// Namespace import edges (`importer → alias → NamespaceTarget`), built by
-    /// `imports.buildImportFacts`, carrying each alias's resolved target path.
-    /// Borrowed view.
-    namespace_edges: ?*imports.NamespaceEdges = null,
-    /// Stable `DeclId` for every declaration, built by `imports.buildDeclTable`
-    /// in parallel with the import facts. Borrowed and appended to.
+    /// Shared import environments and declaration identities, borrowed and appended to.
     decl_table: ?*imports.DeclTable = null,
     /// Every resolved module keyed by canonical path. A `@import` written
     /// inside a module-scope expansion body resolves re-entrantly but stays
@@ -1005,7 +970,7 @@ pub const ProgramIndex = struct {
         const name = switch (ref) {
             inline else => |d| d.name,
         };
-        return self.declarations().internRef(source, name, ref, .{ .start = 0, .end = 0 }) catch @panic("out of memory");
+        return self.declarations().internRef(source, name, ref, null) catch @panic("out of memory");
     }
 
     pub fn internDecl(self: *ProgramIndex, decl: *const Node, source: ?[]const u8) imports.DeclId {

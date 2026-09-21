@@ -104,7 +104,7 @@ const Chunk = union(enum) {
 /// pointer a later insertion could move.
 const Sink = union(enum) {
     slot: *[]const *Node,
-    ns_target: struct { importer: []const u8, alias: []const u8 },
+    ns_target: struct { importer: imports.EnvironmentId, alias: []const u8 },
 };
 
 /// The dedup state one declaration list is merged against. It outlives the
@@ -268,14 +268,13 @@ const Expansion = struct {
 
         // Expanding a target mints declaration facts, which can grow the edge
         // map itself — so the aliases are collected before any of them folds.
-        const edges = ex.self.program_index.namespace_edges orelse return;
+        const table = ex.self.program_index.decl_table orelse return;
         var targets = std.ArrayList(Sink).empty;
         defer targets.deinit(ex.self.alloc);
-        var it = edges.iterator();
-        while (it.next()) |edge| {
-            var ait = edge.value_ptr.keyIterator();
-            while (ait.next()) |alias| {
-                targets.append(ex.self.alloc, .{ .ns_target = .{ .importer = edge.key_ptr.*, .alias = alias.* } }) catch {};
+        for (table.environments.items, 0..) |env, i| {
+            var aliases = env.namespaces.keyIterator();
+            while (aliases.next()) |alias| {
+                targets.append(ex.self.alloc, .{ .ns_target = .{ .importer = @enumFromInt(@as(u32, @intCast(i))), .alias = alias.* } }) catch @panic("out of memory");
             }
         }
         for (targets.items) |sink| {
@@ -284,32 +283,22 @@ const Expansion = struct {
         }
     }
 
-    fn namespaceTargetList(ex: *Expansion, importer: []const u8, alias: []const u8) ?[]const *Node {
-        const edges = ex.self.program_index.namespace_edges orelse return null;
-        const aliases = edges.getPtr(importer) orelse return null;
-        const target = aliases.getPtr(alias) orelse return null;
+    fn namespaceTargetList(ex: *Expansion, importer: imports.EnvironmentId, alias: []const u8) ?[]const *Node {
+        const table = ex.self.program_index.decl_table orelse return null;
+        const target = table.environment(importer).namespaces.get(alias) orelse return null;
         return target.own_decls;
     }
 
-    /// The `DeclId` surface of every namespaced module. A module publishes
-    /// only once its own scope is final — an alias's member table is a claim
-    /// about what that module declares, and a driver written there that has
-    /// not folded can still add to it.
     fn publishNamespaceMembers(ex: *Expansion) void {
-        const edges = ex.self.program_index.namespace_edges orelse return;
         const table = ex.self.program_index.decl_table orelse return;
-        var it = edges.valueIterator();
-        while (it.next()) |aliases| {
-            var ait = aliases.valueIterator();
-            while (ait.next()) |target| {
+        var i: usize = 0;
+        while (i < table.environments.items.len) : (i += 1) {
+            const env: imports.EnvironmentId = @enumFromInt(@as(u32, @intCast(i)));
+            var aliases = table.environment(env).namespaces.valueIterator();
+            while (aliases.next()) |target| {
                 if (!ex.self.expansion.scopeFinal(target.target_module_path)) continue;
-                var ids = std.ArrayList(imports.DeclId).empty;
-                for (target.own_decls) |member| {
-                    if (imports.rawDeclRefOf(member) == null) continue;
-                    const id = table.intern(target.target_module_path, member) catch continue;
-                    ids.append(ex.self.alloc, id) catch {};
-                }
-                target.member_ids = ids.toOwnedSlice(ex.self.alloc) catch target.member_ids;
+                const ids = table.memberIds(target.environment, target.own_decls) catch @panic("out of memory");
+                target.member_ids = ids;
             }
         }
     }
@@ -396,10 +385,12 @@ const Expansion = struct {
         switch (sink) {
             .slot => |p| p.* = list,
             .ns_target => |t| {
-                const edges = ex.self.program_index.namespace_edges orelse return;
-                const aliases = edges.getPtr(t.importer) orelse return;
-                const target = aliases.getPtr(t.alias) orelse return;
-                target.own_decls = list;
+                const table = ex.self.program_index.decl_table orelse return;
+                const target = table.environment(t.importer).namespaces.get(t.alias).?;
+                const ids = table.memberIds(target.environment, list) catch @panic("out of memory");
+                const updated = table.environment(t.importer).namespaces.getPtr(t.alias).?;
+                updated.own_decls = list;
+                updated.member_ids = ids;
             },
         }
     }
@@ -703,7 +694,8 @@ const Expansion = struct {
         const from = src orelse ex.self.main_file orelse return null;
         switch (ex.self.qualifiedMemberVerdictFrom(path, from)) {
             .selected => |sel| {
-                for (sel.target.own_decls) |decl| {
+                for (sel.target.member_ids) |id| {
+                    const decl = ex.self.program_index.declaration(id).node.?;
                     if (decl.data != .const_decl) continue;
                     if (!std.mem.eql(u8, decl.data.const_decl.name, sel.member)) continue;
                     return ex.driveCondition(decl.data.const_decl.value, sel.target.target_module_path, depth + 1);
@@ -1047,7 +1039,7 @@ const Group = struct {
         const imp = stmt.data.import_decl;
         const source = src orelse self.main_file orelse return;
         const cache = self.program_index.module_cache orelse return;
-        const imported = cache.get(imp.path) orelse return;
+        const imported = cache.modules.get(imp.path) orelse return;
 
         if (mint) {
             if (self.program_index.import_graph) |graph| {
@@ -1061,7 +1053,6 @@ const Group = struct {
         }
 
         if (imp.name) |ns_name| {
-            if (mint and !g.claimName(ns_name, source, stmt.visibility, stmt.span)) return;
             const ns_node = self.alloc.create(Node) catch return;
             ns_node.* = .{
                 .span = stmt.span,
@@ -1074,7 +1065,8 @@ const Group = struct {
                 } },
                 .visibility = stmt.visibility,
             };
-            if (mint) g.mintFacts(ns_node, source);
+            ns_node.source_file = source;
+            if (mint and !g.mintFacts(ns_node, source)) return;
             // The module arrives with its own drivers, and they fold later —
             // when the alias's views are expanded. They register HERE, while
             // this driver's registration still covers what they can declare,
@@ -1132,11 +1124,10 @@ const Group = struct {
                 }
                 ledger.put(name, cursor) catch {};
             }
-            if (mint and !g.claimName(name, source, stmt.visibility, stmt.span)) return true;
         }
         stmt.source_file = source;
         imports.stampFnBodySource(stmt, source);
-        if (mint) g.mintFacts(stmt, source);
+        if (mint and !g.mintFacts(stmt, source)) return true;
         g.emit(stmt);
         return true;
     }
@@ -1157,33 +1148,16 @@ const Group = struct {
         g.out.append(g.ex.self.alloc, decl) catch {};
     }
 
-    /// Claim `name` in the declaring file's module scope. False when the file
-    /// already declares it — a group shares one module scope with the text
-    /// around it, so a second author is the ordinary duplicate error.
-    fn claimName(g: *Group, name: []const u8, source: []const u8, visibility: ast.Visibility, span: ast.Span) bool {
+    fn mintFacts(g: *Group, decl: *Node, source: []const u8) bool {
         const self = g.ex.self;
-        const scopes = self.program_index.module_scopes orelse return true;
-        const scope = scopes.getPtr(source) orelse return true;
-        if (scope.contains(name)) {
-            if (self.diagnostics) |diags| {
-                diags.addFmt(.err, span, "duplicate top-level declaration '{s}'", .{name});
-            }
-            return false;
+        const table = self.program_index.declarations();
+        const env = table.internEnvironment(source, &.{}) catch @panic("out of memory");
+        const claimed = table.claim(env, decl) catch @panic("out of memory");
+        if (!claimed) {
+            if (self.diagnostics) |diags|
+                diags.addFmt(.err, decl.span, "duplicate top-level declaration '{s}'", .{decl.data.declName().?});
         }
-        scope.put(name, visibility) catch {};
-        return true;
-    }
-
-    fn mintFacts(g: *Group, decl: *Node, source: []const u8) void {
-        const self = g.ex.self;
-        if (self.program_index.module_decls) |decls| {
-            if (self.program_index.namespace_edges) |edges| {
-                imports.indexOneDecl(self.alloc, decls, edges, source, decl) catch {};
-            }
-        }
-        if (self.program_index.decl_table) |table| {
-            if (imports.rawDeclRefOf(decl) != null) _ = table.intern(source, decl) catch {};
-        }
+        return claimed;
     }
 
     /// Expand a module-scope `inline for` into one declaration group per

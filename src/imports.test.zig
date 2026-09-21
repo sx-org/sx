@@ -14,11 +14,8 @@ fn testIo() std.Io {
     return g_test_threaded.?.io();
 }
 
-// ── buildImportFacts unit tests (import-side raw facts) ──
-
 const Facts = struct {
-    decls: imports.ModuleDecls,
-    ns_edges: imports.NamespaceEdges,
+    table: imports.DeclTable,
     diags: errors.DiagnosticList,
 };
 
@@ -53,8 +50,8 @@ fn buildFacts(alloc: std.mem.Allocator, io: std.Io, absdir: []const u8, main_pat
         &flat_import_graph,
     );
 
-    const facts = try imports.buildImportFacts(alloc, main_path, mod, &cache);
-    return .{ .decls = facts.decls, .ns_edges = facts.ns_edges, .diags = diags };
+    _ = mod;
+    return .{ .table = cache.declarations, .diags = diags };
 }
 
 fn expectTag(ref: imports.RawDeclRef, expected: std.meta.Tag(imports.RawDeclRef)) !void {
@@ -68,12 +65,7 @@ fn hasErr(diags: *const errors.DiagnosticList, needle: []const u8) bool {
     return false;
 }
 
-// Two flat-imported modules each author `greet`; a third is namespaced. The
-// raw facts retain BOTH `greet` authors under their own paths in `module_decls`
-// (function authors flow through it) and record the namespaced import in
-// `import_graph` but NOT in `flat_import_graph` — WITHOUT touching the merged
-// scope: `mod.decls` stays byte-for-byte first-wins (one `greet`, a.sx's).
-test "imports: module_decls retains same-name cross-module fns; flat_import_graph excludes namespaced edge" {
+test "flat-import authors retain identities and exclude namespace edges" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -133,7 +125,7 @@ test "imports: module_decls retains same-name cross-module fns; flat_import_grap
         &flat_import_graph,
     );
 
-    var facts = try imports.buildImportFacts(alloc, main_path, mod, &cache);
+    var facts = Facts{ .table = cache.declarations, .diags = errors.DiagnosticList.init(alloc, main_source, main_path) };
 
     // The MERGED scope the first-wins resolver consumes is unchanged: mergeFlat
     // still drops the second `greet`, so `mod.decls` carries exactly ONE — and
@@ -148,15 +140,13 @@ test "imports: module_decls retains same-name cross-module fns; flat_import_grap
     }
     try std.testing.expectEqual(@as(usize, 1), greet_count);
 
-    // module_decls retains BOTH authors of `greet`, keyed by their own paths —
-    // the dropped author is recorded here (side index), not in the merged scope.
-    const a_idx = facts.decls.get(a_path) orelse return error.MissingAIndex;
-    const b_idx = facts.decls.get(b_path) orelse return error.MissingBIndex;
-    const a_greet = switch (a_idx.names.get("greet") orelse return error.MissingAGreet) {
+    const a_idx = facts.table.fileScope(a_path) orelse return error.MissingAIndex;
+    const b_idx = facts.table.fileScope(b_path) orelse return error.MissingBIndex;
+    const a_greet = switch (facts.table.get(a_idx.names.get("greet") orelse return error.MissingAGreet).ref.?) {
         .fn_decl => |fd| fd,
         else => return error.AGreetNotFn,
     };
-    const b_greet = switch (b_idx.names.get("greet") orelse return error.MissingBGreet) {
+    const b_greet = switch (facts.table.get(b_idx.names.get("greet") orelse return error.MissingBGreet).ref.?) {
         .fn_decl => |fd| fd,
         else => return error.BGreetNotFn,
     };
@@ -180,11 +170,6 @@ test "imports: module_decls retains same-name cross-module fns; flat_import_grap
     try std.testing.expect(full.contains(ns_path));
 }
 
-// Mixed collision: a.sx authors `Widget` as a STRUCT (non-fn), b.sx authors it
-// as a FUNCTION. The function-author retention must NOT shift the
-// merged scope — first-wins keeps a.sx's struct and drops b.sx's function.
-// (The fn author may still be indexed in `module_decls`; resolution is what
-// must be untouched.)
 test "imports: mixed non-fn/fn same-name collision stays first-wins in merged scope" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -254,7 +239,7 @@ test "imports: mixed non-fn/fn same-name collision stays first-wins in merged sc
 // value-vs-type same spelling are ALL retained per-source — no cross-module
 // first-wins at the index level. A `const_decl` is stored raw (`.const_decl`),
 // not pre-classified into value/fn.
-test "buildImportFacts: flat imports keep same-name fn/struct + value-vs-type per source; const stays raw" {
+test "flat import declarations retain distinct raw authors" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -278,34 +263,34 @@ test "buildImportFacts: flat imports keep same-name fn/struct + value-vs-type pe
 
     var facts = try buildFacts(alloc, io, absdir, main_path);
 
-    const a_idx = facts.decls.get(a_path) orelse return error.MissingAIndex;
-    const b_idx = facts.decls.get(b_path) orelse return error.MissingBIndex;
-    const m_idx = facts.decls.get(main_path) orelse return error.MissingMainIndex;
+    const a_idx = facts.table.fileScope(a_path) orelse return error.MissingAIndex;
+    const b_idx = facts.table.fileScope(b_path) orelse return error.MissingBIndex;
+    const m_idx = facts.table.fileScope(main_path) orelse return error.MissingMainIndex;
 
     // The index records its own source path.
     try std.testing.expectEqualStrings(a_path, a_idx.source);
 
     // main authors `main` as a fn.
-    try expectTag(m_idx.names.get("main") orelse return error.MissingMain, .fn_decl);
+    try expectTag(facts.table.get(m_idx.names.get("main") orelse return error.MissingMain).ref.?, .fn_decl);
 
     // Same-name fn retained per source — two DISTINCT FnDecls.
-    const a_dup = a_idx.names.get("dup") orelse return error.MissingADup;
-    const b_dup = b_idx.names.get("dup") orelse return error.MissingBDup;
+    const a_dup = facts.table.get(a_idx.names.get("dup") orelse return error.MissingADup).ref.?;
+    const b_dup = facts.table.get(b_idx.names.get("dup") orelse return error.MissingBDup).ref.?;
     try expectTag(a_dup, .fn_decl);
     try expectTag(b_dup, .fn_decl);
     try std.testing.expect(a_dup.fn_decl != b_dup.fn_decl);
 
     // Same-name struct retained per source — two DISTINCT StructDecls.
-    const a_box = a_idx.names.get("Box") orelse return error.MissingABox;
-    const b_box = b_idx.names.get("Box") orelse return error.MissingBBox;
+    const a_box = facts.table.get(a_idx.names.get("Box") orelse return error.MissingABox).ref.?;
+    const b_box = facts.table.get(b_idx.names.get("Box") orelse return error.MissingBBox).ref.?;
     try expectTag(a_box, .struct_decl);
     try expectTag(b_box, .struct_decl);
     try std.testing.expect(a_box.struct_decl != b_box.struct_decl);
 
     // Value-vs-type same spelling across modules: a.sx's `Shape` is a raw const
     // (NOT pre-classified), b.sx's `Shape` is a struct. Both coexist by source.
-    try expectTag(a_idx.names.get("Shape") orelse return error.MissingAShape, .const_decl);
-    try expectTag(b_idx.names.get("Shape") orelse return error.MissingBShape, .struct_decl);
+    try expectTag(facts.table.get(a_idx.names.get("Shape") orelse return error.MissingAShape).ref.?, .const_decl);
+    try expectTag(facts.table.get(b_idx.names.get("Shape") orelse return error.MissingBShape).ref.?, .struct_decl);
 
     // No spurious diagnostics — these are distinct files, not same-module dups.
     try std.testing.expect(!hasErr(&facts.diags, "duplicate top-level"));
@@ -313,7 +298,7 @@ test "buildImportFacts: flat imports keep same-name fn/struct + value-vs-type pe
 
 // Directory import: the combined module (keyed by the directory path) carries
 // the UNION of every file's authored decls in its scalar index.
-test "buildImportFacts: directory import unions member-file decls under the dir path" {
+test "directory import unions member-file decls under the dir path" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -335,15 +320,15 @@ test "buildImportFacts: directory import unions member-file decls under the dir 
 
     var facts = try buildFacts(alloc, io, absdir, main_path);
 
-    const lib_idx = facts.decls.get(lib_path) orelse return error.MissingLibIndex;
-    try expectTag(lib_idx.names.get("from_one") orelse return error.MissingFromOne, .fn_decl);
-    try expectTag(lib_idx.names.get("Two") orelse return error.MissingTwo, .struct_decl);
+    const lib_idx = facts.table.fileScope(lib_path) orelse return error.MissingLibIndex;
+    try expectTag(facts.table.get(lib_idx.names.get("from_one") orelse return error.MissingFromOne).ref.?, .fn_decl);
+    try expectTag(facts.table.get(lib_idx.names.get("Two") orelse return error.MissingTwo).ref.?, .struct_decl);
 }
 
 // Namespaced file import (`g :: @import "point.sx"`): recorded as a namespace
 // edge whose `target_module_path` is the aliased file, AND as a
 // `.namespace_decl` in the importer's scalar index.
-test "buildImportFacts: namespaced file import captures target_module_path" {
+test "namespaced file import captures target_module_path" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -363,20 +348,20 @@ test "buildImportFacts: namespaced file import captures target_module_path" {
 
     var facts = try buildFacts(alloc, io, absdir, main_path);
 
-    const main_edges = facts.ns_edges.get(main_path) orelse return error.MissingMainEdges;
+    const main_edges = (facts.table.fileScope(main_path) orelse return error.MissingEnvironment).namespaces;
     const g = main_edges.get("g") orelse return error.MissingGEdge;
     try std.testing.expectEqualStrings("g", g.alias);
-    try std.testing.expectEqualStrings(main_path, g.importer_source);
+    try std.testing.expectEqualStrings(try imports.canonicalizePath(alloc, main_path), g.importer_source);
     try std.testing.expectEqualStrings(point_path, g.target_module_path);
     try std.testing.expect(g.own_decls.len >= 1);
 
     // The alias is also a `.namespace_decl` in the importer's scalar index.
-    const m_idx = facts.decls.get(main_path) orelse return error.MissingMainIndex;
-    try expectTag(m_idx.names.get("g") orelse return error.MissingGRef, .namespace_decl);
+    const m_idx = facts.table.fileScope(main_path) orelse return error.MissingMainIndex;
+    try expectTag(facts.table.get(m_idx.names.get("g") orelse return error.MissingGRef).ref.?, .namespace_decl);
 }
 
 // Namespaced directory import: same edge capture, target is the directory path.
-test "buildImportFacts: namespaced directory import captures dir path as target" {
+test "namespaced directory import captures dir path as target" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -397,14 +382,14 @@ test "buildImportFacts: namespaced directory import captures dir path as target"
 
     var facts = try buildFacts(alloc, io, absdir, main_path);
 
-    const main_edges = facts.ns_edges.get(main_path) orelse return error.MissingMainEdges;
+    const main_edges = (facts.table.fileScope(main_path) orelse return error.MissingEnvironment).namespaces;
     const pkg = main_edges.get("pkg") orelse return error.MissingPkgEdge;
     try std.testing.expectEqualStrings(pkg_path, pkg.target_module_path);
 }
 
 // C-import namespace (`c :: @import c { @include ... }`): recorded as a namespace
 // edge. With no separate sx module, the target is the importing file itself.
-test "buildImportFacts: c-import namespace recorded as an edge" {
+test "c-import namespace recorded as an edge" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -422,20 +407,20 @@ test "buildImportFacts: c-import namespace recorded as an edge" {
 
     var facts = try buildFacts(alloc, io, absdir, main_path);
 
-    const main_edges = facts.ns_edges.get(main_path) orelse return error.MissingMainEdges;
+    const main_edges = (facts.table.fileScope(main_path) orelse return error.MissingEnvironment).namespaces;
     const cmod = main_edges.get("cmod") orelse return error.MissingCmodEdge;
     try std.testing.expectEqualStrings("cmod", cmod.alias);
     try std.testing.expectEqualStrings(main_path, cmod.target_module_path);
 
-    const m_idx = facts.decls.get(main_path) orelse return error.MissingMainIndex;
-    try expectTag(m_idx.names.get("cmod") orelse return error.MissingCmodRef, .namespace_decl);
+    const m_idx = facts.table.fileScope(main_path) orelse return error.MissingMainIndex;
+    try expectTag(facts.table.get(m_idx.names.get("cmod") orelse return error.MissingCmodRef).ref.?, .namespace_decl);
 }
 
 // Duplicate-name invariant: a same-module authored duplicate top-level
 // name is DIAGNOSED, not silently dropped. The parser/decl-checker does not
 // catch it, so `resolveImports` surfaces it where `addOwnDecl` refuses the
 // second author.
-test "buildImportFacts: same-module duplicate top-level name is diagnosed" {
+test "same-module duplicate top-level name is diagnosed" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -454,8 +439,8 @@ test "buildImportFacts: same-module duplicate top-level name is diagnosed" {
 
     try std.testing.expect(hasErr(&facts.diags, "duplicate top-level declaration 'foo'"));
     // The surviving author is still in the scalar index (first-wins, not lost).
-    const m_idx = facts.decls.get(main_path) orelse return error.MissingMainIndex;
-    try expectTag(m_idx.names.get("foo") orelse return error.MissingFoo, .fn_decl);
+    const m_idx = facts.table.fileScope(main_path) orelse return error.MissingMainIndex;
+    try expectTag(facts.table.get(m_idx.names.get("foo") orelse return error.MissingFoo).ref.?, .fn_decl);
 }
 
 // The duplicate-name invariant also covers NAMESPACE ALIASES. A
@@ -463,7 +448,7 @@ test "buildImportFacts: same-module duplicate top-level name is diagnosed" {
 // duplicate in EITHER order — `addNamespace` (alias second) and `addOwnDecl`
 // (alias first) each refuse the second author and the site diagnoses it.
 // Surviving author is whichever came FIRST.
-test "buildImportFacts: fn-then-namespace-alias same-module collision is diagnosed" {
+test "fn-then-namespace-alias same-module collision is diagnosed" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -483,11 +468,11 @@ test "buildImportFacts: fn-then-namespace-alias same-module collision is diagnos
 
     try std.testing.expect(hasErr(&facts.diags, "duplicate top-level declaration 'dup'"));
     // The fn came first, so it survives in the scalar index; the alias dropped.
-    const m_idx = facts.decls.get(main_path) orelse return error.MissingMainIndex;
-    try expectTag(m_idx.names.get("dup") orelse return error.MissingDup, .fn_decl);
+    const m_idx = facts.table.fileScope(main_path) orelse return error.MissingMainIndex;
+    try expectTag(facts.table.get(m_idx.names.get("dup") orelse return error.MissingDup).ref.?, .fn_decl);
 }
 
-test "buildImportFacts: namespace-alias-then-fn same-module collision is diagnosed" {
+test "namespace-alias-then-fn same-module collision is diagnosed" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -507,8 +492,8 @@ test "buildImportFacts: namespace-alias-then-fn same-module collision is diagnos
 
     try std.testing.expect(hasErr(&facts.diags, "duplicate top-level declaration 'dup'"));
     // The alias came first, so the namespace_decl survives; the fn dropped.
-    const m_idx = facts.decls.get(main_path) orelse return error.MissingMainIndex;
-    try expectTag(m_idx.names.get("dup") orelse return error.MissingDup, .namespace_decl);
+    const m_idx = facts.table.fileScope(main_path) orelse return error.MissingMainIndex;
+    try expectTag(facts.table.get(m_idx.names.get("dup") orelse return error.MissingDup).ref.?, .namespace_decl);
 }
 
 // ── canonicalizePath ──
@@ -551,6 +536,18 @@ test "canonicalizePath: abs + cwd-relative + redundant ./ and .. spellings unify
     try std.testing.expectEqualStrings(canon, try imports.canonicalizePath(alloc, rel_dotted));
 }
 
+test "canonicalizePath: absolute paths under CWD return one caller-owned allocation" {
+    const alloc = std.testing.allocator;
+    const cwd = imports.processCwd(alloc) orelse return error.MissingCwd;
+    defer alloc.free(cwd);
+    const absolute = try std.fmt.allocPrint(alloc, "{s}/sub/../a.sx", .{cwd});
+    defer alloc.free(absolute);
+
+    const canonical = try imports.canonicalizePath(alloc, absolute);
+    defer alloc.free(canonical);
+    try std.testing.expectEqualStrings("a.sx", canonical);
+}
+
 test "sameFileIdentity: distinct spellings of one file match; distinct and unstattable files do not" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -588,7 +585,7 @@ test "sameFileIdentity: distinct spellings of one file match; distinct and unsta
 // Every source / imported / namespaced declaration gets a stable DeclId; the
 // RawDeclRef → DeclId → AST node round-trip holds; a generic struct is keyable
 // by DeclId; and the namespace target records its members' ids.
-test "buildDeclTable: stable DeclId per decl, round-trip, struct keying, namespace member ids" {
+test "namespace members and wrapped declarations retain their identities" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -634,24 +631,23 @@ test "buildDeclTable: stable DeclId per decl, round-trip, struct keying, namespa
         &flat_import_graph,
     );
 
-    var facts = try imports.buildImportFacts(alloc, main_path, mod, &cache);
-    var table = try imports.buildDeclTable(alloc, main_path, mod, &cache, &facts.decls, &facts.ns_edges);
+    var facts = Facts{ .table = cache.declarations, .diags = diags };
+    _ = mod;
+    const table = &facts.table;
     defer table.deinit();
 
     // Every module author resolves to a DeclId that round-trips to the same node
     // and carries the matching name + source. (verifyRoundTrip also asserts this
     // in Debug; this pins the public lookup API too.)
-    var mit = facts.decls.iterator();
     var seen: usize = 0;
-    while (mit.next()) |m| {
-        var nit = m.value_ptr.names.iterator();
+    for (table.environments.items) |env| {
+        var nit = env.names.iterator();
         while (nit.next()) |kv| {
-            const ref = kv.value_ptr.*;
-            const id = table.declIdForRef(ref) orelse return error.MissingDeclId;
+            const id = kv.value_ptr.*;
             const info = table.get(id);
             try std.testing.expectEqual(id, table.declIdForRef(info.ref.?).?);
             try std.testing.expectEqualStrings(kv.key_ptr.*, info.name);
-            try std.testing.expectEqualStrings(m.value_ptr.source, info.source.?);
+            try std.testing.expectEqualStrings(env.source, info.source.?);
             seen += 1;
         }
     }
@@ -659,8 +655,8 @@ test "buildDeclTable: stable DeclId per decl, round-trip, struct keying, namespa
 
     // The generic struct `Box` (authored in lib.sx) is keyable by DeclId via its
     // inner *StructDecl, and the id reports DeclKind.@"struct" + name "Box".
-    const lib_idx = facts.decls.get(lib_path) orelse return error.MissingLibIndex;
-    const box_ref = lib_idx.names.get("Box") orelse return error.MissingBox;
+    const lib_idx = facts.table.fileScope(lib_path) orelse return error.MissingLibIndex;
+    const box_ref = facts.table.get(lib_idx.names.get("Box") orelse return error.MissingBox).ref.?;
     const box_sd = switch (box_ref) {
         .struct_decl => |sd| sd,
         .const_decl => |cd| if (cd.value.data == .struct_decl) &cd.value.data.struct_decl else return error.BoxNotStruct,
@@ -672,7 +668,7 @@ test "buildDeclTable: stable DeclId per decl, round-trip, struct keying, namespa
 
     // The namespaced `geom.sx` target records its members' DeclIds (here: Point),
     // each round-tripping to a DeclInfo named "Point".
-    const aliases = facts.ns_edges.get(main_path) orelse return error.MissingNsEdges;
+    const aliases = (facts.table.fileScope(main_path) orelse return error.MissingEnvironment).namespaces;
     const target = aliases.get("g") orelse return error.MissingAlias;
     try std.testing.expect(target.member_ids.len >= 1);
     var found_point = false;
@@ -680,4 +676,37 @@ test "buildDeclTable: stable DeclId per decl, round-trip, struct keying, namespa
         if (std.mem.eql(u8, table.get(id).name, "Point")) found_point = true;
     }
     try std.testing.expect(found_point);
+}
+
+test "environment claims separate scope paths and reject a second author of one name" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var p = try parser.Parser.init(alloc, "x :: 1; x :: 2; x :: 3; x :: 4;");
+    const root = try p.parse();
+    const nodes = root.data.root.decls;
+    var table = imports.DeclTable.init(std.testing.allocator);
+    defer table.deinit();
+
+    const file = try table.internEnvironment("environment.sx", &.{});
+    var spelling = "./environment.sx".*;
+    const geo = try table.internEnvironment(&spelling, &.{"geo"});
+    spelling[0] = '!';
+    try std.testing.expectEqual(file, table.fileEnvironment("./environment.sx").?);
+    const nested = try table.internEnvironment("environment.sx", &.{ "geo", "detail" });
+    try std.testing.expect(file != geo and geo != nested);
+    try std.testing.expectEqual(geo, try table.internEnvironment("environment.sx", &.{"geo"}));
+    try std.testing.expect(table.fileEnvironment("missing.sx") == null);
+    try std.testing.expect(try table.claim(file, nodes[0]));
+    try std.testing.expect(try table.claim(geo, nodes[1]));
+    try std.testing.expect(try table.claim(nested, nodes[2]));
+    try std.testing.expect(!try table.claim(geo, nodes[3]));
+
+    const a = table.rawAuthor(file, "x").?;
+    const b = table.rawAuthor(geo, "x").?;
+    const c = table.rawAuthor(nested, "x").?;
+    try std.testing.expect(a.id != b.id and b.id != c.id and a.id != c.id);
+    try std.testing.expectEqual(geo, table.get(b.id).environment.?);
+    try std.testing.expect(table.get(b.id).node.? == nodes[1]);
+    try std.testing.expect(table.declIdForRef(imports.rawDeclRefOf(nodes[3]).?) == null);
 }

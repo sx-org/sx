@@ -10,29 +10,28 @@ test "ProgramIndex.init starts empty with unset borrowed views" {
     var idx = ProgramIndex.init(std.testing.allocator);
     defer idx.deinit();
     try std.testing.expectEqual(@as(u32, 0), idx.nameIndex(.function).count());
-    try std.testing.expect(idx.module_scopes == null);
+    try std.testing.expect(idx.decl_table == null);
     try std.testing.expect(idx.import_graph == null);
 }
 
-test "ProgramIndex borrows module_scopes / import_graph without owning them" {
-    const ScopeMap = std.StringHashMap(std.StringHashMap(@import("../ast.zig").Visibility));
+test "ProgramIndex borrows decl_table / import_graph without owning them" {
     const ScopeSet = std.StringHashMap(std.StringHashMap(void));
-    var scopes = ScopeMap.init(std.testing.allocator);
-    defer scopes.deinit();
+    var table = @import("../imports.zig").DeclTable.init(std.testing.allocator);
+    defer table.deinit();
     var graph = ScopeSet.init(std.testing.allocator);
     defer graph.deinit();
 
     var idx = ProgramIndex.init(std.testing.allocator);
     defer idx.deinit();
-    idx.module_scopes = &scopes;
+    idx.decl_table = &table;
     idx.import_graph = &graph;
 
     // Reads go through the borrowed pointer; the backing stays caller-owned,
     // so idx.deinit() must not free it (testing.allocator would flag a
     // double-free / leak otherwise).
-    try std.testing.expect(idx.module_scopes.? == &scopes);
+    try std.testing.expect(idx.decl_table.? == &table);
     try std.testing.expect(idx.import_graph.? == &graph);
-    try std.testing.expectEqual(@as(u32, 0), idx.module_scopes.?.count());
+    try std.testing.expectEqual(@as(u32, 0), idx.decl_table.?.files.count());
 }
 
 test "ProgramIndex declaration facts round-trip through their identity" {
