@@ -81,7 +81,7 @@ main :: () -> i32 {
     kb.sample(top, VIEW_H);
     kb.grab();
     kb.track(top + 20.0, VIEW_H);
-    kb.letGo((KEYBOARD_FLICK_VELOCITY + 1.0).(f32));
+    kb.letGo(KEYBOARD_FLICK_VELOCITY + 1.0);
     print("flick target {}\n", kb.settleTo);
     0
 }

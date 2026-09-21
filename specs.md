@@ -2921,15 +2921,18 @@ isReady : ValueListenable(bool) = map(
 - `:=` bindings infer type from the right-hand side
 - Explicit annotation overrides inference: `NAME : f64 : 0.9;`
 - Integer literals default to `i64`
-- Float literals default to `f64`. In binary arithmetic and comparisons, a
-  direct float literal (including unary negation) adopts the other operand's
-  float type. Both-literal operands stay `f64`. Parentheses preserve the
-  expression; a nested operation has its own result type, and a named value
-  keeps its inferred or declared type. A typed slot or parameter supplies the
-  type of a direct literal, not the operands of a binary expression.
-  Literals round directly to the nearest representable value of their type,
-  with ties to even; overflow is a located compile error, and underflow may
-  round to zero. Compile-time arithmetic uses the operands' adopted types.
+- Untyped float expressions comprise numeric literals, unannotated numeric
+  constants and their aliases, unary negation, and `+ - * / %`, with at least
+  one float-producing component. They evaluate in `f64`, preserving integer
+  semantics in integer-only subexpressions, then adopt a contextual float type
+  by rounding the complete result once to nearest, ties to even. A typed float
+  peer supplies that context before an enclosing destination; an integer peer
+  supplies no float width. Without context the type is `f64`. Overflow is a
+  located compile error; underflow may produce signed zero, and decimal digit
+  count imposes no restriction. Explicit annotations, conversions, stored values,
+  runtime results, and ordinary field values retain their types. Generic
+  inference binds arguments with their own types before adaptable arguments;
+  `@typeOf` observes the default type without fixing later constant uses.
 - Enum literals (`.variant`) infer their enum type from context (expected type)
 
 ```sx

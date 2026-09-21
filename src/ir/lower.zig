@@ -177,11 +177,20 @@ pub const SourceConstCtx = struct {
     pub fn typeLimitInt(self: SourceConstCtx, receiver: *const Node, field: []const u8) ?i64 {
         return self.lowering.typeLimitInt(receiver, field);
     }
+    pub fn untypedNumericLeaf(self: SourceConstCtx, node: *const Node) ?program_index_mod.UntypedNumericKind {
+        const saved = self.lowering.scope;
+        self.lowering.scope = null;
+        defer self.lowering.scope = saved;
+        return self.lowering.untypedNumericLeaf(node);
+    }
     pub fn floatLeafType(self: SourceConstCtx, node: *const Node) ?TypeId {
+        const saved = self.lowering.scope;
+        self.lowering.scope = null;
+        defer self.lowering.scope = saved;
         return self.lowering.floatLeafType(node);
     }
-    pub fn floatLiteralValue(self: SourceConstCtx, lit: ast.FloatLiteral, ty: TypeId, span: ast.Span) f64 {
-        return self.lowering.floatLiteralValue(lit, ty, span);
+    pub fn adoptFloatValue(self: SourceConstCtx, value: f64, ty: TypeId, span: ast.Span) f64 {
+        return self.lowering.adoptFloatValue(value, ty, span);
     }
     pub fn lookupFloatName(self: SourceConstCtx, name: []const u8) ?f64 {
         return self.lowering.foldSourceConstFloat(name, self.frame);
@@ -276,6 +285,7 @@ pub const Binding = struct {
     /// interface-only constraint check.
     alias_node: ?*ast.Node = null,
     origin: Origin = .other,
+    untyped_numeric: ?program_index_mod.UntypedNumericKind = null,
     /// The binding names a C `va_list` this frame BORROWS — an incoming
     /// boundary parameter. Its caller opened it and ends it, so `@vaStart` /
     /// `@vaEnd` here would act on another frame's list.
@@ -683,6 +693,7 @@ pub const Lowering = struct {
     current_source_file: ?[]const u8 = null, // source file of function currently being lowered
     /// Uncached nested bodies remain part of the active constant expansion.
     module_const_frame: ?*const ConstFoldFrame = null,
+    untyped_const_frame: ?*const UntypedConstFrame = null,
     // Implicit Context parameter machinery. When the program imports
     // `std.sx` (and therefore declares `Context :: struct {...}`), every
     // default-conv sx function gains a synthetic `__sx_ctx: *void` param
@@ -975,6 +986,8 @@ pub const Lowering = struct {
             value: ComptimeValue,
         };
     };
+
+    pub const UntypedConstFrame = struct { value: *const Node, parent: ?*const UntypedConstFrame };
 
     pub const StructConstInfo = struct {
         value: *const Node,
@@ -1932,25 +1945,26 @@ pub const Lowering = struct {
         return null;
     }
 
-    /// Float-valued leaf for the shared float-expression evaluator: a name bound
-    /// to a NUMERIC module const whose compile-time value is a (non-integral)
-    /// float — the FLOAT counterpart of `lookupDimName`, routed through the SAME
-    /// `module_const_map` so the unified narrowing rule resolves a float-const
-    /// leaf (`F : f64 : 2.5`) exactly as it resolves an int-const leaf. Integer /
-    /// integral-float leaves and comptime int bindings are already resolved by the
-    /// `evalConstIntExpr` delegation inside `evalConstFloatExpr`; this surfaces the
-    /// non-integral float const so the rule can reject it.
     pub fn lookupFloatName(self: *Lowering, name: []const u8) ?f64 {
+        if (self.scope) |scope| {
+            const scoped = scope.lookupBoundary(name);
+            if (scoped.crossed != .none) return null;
+            if (scoped.binding) |binding| {
+                if (binding.origin != .local_const) return null;
+                if (self.builder.constFloatInfo(binding.ref)) |info| return info.value;
+                if (self.foldedInt(binding.ref)) |v| return @floatFromInt(v);
+                return null;
+            }
+        }
         return self.foldSourceConstFloat(name, null);
     }
 
-    /// True iff `name` is a FLOAT-valued module const (`F : f64 : 2.5`,
-    /// `K : f64 : 4.0`, untyped `M :: 4.0`, untyped-EXPR `ME :: 4.0 + 1.0`). The
-    /// int folder's division arm consults this so a `/` with a float-const operand
-    /// is recognised as float division. Comptime / generic
-    /// value bindings are always integer-valued, so only the module-const table
-    /// can name a float.
     pub fn nameIsFloatTyped(self: *Lowering, name: []const u8) bool {
+        if (self.scope) |scope| {
+            const scoped = scope.lookupBoundary(name);
+            if (scoped.crossed != .none) return false;
+            if (scoped.binding) |binding| return isFloat(binding.ty);
+        }
         return self.sourceConstIsFloatTyped(name, null);
     }
 
@@ -2790,6 +2804,22 @@ pub const Lowering = struct {
         return ty == .f32 or ty == .f64;
     }
 
+    pub fn floatContext(self: *Lowering, target: ?TypeId) ?TypeId {
+        var ty = target orelse return null;
+        while (!ty.isBuiltin()) {
+            const info = self.module.types.get(ty);
+            if (info != .optional) return null;
+            ty = info.optional.child;
+        }
+        return if (isFloat(ty)) ty else null;
+    }
+
+    pub fn isAdaptableFloat(self: *Lowering, node: *const Node) bool {
+        return program_index_mod.isAdaptableFloat(node, self);
+    }
+
+    pub const untypedNumericLeaf = lower_comptime.untypedNumericLeaf;
+
     pub fn floatLeafType(self: *Lowering, node: *const Node) ?TypeId {
         switch (node.data) {
             .identifier, .type_expr, .field_access => {},
@@ -2799,12 +2829,12 @@ pub const Lowering = struct {
         return if (isFloat(ty)) ty else null;
     }
 
-    pub fn floatLiteralValue(self: *Lowering, lit: ast.FloatLiteral, ty: TypeId, span: ast.Span) f64 {
-        const value: f64 = if (ty == .f32) lit.asF32() else lit.value;
-        if (!std.math.isFinite(value)) {
-            if (self.diagnostics) |d| d.addFmt(.err, span, "float literal overflows '{s}'", .{self.formatTypeName(ty)});
+    pub fn adoptFloatValue(self: *Lowering, value: f64, ty: TypeId, span: ast.Span) f64 {
+        const adopted: f64 = if (ty == .f32) @as(f32, @floatCast(value)) else value;
+        if (!std.math.isFinite(adopted)) {
+            if (self.diagnostics) |d| d.addFmt(.err, span, "float constant overflows '{s}'", .{self.formatTypeName(ty)});
         }
-        return value;
+        return adopted;
     }
 
     pub fn arithResultType(self: *Lowering, lhs_ty: TypeId, rhs_ty: TypeId) TypeId {

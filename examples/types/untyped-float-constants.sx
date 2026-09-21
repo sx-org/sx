@@ -1,0 +1,49 @@
+@import "modules/std.sx";
+
+H :: 0.5;
+Alias :: H;
+Cancellation :: (16777216.0 + 1.0) - 16777216.0;
+FloatCancellation :: (9007199254740992.0 + 1.0) - 9007199254740992.0;
+BIG :: 3e38;
+N :: 7.038531e-26;
+Values :: struct { Fraction :: H; Fixed: f32: 16777217.0 + 0.0; }
+Global: f32 = Values.Fraction + 1.0;
+Table: [1]f32: .[BIG * 2.0 / 4.0];
+
+take :: (v: f32) -> f32 { v }
+sum :: (a: $T, b: T) -> T { a + b }
+
+main :: () {
+    s: f32 = 2.0;
+    peer := Alias * s;
+    inlineValue: f32 = H * 4.0;
+    a: f32 = Cancellation;
+    b: f64 = Cancellation;
+    integerPart: f32 = (5 / 2) + 0.5;
+    print("adoption: {} {} {} {} {}\n", @typeOf(peer) == f32, peer == 1.0,
+        inlineValue == 2.0, a == 1.0 and b == 1.0, integerPart == 2.5);
+    print("float arithmetic: {}\n", FloatCancellation == 0.0);
+    bounded: f32 = BIG * 2.0 / 4.0;
+    zero: f32 = 1e39 * 0.0;
+    print("range: {} {}\n", bounded == 1.5e38, zero == 0.0);
+    print("serialized: {} {}\n", Global == 1.5, Table[0] == bounded);
+    wide: f64 = 16777217.0 * s;
+    member: f64 = Values.Fixed;
+    print("typed member: {}\n", member == 16777216.0);
+    materialized := H;
+    count := 2;
+    print("boundaries: {} {} {} {} {}\n", wide == 33554432.0,
+        @typeOf(materialized) == f64, @typeOf(H) == f64, take(H + H) == 1.0, @typeOf(H * count) == f64);
+    print("inference: {} {} {}\n", @typeOf(sum(H, s)) == f32,
+        @typeOf(sum(H, H)) == f64, H < s);
+    Local :: H + 1.0;
+    local: f32 = Local;
+    print("local: {}\n", local == 1.5);
+    bare: f32 = 7.038531e-26;
+    named: f32 = N;
+    bits := @reinterpret(u32, bare);
+    long: f32 = 444444427645684930969623423423.4444444;
+    precise: f64 = 1.23456789012345678;
+    print("rounding: {} {} {} {}\n", bits == 0x15ae43fe, bare == named,
+        long > 4e29, precise > 1.2);
+}

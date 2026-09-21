@@ -20,7 +20,7 @@ main :: () {
     print("folded: {} {}\n", folded, @typeOf(Folded) == f32);
     z: f32 = 0.0;
     near := 1.00000005960464477539062501 + z;
-    print("nearest: {} {}\n", near > 1.0 and near == Nearest.VALUE, 1e-99 + z == 0.0);
+    print("nearest: {} {}\n", near == 1.0 and near == Nearest.VALUE, 1e-99 + z == 0.0);
     exponent := 1_5.0E-1__0_;
     print("exponent: {} {}\n", @typeOf(1e10) == f64, exponent == 0.0000000015);
 }

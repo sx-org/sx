@@ -1,0 +1,5 @@
+error: float constant overflows 'f32'
+  --> examples/diagnostics/untyped-float-overflow.sx:3:23
+   |
+ 3 | main :: () { x: f32 = Overflow; }
+   |                       ^^^^^^^^

@@ -1881,24 +1881,10 @@ pub fn literalKeepsArray(self: *Lowering, target: ?TypeId) bool {
 
 /// Lower a struct-level constant value (e.g., Phys.GRAVITY).
 pub fn lowerStructConstant(self: *Lowering, info: StructConstInfo) Ref {
-    const val_node = info.value;
-    return switch (val_node.data) {
-        .int_literal => |lit| blk: {
-            self.checkIntLiteralMagnitudeFits(lit.value, info.ty orelse .i64, val_node.span);
-            break :blk self.builder.constInt(lit.value, info.ty orelse .i64);
-        },
-        .char_literal => |lit| blk: {
-            if (info.ty) |t| self.checkCharLiteralFits(lit, t, val_node.span);
-            break :blk self.builder.constInt(lit.value, info.ty orelse .i64);
-        },
-        .float_literal => |lit| blk: {
-            const ty = info.ty orelse .f64;
-            break :blk self.builder.constFloat(self.floatLiteralValue(lit, ty, val_node.span), ty);
-        },
-        .bool_literal => |lit| self.builder.constBool(lit.value),
-        .string_literal => |lit| self.lowerStringLiteral(lit),
-        else => self.lowerExpr(val_node),
-    };
+    var demand = self.enterDemand(if (info.ty) |ty| .{ .coerce = ty } else null);
+    defer demand.restore();
+    const value = self.lowerExpr(info.value);
+    return if (info.ty) |ty| self.coerceToType(value, self.builder.getRefType(value), ty) else value;
 }
 
 /// Lower optional chaining: `p?.field` where p is ?T
@@ -3782,6 +3768,11 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
 }
 
 fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
+    if (self.isAdaptableFloat(node)) {
+        const ty = self.floatContext(self.target_type) orelse .f64;
+        if (program_index_mod.evalConstFloatInit(node, self, ty)) |value|
+            return self.builder.constFloat(value, ty);
+    }
     return switch (node.data) {
         // Bare `$<pack>` in expression position → an `[]Type` slice
         // value where each element is a `const_type(arg_types[i])`.
@@ -3879,7 +3870,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
         },
         .float_literal => |lit| {
             const fty: TypeId = if (self.target_type) |tt| (if (tt == .f32 or tt == .f64) tt else .f64) else .f64;
-            return self.builder.constFloat(self.floatLiteralValue(lit, fty, node.span), fty);
+            return self.builder.constFloat(self.adoptFloatValue(lit.value, fty, node.span), fty);
         },
         .bool_literal => |lit| self.builder.constBool(lit.value),
         .string_literal => |lit| self.lowerStringLiteral(lit),
@@ -4288,7 +4279,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
             if (uop.op == .negate and uop.operand.data == .float_literal) {
                 const lit = uop.operand.data.float_literal;
                 const fty: TypeId = if (self.target_type) |tt| (if (tt == .f32 or tt == .f64) tt else .f64) else .f64;
-                break :blk self.builder.constFloat(-self.floatLiteralValue(lit, fty, node.span), fty);
+                break :blk self.builder.constFloat(-self.adoptFloatValue(lit.value, fty, node.span), fty);
             }
             // Prefix `*` on a TYPE-valued operand is the pointer TYPE, not
             // address-of: `@sizeOf(*T)`, Type-arg positions, and nested
@@ -5494,9 +5485,9 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         const peer_ty = self.inferExprType(bop.rhs);
         if (isCompareNumericPeer(self, peer_ty)) self.target_type = peer_ty;
     }
-    const float_operands = program_index_mod.floatOperandTypes(bop.*, self.operandType(self.inferExprType(bop.lhs)), self.operandType(self.inferExprType(bop.rhs)));
+    const float_operands = program_index_mod.floatOperandTypes(bop.*, self.operandType(self.inferExprType(bop.lhs)), self.operandType(self.inferExprType(bop.rhs)), self);
     const operand_tt = self.target_type;
-    if (ast.floatLiteral(bop.lhs) != null) self.target_type = float_operands.lhs;
+    if (self.isAdaptableFloat(bop.lhs)) self.target_type = float_operands.lhs;
     var lhs = self.lowerExpr(bop.lhs);
     self.target_type = operand_tt;
     if (comparison) self.target_type = null;
@@ -5509,7 +5500,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     // the lowered operand's concrete type rather than a guess.
     const lhs_ty = blk: {
         if (lhs_ref_pointee) |p| break :blk p;
-        if (ast.floatLiteral(bop.lhs) != null) break :blk self.builder.getRefType(lhs);
+        if (self.isAdaptableFloat(bop.lhs)) break :blk self.builder.getRefType(lhs);
         const it = self.inferExprType(bop.lhs);
         break :blk if (it == .unresolved) self.builder.getRefType(lhs) else it;
     };
@@ -5551,7 +5542,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
             break :blk lhs_ty;
         };
     }
-    if (ast.floatLiteral(bop.rhs) != null) self.target_type = float_operands.rhs;
+    if (self.isAdaptableFloat(bop.rhs)) self.target_type = float_operands.rhs;
     var rhs = self.lowerExpr(bop.rhs);
     const rhs_ref_pointee = self.refCapturePointee(bop.rhs);
     if (rhs_ref_pointee) |p| rhs = self.builder.load(rhs, p);
@@ -5568,6 +5559,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     if (bop.op == .eq or bop.op == .neq) {
         const l_actual = if (lhs_ty == .unresolved) self.builder.getRefType(lhs) else lhs_ty;
         const r_actual = blk: {
+            if (self.isAdaptableFloat(bop.rhs)) break :blk self.builder.getRefType(rhs);
             const it = rhs_ref_pointee orelse self.inferExprType(bop.rhs);
             break :blk if (it == .unresolved) self.builder.getRefType(rhs) else it;
         };
@@ -5606,7 +5598,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     // so static typing agrees with the value produced here.
     const rhs_ty = blk: {
         if (rhs_ref_pointee) |p| break :blk p;
-        if (ast.floatLiteral(bop.rhs) != null) break :blk self.builder.getRefType(rhs);
+        if (self.isAdaptableFloat(bop.rhs)) break :blk self.builder.getRefType(rhs);
         const it = self.inferExprType(bop.rhs);
         break :blk if (it == .unresolved) self.builder.getRefType(rhs) else it;
     };
