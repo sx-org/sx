@@ -54,6 +54,13 @@ fn staticHeadInSource(self: *Lowering, name: []const u8, source: ?[]const u8) St
     };
 }
 
+fn staticSelectedHead(self: *Lowering, member: Lowering.QualifiedMember) StaticStructHead {
+    const saved = self.lexicalContext();
+    defer self.restoreLexicalContext(saved);
+    self.setAuthorContext(member.author.id);
+    return staticHeadInSource(self, member.member, member.author.source);
+}
+
 /// Resolve the nominal TypeId named by a static-call head without emitting a
 /// diagnostic. A namespace-qualified head is resolved from the namespace's
 /// target module, so `a.Thing.make()` selects a's `Thing` even when another
@@ -70,7 +77,7 @@ pub fn staticStructHead(self: *Lowering, node: *const Node) StaticStructHead {
         .type_expr => |te| blk: {
             if (std.mem.indexOfScalar(u8, te.name, '.') != null) {
                 switch (self.qualifiedMemberVerdict(te.name)) {
-                    .selected => |sel| break :blk staticHeadInSource(self, sel.member, sel.target.target_module_path),
+                    .selected => |sel| break :blk staticSelectedHead(self, sel),
                     .ambiguous => break :blk .ambiguous,
                     .missing => break :blk .none,
                     .not_qualified => {},
@@ -82,7 +89,7 @@ pub fn staticStructHead(self: *Lowering, node: *const Node) StaticStructHead {
             const path = self.qualifiedTypeName(node) orelse break :blk .none;
             defer self.alloc.free(path);
             break :blk switch (self.qualifiedMemberVerdict(path)) {
-                .selected => |sel| staticHeadInSource(self, sel.member, sel.target.target_module_path),
+                .selected => |sel| staticSelectedHead(self, sel),
                 .ambiguous => .ambiguous,
                 .not_qualified, .missing => .none,
             };
@@ -728,7 +735,7 @@ pub fn followAliasChain(self: *Lowering, author: resolver_mod.RawAuthor) ?resolv
     defer self.restoreLexicalContext(saved_context);
     var cur = author;
     while (true) {
-        self.setCurrentEnvironment(self.program_index.declaration(cur.id).environment);
+        self.setAuthorContext(cur.id);
         const cd = constAliasOfRaw(cur.raw) orelse return cur;
         for (visited.items, 0..) |seen, i| {
             if (seen == cd) {

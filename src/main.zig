@@ -1067,6 +1067,9 @@ fn hasMainEntry(root: *const sx.ast.Node) bool {
                     .namespace_decl => |ns| {
                         if (walk(ns.decls)) return true;
                     },
+                    .scope_decl => |scope| {
+                        if (walk(scope.decls)) return true;
+                    },
                     else => {},
                 }
             }
@@ -1097,6 +1100,7 @@ fn extractLibraries(allocator: std.mem.Allocator, root: *const sx.ast.Node) ![]c
                         try l.append(a, ld.lib_name);
                     },
                     .namespace_decl => |ns| try walk(l, s, a, ns.decls),
+                    .scope_decl => |scope| try walk(l, s, a, scope.decls),
                     else => {},
                 }
             }
@@ -1121,6 +1125,7 @@ fn extractFrameworks(allocator: std.mem.Allocator, root: *const sx.ast.Node) ![]
                         try l.append(a, fd.name);
                     },
                     .namespace_decl => |ns| try walk(l, s, a, ns.decls),
+                    .scope_decl => |scope| try walk(l, s, a, scope.decls),
                     else => {},
                 }
             }

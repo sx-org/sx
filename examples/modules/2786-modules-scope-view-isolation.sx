@@ -1,0 +1,2 @@
+@import "2785-modules-scope-views/lib.sx";
+main :: () -> i64 { geo.baseOnly }

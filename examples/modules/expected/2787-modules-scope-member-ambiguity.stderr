@@ -1,0 +1,5 @@
+error: scope member 'geo.conflict' is ambiguous: it is declared in multiple reachable files
+  --> examples/modules/2787-modules-scope-member-ambiguity.sx:3:21
+   |
+ 3 | main :: () -> i64 { geo.conflict }
+   |                     ^^^^^^^^^^^^

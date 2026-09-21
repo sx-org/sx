@@ -1,0 +1,5 @@
+error: a scope is not a value
+  --> examples/modules/2789-modules-scope-not-value.sx:3:19
+   |
+ 3 | main :: () { x := Alias; }
+   |                   ^^^^^

@@ -69,7 +69,8 @@ pub const Selection = struct {
         for (nodes) |node| {
             const name = node.data.declName() orelse (if (node.data == .import_decl) node.data.import_decl.name else null) orelse continue;
             const id = try table.internNamedNode(if (self.context) |ctx| ctx.environment else null, name, node);
-            try self.own.put(name, .{ .table = table, .id = id });
+            const binding = if (node.data == .scope_decl) self.own.get(name) orelse Declaration{ .table = table, .id = id } else Declaration{ .table = table, .id = id };
+            try self.own.put(name, binding);
             if (node.data == .scope_decl) {
                 if (node.data.scope_decl.body_block) |block| try (try self.inBlock(block)).register(node.data.scope_decl.decls);
             }
@@ -349,7 +350,7 @@ pub const Selection = struct {
                 .scope => |scope| scope.context,
             };
             const members: lookup.Candidates = switch (target) {
-                .namespace => |ctx| .{ .own = lookup.own(ctx, member, requester) },
+                .namespace => |ctx| lookup.namespaceMembers(self, ctx, member, requester, self.alloc) catch @panic("out of memory"),
                 .scope => |scope| lookup.scopeMembers(self, scope, member, requester, self.alloc) catch @panic("out of memory"),
             };
             defer self.alloc.free(members.imported);
@@ -375,6 +376,14 @@ pub const Selection = struct {
         }
         if (self.own.get(name)) |decl| return .{ .selection = self, .declaration = decl };
         return one(self.flat.items, name, visiting);
+    }
+
+    pub fn isScope(self: *const Selection, name: []const u8) bool {
+        var visiting = std.ArrayList(Declaration).empty;
+        defer visiting.deinit(self.alloc);
+        const located = self.locate(name, &visiting) orelse return false;
+        const target = qualifier(located, &visiting) orelse return false;
+        return target == .scope;
     }
 
     pub fn select(self: *const Selection, name: []const u8) ?Declaration {

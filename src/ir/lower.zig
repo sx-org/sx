@@ -687,6 +687,7 @@ pub const Lowering = struct {
     program_index: ProgramIndex,
     current_source_file: ?[]const u8 = null,
     current_environment: ?imports_mod.EnvironmentId = null,
+    current_lexical_block: ?imports_mod.LexicalBlockId = null,
     /// Uncached nested bodies remain part of the active constant expansion.
     module_const_frame: ?*const ConstFoldFrame = null,
     untyped_const_frame: ?*const UntypedConstFrame = null,
@@ -1617,6 +1618,7 @@ pub const Lowering = struct {
         const saved = self.lexicalContext();
         defer self.restoreLexicalContext(saved);
         if (environment) |env| self.setCurrentEnvironment(env);
+        if (type_ann.lexical_block != null) self.setDeclarationContext(type_ann);
         return self.resolveType(type_ann);
     }
 
@@ -1624,6 +1626,7 @@ pub const Lowering = struct {
         const saved = self.lexicalContext();
         defer self.restoreLexicalContext(saved);
         if (environment) |env| self.setCurrentEnvironment(env);
+        if (p.type_expr.lexical_block != null) self.setDeclarationContext(p.type_expr);
         return self.resolveParamType(p);
     }
 
@@ -1991,7 +1994,7 @@ pub const Lowering = struct {
     /// module's own visibility context so the leaf is judged by that module.
     fn selectedMemberType(self: *Lowering, sel: QualifiedMember, is_raw: bool, span: ?ast.Span) TypeId {
         const saved = self.lexicalContext();
-        self.setCurrentEnvironment(self.program_index.declaration(sel.author.id).environment);
+        self.setAuthorContext(sel.author.id);
         defer self.restoreLexicalContext(saved);
         return self.resolveNominalLeaf(sel.member, is_raw, span);
     }
@@ -2003,7 +2006,7 @@ pub const Lowering = struct {
             .selected => |s| s,
             else => return null,
         };
-        const leaf = switch (self.selectNominalLeaf(sel.member, sel.target.environment, false)) {
+        const leaf = switch (self.selectNominalLeaf(sel.member, self.program_index.declaration(sel.author.id).environment.?, false)) {
             .resolved => |t| t,
             else => return null,
         };
@@ -2046,7 +2049,7 @@ pub const Lowering = struct {
             },
             .ambiguous => |alias| {
                 if (self.diagnostics) |d|
-                    d.addFmt(.err, span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{alias});
+                    alias.diagnose(d, span);
                 return .unresolved;
             },
             .not_qualified => {},
@@ -2099,6 +2102,9 @@ pub const Lowering = struct {
 
     /// Resolve a type node, checking type_bindings first for generic type params.
     pub fn resolveTypeWithBindings(self: *Lowering, node: *const Node) TypeId {
+        const saved_context = self.lexicalContext();
+        defer self.restoreLexicalContext(saved_context);
+        if (node.lexical_block != null) self.setDeclarationContext(node);
         // Prefix `*` in a type position: the value grammar parses `*T` as an
         // address_of unary (one glyph, kind-resolved), so type-position
         // consumers (@sizeOf, Type args, typed-literal heads) unwrap it here:
@@ -2378,6 +2384,7 @@ pub const Lowering = struct {
         if (authored_default) |dflt| {
             self.scope = null;
             self.setCurrentEnvironment(dflt.environment);
+            if (node.lexical_block != null) self.setDeclarationContext(node);
         }
         defer if (authored_default != null) {
             self.scope = saved_scope;
@@ -2407,7 +2414,9 @@ pub const Lowering = struct {
     /// by-value; `collectVisibleAuthors`'s `AuthorSet.flat` slice is backed by
     /// `self.alloc` and owned by the caller (`selectCallableAuthor` frees it).
     pub fn resolver(self: *Lowering) resolver_mod.Resolver {
-        return resolver_mod.Resolver.init(&self.program_index, self.alloc);
+        var result = resolver_mod.Resolver.init(&self.program_index, self.alloc);
+        result.context = if (self.current_environment) |env| self.lookupContext(env) else null;
+        return result;
     }
 
     pub fn genericResolver(self: *Lowering) GenericResolver {
@@ -2463,8 +2472,8 @@ pub const Lowering = struct {
 
         pub fn enter(lowering: *Lowering, node: *const Node) AuthorScope {
             const saved = lowering.lexicalContext();
-            if (node.source_file) |sf| {
-                lowering.setCurrentSourceFile(sf);
+            if (node.lexical_block != null or node.source_file != null) {
+                lowering.setDeclarationContext(node);
                 return .{ .lowering = lowering, .saved = saved, .switched = true };
             }
             return .{ .lowering = lowering, .saved = saved, .switched = false };
@@ -2478,15 +2487,17 @@ pub const Lowering = struct {
     pub const LexicalContext = struct {
         source_file: ?[]const u8,
         environment: ?imports_mod.EnvironmentId,
+        block: ?imports_mod.LexicalBlockId = null,
     };
 
     pub fn lexicalContext(self: *const Lowering) LexicalContext {
-        return .{ .source_file = self.current_source_file, .environment = self.current_environment };
+        return .{ .source_file = self.current_source_file, .environment = self.current_environment, .block = self.current_lexical_block };
     }
 
     pub fn restoreLexicalContext(self: *Lowering, context: LexicalContext) void {
         self.current_source_file = context.source_file;
         self.current_environment = context.environment;
+        self.current_lexical_block = context.block;
         if (self.diagnostics) |d| d.current_source_file = context.source_file;
     }
 
@@ -2504,6 +2515,7 @@ pub const Lowering = struct {
         self.restoreLexicalContext(.{
             .source_file = source_file,
             .environment = self.environmentForSource(source_file),
+            .block = if (source_file != null and self.current_source_file != null and std.mem.eql(u8, source_file.?, self.current_source_file.?)) self.current_lexical_block else null,
         });
     }
 
@@ -2511,15 +2523,37 @@ pub const Lowering = struct {
         self.restoreLexicalContext(.{
             .source_file = if (environment) |env| self.program_index.declarations().environment(env).source else null,
             .environment = environment,
+            .block = if (environment == self.current_environment) self.current_lexical_block else null,
         });
     }
 
+    pub fn lookupContext(self: *Lowering, environment: imports_mod.EnvironmentId) resolver_mod.LookupContext {
+        return .{ .table = self.program_index.declarations(), .environment = environment, .block = if (environment == self.current_environment) self.current_lexical_block else null };
+    }
+
+    pub fn setAuthorContext(self: *Lowering, id: imports_mod.DeclId) void {
+        const info = self.program_index.declaration(id);
+        self.setCurrentEnvironment(info.environment);
+        self.current_lexical_block = info.lexical_block;
+    }
+
+    pub fn setFunctionContext(self: *Lowering, fd: *const ast.FnDecl) void {
+        if (fd.body.lexical_block != null) {
+            self.setDeclarationContext(fd.body);
+        } else self.setCurrentEnvironment(self.functionEnvironment(fd));
+    }
+
     pub fn setDeclarationContext(self: *Lowering, node: *const Node) void {
+        if (node.lexical_block) |block| {
+            self.setCurrentEnvironment(self.program_index.declarations().block(block).environment);
+            self.current_lexical_block = block;
+            return;
+        }
         if (self.program_index.declarations().by_node.get(@intFromPtr(node))) |id| {
-            self.setCurrentEnvironment(self.program_index.declaration(id).environment);
+            self.setAuthorContext(id);
         } else if (imports_mod.rawDeclRefOf(node)) |ref| {
             if (self.program_index.idForRef(ref)) |id| {
-                self.setCurrentEnvironment(self.program_index.declaration(id).environment);
+                self.setAuthorContext(id);
                 return;
             }
             self.setCurrentSourceFile(node.source_file);
@@ -2998,64 +3032,27 @@ pub const Lowering = struct {
         return null;
     }
 
-    /// The declaration authored by a namespace target for `name`, or null when
-    /// the name is merely visible to the target through one of its flat
-    /// imports. Qualified access exposes only authored members; the target's
-    /// direct flat imports remain available while lowering its own bodies but
-    /// are not re-exported (specs.md §9).
-    pub fn namespaceOwnMember(self: *Lowering, target: imports_mod.NamespaceTarget, name: []const u8) ?resolver_mod.RawAuthor {
-        var res = self.resolver();
-        return res.collectNamespaceAuthors(target, name).own;
-    }
-
-    /// True when the target authors a named compiler-special declaration that
-    /// intentionally does not enter `RawDeclRef` (currently `@library`,
-    /// `@framework`, C-import metadata, or a UFCS alias). These names belong to
-    /// their existing non-type/value resolution domains; the dotted selector
-    /// must fall back rather than misdiagnose them as a missing namespace
-    /// member. In particular stdlib's `libc :: c.libc` re-export is a library
-    /// handle alias, not a value/type alias (issue 0325).
-    pub fn namespaceOwnSpecialMember(self: *Lowering, target: imports_mod.NamespaceTarget, name: []const u8) bool {
-        for (target.member_ids) |id| {
-            const decl = self.program_index.declaration(id).node.?;
-            // A private special member (library handle, UFCS alias, …) is not
-            // part of the namespace surface for any other source file — the
-            // dotted selector must report the member missing rather than fall
-            // through to the name's process-global resolution domain.
-            if (decl.visibility == .private) {
-                const authority = decl.source_file orelse target.target_module_path;
-                const requester = self.current_source_file orelse self.main_file orelse authority;
-                if (!std.mem.eql(u8, requester, authority)) continue;
-            }
-            const own_name: ?[]const u8 = switch (decl.data) {
-                .library_decl => |d| d.name,
-                .framework_decl => |d| d.name,
-                .c_import_decl => |d| d.name,
-                .ufcs_alias => |d| d.name,
-                else => null,
-            };
-            if (own_name) |n| if (std.mem.eql(u8, n, name)) return true;
-        }
-        return false;
-    }
-
-    /// Exact author selected by a dotted namespace-member path. `target` is
-    /// the namespace whose OWN declaration supplies `member`; callers must
-    /// keep using that source/author rather than falling back to a process-
-    /// global name map.
     pub const QualifiedMember = struct {
-        target: imports_mod.NamespaceTarget,
         author: resolver_mod.RawAuthor,
         member: []const u8,
     };
 
-    pub const MissingMember = struct { namespace: []const u8, member: []const u8, environment: imports_mod.EnvironmentId };
+    pub const AmbiguousQualified = struct {
+        name: []const u8,
+        scope_member: bool,
 
-    /// Diagnostic-free result of resolving a full dotted namespace-member
-    /// path (`facade.engine_alias.Member`) from an explicit source authority.
-    /// Intermediate segments are namespace aliases and obey the same carry
-    /// rule as a root alias: own edge first, otherwise exactly one direct flat
-    /// hop. The terminal segment must be authored by the exact final target.
+        pub fn diagnose(self: AmbiguousQualified, diagnostics: *errors.DiagnosticList, span: ?ast.Span) void {
+            if (self.scope_member) {
+                diagnostics.addFmt(.err, span, "scope member '{s}' is ambiguous: it is declared in multiple reachable files", .{self.name});
+            } else {
+                diagnostics.addFmt(.err, span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{self.name});
+            }
+        }
+    };
+
+    pub const MissingMember = struct { namespace: []const u8, member: []const u8, environment: ?imports_mod.EnvironmentId };
+
+    /// Scope headers retain the querying view; aliases resolve in their author context.
     pub const QualifiedMemberVerdict = union(enum) {
         /// The root is not a namespace alias from `from`, or an intermediate
         /// segment is an ordinary authored value/type member. The caller may
@@ -3065,7 +3062,7 @@ pub const Lowering = struct {
         missing: MissingMember,
         /// The named root/intermediate alias is carried from multiple direct
         /// flat imports to distinct targets.
-        ambiguous: []const u8,
+        ambiguous: AmbiguousQualified,
         selected: QualifiedMember,
     };
 
@@ -3105,69 +3102,68 @@ pub const Lowering = struct {
         return false;
     }
 
-    /// Resolve a complete dotted namespace-member spelling from `from`.
-    ///
-    /// For `facade.engine_alias.Member`, `facade` is resolved from `from`, then
-    /// `engine_alias` from the facade target's source, and only then `Member`
-    /// is proved as an OWN declaration of the exact inner target. A namespace
-    /// alias hidden behind two flat edges therefore stops at `.missing` before
-    /// any global `Member` lookup can cross-bind. An ordinary authored
-    /// intermediate (`facade.Kind.one`) returns `.not_qualified`; callers can
-    /// resolve `facade.Kind` as the namespace terminal and apply `.one` as an
-    /// enum/static/value member.
     pub fn qualifiedMemberVerdictFrom(self: *Lowering, path: []const u8, from: []const u8) QualifiedMemberVerdict {
         const first_dot = std.mem.indexOfScalar(u8, path, '.') orelse return .not_qualified;
-        if (first_dot == 0 or first_dot + 1 >= path.len) return .not_qualified;
-
-        const root = path[0..first_dot];
-        var target = switch (self.namespaceAliasVerdictFrom(root, from)) {
-            .target => |t| t,
-            .ambiguous => return .{ .ambiguous = root },
-            .none => return .not_qualified,
+        const table = self.program_index.declarations();
+        var resolver_ = self.resolver();
+        const context = self.lookupContext(self.environmentForSource(from).?);
+        var selected = switch (resolver_.selectPath(path[0..first_dot], context)) {
+            .selected => |value| value,
+            .ambiguous => {
+                const authors = resolver_.collectInContext(path[0..first_dot], context);
+                defer self.alloc.free(authors.flat);
+                for (authors.flat) |author| {
+                    if (resolver_.qualifier(.{ .declaration = author.id, .view = context }) != null)
+                        return .{ .ambiguous = .{ .name = path[0..first_dot], .scope_member = false } };
+                }
+                return .not_qualified;
+            },
+            .missing => return .not_qualified,
         };
-        var namespace_name = root;
-        var segment_start = first_dot + 1;
-
-        while (std.mem.indexOfScalar(u8, path[segment_start..], '.')) |rel_dot| {
-            const dot = segment_start + rel_dot;
-            const segment = path[segment_start..dot];
-            if (segment.len == 0) return .not_qualified;
-
-            // An ordinary member authored by the current target shadows a
-            // same-spelled namespace alias carried by one of its flat imports.
-            // This is an ordinary field/static chain, not a nested namespace.
-            if (self.namespaceOwnMember(target, segment)) |own| {
-                if (own.raw != .namespace_decl) return .not_qualified;
-            }
-            if (self.namespaceOwnSpecialMember(target, segment)) return .not_qualified;
-
-            target = switch (self.namespaceAliasVerdictIn(segment, target.environment)) {
-                .target => |t| t,
-                .ambiguous => return .{ .ambiguous = segment },
-                .none => return .{ .missing = .{ .namespace = namespace_name, .member = segment, .environment = target.environment } },
+        var qualifier_start: usize = 0;
+        var start = first_dot + 1;
+        while (true) {
+            const qualifier = resolver_.qualifier(selected) orelse return .not_qualified;
+            const end = if (std.mem.indexOfScalarPos(u8, path, start, '.')) |dot| dot else path.len;
+            const name = path[start..end];
+            selected = switch (resolver_.selectMember(qualifier, name, from)) {
+                .selected => |value| value,
+                .ambiguous => return .{ .ambiguous = .{ .name = path[0..end], .scope_member = qualifier == .scope } },
+                .missing => return .{ .missing = .{
+                    .namespace = path[qualifier_start .. start - 1],
+                    .member = name,
+                    .environment = switch (qualifier) {
+                        .namespace => |namespace| namespace.environment,
+                        .scope => |scope| table.findEnvironment(scope.context.source(), scope.path),
+                    },
+                } },
             };
-            // Deep traversal keeps the ORIGINAL requester's authority: a
-            // private intermediate alias belongs to the file that declared it
-            // and is not part of that module's namespace surface for anyone
-            // else.
-            if (target.visibility == .private and !std.mem.eql(u8, from, target.importer_source)) {
-                return .{ .missing = .{ .namespace = namespace_name, .member = segment, .environment = target.environment } };
+            if (end == path.len) {
+                const info = table.get(selected.declaration);
+                const author = table.author(selected.declaration, info.source.?) orelse return .not_qualified;
+                return .{ .selected = .{ .author = author, .member = name } };
             }
-            namespace_name = segment;
-            segment_start = dot + 1;
-            if (segment_start >= path.len) return .not_qualified;
+            qualifier_start = start;
+            start = end + 1;
         }
+    }
 
-        const member = path[segment_start..];
-        if (member.len == 0) return .not_qualified;
-        const author = self.namespaceOwnMember(target, member) orelse {
-            if (self.namespaceOwnSpecialMember(target, member)) return .not_qualified;
-            return .{ .missing = .{ .namespace = namespace_name, .member = member, .environment = target.environment } };
-        };
-        if (author.visibility == .private and !std.mem.eql(u8, from, author.source)) {
-            return .{ .missing = .{ .namespace = namespace_name, .member = member, .environment = target.environment } };
-        }
-        return .{ .selected = .{ .target = target, .author = author, .member = member } };
+    pub fn isScopeDesignator(self: *Lowering, node: *const Node) bool {
+        const environment = self.current_environment orelse return false;
+        const path = imports_mod.aliasPath(self.alloc, node) orelse return false;
+        defer self.alloc.free(path);
+        const head = path[0 .. std.mem.indexOfScalar(u8, path, '.') orelse path.len];
+        if (self.identifierBindsVisibleValue(head)) return false;
+        var resolver_ = self.resolver();
+        const selection = resolver_.selectPath(path, self.lookupContext(environment));
+        if (selection != .selected) return false;
+        const qualifier = resolver_.qualifier(selection.selected) orelse return false;
+        return qualifier == .scope;
+    }
+
+    pub fn selectedFunction(self: *Lowering, member: QualifiedMember) ?*const ast.FnDecl {
+        const selected = self.callableAuthorFn(member.author) orelse return null;
+        return selected.decl;
     }
 
     /// A name-lookup MISS is the one non-monotone half of the declaration
@@ -3177,7 +3173,7 @@ pub const Lowering = struct {
     /// at finality the ordinary namespace diagnostic stands.
     pub fn namespaceMissWaits(self: *Lowering, miss: MissingMember) bool {
         if (!self.expansion.scheduled()) return false;
-        if (!self.expansion.mayDeclare(miss.environment, miss.member)) return false;
+        if (!self.expansion.mayDeclare(miss.environment orelse return false, miss.member)) return false;
         self.expansion.awaitFact(std.fmt.allocPrint(self.alloc, "'{s}' to declare '{s}'", .{
             miss.namespace, miss.member,
         }) catch "a module scope to be final");
@@ -3189,13 +3185,9 @@ pub const Lowering = struct {
         return self.qualifiedMemberVerdictFrom(path, from);
     }
 
-    /// Function-valued projection of the full-path selector. The path must
-    /// first prove an exact terminal author; namespaceFnMember then follows an
-    /// explicit function alias authored by that target without consulting a
-    /// same-spelled global winner.
     pub fn qualifiedFnMember(self: *Lowering, path: []const u8) ?*const ast.FnDecl {
         return switch (self.qualifiedMemberVerdict(path)) {
-            .selected => |sel| self.namespaceFnMember(&sel.target, sel.member),
+            .selected => |sel| self.selectedFunction(sel),
             .not_qualified, .missing, .ambiguous => null,
         };
     }
@@ -3628,6 +3620,7 @@ pub const Lowering = struct {
     pub const globalValueRef = lower_comptime.globalValueRef;
     pub const sourceModuleConst = lower_comptime.sourceModuleConst;
     pub const pinConstEnvironment = lower_comptime.pinConstEnvironment;
+    pub const pinConstValue = lower_comptime.pinConstValue;
     pub const foldComptimeFloatInit = lower_comptime.foldComptimeFloatInit;
 
     // --- lower/stmt.zig (lower_stmt) ---

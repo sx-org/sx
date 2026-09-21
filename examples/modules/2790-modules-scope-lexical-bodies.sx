@@ -1,0 +1,27 @@
+@import "modules/std.sx";
+geo :: scope {
+    @import "2790-modules-scope-lexical-bodies/left.sx";
+    Count :: answer + 1;
+    read :: (x: Number = answer) -> Number { x }
+    generic :: ($T: Type, x: T) -> Number { answer + x }
+    Box :: struct($T: Type) {
+        value: T;
+        result :: (self: *@This()) -> Number { answer + self.value }
+    }
+}
+geo :: scope {
+    @import "2790-modules-scope-lexical-bodies/right.sx";
+    other :: () -> Number { (answer + Count).(Number) }
+}
+other :: scope {
+    @import "2790-modules-scope-lexical-bodies/right.sx";
+    Box :: struct($T: Type) {
+        value: T;
+        result :: (self: *@This()) -> Number { answer + self.value }
+    }
+}
+main :: () {
+    a: geo.Box(i64) = .{ value = 10 };
+    b: other.Box(i32) = .{ value = 20 };
+    print("{} {} {} {} {}\n", geo.read(), geo.other(), geo.generic(i64, 2), a.result(), b.result());
+}

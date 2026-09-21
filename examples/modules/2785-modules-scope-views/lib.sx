@@ -1,0 +1,7 @@
+@import "base.sx";
+geo :: scope {
+    conflict :: 1;
+    read :: () -> i64 { value }
+    generic :: ($T: Type, x: T) -> i64 { value + x }
+}
+Saved :: geo;

@@ -1197,7 +1197,8 @@ fn resolveBlockImports(
             reportDuplicateDecl(diagnostics, added, decl);
             if (added) {
                 const child = try cache.declarations.addScopeBlock(block_id, decl);
-                _ = try resolveBlockImports(allocator, io, &decl.data.scope_decl.decls, child, base_dir, file_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
+                const body = try resolveBlockImports(allocator, io, &decl.data.scope_decl.decls, child, base_dir, file_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
+                decl.data.scope_decl.decls = body.decls;
             }
             continue;
         }

@@ -463,7 +463,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
             if (self.qualifiedTypeName(fa.object)) |path| {
                 defer self.alloc.free(path);
                 switch (self.qualifiedMemberVerdict(path)) {
-                    .selected => |sel| resolved = switch (self.selectNominalLeaf(sel.member, sel.target.environment, false)) {
+                    .selected => |sel| resolved = switch (self.selectNominalLeaf(sel.member, self.program_index.declaration(sel.author.id).environment.?, false)) {
                         .resolved => |ty| ty,
                         else => .unresolved,
                     },
@@ -1421,7 +1421,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
                     if (synth) |n| {
                         n.* = .{ .span = span, .data = .{ .identifier = .{ .name = sel.member } } };
                         const saved_src = self.lexicalContext();
-                        self.setCurrentEnvironment(self.program_index.declaration(sel.author.id).environment);
+                        self.setAuthorContext(sel.author.id);
                         defer self.restoreLexicalContext(saved_src);
                         return self.lowerExpr(n);
                     }
@@ -1434,7 +1434,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
                 },
                 .ambiguous => |alias| {
                     if (self.diagnostics) |d|
-                        d.addFmt(.err, span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{alias});
+                        alias.diagnose(d, span);
                     return Ref.none;
                 },
                 .not_qualified => {},
@@ -1454,7 +1454,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
             switch (self.qualifiedMemberVerdict(object_path)) {
                 .selected => |sel| {
                     const saved_global_src = self.lexicalContext();
-                    self.setCurrentEnvironment(self.program_index.declaration(sel.author.id).environment);
+                    self.setAuthorContext(sel.author.id);
                     var global_info: ?program_index_mod.GlobalInfo = null;
                     if (self.program_index.lookup(.global, sel.member)) |fallback| {
                         switch (self.selectGlobalAuthor(sel.member)) {
@@ -1470,7 +1470,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
                     }
 
                     const saved_src = self.lexicalContext();
-                    self.setCurrentEnvironment(self.program_index.declaration(sel.author.id).environment);
+                    self.setAuthorContext(sel.author.id);
                     const ty = self.resolveNominalLeaf(sel.member, false, span);
                     self.restoreLexicalContext(saved_src);
                     if (ty != .unresolved and !ty.isBuiltin()) {
@@ -1493,7 +1493,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
                         n.* = .{ .span = fa.object.span, .data = .{ .identifier = .{ .name = sel.member } } };
                         const stripped = ast.FieldAccess{ .object = n, .field = fa.field, .is_optional = fa.is_optional };
                         const saved_member_src = self.lexicalContext();
-                        self.setCurrentEnvironment(self.program_index.declaration(sel.author.id).environment);
+                        self.setAuthorContext(sel.author.id);
                         defer self.restoreLexicalContext(saved_member_src);
                         return self.lowerFieldAccess(&stripped, span);
                     }
@@ -1506,7 +1506,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
                 },
                 .ambiguous => |alias| {
                     if (self.diagnostics) |d|
-                        d.addFmt(.err, fa.object.span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{alias});
+                        alias.diagnose(d, fa.object.span);
                     return Ref.none;
                 },
                 .not_qualified => {},
@@ -3727,6 +3727,10 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
     // the body's defining-module pin for the whole recursive lowering.
     const author = Lowering.AuthorScope.enter(self, node);
     defer author.leave();
+    if (self.isScopeDesignator(node)) {
+        if (self.diagnostics) |d| d.add(.err, "a scope is not a value", node.span);
+        return Ref.none;
+    }
     const result = lowerExprInner(self, node);
     const ty = self.builder.getRefType(result);
     const produces_failable = blk: {

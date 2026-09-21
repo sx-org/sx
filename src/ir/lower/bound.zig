@@ -160,7 +160,7 @@ pub fn resolveHead(
                     if (self.open_sets.getPtr(osd)) |set| return .{ .open_set = .{ .ty = set.ty, .name = osd.name } };
                 },
                 .protocol_decl => |pd| {
-                    if (self.protocolResolver().resolveProtocol(pd.name, sel.target.target_module_path)) |p| {
+                    if (self.protocolResolver().resolveProtocol(pd.name, sel.author.source)) |p| {
                         return .{ .protocol = .{ .ty = p.ty, .name = pd.name, .params = p.decl.type_params.len } };
                     }
                 },

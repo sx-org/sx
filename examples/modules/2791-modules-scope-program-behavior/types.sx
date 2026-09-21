@@ -1,0 +1,7 @@
+api :: scope {
+    Item :: struct {
+        value: i64;
+        make :: () -> @This() { .{ value = 7 } }
+    }
+    Read :: interface { read :: (self: *Self) -> i64; }
+}

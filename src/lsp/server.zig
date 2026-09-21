@@ -356,6 +356,14 @@ pub const Server = struct {
             }
         }
 
+        if (sx.sema.findReferenceAtOffset(sema.references, offset)) |ref_idx| {
+            const ref = sema.references[ref_idx];
+            if (ref.symbol_index < sema.symbols.len) {
+                const sym = sema.symbols[ref.symbol_index];
+                if (try self.sendSymbolLocationWithOrigin(id_json, doc, sym, ref.span)) return;
+            }
+        }
+
         // 1. Qualified name (e.g. "std.print" or UFCS "list.append") — only
         // when the cursor is ON the member part; the origin span is just the
         // member, so the editor underlines `init`, not `BitWriter.init`. On
@@ -402,15 +410,6 @@ pub const Server = struct {
                     const lookup = self.findTypeDeclNode(sema, doc, sym.name) orelse continue;
                     if (try self.sendMemberLocation(id_json, lookup, name, doc, origin)) return;
                 }
-            }
-        }
-
-        // 2. Reference at offset → jump to definition
-        if (sx.sema.findReferenceAtOffset(sema.references, offset)) |ref_idx| {
-            const ref = sema.references[ref_idx];
-            if (ref.symbol_index < sema.symbols.len) {
-                const sym = sema.symbols[ref.symbol_index];
-                if (try self.sendSymbolLocationWithOrigin(id_json, doc, sym, ref.span)) return;
             }
         }
 

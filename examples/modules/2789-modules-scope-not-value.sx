@@ -1,0 +1,3 @@
+geo :: scope { value :: 1; }
+Alias :: geo;
+main :: () { x := Alias; }

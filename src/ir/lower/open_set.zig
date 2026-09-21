@@ -229,7 +229,7 @@ pub fn setDeclVerdict(self: *Lowering, path: []const u8, from: ?[]const u8) Head
                 .const_decl => |cd| blk: {
                     const saved = self.lexicalContext();
                     defer self.restoreLexicalContext(saved);
-                    self.setCurrentEnvironment(self.program_index.declaration(sel.author.id).environment);
+                    self.setAuthorContext(sel.author.id);
                     const ty = self.resolveTypeArg(cd.value);
                     if (ty == .unresolved) break :blk .none;
                     const set = setOf(self, ty) orelse break :blk .none;

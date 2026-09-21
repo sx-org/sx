@@ -1308,7 +1308,7 @@ pub fn monomorphizePackFn(
     // `monomorphizeFunction` pin. The comptime call-site args below are
     // lowered AFTER this restore, in the caller's context.
     const saved_sig_src = self.lexicalContext();
-    if (self.functionEnvironment(fd)) |env| self.setCurrentEnvironment(env);
+    self.setFunctionContext(fd);
 
     const declared_is_generic_ret = blk: {
         const rt = fd.return_type orelse break :blk false;
@@ -1440,7 +1440,7 @@ pub fn monomorphizePackFn(
     // synthesized/sourceless body keeps the caller's context.
     const saved_source = self.lexicalContext();
     defer self.restoreLexicalContext(saved_source);
-    if (self.functionEnvironment(fd)) |env| self.setCurrentEnvironment(env);
+    self.setFunctionContext(fd);
 
     // Delegate to the shared body owner (mirrors the decl + generic paths) so
     // this pack-fn instance can't drift from them.

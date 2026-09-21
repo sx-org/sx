@@ -1,0 +1,5 @@
+error: namespace 'geo' has no member 'baseOnly'
+  --> examples/modules/2786-modules-scope-view-isolation.sx:2:21
+   |
+ 2 | main :: () -> i64 { geo.baseOnly }
+   |                     ^^^^^^^^^^^^
