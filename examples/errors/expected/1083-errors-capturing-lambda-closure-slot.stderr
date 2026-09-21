@@ -1,8 +1,13 @@
-error: cannot initialize 'h' of type 'Closure(i64) -> i64' with a value of type '__env_3'
-  --> examples/errors/1083-errors-capturing-lambda-closure-slot.sx:13:31
+error: a capturing lambda does not erase to 'Closure(i64) -> i64' — its environment has no home here
+  --> examples/errors/1083-errors-capturing-lambda-closure-slot.sx:13:5
    |
 13 |     h : Closure(i64) -> i64 = |x: i64|_{ n = n } x + n;   // reject: annotated slot
-   |                               ^^^^^^^^^^^^^^^^^^^^^^^^
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+help: persist it with 'closure(f)', or 'closure(f, alloc)' to choose the allocator; a pointer to it ('*f') erases by borrowing
+   |
+13 |     h : Closure(i64) -> i64 = |x: i64|_{ n = n } x + n;   // reject: annotated slot
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: a capturing lambda does not erase to 'Closure(i64) -> i64' — its environment has no home here
   --> examples/errors/1083-errors-capturing-lambda-closure-slot.sx:15:10

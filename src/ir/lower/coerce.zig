@@ -1274,6 +1274,11 @@ fn checkAssignableWith(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: as
         }
     }
     if (self.conversionAvailable(src_ty, dst_ty, .implicit)) return true;
+    // Lowering owns the specific refusal diagnostics for these pairs.
+    const plan = self.coercionResolver().classify(src_ty, dst_ty);
+    if (plan.refuses() or plan == .unbox_any) return true;
+    if (!src_ty.isBuiltin() and !dst_ty.isBuiltin() and
+        self.module.types.get(src_ty) == .@"error" and self.module.types.get(dst_ty) == .@"error") return true;
     if (self.diagnostics) |d| {
         switch (diag) {
             .formation => d.addFmt(.err, span, "'{s}' cannot form an initializer for '{s}': no conversion applies", .{ self.formatSourceTypeName(src_ty), self.formatSourceTypeName(dst_ty) }),

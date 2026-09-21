@@ -1,8 +1,14 @@
-error: cannot initialize 'narrowed' of type 'Narrow' with a value of type 'Broad'
-  --> examples/errors/1076-errors-cross-set-value-reject.sx:23:25
+error: cannot coerce error set 'Broad' to 'Narrow': 'Wide' is not a member of 'Narrow'
+  --> examples/errors/1076-errors-cross-set-value-reject.sx:23:5
    |
 23 |     narrowed : Narrow = be;      // error: neither Broad member is in Narrow
-   |                         ^^
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+error: cannot coerce error set 'Broad' to 'Narrow': 'Extra' is not a member of 'Narrow'
+  --> examples/errors/1076-errors-cross-set-value-reject.sx:23:5
+   |
+23 |     narrowed : Narrow = be;      // error: neither Broad member is in Narrow
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
 
 error: cannot coerce error set 'Broad' to 'Narrow': 'Wide' is not a member of 'Narrow'
   --> examples/errors/1076-errors-cross-set-value-reject.sx:24:5
