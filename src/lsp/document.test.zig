@@ -787,3 +787,153 @@ test "parsed scopes and spreads report unsupported semantics" {
     try std.testing.expectEqualStrings("scope spreads are not supported", sema.diagnostics[1].message);
     try std.testing.expectEqual(@as(usize, 0), sema.symbols.len);
 }
+
+const CompilerFacts = struct {
+    table: sx.imports.DeclTable,
+    root: *@import("../ast.zig").Node,
+    diagnostics: @import("../errors.zig").DiagnosticList,
+    flat_imports: std.StringHashMap(std.StringHashMap(void)),
+};
+
+fn compilerFacts(alloc: std.mem.Allocator, path: []const u8, source: [:0]const u8) !CompilerFacts {
+    var parser = try @import("../parser.zig").Parser.init(alloc, source);
+    const root = try parser.parse();
+    var cache = sx.imports.ModuleCache.init(alloc);
+    var chain = std.StringHashMap(void).init(alloc);
+    var flat = std.StringHashMap(std.StringHashMap(void)).init(alloc);
+    var diagnostics = @import("../errors.zig").DiagnosticList.init(alloc, source, path);
+    _ = try sx.imports.resolveImports(alloc, test_io(), root, sx.imports.dirName(path), path, &chain, &cache, null, &diagnostics, &.{}, null, &flat);
+    return .{ .table = cache.declarations, .root = root, .diagnostics = diagnostics, .flat_imports = flat };
+}
+
+fn expectSameFileFacts(compiler: *const sx.imports.DeclTable, editor: *const sx.imports.DeclTable, path: []const u8) !void {
+    const source = compiler.fileScope(path).?.source;
+    var count: usize = 0;
+    for (compiler.blocks.items) |block| {
+        const env = compiler.environment(block.environment);
+        if (!std.mem.eql(u8, source, env.source)) continue;
+        count += 1;
+        const other = for (editor.blocks.items) |candidate| {
+            if (std.meta.eql(block.node.span, candidate.node.span) and std.meta.activeTag(block.node.data) == std.meta.activeTag(candidate.node.data)) break candidate;
+        } else return error.MissingEditorBlock;
+        const other_env = editor.environment(other.environment);
+        try std.testing.expectEqualDeep(env.scope_path, other_env.scope_path);
+        try std.testing.expectEqual(env.scope == null, other_env.scope == null);
+        if (env.scope) |id| try std.testing.expectEqualDeep(compiler.scopeInfo(id).path, editor.scopeInfo(other_env.scope.?).path);
+        try std.testing.expectEqual(block.parent == null, other.parent == null);
+        if (block.parent) |parent| try std.testing.expectEqualDeep(compiler.block(parent).node.span, editor.block(other.parent.?).node.span);
+        try std.testing.expectEqual(block.imports.items.len, other.imports.items.len);
+        for (block.imports.items, other.imports.items) |left, right| {
+            try std.testing.expectEqualDeep(left.data.import_decl, right.data.import_decl);
+            try std.testing.expectEqualDeep(left.span, right.span);
+        }
+        try std.testing.expectEqual(env.names.count(), other_env.names.count());
+        var names = env.names.iterator();
+        while (names.next()) |entry| {
+            const left = compiler.get(entry.value_ptr.*);
+            const right = editor.get(other_env.names.get(entry.key_ptr.*).?);
+            try std.testing.expectEqual(left.kind, right.kind);
+            try std.testing.expectEqualDeep(left.span, right.span);
+            try std.testing.expectEqualDeep(compiler.block(left.lexical_block.?).node.span, editor.block(right.lexical_block.?).node.span);
+            try std.testing.expectEqual(left.scope == null, right.scope == null);
+            if (left.scope) |id| try std.testing.expectEqualDeep(compiler.scopeInfo(id).path, editor.scopeInfo(right.scope.?).path);
+        }
+    }
+    try std.testing.expectEqual(count, editor.blocks.items.len);
+}
+
+test "compiler and editor retain scope block imports without file-level leakage" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const io = test_io();
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.createDir(io, "parts", .default_dir);
+    try tmp.dir.writeFile(io, .{ .sub_path = "parts/left.sx", .data = "left :: 10;" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "right.sx", .data = "right :: 20;" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "local.h", .data = "long c_value(void);" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "other.sx", .data = "geo :: scope { x :: 30; }" });
+    const source: [:0]const u8 =
+        \\@import "other.sx";
+        \\geo :: scope {
+        \\    @import "parts";
+        \\    n :: @import "right.sx";
+        \\    x :: 1;
+        \\    detail :: scope { read :: () -> i64 { x } }
+        \\}
+        \\geo :: scope {
+        \\    @import "right.sx";
+        \\    y :: 2;
+        \\    c :: @import c { @include "local.h"; };
+        \\    detail :: scope { value :: 3; }
+        \\    ..@import "absent.sx";
+        \\    ..geo;
+        \\}
+        \\x :: 4;
+    ;
+    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data = source });
+    var dirbuf: [4096]u8 = undefined;
+    const dirlen = try tmp.dir.realPath(io, &dirbuf);
+    const path = try std.fmt.allocPrint(alloc, "{s}/main.sx", .{dirbuf[0..dirlen]});
+    var compiler = try compilerFacts(alloc, path, source);
+    try std.testing.expectEqual(@as(usize, 0), compiler.diagnostics.items.items.len);
+    var store = doc_mod.DocumentStore.init(alloc, io, &.{}, alloc);
+    const doc = try store.openOrUpdate(path, source, 1);
+    try store.analyzeDocument(doc);
+    const editor = doc.declarations.?.table;
+    try expectSameFileFacts(&compiler.table, editor, path);
+    const first = compiler.root.data.root.decls[1].data.scope_decl.body_block.?;
+    const second = compiler.root.data.root.decls[2].data.scope_decl.body_block.?;
+    const geo = compiler.table.block(first).environment;
+    try std.testing.expect(first != second);
+    try std.testing.expectEqual(geo, compiler.table.block(second).environment);
+    try std.testing.expectEqual(@as(usize, 2), compiler.table.block(first).imports.items.len);
+    try std.testing.expectEqual(@as(usize, 1), compiler.table.block(second).imports.items.len);
+    const root_env = compiler.table.fileEnvironment(path).?;
+    try std.testing.expectEqual(@as(u32, 1), compiler.table.directImports(&compiler.flat_imports, root_env).?.count());
+    const other_doc = try store.getOrLoad(doc.imports[0].path);
+    try expectSameFileFacts(&compiler.table, other_doc.declarations.?.table, other_doc.path);
+    const other_scope = compiler.table.get(compiler.table.fileScope(other_doc.path).?.names.get("geo").?).scope.?;
+    try std.testing.expectEqual(compiler.table.environment(geo).scope.?, other_scope);
+    for (doc.sema.?.symbols) |symbol| {
+        try std.testing.expect(!std.mem.eql(u8, symbol.name, "left") and !std.mem.eql(u8, symbol.name, "right"));
+    }
+    const read = compiler.root.data.root.decls[1].data.scope_decl.decls[3].data.scope_decl.decls[0];
+    try std.testing.expectEqual(read.lexical_block.?, read.data.fn_decl.body.lexical_block.?);
+    var subst = @import("../ast.zig").Substitution.init(alloc);
+    const cloned = try @import("../ast.zig").cloneWithSubst(alloc, read, &subst);
+    try std.testing.expectEqual(read.lexical_block.?, cloned.data.fn_decl.body.lexical_block.?);
+}
+
+test "scope merge duplicates and scope-name collisions diagnose the second declaration" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source: [:0]const u8 =
+        \\geo :: scope { x :: 1; }
+        \\geo :: scope { x :: 2; }
+        \\geo :: 3;
+        \\plain :: 4;
+        \\plain :: scope {}
+    ;
+    var compiler = try compilerFacts(alloc, "duplicate-scopes.sx", source);
+    const nodes = compiler.root.data.root.decls;
+    const spans = [_]@import("../ast.zig").Span{ nodes[1].data.scope_decl.decls[0].span, nodes[2].span, nodes[4].span };
+    try std.testing.expectEqual(spans.len, compiler.diagnostics.items.items.len);
+    for (spans, compiler.diagnostics.items.items) |span, diagnostic| {
+        try std.testing.expectEqualDeep(span, diagnostic.span);
+        try std.testing.expect(std.mem.indexOf(u8, diagnostic.message, "duplicate top-level declaration") != null);
+    }
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const doc = try store.openOrUpdate("duplicate-scopes.sx", source, 1);
+    try store.analyzeDocument(doc);
+    var count: usize = 0;
+    for (doc.sema.?.diagnostics) |diagnostic| {
+        if (diagnostic.level != .err or !std.mem.eql(u8, diagnostic.message, "duplicate declaration")) continue;
+        try std.testing.expectEqualDeep(spans[count], diagnostic.span);
+        count += 1;
+    }
+    try std.testing.expectEqual(spans.len, count);
+    try expectSameFileFacts(&compiler.table, doc.declarations.?.table, doc.path);
+}

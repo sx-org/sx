@@ -10,6 +10,7 @@ const sx = struct {
 };
 
 pub const Import = struct {
+    block: sx.imports.LexicalBlockId,
     declaration: ?sx.sema.Declaration = null,
     /// Namespace name. null for flat imports.
     ns: ?[]const u8,
@@ -238,6 +239,10 @@ pub const DocumentStore = struct {
     /// for the whole file, including the arms this target does not compile.
     fn collectImports(self: *DocumentStore, list: *std.ArrayList(Import), decls: []const *sx.ast.Node, base_dir: []const u8, file_path: []const u8) anyerror!void {
         for (decls) |decl| {
+            if (decl.data == .scope_decl) {
+                if (decl.data.scope_decl.body_block != null) try self.collectImports(list, decl.data.scope_decl.decls, base_dir, file_path);
+                continue;
+            }
             if (sx.imports.isModuleDriver(decl)) {
                 switch (decl.data) {
                     .if_expr => |ie| {
@@ -256,6 +261,7 @@ pub const DocumentStore = struct {
             const imp = decl.data.import_decl;
             const resolved_path = try sx.imports.resolveImportPath(self.allocator, self.io, base_dir, imp.path, self.rootPathOpt(), self.stdlib_paths);
             try list.append(self.allocator, .{
+                .block = decl.lexical_block.?,
                 .ns = imp.name,
                 .path = resolved_path,
             });
@@ -267,6 +273,79 @@ pub const DocumentStore = struct {
         const expanded = try sx.imports.expandDirectoryImports(self.allocator, self.io, stmts, base_dir, file_path, self.rootPathOpt(), self.stdlib_paths, null);
         if (body.data == .block) body.data.block.stmts = expanded;
         try self.collectImports(list, expanded, base_dir, file_path);
+    }
+
+    fn expandDeclarations(self: *DocumentStore, doc: *Document, nodes: *[]const *sx.ast.Node) anyerror!void {
+        nodes.* = try sx.imports.expandDirectoryImports(self.allocator, self.io, nodes.*, sx.imports.dirName(doc.path), doc.path, self.rootPathOpt(), self.stdlib_paths, null);
+        var expanded = std.ArrayList(*sx.ast.Node).empty;
+        for (nodes.*) |decl| {
+            if (decl.data == .scope_decl) try self.expandDeclarations(doc, &decl.data.scope_decl.decls);
+            if (decl.data == .c_import_decl) {
+                const ci = decl.data.c_import_decl;
+                const includes = try self.allocator.alloc([]const u8, ci.includes.len);
+                for (ci.includes, includes) |include, *resolved| {
+                    resolved.* = try sx.imports.resolveImportPath(self.allocator, self.io, sx.imports.dirName(doc.path), include, self.rootPathOpt(), self.stdlib_paths);
+                }
+                if (sx.c_import.processCImport(
+                    self.allocator,
+                    includes,
+                    ci.defines,
+                    ci.flags,
+                )) |result| {
+                    for (result.fn_decls, result.locations) |fd, loc| {
+                        if (ci.name == null) {
+                            fd.source_file = doc.path;
+                            try expanded.append(self.allocator, fd);
+                        }
+                        if (fd.data == .fn_decl) {
+                            try doc.c_source_locations.put(fd.data.fn_decl.name, loc);
+                        }
+                    }
+                    if (ci.name) |name| {
+                        const ns = try self.allocator.create(sx.ast.Node);
+                        ns.* = .{
+                            .span = decl.span,
+                            .source_file = doc.path,
+                            .visibility = decl.visibility,
+                            .data = .{ .namespace_decl = .{
+                                .name = name,
+                                .decls = result.fn_decls,
+                                .own_decls = result.fn_decls,
+                                .target_module_path = doc.path,
+                                .is_raw = ci.is_raw,
+                            } },
+                        };
+                        try expanded.append(self.allocator, ns);
+                        continue;
+                    }
+                } else |_| {}
+            }
+            try expanded.append(self.allocator, decl);
+        }
+        nodes.* = try expanded.toOwnedSlice(self.allocator);
+    }
+
+    fn indexBlock(self: *DocumentStore, table: *sx.imports.DeclTable, block: sx.imports.LexicalBlockId, nodes: []const *sx.ast.Node, duplicates: *std.ArrayList(sx.ast.Span)) anyerror!void {
+        const env = table.block(block).environment;
+        const source = table.environment(env).source;
+        for (nodes) |decl| {
+            sx.ast.stampLexicalBlock(decl, block);
+            decl.source_file = source;
+            sx.imports.stampFnBodySource(decl, source);
+            const name = decl.data.declName() orelse (if (decl.data == .import_decl) decl.data.import_decl.name else null);
+            if (name) |n| {
+                if (!try table.claimNamed(env, n, decl)) {
+                    try duplicates.append(self.allocator, decl.span);
+                    continue;
+                }
+            }
+            if (decl.data == .scope_decl) {
+                const child = try table.addScopeBlock(block, decl);
+                try self.indexBlock(table, child, decl.data.scope_decl.decls, duplicates);
+            } else if (decl.data == .import_decl) {
+                try table.recordImport(block, decl);
+            }
+        }
     }
 
     /// Analyze a document: parse, resolve imports, run sema with imported symbols pre-registered.
@@ -281,67 +360,19 @@ pub const DocumentStore = struct {
             doc.root = p.parse() catch return;
         }
 
-        // Expand root with synthetic fn_decls from @import c { ... } declarations.
-        // This makes C functions visible to sema, completions, and hover.
         doc.c_source_locations = std.StringHashMap(sx.c_import.CSourceLocation).init(self.allocator);
         if (doc.root) |parsed_root| {
-            if (parsed_root.data == .root) {
-                parsed_root.data.root.decls = try sx.imports.expandDirectoryImports(self.allocator, self.io, parsed_root.data.root.decls, sx.imports.dirName(doc.path), doc.path, self.rootPathOpt(), self.stdlib_paths, null);
-                var expanded = std.ArrayList(*sx.ast.Node).empty;
-                for (parsed_root.data.root.decls) |decl| {
-                    if (decl.data == .c_import_decl) {
-                        const ci = decl.data.c_import_decl;
-                        const includes = try self.allocator.alloc([]const u8, ci.includes.len);
-                        for (ci.includes, includes) |include, *resolved| {
-                            resolved.* = try sx.imports.resolveImportPath(self.allocator, self.io, sx.imports.dirName(doc.path), include, self.rootPathOpt(), self.stdlib_paths);
-                        }
-                        if (sx.c_import.processCImport(
-                            self.allocator,
-                            includes,
-                            ci.defines,
-                            ci.flags,
-                        )) |result| {
-                            for (result.fn_decls, result.locations) |fd, loc| {
-                                if (ci.name == null) {
-                                    fd.source_file = doc.path;
-                                    try expanded.append(self.allocator, fd);
-                                }
-                                if (fd.data == .fn_decl) {
-                                    try doc.c_source_locations.put(fd.data.fn_decl.name, loc);
-                                }
-                            }
-                            if (ci.name) |name| {
-                                const ns = try self.allocator.create(sx.ast.Node);
-                                ns.* = .{
-                                    .span = decl.span,
-                                    .source_file = doc.path,
-                                    .visibility = decl.visibility,
-                                    .data = .{ .namespace_decl = .{
-                                        .name = name,
-                                        .decls = result.fn_decls,
-                                        .own_decls = result.fn_decls,
-                                        .target_module_path = doc.path,
-                                        .is_raw = ci.is_raw,
-                                    } },
-                                };
-                                try expanded.append(self.allocator, ns);
-                                continue;
-                            }
-                        } else |_| {}
-                    }
-                    try expanded.append(self.allocator, decl);
-                }
-                parsed_root.data.root.decls = try expanded.toOwnedSlice(self.allocator);
-            }
+            if (parsed_root.data == .root) try self.expandDeclarations(doc, &parsed_root.data.root.decls);
         }
 
         const root = doc.root orelse return;
         const table = try self.allocator.create(sx.imports.DeclTable);
         table.* = sx.imports.DeclTable.init(self.allocator);
         const environment = try table.internEnvironment(doc.path, &.{});
-        if (root.data == .root) for (root.data.root.decls) |decl| {
-            _ = try table.claim(environment, decl);
-        };
+        const block = try table.addBlock(environment, null, root);
+        root.lexical_block = block;
+        var duplicates = std.ArrayList(sx.ast.Span).empty;
+        if (root.data == .root) try self.indexBlock(table, block, root.data.root.decls, &duplicates);
         doc.declarations = .{ .table = table, .environment = environment };
 
         // Extract imports from AST — uses shared resolution logic from imports.zig
@@ -350,28 +381,19 @@ pub const DocumentStore = struct {
         if (root.data == .root) {
             try self.collectImports(&import_list, root.data.root.decls, base_dir, doc.path);
         }
-        var duplicate_imports = std.ArrayList(sx.ast.Span).empty;
-        if (root.data == .root) for (root.data.root.decls) |decl| {
-            if (decl.data != .import_decl) continue;
-            const name = decl.data.import_decl.name orelse continue;
-            if (!try table.claimNamed(environment, name, decl)) {
-                try duplicate_imports.append(self.allocator, decl.span);
-                continue;
+        for (import_list.items) |*imp| {
+            if (imp.ns) |name| {
+                const env = table.block(imp.block).environment;
+                if (table.environment(env).names.get(name)) |id| imp.declaration = .{ .table = table, .id = id };
             }
-            const id = table.environment(environment).names.get(name).?;
-            for (import_list.items) |*imp| {
-                if (imp.ns) |alias| if (std.mem.eql(u8, alias, name)) {
-                    imp.declaration = .{ .table = table, .id = id };
-                };
-            }
-        };
+        }
         doc.imports = try import_list.toOwnedSlice(self.allocator);
         doc.last_good_imports = doc.imports;
 
         // Recursively analyze imported documents and pre-register their symbols
         var analyzer = sx.sema.Analyzer.init(self.allocator);
         analyzer.declarations = doc.declarations;
-        for (duplicate_imports.items) |span| {
+        for (duplicates.items) |span| {
             try analyzer.diagnostics.append(self.allocator, .{ .span = span, .message = "duplicate declaration", .level = .err });
         }
 
@@ -384,6 +406,7 @@ pub const DocumentStore = struct {
             }
 
             const imp_sema = imp_doc.sema orelse continue;
+            if (imp.block != block) continue;
             try analyzer.selection.addImport(imp.ns, imp_sema.selection);
             try analyzer.mergeMetadata(imp_sema);
 

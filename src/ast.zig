@@ -17,10 +17,13 @@ pub const no_source_start: u32 = std.math.maxInt(u32);
 /// on `StructDecl.field_visibilities`; every other node stays `.public`.
 pub const Visibility = enum { public, private };
 
+pub const LexicalBlockId = enum(u32) { _ };
+
 pub const Node = struct {
     span: Span,
     data: Data,
     source_file: ?[]const u8 = null,
+    lexical_block: ?LexicalBlockId = null,
     /// Declaration visibility (`private NAME :: …`). Defaults to `.public`;
     /// only the parser's module-scope declaration paths ever set `.private`.
     visibility: Visibility = .public,
@@ -808,6 +811,7 @@ pub const ScopeDecl = struct {
     name: []const u8,
     name_span: Span,
     decls: []const *Node,
+    body_block: ?LexicalBlockId = null,
     is_raw: bool = false,
 };
 
@@ -1310,6 +1314,7 @@ pub fn cloneWithSubst(
         .span = node.span,
         .data = try cloneData(allocator, node.data, subst),
         .source_file = node.source_file,
+        .lexical_block = node.lexical_block,
         .visibility = node.visibility,
     };
     switch (out.data) {
@@ -1333,6 +1338,33 @@ pub fn cloneWithSubst(
         else => {},
     }
     return out;
+}
+
+pub fn stampLexicalBlock(node: *Node, block: LexicalBlockId) void {
+    node.lexical_block = block;
+    switch (node.data) {
+        .scope_decl, .namespace_decl => {},
+        inline else => |payload| stampBlockValue(@TypeOf(payload), payload, block),
+    }
+}
+
+fn stampBlockValue(comptime T: type, value: T, block: LexicalBlockId) void {
+    if (comptime !holdsNode(T)) return;
+    switch (@typeInfo(T)) {
+        .pointer => |p| switch (p.size) {
+            .one => stampLexicalBlock(value, block),
+            .slice => for (value) |elem| stampBlockValue(p.child, elem, block),
+            else => {},
+        },
+        .optional => |o| if (value) |inner| stampBlockValue(o.child, inner, block),
+        .@"struct" => |s| inline for (s.fields) |f| {
+            stampBlockValue(f.type, @field(value, f.name), block);
+        },
+        .@"union" => switch (value) {
+            inline else => |payload| stampBlockValue(@TypeOf(payload), payload, block),
+        },
+        else => {},
+    }
 }
 
 fn cloneData(
@@ -1383,8 +1415,6 @@ fn cloneValue(
     }
 }
 
-/// True when `T` reaches a `*Node` — the comptime gate that keeps the cloner
-/// off the payload types it must copy verbatim (names, spans, flags).
 fn holdsNode(comptime T: type) bool {
     return switch (@typeInfo(T)) {
         .pointer => |p| switch (p.size) {
