@@ -18,8 +18,8 @@ apply :: (v: $T, boxed: Box($T)) -> i64 {
 }
 
 pf :: (..args: $Ts) -> i64 {
-    ignore := |f: Closure(..$args) -> i64| 40;
-    ignore(|| -> i64 0)
+    invoke := |f: Closure(..$args) -> i64, a: $args[0], b: $args[1]| f(a, b);
+    invoke(|a: i64, b: i32| a * b, ..args)
 }
 
 main :: () {
@@ -27,5 +27,5 @@ main :: () {
     chained := |n: *Node| n.v;
     concrete := |b: Box(i64)| b.v;
     tail := Node{ v = 2, next = null };
-    print("{} {} {} {} {} {}\n", apply(3, .{ v = 4 }), Holder(i64){ v = 5 }.unwrap(), pf(6, 7), recipe(7), chained(*tail), concrete(.{ v = 8 }));
+    print("{} {} {} {} {} {}\n", apply(3, .{ v = 4 }), Holder(i64){ v = 5 }.unwrap(), pf(6, 7.(i32)), recipe(7), chained(*tail), concrete(.{ v = 8 }));
 }

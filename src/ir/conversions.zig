@@ -33,6 +33,7 @@ pub const CoercionResolver = struct {
         unbox_any, // any → concrete
         box_any, // concrete → any
         closure_to_fn_reject, // closure value → bare fn-ptr (diagnostic, returns operand)
+        closure_signature_reject,
         unique_to_closure, // empty-env unique lambda → Closure ({fn, null})
         unique_to_closure_reject, // capturing unique lambda → Closure (diagnostic; the env has no home)
         lambda_ptr_to_closure, // *F, F a unique lambda → Closure borrowing the env the pointer names
@@ -69,6 +70,7 @@ pub const CoercionResolver = struct {
         pub fn refuses(self: CoercionPlan) bool {
             return switch (self) {
                 .closure_to_fn_reject,
+                .closure_signature_reject,
                 .unique_to_closure_reject,
                 .lambda_ptr_to_closure_reject,
                 .optional_to_bool_reject,
@@ -143,6 +145,13 @@ pub const CoercionResolver = struct {
         if (dst_ty == .any and src_ty != .any) return .box_any;
 
         if (!src_ty.isBuiltin() and !dst_ty.isBuiltin()) {
+            if (self.l.module.types.get(src_ty) == .closure and self.l.module.types.get(dst_ty) == .closure) {
+                const have = self.l.module.types.get(src_ty).closure;
+                const want = self.l.module.types.get(dst_ty).closure;
+                if (!self.l.module.types.sameTypes(have.params, want.params) or
+                    !self.l.module.types.sameType(have.ret, want.ret) or have.pack_start != want.pack_start)
+                    return .closure_signature_reject;
+            }
             if (self.l.module.types.get(src_ty) == .closure and self.l.module.types.get(dst_ty) == .function) {
                 return .closure_to_fn_reject;
             }

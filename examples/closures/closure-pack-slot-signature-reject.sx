@@ -1,0 +1,6 @@
+pf :: (..args: $Ts) -> i64 {
+    ignore := |f: Closure(..$args) -> i64| 40;
+    ignore(|| -> i64 0)
+}
+
+main :: () { pf(6, 7); }
