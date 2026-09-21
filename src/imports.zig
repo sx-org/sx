@@ -379,7 +379,7 @@ pub const ResolvedModule = struct {
             if (name.len > 0 and name[0] == '@') return true;
         }
         return switch (decl.data) {
-            .struct_decl, .enum_decl, .union_decl, .error_set_decl, .protocol_decl, .open_set_decl, .runtime_class_decl => true,
+            .struct_decl, .enum_decl, .union_decl, .error_set_decl, .protocol_decl, .open_set_decl, .runtime_class_decl, .scope_decl => true,
             .fn_decl => |fd| fd.extern_export == .extern_ or fd.body.data == .intrinsic_expr,
             .const_decl => |cd| cd.value.data != .fn_decl or isPerSourceDecl(cd.value),
             .var_decl => true,
@@ -399,6 +399,7 @@ pub const ResolvedModule = struct {
         span: ast.Span,
         is_raw: bool,
         visibility: ast.Visibility,
+        lexical_block: LexicalBlockId,
     ) !bool {
         const ns_node = try allocator.create(Node);
         ns_node.* = .{
@@ -424,6 +425,7 @@ pub const ResolvedModule = struct {
             .visibility = visibility,
         };
         ns_node.source_file = self.path;
+        ns_node.lexical_block = lexical_block;
         if (!try table.claim(self.environment, ns_node)) return false;
         try seen_list.put(name, {});
         try list.append(allocator, ns_node);
@@ -494,6 +496,38 @@ pub fn aliasPath(allocator: std.mem.Allocator, node: *const Node) ?[]const u8 {
 }
 
 pub const EnvironmentId = enum(u32) { _ };
+pub const ScopeId = enum(u32) { _ };
+pub const LexicalBlockId = ast.LexicalBlockId;
+
+const ScopePathContext = struct {
+    pub fn hash(_: @This(), path: []const []const u8) u64 {
+        var h = std.hash.Wyhash.init(0);
+        for (path) |part| {
+            std.hash.autoHash(&h, part.len);
+            h.update(part);
+        }
+        return h.final();
+    }
+
+    pub fn eql(_: @This(), a: []const []const u8, b: []const []const u8) bool {
+        if (a.len != b.len) return false;
+        for (a, b) |left, right| {
+            if (!std.mem.eql(u8, left, right)) return false;
+        }
+        return true;
+    }
+};
+
+pub const Scope = struct {
+    path: []const []const u8,
+};
+
+pub const LexicalBlock = struct {
+    environment: EnvironmentId,
+    parent: ?LexicalBlockId,
+    node: *const Node,
+    imports: std.ArrayList(*const Node) = .empty,
+};
 
 const EnvironmentKey = struct {
     source: []const u8,
@@ -523,6 +557,7 @@ const EnvironmentKeyContext = struct {
 pub const Environment = struct {
     source: []const u8,
     scope_path: []const []const u8,
+    scope: ?ScopeId = null,
     names: std.StringHashMap(DeclId),
     namespaces: std.StringHashMap(NamespaceTarget),
 };
@@ -572,6 +607,7 @@ pub const DeclKind = enum {
     open_set,
     runtime_class,
     namespace,
+    scope,
     /// A name lowering mints with no authoring AST declaration.
     synthetic,
     ufcs_alias,
@@ -628,6 +664,8 @@ pub const DeclInfo = struct {
     id: DeclId,
     source: ?[]const u8,
     environment: ?EnvironmentId,
+    lexical_block: ?LexicalBlockId = null,
+    scope: ?ScopeId = null,
     node: ?*const Node = null,
     visibility: ast.Visibility = .public,
     name: []const u8,
@@ -648,6 +686,9 @@ pub const DeclTable = struct {
     environments: std.ArrayList(Environment) = .empty,
     files: std.StringHashMap(EnvironmentId),
     scoped_environments: std.HashMap(EnvironmentKey, EnvironmentId, EnvironmentKeyContext, std.hash_map.default_max_load_percentage),
+    scopes: std.ArrayList(Scope) = .empty,
+    scopes_by_path: std.HashMap([]const []const u8, ScopeId, ScopePathContext, std.hash_map.default_max_load_percentage),
+    blocks: std.ArrayList(LexicalBlock) = .empty,
     // Namespace selections borrow member slices across expansion.
     member_slices: std.ArrayList([]const DeclId) = .empty,
 
@@ -657,6 +698,7 @@ pub const DeclTable = struct {
             .by_node = std.AutoHashMap(usize, DeclId).init(alloc),
             .files = std.StringHashMap(EnvironmentId).init(alloc),
             .scoped_environments = .init(alloc),
+            .scopes_by_path = .init(alloc),
         };
     }
 
@@ -675,6 +717,14 @@ pub const DeclTable = struct {
         while (spellings.next()) |path| self.alloc.free(path.*);
         self.files.deinit();
         self.scoped_environments.deinit();
+        for (self.scopes.items) |scope| {
+            for (scope.path) |part| self.alloc.free(part);
+            self.alloc.free(scope.path);
+        }
+        self.scopes.deinit(self.alloc);
+        self.scopes_by_path.deinit();
+        for (self.blocks.items) |*block_info| block_info.imports.deinit(self.alloc);
+        self.blocks.deinit(self.alloc);
         for (self.member_slices.items) |slice| self.alloc.free(slice);
         self.member_slices.deinit(self.alloc);
     }
@@ -720,7 +770,7 @@ pub const DeclTable = struct {
     }
 
     pub fn intern(self: *DeclTable, source: ?[]const u8, decl: *const Node) !DeclId {
-        const env = if (decl.source_file orelse source) |path| try self.internEnvironment(path, &.{}) else null;
+        const env = if (decl.lexical_block) |b| self.block(b).environment else if (decl.source_file orelse source) |path| try self.internEnvironment(path, &.{}) else null;
         return self.internInEnvironment(env, decl);
     }
 
@@ -735,7 +785,12 @@ pub const DeclTable = struct {
             const key = @intFromPtr(decl);
             if (self.by_node.get(key)) |existing| break :blk existing;
             const fresh = try self.syntheticInEnvironment(env, name);
-            self.entries.items[@intFromEnum(fresh)].kind = if (decl.data == .ufcs_alias) .ufcs_alias else .other;
+            self.entries.items[@intFromEnum(fresh)].kind = switch (decl.data) {
+                .ufcs_alias => .ufcs_alias,
+                .scope_decl => .scope,
+                .import_decl => .namespace,
+                else => .other,
+            };
             try self.by_node.put(key, fresh);
             break :blk fresh;
         };
@@ -743,6 +798,7 @@ pub const DeclTable = struct {
         info.node = decl;
         info.visibility = decl.visibility;
         info.span = decl.span;
+        info.lexical_block = decl.lexical_block;
         return id;
     }
 
@@ -769,6 +825,48 @@ pub const DeclTable = struct {
 
     pub fn environment(self: *const DeclTable, id: EnvironmentId) *Environment {
         return &self.environments.items[@intFromEnum(id)];
+    }
+
+    pub fn scopeInfo(self: *const DeclTable, id: ScopeId) Scope {
+        return self.scopes.items[@intFromEnum(id)];
+    }
+
+    fn internScope(self: *DeclTable, path: []const []const u8) !ScopeId {
+        if (self.scopes_by_path.get(path)) |id| return id;
+        const parts = try self.alloc.alloc([]const u8, path.len);
+        for (path, parts) |part, *copy| copy.* = try self.alloc.dupe(u8, part);
+        const id: ScopeId = @enumFromInt(@as(u32, @intCast(self.scopes.items.len)));
+        try self.scopes.append(self.alloc, .{ .path = parts });
+        try self.scopes_by_path.put(parts, id);
+        return id;
+    }
+
+    pub fn block(self: *const DeclTable, id: LexicalBlockId) *LexicalBlock {
+        return &self.blocks.items[@intFromEnum(id)];
+    }
+
+    pub fn addBlock(self: *DeclTable, env: EnvironmentId, parent: ?LexicalBlockId, node: *const Node) !LexicalBlockId {
+        const id: LexicalBlockId = @enumFromInt(@as(u32, @intCast(self.blocks.items.len)));
+        try self.blocks.append(self.alloc, .{ .environment = env, .parent = parent, .node = node });
+        return id;
+    }
+
+    pub fn addScopeBlock(self: *DeclTable, parent: LexicalBlockId, decl: *Node) !LexicalBlockId {
+        const author_env = self.block(parent).environment;
+        const path = try std.mem.concat(self.alloc, []const u8, &.{ self.environment(author_env).scope_path, &.{decl.data.scope_decl.name} });
+        defer self.alloc.free(path);
+        const scope_id = try self.internScope(path);
+        const env = try self.internEnvironment(self.environment(author_env).source, path);
+        self.environment(env).scope = scope_id;
+        const id = try self.internInEnvironment(author_env, decl);
+        self.entries.items[@intFromEnum(id)].scope = scope_id;
+        const body_block = try self.addBlock(env, parent, decl);
+        decl.data.scope_decl.body_block = body_block;
+        return body_block;
+    }
+
+    pub fn recordImport(self: *DeclTable, owner: LexicalBlockId, node: *const Node) !void {
+        try self.block(owner).imports.append(self.alloc, node);
     }
 
     pub fn fileEnvironment(self: *const DeclTable, path: []const u8) ?EnvironmentId {
@@ -833,7 +931,11 @@ pub const DeclTable = struct {
     }
 
     pub fn claimNamed(self: *DeclTable, env: EnvironmentId, name: []const u8, decl: *const Node) std.mem.Allocator.Error!bool {
-        if (self.environment(env).names.contains(name)) return false;
+        if (self.environment(env).names.get(name)) |previous| {
+            if (decl.data != .scope_decl or self.get(previous).kind != .scope) return false;
+            _ = try self.internNamedNode(env, name, decl);
+            return true;
+        }
         const id = try self.internNamedNode(env, name, decl);
         try self.environment(env).names.put(name, id);
         if (decl.data == .namespace_decl) try self.publishNamespace(env, decl);
@@ -844,7 +946,7 @@ pub const DeclTable = struct {
         var ids = std.ArrayList(DeclId).empty;
         for (nodes) |node| {
             if (memberName(node) == null) continue;
-            const author_env = if (node.source_file) |path| try self.internEnvironment(path, &.{}) else env;
+            const author_env = if (node.lexical_block) |b| self.block(b).environment else if (node.source_file) |path| try self.internEnvironment(path, &.{}) else env;
             const id = try self.internInEnvironment(author_env, node);
             try ids.append(self.alloc, id);
         }
@@ -861,9 +963,11 @@ pub const DeclTable = struct {
             break :blk try self.internEnvironment(ns.target_module_path, path);
         } else try self.internEnvironment(ns.target_module_path, &.{});
         if (self.environment(target_env).scope_path.len > 0) {
+            const body_block = try self.addBlock(target_env, decl.lexical_block, decl);
             // C namespace lookup selects the first member of a name; every prototype retains its identity.
             for (ns.own_decls) |member| {
                 if (rawDeclRefOf(member) == null) continue;
+                ast.stampLexicalBlock(member, body_block);
                 _ = try self.claim(target_env, member);
             }
         }
@@ -1044,21 +1148,33 @@ pub fn resolveImports(
             try g.put(canonical_file, std.StringHashMap(void).init(allocator));
         }
     }
-    var mod = ResolvedModule{
-        .path = file_path,
-        .decls = &.{},
-        .own_decls = &.{},
-        .environment = env,
-    };
     try chain.put(canonical_file, {});
     defer _ = chain.remove(canonical_file);
+    const block_id = try cache.declarations.addBlock(env, null, root);
+    root.lexical_block = block_id;
+    if (root.data != .root) return .{ .path = file_path, .decls = &.{}, .own_decls = &.{}, .environment = env };
+    return resolveBlockImports(allocator, io, &root.data.root.decls, block_id, base_dir, file_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
+}
 
-    if (root.data != .root) {
-        mod.decls = &.{};
-        return mod;
-    }
-
-    root.data.root.decls = try expandDirectoryImports(allocator, io, root.data.root.decls, base_dir, file_path, null, stdlib_paths, diagnostics);
+fn resolveBlockImports(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    nodes: *[]const *Node,
+    block_id: LexicalBlockId,
+    base_dir: []const u8,
+    file_path: []const u8,
+    chain: *std.StringHashMap(void),
+    cache: *ModuleCache,
+    source_map: ?*std.StringHashMap([:0]const u8),
+    diagnostics: ?*errors.DiagnosticList,
+    stdlib_paths: []const []const u8,
+    import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
+    flat_import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
+) anyerror!ResolvedModule {
+    const env = cache.declarations.block(block_id).environment;
+    const canonical_file = cache.declarations.environment(env).source;
+    var mod = ResolvedModule{ .path = file_path, .decls = &.{}, .own_decls = &.{}, .environment = env };
+    nodes.* = try expandDirectoryImports(allocator, io, nodes.*, base_dir, file_path, null, stdlib_paths, diagnostics);
 
     var decl_list = std.ArrayList(*Node).empty;
     var own_decl_list = std.ArrayList(*Node).empty;
@@ -1067,7 +1183,18 @@ pub fn resolveImports(
     // (impl blocks) that carry no name to dedupe on.
     var seen_nodes = std.AutoHashMap(*Node, void).init(allocator);
 
-    for (root.data.root.decls) |decl| {
+    for (nodes.*) |decl| {
+        ast.stampLexicalBlock(decl, block_id);
+        if (decl.data == .scope_decl) {
+            decl.source_file = file_path;
+            const added = try mod.addOwnDecl(allocator, &cache.declarations, &decl_list, &own_decl_list, &seen_in_list, decl);
+            reportDuplicateDecl(diagnostics, added, decl);
+            if (added) {
+                const child = try cache.declarations.addScopeBlock(block_id, decl);
+                _ = try resolveBlockImports(allocator, io, &decl.data.scope_decl.decls, child, base_dir, file_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
+            }
+            continue;
+        }
         if (isModuleDriver(decl)) {
             // A module-scope `inline if` / comptime `match` / `inline for` is
             // OPAQUE here: its groups stay inside the node until lowering
@@ -1146,6 +1273,7 @@ pub fn resolveImports(
                     },
                 };
                 ns_node.source_file = file_path;
+                ns_node.lexical_block = block_id;
                 // A `private ns :: @import c { … }` namespace stays file-local.
                 ns_node.visibility = decl.visibility;
                 reportDuplicateName(diagnostics, try mod.addOwnDecl(allocator, &cache.declarations, &decl_list, &own_decl_list, &seen_in_list, ns_node), ns_name, decl.span);
@@ -1153,6 +1281,7 @@ pub fn resolveImports(
                 // Flat: add fn_decls directly + keep c_import_decl
                 for (result.fn_decls) |fd| {
                     fd.source_file = file_path;
+                    ast.stampLexicalBlock(fd, block_id);
                     reportDuplicateDecl(diagnostics, try mod.addOwnDecl(allocator, &cache.declarations, &decl_list, &own_decl_list, &seen_in_list, fd), fd);
                 }
                 decl.source_file = file_path;
@@ -1166,6 +1295,7 @@ pub fn resolveImports(
             reportDuplicateDecl(diagnostics, try mod.addOwnDecl(allocator, &cache.declarations, &decl_list, &own_decl_list, &seen_in_list, decl), decl);
             continue;
         }
+        try cache.declarations.recordImport(block_id, decl);
         const imp = decl.data.import_decl;
 
         const resolved_path = imp.path;
@@ -1178,7 +1308,7 @@ pub fn resolveImports(
                 set.put(resolved_path, {}) catch {};
             }
         }
-        if (imp.name == null) {
+        if (imp.name == null and cache.declarations.block(block_id).parent == null) {
             if (flat_import_graph) |g| {
                 if (g.getPtr(canonical_file)) |set| {
                     set.put(resolved_path, {}) catch {};
@@ -1189,7 +1319,7 @@ pub fn resolveImports(
         const imported_mod = (try loadImport(allocator, io, resolved_path, decl, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph)) orelse continue;
 
         if (imp.name) |ns_name| {
-            const added = try mod.addNamespace(allocator, &cache.declarations, &decl_list, &own_decl_list, &seen_in_list, ns_name, imported_mod, decl.span, imp.is_raw, decl.visibility);
+            const added = try mod.addNamespace(allocator, &cache.declarations, &decl_list, &own_decl_list, &seen_in_list, ns_name, imported_mod, decl.span, imp.is_raw, decl.visibility, block_id);
             reportDuplicateName(diagnostics, added, ns_name, decl.span);
         } else {
             try mod.mergeFlat(allocator, &decl_list, &seen_in_list, &seen_nodes, imported_mod);

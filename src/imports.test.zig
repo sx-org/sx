@@ -703,3 +703,61 @@ test "environment claims separate scope paths and reject a second author of one 
     try std.testing.expect(table.get(b.id).node.? == nodes[1]);
     try std.testing.expect(table.declIdForRef(imports.rawDeclRefOf(nodes[3]).?) == null);
 }
+
+test "scope blocks merge by path and keep file-owned declarations and lexical parents" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var p = try parser.Parser.init(
+        alloc,
+        "geo :: scope { x :: 1; detail :: scope {} } geo :: scope { y :: 2; detail :: scope {} }",
+    );
+    const root = try p.parse();
+    var other_parser = try parser.Parser.init(alloc, "geo :: scope { x :: 3; }");
+    const other_root = try other_parser.parse();
+    var table = imports.DeclTable.init(std.testing.allocator);
+    defer table.deinit();
+    const file = try table.internEnvironment("blocks.sx", &.{});
+    const root_block = try table.addBlock(file, null, root);
+    var first: ?imports.LexicalBlockId = null;
+    var first_nested: ?imports.LexicalBlockId = null;
+    for (root.data.root.decls) |node| {
+        ast.stampLexicalBlock(node, root_block);
+        try std.testing.expect(try table.claim(file, node));
+        const block = try table.addScopeBlock(root_block, node);
+        const env = table.block(block).environment;
+        for (node.data.scope_decl.decls) |member| {
+            ast.stampLexicalBlock(member, block);
+            try std.testing.expect(try table.claim(env, member));
+        }
+        const nested = try table.addScopeBlock(block, node.data.scope_decl.decls[1]);
+        try std.testing.expectEqual(block, table.block(nested).parent.?);
+        if (first) |previous| {
+            try std.testing.expect(previous != block);
+            try std.testing.expectEqual(table.block(previous).environment, env);
+            try std.testing.expectEqual(table.block(first_nested.?).environment, table.block(nested).environment);
+        } else {
+            first = block;
+            first_nested = nested;
+        }
+    }
+    const geo = table.block(first.?).environment;
+    try std.testing.expectEqual(@as(u32, 3), table.environment(geo).names.count());
+    const other_file = try table.internEnvironment("other.sx", &.{});
+    const other_block = try table.addBlock(other_file, null, other_root);
+    const other_scope = other_root.data.root.decls[0];
+    ast.stampLexicalBlock(other_scope, other_block);
+    try std.testing.expect(try table.claim(other_file, other_scope));
+    const other_body = try table.addScopeBlock(other_block, other_scope);
+    const other_geo = table.block(other_body).environment;
+    try std.testing.expect(geo != other_geo);
+    try std.testing.expectEqual(table.environment(geo).scope.?, table.environment(other_geo).scope.?);
+    const other_x = other_scope.data.scope_decl.decls[0];
+    ast.stampLexicalBlock(other_x, other_body);
+    try std.testing.expect(try table.claim(other_geo, other_x));
+    const x = table.environment(geo).names.get("x").?;
+    const y = table.environment(geo).names.get("y").?;
+    try std.testing.expect(x != table.environment(other_geo).names.get("x").?);
+    try std.testing.expect(table.get(x).lexical_block.? != table.get(y).lexical_block.?);
+    try std.testing.expectEqual(geo, table.get(try table.intern("blocks.sx", table.get(y).node.?)).environment.?);
+}
