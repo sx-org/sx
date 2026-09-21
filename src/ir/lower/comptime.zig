@@ -2601,21 +2601,14 @@ pub fn selectGlobalAuthor(self: *Lowering, name: []const u8) GlobalAuthor {
     var res = self.resolver();
     const set = res.collectVisibleAuthors(name, self.environmentForSource(from).?, .user_bare_flat);
     defer if (set.flat.len > 0) self.alloc.free(set.flat);
-    if (set.own) |o| return globalAuthorAt(self, o, name);
+    if (set.own) |o| return globalAuthorAt(self, o);
     if (set.flat.len >= 2) return .ambiguous;
-    if (set.flat.len == 1) return globalAuthorAt(self, set.flat[0], name);
+    if (set.flat.len == 1) return globalAuthorAt(self, set.flat[0]);
     return if (anyRawAuthor(self, name)) .not_visible else .untracked;
 }
 
-fn globalAuthorAt(self: *Lowering, author: resolver_mod.RawAuthor, name: []const u8) GlobalAuthor {
+fn globalAuthorAt(self: *Lowering, author: resolver_mod.RawAuthor) GlobalAuthor {
     if (self.program_index.get(.global, author.id)) |g| return .{ .resolved = g };
-    // A var_decl author with no per-source registration: the decl was deduped
-    // at flat-merge (two modules declaring the same extern symbol), so the
-    // global registered under the surviving author's source. The author IS a
-    // global — serve the symbol's registration.
-    if (author.raw == .var_decl) {
-        if (self.program_index.lookup(.global, name)) |g| return .{ .resolved = g };
-    }
     return .not_a_global;
 }
 

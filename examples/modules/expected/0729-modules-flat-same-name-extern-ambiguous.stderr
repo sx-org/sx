@@ -1,0 +1,5 @@
+error: 'absval' is ambiguous; declared by multiple imported modules — qualify the call
+  --> examples/modules/0729-modules-flat-same-name-extern-ambiguous.sx:4:21
+   |
+ 4 | main :: () -> i32 { absval(-7) }
+   |                     ^^^^^^

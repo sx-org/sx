@@ -3167,10 +3167,7 @@ pub const Lowering = struct {
             if (self.namespaceOwnSpecialMember(target, member)) return .not_qualified;
             return .{ .missing = .{ .namespace = namespace_name, .member = member, .scope = target.target_module_path } };
         };
-        // A private member is no member at all from any other source file —
-        // judged against the ORIGINAL requester, and against the member's
-        // exact declaring file (not a directory-import aggregate).
-        if (author.visibility == .private and !std.mem.eql(u8, from, author.visAuthority())) {
+        if (author.visibility == .private and !std.mem.eql(u8, from, author.source)) {
             return .{ .missing = .{ .namespace = namespace_name, .member = member, .scope = target.target_module_path } };
         }
         return .{ .selected = .{ .target = target, .author = author, .member = member } };

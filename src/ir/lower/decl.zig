@@ -1661,13 +1661,23 @@ pub fn registerTopLevelGlobal(self: *Lowering, vd: *const ast.VarDecl) void {
     // symbol name is the optional override (`extern_name`) or the sx name itself.
     const sym_name = vd.extern_name orelse vd.name;
     const name_id = self.module.types.internString(sym_name);
-    const gid = self.module.addGlobal(.{
-        .name = name_id,
-        .ty = var_ty,
-        .init_val = null,
-        .is_const = false,
-        .is_extern = vd.is_extern,
-    });
+    const gid = shared: {
+        if (vd.is_extern) for (self.module.globals.items, 0..) |global, i| {
+            if (!global.is_extern or global.name != name_id) continue;
+            if (!self.module.types.sameType(global.ty, var_ty)) {
+                if (self.diagnostics) |d| d.addFmt(.err, ty_span, "extern symbol '{s}' is already bound with a different type", .{sym_name});
+                return;
+            }
+            break :shared @import("../inst.zig").GlobalId.fromIndex(@intCast(i));
+        };
+        break :shared self.module.addGlobal(.{
+            .name = name_id,
+            .ty = var_ty,
+            .init_val = null,
+            .is_const = false,
+            .is_extern = vd.is_extern,
+        });
+    };
     const info = program_index_mod.GlobalInfo{ .id = gid, .ty = var_ty };
     self.global_decl_infos.put(vd, info) catch @panic("out of memory while indexing global declaration identity");
     self.putGlobal(self.declId(.{ .var_decl = vd }, self.current_source_file), vd.name, info);
@@ -2571,17 +2581,9 @@ pub const BareCallee = union(enum) {
     none,
 };
 
-/// Which callable shapes an author selection admits.
 pub const CallableKinds = enum {
-    /// Plain free functions only (`isPlainFreeFn`) — the shapes that own a
-    /// name-keyed FuncId slot. Function VALUES and UFCS dispatch select over
-    /// this set: a generic / pack / comptime author has no callable slot to
-    /// bind and keeps its own monomorphizing dispatch.
-    plain_free,
-    /// Every sx-bodied free function: plain, generic, comptime and pack. A
-    /// bare CALL dispatches all four from the declaration itself, so all four
-    /// must be selected from the caller's own visible authors.
-    any_body,
+    non_generic,
+    all,
 };
 
 /// The single bare-call author object: the `*FnDecl` that defines
@@ -2682,44 +2684,14 @@ fn valueAuthor(self: *Lowering, author: resolver_mod.RawAuthor) bool {
     };
 }
 
-/// Whether a selected function may bind `kinds`. `extern` imports and
-/// intrinsics are dispatched name-keyed by the C symbol / the compiler and
-/// have no per-author sx body to select, so neither set admits them.
 fn selectableFn(fd: *const ast.FnDecl, kinds: CallableKinds) bool {
+    if (fd.body.data == .intrinsic_expr) return false;
     return switch (kinds) {
-        .plain_free => isPlainFreeFn(fd),
-        .any_body => fd.extern_export != .extern_ and fd.body.data != .intrinsic_expr,
+        .non_generic => fd.type_params.len == 0,
+        .all => true,
     };
 }
 
-/// THE bare-name callable selector, over the author collector
-/// (`resolver.collectVisibleAuthors` — the ONE graph-walk). Routes a bare
-/// reference to `name` from `caller_file` to the author that spelling actually
-/// denotes there, following `alias :: target` chains to their exact terminal
-/// declaration. Every single-author / local / parameter / std / qualified name
-/// resolves through the EXISTING path unchanged: the selector returns `.none`
-/// whenever the outcome would match first-wins.
-///
-/// - **own-author wins**: if `caller_file` authors `name` as a fn (directly or
-///   through an alias chain) and the bare-name first-wins winner is a DIFFERENT
-///   declaration, select the caller's own author. (When the winner already IS
-///   the caller's own — the single-author and first-importer cases — `.none`
-///   lets the existing path bind it.)
-/// - else select among the authors reachable via `caller_file`'s FLAT import
-///   edges (bare `@import` of a file or directory, never a namespaced
-///   `ns :: @import`), deduped by author identity (a diamond import of the
-///   same module is one author): `≥2 distinct` → `.ambiguous`; exactly one
-///   that DIFFERS from the winner → select it.
-/// - a visible author that denotes a VALUE (`valueAuthor`) yields
-///   `.not_callable`: the name-keyed function map may not answer for a name
-///   whose visible meaning here is a value.
-///
-/// `kinds` decides which function shapes participate; a shape outside the set
-/// (an `extern` symbol, an intrinsic, a generic under `.plain_free`) is not an
-/// eligible author at all — it neither wins nor counts toward ambiguity, and
-/// keeps its existing dispatch. No eager materialization: the returned
-/// `SelectedFunc` carries decl + source and `materialized = null`; a consumer
-/// fills the FuncId via `selectedFuncId` only when it truly needs it.
 pub fn selectCallableAuthor(self: *Lowering, name: []const u8, environment: imports.EnvironmentId, kinds: CallableKinds) BareCallee {
     const winner = self.program_index.lookup(.function, name);
     var res = self.resolver();
@@ -2735,10 +2707,6 @@ pub fn selectCallableAuthor(self: *Lowering, name: []const u8, environment: impo
         if (valueAuthor(self, own_author)) return .not_callable;
     }
 
-    // Caller does not author `name` as a fn → its flat-reachable authors.
-    // Filter by kind BEFORE counting: a same-name collision of ineligible
-    // authors (e.g. two flat-imported modules each `extern`ing the same
-    // symbol) is NOT ambiguous — it falls through to the existing path.
     var the_one: ?SelectedFunc = null;
     var count: usize = 0;
     for (set.flat) |fa| {
@@ -3312,7 +3280,7 @@ pub fn selectedFuncId(self: *Lowering, sf: *SelectedFunc) FuncId {
 /// which slots already carry a body.
 pub fn bareAuthorFuncId(self: *Lowering, fd: *const ast.FnDecl, name: []const u8, path: []const u8) FuncId {
     if (self.declFuncId(fd)) |fid| {
-        if (!self.lowered_fids.contains(fid)) {
+        if (fd.extern_export != .extern_ and !self.lowered_fids.contains(fid)) {
             self.lowered_fids.put(fid, {}) catch {};
             self.lowerFunctionBodyInto(fd, fid, name);
         }
@@ -3323,8 +3291,10 @@ pub fn bareAuthorFuncId(self: *Lowering, fd: *const ast.FnDecl, name: []const u8
     self.declareFunction(fd, name);
     self.restoreLexicalContext(saved_src);
     const fid = self.declFuncId(fd).?;
-    self.lowered_fids.put(fid, {}) catch {};
-    self.lowerFunctionBodyInto(fd, fid, name);
+    if (fd.extern_export != .extern_) {
+        self.lowered_fids.put(fid, {}) catch {};
+        self.lowerFunctionBodyInto(fd, fid, name);
+    }
     return fid;
 }
 

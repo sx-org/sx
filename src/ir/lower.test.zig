@@ -1899,9 +1899,9 @@ test "lower: shadowed same-name author gets its own FuncId + real body" {
     // Imported modules are keyed by their CANONICAL path.
     const a_path = try imports.canonicalizePath(alloc, try std.fmt.allocPrint(alloc, "{s}/a.sx", .{absdir}));
     const b_path = try imports.canonicalizePath(alloc, try std.fmt.allocPrint(alloc, "{s}/b.sx", .{absdir}));
-    try std.testing.expect(lowering.selectCallableAuthor("greet", lowering.environmentForSource(main_path).?, .any_body) == .ambiguous);
-    try std.testing.expect(lowering.selectCallableAuthor("greet", lowering.environmentForSource(a_path).?, .any_body) == .none);
-    switch (lowering.selectCallableAuthor("greet", lowering.environmentForSource(b_path).?, .any_body)) {
+    try std.testing.expect(lowering.selectCallableAuthor("greet", lowering.environmentForSource(main_path).?, .all) == .ambiguous);
+    try std.testing.expect(lowering.selectCallableAuthor("greet", lowering.environmentForSource(a_path).?, .all) == .none);
+    switch (lowering.selectCallableAuthor("greet", lowering.environmentForSource(b_path).?, .all)) {
         .func => |sf| {
             try std.testing.expectEqual(shadow_fd.?, sf.decl);
             try std.testing.expectEqualStrings(b_path, sf.source);
@@ -1911,7 +1911,7 @@ test "lower: shadowed same-name author gets its own FuncId + real body" {
         else => return error.TestUnexpectedResult,
     }
     // A name no module authors (and no flat import provides) never routes.
-    try std.testing.expect(lowering.selectCallableAuthor("nonexistent", lowering.environmentForSource(b_path).?, .any_body) == .none);
+    try std.testing.expect(lowering.selectCallableAuthor("nonexistent", lowering.environmentForSource(b_path).?, .all) == .none);
 }
 
 // The scan populates the source-keyed caches partitioned by the registering

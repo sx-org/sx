@@ -1,0 +1,8 @@
+@import "modules/std.sx";
+a :: @import "1230-ffi-extern-qualified-authors/a.sx";
+b :: @import "1230-ffi-extern-qualified-authors/b.sx";
+
+main :: () -> i32 {
+    print("absval = {}\n", a.absval(-7));
+    b.absval(-7) - 7
+}

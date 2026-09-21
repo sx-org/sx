@@ -14,9 +14,6 @@ pub const NamespaceTarget = imports.NamespaceTarget;
 pub const AuthorSet = struct {
     /// The author declared in the querying module itself, if any.
     own: ?RawAuthor,
-    /// Distinct flat-import authors. Diamond imports of the SAME author (same
-    /// AST node reached over two edges, e.g. a directory aggregate and one of
-    /// its member files) collapse to a single entry. Always disjoint from `own`.
     flat: []const RawAuthor,
 
     /// own + flat, counted by author identity. `flat` is already deduped and
@@ -108,7 +105,7 @@ pub fn eligibleKind(domain: Domain, raw: RawDeclRef, field: ?[]const u8) bool {
             else => false,
         },
         .value_const => raw == .const_decl,
-        .callable => if (fnDeclOf(raw)) |fd| isPlainFreeFnDecl(fd) else false,
+        .callable => if (fnDeclOf(raw)) |fd| fd.type_params.len == 0 and fd.body.data != .intrinsic_expr else false,
         .generic_struct_head => if (structDeclOf(raw)) |sd| sd.type_params.len > 0 else false,
         .type_fn_head => if (fnDeclOf(raw)) |fd| fd.type_params.len > 0 else false,
         .protocol_head => raw == .protocol_decl,
@@ -138,23 +135,6 @@ pub fn fnDeclOf(raw: RawDeclRef) ?*const ast.FnDecl {
         .fn_decl => |fd| fd,
         .const_decl => |cd| if (cd.value.data == .fn_decl) &cd.value.data.fn_decl else null,
         else => null,
-    };
-}
-
-/// A PLAIN free function — no type params, an ordinary (non-`extern`/
-/// compiler-provided/`#compiler`/`extern`) body — the only callable kind the bare-call
-/// verdict counts.
-pub fn isPlainFreeFnDecl(fd: *const ast.FnDecl) bool {
-    if (fd.type_params.len > 0) return false;
-    // An `extern` import is an external C symbol with no sx-lowerable body —
-    // dispatched name-keyed first-wins, exactly like a `extern` body, so it
-    // is NOT a plain free fn (excluded from the bare-call ambiguity verdict and
-    // the out-of-line-slot / shadow-author pass). `export` DEFINES a real sx
-    // body, so it stays plain-free.
-    if (fd.extern_export == .extern_) return false;
-    return switch (fd.body.data) {
-        .intrinsic_expr => false,
-        else => true,
     };
 }
 

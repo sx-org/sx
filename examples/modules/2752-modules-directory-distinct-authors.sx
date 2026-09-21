@@ -1,0 +1,3 @@
+@import "2752-modules-directory-distinct-authors";
+
+main :: () -> i32 { answer() }

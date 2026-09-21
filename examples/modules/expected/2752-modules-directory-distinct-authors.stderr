@@ -1,0 +1,5 @@
+error: 'answer' is ambiguous; declared by multiple imported modules — qualify the call
+  --> examples/modules/2752-modules-directory-distinct-authors.sx:3:21
+   |
+ 3 | main :: () -> i32 { answer() }
+   |                     ^^^^^^

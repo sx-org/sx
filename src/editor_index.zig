@@ -159,11 +159,12 @@ pub const Selection = struct {
             defer b.alloc.free(yp);
             const xl = a.locate(xp, visiting);
             const yl = b.locate(yp, visiting);
-            if (xl) |l| {
-                const r = yl orelse return false;
-                return sameEntity(entity(l, visiting) orelse return false, entity(r, visiting) orelse return false, visiting);
+            if (xl != null or yl != null) {
+                const left: Entity = if (xl) |l| entity(l, visiting) orelse return false else .{ .expression = .{ .selection = a, .node = x } };
+                const right: Entity = if (yl) |r| entity(r, visiting) orelse return false else .{ .expression = .{ .selection = b, .node = y } };
+                return sameEntity(left, right, visiting);
             }
-            return yl == null and std.mem.eql(u8, xp, yp);
+            return std.mem.eql(u8, xp, yp);
         }
         if (std.meta.activeTag(x.data) != std.meta.activeTag(y.data)) return false;
         return switch (x.data) {
@@ -211,14 +212,22 @@ pub const Selection = struct {
         return true;
     }
 
+    fn equivalent(a: Located, b: Located, visiting: *std.ArrayList(Declaration)) bool {
+        if (std.meta.eql(a.declaration, b.declaration)) return true;
+        const left = entity(a, visiting) orelse return false;
+        const right = entity(b, visiting) orelse return false;
+        visiting.appendSlice(a.selection.alloc, &.{ a.declaration, b.declaration }) catch @panic("out of memory");
+        defer visiting.shrinkRetainingCapacity(visiting.items.len - 2);
+        return sameEntity(left, right, visiting);
+    }
+
     fn one(candidates: []const *Selection, name: []const u8, visiting: *std.ArrayList(Declaration)) ?Located {
         var selected: ?Located = null;
         for (candidates) |candidate| {
             const decl = candidate.publicOwn(name) orelse continue;
             const current = Located{ .selection = candidate, .declaration = decl };
             if (selected) |previous| {
-                if (std.meta.eql(previous.declaration, decl)) continue;
-                if (!sameEntity(entity(previous, visiting) orelse return null, entity(current, visiting) orelse return null, visiting)) return null;
+                if (!equivalent(previous, current, visiting)) return null;
             } else selected = current;
         }
         return selected;
@@ -246,7 +255,7 @@ pub const Selection = struct {
             for (targets) |target| {
                 const current = target.locate(rest, visiting) orelse continue;
                 if (selected) |previous| {
-                    if (!sameEntity(entity(previous, visiting) orelse return null, entity(current, visiting) orelse return null, visiting)) return null;
+                    if (!equivalent(previous, current, visiting)) return null;
                 } else selected = current;
             }
             return selected;

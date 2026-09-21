@@ -1,5 +1,7 @@
 a :: @import "a.sx";
+t :: @import "target.sx";
+private Int :: i64;
 answer :: a.answer;
 N :: a.N;
-Cb :: (x: i64) -> i64;
-IB :: a.IB;
+Cb :: (x: Int) -> Int;
+IB :: t.Box(Int);
