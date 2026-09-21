@@ -1,8 +1,3 @@
-// Match arms whose result types have NO safe coercion in either direction (the
-// store guard's `noneReinterpretIsUnsafe` lattice) are a true mismatch: each
-// offending arm gets a located "match arms have incompatible types" diagnostic.
-// Covers the value-position literal shape, a capture-typed arm against a string
-// arm, and a match whose arm tails are calls.
 @import "modules/std.sx";
 
 Color :: enum { red; green; }

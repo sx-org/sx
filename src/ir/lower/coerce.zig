@@ -1226,12 +1226,12 @@ const AssignDiag = union(enum) {
 };
 
 /// Guard a store into an explicitly-annotated slot against a silent bit-mangle.
-pub fn checkAssignable(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: ast.Span, verb: []const u8, name: []const u8, _: ?*const Node) bool {
+pub fn checkAssignable(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: ast.Span, verb: []const u8, name: []const u8) bool {
     return checkAssignableWith(self, src_ty, dst_ty, span, .{ .ordinary = .{ .verb = verb, .name = name } });
 }
 
 /// `checkAssignable` for the write an `@Init(dst_ty)` formation performs.
-pub fn checkFormationWritable(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: ast.Span, _: ?*const Node) bool {
+pub fn checkFormationWritable(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: ast.Span) bool {
     return checkAssignableWith(self, src_ty, dst_ty, span, .formation);
 }
 

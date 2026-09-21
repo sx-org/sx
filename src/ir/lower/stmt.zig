@@ -947,7 +947,7 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
                     // (`x : i32 = "hi"`) would otherwise pass through unchanged and
                     // bit-mangle the slot. Diagnose and store a safe
                     // default so the build aborts cleanly instead of segfaulting.
-                    if (!self.checkAssignable(ref_ty, ty, val.span, "initialize", vd.name, val)) {
+                    if (!self.checkAssignable(ref_ty, ty, val.span, "initialize", vd.name)) {
                         self.builder.store(slot, self.buildDefaultValue(ty));
                         if (self.scope) |scope| {
                             scope.put(vd.name, .{ .ref = slot, .ty = ty, .is_alloca = true });
@@ -1138,7 +1138,7 @@ pub fn lowerConstDecl(self: *Lowering, cd: *const ast.ConstDecl) void {
     if (rejectVoidInitializer(self, cd.value, cd.name, ref_ty, errs_before)) return;
 
     if (cd.type_annotation != null) {
-        if (!self.checkAssignable(ref_ty, ty, cd.value.span, "initialize", cd.name, cd.value)) {
+        if (!self.checkAssignable(ref_ty, ty, cd.value.span, "initialize", cd.name)) {
             ref = self.buildDefaultValue(ty);
         } else if (ref_ty != ty and ref_ty != .void and ty != .void) {
             const checked = self.coerceChecked(ref, ref_ty, ty);
@@ -1995,11 +1995,10 @@ fn lowerSelectedQualifiedGlobalStore(
     op: ast.Assignment.Op,
     val: Ref,
     val_span: ast.Span,
-    val_node: *const Node,
 ) void {
     if (target.field) |field| {
         const val_ty = self.builder.getRefType(val);
-        if (op == .assign and !self.checkAssignable(val_ty, field.ty, val_span, "assign", field.name, val_node)) return;
+        if (op == .assign and !self.checkAssignable(val_ty, field.ty, val_span, "assign", field.name)) return;
         const base = self.builder.emit(.{ .global_addr = target.global.id }, self.module.types.ptrTo(target.global.ty));
         const ptr = self.builder.structGepTyped(base, field.index, self.module.types.ptrTo(field.ty), target.global.ty);
         self.storeOrCompound(ptr, val, op, field.ty);
@@ -2009,7 +2008,7 @@ fn lowerSelectedQualifiedGlobalStore(
     if (op == .assign) {
         const val_ty = self.builder.getRefType(val);
         if (val_ty != target.global.ty and val_ty != .void and target.global.ty != .void) {
-            if (!self.checkAssignable(val_ty, target.global.ty, val_span, "assign", target.member, val_node)) return;
+            if (!self.checkAssignable(val_ty, target.global.ty, val_span, "assign", target.member)) return;
         }
         const store_val = if (val_ty != target.global.ty and val_ty != .void and target.global.ty != .void)
             self.coerceToType(val, val_ty, target.global.ty)
@@ -2045,7 +2044,6 @@ fn tryLowerQualifiedGlobalStore(
     val: Ref,
     span: ast.Span,
     val_span: ast.Span,
-    val_node: *const Node,
 ) QualifiedStore {
     const full_node = Node{ .span = span, .data = .{ .field_access = fa } };
     const full_path = self.qualifiedTypeName(&full_node) orelse return .not_applicable;
@@ -2159,7 +2157,7 @@ fn tryLowerQualifiedGlobalStore(
                 .private => return .handled,
                 .hit => |h| {
                     const val_ty = self.builder.getRefType(val);
-                    if (op == .assign and !self.checkAssignable(val_ty, h.ty, val_span, "assign", field_name, val_node)) return .handled;
+                    if (op == .assign and !self.checkAssignable(val_ty, h.ty, val_span, "assign", field_name)) return .handled;
                     const base = self.builder.emit(.{ .global_addr = gi.id }, self.module.types.ptrTo(gi.ty));
                     const ptr = self.builder.structGepTyped(base, h.index, self.module.types.ptrTo(h.ty), gi.ty);
                     self.storeOrCompound(ptr, val, op, h.ty);
@@ -2175,7 +2173,7 @@ fn tryLowerQualifiedGlobalStore(
             const val_ty = self.builder.getRefType(val);
             if (val_ty != gi.ty and val_ty != .void and gi.ty != .void) {
                 // No coercion to the global's type — bit-mangle guard.
-                if (!self.checkAssignable(val_ty, gi.ty, val_span, "assign", member, val_node)) return .handled;
+                if (!self.checkAssignable(val_ty, gi.ty, val_span, "assign", member)) return .handled;
             }
             const store_val = if (val_ty != gi.ty and val_ty != .void and gi.ty != .void)
                 self.coerceToType(val, val_ty, gi.ty)
@@ -2548,7 +2546,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
     // store Bus-errors through the enclosing frame's dead alloca.
     if (diagEnclosingRootWrite(self, asgn.target)) return;
     if (qualified_store_target) |target| {
-        lowerSelectedQualifiedGlobalStore(self, target, asgn.op, val, asgn.value.span, asgn.value);
+        lowerSelectedQualifiedGlobalStore(self, target, asgn.op, val, asgn.value.span);
         return;
     }
     switch (asgn.target.data) {
@@ -2572,7 +2570,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                                 // A reassignment with no coercion to the slot type
                                 // (`x = "hi"` for `x: i32`) would pass through and
                                 // bit-mangle the slot — diagnose instead.
-                                if (!self.checkAssignable(val_ty, binding.ty, asgn.value.span, "reassign", id.name, asgn.value)) return;
+                                if (!self.checkAssignable(val_ty, binding.ty, asgn.value.span, "reassign", id.name)) return;
                                 store_val = self.coerceToType(val, val_ty, binding.ty);
                             }
                             self.builder.store(binding.ref, store_val);
@@ -2603,7 +2601,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                         const val_ty = self.builder.getRefType(val);
                         if (val_ty != gi.ty and val_ty != .void and gi.ty != .void) {
                             // No coercion to the global's type — bit-mangle guard.
-                            if (!self.checkAssignable(val_ty, gi.ty, asgn.value.span, "reassign", id.name, asgn.value)) return;
+                            if (!self.checkAssignable(val_ty, gi.ty, asgn.value.span, "reassign", id.name)) return;
                         }
                         const store_val = if (val_ty != gi.ty and val_ty != .void and gi.ty != .void)
                             self.coerceToType(val, val_ty, gi.ty)
@@ -2644,7 +2642,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
             // store into the imported module's mutable global.
             // Runs BEFORE the value-lvalue path below — a module alias is not
             // a value, so `lowerExprAsPtr(fa.object)` would fail "unresolved".
-            switch (tryLowerQualifiedGlobalStore(self, fa, asgn.op, val, asgn.target.span, asgn.value.span, asgn.value)) {
+            switch (tryLowerQualifiedGlobalStore(self, fa, asgn.op, val, asgn.target.span, asgn.value.span)) {
                 .handled => return,
                 .not_applicable => {},
             }
@@ -2743,7 +2741,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                 const field_ty = self.module.types.manyPtrTo(elem_ty);
                 const gep = self.builder.structGepTyped(obj_ptr, 0, self.module.types.ptrTo(field_ty), obj_ty);
                 self.storeOrCompound(gep, val, asgn.op, field_ty);
-            } else if (self.storeSwizzle(obj_ptr, obj_ty, fa.field, val, asgn.op, asgn.target.span, asgn.value.span, asgn.value)) {
+            } else if (self.storeSwizzle(obj_ptr, obj_ty, fa.field, val, asgn.op, asgn.target.span, asgn.value.span)) {
                 // Multi-letter shuffle store (and diagnosed swizzle errors).
             } else switch (self.fieldLvalueMention(obj_ptr, obj_ty, fa.field, asgn.target.span)) {
                 .private => {},
@@ -2761,7 +2759,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                     // (`w.s = "hi"` for a struct field `s`) — it would overrun the
                     // slot and corrupt neighbors. Plain `=` only;
                     // compound ops load-op-store through the field type.
-                    if (asgn.op == .assign and !self.checkAssignable(src_ty, fl.ty, asgn.value.span, "assign", fa.field, asgn.value)) return;
+                    if (asgn.op == .assign and !self.checkAssignable(src_ty, fl.ty, asgn.value.span, "assign", fa.field)) return;
                     const coerced = self.coerceToType(val, src_ty, fl.ty);
                     self.storeOrCompound(fl.ptr, coerced, asgn.op, fl.ty);
                 },
@@ -2791,7 +2789,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
             // Guard a width-mismatched `.none` store into an element slot
             // (`arr[0] = "hi"` for an i32 array) — it would overrun the element
             // and corrupt neighbors. Plain `=` only.
-            if (asgn.op == .assign and !self.checkAssignable(self.builder.getRefType(val), elem_ty, asgn.value.span, "assign", "element", asgn.value)) return;
+            if (asgn.op == .assign and !self.checkAssignable(self.builder.getRefType(val), elem_ty, asgn.value.span, "assign", "element")) return;
             const base = self.indexBase(ie.object, obj_ty, narrowed_child);
             const gep = self.builder.emit(.{ .index_gep = .{ .lhs = base, .rhs = idx } }, ptr_ty);
             self.storeOrCompound(gep, val, asgn.op, elem_ty);
@@ -2815,7 +2813,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                 }
                 // Guard a width-mismatched `.none` store through the pointer
                 // (`p.* = "hi"` for a `*i32`) — overruns the pointee.
-                if (!self.checkAssignable(val_ty, pointee_ty, asgn.value.span, "assign", "target", asgn.value)) return;
+                if (!self.checkAssignable(val_ty, pointee_ty, asgn.value.span, "assign", "target")) return;
                 const store_val = if (val_ty != pointee_ty and val_ty != .void and pointee_ty != .void)
                     self.coerceToType(val, val_ty, pointee_ty)
                 else
@@ -2840,7 +2838,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
             }
             const field = self.lowerFieldPlace(asgn.target) orelse return;
             const src_ty = self.builder.getRefType(val);
-            if (asgn.op == .assign and !self.checkAssignable(src_ty, field.ty, asgn.value.span, "assign", "field", asgn.value)) return;
+            if (asgn.op == .assign and !self.checkAssignable(src_ty, field.ty, asgn.value.span, "assign", "field")) return;
             self.storeOrCompound(field.ptr, self.coerceToType(val, src_ty, field.ty), asgn.op, field.ty);
         },
         else => {
@@ -2993,7 +2991,6 @@ pub fn storeSwizzle(
     op: ast.Assignment.Op,
     target_span: ast.Span,
     value_span: ast.Span,
-    value_node: *const Node,
 ) bool {
     const recv = self.swizzleRecvOf(obj_ty) orelse return false;
     switch (lower_expr.parseSwizzle(field)) {
@@ -3014,7 +3011,7 @@ pub fn storeSwizzle(
             const elem_ty = self.getElementType(obj_ty);
             const result_ty = self.swizzleResultType(recv, elem_ty, sw);
             const src_ty = self.builder.getRefType(val);
-            if (op == .assign and !self.checkAssignable(src_ty, result_ty, value_span, "assign", field, value_node))
+            if (op == .assign and !self.checkAssignable(src_ty, result_ty, value_span, "assign", field))
                 return true;
             const coerced = self.coerceToType(val, src_ty, result_ty);
             for (sw.lanes[0..sw.len], 0..) |lane, i| {
@@ -3873,7 +3870,7 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
         if (diagEnclosingRootWrite(self, target)) continue;
         if (qualified_store_verdicts[i] == .target) {
             const selected = qualified_store_verdicts[i].target;
-            lowerSelectedQualifiedGlobalStore(self, selected, .assign, val, ma.values[i].span, ma.values[i]);
+            lowerSelectedQualifiedGlobalStore(self, selected, .assign, val, ma.values[i].span);
             continue;
         }
         switch (target.data) {
@@ -3898,7 +3895,7 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                             handled = true;
                             const val_ty = self.builder.getRefType(val);
                             // Width-mismatched `.none` store guard.
-                            if (!self.checkAssignable(val_ty, binding.ty, ma.values[i].span, "assign", id.name, ma.values[i])) continue;
+                            if (!self.checkAssignable(val_ty, binding.ty, ma.values[i].span, "assign", id.name)) continue;
                             const store_val = if (val_ty != binding.ty and val_ty != .void and binding.ty != .void)
                                 self.coerceToType(val, val_ty, binding.ty)
                             else
@@ -3932,7 +3929,7 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                         const val_ty = self.builder.getRefType(val);
                         if (val_ty != gi.ty and val_ty != .void and gi.ty != .void) {
                             // No coercion to the global's type — bit-mangle guard.
-                            if (!self.checkAssignable(val_ty, gi.ty, ma.values[i].span, "assign", id.name, ma.values[i])) continue;
+                            if (!self.checkAssignable(val_ty, gi.ty, ma.values[i].span, "assign", id.name)) continue;
                         }
                         const store_val = if (val_ty != gi.ty and val_ty != .void and gi.ty != .void)
                             self.coerceToType(val, val_ty, gi.ty)
@@ -3966,7 +3963,7 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                 }
                 const field = self.lowerFieldPlace(target) orelse continue;
                 const val_ty = self.builder.getRefType(val);
-                if (!self.checkAssignable(val_ty, field.ty, ma.values[i].span, "assign", "field", ma.values[i])) continue;
+                if (!self.checkAssignable(val_ty, field.ty, ma.values[i].span, "assign", "field")) continue;
                 self.builder.store(field.ptr, self.coerceToType(val, val_ty, field.ty));
             },
             .index_expr => |ie| {
@@ -3985,7 +3982,7 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                 }
                 const ptr_ty = self.module.types.ptrTo(elem_ty);
                 const val_ty = self.builder.getRefType(val);
-                if (!self.checkAssignable(val_ty, elem_ty, ma.values[i].span, "assign", "element", ma.values[i])) continue;
+                if (!self.checkAssignable(val_ty, elem_ty, ma.values[i].span, "assign", "element")) continue;
                 const store_val = if (val_ty != elem_ty and val_ty != .void and elem_ty != .void)
                     self.coerceToType(val, val_ty, elem_ty)
                 else
@@ -3999,7 +3996,7 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                 // mutable global (the multi-assign sibling). Runs
                 // BEFORE lowerExprAsPtr, which cannot address a module alias.
                 // Multi-assign is always plain `=`.
-                switch (tryLowerQualifiedGlobalStore(self, fa, .assign, val, target.span, ma.values[i].span, ma.values[i])) {
+                switch (tryLowerQualifiedGlobalStore(self, fa, .assign, val, target.span, ma.values[i].span)) {
                     .handled => continue,
                     .not_applicable => {},
                 }
@@ -4020,7 +4017,7 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                     .private => {},
                     .ptr => |r| {
                         const val_ty = self.builder.getRefType(val);
-                        if (!self.checkAssignable(val_ty, r.ty, ma.values[i].span, "assign", fa.field, ma.values[i])) continue;
+                        if (!self.checkAssignable(val_ty, r.ty, ma.values[i].span, "assign", fa.field)) continue;
                         const store_val = if (val_ty != r.ty and val_ty != .void and r.ty != .void)
                             self.coerceToType(val, val_ty, r.ty)
                         else
@@ -4041,7 +4038,7 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                     break :blk ptr_ty;
                 };
                 const val_ty = self.builder.getRefType(val);
-                if (!self.checkAssignable(val_ty, pointee_ty, ma.values[i].span, "assign", "target", ma.values[i])) continue;
+                if (!self.checkAssignable(val_ty, pointee_ty, ma.values[i].span, "assign", "target")) continue;
                 const store_val = if (val_ty != pointee_ty and val_ty != .void and pointee_ty != .void)
                     self.coerceToType(val, val_ty, pointee_ty)
                 else

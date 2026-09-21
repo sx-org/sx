@@ -3941,19 +3941,8 @@ fn lowerAsIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
     // Interface re-erasure is not a conversion: it is the assertion `p.(Q)`.
     const xx_plan = self.coercionResolver().classifyXX(src_ty, dst);
     if (xx_plan == .reerase_protocol or xx_plan == .reerase_protocol_wrap) return refuseAs(self, src_ty, dst, c.callee.span);
-    switch (self.coercionResolver().classify(src_ty, dst)) {
-        .no_op => return self.coerceToType(val, src_ty, dst),
-        .unbox_any => unreachable,
-        .closure_to_fn_reject, .closure_signature_reject, .function_signature_reject, .unique_to_closure_reject, .lambda_ptr_to_closure_reject, .optional_to_bool_reject, .many_to_slice_reject => return refuseAs(self, src_ty, dst, c.callee.span),
-        else => {
-            // The explicit ladder carries the modeled puns (same-width integer
-            // signedness, pointer words); a value it passes through untyped has
-            // no conversion.
-            const converted = self.coerceExplicit(val, src_ty, dst);
-            if (self.builder.getRefType(converted) != dst) return refuseAs(self, src_ty, dst, c.callee.span);
-            return converted;
-        },
-    }
+    if (!self.conversionAvailable(src_ty, dst, .explicit)) return refuseAs(self, src_ty, dst, c.callee.span);
+    return self.coerceExplicit(val, src_ty, dst);
 }
 
 fn refuseAs(self: *Lowering, src_ty: TypeId, dst: TypeId, span: ast.Span) Ref {

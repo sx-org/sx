@@ -245,7 +245,7 @@ pub fn formationWriteValue(self: *Lowering, val: Ref, val_ty: TypeId, target: Ty
 /// refusal that names the expression instead of a destination the program never
 /// wrote.
 fn formationStore(self: *Lowering, val: Ref, val_ty: TypeId, target: TypeId, node: *const Node) ?Ref {
-    if (!self.checkFormationWritable(val_ty, target, node.span, node)) return null;
+    if (!self.checkFormationWritable(val_ty, target, node.span)) return null;
     if (val_ty == target) return val;
     return self.coerceToType(val, val_ty, target);
 }
