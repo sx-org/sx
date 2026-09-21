@@ -38,7 +38,10 @@ pub fn main(init: std.process.Init) !void {
         const arg = args[i];
         if (std.mem.eql(u8, arg, "--target")) {
             i += 1;
-            if (i >= args.len) { std.debug.print("error: --target requires a value\n", .{}); return; }
+            if (i >= args.len) {
+                std.debug.print("error: --target requires a value\n", .{});
+                return;
+            }
             const raw = args[i];
             // Shorthand aliases for common targets
             const expanded = if (std.mem.eql(u8, raw, "wasm") or std.mem.eql(u8, raw, "wasm32") or std.mem.eql(u8, raw, "emscripten"))
@@ -76,11 +79,17 @@ pub fn main(init: std.process.Init) !void {
             target_config.triple = (try allocator.dupeZ(u8, expanded)).ptr;
         } else if (std.mem.eql(u8, arg, "--cpu")) {
             i += 1;
-            if (i >= args.len) { std.debug.print("error: --cpu requires a value\n", .{}); return; }
+            if (i >= args.len) {
+                std.debug.print("error: --cpu requires a value\n", .{});
+                return;
+            }
             target_config.cpu = (try allocator.dupeZ(u8, args[i])).ptr;
         } else if (std.mem.eql(u8, arg, "--opt")) {
             i += 1;
-            if (i >= args.len) { std.debug.print("error: --opt requires a value\n", .{}); return; }
+            if (i >= args.len) {
+                std.debug.print("error: --opt requires a value\n", .{});
+                return;
+            }
             target_config.opt_level = parseOptLevel(args[i]) orelse {
                 std.debug.print("error: invalid --opt value '{s}' (expected: none/0, less/1, default/2, aggressive/3)\n", .{args[i]});
                 return;
@@ -88,11 +97,17 @@ pub fn main(init: std.process.Init) !void {
             explicit_opt = true;
         } else if (std.mem.eql(u8, arg, "-o")) {
             i += 1;
-            if (i >= args.len) { std.debug.print("error: -o requires a value\n", .{}); return; }
+            if (i >= args.len) {
+                std.debug.print("error: -o requires a value\n", .{});
+                return;
+            }
             target_config.output_path = args[i];
         } else if (std.mem.eql(u8, arg, "--linker")) {
             i += 1;
-            if (i >= args.len) { std.debug.print("error: --linker requires a value\n", .{}); return; }
+            if (i >= args.len) {
+                std.debug.print("error: --linker requires a value\n", .{});
+                return;
+            }
             target_config.linker = args[i];
         } else if (std.mem.eql(u8, arg, "--self-contained")) {
             target_config.self_contained = .on;
@@ -100,39 +115,66 @@ pub fn main(init: std.process.Init) !void {
             target_config.self_contained = .off;
         } else if (std.mem.eql(u8, arg, "--sysroot")) {
             i += 1;
-            if (i >= args.len) { std.debug.print("error: --sysroot requires a value\n", .{}); return; }
+            if (i >= args.len) {
+                std.debug.print("error: --sysroot requires a value\n", .{});
+                return;
+            }
             target_config.sysroot = args[i];
         } else if (std.mem.eql(u8, arg, "--bundle")) {
             i += 1;
-            if (i >= args.len) { std.debug.print("error: --bundle requires a path (e.g. MyApp.app)\n", .{}); return; }
+            if (i >= args.len) {
+                std.debug.print("error: --bundle requires a path (e.g. MyApp.app)\n", .{});
+                return;
+            }
             target_config.bundle_path = args[i];
         } else if (std.mem.eql(u8, arg, "--apk")) {
             i += 1;
-            if (i >= args.len) { std.debug.print("error: --apk requires a path (e.g. out.apk)\n", .{}); return; }
+            if (i >= args.len) {
+                std.debug.print("error: --apk requires a path (e.g. out.apk)\n", .{});
+                return;
+            }
             target_config.apk_path = args[i];
         } else if (std.mem.eql(u8, arg, "--manifest")) {
             i += 1;
-            if (i >= args.len) { std.debug.print("error: --manifest requires a path\n", .{}); return; }
+            if (i >= args.len) {
+                std.debug.print("error: --manifest requires a path\n", .{});
+                return;
+            }
             target_config.manifest_path = args[i];
         } else if (std.mem.eql(u8, arg, "--keystore")) {
             i += 1;
-            if (i >= args.len) { std.debug.print("error: --keystore requires a path\n", .{}); return; }
+            if (i >= args.len) {
+                std.debug.print("error: --keystore requires a path\n", .{});
+                return;
+            }
             target_config.keystore_path = args[i];
         } else if (std.mem.eql(u8, arg, "--bundle-id")) {
             i += 1;
-            if (i >= args.len) { std.debug.print("error: --bundle-id requires a value (e.g. co.swipelab.myapp)\n", .{}); return; }
+            if (i >= args.len) {
+                std.debug.print("error: --bundle-id requires a value (e.g. co.swipelab.myapp)\n", .{});
+                return;
+            }
             target_config.bundle_id = args[i];
         } else if (std.mem.eql(u8, arg, "--codesign-identity")) {
             i += 1;
-            if (i >= args.len) { std.debug.print("error: --codesign-identity requires a value\n", .{}); return; }
+            if (i >= args.len) {
+                std.debug.print("error: --codesign-identity requires a value\n", .{});
+                return;
+            }
             target_config.codesign_identity = args[i];
         } else if (std.mem.eql(u8, arg, "--provisioning-profile")) {
             i += 1;
-            if (i >= args.len) { std.debug.print("error: --provisioning-profile requires a path\n", .{}); return; }
+            if (i >= args.len) {
+                std.debug.print("error: --provisioning-profile requires a path\n", .{});
+                return;
+            }
             target_config.provisioning_profile = args[i];
         } else if (std.mem.eql(u8, arg, "--entitlements")) {
             i += 1;
-            if (i >= args.len) { std.debug.print("error: --entitlements requires a path\n", .{}); return; }
+            if (i >= args.len) {
+                std.debug.print("error: --entitlements requires a path\n", .{});
+                return;
+            }
             target_config.entitlements_path = args[i];
         } else if (std.mem.eql(u8, arg, "--time")) {
             show_timing = true;
@@ -145,7 +187,10 @@ pub fn main(init: std.process.Init) !void {
                 try lib_paths.append(allocator, arg[2..]);
             } else {
                 i += 1;
-                if (i >= args.len) { std.debug.print("error: -L requires a value\n", .{}); return; }
+                if (i >= args.len) {
+                    std.debug.print("error: -L requires a value\n", .{});
+                    return;
+                }
                 try lib_paths.append(allocator, args[i]);
             }
         } else if (std.mem.startsWith(u8, arg, "-F")) {
@@ -153,12 +198,18 @@ pub fn main(init: std.process.Init) !void {
                 try framework_paths.append(allocator, arg[2..]);
             } else {
                 i += 1;
-                if (i >= args.len) { std.debug.print("error: -F requires a value\n", .{}); return; }
+                if (i >= args.len) {
+                    std.debug.print("error: -F requires a value\n", .{});
+                    return;
+                }
                 try framework_paths.append(allocator, args[i]);
             }
         } else if (std.mem.eql(u8, arg, "--lflags")) {
             i += 1;
-            if (i >= args.len) { std.debug.print("error: --lflags requires a value\n", .{}); return; }
+            if (i >= args.len) {
+                std.debug.print("error: --lflags requires a value\n", .{});
+                return;
+            }
             try link_flags.append(allocator, args[i]);
         } else if (!std.mem.startsWith(u8, arg, "-")) {
             input_path = arg;
@@ -237,11 +288,17 @@ pub fn main(init: std.process.Init) !void {
         defer comp.deinit();
 
         timer.mark();
-        comp.parse() catch { comp.renderDiagnostics(); std.process.exit(1); };
+        comp.parse() catch {
+            comp.renderDiagnostics();
+            std.process.exit(1);
+        };
         timer.record("parse");
 
         timer.mark();
-        comp.resolveImports() catch { comp.renderDiagnostics(); std.process.exit(1); };
+        comp.resolveImports() catch {
+            comp.renderDiagnostics();
+            std.process.exit(1);
+        };
         timer.record("imports");
 
         // Cache check — use .o files (precompiled object, skip IR compilation in JIT)
@@ -282,7 +339,10 @@ pub fn main(init: std.process.Init) !void {
 
             // Cache MISS — codegen (including verification + optimization) and
             // emit the resulting object to memory.
-            comp.generateCode() catch { comp.renderDiagnostics(); std.process.exit(1); };
+            comp.generateCode() catch {
+                comp.renderDiagnostics();
+                std.process.exit(1);
+            };
             timer.record("codegen");
 
             timer.mark();
@@ -301,7 +361,10 @@ pub fn main(init: std.process.Init) !void {
 
         // Compile C sources natively and dlopen before JIT
         timer.mark();
-        var c_handle = compileCForJIT(allocator, io, &comp) catch { comp.renderDiagnostics(); std.process.exit(1); };
+        var c_handle = compileCForJIT(allocator, io, &comp) catch {
+            comp.renderDiagnostics();
+            std.process.exit(1);
+        };
         defer c_handle.unload(io);
         timer.record("c-import");
 
@@ -484,7 +547,6 @@ fn deriveOutputName(input_path: []const u8) []const u8 {
     return basename;
 }
 
-
 /// Format the "interpreter bailed during X" message, attaching the IR op
 /// and the source location (line:col) when the interpreter captured them.
 fn printInterpBailDiag(comp: *const sx.core.Compilation, label: []const u8, err: anyerror) void {
@@ -514,15 +576,24 @@ fn compilePipeline(allocator: std.mem.Allocator, io: std.Io, input_path: []const
     errdefer comp.deinit();
 
     timer.mark();
-    comp.parse() catch { comp.renderDiagnostics(); return error.CompileError; };
+    comp.parse() catch {
+        comp.renderDiagnostics();
+        return error.CompileError;
+    };
     timer.record("parse");
 
     timer.mark();
-    comp.resolveImports() catch { comp.renderDiagnostics(); return error.CompileError; };
+    comp.resolveImports() catch {
+        comp.renderDiagnostics();
+        return error.CompileError;
+    };
     timer.record("imports");
 
     timer.mark();
-    comp.generateCode() catch { comp.renderDiagnostics(); return error.CompileError; };
+    comp.generateCode() catch {
+        comp.renderDiagnostics();
+        return error.CompileError;
+    };
     timer.record("codegen");
 
     comp.renderDiagnostics();
@@ -534,10 +605,19 @@ fn dumpSxIR(allocator: std.mem.Allocator, io: std.Io, input_path: []const u8, st
     var comp = sx.core.Compilation.init(allocator, io, input_path, source, .{}, stdlib_paths);
     defer comp.deinit();
 
-    comp.parse() catch { comp.renderDiagnostics(); return error.CompileError; };
-    comp.resolveImports() catch { comp.renderDiagnostics(); return error.CompileError; };
+    comp.parse() catch {
+        comp.renderDiagnostics();
+        return error.CompileError;
+    };
+    comp.resolveImports() catch {
+        comp.renderDiagnostics();
+        return error.CompileError;
+    };
 
-    var ir_module = comp.lowerToIR() catch { comp.renderDiagnostics(); return error.CompileError; };
+    var ir_module = comp.lowerToIR() catch {
+        comp.renderDiagnostics();
+        return error.CompileError;
+    };
     defer ir_module.deinit();
     comp.renderDiagnostics();
 
@@ -628,7 +708,10 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
     defer comp.deinit();
 
     timer.mark();
-    comp.parse() catch { comp.renderDiagnostics(); return error.CompileError; };
+    comp.parse() catch {
+        comp.renderDiagnostics();
+        return error.CompileError;
+    };
     timer.record("parse");
 
     // Auto-import the stdlib build driver so `defaultPipeline` (+ the build
@@ -647,7 +730,10 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
     }
 
     timer.mark();
-    comp.resolveImports() catch { comp.renderDiagnostics(); return error.CompileError; };
+    comp.resolveImports() catch {
+        comp.renderDiagnostics();
+        return error.CompileError;
+    };
     timer.record("imports");
 
     // Extract library + framework names from AST (needed for linking regardless of cache)
@@ -673,7 +759,10 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
     // c_import.zig writes.
     _ = enable_cache;
     timer.mark();
-    comp.generateCode() catch { comp.renderDiagnostics(); return error.CompileError; };
+    comp.generateCode() catch {
+        comp.renderDiagnostics();
+        return error.CompileError;
+    };
     timer.record("codegen");
 
     comp.renderDiagnostics();
