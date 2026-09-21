@@ -1,5 +1,5 @@
-error: a value of type 'string' does not coerce to 'cstring': no conversion adds a terminator — materialize one with toCstring(s)
-  --> examples/diagnostics/1173-diagnostics-cstring-coercions.sx:8:5
+error: cannot initialize 'c' of type 'cstring' with a value of type 'string'
+  --> examples/diagnostics/1173-diagnostics-cstring-coercions.sx:8:19
    |
  8 |     c : cstring = s;            // error: an unterminated string -> cstring
-   |     ^^^^^^^^^^^^^^^^
+   |                   ^

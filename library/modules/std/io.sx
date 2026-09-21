@@ -52,7 +52,7 @@ impl Io for CBlockingIo {
         // completion right here, so the `async` free-fn's Future is born `.ready`.
         // (A suspending impl — the fiber scheduler — instead defers `entry` onto a
         // fiber.) Same `(*void)->void` erased-thunk contract `spawnRaw` mandates.
-        entryFn := entry.((*void) -> void);
+        entryFn := @reinterpret((*void) -> void, entry);
         entryFn(arg);
         return null;
     }

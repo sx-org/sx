@@ -390,7 +390,7 @@ impl Platform for UIKitPlatform {
             NSLog(nsstring("[sx] UIKitPlatform.runFrameLoop: delegateClassName unset — boot through uikitAppRun (platform/uikit_app.sx) or set your own delegate class first\n"));
             return;
         }
-        UIApplicationMain(0, (0).(*void), (0).(*NSString), nsstring(self.delegateClassName));
+        UIApplicationMain(0, null, null, nsstring(self.delegateClassName));
     }
 
     pollEvents :: (self: *UIKitPlatform) -> []PlatformEvent {
@@ -776,7 +776,7 @@ impl Platform for UIKitPlatform {
             dict := NSMutableDictionary.dictionary();
             dict.setObject_forKey(nsNo, retainedKey);
             dict.setObject_forKey(rgba8Value, colorformatKey);
-            eaglLayer : *CAEAGLLayer = glLayer.(*CAEAGLLayer);
+            eaglLayer : *CAEAGLLayer = @reinterpret(*CAEAGLLayer, glLayer);
             eaglLayer.setDrawableProperties(dict);
         }
 
@@ -982,7 +982,7 @@ uikitPointer :: (pos: Point) -> PointerEvent {
 // dlsym(RTLD_DEFAULT, name) — Apple platforms. RTLD_DEFAULT is (void*)-2.
 // abi(.c) so this is callable from `loadGl`'s C-conv proc-loader slot.
 iosGlProc :: (name: [*:0]u8) -> *void abi(.c) {
-    rtldDefault : *void = (0 - 2).(*void);
+    rtldDefault : *void = @reinterpret(*void, (0 - 2).(usize));
     dlsym(rtldDefault, name)
 }
 
@@ -990,7 +990,7 @@ iosGlProc :: (name: [*:0]u8) -> *void abi(.c) {
 // extern variable holds a pointer to the NSString instance — dlsym returns
 // the address of that variable, which we dereference.
 uikitExternNsstring :: (name: [*]u8) -> *void {
-    rtldDefault : *void = (0 - 2).(*void);
+    rtldDefault : *void = @reinterpret(*void, (0 - 2).(usize));
     p := dlsym(rtldDefault, name);
     if p == null { return null; }
     pp : **void = p.(**void);

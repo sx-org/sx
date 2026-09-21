@@ -41,5 +41,5 @@ main :: () -> i32 {
     objc_registerClassPair(SxAppDelegate);
 
     // Hand off to the iOS run loop. Never returns under normal operation.
-    return UIApplicationMain(0, xx 0, xx 0, nsstring("SxAppDelegate"));
+    return UIApplicationMain(0, null, null, nsstring("SxAppDelegate"));
 }

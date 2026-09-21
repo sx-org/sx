@@ -63,7 +63,7 @@ kBlockHasCopyDispose :: (1 << 25).(i32);
 // copy's own.
 blockCopyHelper :: (dst: *Block, src: *Block) abi(.c) {
     _ = src;
-    head := dst.(*BlockHead);
+    head := @reinterpret(*BlockHead, dst);
     head.header.descriptor = *head.shape;
 }
 
@@ -125,7 +125,7 @@ buildBlockInvoke :: (args: []Type, $ret: Type) -> string {
     }
     code = concat(code, ") -> ");
     code = concat(code, retName);
-    code = concat(code, " abi(.c) { storage := blockSelf.(*BlockStorage(F)); ");
+    code = concat(code, " abi(.c) { storage := @reinterpret(*BlockStorage(F), blockSelf); ");
     if retName == "void" {
         code = concat(code, "storage.callable(");
     } else {

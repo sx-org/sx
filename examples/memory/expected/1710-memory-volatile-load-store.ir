@@ -93,6 +93,7 @@ entry:
   %allocaN = alloca { i32 }, align 8
   %allocaN = alloca i64, align 8
   %allocaN = alloca ptr, align 8
+  %allocaN = alloca ptr, align 8
   %allocaN = alloca { i32 }, align 8
   %allocaN = alloca { i32 }, align 8
   %allocaN = alloca { i32, i32 }, align 8
@@ -194,10 +195,12 @@ if.merge.27:                                      ; preds = %if.else.26, %if.the
   store i64 0, ptr %allocaN, align 8
   store ptr %allocaN, ptr %allocaN, align 8
   %loadN = load ptr, ptr %allocaN, align 8
+  store ptr %loadN, ptr %allocaN, align 8
+  %loadN = load ptr, ptr %allocaN, align 8
   store volatile i64 -1, ptr %loadN, align 8
   %loadN = load ptr, ptr %allocaN, align 8
-  %volatile_load44 = load volatile i64, ptr %loadN, align 8
-  %icmpN = icmp eq i64 %volatile_load44, -1
+  %volatile_load46 = load volatile i64, ptr %loadN, align 8
+  %icmpN = icmp eq i64 %volatile_load46, -1
   br i1 %icmpN, label %if.then.28, label %if.else.29
 
 if.then.28:                                       ; preds = %if.merge.27
@@ -222,8 +225,8 @@ if.else.29:                                       ; preds = %if.merge.27
 
 if.merge.30:                                      ; preds = %if.else.29, %if.then.28
   store { i32, i32 } { i32 3, i32 4 }, ptr %allocaN, align 4
-  %volatile_load57 = load volatile { i32, i32 }, ptr %allocaN, align 4
-  store { i32, i32 } %volatile_load57, ptr %allocaN, align 4
+  %volatile_load59 = load volatile { i32, i32 }, ptr %allocaN, align 4
+  store { i32, i32 } %volatile_load59, ptr %allocaN, align 4
   %loadN = load { i32, i32 }, ptr %allocaN, align 4
   %sg = extractvalue { i32, i32 } %loadN, 1
   %loadN = load { i32, i32 }, ptr %allocaN, align 4

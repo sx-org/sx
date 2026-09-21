@@ -106,7 +106,7 @@ free :: ufcs (x: $T, a: Allocator = context.allocator) {
         case interface:
             @error("free on an interface handle — a handle borrows its referent and owns nothing; free the referent where it lives ('Allocator.destroy' for one made by 'Allocator.make')");
         case closure: {
-            env := x.(@Closure).env;
+            env := @reinterpret(@Closure, x).env;
             if env != null { a.deallocBytes(env); }
         }
         case slice:    a.deallocBytes(x.ptr);
@@ -287,14 +287,14 @@ impl Allocator for Arena {
         if self.first != null {
             usable := self.first.cap - 16;
             if self.endIndex + aligned <= usable {
-                buf : [*]u8 = self.first.([*]u8);
+                buf : [*]u8 = @reinterpret([*]u8, self.first);
                 ptr := *buf[16 + self.endIndex];
                 self.endIndex = self.endIndex + aligned;
                 return ptr;
             }
         }
         self.addChunk(aligned);
-        buf : [*]u8 = self.first.([*]u8);
+        buf : [*]u8 = @reinterpret([*]u8, self.first);
         ptr := *buf[16 + self.endIndex];
         self.endIndex = self.endIndex + aligned;
         ptr

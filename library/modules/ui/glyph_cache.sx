@@ -239,7 +239,7 @@ GlyphCache :: struct {
         self.lineGap = linegapI;
 
         // Init text shaping context
-        self.shapeCtx = kbts_CreateShapeContext((0).(*void), (0).(*void));
+        self.shapeCtx = kbts_CreateShapeContext(null, null);
         if self.shapeCtx != null {
             self.shapeFont = kbts_ShapePushFontFromMemory(self.shapeCtx, self.fontData, fileSize, 0);
             // Get font metrics (unitsPerEm) from kbts

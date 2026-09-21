@@ -109,7 +109,7 @@ useState :: ($T: Type, default: T, site: SiteId = siteOf(@caller)) -> State(T) {
             process.exit(1)
         }
         e.claimed = true;
-        return State(T){ ptr = e.data };
+        return State(T){ ptr = @reinterpret(*T, e.data) };
     }
 
     e : *StateEntry = store.gpa.create(StateEntry);
@@ -117,11 +117,11 @@ useState :: ($T: Type, default: T, site: SiteId = siteOf(@caller)) -> State(T) {
         key = key,
         ty = T,
         size = @sizeOf(T),
-        data = store.gpa.create(T),
+        data = @reinterpret([*]u8, store.gpa.create(T)),
         claimed = true,
     };
     seed := default;
     c.memcpy(e.data, *seed, @sizeOf(T));
     store.entries.append(e, store.gpa);
-    State(T){ ptr = e.data }
+    State(T){ ptr = @reinterpret(*T, e.data) }
 }

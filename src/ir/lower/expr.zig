@@ -3653,11 +3653,7 @@ pub fn lowerNullCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
     var rhs = self.lowerExpr(nc.rhs);
     self.target_type = saved_tt;
     const rhs_ty = self.builder.getRefType(rhs);
-    // Skip the coerce entirely when the pair has NO modeled coercion and a
-    // width mismatch: `coerceToType` would be a passthrough no-op anyway, and
-    // its weld guard would fire a generic "cannot coerce" ahead of the
-    // focused `'??' default has type ...` diagnostic below (double error).
-    if (rhs_ty != inner_ty and rhs_ty != .void and inner_ty != .void and !self.noneReinterpretIsUnsafe(rhs_ty, inner_ty)) {
+    if (rhs_ty != inner_ty and rhs_ty != .void and inner_ty != .void and self.conversionAvailable(rhs_ty, inner_ty, .implicit)) {
         rhs = self.coerceToType(rhs, rhs_ty, inner_ty);
     }
     // The merge-block param, the unwrapped LHS, and the coerced RHS must all
@@ -6077,6 +6073,12 @@ fn meetCompareOperands(
                 .rhs = coerceCompareOperand(self, rhs, rhs_ty, meet_ty),
             };
         },
+        .incompatible => {
+            if (self.diagnostics) |d| {
+                d.addFmt(.err, span, "cannot compare values of type '{s}' and '{s}'", .{ self.formatTypeName(lhs_ty), self.formatTypeName(rhs_ty) });
+            }
+            return null;
+        },
         .signedness => {
             if (constIntOf(self, lhs)) |n| {
                 if (self.isIntEx(rhs_ty)) {
@@ -6114,11 +6116,6 @@ fn meetCompareOperands(
 
 fn coerceCompareOperand(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId) Ref {
     if (src_ty == dst_ty) return val;
-    // Pointer ↔ integer is a store-time explicit conversion; a comparison
-    // still uses that IR (inttoptr / ptrtoint) without requiring a glyph.
-    if (self.coercionResolver().classify(src_ty, dst_ty) == .ptr_int_bitcast) {
-        return self.coerceExplicit(val, src_ty, dst_ty);
-    }
     return self.coerceToType(val, src_ty, dst_ty);
 }
 

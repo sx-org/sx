@@ -54,5 +54,5 @@ main :: () -> i32 {
     objc_registerClassPair(SxAppDelegate);
 
     // UIApplicationMain blocks driving iOS's run loop.
-    return UIApplicationMain(0, xx 0, xx 0, nsstring("SxAppDelegate"));
+    return UIApplicationMain(0, null, null, nsstring("SxAppDelegate"));
 }

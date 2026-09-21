@@ -40,7 +40,7 @@ main :: () {
     // `T` alone fixes the access width. The address is a narrower view of the
     // same slot, and the store through it still writes all eight bytes.
     viewed: i64 = 0;
-    view: *i32 = *viewed;
+    view: *i32 = @reinterpret(*i32, *viewed);
     @volatileStore(i64, view, -1);
 
     if @volatileLoad(i64, view) == -1 {

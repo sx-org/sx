@@ -31,7 +31,7 @@ main :: () -> i32 {
     objc_registerClassPair(SxThing);
 
     obj := class_createInstance(SxThing, 0);
-    if obj == xx 0 { return 2; }
+    if obj == null { return 2; }
 
     // [obj hello]
     msg : (*void, *void) -> void abi(.c) = @reinterpret((*void, *void) -> void abi(.c), objc_msgSend);

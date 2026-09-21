@@ -1357,16 +1357,9 @@ pub fn unifyValueArmTypes(self: *Lowering, a: TypeId, b: TypeId) ?TypeId {
         if (a_float != b_float) return if (a_float) a else b;
         return if (self.typeBitsEx(b) > self.typeBitsEx(a)) b else a;
     }
-    if (armValueReaches(self, b, a)) return a;
-    if (armValueReaches(self, a, b)) return b;
+    if (self.conversionAvailable(b, a, .implicit)) return a;
+    if (self.conversionAvailable(a, b, .implicit)) return b;
     return null;
-}
-
-/// Whether an arm value of `src` reaches the joined type `dst`: a modeled
-/// coercion that is not a refusal, or a bit-compatible reinterpret.
-fn armValueReaches(self: *Lowering, src: TypeId, dst: TypeId) bool {
-    if (self.coercionResolver().classify(src, dst).refuses()) return false;
-    return !self.noneReinterpretIsUnsafe(src, dst);
 }
 
 /// Is `name` a runtime type-CATEGORY keyword denoting a tag SET (many

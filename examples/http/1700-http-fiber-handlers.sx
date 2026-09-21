@@ -53,7 +53,7 @@ checksum :: (s: string) -> i64 {
 }
 
 route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
-    obs : *Obs = xx ctx;
+    obs : *Obs = @reinterpret(*Obs, ctx);
     if req.path == "/sum" {
         if obs.handlerTid == 0 { obs.handlerTid = pthread_self(); }
         scratch : [8192]u8 = ---;
@@ -189,7 +189,7 @@ main :: () -> i32 {
             streamRequestBody = true,  // no pool: REQUIRES fibers
             fibers = runner,
         };
-        srv, se := http.Server.init(cfg, route, xx *obs);
+        srv, se := http.Server.init(cfg, route, @reinterpret(usize, *obs));
         if se { print("init failed\n"); return 1; }
 
         // ── case 1: bodyless fiber dispatch ───────────────────────────

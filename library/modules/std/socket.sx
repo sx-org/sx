@@ -71,11 +71,11 @@ Addr :: struct {
 // *SockAddr at the call (one C symbol, one signature; the sockaddrIn
 // surface stays as the legitimate simple-v4 API).
 bindTo :: (fd: i32, a: *Addr) -> i32 {
-    return bind(fd, *a.buf[0], a.len);
+    return bind(fd, @reinterpret(*SockAddr, *a.buf[0]), a.len);
 }
 
 connectTo :: (fd: i32, a: *Addr) -> i32 {
-    return connect(fd, *a.buf[0], a.len);
+    return connect(fd, @reinterpret(*SockAddr, *a.buf[0]), a.len);
 }
 
 // Leaf-module byte copy (socket.sx imports nothing but libc; addresses are
@@ -117,8 +117,8 @@ setBlocking :: (fd: i32) -> bool {
 setIoTimeout :: (fd: i32, ms: i64) -> bool {
     if ms <= 0 { return false; }
     tv := timevalMs(ms);
-    if setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, *tv, @sizeOf(Timeval)) != 0 { return false; }
-    return setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, *tv, @sizeOf(Timeval)) == 0;
+    if setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, @reinterpret(*i32, *tv), @sizeOf(Timeval)) != 0 { return false; }
+    return setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, @reinterpret(*i32, *tv), @sizeOf(Timeval)) == 0;
 }
 
 // Connect `fd` (already created, any family) to `a` with a hard deadline:
@@ -179,14 +179,14 @@ parseAddr :: (text: string, port: i64) -> (Addr, bool) {
     v4 : u32 = 0;
     if inet_pton(AF_INET, *tb[0], *v4) == 1 {
         sa := sockaddrIn(port, v4);
-        copyBytes(*a.buf[0], *sa, @sizeOf(SockAddr));
+        copyBytes(*a.buf[0], @reinterpret([*]u8, *sa), @sizeOf(SockAddr));
         a.len = 16;
         return a, true;
     }
     v6 : [16]u8 = ---;
     if inet_pton(AF_INET6, *tb[0], *v6[0]) == 1 {
-        sa6 := sockaddrIn6(port, *v6[0]);
-        copyBytes(*a.buf[0], *sa6, @sizeOf(SockAddrIn6));
+        sa6 := sockaddrIn6(port, @reinterpret(*[16]u8, *v6[0]));
+        copyBytes(*a.buf[0], @reinterpret([*]u8, *sa6), @sizeOf(SockAddrIn6));
         a.len = 28;
         return a, true;
     }
@@ -235,14 +235,14 @@ resolve :: (host: string, port: i64) -> (Addr, bool) {
     res : usize = 0;
     if getaddrinfo(*hb[0], *sb[0], *hints, *res) != 0 { return a, false; }
     if res == 0 { return a, false; }
-    ai : *AddrInfo = res.(*AddrInfo);
+    ai : *AddrInfo = @reinterpret(*AddrInfo, res);
     ok := false;
     if ai.aiAddrlen > 0 and ai.aiAddrlen <= 128 and ai.aiAddr != 0 {
-        copyBytes(*a.buf[0], ai.aiAddr.([*]u8), ai.aiAddrlen);
+        copyBytes(*a.buf[0], @reinterpret([*]u8, ai.aiAddr), ai.aiAddrlen);
         a.len = ai.aiAddrlen;
         ok = true;
     }
-    freeaddrinfo(res.(*AddrInfo));
+    freeaddrinfo(@reinterpret(*AddrInfo, res));
     return a, ok;
 }
 

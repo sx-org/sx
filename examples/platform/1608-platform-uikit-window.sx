@@ -55,7 +55,7 @@ sceneWillConnect :: (self: *void, _cmd: *void, scene: *void, session: *void, opt
     // UIKit invokes this callback only after the UIWindowScene exists, unlike
     // application:didFinishLaunchingWithOptions: where connectedScenes is still
     // empty on current iOS releases.
-    if scene == xx 0 { NSLog(nsstring("[sx] scene NULL\n")); return; }
+    if scene == null { NSLog(nsstring("[sx] scene NULL\n")); return; }
     NSLog(nsstring("[sx] scene: ok\n"));
 
     winRaw := msgO(UIWindow, selAlloc);
@@ -111,5 +111,5 @@ main :: () -> i32 {
         @reinterpret(*void, windowSetter), "v@:@".ptr);
     objc_registerClassPair(SxSceneDelegate);
 
-    return UIApplicationMain(0, xx 0, xx 0, nsstring("SxAppDelegate"));
+    return UIApplicationMain(0, null, null, nsstring("SxAppDelegate"));
 }

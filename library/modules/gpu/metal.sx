@@ -666,8 +666,8 @@ impl GPU for MetalGPU {
         if base == null { return; }
         // Add byteOffset via integer arithmetic. `@dst[i]` on `[*]u8` does
         // the same thing; the explicit form keeps the arithmetic visible.
-        baseI : i64 = base.(i64);
-        dstAt : *void = (baseI + byteOffset).(*void);
+        baseI : i64 = @reinterpret(isize, base).(i64);
+        dstAt : *void = @reinterpret(*void, (baseI + byteOffset).(usize));
         c.memcpy(dstAt, data, sizeBytes);
     }
 

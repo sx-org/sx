@@ -1,0 +1,2 @@
+Pair :: struct { p: [*]u8; n: i64; }
+main :: () { pair := Pair{}; s := pair.(string); }

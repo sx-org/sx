@@ -69,13 +69,13 @@ main :: () -> ! {
 
     // ── 2. Ownership: flag value is a VIEW into argv ──────────────────
     // "dist" is argv[3]; its bytes must lie inside that very element.
-    src   : i64 = xx argv[3].ptr;
+    src   : i64 = @reinterpret(isize, argv[3].ptr).(i64);
     stop  := src + argv[3].len;
-    pview : i64 = xx p.valueOf("out").ptr;
+    pview : i64 = @reinterpret(isize, p.valueOf("out").ptr).(i64);
     report("value-is-view", inRange(pview, src, stop) or pview == src);
     // group/command are argv[0]/argv[1] verbatim (same pointer, no copy).
-    g0 : i64 = xx argv[0].ptr;
-    gp : i64 = xx p.group.ptr;
+    g0 : i64 = @reinterpret(isize, argv[0].ptr).(i64);
+    gp : i64 = @reinterpret(isize, p.group.ptr).(i64);
     report("group-is-view", gp == g0);
 
     // ── 3. Dispatch to a different command in the table ──────────────

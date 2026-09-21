@@ -1,0 +1,4 @@
+main :: () {
+    s := "hello";
+    raw := s.(@Slice);
+}

@@ -584,7 +584,7 @@ BodyChan :: struct {
 // The BodyReadFn the server wires into a streamed request's Request
 // (bodyReadCtx = the *BodyChan).
 bodyChanRead :: (ctx: usize, dst: [*]u8, cap: i64) -> i64 {
-    ch : *BodyChan = ctx.(*BodyChan);
+    ch : *BodyChan = @reinterpret(*BodyChan, ctx);
     return ch.read(dst, cap);
 }
 
@@ -1000,7 +1000,7 @@ prepareContentEncoding :: (req: *Request, resp: *Response, enabled: bool, minSiz
 // mutex is uncontended here (single thread) — kept for field-protocol
 // uniformity with the pool path, not for exclusion.
 bodyFiberRead :: (ctx: usize, dst: [*]u8, cap: i64) -> i64 {
-    job : *HandlerJob = ctx.(*HandlerJob);
+    job : *HandlerJob = @reinterpret(*HandlerJob, ctx);
     ch := job.chan;
     if cap <= 0 { return 0; }
     while true {
@@ -1035,7 +1035,7 @@ bodyFiberRead :: (ctx: usize, dst: [*]u8, cap: i64) -> i64 {
 // allocator; serialize into job-owned bytes; queue the completion; wake
 // the loop.
 runHandlerJob :: (arg: usize) {
-    job : *HandlerJob = arg.(*HandlerJob);
+    job : *HandlerJob = @reinterpret(*HandlerJob, arg);
     resp : Response = .{};
     arena := Arena.init(job.alloc, 65536);
     ob : OutBytes = .{};
@@ -1058,7 +1058,7 @@ runHandlerJob :: (arg: usize) {
         // wire the streaming reader into the request the handler sees.
         if job.chan != null {
             job.req.bodyReadFn = bodyChanRead;
-            job.req.bodyReadCtx = job.chan.(usize);
+            job.req.bodyReadCtx = @reinterpret(usize, job.chan);
         }
         // a HEAD response never carries body bytes; a 204/304 never
         // carries a body regardless of method — and a no-body status wins
@@ -1194,7 +1194,7 @@ runHandlerJob :: (arg: usize) {
 // stack in finalizeFibers, never on this bounded fiber stack). The job is
 // freed here; the runner reaps the fiber (env + stack) after this returns.
 runFiberJob :: (arg: usize) {
-    job : *HandlerJob = arg.(*HandlerJob);
+    job : *HandlerJob = @reinterpret(*HandlerJob, arg);
     srv := job.srv;
     resp : Response = .{};
     arena := Arena.init(job.alloc, 65536);
@@ -1203,7 +1203,7 @@ runFiberJob :: (arg: usize) {
         h := job.handler;
         if job.chan != null {
             job.req.bodyReadFn = bodyFiberRead;
-            job.req.bodyReadCtx = job.(usize);
+            job.req.bodyReadCtx = @reinterpret(usize, job);
         }
         isHead := asciiIeq(job.req.method, "head");
         h(*job.req, *resp, job.appCtx);
@@ -1712,7 +1712,7 @@ Server :: struct {
             ps.done = oa.alloc(Completion, ps.doneCap).ptr;
             ps.doneLen = 0;
             // one pumping stream channel per worker, at most.
-            ps.ochans = oa.alloc(usize, cfg.threadPoolCount).ptr;
+            ps.ochans = oa.alloc(*OutChan, cfg.threadPoolCount).ptr;
             ps.ochansLen = 0;
             // Capture the loop AFTER addWake (registered above): on epoll,
             // addWake lazily creates wakeFd, so a copy taken earlier would
@@ -3422,7 +3422,7 @@ Server :: struct {
             // pool path, minus the body — the channel IS the body).
             hdrTotal := he + 4;
             job : *HandlerJob = self.ownAlloc.allocBytes(@sizeOf(HandlerJob) + hdrTotal).(*HandlerJob);
-            jb : [*]u8 = job.([*]u8);
+            jb : [*]u8 = @reinterpret([*]u8, job);
             raw : [*]u8 = *jb[@sizeOf(HandlerJob)];
             clib.memcpy(raw, c.readBuf, hdrTotal);
             jreq := req;
@@ -3466,7 +3466,7 @@ Server :: struct {
                 // fiber tail + finalizeFibers.
                 c.fiberH = self.cfg.fibers.spawn(@reinterpret(*void, runFiberJob), job);
                 self.fiberSpawned = true;   // tick re-drives until quiescent
-            } else if !self.ps.pool.submit(runHandlerJob, job.(usize)) {
+            } else if !self.ps.pool.submit(runHandlerJob, @reinterpret(usize, job)) {
                 // Backlog full: shed 503 — undo the dispatch (the worker
                 // never saw the job; both channel refs die here).
                 self.ownAlloc.deallocBytes(job);
@@ -3615,7 +3615,7 @@ Server :: struct {
             // absolute-form) is a static literal, valid on any thread — no
             // rebuild.
             job : *HandlerJob = self.ownAlloc.allocBytes(@sizeOf(HandlerJob) + total).(*HandlerJob);
-            jb : [*]u8 = job.([*]u8);
+            jb : [*]u8 = @reinterpret([*]u8, job);
             raw : [*]u8 = *jb[@sizeOf(HandlerJob)];
             clib.memcpy(raw, c.readBuf, total);
             jreq := req;
@@ -3659,7 +3659,7 @@ Server :: struct {
                 } else {
                     c.handlerDeadline = 0;
                 }
-                if !self.ps.pool.submit(runHandlerJob, job.(usize)) {
+                if !self.ps.pool.submit(runHandlerJob, @reinterpret(usize, job)) {
                     self.ownAlloc.deallocBytes(job);
                     c.state = CONN_READING;
                     c.handlerDeadline = 0;

@@ -1,11 +1,9 @@
-// Same-size aggregate pun: a string and `@Slice` are the same two words.
-// Aggregate↔scalar reinterpret is a hard error (no spill).
 @import "modules/std.sx";
 
 main :: () {
     s := "hi";
-    raw := s.(@Slice);
+    raw := @reinterpret(@Slice, s);
     print("view={} {}\n", raw.len, raw.ptr != null);
-    back := raw.(string);
+    back := @reinterpret(string, raw);
     print("back={}\n", back);
 }

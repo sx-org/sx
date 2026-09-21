@@ -1,0 +1,26 @@
+@import "modules/std.sx";
+
+Source :: struct { n: i64; }
+Destination :: struct { n: i64; }
+
+impl Into(Destination) for Source {
+    convert :: (self: Source, alloc: Allocator = context.allocator) -> Destination {
+        Destination{ n = self.n + 100 }
+    }
+}
+
+converted :: (n: i64) -> i64 {
+    source := Source{ n = n };
+    destination := source.(Destination);
+    destination.n
+}
+
+main :: () {
+    FOLDED :: @run converted(7);
+    print("{} {}\n", converted(7), FOLDED);
+    n: i64 = 9;
+    p := *n;
+    address := @reinterpret(isize, p);
+    back := @reinterpret(*i64, address);
+    print("{} {} {}\n", p != null, address == @reinterpret(isize, back), back.*);
+}

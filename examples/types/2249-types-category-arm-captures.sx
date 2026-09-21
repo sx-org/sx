@@ -11,7 +11,7 @@ show :: (v: any) -> string {
         case signed: |n| { format("signed {}", n) }
         case unsigned: |n| { format("unsigned {}", n) }
         case float: |f| { format("float {}", f) }
-        case pointer: |p| { if p == null then "pointer null" else format("pointer {}", p.(usize) != 0) }
+        case pointer: |p| { if p == null then "pointer null" else format("pointer {}", @reinterpret(usize, p) != 0) }
         case struct: |s| { format("struct {}", @unbox(i32, @field(s, 0))) }
         else: { "other" }
     }

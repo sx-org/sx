@@ -494,11 +494,11 @@ pub const Analyzer = struct {
                 return .{ .optional_type = .{ .child_name = inner_name, .is_raw = typeExprIsRaw(ote.inner_type) } };
             }
             // Pointer type: *T
-            if (tn.data == .pointer_type_expr) {
-                const pte = tn.data.pointer_type_expr;
-                const pointee_type = self.resolveTypeNode(pte.pointee_type);
+            if (tn.data == .pointer_type_expr or (tn.data == .unary_op and tn.data.unary_op.op == .address_of)) {
+                const pointee = if (tn.data == .pointer_type_expr) tn.data.pointer_type_expr.pointee_type else tn.data.unary_op.operand;
+                const pointee_type = self.resolveTypeNode(pointee);
                 const pointee_name = pointee_type.displayName(self.allocator) catch return .void_type;
-                return .{ .pointer_type = .{ .pointee_name = pointee_name, .is_raw = typeExprIsRaw(pte.pointee_type) } };
+                return .{ .pointer_type = .{ .pointee_name = pointee_name, .is_raw = typeExprIsRaw(pointee) } };
             }
             // Many-pointer type: [*]T
             if (tn.data == .many_pointer_type_expr) {
@@ -828,6 +828,8 @@ pub const Analyzer = struct {
                     };
                     return if (index >= 0 and index < fields.len) fields[@intCast(index)] else .unresolved;
                 }
+                if (std.mem.eql(u8, callee_name, "@reinterpret") and call_node.args.len == 2)
+                    return self.resolveTypeNode(call_node.args[0]);
                 // Check fn_signatures registry
                 if (self.fn_signatures.get(callee_name)) |sig| {
                     return sig.return_type;

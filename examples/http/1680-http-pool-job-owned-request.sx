@@ -58,7 +58,7 @@ checksum :: (s: string) -> i64 {
 
 route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     if req.path == "/slow" {
-        obs : *Observed = xx ctx;
+        obs : *Observed = @reinterpret(*Observed, ctx);
         // Sleep PAST the handler deadline — the loop 504s + frees the slot,
         // and connection B reuses/rewrites/grows the read buffer meanwhile.
         usleep(SLOW_SLEEP_US);
@@ -127,7 +127,7 @@ main :: () -> i32 {
             threadPoolBacklog = 16,
             handlerTimeoutMs = HANDLER_TIMEOUT_MS,
         };
-        srv, se := http.Server.init(cfg, route, xx *obs);
+        srv, se := http.Server.init(cfg, route, @reinterpret(usize, *obs));
         if se { print("init failed\n"); return 1; }
 
         // ── connection A: POST /slow with a known body ────────────────

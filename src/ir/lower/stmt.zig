@@ -580,13 +580,7 @@ pub fn bindNamedReturnSlots(self: *Lowering, fd: *const ast.FnDecl, ret_ty: Type
             const dval = self.lowerExpr(dn);
             self.target_type = saved_target;
             const dval_ty = self.builder.getRefType(dval);
-            // Reject a default whose type has NO coercion to the slot type and a
-            // mismatched byte width (e.g. `sum: i32 = "hi"`) — a `.none` plan
-            // would pass the value through unchanged and overrun / under-fill the
-            // slot, corrupting memory (the same guard as plain annotated
-            // assignment). A same-width `.none` (`p: *void = typed_ptr`)
-            // is a legitimate reinterpretation and stays allowed.
-            if (!self.externalErrorsExist() and dval_ty != .unresolved and self.noneReinterpretIsUnsafe(dval_ty, fty)) {
+            if (!self.externalErrorsExist() and dval_ty != .unresolved and !self.conversionAvailable(dval_ty, fty, .implicit)) {
                 if (self.diagnostics) |d| {
                     d.addFmt(.err, dn.span, "named return '{s}' has a default of type '{s}' that does not match its declared type '{s}'", .{ nm, self.formatTypeName(dval_ty), self.formatTypeName(fty) });
                     self.assignability_error_count += 1;

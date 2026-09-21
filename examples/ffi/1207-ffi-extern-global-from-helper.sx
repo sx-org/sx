@@ -10,11 +10,11 @@
 __stdinp : *void extern;
 
 stdinpAddrViaHelper :: () -> u64 {
-    xx *__stdinp
+    @reinterpret(usize, *__stdinp).(u64)
 }
 
 main :: () -> i32 {
-    direct  : u64 = xx *__stdinp;
+    direct  : u64 = @reinterpret(usize, *__stdinp).(u64);
     viaHelper := stdinpAddrViaHelper();
     print("direct non-null = {}\n", direct != 0);
     print("helper non-null = {}\n", viaHelper != 0);

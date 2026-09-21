@@ -24,7 +24,7 @@ Counter :: struct {
 }
 
 onEvent :: (ctx: usize, ev: http.EventKind, slot: i64, detail: i64) {
-    c : *Counter = xx ctx;
+    c : *Counter = @reinterpret(*Counter, ctx);
     if ev == http.EventKind.LISTEN_ERROR {
         c.listenErrors += 1;
         c.lastDetail = detail;
@@ -46,7 +46,7 @@ main :: () -> i32 {
             port = PORT,
             maxConn = 4,
             onEvent = onEvent,
-            onEventCtx = xx *counter,
+            onEventCtx = @reinterpret(usize, *counter),
         };
         srv, se := http.Server.init(cfg, route, 0);
         if se { print("init failed\n"); return 1; }
