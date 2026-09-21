@@ -310,6 +310,7 @@ pub const Analyzer = struct {
                 // a facade module's exports resolve for its importers, which
                 // never see the part-file the alias points into.
                 if (self.aliasTargetName(cd.value)) |target| {
+                    if (self.fn_signatures.get(target)) |signature| try self.fn_signatures.put(cd.name, signature);
                     if (self.struct_types.get(target)) |info| try self.struct_types.put(cd.name, info);
                     if (self.enum_types.get(target)) |variants| try self.enum_types.put(cd.name, variants);
                 }

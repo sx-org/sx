@@ -519,6 +519,19 @@ pub const RawAuthor = struct {
     }
 };
 
+pub fn aliasPath(allocator: std.mem.Allocator, node: *const Node) ?[]const u8 {
+    return switch (node.data) {
+        .identifier => |id| allocator.dupe(u8, id.name) catch @panic("out of memory"),
+        .type_expr => |te| allocator.dupe(u8, te.name) catch @panic("out of memory"),
+        .field_access => |fa| blk: {
+            const object = aliasPath(allocator, fa.object) orelse break :blk null;
+            defer allocator.free(object);
+            break :blk std.fmt.allocPrint(allocator, "{s}.{s}", .{ object, fa.field }) catch @panic("out of memory");
+        },
+        else => null,
+    };
+}
+
 pub const EnvironmentId = enum(u32) { _ };
 
 const EnvironmentKey = struct {
@@ -632,7 +645,7 @@ pub fn authorNodePtrOf(ref: RawDeclRef) usize {
 /// The declaration a `const_decl` wrapper defines (`S :: struct { … }` wraps a
 /// `struct_decl`), or null when the ref is not a wrapper. Wrapper and inner
 /// author share one identity.
-fn innerDeclRef(ref: RawDeclRef) ?RawDeclRef {
+pub fn innerDeclRef(ref: RawDeclRef) ?RawDeclRef {
     if (ref != .const_decl) return null;
     return rawDeclRefOf(ref.const_decl.value);
 }

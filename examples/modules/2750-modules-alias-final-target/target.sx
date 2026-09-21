@@ -1,0 +1,3 @@
+answer :: () -> i64 { 42 }
+N :: 7;
+Box :: struct($T: Type) { value: T; }

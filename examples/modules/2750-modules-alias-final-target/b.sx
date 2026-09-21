@@ -1,0 +1,5 @@
+a :: @import "a.sx";
+answer :: a.answer;
+N :: a.N;
+Cb :: (x: i64) -> i64;
+IB :: a.IB;

@@ -1,0 +1,5 @@
+t :: @import "target.sx";
+answer :: t.answer;
+N :: t.N;
+Cb :: (x: i64) -> i64;
+IB :: t.Box(i64);

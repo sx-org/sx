@@ -703,3 +703,18 @@ test "document declarations follow the analyzed source snapshot" {
     try std.testing.expect(doc.declarations == null);
     try std.testing.expect(doc.last_good_sema.?.declarations.?.table == context.table);
 }
+
+test "analyzeDocument: alias candidates share their final target" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const doc = try store.getOrLoad("examples/modules/2750-modules-alias-final-target.sx");
+    try store.analyzeDocument(doc);
+    const index = doc.sema orelse return error.MissingAnalysis;
+    try std.testing.expect(index.selection.select("answer") != null);
+    try std.testing.expect(index.selection.select("N") != null);
+    try std.testing.expect(index.selection.select("Cb") != null);
+    try std.testing.expect(index.selection.select("IB") != null);
+    try std.testing.expect(index.fn_signatures.get("answer") != null);
+}

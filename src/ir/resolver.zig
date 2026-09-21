@@ -259,14 +259,88 @@ pub const Resolver = struct {
             const env = table.fileEnvironment(kv.key_ptr.*) orelse continue;
             const cand = table.rawAuthor(env, name) orelse continue;
             if (cand.visibility == .private) continue;
-            if (sameAuthor(own, cand)) continue;
-            if (containsAuthor(flat.items, cand)) continue;
+            if (own) |author| if (self.sameIdentity(author, cand)) continue;
+            if (self.containsIdentity(flat.items, cand)) continue;
             flat.append(self.alloc, cand) catch @panic("collectVisibleAuthors: OOM");
         }
         return .{
             .own = own,
             .flat = flat.toOwnedSlice(self.alloc) catch @panic("collectVisibleAuthors: OOM"),
         };
+    }
+
+    const Identity = union(enum) {
+        declaration: imports.DeclId,
+        type: @import("types.zig").TypeId,
+        namespace: imports.EnvironmentId,
+    };
+
+    fn sameIdentity(self: *Resolver, a: RawAuthor, b: RawAuthor) bool {
+        if (a.id == b.id) return true;
+        var visiting = std.ArrayList(imports.DeclId).empty;
+        defer visiting.deinit(self.alloc);
+        const left = self.identity(a, &visiting) orelse return false;
+        const right = self.identity(b, &visiting) orelse return false;
+        return std.meta.eql(left, right);
+    }
+
+    fn containsIdentity(self: *Resolver, authors: []const RawAuthor, candidate: RawAuthor) bool {
+        for (authors) |author| if (self.sameIdentity(author, candidate)) return true;
+        return false;
+    }
+
+    fn identity(self: *Resolver, author: RawAuthor, visiting: *std.ArrayList(imports.DeclId)) ?Identity {
+        for (visiting.items) |id| if (id == author.id) return null;
+        visiting.append(self.alloc, author.id) catch @panic("out of memory");
+        defer _ = visiting.pop();
+        const table = self.index.declarations();
+        const env = table.get(author.id).environment orelse return .{ .declaration = author.id };
+        if (author.raw == .namespace_decl) {
+            const target = table.environment(env).namespaces.get(author.raw.namespace_decl.name) orelse return null;
+            return .{ .namespace = target.environment };
+        }
+        if (author.raw != .const_decl) return .{ .declaration = author.id };
+        const path = imports.aliasPath(self.alloc, author.raw.const_decl.value) orelse {
+            if (self.index.get(.type_alias, author.id)) |ty| return .{ .type = ty };
+            return .{ .declaration = author.id };
+        };
+        defer self.alloc.free(path);
+        const raw = switch (author.raw.const_decl.value.data) {
+            .identifier => |id| id.is_raw,
+            .type_expr => |te| te.is_raw,
+            else => true,
+        };
+        if (!raw) if (@import("type_resolver.zig").TypeResolver.resolvePrimitive(path)) |ty| return .{ .type = ty };
+        return self.pathIdentity(env, path, visiting, false);
+    }
+
+    fn pathIdentity(self: *Resolver, env: imports.EnvironmentId, path: []const u8, visiting: *std.ArrayList(imports.DeclId), qualified: bool) ?Identity {
+        const table = self.index.declarations();
+        const dot = std.mem.indexOfScalar(u8, path, '.');
+        const name = if (dot) |i| path[0..i] else path;
+        var selected: ?Identity = null;
+        if (table.rawAuthor(env, name)) |author| {
+            if (qualified and author.visibility == .private) return null;
+            selected = self.identity(author, visiting);
+        } else if (!qualified) {
+            const direct = self.index.flatImports(env) orelse return null;
+            var it = direct.keyIterator();
+            while (it.next()) |source| {
+                const imported = table.fileEnvironment(source.*) orelse continue;
+                const author = table.rawAuthor(imported, name) orelse continue;
+                if (author.visibility == .private) continue;
+                const candidate = self.identity(author, visiting) orelse return null;
+                if (selected) |previous| {
+                    if (!std.meta.eql(previous, candidate)) return null;
+                } else selected = candidate;
+            }
+        }
+        const result = selected orelse return null;
+        if (dot) |i| {
+            if (result != .namespace) return null;
+            return self.pathIdentity(result.namespace, path[i + 1 ..], visiting, true);
+        }
+        return result;
     }
 
     pub fn collectNamespaceAuthors(
@@ -361,12 +435,3 @@ pub const Resolver = struct {
         return false;
     }
 };
-
-fn sameAuthor(a: ?RawAuthor, b: RawAuthor) bool {
-    return if (a) |author| author.id == b.id else false;
-}
-
-fn containsAuthor(list: []const RawAuthor, b: RawAuthor) bool {
-    for (list) |author| if (author.id == b.id) return true;
-    return false;
-}
