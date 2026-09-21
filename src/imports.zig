@@ -850,11 +850,11 @@ pub const DeclTable = struct {
         return self.environment(self.fileEnvironment(path) orelse return null);
     }
 
-    pub fn claim(self: *DeclTable, env: EnvironmentId, decl: *const Node) (std.mem.Allocator.Error || error{DuplicateDeclaration})!bool {
+    pub fn claim(self: *DeclTable, env: EnvironmentId, decl: *const Node) std.mem.Allocator.Error!bool {
         return self.claimNamed(env, decl.data.declName() orelse return true, decl);
     }
 
-    pub fn claimNamed(self: *DeclTable, env: EnvironmentId, name: []const u8, decl: *const Node) (std.mem.Allocator.Error || error{DuplicateDeclaration})!bool {
+    pub fn claimNamed(self: *DeclTable, env: EnvironmentId, name: []const u8, decl: *const Node) std.mem.Allocator.Error!bool {
         if (self.environment(env).names.contains(name)) return false;
         const id = try self.internNamedNode(env, name, decl);
         try self.environment(env).names.put(name, id);
@@ -883,9 +883,10 @@ pub const DeclTable = struct {
             break :blk try self.internEnvironment(ns.target_module_path, path);
         } else try self.internEnvironment(ns.target_module_path, &.{});
         if (self.environment(target_env).scope_path.len > 0) {
+            // C namespace lookup selects the first member of a name; every prototype retains its identity.
             for (ns.own_decls) |member| {
                 if (rawDeclRefOf(member) == null) continue;
-                if (!try self.claim(target_env, member)) return error.DuplicateDeclaration;
+                _ = try self.claim(target_env, member);
             }
         }
         const ids = try self.memberIds(target_env, ns.own_decls);

@@ -223,20 +223,20 @@ test "resolver: visibility edge-walk — own + flat visible; namespaced-only onl
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var scopes = imports.DeclTable.init(alloc);
+    var table = imports.DeclTable.init(alloc);
     inline for (.{
         .{ "main", &[_][]const u8{ "selfauthored", "g" } },
         .{ "a", &[_][]const u8{"dup"} },
         .{ "p", &[_][]const u8{"secret"} },
     }) |entry| {
-        const env = try scopes.internEnvironment(entry[0], &.{});
-        for (entry[1]) |n| try scopes.environment(env).names.put(n, try scopes.internSynthetic(entry[0], n));
+        const env = try table.internEnvironment(entry[0], &.{});
+        for (entry[1]) |n| try table.environment(env).names.put(n, try table.internSynthetic(entry[0], n));
     }
     // `a` also authors a PRIVATE name, and `main` authors a private of its own.
     inline for (.{ .{ "a", "filelocal" }, .{ "main", "ownpriv" } }) |entry| {
-        const id = try scopes.internSynthetic(entry[0], entry[1]);
-        scopes.entries.items[@intFromEnum(id)].visibility = .private;
-        try scopes.fileScope(entry[0]).?.names.put(entry[1], id);
+        const id = try table.internSynthetic(entry[0], entry[1]);
+        table.entries.items[@intFromEnum(id)].visibility = .private;
+        try table.fileScope(entry[0]).?.names.put(entry[1], id);
     }
 
     // Flat graph: main flat-imports a only. Import graph: main reaches a + p.
@@ -252,31 +252,31 @@ test "resolver: visibility edge-walk — own + flat visible; namespaced-only onl
     try all.put("main", all_edges);
 
     // Own-scope name: visible regardless of edge set.
-    try std.testing.expect(lower.nameVisibleOverEdges(&scopes, &flat, "main", "selfauthored"));
-    try std.testing.expect(lower.nameVisibleOverEdges(&scopes, &all, "main", "selfauthored"));
+    try std.testing.expect(lower.nameVisibleOverEdges(&table, &flat, "main", "selfauthored"));
+    try std.testing.expect(lower.nameVisibleOverEdges(&table, &all, "main", "selfauthored"));
 
     // Flat-imported name: visible under both (the flat edge is in both graphs).
-    try std.testing.expect(lower.nameVisibleOverEdges(&scopes, &flat, "main", "dup"));
-    try std.testing.expect(lower.nameVisibleOverEdges(&scopes, &all, "main", "dup"));
+    try std.testing.expect(lower.nameVisibleOverEdges(&table, &flat, "main", "dup"));
+    try std.testing.expect(lower.nameVisibleOverEdges(&table, &all, "main", "dup"));
 
     // Namespaced-only name: NOT visible under the flat set (user_bare_flat),
     // but visible under the full import_graph set.
-    try std.testing.expect(!lower.nameVisibleOverEdges(&scopes, &flat, "main", "secret"));
-    try std.testing.expect(lower.nameVisibleOverEdges(&scopes, &all, "main", "secret"));
+    try std.testing.expect(!lower.nameVisibleOverEdges(&table, &flat, "main", "secret"));
+    try std.testing.expect(lower.nameVisibleOverEdges(&table, &all, "main", "secret"));
 
     // Private names: an own private IS visible to its own file, a flat
     // import's private is NOT carried — under either edge set.
-    try std.testing.expect(lower.nameVisibleOverEdges(&scopes, &flat, "main", "ownpriv"));
-    try std.testing.expect(!lower.nameVisibleOverEdges(&scopes, &flat, "main", "filelocal"));
-    try std.testing.expect(!lower.nameVisibleOverEdges(&scopes, &all, "main", "filelocal"));
-    try std.testing.expect(lower.nameVisibleOverEdges(&scopes, &flat, "a", "filelocal"));
+    try std.testing.expect(lower.nameVisibleOverEdges(&table, &flat, "main", "ownpriv"));
+    try std.testing.expect(!lower.nameVisibleOverEdges(&table, &flat, "main", "filelocal"));
+    try std.testing.expect(!lower.nameVisibleOverEdges(&table, &all, "main", "filelocal"));
+    try std.testing.expect(lower.nameVisibleOverEdges(&table, &flat, "a", "filelocal"));
 
     // Unknown name: not visible.
-    try std.testing.expect(!lower.nameVisibleOverEdges(&scopes, &flat, "main", "nope"));
+    try std.testing.expect(!lower.nameVisibleOverEdges(&table, &flat, "main", "nope"));
 
-    // Falls open when scoping infra is unwired (null scopes/graph).
+    // Falls open when scoping infra is unwired (null table/graph).
     try std.testing.expect(lower.nameVisibleOverEdges(null, &flat, "main", "secret"));
-    try std.testing.expect(lower.nameVisibleOverEdges(&scopes, null, "main", "secret"));
+    try std.testing.expect(lower.nameVisibleOverEdges(&table, null, "main", "secret"));
 }
 
 // ── resolveBare ──────────────────────────────────────────────────────────────

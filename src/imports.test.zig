@@ -536,6 +536,18 @@ test "canonicalizePath: abs + cwd-relative + redundant ./ and .. spellings unify
     try std.testing.expectEqualStrings(canon, try imports.canonicalizePath(alloc, rel_dotted));
 }
 
+test "canonicalizePath: absolute paths under CWD return one caller-owned allocation" {
+    const alloc = std.testing.allocator;
+    const cwd = imports.processCwd(alloc) orelse return error.MissingCwd;
+    defer alloc.free(cwd);
+    const absolute = try std.fmt.allocPrint(alloc, "{s}/sub/../a.sx", .{cwd});
+    defer alloc.free(absolute);
+
+    const canonical = try imports.canonicalizePath(alloc, absolute);
+    defer alloc.free(canonical);
+    try std.testing.expectEqualStrings("a.sx", canonical);
+}
+
 test "sameFileIdentity: distinct spellings of one file match; distinct and unstattable files do not" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
