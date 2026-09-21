@@ -193,10 +193,10 @@ pub const ProtocolResolver = struct {
         const pd = terminal.raw.protocol_decl;
         var protocol_ty: ?TypeId = null;
         if (pd.type_params.len == 0) {
-            const saved = self.l.current_source_file;
-            self.l.setCurrentSourceFile(terminal.source);
+            const saved = self.l.lexicalContext();
+            self.l.setCurrentEnvironment(self.l.program_index.declaration(terminal.id).environment);
             self.registerProtocolDecl(pd);
-            self.l.setCurrentSourceFile(saved);
+            self.l.restoreLexicalContext(saved);
             protocol_ty = self.l.namedRefTid(terminal.raw, pd.name) orelse return null;
         }
         return .{ .name = self.protocolIdentityName(pd), .ty = protocol_ty, .decl = pd };
@@ -230,7 +230,7 @@ pub const ProtocolResolver = struct {
             // in each alias author's source until the terminal protocol decl.
             // Own wins; otherwise exactly one direct flat author is required.
             var resolver = self.l.resolver();
-            const set = resolver.collectVisibleAuthors(written, from, .user_bare_flat);
+            const set = resolver.collectVisibleAuthors(written, self.l.environmentForSource(from).?, .user_bare_flat);
             defer if (set.flat.len > 0) self.l.alloc.free(set.flat);
             if (set.own) |own| return self.resolvedProtocolAuthor(own);
 
@@ -273,7 +273,7 @@ pub const ProtocolResolver = struct {
         // instance machinery only after Box is instantiated.
         if (ib.target_type_params.len > 0 or ib.target_type.len == 0) return null;
         if (source orelse self.l.current_source_file) |from| {
-            return switch (self.l.selectNominalLeaf(ib.target_type, from, false)) {
+            return switch (self.l.selectNominalLeaf(ib.target_type, self.l.environmentForSource(from).?, false)) {
                 .resolved => |ty| ty,
                 else => null,
             };
@@ -295,18 +295,18 @@ pub const ProtocolResolver = struct {
         for (ib.protocol_type_args) |arg_node| {
             if (typeExprHasGeneric(arg_node)) continue;
             if (!self.l.typeNodeLeavesReady(arg_node, source)) return false;
-            const ty = self.l.resolveTypeInSource(source, arg_node);
+            const ty = self.l.resolveTypeInEnvironment(self.l.environmentForSource(source), arg_node);
             if (typeContainsUnresolved(table, ty)) return false;
         }
         if (ib.target_type_expr) |target| {
             if (typeExprHasGeneric(target)) return true;
             if (!self.l.typeNodeLeavesReady(target, source)) return false;
-            return !typeContainsUnresolved(table, self.l.resolveTypeInSource(source, target));
+            return !typeContainsUnresolved(table, self.l.resolveTypeInEnvironment(self.l.environmentForSource(source), target));
         }
         if (ib.target_type.len == 0 or ib.target_type_params.len > 0) return true;
         const target: Node = .{ .span = decl.span, .data = .{ .type_expr = .{ .name = ib.target_type } } };
         if (!self.l.typeNodeLeavesReady(&target, source)) return false;
-        return !typeContainsUnresolved(table, self.l.resolveTypeInSource(source, &target));
+        return !typeContainsUnresolved(table, self.l.resolveTypeInEnvironment(self.l.environmentForSource(source), &target));
     }
 
     fn recordProtocolImplMethod(self: ProtocolResolver, proto_ty: ?TypeId, p_name: []const u8, concrete: ?TypeId, fd: *const ast.FnDecl, source: ?[]const u8, is_synthesized_default: bool) void {
@@ -600,7 +600,7 @@ pub const ProtocolResolver = struct {
                     if (p.data == .type_expr and std.mem.eql(u8, p.data.type_expr.name, "Self")) {
                         break :blk void_ptr_ty;
                     }
-                    break :blk self.l.resolveTypeInSource(pd.source_file, p);
+                    break :blk self.l.resolveTypeInEnvironment(self.l.declarationEnvironment(.{ .protocol_decl = pd }, pd.source_file), p);
                 };
                 ptypes.append(self.l.alloc, pty) catch unreachable;
             }
@@ -608,7 +608,7 @@ pub const ProtocolResolver = struct {
                 if (rt.data == .type_expr and std.mem.eql(u8, rt.data.type_expr.name, "Self")) {
                     break :blk void_ptr_ty;
                 }
-                break :blk self.l.resolveTypeInSource(pd.source_file, rt);
+                break :blk self.l.resolveTypeInEnvironment(self.l.declarationEnvironment(.{ .protocol_decl = pd }, pd.source_file), rt);
             } else .void;
             // A method is an sx call, so its signature meets the C-variadic
             // cursor rules as non-C — before it registers as dispatch metadata.
@@ -766,7 +766,7 @@ pub const ProtocolResolver = struct {
             retry = true;
             return;
         }
-        const cty = self.l.resolveTypeInSource(source, target_node);
+        const cty = self.l.resolveTypeInEnvironment(self.l.environmentForSource(source), target_node);
         if (cty == .unresolved) {
             retry = true;
             return;
@@ -795,7 +795,7 @@ pub const ProtocolResolver = struct {
             const fd = &method_node.data.fn_decl;
             const qualified = std.fmt.allocPrint(self.l.alloc, "{s}.{s}", .{ ib.target_type, fd.name }) catch continue;
             if (!self.l.program_index.contains(.function, qualified)) {
-                self.l.program_index.registerFunction(qualified, fd, self.l.current_source_file);
+                self.l.program_index.registerFunction(qualified, fd, self.l.functionEnvironment(fd));
             }
             self.l.declareFunction(fd, qualified);
             if (std.mem.eql(u8, fd.name, "call")) call_fd = fd;
@@ -827,7 +827,7 @@ pub const ProtocolResolver = struct {
         const sig_source = if (call_fd != null) source else fd.body.source_file orelse source;
 
         const ptr_cty = self.l.module.types.ptrTo(cty);
-        const recv_ty = if (fd.params.len > 0) self.l.resolveTypeInSource(sig_source, fd.params[0].type_expr) else TypeId.void;
+        const recv_ty = if (fd.params.len > 0) self.l.resolveTypeInEnvironment(self.l.environmentForSource(sig_source), fd.params[0].type_expr) else TypeId.void;
         if (fd.params.len == 0 or (recv_ty != cty and recv_ty != ptr_cty)) {
             if (diags) |d| {
                 const id = d.addFmtId(.err, fd.name_span, "'call' takes the conformer as its receiver", .{});
@@ -837,13 +837,13 @@ pub const ProtocolResolver = struct {
         }
 
         var params = std.ArrayList(TypeId).empty;
-        for (fd.params[1..]) |p| params.append(self.l.alloc, self.l.resolveTypeInSource(sig_source, p.type_expr)) catch return;
-        const ret = if (fd.return_type) |rt| self.l.resolveTypeInSource(sig_source, rt) else TypeId.void;
+        for (fd.params[1..]) |p| params.append(self.l.alloc, self.l.resolveTypeInEnvironment(self.l.environmentForSource(sig_source), p.type_expr)) catch return;
+        const ret = if (fd.return_type) |rt| self.l.resolveTypeInEnvironment(self.l.environmentForSource(sig_source), rt) else TypeId.void;
 
         const fte = fn_ty.data.function_type_expr;
         var head_params = std.ArrayList(TypeId).empty;
-        for (fte.param_types) |p| head_params.append(self.l.alloc, self.l.resolveTypeInSource(source, p)) catch return;
-        const head_ret = if (fte.return_type) |rt| self.l.resolveTypeInSource(source, rt) else TypeId.void;
+        for (fte.param_types) |p| head_params.append(self.l.alloc, self.l.resolveTypeInEnvironment(self.l.environmentForSource(source), p)) catch return;
+        const head_ret = if (fte.return_type) |rt| self.l.resolveTypeInEnvironment(self.l.environmentForSource(source), rt) else TypeId.void;
         const agrees = self.l.module.types.sameType(head_ret, ret) and head_params.items.len == params.items.len and
             self.l.module.types.sameTypes(head_params.items, params.items);
         if (!agrees) {
@@ -936,7 +936,7 @@ pub const ProtocolResolver = struct {
                 // Compatibility map: keep a coherent first AST/first FuncId
                 // winner. Exact protocol dispatch uses the identity map below.
                 if (!self.l.program_index.contains(.function, qualified)) {
-                    self.l.program_index.registerFunction(qualified, method_fd, self.l.current_source_file);
+                    self.l.program_index.registerFunction(qualified, method_fd, self.l.functionEnvironment(method_fd));
                 }
                 self.l.declareFunction(method_fd, qualified);
                 self.recordProtocolImplMethod(proto.ty, proto_name, concrete_ty, method_fd, source, false);
@@ -957,7 +957,7 @@ pub const ProtocolResolver = struct {
                     const synth_fd = self.synthesizeDefaultMethod(method, ib.target_type);
                     const qualified = std.fmt.allocPrint(self.l.alloc, "{s}.{s}", .{ ib.target_type, method.name }) catch continue;
                     if (!self.l.program_index.contains(.function, qualified)) {
-                        self.l.program_index.registerFunction(qualified, synth_fd, self.l.current_source_file);
+                        self.l.program_index.registerFunction(qualified, synth_fd, self.l.declarationEnvironment(.{ .protocol_decl = pd }, pd.source_file));
                     }
                     // The default body and its protocol-declared parameter
                     // types belong to the protocol module. Register the exact
@@ -968,10 +968,10 @@ pub const ProtocolResolver = struct {
                     if (concrete_ty) |cty| {
                         self.l.protocol_impl_receiver_types.put(synth_fd, if (method.receiver_is_pointer) self.l.module.types.ptrTo(cty) else cty) catch @panic("out of memory");
                     }
-                    const saved_source = self.l.current_source_file;
-                    if (default_source) |src| self.l.setCurrentSourceFile(src);
+                    const saved_source = self.l.lexicalContext();
+                    self.l.setCurrentEnvironment(self.l.declarationEnvironment(.{ .protocol_decl = pd }, pd.source_file));
                     self.l.declareFunction(synth_fd, qualified);
-                    self.l.setCurrentSourceFile(saved_source);
+                    self.l.restoreLexicalContext(saved_source);
                     self.recordProtocolImplMethod(proto.ty, proto_name, concrete_ty, synth_fd, default_source, true);
                 }
             }
@@ -1324,14 +1324,14 @@ pub const ProtocolResolver = struct {
     pub fn registerParamImpl(self: ProtocolResolver, ib: *const ast.ImplBlock, decl: *const Node, proto_name: []const u8) void {
         const table = &self.l.module.types;
         const source = decl.source_file orelse self.l.current_source_file;
-        const saved_source = self.l.current_source_file;
-        if (source) |src| self.l.setCurrentSourceFile(src);
-        defer self.l.setCurrentSourceFile(saved_source);
+        const saved_source = self.l.lexicalContext();
+        self.l.setDeclarationContext(decl);
+        defer self.l.restoreLexicalContext(saved_source);
 
         // Resolve the protocol's type-arg list to concrete TypeIds.
         var arg_tys = std.ArrayList(TypeId).empty;
         for (ib.protocol_type_args) |arg_node| {
-            const t = self.l.resolveTypeInSource(source, arg_node);
+            const t = self.l.resolveTypeInEnvironment(self.l.environmentForSource(source), arg_node);
             arg_tys.append(self.l.alloc, t) catch return;
         }
 
@@ -1344,12 +1344,12 @@ pub const ProtocolResolver = struct {
             // concrete sources use the source-aware nominal path below.
             if (typeExprHasGeneric(te))
                 break :blk type_bridge.resolveAstType(te, table, &self.l.program_index);
-            break :blk self.l.resolveTypeInSource(source, te);
+            break :blk self.l.resolveTypeInEnvironment(self.l.environmentForSource(source), te);
         } else if (ib.target_type.len > 0) blk: {
             const node: Node = .{ .span = decl.span, .data = .{ .type_expr = .{ .name = ib.target_type } } };
             if (ib.target_type_params.len > 0)
                 break :blk type_bridge.resolveAstType(&node, table, &self.l.program_index);
-            break :blk self.l.resolveTypeInSource(source, &node);
+            break :blk self.l.resolveTypeInEnvironment(self.l.environmentForSource(source), &node);
         } else return;
 
         // Mangle into the lookup key.
@@ -1427,7 +1427,7 @@ pub const ProtocolResolver = struct {
                 for (methods.items) |mfd| {
                     const q = std.fmt.allocPrint(self.l.alloc, "{s}.{s}", .{ src_name, mfd.name }) catch continue;
                     if (!self.l.program_index.contains(.function, q)) {
-                        self.l.program_index.registerFunction(q, mfd, self.l.current_source_file);
+                        self.l.program_index.registerFunction(q, mfd, self.l.functionEnvironment(mfd));
                     }
                     if (!is_generic_src) {
                         self.l.declareFunction(mfd, q);

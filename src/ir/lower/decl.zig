@@ -534,19 +534,19 @@ pub fn lowerDeferredTypeFns(self: *Lowering) void {
 /// Lower a list of top-level declarations (used by irComptimeEval — non-lazy path).
 pub fn lowerDecls(self: *Lowering, decls: []const *const Node) void {
     for (decls) |decl| {
-        self.setCurrentSourceFile(decl.source_file);
+        self.setDeclarationContext(decl);
         const is_imported = if (self.main_file) |mf|
             (if (decl.source_file) |sf| !std.mem.eql(u8, sf, mf) else false)
         else
             false;
         switch (decl.data) {
             .fn_decl => |fd| {
-                self.program_index.registerFunction(fd.name, &decl.data.fn_decl, decl.source_file);
+                self.program_index.registerFunction(fd.name, &decl.data.fn_decl, self.functionEnvironment(&decl.data.fn_decl));
                 self.lowerFunction(&fd, fd.name, is_imported);
             },
             .const_decl => |cd| {
                 if (cd.value.data == .fn_decl) {
-                    self.program_index.registerFunction(cd.name, &cd.value.data.fn_decl, decl.source_file);
+                    self.program_index.registerFunction(cd.name, &cd.value.data.fn_decl, self.functionEnvironment(&cd.value.data.fn_decl));
                     self.lowerFunction(&cd.value.data.fn_decl, cd.name, is_imported);
                 } else if (cd.value.data == .struct_decl) {
                     self.registerStructDecl(&cd.value.data.struct_decl, decl.source_file);
@@ -555,7 +555,7 @@ pub fn lowerDecls(self: *Lowering, decls: []const *const Node) void {
                 } else if (cd.value.data == .union_decl) {
                     self.registerUnionDecl(&cd.value.data.union_decl);
                 } else if (cd.value.data == .comptime_expr) {
-                    self.lowerComptimeGlobal(cd.name, cd.value.data.comptime_expr.expr, cd.type_annotation);
+                    self.lowerComptimeGlobal(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, cd.value.data.comptime_expr.expr, cd.type_annotation);
                 }
             },
             .comptime_expr => |ct| {
@@ -588,7 +588,6 @@ pub fn lowerDecls(self: *Lowering, decls: []const *const Node) void {
             .namespace_decl => |ns| {
                 self.registerNamespacedRuntimeClasses(ns);
                 if (self.main_file != null) {
-                    self.registerNamespaceQualifiedFns(ns.name, ns.own_decls);
                     self.lowerDecls(ns.decls);
                 }
             },
@@ -608,7 +607,7 @@ fn admitOpenVariants(self: *Lowering, decls: []const *const Node) void {
                 // A generic member is measured per instantiation, at the
                 // instantiation site — the template itself has no layout.
                 if (sd.type_params.len > 0) continue;
-                self.setCurrentSourceFile(decl.source_file);
+                self.setDeclarationContext(decl);
                 const ty = self.resolveName(sd.name);
                 if (ty == .unresolved) continue;
                 self.admitOpenVariant(&decl.data.struct_decl, ty, decl.span);
@@ -617,7 +616,7 @@ fn admitOpenVariants(self: *Lowering, decls: []const *const Node) void {
                 if (cd.value.data != .struct_decl) continue;
                 const sd = cd.value.data.struct_decl;
                 if (sd.open_variant_of == null or sd.type_params.len > 0) continue;
-                self.setCurrentSourceFile(decl.source_file);
+                self.setDeclarationContext(decl);
                 const ty = self.resolveName(sd.name);
                 if (ty == .unresolved) continue;
                 self.admitOpenVariant(&cd.value.data.struct_decl, ty, decl.span);
@@ -696,23 +695,14 @@ pub fn fnPtrTypeWantsCtx(self: *const Lowering, ty: TypeId) bool {
     return ti.function.call_conv != .c;
 }
 
-// ── Unified declaration-fact writers ──
-// The SOLE writers of the `type_alias` / `module_const` / `global` facts.
-// Each takes the identity of the declaration the fact belongs to, so the
-// program-wide name index and the per-source one select the SAME declaration.
-// No raw `put`/`dropFact` for these three facts exists outside these helpers
-// (grep-checkable — mirrors the no-raw-`TypeTable.update` discipline). A null
-// source (unreachable for a scanned top-level decl post-import-resolution)
-// falls back to the main file; if even that is absent the fact is still stored
-// and reachable program-wide, just not per-source.
-pub fn putTypeAlias(self: *Lowering, id: imports.DeclId, source: ?[]const u8, name: []const u8, tid: TypeId) void {
-    self.program_index.putInSource(.type_alias, id, source orelse self.main_file, name, tid);
+pub fn putTypeAlias(self: *Lowering, id: imports.DeclId, name: []const u8, tid: TypeId) void {
+    self.program_index.put(.type_alias, id, name, tid);
 }
-pub fn putModuleConst(self: *Lowering, id: imports.DeclId, source: ?[]const u8, name: []const u8, info: program_index_mod.ModuleConstInfo) void {
-    self.program_index.putInSource(.module_const, id, source orelse self.main_file, name, info);
+pub fn putModuleConst(self: *Lowering, id: imports.DeclId, name: []const u8, info: program_index_mod.ModuleConstInfo) void {
+    self.program_index.put(.module_const, id, name, info);
 }
-pub fn putGlobal(self: *Lowering, id: imports.DeclId, source: ?[]const u8, name: []const u8, info: program_index_mod.GlobalInfo) void {
-    self.program_index.putInSource(.global, id, source orelse self.main_file, name, info);
+pub fn putGlobal(self: *Lowering, id: imports.DeclId, name: []const u8, info: program_index_mod.GlobalInfo) void {
+    self.program_index.put(.global, id, name, info);
 }
 pub fn dropModuleConst(self: *Lowering, id: imports.DeclId) void {
     self.program_index.dropFact(.module_const, id);
@@ -722,7 +712,7 @@ pub fn dropModuleConst(self: *Lowering, id: imports.DeclId) void {
 /// driver's declaration walk never reached it (a comptime- or
 /// expansion-registered declaration).
 pub fn declId(self: *Lowering, ref: imports.RawDeclRef, source: ?[]const u8) imports.DeclId {
-    return self.program_index.internRef(ref, source);
+    return self.program_index.internRef(ref, self.environmentForSource(source));
 }
 
 /// The identity `ref` already has, without minting one: a read asks this,
@@ -761,19 +751,19 @@ pub fn registerLiteralModuleConsts(self: *Lowering, decls: []const *const Node) 
         switch (cd.value.data) {
             .int_literal => {
                 const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = float_annotation orelse .i64, .declared_type = float_annotation };
-                self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), decl.source_file, cd.name, info);
+                self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, info);
             },
             .char_literal => {
                 const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = float_annotation orelse .i64, .declared_type = float_annotation };
-                self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), decl.source_file, cd.name, info);
+                self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, info);
             },
             .float_literal => {
                 const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = float_annotation orelse .f64, .declared_type = float_annotation };
-                self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), decl.source_file, cd.name, info);
+                self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, info);
             },
             .binary_op, .unary_op => {
                 const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = float_annotation orelse .i64, .declared_type = float_annotation };
-                self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), decl.source_file, cd.name, info);
+                self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, info);
             },
             // Bool/string literal consts carry their real type — registering
             // them here (not just in declaration-ordered pass 1) lets a
@@ -783,11 +773,11 @@ pub fn registerLiteralModuleConsts(self: *Lowering, decls: []const *const Node) 
             // the literal's own type here would keep it.
             .bool_literal => if (cd.type_annotation == null) {
                 const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = .bool };
-                self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), decl.source_file, cd.name, info);
+                self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, info);
             },
             .string_literal => |lit| if (cd.type_annotation == null) {
                 const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = self.stringLiteralType(lit) };
-                self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), decl.source_file, cd.name, info);
+                self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, info);
             },
             else => {},
         }
@@ -894,7 +884,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
         if (td.isGeneric()) continue;
         const sk = self.module.types.internString(td.name());
         if (!genuine_shadows.contains(sk)) continue;
-        self.setCurrentSourceFile(decl.source_file);
+        self.setDeclarationContext(decl);
         self.reserveShadowSlot(td);
     }
     reserveStructLayouts(self, decls);
@@ -905,7 +895,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
     resolveErrorCompositionAliases(self, decls);
     for (decls) |decl| {
         if (!claimDecl(self, decl)) continue;
-        self.setCurrentSourceFile(decl.source_file);
+        self.setDeclarationContext(decl);
         switch (decl.data) {
             .fn_decl => |fd| {
                 // First-wins on a bare-name collision, matching `mergeFlat`:
@@ -915,13 +905,13 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                 // shadowed author stays reachable through its qualified name
                 // and through its own identity.
                 if (!self.program_index.contains(.function, fd.name))
-                    self.program_index.registerFunction(fd.name, &decl.data.fn_decl, decl.source_file);
+                    self.program_index.registerFunction(fd.name, &decl.data.fn_decl, self.functionEnvironment(&decl.data.fn_decl));
                 self.declareFunction(&decl.data.fn_decl, fd.name);
             },
             .const_decl => |cd| {
                 if (cd.value.data == .fn_decl) {
                     if (!self.program_index.contains(.function, cd.name))
-                        self.program_index.registerFunction(cd.name, &cd.value.data.fn_decl, decl.source_file);
+                        self.program_index.registerFunction(cd.name, &cd.value.data.fn_decl, self.functionEnvironment(&cd.value.data.fn_decl));
                     self.declareFunction(&cd.value.data.fn_decl, cd.name);
                 } else if (cd.value.data == .struct_decl) {
                     self.registerStructDecl(&cd.value.data.struct_decl, decl.source_file);
@@ -958,7 +948,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                     // forward decl. (Composite RHS shapes take the deferred,
                     // stub-hardened branch above.)
                     const target_ty = type_bridge.resolveAstType(cd.value, &self.module.types, &self.program_index);
-                    self.putTypeAlias(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), self.current_source_file, cd.name, target_ty);
+                    self.putTypeAlias(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, target_ty);
                 } else if (cd.value.data == .identifier or cd.value.data == .field_access) {
                     // FN alias: `print2 :: print;` /
                     // `my_print :: s.print;`. When the alias chain terminates
@@ -972,30 +962,14 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                     if (self.current_source_file orelse self.main_file) |from| {
                         if (self.aliasedFnDecl(&decl.data.const_decl, from)) |target_fd| {
                             if (!self.program_index.contains(.function, cd.name))
-                                self.program_index.registerFunction(cd.name, target_fd, decl.source_file);
+                                self.program_index.registerFunction(cd.name, target_fd, self.functionEnvironment(target_fd));
                         }
                     }
                     if (cd.value.data == .identifier) {
-                        // Identifier-RHS alias: MyAlias :: MyInt;  WideAlias :: Wide.
-                        // SOURCE-AWARE. Resolve the RHS `B` AS SEEN FROM this
-                        // alias's OWN source via `selectNominalLeaf` (the source-
-                        // keyed nominal leaf), NEVER the global `type_alias_map` /
-                        // global `findByName` (last-wins across modules). Only the
-                        // `.resolved` outcome is written; `.pending` (B is itself a
-                        // forward alias not resolved yet), `.undeclared`, and
-                        // `.not_visible` (a same-name B authored only by a namespaced
-                        // import) leave A UNWRITTEN so the source-aware
-                        // `resolveForwardIdentifierAliases` fixpoint re-tries A once
-                        // the local B registers. A GLOBAL selection here would bind A
-                        // to a namespaced same-name B, and the per-source fixpoint
-                        // guard (`aliasResolvedInSource`) would then SKIP A — leaving
-                        // the wrong global TypeId, re-opening the same-name
-                        // collision one layer down.
-                        // Same unified `putTypeAlias` writer (no-drift).
                         const rhs = cd.value.data.identifier;
                         if (self.current_source_file orelse self.main_file) |from| {
-                            switch (self.selectNominalLeaf(rhs.name, from, rhs.is_raw)) {
-                                .resolved => |tid| self.putTypeAlias(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), self.current_source_file, cd.name, tid),
+                            switch (self.selectNominalLeaf(rhs.name, self.environmentForSource(from).?, rhs.is_raw)) {
+                                .resolved => |tid| self.putTypeAlias(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, tid),
                                 // `.ambiguous` (same-name RHS authored by ≥2 flat
                                 // imports) leaves A unwritten like `.not_visible`;
                                 // the loud diagnostic fires where A is USED.
@@ -1022,10 +996,10 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                                     // is silently lost at runtime. The stored RHS
                                     // remains the qualified node, so emission and
                                     // nested const folding re-prove the same path.
-                                    if (self.sourceModuleConst(sel.target.target_module_path, sel.member)) |target| {
-                                        self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), self.current_source_file, cd.name, .{ .value = cd.value, .ty = target.ty });
-                                    } else switch (self.selectNominalLeaf(sel.member, sel.target.target_module_path, false)) {
-                                        .resolved => |tid| self.putTypeAlias(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), self.current_source_file, cd.name, tid),
+                                    if (self.program_index.get(.module_const, sel.author.id)) |target| {
+                                        self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, .{ .value = cd.value, .ty = target.ty });
+                                    } else switch (self.selectNominalLeaf(sel.member, sel.target.environment, false)) {
+                                        .resolved => |tid| self.putTypeAlias(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, tid),
                                         .pending, .forward, .undeclared, .not_visible, .private_elsewhere, .ambiguous => {},
                                     }
                                 },
@@ -1072,7 +1046,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                             // The minted type's NAME comes from its `TypeInfo`
                             // (via `define`), not the binding LHS — no rename.
                             const tid = self.evalComptimeType(cd.value) orelse TypeId.unresolved;
-                            self.putTypeAlias(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), self.current_source_file, cd.name, tid);
+                            self.putTypeAlias(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, tid);
                             continue;
                         }
                     }
@@ -1087,7 +1061,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                         // branches stay as the non-generic fall-through.
                         switch (self.selectGenericStructCallee(call_data.callee, call_data.callee.span)) {
                             .template => |t| self.registerGenericStructAlias(&decl.data.const_decl, &t, call_data.args),
-                            .poisoned => self.putTypeAlias(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), self.current_source_file, cd.name, .unresolved),
+                            .poisoned => self.putTypeAlias(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, .unresolved),
                             .not_generic => {
                                 if (contracts.isTypeConstructor(callee_name)) {
                                     // The builtin constructor has no declaration
@@ -1096,15 +1070,15 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                                     // `resolveTypeCallWithBindings`.
                                     const result_ty = self.resolveTypeCallWithBindings(call_data);
                                     if (result_ty != .void) {
-                                        self.putTypeAlias(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), self.current_source_file, cd.name, result_ty);
+                                        self.putTypeAlias(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, result_ty);
                                     }
                                 } else if (selected_fd) |fd| {
                                     // Type-returning function: Foo :: Complex(u32)
                                     if (fd.type_params.len > 0) {
                                         if (!head_qualified and self.headFnLeak(callee_name, call_data.callee.span)) {
-                                            self.putTypeAlias(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), self.current_source_file, cd.name, .unresolved);
+                                            self.putTypeAlias(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, .unresolved);
                                         } else if (self.instantiateTypeFunction(cd.name, callee_name, fd, call_data.args)) |result_ty| {
-                                            self.putTypeAlias(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), self.current_source_file, cd.name, result_ty);
+                                            self.putTypeAlias(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, result_ty);
                                         }
                                     }
                                 }
@@ -1125,7 +1099,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                     // path (`@Vector` etc.) stays as the non-generic fall-through.
                     switch (self.selectGenericStructHead(base_name, if (pt_qualified) pt.name else null, pt_qualified, cd.value.span)) {
                         .template => |t| self.registerGenericStructAlias(&decl.data.const_decl, &t, pt.args),
-                        .poisoned => self.putTypeAlias(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), self.current_source_file, cd.name, .unresolved),
+                        .poisoned => self.putTypeAlias(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, .unresolved),
                         .not_generic => {
                             // Builtin parameterised type (`@Vector(N, T)` etc) —
                             // resolve via type_bridge and register the result
@@ -1133,7 +1107,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                             // position can `const_type(<vector tid>)`.
                             const result_ty = self.resolveParameterizedWithBindings(pt, cd.value.span);
                             if (result_ty != .void and result_ty != .unresolved) {
-                                self.putTypeAlias(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), self.current_source_file, cd.name, result_ty);
+                                self.putTypeAlias(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, result_ty);
                             }
                         },
                     }
@@ -1160,7 +1134,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                     };
                     if (lit_ty) |ty| {
                         const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = ty };
-                        self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), self.current_source_file, cd.name, info);
+                        self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, info);
                     }
                 }
             },
@@ -1194,7 +1168,6 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                 self.registerNamespacedRuntimeClasses(ns);
                 if (self.main_file != null) {
                     self.scanDecls(ns.decls);
-                    self.registerNamespaceQualifiedFns(ns.name, ns.own_decls);
                 }
             },
             .ufcs_alias => |ua| {
@@ -1206,10 +1179,10 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                     // one only occupies it while no public author exists.)
                     if (!self.program_index.contains(.ufcs_alias, ua.name)) {
                         const authority = decl.source_file orelse self.current_source_file orelse self.main_file;
-                        self.program_index.put(.ufcs_alias, self.program_index.internDecl(decl, decl.source_file), ua.name, .{ .target = ua.target, .private_source = authority });
+                        self.program_index.put(.ufcs_alias, self.program_index.internDecl(decl, self.environmentForSource(decl.source_file)), ua.name, .{ .target = ua.target, .private_source = authority });
                     }
                 } else {
-                    self.program_index.put(.ufcs_alias, self.program_index.internDecl(decl, decl.source_file), ua.name, .{ .target = ua.target });
+                    self.program_index.put(.ufcs_alias, self.program_index.internDecl(decl, self.environmentForSource(decl.source_file)), ua.name, .{ .target = ua.target });
                 }
             },
             // Top-level globals are registered in a second pass (below),
@@ -1227,7 +1200,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
     for (decls) |decl| {
         if (decl.data != .impl_block) continue;
         if (self.registered_protocol_impls.contains(&decl.data.impl_block)) continue;
-        self.setCurrentSourceFile(decl.source_file);
+        self.setDeclarationContext(decl);
         self.protocolResolver().registerImplBlock(&decl.data.impl_block, decl);
     }
     // Pass 1c: settle every juxtaposition a top-level initializer holds. Every
@@ -1243,14 +1216,14 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
             .struct_literal, .postfix_cast => {},
             else => continue,
         }
-        self.setCurrentSourceFile(decl.source_file);
-        self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), self.current_source_file, cd.name, .{ .value = cd.value, .ty = self.inferExprType(cd.value) });
+        self.setDeclarationContext(decl);
+        self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, .{ .value = cd.value, .ty = self.inferExprType(cd.value) });
     }
     // Pass 2: registrations that resolve a top-level type annotation run
     // after the alias fixpoint, so a forward identifier alias used as the
     // annotation resolves to its target.
     for (decls) |decl| {
-        self.setCurrentSourceFile(decl.source_file);
+        self.setDeclarationContext(decl);
         switch (decl.data) {
             .var_decl => self.registerTopLevelGlobal(&decl.data.var_decl),
             // The STABLE AST field pointer, never the switch-capture copy:
@@ -1276,11 +1249,11 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
             const cd = &decl.data.const_decl;
             if (cd.type_annotation != null) continue;
             const c = self.fieldCall(cd.value) orelse continue;
-            self.setCurrentSourceFile(decl.source_file);
+            self.setDeclarationContext(decl);
             const source = self.current_source_file orelse self.main_file orelse continue;
             if (self.sourceModuleConst(source, cd.name) != null) continue;
             const field = self.fieldProjection(c) orelse continue;
-            self.putModuleConst(self.declId(.{ .const_decl = cd }, decl.source_file), self.current_source_file, cd.name, .{ .value = cd.value, .ty = field.ty });
+            self.putModuleConst(self.declId(.{ .const_decl = cd }, decl.source_file), cd.name, .{ .value = cd.value, .ty = field.ty });
             fields_registered = true;
         }
     }
@@ -1289,7 +1262,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
     // a separate pass without changing declaration/global ordering.
     for (decls) |decl| {
         if (decl.data != .var_decl) continue;
-        self.setCurrentSourceFile(decl.source_file);
+        self.setDeclarationContext(decl);
         initializeTopLevelGlobal(self, &decl.data.var_decl);
     }
     // Pass 2b: untyped consts whose RHS is a CONST-AGGREGATE leaf
@@ -1303,7 +1276,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
         if (decl.data != .const_decl) continue;
         const cd = decl.data.const_decl;
         if (cd.type_annotation != null) continue;
-        self.setCurrentSourceFile(decl.source_file);
+        self.setDeclarationContext(decl);
         const obj: *const Node = switch (cd.value.data) {
             .field_access => |fa| fa.object,
             .index_expr => |ie| ie.object,
@@ -1316,7 +1289,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
             .own_opaque, .ambiguous, .none => if (self.comptime_constants.get(recv)) |cv| cv == .struct_val else false,
         };
         if (!recv_is_agg) continue;
-        self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), decl.source_file, cd.name, .{ .value = cd.value, .ty = .i64 });
+        self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, .{ .value = cd.value, .ty = .i64 });
     }
     // Pass 2c: the const-alias fixpoint again. Its pass-0a' run can only see
     // the LITERAL consts pass 0 registers; an aggregate const (`C :: S{…}`,
@@ -1339,7 +1312,7 @@ fn refreshNumericConstTypes(self: *Lowering, decls: []const *const Node) void {
                 .binary_op, .unary_op, .identifier, .field_access => {},
                 else => continue,
             }
-            self.setCurrentSourceFile(decl.source_file);
+            self.setDeclarationContext(decl);
             const sel = switch (self.selectModuleConst(cd.name)) {
                 .resolved => |s| s,
                 else => continue,
@@ -1349,7 +1322,7 @@ fn refreshNumericConstTypes(self: *Lowering, decls: []const *const Node) void {
             if ((!self.isIntEx(ty) and !isFloat(ty)) or ty == sel.info.ty) continue;
             var info = sel.info;
             info.ty = ty;
-            self.putModuleConst(self.declId(.{ .const_decl = cd }, decl.source_file), decl.source_file, cd.name, info);
+            self.putModuleConst(self.declId(.{ .const_decl = cd }, decl.source_file), cd.name, info);
             changed = true;
         }
     }
@@ -1375,9 +1348,14 @@ pub fn registerConstAliases(self: *Lowering, decls: []const *const Node) void {
             if (decl.data != .const_decl) continue;
             const cd = decl.data.const_decl;
             if (cd.value.data != .identifier and cd.value.data != .field_access) continue;
-            if (self.program_index.contains(.module_const, cd.name)) continue;
+            self.setDeclarationContext(decl);
+            const declaration = self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file);
+            if (self.program_index.get(.module_const, declaration) != null) continue;
             const target: program_index_mod.ModuleConstInfo = switch (cd.value.data) {
-                .identifier => |id| self.program_index.lookup(.module_const, id.name) orelse continue,
+                .identifier => |id| switch (self.selectModuleConst(id.name)) {
+                    .resolved => |selected| selected.info,
+                    else => continue,
+                },
                 .field_access => blk: {
                     const from = decl.source_file orelse self.main_file orelse continue;
                     const path = self.qualifiedTypeName(cd.value) orelse continue;
@@ -1386,11 +1364,11 @@ pub fn registerConstAliases(self: *Lowering, decls: []const *const Node) void {
                         .selected => |s| s,
                         .not_qualified, .missing, .ambiguous => continue,
                     };
-                    break :blk self.sourceModuleConst(sel.target.target_module_path, sel.member) orelse continue;
+                    break :blk self.program_index.get(.module_const, sel.author.id) orelse continue;
                 },
                 else => unreachable,
             };
-            self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), decl.source_file, cd.name, .{ .value = cd.value, .ty = target.ty });
+            self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, .{ .value = cd.value, .ty = target.ty });
             changed = true;
         }
     }
@@ -1449,7 +1427,7 @@ pub fn registerTypedModuleConst(self: *Lowering, cd: *const ast.ConstDecl) void 
     // a literal/expression placeholder type), so the const folds and emits at
     // its declared type — the same `put` the literal path always did.
     const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = ty, .declared_type = ty };
-    self.putModuleConst(self.declId(.{ .const_decl = cd }, self.current_source_file), self.current_source_file, cd.name, info);
+    self.putModuleConst(self.declId(.{ .const_decl = cd }, self.current_source_file), cd.name, info);
 }
 
 /// True iff a literal initializer of `value`'s kind is faithfully
@@ -1571,12 +1549,12 @@ pub fn registerConstArrayGlobal(self: *Lowering, cd: *const ast.ConstDecl) void 
         .init_val = init_val,
         .is_const = true,
     });
-    self.putGlobal(self.declId(.{ .const_decl = cd }, self.current_source_file), self.current_source_file, cd.name, .{ .id = gid, .ty = arr_ty });
+    self.putGlobal(self.declId(.{ .const_decl = cd }, self.current_source_file), cd.name, .{ .id = gid, .ty = arr_ty });
     // ALSO register as a module const so the comptime folders see the
     // elements (`K.len` / `K[<const idx>]` in dims and const exprs).
     // Bare value reads still hit the GLOBAL arm first (identifier arm
     // order), so this never double-emits.
-    self.putModuleConst(self.declId(.{ .const_decl = cd }, self.current_source_file), self.current_source_file, cd.name, .{ .value = cd.value, .ty = arr_ty });
+    self.putModuleConst(self.declId(.{ .const_decl = cd }, self.current_source_file), cd.name, .{ .value = cd.value, .ty = arr_ty });
 }
 
 /// Infer `[N]T` for an untyped array-literal constant. Element types unify:
@@ -1650,7 +1628,7 @@ pub fn maybeRegisterConstStructGlobal(self: *Lowering, cd: *const ast.ConstDecl)
         .init_val = init_val,
         .is_const = true,
     });
-    self.putGlobal(self.declId(.{ .const_decl = cd }, self.current_source_file), self.current_source_file, cd.name, .{ .id = gid, .ty = ci.ty });
+    self.putGlobal(self.declId(.{ .const_decl = cd }, self.current_source_file), cd.name, .{ .id = gid, .ty = ci.ty });
 }
 
 /// Register a top-level mutable global (e.g., `context : Context = ---;`).
@@ -1692,7 +1670,7 @@ pub fn registerTopLevelGlobal(self: *Lowering, vd: *const ast.VarDecl) void {
     });
     const info = program_index_mod.GlobalInfo{ .id = gid, .ty = var_ty };
     self.global_decl_infos.put(vd, info) catch @panic("out of memory while indexing global declaration identity");
-    self.putGlobal(self.declId(.{ .var_decl = vd }, self.current_source_file), self.current_source_file, vd.name, info);
+    self.putGlobal(self.declId(.{ .var_decl = vd }, self.current_source_file), vd.name, info);
 }
 
 fn initializeTopLevelGlobal(self: *Lowering, vd: *const ast.VarDecl) void {
@@ -1902,8 +1880,8 @@ pub fn diagnoseNonConstGlobal(self: *Lowering, vd: *const ast.VarDecl, v: *const
 }
 
 fn reserveStructLayouts(self: *Lowering, decls: []const *const Node) void {
-    const saved_source = self.current_source_file;
-    defer self.setCurrentSourceFile(saved_source);
+    const saved_source = self.lexicalContext();
+    defer self.restoreLexicalContext(saved_source);
     for (decls) |decl| {
         if (decl.data == .namespace_decl) {
             reserveStructLayouts(self, decl.data.namespace_decl.decls);
@@ -1911,7 +1889,7 @@ fn reserveStructLayouts(self: *Lowering, decls: []const *const Node) void {
         }
         const td = topLevelTypeDecl(decl) orelse continue;
         if (td != .@"struct" or td.isGeneric()) continue;
-        self.setCurrentSourceFile(decl.source_file);
+        self.setDeclarationContext(decl);
         _ = self.reserveStructLayout(td.@"struct", decl.source_file);
     }
 }
@@ -1927,7 +1905,7 @@ fn reserveErrorSetSlots(self: *Lowering, decls: []const *const Node) void {
             .@"error" => |e| e,
             else => continue,
         };
-        self.setCurrentSourceFile(decl.source_file);
+        self.setDeclarationContext(decl);
         self.reserveShadowErrorSetSlot(esd);
     }
     for (decls) |decl| {
@@ -1947,11 +1925,10 @@ fn resolveErrorCompositionAliases(self: *Lowering, decls: []const *const Node) v
             if (decl.data != .const_decl) continue;
             const cd = decl.data.const_decl;
             if (cd.value.data != .binary_op or cd.value.data.binary_op.op != .bit_or) continue;
-            const src = decl.source_file orelse self.main_file orelse continue;
-            if (self.aliasResolvedInSource(src, cd.name)) continue;
-            self.setCurrentSourceFile(decl.source_file);
+            if (aliasResolved(self, &decl.data.const_decl)) continue;
+            self.setDeclarationContext(decl);
             const channel = self.composedChannel(cd.value, cd.name) orelse continue;
-            self.putTypeAlias(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), decl.source_file, cd.name, channel);
+            self.putTypeAlias(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, channel);
             progressed = true;
         }
     }
@@ -1993,10 +1970,10 @@ pub fn resolveForwardIdentifierAliases(self: *Lowering, decls: []const *const No
                 else => continue,
             };
             const src = decl.source_file orelse self.main_file orelse continue;
-            if (self.aliasResolvedInSource(src, cd.name)) continue;
+            if (aliasResolved(self, &decl.data.const_decl)) continue;
             // A diagnostic the RHS walk raises (an alias cycle) belongs to this
             // declaration's file.
-            self.setCurrentSourceFile(decl.source_file);
+            self.setDeclarationContext(decl);
             // The (leaf-name, from-source, raw) triple to resolve the alias RHS:
             //  • `A :: B`        — a bare identifier; resolve `B` from `src`.
             //  • `A :: ns.Leaf`  — a qualified RHS (`Color :: inner.Color`); the
@@ -2007,8 +1984,8 @@ pub fn resolveForwardIdentifierAliases(self: *Lowering, decls: []const *const No
             //    struct target but corrupts a non-struct target.
             var qualified_path: ?[]const u8 = null;
             defer if (qualified_path) |path| self.alloc.free(path);
-            const target_src, const leaf, const leaf_raw = switch (cd.value.data) {
-                .identifier => |rhs| .{ src, rhs.name, rhs.is_raw },
+            const target_env, const leaf, const leaf_raw = switch (cd.value.data) {
+                .identifier => |rhs| .{ self.current_environment.?, rhs.name, rhs.is_raw },
                 .field_access => blk: {
                     const path = self.qualifiedTypeName(cd.value) orelse continue;
                     // `sel.member` is a slice into `path`; retain that owned
@@ -2021,13 +1998,13 @@ pub fn resolveForwardIdentifierAliases(self: *Lowering, decls: []const *const No
                         .selected => |s| s,
                         .not_qualified, .missing, .ambiguous => continue,
                     };
-                    break :blk .{ sel.target.target_module_path, sel.member, false };
+                    break :blk .{ sel.target.environment, sel.member, false };
                 },
                 else => continue,
             };
-            switch (self.selectNominalLeaf(leaf, target_src, leaf_raw)) {
+            switch (self.selectNominalLeaf(leaf, target_env, leaf_raw)) {
                 .resolved => |tid| {
-                    self.putTypeAlias(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), decl.source_file, cd.name, tid);
+                    self.putTypeAlias(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, tid);
                     progressed = true;
                 },
                 // B not yet a resolved type author from this source: a forward
@@ -2207,7 +2184,7 @@ fn typeNodeLeavesReadyBehindPtr(self: *Lowering, node: *const Node, source: ?[]c
 /// never adopted) still defers.
 fn bareTypeLeafReadyBehindPtr(self: *Lowering, name: []const u8, src: []const u8, raw: bool) bool {
     if (std.mem.indexOfScalar(u8, name, '.') != null) return true;
-    return switch (self.selectNominalLeaf(name, src, raw)) {
+    return switch (self.selectNominalLeaf(name, self.environmentForSource(src).?, raw)) {
         .resolved, .forward => true,
         .pending, .undeclared, .not_visible, .private_elsewhere, .ambiguous => false,
     };
@@ -2224,7 +2201,7 @@ fn bareTypeLeafReady(self: *Lowering, name: []const u8, src: []const u8, raw: bo
     // Qualified names (`ns.T`) resolve through the namespace-edge machinery
     // with its own guards — trust the stateful resolver.
     if (std.mem.indexOfScalar(u8, name, '.') != null) return true;
-    return switch (self.selectNominalLeaf(name, src, raw)) {
+    return switch (self.selectNominalLeaf(name, self.environmentForSource(src).?, raw)) {
         .resolved => true,
         .pending, .forward, .undeclared, .not_visible, .private_elsewhere, .ambiguous => false,
     };
@@ -2236,39 +2213,48 @@ fn bareTypeLeafReady(self: *Lowering, name: []const u8, src: []const u8, raw: bo
 /// would mint an empty-struct stub for the pending peer that
 /// `typeCarriesUnresolved` cannot tell from a real empty struct, silently
 /// registering a lying layout.
-fn compositeRhsReferencesPending(node: *const Node, pending: *const std.StringHashMap(void)) bool {
+fn compositeRhsReferencesPending(self: *Lowering, node: *const Node, pending: *const std.AutoHashMap(imports.DeclId, void)) bool {
     switch (node.data) {
-        .type_expr => |te| return pending.contains(te.name),
-        .identifier => |id| return pending.contains(id.name),
-        .pointer_type_expr => |p| return compositeRhsReferencesPending(p.pointee_type, pending),
-        .many_pointer_type_expr => |m| return compositeRhsReferencesPending(m.element_type, pending),
-        .slice_type_expr => |s| return compositeRhsReferencesPending(s.element_type, pending),
-        .optional_type_expr => |o| return compositeRhsReferencesPending(o.inner_type, pending),
-        .array_type_expr => |a| return compositeRhsReferencesPending(a.element_type, pending),
+        .type_expr => |te| return pendingTypeAlias(self, te.name, pending),
+        .identifier => |id| return pendingTypeAlias(self, id.name, pending),
+        .pointer_type_expr => |p| return compositeRhsReferencesPending(self, p.pointee_type, pending),
+        .many_pointer_type_expr => |m| return compositeRhsReferencesPending(self, m.element_type, pending),
+        .slice_type_expr => |s| return compositeRhsReferencesPending(self, s.element_type, pending),
+        .optional_type_expr => |o| return compositeRhsReferencesPending(self, o.inner_type, pending),
+        .array_type_expr => |a| return compositeRhsReferencesPending(self, a.element_type, pending),
         .tuple_type_expr => |tt| {
-            for (tt.field_types) |ft| if (compositeRhsReferencesPending(ft, pending)) return true;
+            for (tt.field_types) |ft| if (compositeRhsReferencesPending(self, ft, pending)) return true;
             return false;
         },
         .return_type_expr => |rt| {
-            for (rt.field_types) |ft| if (compositeRhsReferencesPending(ft, pending)) return true;
+            for (rt.field_types) |ft| if (compositeRhsReferencesPending(self, ft, pending)) return true;
             return false;
         },
         .closure_type_expr => |ct| {
-            for (ct.param_types) |pt| if (compositeRhsReferencesPending(pt, pending)) return true;
-            if (ct.return_type) |r| return compositeRhsReferencesPending(r, pending);
+            for (ct.param_types) |pt| if (compositeRhsReferencesPending(self, pt, pending)) return true;
+            if (ct.return_type) |r| return compositeRhsReferencesPending(self, r, pending);
             return false;
         },
         .function_type_expr => |ft| {
-            for (ft.param_types) |pt| if (compositeRhsReferencesPending(pt, pending)) return true;
-            if (ft.return_type) |r| return compositeRhsReferencesPending(r, pending);
+            for (ft.param_types) |pt| if (compositeRhsReferencesPending(self, pt, pending)) return true;
+            if (ft.return_type) |r| return compositeRhsReferencesPending(self, r, pending);
             return false;
         },
         .parameterized_type_expr => |pt| {
-            for (pt.args) |arg| if (compositeRhsReferencesPending(arg, pending)) return true;
+            for (pt.args) |arg| if (compositeRhsReferencesPending(self, arg, pending)) return true;
             return false;
         },
         else => return false,
     }
+}
+
+fn pendingTypeAlias(self: *Lowering, name: []const u8, pending: *const std.AutoHashMap(imports.DeclId, void)) bool {
+    const environment = self.current_environment orelse return false;
+    var resolver = self.resolver();
+    const authors = resolver.collectVisibleAuthors(name, environment, .user_bare_flat);
+    defer if (authors.flat.len > 0) self.alloc.free(authors.flat);
+    const selected = authors.own orelse (if (authors.flat.len == 1) authors.flat[0] else return false);
+    return pending.contains(selected.id);
 }
 
 /// Report the precise per-element diagnostic for a composite-alias RHS that
@@ -2399,11 +2385,11 @@ fn registerCompositeAlias(self: *Lowering, cd: *const ast.ConstDecl, source: ?[]
                 }
             }
         }
-        self.putTypeAlias(self.declId(.{ .const_decl = cd }, source), source, cd.name, ty);
+        self.putTypeAlias(self.declId(.{ .const_decl = cd }, source), cd.name, ty);
         return;
     }
     reportCompositeAliasElement(self, cd, cd.value);
-    self.putTypeAlias(self.declId(.{ .const_decl = cd }, source), source, cd.name, .unresolved);
+    self.putTypeAlias(self.declId(.{ .const_decl = cd }, source), cd.name, .unresolved);
 }
 
 /// Fixpoint registration for COMPOSITE-type aliases whose elements reference
@@ -2428,10 +2414,9 @@ fn resolveCompositeAliases(self: *Lowering, decls: []const *const Node) void {
         progressed = false;
         for (decls) |decl| {
             const cd = compositeAliasConstDecl(decl) orelse continue;
-            const src = decl.source_file orelse self.main_file orelse continue;
-            if (self.aliasResolvedInSource(src, cd.name)) continue;
+            if (aliasResolved(self, &decl.data.const_decl)) continue;
+            self.setDeclarationContext(decl);
             if (!typeNodeLeavesReady(self, cd.value, decl.source_file)) continue;
-            self.setCurrentSourceFile(decl.source_file);
             registerCompositeAlias(self, cd, decl.source_file);
             progressed = true;
         }
@@ -2441,21 +2426,19 @@ fn resolveCompositeAliases(self: *Lowering, decls: []const *const Node) void {
     progressed = true;
     while (progressed) {
         progressed = false;
-        var still_pending = std.StringHashMap(void).init(self.alloc);
+        var still_pending = std.AutoHashMap(imports.DeclId, void).init(self.alloc);
         defer still_pending.deinit();
         for (decls) |decl| {
             const cd = compositeAliasConstDecl(decl) orelse continue;
-            const src = decl.source_file orelse self.main_file orelse continue;
-            if (!self.aliasResolvedInSource(src, cd.name)) still_pending.put(cd.name, {}) catch {};
+            if (!aliasResolved(self, cd)) still_pending.put(self.declId(.{ .const_decl = cd }, decl.source_file), {}) catch {};
         }
         for (decls) |decl| {
             const cd = compositeAliasConstDecl(decl) orelse continue;
-            const src = decl.source_file orelse self.main_file orelse continue;
-            if (self.aliasResolvedInSource(src, cd.name)) continue;
-            if (compositeRhsReferencesPending(cd.value, &still_pending)) continue;
-            self.setCurrentSourceFile(decl.source_file);
+            if (aliasResolved(self, &decl.data.const_decl)) continue;
+            self.setDeclarationContext(decl);
+            if (compositeRhsReferencesPending(self, cd.value, &still_pending)) continue;
             registerCompositeAlias(self, cd, decl.source_file);
-            _ = still_pending.remove(cd.name);
+            _ = still_pending.remove(self.declId(.{ .const_decl = cd }, decl.source_file));
             progressed = true;
         }
         if (progressed) self.resolveForwardIdentifierAliases(decls);
@@ -2464,20 +2447,17 @@ fn resolveCompositeAliases(self: *Lowering, decls: []const *const Node) void {
     // (or itself) — a reference cycle. Diagnose + poison.
     for (decls) |decl| {
         const cd = compositeAliasConstDecl(decl) orelse continue;
-        const src = decl.source_file orelse self.main_file orelse continue;
-        if (self.aliasResolvedInSource(src, cd.name)) continue;
-        self.setCurrentSourceFile(decl.source_file);
+        if (aliasResolved(self, &decl.data.const_decl)) continue;
+        self.setDeclarationContext(decl);
         if (self.diagnostics) |d|
             d.addFmt(.err, cd.value.span, "type alias '{s}' could not be resolved: it participates in a composite-alias reference cycle (self-referential structural aliases are not supported; use a named struct for recursive shapes)", .{cd.name});
-        self.putTypeAlias(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), decl.source_file, cd.name, .unresolved);
+        self.putTypeAlias(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, .unresolved);
     }
 }
 
-/// TRUE iff `name` is already recorded as a type alias FROM `src`, so the
-/// forward-alias fixpoint resolves a same-name alias in each source
-/// independently.
-pub fn aliasResolvedInSource(self: *Lowering, src: []const u8, name: []const u8) bool {
-    return self.program_index.containsInSource(.type_alias, src, name);
+fn aliasResolved(self: *Lowering, cd: *const ast.ConstDecl) bool {
+    const id = self.declIdOf(.{ .const_decl = cd }) orelse return false;
+    return self.program_index.get(.type_alias, id) != null;
 }
 
 /// Pass 2: Lower main function body and comptime side-effects.
@@ -2489,7 +2469,7 @@ pub fn lowerMainAndComptime(self: *Lowering, decls: []const *const Node) void {
         // file's perspective and reports a genuine per-source author as
         // ambiguous. Mirrors `scanDecls` / `lowerDecls`, which already set
         // the source file per decl.
-        self.setCurrentSourceFile(decl.source_file);
+        self.setDeclarationContext(decl);
         switch (decl.data) {
             .const_decl => |cd| {
                 if (cd.value.data == .fn_decl) {
@@ -2501,7 +2481,7 @@ pub fn lowerMainAndComptime(self: *Lowering, decls: []const *const Node) void {
                         self.lazyLowerFunction(cd.name);
                     }
                 } else if (cd.value.data == .comptime_expr) {
-                    self.lowerComptimeGlobal(cd.name, cd.value.data.comptime_expr.expr, cd.type_annotation);
+                    self.lowerComptimeGlobal(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, cd.value.data.comptime_expr.expr, cd.type_annotation);
                 }
             },
             .fn_decl => |fd| {
@@ -2739,10 +2719,10 @@ fn selectableFn(fd: *const ast.FnDecl, kinds: CallableKinds) bool {
 /// keeps its existing dispatch. No eager materialization: the returned
 /// `SelectedFunc` carries decl + source and `materialized = null`; a consumer
 /// fills the FuncId via `selectedFuncId` only when it truly needs it.
-pub fn selectCallableAuthor(self: *Lowering, name: []const u8, caller_file: []const u8, kinds: CallableKinds) BareCallee {
+pub fn selectCallableAuthor(self: *Lowering, name: []const u8, environment: imports.EnvironmentId, kinds: CallableKinds) BareCallee {
     const winner = self.program_index.lookup(.function, name);
     var res = self.resolver();
-    const set = res.collectVisibleAuthors(name, caller_file, .user_bare_flat);
+    const set = res.collectVisibleAuthors(name, environment, .user_bare_flat);
     defer if (set.flat.len > 0) self.alloc.free(set.flat);
 
     if (set.own) |own_author| {
@@ -2802,7 +2782,7 @@ fn resolveBuiltinAliasChain(
         else => return null,
     };
     var res = self.resolver();
-    const set = res.collectVisibleAuthors(hop.name, author.source, .user_bare_flat);
+    const set = res.collectVisibleAuthors(hop.name, self.program_index.declaration(author.id).environment.?, .user_bare_flat);
     defer if (set.flat.len > 0) self.alloc.free(set.flat);
     const next = set.own orelse (if (set.flat.len == 1) set.flat[0] else null) orelse return null;
     return resolveBuiltinAliasChain(self, next, depth + 1);
@@ -2821,7 +2801,7 @@ fn resolveBuiltinAliasChain(
 /// chain (`MYB2 :: MYB; MYB :: i8`) walks each hop the same way.
 fn resolvePendingAliasType(self: *Lowering, author: resolver_mod.RawAuthor, alias_name: []const u8) ?TypeId {
     if (resolveBuiltinAliasChain(self, author, 0)) |tid| {
-        self.putTypeAlias(self.declId(author.raw, author.source), author.source, alias_name, tid);
+        self.putTypeAlias(self.declId(author.raw, author.source), alias_name, tid);
         return tid;
     }
     const terminal = self.followAliasChain(author) orelse return null;
@@ -2831,10 +2811,10 @@ fn resolvePendingAliasType(self: *Lowering, author: resolver_mod.RawAuthor, alia
         // Parameterized protocols are compile-time templates, not runtime ABI
         // types, so they cannot satisfy a plain alias annotation here.
         if (pd.type_params.len > 0) return null;
-        const saved_source = self.current_source_file;
-        self.setCurrentSourceFile(terminal.source);
+        const saved_source = self.lexicalContext();
+        self.setCurrentEnvironment(self.program_index.declaration(terminal.id).environment);
         self.protocolResolver().registerProtocolDecl(pd);
-        self.setCurrentSourceFile(saved_source);
+        self.restoreLexicalContext(saved_source);
     }
 
     const terminal_name: []const u8 = switch (terminal.raw) {
@@ -2855,11 +2835,11 @@ fn resolvePendingAliasType(self: *Lowering, author: resolver_mod.RawAuthor, alia
             // exact declaration slot is authoritative and must not be looked
             // up through the alias compatibility map.
             if (self.namedRefTid(terminal.raw, terminal_name)) |named| break :blk named;
-            break :blk self.program_index.lookupInSource(.type_alias, terminal.source, terminal_name) orelse return null;
+            break :blk self.program_index.get(.type_alias, terminal.id) orelse return null;
         },
         else => self.namedRefTid(terminal.raw, terminal_name) orelse return null,
     };
-    self.putTypeAlias(self.declId(author.raw, author.source), author.source, alias_name, tid);
+    self.putTypeAlias(self.declId(author.raw, author.source), alias_name, tid);
     return tid;
 }
 
@@ -2878,7 +2858,8 @@ fn resolvePendingAliasType(self: *Lowering, author: resolver_mod.RawAuthor, alia
 /// Generic / parameterized-protocol / `@Vector` / type-function heads never
 /// reach this leaf — `resolveTypeWithBindings` owns those above the leaf
 /// switch.
-pub fn selectNominalLeaf(self: *Lowering, name: []const u8, from: []const u8, raw: bool) TypeHeadResolution {
+pub fn selectNominalLeaf(self: *Lowering, name: []const u8, environment: imports.EnvironmentId, raw: bool) TypeHeadResolution {
+    const from = self.program_index.declarations().environment(environment).source;
     const table = &self.module.types;
     // Builtin primitive keyword — unless a raw escape routes the literal name
     // straight to nominal resolution.
@@ -2930,16 +2911,9 @@ pub fn selectNominalLeaf(self: *Lowering, name: []const u8, from: []const u8, ra
     if (self.emitting_default_context) {
         if (registered) |existing| return .{ .resolved = existing };
     }
-    if (self.program_index.decl_table == null or self.program_index.flat_import_graph == null) {
+    if (self.program_index.decl_table == null) {
         if (registered) |existing| return .{ .resolved = existing };
-        // Direct per-source lookup for resolved alias, then pending check.
-        if (self.program_index.lookupInSource(.type_alias, from, name)) |tid| return .{ .resolved = tid };
-        if (self.program_index.decl_table) |decls| {
-            if (decls.fileScope(from)) |env| if (env.names.get(name)) |id| {
-                const ref = decls.get(id).ref orelse return .undeclared;
-                if (ref == .const_decl) return .pending;
-            };
-        }
+        if (self.program_index.lookupInEnvironment(.type_alias, environment, name)) |tid| return .{ .resolved = tid };
         return .undeclared;
     }
 
@@ -2947,7 +2921,7 @@ pub fn selectNominalLeaf(self: *Lowering, name: []const u8, from: []const u8, ra
     // replaces `moduleTypeAuthor` + `ownConstDeclIsPendingAlias` +
     // `flatTypeAuthorCount` + `forwardAliasOrUndeclared`.
     var res_walk = self.resolver();
-    const author_set = res_walk.collectVisibleAuthors(name, from, .user_bare_flat);
+    const author_set = res_walk.collectVisibleAuthors(name, environment, .user_bare_flat);
     defer if (author_set.flat.len > 0) self.alloc.free(author_set.flat);
 
     // 1a. Own type author wins outright (own-wins).
@@ -2962,7 +2936,7 @@ pub fn selectNominalLeaf(self: *Lowering, name: []const u8, from: []const u8, ra
                 if (self.namedRefTid(own.raw, name)) |tid| return .{ .resolved = tid };
                 return .forward;
             }
-            if (self.program_index.lookupInSource(.type_alias, own.source, name)) |tid| return .{ .resolved = tid };
+            if (self.program_index.get(.type_alias, own.id)) |tid| return .{ .resolved = tid };
             // Forward/qualified alias chains may be queried by an ABI consumer
             // before declaration-order scanning reaches the alias. Resolve the
             // raw chain now so params, returns, fields and wrappers all intern
@@ -2987,7 +2961,7 @@ pub fn selectNominalLeaf(self: *Lowering, name: []const u8, from: []const u8, ra
     for (author_set.flat) |fa| {
         const is_type = switch (fa.raw) {
             .const_decl => constWrappedNamedTypeRef(fa.raw.const_decl) != null or
-                self.program_index.containsInSource(.type_alias, fa.source, name),
+                self.program_index.get(.type_alias, fa.id) != null,
             else => isNamedTypeKind(fa.raw),
         };
         if (!is_type) continue;
@@ -2996,7 +2970,7 @@ pub fn selectNominalLeaf(self: *Lowering, name: []const u8, from: []const u8, ra
             .const_decl => if (constWrappedNamedTypeRef(fa.raw.const_decl) != null)
                 self.namedRefTid(fa.raw, name)
             else
-                self.program_index.lookupInSource(.type_alias, fa.source, name),
+                self.program_index.get(.type_alias, fa.id),
             else => self.namedRefTid(fa.raw, name),
         };
         if (fa_tid) |t| {
@@ -3019,7 +2993,7 @@ pub fn selectNominalLeaf(self: *Lowering, name: []const u8, from: []const u8, ra
     //     is that primitive.
     for (author_set.flat) |fa| {
         if (fa.raw == .const_decl) {
-            if (self.program_index.lookupInSource(.type_alias, fa.source, name)) |tid| return .{ .resolved = tid };
+            if (self.program_index.get(.type_alias, fa.id)) |tid| return .{ .resolved = tid };
             if (resolvePendingAliasType(self, fa, name)) |tid| return .{ .resolved = tid };
             return .pending;
         }
@@ -3187,7 +3161,7 @@ pub fn localTypeInAnySource(self: *Lowering, name: []const u8) bool {
 pub fn resolveNominalLeaf(self: *Lowering, name: []const u8, raw: bool, span: ?ast.Span) TypeId {
     const from = self.current_source_file orelse
         return self.typeResolver().resolveName(name, raw);
-    return switch (self.selectNominalLeaf(name, from, raw)) {
+    return switch (self.selectNominalLeaf(name, self.environmentForSource(from).?, raw)) {
         .resolved => |t| t,
         // A forward alias (`.pending`) or a forward / not-yet-interned named
         // author (`.forward`) — keep the empty-struct stub the type adopts
@@ -3343,10 +3317,10 @@ pub fn bareAuthorFuncId(self: *Lowering, fd: *const ast.FnDecl, name: []const u8
         }
         return fid;
     }
-    const saved_src = self.current_source_file;
-    self.setCurrentSourceFile(path);
+    const saved_src = self.lexicalContext();
+    self.setCurrentEnvironment(self.functionEnvironment(fd) orelse self.environmentForSource(path));
     self.declareFunction(fd, name);
-    self.setCurrentSourceFile(saved_src);
+    self.restoreLexicalContext(saved_src);
     const fid = self.declFuncId(fd).?;
     self.lowered_fids.put(fid, {}) catch {};
     self.lowerFunctionBodyInto(fd, fid, name);
@@ -3628,58 +3602,6 @@ pub fn isEvaluateIntrinsic(self: *Lowering, fd: *const ast.FnDecl, name: []const
     return e.mode == .evaluate;
 }
 
-/// Register a namespaced import's OWN functions under their module-qualified
-/// name (`ns.fn`). Two modules each exporting a top-level `parse` share the
-/// bare name, which selects one of them; the qualified spelling names the
-/// other's declaration directly. The bare recursion in `scanDecls` still
-/// registers intra-module bare calls; this adds the qualified identity the
-/// `pkg.fn(...)` resolution paths in `CallResolver.plan` / `lowerCall` already
-/// prefer.
-pub fn registerNamespaceQualifiedFns(self: *Lowering, ns_name: []const u8, own_decls: []const *Node) void {
-    const saved_source = self.current_source_file;
-    defer self.setCurrentSourceFile(saved_source);
-    for (own_decls) |decl| {
-        self.setCurrentSourceFile(decl.source_file);
-        switch (decl.data) {
-            .fn_decl => self.registerQualifiedFn(ns_name, &decl.data.fn_decl, decl.data.fn_decl.name),
-            .const_decl => |cd| {
-                if (cd.value.data == .fn_decl) {
-                    self.registerQualifiedFn(ns_name, &cd.value.data.fn_decl, cd.name);
-                }
-            },
-            else => {},
-        }
-    }
-}
-
-pub fn registerQualifiedFn(self: *Lowering, ns_name: []const u8, fd: *const ast.FnDecl, short: []const u8) void {
-    // Only PLAIN free functions need a qualified identity. Generic /
-    // comptime / pack functions (`@Vector`, `print`, `anyToString`) are
-    // dispatched by monomorphization off their BARE template name, not the
-    // plain `resolveFuncByName` / `lazyLowerFunction` path that trips the
-    // collision assert; registering a qualified alias for them
-    // would divert that machinery and strand a per-call type binding.
-    if (fd.type_params.len > 0 or hasComptimeParams(fd) or isPackFn(fd)) return;
-    // Extern / builtin bodies keep their literal name; a qualified alias has
-    // no distinct symbol to resolve to.
-    switch (fd.body.data) {
-        .intrinsic_expr => return,
-        else => {},
-    }
-    const qualified = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ ns_name, short }) catch return;
-    if (self.program_index.contains(.function, qualified)) return;
-    // The qualified spelling selects the SAME declaration the bare one does,
-    // so the source `lazyLowerFunction` restores is the declaration's own —
-    // `ns.fn`'s body lowers in its own module's visibility context, not the
-    // call site's.
-    self.program_index.registerFunction(qualified, fd, self.current_source_file);
-    // No eager `declareFunction` here: the extern stub's param/return types
-    // would be resolved now, before the forward-alias fixpoint, caching an
-    // `.unresolved` for any type declared later in the module. The qualified
-    // function is declared + lowered on demand by `lazyLowerFunction`'s
-    // null-FuncId path (`lowerFunction`), which runs after all types resolve.
-}
-
 /// The unified non-transitive `@import` visibility predicate, parameterized
 /// by `VisibilityMode`. `isNameVisible` / `isCImportVisible` are thin
 /// adapters over it.
@@ -3713,8 +3635,7 @@ pub fn isVisible(self: *Lowering, name: []const u8, vis: resolver_mod.Visibility
 /// responsible for restricting the check to names that ARE known top-level
 /// decls; otherwise every local variable would be policed.
 pub fn visibleOverEdges(self: *Lowering, name: []const u8) bool {
-    const source = self.current_source_file orelse return true;
-    return nameVisibleOverEdges(self.program_index.decl_table, self.program_index.flat_import_graph, source, name);
+    return nameVisibleOverEdges(self.program_index.decl_table, self.program_index.flat_import_graph, self.current_environment, name);
 }
 
 /// Check if a C-imported function is visible from the current source file.
@@ -3793,19 +3714,9 @@ pub fn lazyLowerFunction(self: *Lowering, name: []const u8) void {
         return;
     }
 
-    // Function not yet declared — create it fresh via lowerFunction. A
-    // module-qualified alias (`ns.fn`) enters the function index without an
-    // eager `declareFunction`, so there's no `Function.source_file` to switch
-    // to. Restore the alias's OWN declaring source before lowering its body,
-    // otherwise it lowers in the caller's visibility context and an own-import
-    // callee (`foo` calling `helper` from `foo`'s module's flat import) is
-    // reported "not visible". The reentry guard keeps the nested lowering
-    // transparent to the caller.
     var reentry = FnBodyReentry.enter(self);
     defer reentry.restore();
-    if (self.program_index.functionSource(name)) |src| {
-        self.setCurrentSourceFile(src);
-    }
+    self.setCurrentEnvironment(self.functionEnvironment(fd));
     self.lowerFunction(fd, name, false);
 }
 
@@ -3849,7 +3760,7 @@ pub fn lowerFunctionBodyInto(self: *Lowering, fd: *const ast.FnDecl, fid: FuncId
     // resolve after this point.
     self.builder.func = fid;
     const func = &self.module.functions.items[@intFromEnum(fid)];
-    self.setCurrentSourceFile(func.source_file);
+    self.setCurrentEnvironment(self.functionEnvironment(fd));
 
     // `extern` imports are pure declarations — never promote the stub to a real
     // function or lower the (empty placeholder) body. Mirrors the declare-only
@@ -3956,6 +3867,9 @@ pub fn lowerFunctionBodyInto(self: *Lowering, fd: *const ast.FnDecl, fid: FuncId
 
 /// Lower a single function declaration.
 pub fn lowerFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8, is_imported: bool) void {
+    const saved_context = self.lexicalContext();
+    defer self.restoreLexicalContext(saved_context);
+    self.setCurrentEnvironment(self.functionEnvironment(fd));
     // For sx-defined `@ObjcClass` methods (qualified `<Class>.<method>`),
     // set `current_runtime_class` so `*Self` substitutions through
     // `resolveTypeWithBindings` find the state-struct type
@@ -4132,23 +4046,18 @@ pub fn callableReturnBinder(fd: *const ast.FnDecl, ret_ty: TypeId) ?*const Node 
 
 // ── Module-const emission ───────────────────────────────────────
 
-pub fn emitModuleConst(self: *Lowering, name: []const u8, ci: ModuleConstInfo, author_source: ?[]const u8) Ref {
-    // A const read from another module folds/lowers its RHS in the
-    // AUTHOR's visibility context, so a same-name leaf (`K :: M + 1` selected
-    // from `a.sx`) resolves `M` against `a.sx` — not against the reading
-    // module, which may flat-import a different same-name `M`. Single-author /
-    // own-read consts pin to the source they were already in → byte-identical.
-    const author_pin = self.pinConstAuthorSource(author_source);
+pub fn emitModuleConst(self: *Lowering, name: []const u8, ci: ModuleConstInfo, environment: ?imports.EnvironmentId) Ref {
+    const author_pin = self.pinConstEnvironment(environment);
     defer author_pin.unpin();
     const saved_scope = self.scope;
     self.scope = null;
     defer self.scope = saved_scope;
-    if (lower.constFoldFrameContains(self.module_const_frame, name, author_source)) {
+    if (lower.constFoldFrameContains(self.module_const_frame, name, environment)) {
         if (self.diagnostics) |d|
             d.addFmt(.err, ci.value.span, "constant '{s}' depends on itself", .{name});
         return self.builder.constUndef(ci.ty);
     }
-    const frame = lower.ConstFoldFrame{ .name = name, .source = author_source, .parent = self.module_const_frame };
+    const frame = lower.ConstFoldFrame{ .name = name, .environment = environment, .parent = self.module_const_frame };
     self.module_const_frame = &frame;
     defer self.module_const_frame = frame.parent;
     // An integer-typed const whose initializer is a compile-time integer —

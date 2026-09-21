@@ -69,6 +69,11 @@ const Function = inst_mod.Function;
 const Module = mod_mod.Module;
 const Builder = mod_mod.Builder;
 
+pub const AuthoredDefault = struct {
+    site: DefaultCallSite,
+    environment: ?imports_mod.EnvironmentId,
+};
+
 /// Call-site provenance retained while a declaration-authored default AST is
 /// evaluated. Nested `@caller` markers use this instead of the default
 /// expression's lexical source; ordinary names still resolve in the function
@@ -136,25 +141,19 @@ pub const ProtocolDefaultDispatchDomain = struct {
 };
 
 /// Stack-allocated dependency chain for module-constant folding and lowering.
-/// Author source distinguishes same-named constants in different modules.
+/// The environment distinguishes same-named constants.
 pub const ConstFoldFrame = struct {
     name: []const u8,
-    source: ?[]const u8,
+    environment: ?imports_mod.EnvironmentId,
     parent: ?*const ConstFoldFrame,
 };
 
-pub fn constFoldFrameContains(frame: ?*const ConstFoldFrame, name: []const u8, source: ?[]const u8) bool {
+pub fn constFoldFrameContains(frame: ?*const ConstFoldFrame, name: []const u8, environment: ?imports_mod.EnvironmentId) bool {
     var cur = frame;
     while (cur) |c| : (cur = c.parent) {
-        if (std.mem.eql(u8, c.name, name) and sourcesEql(c.source, source)) return true;
+        if (std.mem.eql(u8, c.name, name) and c.environment == environment) return true;
     }
     return false;
-}
-
-fn sourcesEql(a: ?[]const u8, b: ?[]const u8) bool {
-    if (a == null and b == null) return true;
-    if (a == null or b == null) return false;
-    return std.mem.eql(u8, a.?, b.?);
 }
 
 /// Folding context for a SOURCE-AWARE module-const EXPRESSION RHS.
@@ -429,14 +428,15 @@ pub const Scope = struct {
 pub fn nameVisibleOverEdges(
     declarations: ?*imports_mod.DeclTable,
     graph: ?*std.StringHashMap(std.StringHashMap(void)),
-    source: []const u8,
+    environment: ?imports_mod.EnvironmentId,
     name: []const u8,
 ) bool {
     const table = declarations orelse return true;
-    const own_scope = table.fileScope(source) orelse return true;
+    const env = environment orelse return true;
+    const own_scope = table.environment(env);
     if (own_scope.names.contains(name)) return true;
     const g = graph orelse return true;
-    const direct = g.get(source) orelse return true;
+    const direct = table.directImports(g, env) orelse return true;
     var it = direct.iterator();
     while (it.next()) |kv| {
         const dep = table.fileScope(kv.key_ptr.*) orelse continue;
@@ -571,7 +571,7 @@ pub const Lowering = struct {
     /// not capture a same-named local from the call site. `inferExprType` and
     /// `lowerExpr` temporarily hide the caller scope for these roots while the
     /// node's source pin remains active through all recursive children.
-    authored_call_defaults: std.AutoHashMap(*const Node, DefaultCallSite),
+    authored_call_defaults: std.AutoHashMap(*const Node, AuthoredDefault),
     /// Named-argument pin (specs: Named Arguments): argument values
     /// PRE-LOWERED in written order by `mapNamedArgs` when the mapped
     /// declaration order would displace evaluation. `lowerExpr` returns the
@@ -683,7 +683,8 @@ pub const Lowering = struct {
     protocol_info_by_type: std.AutoHashMap(TypeId, program_index_mod.ProtocolDeclInfo),
     protocol_ast_by_type: std.AutoHashMap(TypeId, *const ast.ProtocolDecl),
     program_index: ProgramIndex,
-    current_source_file: ?[]const u8 = null, // source file of function currently being lowered
+    current_source_file: ?[]const u8 = null,
+    current_environment: ?imports_mod.EnvironmentId = null,
     /// Uncached nested bodies remain part of the active constant expansion.
     module_const_frame: ?*const ConstFoldFrame = null,
     untyped_const_frame: ?*const UntypedConstFrame = null,
@@ -1108,7 +1109,7 @@ pub const Lowering = struct {
         defer_base: usize,
         block_terminated: bool,
         force_block_value: bool,
-        source_file: ?[]const u8,
+        context: LexicalContext,
         module_const_frame: ?*const ConstFoldFrame,
         jni_env_base: usize,
         pack_arg_nodes: ?std.StringHashMap([]const *const Node),
@@ -1133,7 +1134,7 @@ pub const Lowering = struct {
                 .defer_base = l.func_defer_base,
                 .block_terminated = l.block_terminated,
                 .force_block_value = l.force_block_value,
-                .source_file = l.current_source_file,
+                .context = l.lexicalContext(),
                 .module_const_frame = l.module_const_frame,
                 .jni_env_base = l.jni_env_stack_base,
                 .pack_arg_nodes = l.pack_arg_nodes,
@@ -1179,7 +1180,7 @@ pub const Lowering = struct {
 
         pub fn restore(g: FnBodyReentry) void {
             const l = g.l;
-            l.setCurrentSourceFile(g.source_file);
+            l.restoreLexicalContext(g.context);
             l.module_const_frame = g.module_const_frame;
             l.scope = g.scope;
             l.func_defer_base = g.defer_base;
@@ -1358,7 +1359,7 @@ pub const Lowering = struct {
             .builder = Builder.init(module),
             .alloc = module.alloc,
             .lowered_functions = std.StringHashMap(void).init(module.alloc),
-            .authored_call_defaults = std.AutoHashMap(*const Node, DefaultCallSite).init(module.alloc),
+            .authored_call_defaults = std.AutoHashMap(*const Node, AuthoredDefault).init(module.alloc),
             .precomputed_args = std.AutoHashMap(*const Node, Ref).init(module.alloc),
             .mono_sites = std.ArrayList(DefaultCallSite).empty,
             .fn_decl_fids = std.AutoHashMap(imports_mod.DeclId, FuncId).init(module.alloc),
@@ -1603,34 +1604,17 @@ pub const Lowering = struct {
         return self.resolveTypeWithBindings(type_ann);
     }
 
-    /// Resolve a type node with the visibility context pinned to `src`, the
-    /// DEFINING module of a namespaced callee, restoring the caller's context
-    /// after. A namespaced callee's declared return type may name a type that is
-    /// bare-visible only inside the callee's own module — namespaced-only from the
-    /// call site's view. The bare leaf is source-aware, so resolving that
-    /// return type in the CALL SITE's context would wrongly reject it (the type
-    /// analog of the namespaced-fn-body source pin that lowers a namespaced fn body in
-    /// its own module's context). `src == null` falls back to the call site's
-    /// context unchanged.
-    pub fn resolveTypeInSource(self: *Lowering, src: ?[]const u8, type_ann: *const Node) TypeId {
-        const pinned = src orelse return self.resolveType(type_ann);
-        const saved = self.current_source_file;
-        defer self.setCurrentSourceFile(saved);
-        self.setCurrentSourceFile(pinned);
+    pub fn resolveTypeInEnvironment(self: *Lowering, environment: ?imports_mod.EnvironmentId, type_ann: *const Node) TypeId {
+        const saved = self.lexicalContext();
+        defer self.restoreLexicalContext(saved);
+        if (environment) |env| self.setCurrentEnvironment(env);
         return self.resolveType(type_ann);
     }
 
-    /// `resolveParamType` with the visibility context pinned to `src`, the
-    /// DEFINING module of the param's function. An imported method's
-    /// default-param type (`alloc: Allocator`) is bare-visible only inside its
-    /// own module, so typing a cross-module call's args against it must resolve
-    /// in that module's context, not the call site's (— the param analog of
-    /// `resolveTypeInSource`). `src == null` falls back unchanged.
-    pub fn resolveParamTypeInSource(self: *Lowering, src: ?[]const u8, p: *const ast.Param) TypeId {
-        const pinned = src orelse return self.resolveParamType(p);
-        const saved = self.current_source_file;
-        defer self.setCurrentSourceFile(saved);
-        self.setCurrentSourceFile(pinned);
+    pub fn resolveParamTypeInEnvironment(self: *Lowering, environment: ?imports_mod.EnvironmentId, p: *const ast.Param) TypeId {
+        const saved = self.lexicalContext();
+        defer self.restoreLexicalContext(saved);
+        if (environment) |env| self.setCurrentEnvironment(env);
         return self.resolveParamType(p);
     }
 
@@ -1644,7 +1628,7 @@ pub const Lowering = struct {
         if (index == 0) {
             if (self.protocol_impl_receiver_types.get(fd)) |receiver_ty| return receiver_ty;
         }
-        return self.resolveParamTypeInSource(fd.body.source_file, &fd.params[index]);
+        return self.resolveParamTypeInEnvironment(self.functionEnvironment(fd), &fd.params[index]);
     }
 
     /// Construct a `TypeResolver` view over the current lowering state (borrows
@@ -1655,6 +1639,7 @@ pub const Lowering = struct {
             .types = &self.module.types,
             .diagnostics = self.diagnostics,
             .index = &self.program_index,
+            .environment = self.current_environment,
         };
     }
 
@@ -1996,9 +1981,9 @@ pub const Lowering = struct {
     /// The type a proved namespace selection names, resolved in the TARGET
     /// module's own visibility context so the leaf is judged by that module.
     fn selectedMemberType(self: *Lowering, sel: QualifiedMember, is_raw: bool, span: ?ast.Span) TypeId {
-        const saved = self.current_source_file;
-        self.setCurrentSourceFile(sel.target.target_module_path);
-        defer self.setCurrentSourceFile(saved);
+        const saved = self.lexicalContext();
+        self.setCurrentEnvironment(self.program_index.declaration(sel.author.id).environment);
+        defer self.restoreLexicalContext(saved);
         return self.resolveNominalLeaf(sel.member, is_raw, span);
     }
 
@@ -2009,7 +1994,7 @@ pub const Lowering = struct {
             .selected => |s| s,
             else => return null,
         };
-        const leaf = switch (self.selectNominalLeaf(sel.member, sel.target.target_module_path, false)) {
+        const leaf = switch (self.selectNominalLeaf(sel.member, sel.target.environment, false)) {
             .resolved => |t| t,
             else => return null,
         };
@@ -2378,16 +2363,16 @@ pub const Lowering = struct {
 
     /// Infer the type of an expression from its AST node (used for untyped var decls).
     pub fn inferExprType(self: *Lowering, node: *const Node) TypeId {
-        const authored_default = self.authored_call_defaults.contains(node);
+        const authored_default = self.authored_call_defaults.get(node);
         const saved_scope = self.scope;
-        const saved_source = self.current_source_file;
-        if (authored_default) {
+        const saved_source = self.lexicalContext();
+        if (authored_default) |dflt| {
             self.scope = null;
-            if (node.source_file) |src| self.setCurrentSourceFile(src);
+            self.setCurrentEnvironment(dflt.environment);
         }
-        defer if (authored_default) {
+        defer if (authored_default != null) {
             self.scope = saved_scope;
-            self.setCurrentSourceFile(saved_source);
+            self.restoreLexicalContext(saved_source);
         };
         return switch (node.data) {
             .call => |*c| self.callResolver().resultType(c),
@@ -2464,11 +2449,11 @@ pub const Lowering = struct {
     /// this is a no-op on the hot path.
     pub const AuthorScope = struct {
         lowering: *Lowering,
-        saved: ?[]const u8,
+        saved: LexicalContext,
         switched: bool,
 
         pub fn enter(lowering: *Lowering, node: *const Node) AuthorScope {
-            const saved = lowering.current_source_file;
+            const saved = lowering.lexicalContext();
             if (node.source_file) |sf| {
                 lowering.setCurrentSourceFile(sf);
                 return .{ .lowering = lowering, .saved = saved, .switched = true };
@@ -2477,16 +2462,68 @@ pub const Lowering = struct {
         }
 
         pub fn leave(self: AuthorScope) void {
-            if (self.switched) self.lowering.setCurrentSourceFile(self.saved);
+            if (self.switched) self.lowering.restoreLexicalContext(self.saved);
         }
     };
 
-    /// Update `self.current_source_file` and mirror it onto `diags.current_source_file`,
-    /// so any diagnostic emitted from inside a function lowered from another module is
-    /// attributed to that module — not whichever file the diagnostics list was init'd with.
+    pub const LexicalContext = struct {
+        source_file: ?[]const u8,
+        environment: ?imports_mod.EnvironmentId,
+    };
+
+    pub fn lexicalContext(self: *const Lowering) LexicalContext {
+        return .{ .source_file = self.current_source_file, .environment = self.current_environment };
+    }
+
+    pub fn restoreLexicalContext(self: *Lowering, context: LexicalContext) void {
+        self.current_source_file = context.source_file;
+        self.current_environment = context.environment;
+        if (self.diagnostics) |d| d.current_source_file = context.source_file;
+    }
+
+    pub fn environmentForSource(self: *Lowering, source: ?[]const u8) ?imports_mod.EnvironmentId {
+        const path = source orelse self.current_source_file orelse self.main_file orelse return self.current_environment;
+        const table = self.program_index.declarations();
+        const root = table.internEnvironment(path, &.{}) catch @panic("out of memory");
+        if (self.current_environment) |env| {
+            if (std.mem.eql(u8, table.environment(env).source, table.environment(root).source)) return env;
+        }
+        return root;
+    }
+
     pub fn setCurrentSourceFile(self: *Lowering, source_file: ?[]const u8) void {
-        self.current_source_file = source_file;
-        if (self.diagnostics) |d| d.current_source_file = source_file;
+        self.restoreLexicalContext(.{
+            .source_file = source_file,
+            .environment = self.environmentForSource(source_file),
+        });
+    }
+
+    pub fn setCurrentEnvironment(self: *Lowering, environment: ?imports_mod.EnvironmentId) void {
+        self.restoreLexicalContext(.{
+            .source_file = if (environment) |env| self.program_index.declarations().environment(env).source else null,
+            .environment = environment,
+        });
+    }
+
+    pub fn setDeclarationContext(self: *Lowering, node: *const Node) void {
+        if (self.program_index.declarations().by_node.get(@intFromPtr(node))) |id| {
+            self.setCurrentEnvironment(self.program_index.declaration(id).environment);
+        } else if (imports_mod.rawDeclRefOf(node)) |ref| {
+            if (self.program_index.idForRef(ref)) |id| {
+                self.setCurrentEnvironment(self.program_index.declaration(id).environment);
+                return;
+            }
+            self.setCurrentSourceFile(node.source_file);
+        } else self.setCurrentSourceFile(node.source_file);
+    }
+
+    pub fn declarationEnvironment(self: *Lowering, ref: imports_mod.RawDeclRef, source: ?[]const u8) ?imports_mod.EnvironmentId {
+        if (self.program_index.idForRef(ref)) |id| return self.program_index.declaration(id).environment;
+        return self.environmentForSource(source);
+    }
+
+    pub fn functionEnvironment(self: *Lowering, fd: *const ast.FnDecl) ?imports_mod.EnvironmentId {
+        return self.declarationEnvironment(.{ .fn_decl = fd }, fd.body.source_file);
     }
 
     /// Stamp a caller-provided comptime `$`-arg node with the caller's source
@@ -2852,7 +2889,7 @@ pub const Lowering = struct {
     /// the same alias are ambiguous.
     pub fn namespaceAliasVerdict(self: *Lowering, alias: []const u8) AliasVerdict {
         const from = self.current_source_file orelse return .none;
-        return self.namespaceAliasVerdictFrom(alias, from);
+        return self.namespaceAliasVerdictIn(alias, self.environmentForSource(from).?);
     }
 
     /// `namespaceAliasVerdict` with an explicit querying source — for callers
@@ -2860,12 +2897,14 @@ pub const Lowering = struct {
     /// alias decl whose RHS is `ns.X`: `ns` binds in the alias author's file,
     /// not the use site's).
     pub fn namespaceAliasVerdictFrom(self: *Lowering, alias: []const u8, from: []const u8) AliasVerdict {
-        const table = self.program_index.decl_table orelse return .none;
-        if (table.fileScope(from)) |own| {
-            if (own.namespaces.get(alias)) |t| return .{ .target = t };
-        }
-        const flat = self.program_index.flat_import_graph orelse return .none;
-        const direct = flat.get(from) orelse return .none;
+        return self.namespaceAliasVerdictIn(alias, self.environmentForSource(from).?);
+    }
+
+    pub fn namespaceAliasVerdictIn(self: *Lowering, alias: []const u8, environment: imports_mod.EnvironmentId) AliasVerdict {
+        const table = self.program_index.declarations();
+        const own = table.environment(environment);
+        if (own.namespaces.get(alias)) |t| return .{ .target = t };
+        const direct = self.program_index.flatImports(environment) orelse return .none;
         var found: ?imports_mod.NamespaceTarget = null;
         var it = direct.keyIterator();
         while (it.next()) |dep| {
@@ -2875,7 +2914,7 @@ pub const Lowering = struct {
             // carried over a flat hop.
             if (t.visibility == .private) continue;
             if (found) |f| {
-                if (!std.mem.eql(u8, f.target_module_path, t.target_module_path)) return .ambiguous;
+                if (f.environment != t.environment) return .ambiguous;
             } else found = t;
         }
         return if (found) |f| .{ .target = f } else .none;
@@ -2918,9 +2957,7 @@ pub const Lowering = struct {
         return false;
     }
 
-    /// The target module's own fn member named `name` — a top-level fn decl
-    /// or a const-wrapped fn (the same surface `registerNamespaceQualifiedFns`
-    /// registers). Null when the member is absent or not a function.
+    /// The selected namespace member's function, following authored aliases.
     pub fn namespaceFnMember(self: *Lowering, target: *const imports_mod.NamespaceTarget, name: []const u8) ?*const ast.FnDecl {
         for (target.member_ids) |id| {
             const decl = self.program_index.declaration(id).node.?;
@@ -3098,7 +3135,7 @@ pub const Lowering = struct {
             }
             if (self.namespaceOwnSpecialMember(target, segment)) return .not_qualified;
 
-            target = switch (self.namespaceAliasVerdictFrom(segment, target.target_module_path)) {
+            target = switch (self.namespaceAliasVerdictIn(segment, target.environment)) {
                 .target => |t| t,
                 .ambiguous => return .{ .ambiguous = segment },
                 .none => return .{ .missing = .{ .namespace = namespace_name, .member = segment, .scope = target.target_module_path } },
@@ -3587,7 +3624,7 @@ pub const Lowering = struct {
     pub const resolveGlobalRef = lower_comptime.resolveGlobalRef;
     pub const globalValueRef = lower_comptime.globalValueRef;
     pub const sourceModuleConst = lower_comptime.sourceModuleConst;
-    pub const pinConstAuthorSource = lower_comptime.pinConstAuthorSource;
+    pub const pinConstEnvironment = lower_comptime.pinConstEnvironment;
     pub const foldComptimeFloatInit = lower_comptime.foldComptimeFloatInit;
 
     // --- lower/stmt.zig (lower_stmt) ---
@@ -3722,10 +3759,7 @@ pub const Lowering = struct {
     pub const globalInitValuePayload = lower_decl.globalInitValuePayload;
     pub const diagnoseNonConstGlobal = lower_decl.diagnoseNonConstGlobal;
     pub const resolveForwardIdentifierAliases = lower_decl.resolveForwardIdentifierAliases;
-    pub const aliasResolvedInSource = lower_decl.aliasResolvedInSource;
     pub const declareFunction = lower_decl.declareFunction;
-    pub const registerNamespaceQualifiedFns = lower_decl.registerNamespaceQualifiedFns;
-    pub const registerQualifiedFn = lower_decl.registerQualifiedFn;
     pub const isVisible = lower_decl.isVisible;
     pub const visibleOverEdges = lower_decl.visibleOverEdges;
     pub const isCImportVisible = lower_decl.isCImportVisible;

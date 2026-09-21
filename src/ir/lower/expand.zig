@@ -240,12 +240,12 @@ const Expansion = struct {
                 .const_decl => |cd| {
                     if (cd.value.data != .enum_decl) continue;
                     if (!isTargetEnumName(cd.name)) continue;
-                    ex.self.setCurrentSourceFile(decl.source_file);
+                    ex.self.setDeclarationContext(decl);
                     ex.self.registerEnumDecl(&cd.value.data.enum_decl);
                 },
                 .enum_decl => |ed| {
                     if (!isTargetEnumName(ed.name)) continue;
-                    ex.self.setCurrentSourceFile(decl.source_file);
+                    ex.self.setDeclarationContext(decl);
                     ex.self.registerEnumDecl(&decl.data.enum_decl);
                 },
                 .namespace_decl => |ns| {
@@ -508,12 +508,12 @@ const Expansion = struct {
         const self = ex.self;
         const space = ex.decidedList();
         const saved_diags = self.diagnostics;
-        const saved_src = self.current_source_file;
+        const saved_src = self.lexicalContext();
         self.diagnostics = null;
         self.incremental_scan = true;
         defer {
             self.diagnostics = saved_diags;
-            self.setCurrentSourceFile(saved_src);
+            self.restoreLexicalContext(saved_src);
         }
         self.collectContextExtensions(space);
         self.scanDecls(space);
@@ -550,8 +550,8 @@ const Expansion = struct {
         };
         if (!ex.contextReady()) return null;
 
-        const saved_src = self.current_source_file;
-        defer self.setCurrentSourceFile(saved_src);
+        const saved_src = self.lexicalContext();
+        defer self.restoreLexicalContext(saved_src);
         self.setCurrentSourceFile(src);
         const func_id = self.createComptimeFunction("__drive", .expansion, expr, ret_ty);
         // A read the body reached that no set can answer yet is the DRIVER's
@@ -759,7 +759,7 @@ const Expansion = struct {
         while (it.next()) |decl| {
             if (decl.data != .impl_block) continue;
             if (!std.mem.eql(u8, decl.data.impl_block.protocol_name, proto_name)) continue;
-            ex.self.setCurrentSourceFile(decl.source_file);
+            ex.self.setDeclarationContext(decl);
             ex.self.protocolResolver().registerImplBlock(&decl.data.impl_block, decl);
         }
         ex.self.setCurrentSourceFile(src);
@@ -776,7 +776,7 @@ const Expansion = struct {
         while (it.next()) |decl| {
             const declared = decl.data.declName() orelse continue;
             if (!std.mem.eql(u8, declared, name)) continue;
-            ex.self.setCurrentSourceFile(decl.source_file);
+            ex.self.setDeclarationContext(decl);
             switch (decl.data) {
                 .protocol_decl => |*pd| ex.self.registerProtocolDecl(pd),
                 .struct_decl => |*sd| ex.self.registerStructDecl(sd, decl.source_file),
@@ -812,9 +812,9 @@ const Expansion = struct {
                 if (tid != .unresolved) return true;
             }
             if (!ex.contextReady()) return true;
-            ex.self.setCurrentSourceFile(decl.source_file);
+            ex.self.setDeclarationContext(decl);
             const minted = ex.self.evalComptimeType(cd.value) orelse return true;
-            ex.self.putTypeAlias(ex.self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), decl.source_file, name, minted);
+            ex.self.putTypeAlias(ex.self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), name, minted);
             return true;
         }
         return false;
@@ -852,7 +852,7 @@ const Expansion = struct {
         if (ex.raised.contains(decl)) return;
         ex.raised.put(decl, {}) catch {};
         const diags = ex.self.diagnostics orelse return;
-        ex.self.setCurrentSourceFile(decl.source_file);
+        ex.self.setDeclarationContext(decl);
         diags.addFmt(.err, decl.span, "{s}", .{decl.data.error_directive.message});
     }
 };

@@ -237,31 +237,21 @@ pub const Resolver = struct {
         return .{ .index = index, .alloc = alloc };
     }
 
-    /// THE single graph-walk in this file (falsifiable invariant):
-    /// the own author declared in `from` ∪ the flat-import authors reachable
-    /// over the edge set `vis` chooses. RAW — selectors decide eligibility, not
-    /// this. `from` is the querying module's source path.
-    ///
-    /// Edge set by mode: `flat_import_graph` for `user_bare_flat`/`c_import_bare`.
-    /// `impl_transitive` and `lowering_internal` are not single-hop author walks —
-    /// reaching them here is a wiring bug, so we trip loudly.
+    /// Own-environment and direct-import authors, before domain selection.
     pub fn collectVisibleAuthors(
         self: *Resolver,
         name: []const u8,
-        from: []const u8,
+        from: imports.EnvironmentId,
         vis: VisibilityMode,
     ) AuthorSet {
         const table = self.index.decl_table orelse return .{ .own = null, .flat = &.{} };
-        const own = if (table.fileEnvironment(from)) |env| table.rawAuthor(env, name) else null;
+        const own = table.rawAuthor(from, name);
 
-        const graph = (switch (vis) {
-            .user_bare_flat, .c_import_bare => self.index.flat_import_graph,
-            .impl_transitive, .lowering_internal => @panic(
-                "collectVisibleAuthors: vis mode performs no single-hop author walk",
-            ),
-        }) orelse return .{ .own = own, .flat = &.{} };
-
-        const direct = graph.get(from) orelse return .{ .own = own, .flat = &.{} };
+        switch (vis) {
+            .user_bare_flat, .c_import_bare => {},
+            .impl_transitive, .lowering_internal => @panic("collectVisibleAuthors: visibility mode has no single-hop author walk"),
+        }
+        const direct = self.index.flatImports(from) orelse return .{ .own = own, .flat = &.{} };
 
         var flat = std.ArrayList(RawAuthor).empty;
         var it = direct.iterator(); // ← the one graph iterator (invariant)
@@ -301,7 +291,7 @@ pub const Resolver = struct {
     pub fn resolveBare(
         self: *Resolver,
         name: []const u8,
-        from: []const u8,
+        from: imports.EnvironmentId,
         domain: Domain,
     ) ResolvedAuthors {
         const set = self.collectVisibleAuthors(name, from, .user_bare_flat);

@@ -101,14 +101,14 @@ test "resolver: collectVisibleAuthors — own author, two distinct flat authors,
     var r = resolver.Resolver.init(&idx, alloc);
 
     // Own author (declared in main itself).
-    const own_set = r.collectVisibleAuthors("selfauthored", main_path, .user_bare_flat);
+    const own_set = r.collectVisibleAuthors("selfauthored", r.index.declarations().fileEnvironment(main_path).?, .user_bare_flat);
     try std.testing.expect(own_set.own != null);
     try std.testing.expectEqualStrings(try imports.canonicalizePath(alloc, main_path), own_set.own.?.source);
     try std.testing.expectEqual(@as(usize, 0), own_set.flat.len);
     try std.testing.expectEqual(@as(usize, 1), own_set.distinctCount());
 
     // Two distinct flat authors of `dup` (a.sx and b.sx), returned raw.
-    const dup_set = r.collectVisibleAuthors("dup", main_path, .user_bare_flat);
+    const dup_set = r.collectVisibleAuthors("dup", r.index.declarations().fileEnvironment(main_path).?, .user_bare_flat);
     try std.testing.expect(dup_set.own == null);
     try std.testing.expectEqual(@as(usize, 2), dup_set.flat.len);
     try std.testing.expectEqual(@as(usize, 2), dup_set.distinctCount());
@@ -118,7 +118,7 @@ test "resolver: collectVisibleAuthors — own author, two distinct flat authors,
 
     // `secret` is authored only in p.sx, imported NAMESPACED (`g :: @import`).
     // user_bare_flat must NOT see it (p.sx is not a flat edge).
-    const flat_secret = r.collectVisibleAuthors("secret", main_path, .user_bare_flat);
+    const flat_secret = r.collectVisibleAuthors("secret", r.index.declarations().fileEnvironment(main_path).?, .user_bare_flat);
     try std.testing.expect(flat_secret.own == null);
     try std.testing.expectEqual(@as(usize, 0), flat_secret.flat.len);
 }
@@ -149,6 +149,7 @@ test "resolver: collectVisibleAuthors — diamond imports of one author dedup to
     try from_edges.put("p1", {});
     try from_edges.put("p2", {});
     try flat.put("from", from_edges);
+    _ = try table.internEnvironment("from", &.{});
 
     var idx = ProgramIndex.init(alloc);
     defer idx.deinit();
@@ -156,7 +157,7 @@ test "resolver: collectVisibleAuthors — diamond imports of one author dedup to
     idx.flat_import_graph = &flat;
 
     var r = resolver.Resolver.init(&idx, alloc);
-    const set = r.collectVisibleAuthors("shared", "from", .user_bare_flat);
+    const set = r.collectVisibleAuthors("shared", r.index.declarations().fileEnvironment("from").?, .user_bare_flat);
     try std.testing.expect(set.own == null);
     try std.testing.expectEqual(@as(usize, 1), set.flat.len);
     try std.testing.expectEqual(@as(usize, 1), set.distinctCount());
@@ -252,31 +253,31 @@ test "resolver: visibility edge-walk — own + flat visible; namespaced-only onl
     try all.put("main", all_edges);
 
     // Own-scope name: visible regardless of edge set.
-    try std.testing.expect(lower.nameVisibleOverEdges(&table, &flat, "main", "selfauthored"));
-    try std.testing.expect(lower.nameVisibleOverEdges(&table, &all, "main", "selfauthored"));
+    try std.testing.expect(lower.nameVisibleOverEdges(&table, &flat, table.fileEnvironment("main"), "selfauthored"));
+    try std.testing.expect(lower.nameVisibleOverEdges(&table, &all, table.fileEnvironment("main"), "selfauthored"));
 
     // Flat-imported name: visible under both (the flat edge is in both graphs).
-    try std.testing.expect(lower.nameVisibleOverEdges(&table, &flat, "main", "dup"));
-    try std.testing.expect(lower.nameVisibleOverEdges(&table, &all, "main", "dup"));
+    try std.testing.expect(lower.nameVisibleOverEdges(&table, &flat, table.fileEnvironment("main"), "dup"));
+    try std.testing.expect(lower.nameVisibleOverEdges(&table, &all, table.fileEnvironment("main"), "dup"));
 
     // Namespaced-only name: NOT visible under the flat set (user_bare_flat),
     // but visible under the full import_graph set.
-    try std.testing.expect(!lower.nameVisibleOverEdges(&table, &flat, "main", "secret"));
-    try std.testing.expect(lower.nameVisibleOverEdges(&table, &all, "main", "secret"));
+    try std.testing.expect(!lower.nameVisibleOverEdges(&table, &flat, table.fileEnvironment("main"), "secret"));
+    try std.testing.expect(lower.nameVisibleOverEdges(&table, &all, table.fileEnvironment("main"), "secret"));
 
     // Private names: an own private IS visible to its own file, a flat
     // import's private is NOT carried — under either edge set.
-    try std.testing.expect(lower.nameVisibleOverEdges(&table, &flat, "main", "ownpriv"));
-    try std.testing.expect(!lower.nameVisibleOverEdges(&table, &flat, "main", "filelocal"));
-    try std.testing.expect(!lower.nameVisibleOverEdges(&table, &all, "main", "filelocal"));
-    try std.testing.expect(lower.nameVisibleOverEdges(&table, &flat, "a", "filelocal"));
+    try std.testing.expect(lower.nameVisibleOverEdges(&table, &flat, table.fileEnvironment("main"), "ownpriv"));
+    try std.testing.expect(!lower.nameVisibleOverEdges(&table, &flat, table.fileEnvironment("main"), "filelocal"));
+    try std.testing.expect(!lower.nameVisibleOverEdges(&table, &all, table.fileEnvironment("main"), "filelocal"));
+    try std.testing.expect(lower.nameVisibleOverEdges(&table, &flat, table.fileEnvironment("a"), "filelocal"));
 
     // Unknown name: not visible.
-    try std.testing.expect(!lower.nameVisibleOverEdges(&table, &flat, "main", "nope"));
+    try std.testing.expect(!lower.nameVisibleOverEdges(&table, &flat, table.fileEnvironment("main"), "nope"));
 
     // Falls open when scoping infra is unwired (null table/graph).
-    try std.testing.expect(lower.nameVisibleOverEdges(null, &flat, "main", "secret"));
-    try std.testing.expect(lower.nameVisibleOverEdges(&table, null, "main", "secret"));
+    try std.testing.expect(lower.nameVisibleOverEdges(null, &flat, table.fileEnvironment("main"), "secret"));
+    try std.testing.expect(lower.nameVisibleOverEdges(&table, null, table.fileEnvironment("main"), "secret"));
 }
 
 // ── resolveBare ──────────────────────────────────────────────────────────────
@@ -321,24 +322,24 @@ test "resolver: resolveBare — own_wins / single / ambiguous / not_visible / do
     var r = resolver.Resolver.init(&idx, alloc);
 
     // own_wins: selfauthored is authored in main itself
-    const own = r.resolveBare("selfauthored", main_path, .callable);
+    const own = r.resolveBare("selfauthored", r.index.declarations().fileEnvironment(main_path).?, .callable);
     try std.testing.expectEqual(resolver.Verdict.own_wins, own.verdict);
     try std.testing.expect(own.set.own != null);
 
     // ambiguous: dup is authored in both a.sx and b.sx
-    const amb = r.resolveBare("dup", main_path, .callable);
+    const amb = r.resolveBare("dup", r.index.declarations().fileEnvironment(main_path).?, .callable);
     try std.testing.expectEqual(resolver.Verdict.ambiguous, amb.verdict);
 
     // not_visible: secret is authored in ns.sx (namespaced-only import)
-    const nv = r.resolveBare("secret", main_path, .callable);
+    const nv = r.resolveBare("secret", r.index.declarations().fileEnvironment(main_path).?, .callable);
     try std.testing.expectEqual(resolver.Verdict.not_visible, nv.verdict);
 
     // domain_filtered: selfauthored exists but is not a type author
-    const df = r.resolveBare("selfauthored", main_path, .bare_type);
+    const df = r.resolveBare("selfauthored", r.index.declarations().fileEnvironment(main_path).?, .bare_type);
     try std.testing.expectEqual(resolver.Verdict.domain_filtered, df.verdict);
 
     // domain_filtered with empty set: i64 is a builtin, no user author
-    const builtin = r.resolveBare("i64", main_path, .bare_type);
+    const builtin = r.resolveBare("i64", r.index.declarations().fileEnvironment(main_path).?, .bare_type);
     try std.testing.expectEqual(resolver.Verdict.domain_filtered, builtin.verdict);
     try std.testing.expectEqual(@as(usize, 0), builtin.set.distinctCount());
 }

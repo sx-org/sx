@@ -274,9 +274,9 @@ pub fn emitObjcDefinedClassImps(self: *Lowering) void {
         // Pin to the class's defining module so the IMP trampolines'
         // method-signature types (`-> BOOL`, param types) resolve where they
         // are visible, not at whatever lowering site triggered emission.
-        const saved_src = self.current_source_file;
-        defer self.setCurrentSourceFile(saved_src);
-        if (fcd.source_file) |src| self.setCurrentSourceFile(src);
+        const saved_src = self.lexicalContext();
+        defer self.restoreLexicalContext(saved_src);
+        self.setCurrentEnvironment(self.declarationEnvironment(.{ .runtime_class_decl = fcd }, fcd.source_file));
         // Synthesize +alloc and -dealloc. emit_llvm
         // registers +alloc on the metaclass and -dealloc on the class
         // itself after objc_registerClassPair.

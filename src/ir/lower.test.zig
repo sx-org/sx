@@ -1899,9 +1899,9 @@ test "lower: shadowed same-name author gets its own FuncId + real body" {
     // Imported modules are keyed by their CANONICAL path.
     const a_path = try imports.canonicalizePath(alloc, try std.fmt.allocPrint(alloc, "{s}/a.sx", .{absdir}));
     const b_path = try imports.canonicalizePath(alloc, try std.fmt.allocPrint(alloc, "{s}/b.sx", .{absdir}));
-    try std.testing.expect(lowering.selectCallableAuthor("greet", main_path, .any_body) == .ambiguous);
-    try std.testing.expect(lowering.selectCallableAuthor("greet", a_path, .any_body) == .none);
-    switch (lowering.selectCallableAuthor("greet", b_path, .any_body)) {
+    try std.testing.expect(lowering.selectCallableAuthor("greet", lowering.environmentForSource(main_path).?, .any_body) == .ambiguous);
+    try std.testing.expect(lowering.selectCallableAuthor("greet", lowering.environmentForSource(a_path).?, .any_body) == .none);
+    switch (lowering.selectCallableAuthor("greet", lowering.environmentForSource(b_path).?, .any_body)) {
         .func => |sf| {
             try std.testing.expectEqual(shadow_fd.?, sf.decl);
             try std.testing.expectEqualStrings(b_path, sf.source);
@@ -1911,7 +1911,7 @@ test "lower: shadowed same-name author gets its own FuncId + real body" {
         else => return error.TestUnexpectedResult,
     }
     // A name no module authors (and no flat import provides) never routes.
-    try std.testing.expect(lowering.selectCallableAuthor("nonexistent", b_path, .any_body) == .none);
+    try std.testing.expect(lowering.selectCallableAuthor("nonexistent", lowering.environmentForSource(b_path).?, .any_body) == .none);
 }
 
 // The scan populates the source-keyed caches partitioned by the registering
@@ -1995,13 +1995,13 @@ test "lower: scan populates source-keyed caches per declaring source" {
     const idx = &lowering.program_index;
 
     // SAME alias name `Color` lands a DISTINCT entry under each source key.
-    const color_a = idx.lookupInSource(.type_alias, a_path, "Color").?;
-    const color_b = idx.lookupInSource(.type_alias, b_path, "Color").?;
+    const color_a = idx.lookupInEnvironment(.type_alias, idx.declarations().fileEnvironment(a_path), "Color").?;
+    const color_b = idx.lookupInEnvironment(.type_alias, idx.declarations().fileEnvironment(b_path), "Color").?;
     try std.testing.expect(color_a != color_b); // *u8 vs *u16 — source-partitioned
 
     // SAME const name `K` lands a DISTINCT entry (distinct value node) per source.
-    const k_a = idx.lookupInSource(.module_const, a_path, "K").?;
-    const k_b = idx.lookupInSource(.module_const, b_path, "K").?;
+    const k_a = idx.lookupInEnvironment(.module_const, idx.declarations().fileEnvironment(a_path), "K").?;
+    const k_b = idx.lookupInEnvironment(.module_const, idx.declarations().fileEnvironment(b_path), "K").?;
     try std.testing.expect(k_a.value != k_b.value);
 
     // The global maps stay keyed by NAME alone — a hashmap key holds exactly
@@ -3476,4 +3476,58 @@ test "inline exit: every inlined body form exits to its own destination, never t
             return err;
         };
     }
+}
+
+test "function bodies and signatures retain distinct environments in one file" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var first_parser = try parser.Parser.init(alloc, "T :: U; U :: i64; K :: V; V :: 11; answer :: () -> T { K }");
+    var second_parser = try parser.Parser.init(alloc, "T :: U; U :: i32; K :: V; V :: 22; answer :: () -> T { K }");
+    const first = try first_parser.parse();
+    const second = try second_parser.parse();
+    var table = imports.DeclTable.init(alloc);
+    const first_env = try table.internEnvironment("same.sx", &.{"first"});
+    const second_env = try table.internEnvironment("same.sx", &.{"second"});
+    for (first.data.root.decls) |node| try std.testing.expect(try table.claim(first_env, node));
+    for (second.data.root.decls) |node| try std.testing.expect(try table.claim(second_env, node));
+    const root_env = try table.internEnvironment("same.sx", &.{});
+    var namespace = Node{ .span = first.span, .data = .{ .namespace_decl = .{
+        .name = "first",
+        .target_module_path = "same.sx",
+        .decls = first.data.root.decls,
+        .own_decls = first.data.root.decls,
+    } } };
+    try std.testing.expect(try table.claim(root_env, &namespace));
+
+    var module = ir_mod.Module.init(alloc);
+    defer module.deinit();
+    var lowering = Lowering.init(&module);
+    lowering.program_index.decl_table = &table;
+    lowering.main_file = "same.sx";
+    const declarations = try std.mem.concat(alloc, *Node, &.{ first.data.root.decls, second.data.root.decls });
+    lowering.scanDecls(declarations);
+    lowering.setCurrentEnvironment(second_env);
+    const first_fn = &first.data.root.decls[4].data.fn_decl;
+    const second_fn = &second.data.root.decls[4].data.fn_decl;
+    const first_id = lowering.bareAuthorFuncId(first_fn, "answer", "same.sx");
+    const second_id = lowering.bareAuthorFuncId(second_fn, "answer", "same.sx");
+    try std.testing.expect(first_id != second_id);
+    try std.testing.expectEqual(first_env, lowering.functionEnvironment(first_fn).?);
+    try std.testing.expectEqual(second_env, lowering.current_environment.?);
+    try std.testing.expectEqual(TypeId.i64, module.getFunction(first_id).ret);
+    try std.testing.expectEqual(TypeId.i32, module.getFunction(second_id).ret);
+    var values: [2]?i64 = .{ null, null };
+    for ([_]FuncId{ first_id, second_id }, &values) |id, *value| {
+        for (module.getFunction(id).blocks.items) |block| {
+            for (block.insts.items) |instruction| {
+                if (instruction.op == .const_int) value.* = instruction.op.const_int;
+            }
+        }
+    }
+    try std.testing.expectEqual(@as(?i64, 11), values[0]);
+    try std.testing.expectEqual(@as(?i64, 22), values[1]);
+    lowering.setCurrentEnvironment(root_env);
+    try std.testing.expectEqual(first_fn, lowering.qualifiedFnMember("first.answer").?);
+    try std.testing.expect(!lowering.program_index.contains(.function, "first.answer"));
 }

@@ -300,9 +300,9 @@ pub fn instantiateParamProtocol(self: *Lowering, pd: *const ast.ProtocolDecl, ar
     // in a signature is the case this pin protects.
     const saved_tb = self.type_bindings;
     self.type_bindings = tb;
-    const saved_pp_src = self.current_source_file;
-    defer self.setCurrentSourceFile(saved_pp_src);
-    if (pd.source_file) |src| self.setCurrentSourceFile(src);
+    const saved_pp_src = self.lexicalContext();
+    defer self.restoreLexicalContext(saved_pp_src);
+    self.setCurrentEnvironment(self.declarationEnvironment(.{ .protocol_decl = pd }, pd.source_file));
     var method_infos = std.ArrayList(ProtocolMethodInfo).empty;
     for (pd.methods) |method| {
         var ptypes = std.ArrayList(TypeId).empty;
@@ -779,7 +779,7 @@ fn staticInterfaceGlobal(self: *Lowering, operand: *const Node) ?program_index_m
 }
 
 fn selectedNamespaceGlobal(self: *Lowering, sel: Lowering.QualifiedMember) ?program_index_mod.GlobalInfo {
-    if (self.program_index.lookupInSource(.global, sel.author.source, sel.member)) |g| return g;
+    if (self.program_index.get(.global, sel.author.id)) |g| return g;
     if (sel.author.raw == .var_decl)
         return self.program_index.lookup(.global, sel.member);
     return null;
@@ -928,7 +928,7 @@ fn emitDefaultContextGlobalImpl(self: *Lowering, mode: enum { early, final }) vo
         .init_val = .{ .aggregate = ctx_fields },
         .is_const = true,
     });
-    self.putGlobal(self.program_index.synthetic(global_name, self.current_source_file), self.current_source_file, global_name, .{ .id = gid, .ty = ctx_ty });
+    self.putGlobal(self.program_index.synthetic(global_name, self.environmentForSource(self.current_source_file)), global_name, .{ .id = gid, .ty = ctx_ty });
 }
 
 /// Create a thunk function: __thunk_ConcreteType_Protocol_method(ctx: *void, args...) -> ret
@@ -1268,7 +1268,7 @@ pub fn resolveProtoTypeSubSelf(self: *Lowering, node: *const Node, concrete_ty: 
     switch (node.data) {
         .type_expr => |te| {
             if (std.mem.eql(u8, te.name, "Self")) return concrete_ty;
-            return self.resolveTypeInSource(proto_src, node);
+            return self.resolveTypeInEnvironment(self.environmentForSource(proto_src), node);
         },
         .pointer_type_expr => |pt| return self.module.types.ptrTo(resolveProtoTypeSubSelf(self, pt.pointee_type, concrete_ty, proto_src)),
         .many_pointer_type_expr => |mp| return self.module.types.manyPtrTo(resolveProtoTypeSubSelf(self, mp.element_type, concrete_ty, proto_src)),
@@ -1297,7 +1297,7 @@ pub fn resolveProtoTypeSubSelf(self: *Lowering, node: *const Node, concrete_ty: 
             // the gate's job is to never produce a FALSE positive, and the
             // miscompiles it guards are leaf / pointer / slice / array shaped.
             if (containsSelf(node)) return .unresolved;
-            return self.resolveTypeInSource(proto_src, node);
+            return self.resolveTypeInEnvironment(self.environmentForSource(proto_src), node);
         },
     }
 }
@@ -1316,14 +1316,6 @@ pub fn resolveProtoTypeSubSelf(self: *Lowering, node: *const Node, concrete_ty: 
 /// BOTH sides resolve to concrete, fully-known types and their identities differ
 /// — conservative against false positives on any shape we cannot resolve.
 ///
-/// Each side is source-pinned to its OWN defining module: the protocol side via
-/// `resolveProtoTypeSubSelf(..., proto_src)`, the impl side via
-/// `resolveTypeInSource(fd.body.source_file, ...)`. Pinning the impl side matters
-/// because the impl's param/return type may name a module-local type that is
-/// bare-visible only inside the impl's module (namespaced-only from the erasure
-/// site). Resolving it in the erasure-site context would hit the `.not_visible`
-/// arm of `resolveNominalLeaf` and emit a hard diagnostic instead of
-/// resolving-and-comparing structurally.
 fn signatureMismatch(self: *Lowering, mast: ast.ProtocolMethodDecl, m: ProtocolMethodInfo, fd: *const ast.FnDecl, concrete_ty: TypeId, proto_src: ?[]const u8) ?NonConformance {
     // The concrete VALUE type (strip a single pointer): `*Self` substitutes to
     // `*T`, so `Self` itself must substitute to the value `T`.
@@ -1355,7 +1347,7 @@ fn signatureMismatch(self: *Lowering, mast: ast.ProtocolMethodDecl, m: ProtocolM
     // source, and remain distinct for separate same-display-name nominals.
     for (mast.params, impl_extra) |proto_pnode, impl_param| {
         const proto_pty = resolveProtoTypeSubSelf(self, proto_pnode, value_ty, proto_src);
-        const impl_pty = self.resolveTypeInSource(fd.body.source_file, impl_param.type_expr);
+        const impl_pty = self.resolveTypeInEnvironment(self.functionEnvironment(fd), impl_param.type_expr);
         if (typesClearlyDiffer(self, proto_pty, impl_pty)) {
             const proto_name = self.formatTypeName(proto_pty);
             const impl_name = self.formatTypeName(impl_pty);
@@ -1371,7 +1363,7 @@ fn signatureMismatch(self: *Lowering, mast: ast.ProtocolMethodDecl, m: ProtocolM
 
     // Return type check.
     const proto_ret: TypeId = if (mast.return_type) |rt| resolveProtoTypeSubSelf(self, rt, value_ty, proto_src) else .void;
-    const impl_ret: TypeId = if (fd.return_type) |rt| self.resolveTypeInSource(fd.body.source_file, rt) else .void;
+    const impl_ret: TypeId = if (fd.return_type) |rt| self.resolveTypeInEnvironment(self.functionEnvironment(fd), rt) else .void;
     if (typesClearlyDiffer(self, proto_ret, impl_ret)) {
         const proto_name = self.formatTypeName(proto_ret);
         const impl_name = self.formatTypeName(impl_ret);

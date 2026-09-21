@@ -43,6 +43,7 @@ pub const Site = struct {
     /// Where the block was WRITTEN — the file its site reports, which is the
     /// forming caller's, not the accepting function's.
     source_file: ?[]const u8,
+    environment: ?@import("../../imports.zig").EnvironmentId,
     /// Locals the body reads, captured BY REFERENCE: the environment holds
     /// their addresses, so a replay in another frame reads them live and a
     /// second `run` observes a mutation.
@@ -176,6 +177,7 @@ fn siteFor(self: *Lowering, arg: *const Node, protocol: TypeId) u32 {
         .lambda = arg,
         .protocol = protocol,
         .source_file = src,
+        .environment = self.current_environment,
         .captures = deduped.toOwnedSlice(self.alloc) catch &.{},
         .env_ty = env_ty,
         .indexed = indexed,
@@ -304,7 +306,6 @@ pub fn sinkAccepts(self: *Lowering, sink: TypeId, protocol: TypeId) bool {
     return sinkDeclaresMethod(self, sink);
 }
 
-
 /// The FIXED target of a sink's `expression` initializer — `$I/@Init(P)` — or null
 /// when it takes the open form (`$I/@Init($V/P)`, whose target is the argument's
 /// own type and so resolves to nothing here).
@@ -388,9 +389,9 @@ fn replayBody(
     self.scope = &body_scope;
     // A name in the body is asked of the file that WROTE the block, not of the
     // function replaying it: a block does not inherit the collector's namespace.
-    const saved_file = self.current_source_file;
-    defer self.current_source_file = saved_file;
-    if (record.source_file) |f| self.current_source_file = f;
+    const saved_file = self.lexicalContext();
+    defer self.restoreLexicalContext(saved_file);
+    self.restoreLexicalContext(.{ .source_file = record.source_file, .environment = record.environment });
     self.lowerBlock(record.lambda.data.lambda.body);
 }
 
@@ -464,10 +465,24 @@ fn analyzeShapeStmt(self: *Lowering, stmt: *const Node, protocol: TypeId, facts:
         },
         .block => analyzeShapeBody(self, stmt, protocol, facts),
         // Non-expression statements never become reached build values.
-        .var_decl, .const_decl, .assignment, .multi_assign, .destructure_decl,
-        .return_stmt, .raise_stmt, .break_expr, .continue_expr,
-        .defer_stmt, .fn_decl, .struct_decl, .enum_decl, .union_decl,
-        .error_set_decl, .protocol_decl, .impl_block, .push_stmt,
+        .var_decl,
+        .const_decl,
+        .assignment,
+        .multi_assign,
+        .destructure_decl,
+        .return_stmt,
+        .raise_stmt,
+        .break_expr,
+        .continue_expr,
+        .defer_stmt,
+        .fn_decl,
+        .struct_decl,
+        .enum_decl,
+        .union_decl,
+        .error_set_decl,
+        .protocol_decl,
+        .impl_block,
+        .push_stmt,
         => {},
         else => countStaticExpression(self, stmt, protocol, facts),
     }

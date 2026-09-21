@@ -359,6 +359,8 @@ pub const DocumentStore = struct {
                         self.analyzeDocument(file_doc) catch {};
                     }
                     const file_sema = file_doc.sema orelse continue;
+                    try analyzer.selection.addImport(imp.ns, file_sema.selection);
+                    try analyzer.mergeMetadata(file_sema);
                     if (imp.ns) |ns_name| {
                         // Only register namespace symbol once (first file)
                         if (!analyzer.hasSymbol(ns_name)) {
@@ -371,26 +373,6 @@ pub const DocumentStore = struct {
                                 .scope_depth = 0,
                                 .origin = imp.path,
                             });
-                        }
-                        var sig_it = file_sema.fn_signatures.iterator();
-                        while (sig_it.next()) |entry| {
-                            const prefixed = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ ns_name, entry.key_ptr.* });
-                            try analyzer.fn_signatures.put(prefixed, entry.value_ptr.*);
-                        }
-                        var struct_it = file_sema.struct_types.iterator();
-                        while (struct_it.next()) |entry| {
-                            const prefixed = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ ns_name, entry.key_ptr.* });
-                            try analyzer.struct_types.put(prefixed, entry.value_ptr.*);
-                        }
-                        var enum_it = file_sema.enum_types.iterator();
-                        while (enum_it.next()) |entry| {
-                            const prefixed = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ ns_name, entry.key_ptr.* });
-                            try analyzer.enum_types.put(prefixed, entry.value_ptr.*);
-                        }
-                        // Context members are program-wide, never namespaced.
-                        var ctx_it = file_sema.context_members.iterator();
-                        while (ctx_it.next()) |entry| {
-                            try analyzer.context_members.put(entry.key_ptr.*, entry.value_ptr.*);
                         }
                     } else {
                         for (file_sema.symbols) |sym| {
@@ -409,22 +391,6 @@ pub const DocumentStore = struct {
                                 });
                             }
                         }
-                        var sig_it = file_sema.fn_signatures.iterator();
-                        while (sig_it.next()) |entry| {
-                            try analyzer.fn_signatures.put(entry.key_ptr.*, entry.value_ptr.*);
-                        }
-                        var struct_it = file_sema.struct_types.iterator();
-                        while (struct_it.next()) |entry| {
-                            try analyzer.struct_types.put(entry.key_ptr.*, entry.value_ptr.*);
-                        }
-                        var enum_it = file_sema.enum_types.iterator();
-                        while (enum_it.next()) |entry| {
-                            try analyzer.enum_types.put(entry.key_ptr.*, entry.value_ptr.*);
-                        }
-                        var ctx_it = file_sema.context_members.iterator();
-                        while (ctx_it.next()) |entry| {
-                            try analyzer.context_members.put(entry.key_ptr.*, entry.value_ptr.*);
-                        }
                     }
                 }
                 continue;
@@ -436,6 +402,8 @@ pub const DocumentStore = struct {
             }
 
             const imp_sema = imp_doc.sema orelse continue;
+            try analyzer.selection.addImport(imp.ns, imp_sema.selection);
+            try analyzer.mergeMetadata(imp_sema);
 
             if (imp.ns) |ns_name| {
                 // Namespaced import: register one namespace symbol
@@ -448,29 +416,6 @@ pub const DocumentStore = struct {
                     .scope_depth = 0,
                     .origin = imp.path,
                 });
-                // Copy fn_signatures with namespace prefix
-                var sig_it = imp_sema.fn_signatures.iterator();
-                while (sig_it.next()) |entry| {
-                    const prefixed = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ ns_name, entry.key_ptr.* });
-                    try analyzer.fn_signatures.put(prefixed, entry.value_ptr.*);
-                }
-                // Copy struct_types with namespace prefix
-                var struct_it = imp_sema.struct_types.iterator();
-                while (struct_it.next()) |entry| {
-                    const prefixed = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ ns_name, entry.key_ptr.* });
-                    try analyzer.struct_types.put(prefixed, entry.value_ptr.*);
-                }
-                // Copy enum_types with namespace prefix
-                var enum_it = imp_sema.enum_types.iterator();
-                while (enum_it.next()) |entry| {
-                    const prefixed = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ ns_name, entry.key_ptr.* });
-                    try analyzer.enum_types.put(prefixed, entry.value_ptr.*);
-                }
-                // Context members are program-wide, never namespaced.
-                var ctx_it = imp_sema.context_members.iterator();
-                while (ctx_it.next()) |entry| {
-                    try analyzer.context_members.put(entry.key_ptr.*, entry.value_ptr.*);
-                }
             } else {
                 // Flat import: pre-register all top-level symbols with origin set
                 for (imp_sema.symbols) |sym| {
@@ -488,25 +433,6 @@ pub const DocumentStore = struct {
                             .origin = sym.origin orelse imp.path,
                         });
                     }
-                }
-                // Copy fn_signatures as-is
-                var sig_it = imp_sema.fn_signatures.iterator();
-                while (sig_it.next()) |entry| {
-                    try analyzer.fn_signatures.put(entry.key_ptr.*, entry.value_ptr.*);
-                }
-                // Copy struct_types
-                var struct_it = imp_sema.struct_types.iterator();
-                while (struct_it.next()) |entry| {
-                    try analyzer.struct_types.put(entry.key_ptr.*, entry.value_ptr.*);
-                }
-                // Copy enum_types
-                var enum_it = imp_sema.enum_types.iterator();
-                while (enum_it.next()) |entry| {
-                    try analyzer.enum_types.put(entry.key_ptr.*, entry.value_ptr.*);
-                }
-                var ctx_it = imp_sema.context_members.iterator();
-                while (ctx_it.next()) |entry| {
-                    try analyzer.context_members.put(entry.key_ptr.*, entry.value_ptr.*);
                 }
             }
         }

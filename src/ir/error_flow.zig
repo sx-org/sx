@@ -121,8 +121,8 @@ pub const ErrorFlow = struct {
     /// this conservative check would over-reject), so they are skipped.
     pub fn checkErrorFlow(self: ErrorFlow, decls: []const *const Node) void {
         if (self.l.diagnostics == null) return;
-        const saved_file = self.l.current_source_file;
-        defer self.l.setCurrentSourceFile(saved_file);
+        const saved_file = self.l.lexicalContext();
+        defer self.l.restoreLexicalContext(saved_file);
         for (decls) |decl| {
             if (self.l.main_file) |mf| {
                 if (decl.source_file) |sf| {
@@ -133,7 +133,7 @@ pub const ErrorFlow = struct {
             // decl's own module — the flow walk resolves types via
             // inferExprType, and the ambient file the previous phase left
             // behind is arbitrary.
-            if (decl.source_file) |sf| self.l.setCurrentSourceFile(sf);
+            self.l.setDeclarationContext(decl);
             switch (decl.data) {
                 .fn_decl => |fd| self.analyzeFnBody(fd.body),
                 .const_decl => |cd| {

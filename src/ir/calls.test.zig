@@ -438,13 +438,26 @@ test "plan: qualified namespace function" {
     var l = Lowering.init(&module);
     const cr = CallResolver{ .l = &l };
 
-    // mathlib.square :: () -> i64  — registered under its qualified name, lazy.
-    const fd = ast.FnDecl{ .name = "mathlib.square", .params = &.{}, .return_type = typeExpr(alloc, "i64"), .body = emptyBody(alloc) };
-    l.program_index.registerFunction("mathlib.square", &fd, null);
+    const table = l.program_index.declarations();
+    l.program_index.decl_table = table;
+    const env = try table.internEnvironment("main.sx", &.{});
+    const target = try table.internEnvironment("lib.sx", &.{});
+    const function = mk(alloc, .{ .fn_decl = .{ .name = "square", .params = &.{}, .return_type = typeExpr(alloc, "i64"), .body = emptyBody(alloc) } });
+    try std.testing.expect(try table.claim(target, function));
+    const ns = mk(alloc, .{ .namespace_decl = .{
+        .name = "mathlib",
+        .target_module_path = "lib.sx",
+        .decls = &.{function},
+        .own_decls = &.{function},
+    } });
+    try std.testing.expect(try table.claim(env, ns));
+    l.setCurrentEnvironment(env);
+    l.program_index.registerFunction("square", &function.data.fn_decl, target);
 
     const call = callNode(alloc, fieldAccess(alloc, ident(alloc, "mathlib"), "square"), &.{});
     const p = cr.plan(&call.data.call);
     try std.testing.expectEqual(CallPlan.Kind.namespace_fn, p.kind);
-    try std.testing.expectEqualStrings("mathlib.square", p.target.named);
+    try std.testing.expectEqual(&function.data.fn_decl, p.target.selected.decl);
+    try std.testing.expect(!l.program_index.contains(.function, "mathlib.square"));
     try std.testing.expectEqual(TypeId.i64, p.return_type);
 }

@@ -1335,7 +1335,7 @@ pub fn bareFnNameSignature(self: *Lowering, node: *const Node) ?TypeId {
     const name = node.data.identifier.name;
     if (self.scope) |scope| if (scope.lookup(name) != null) return null;
     if (self.ufcsAliasTarget(name) != null) return null;
-    const fd: *const ast.FnDecl = switch (self.selectCallableAuthor(name, self.current_source_file orelse return null, .plain_free)) {
+    const fd: *const ast.FnDecl = switch (self.selectCallableAuthor(name, self.environmentForSource(self.current_source_file orelse return null).?, .plain_free)) {
         .func => |sf| sf.decl,
         .none => self.program_index.lookup(.function, name) orelse return null,
         .ambiguous, .not_callable => return null,

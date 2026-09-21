@@ -779,7 +779,7 @@ pub const DeclTable = struct {
         return self.syntheticInEnvironment(env, name);
     }
 
-    fn syntheticInEnvironment(self: *DeclTable, env: ?EnvironmentId, name: []const u8) !DeclId {
+    pub fn syntheticInEnvironment(self: *DeclTable, env: ?EnvironmentId, name: []const u8) !DeclId {
         const id: DeclId = @enumFromInt(@as(u32, @intCast(self.entries.items.len)));
         try self.entries.append(self.alloc, .{
             .id = id,
@@ -844,6 +844,15 @@ pub const DeclTable = struct {
         const env = self.environment(id);
         try self.scoped_environments.put(.{ .source = env.source, .scope_path = env.scope_path }, id);
         return id;
+    }
+
+    pub fn directImports(self: *const DeclTable, graph: *const std.StringHashMap(std.StringHashMap(void)), env: EnvironmentId) ?std.StringHashMap(void) {
+        const root = self.fileEnvironment(self.environment(env).source).?;
+        var entries = graph.iterator();
+        while (entries.next()) |entry| {
+            if (self.fileEnvironment(entry.key_ptr.*) == root) return entry.value_ptr.*;
+        }
+        return null;
     }
 
     pub fn fileScope(self: *const DeclTable, path: []const u8) ?*Environment {

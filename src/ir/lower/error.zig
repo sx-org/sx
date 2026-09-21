@@ -127,7 +127,7 @@ pub fn armPrefixType(self: *Lowering, object: *const Node) ?TypeId {
     }
     if (self.program_index.contains(.global, name)) return null;
     const from = self.current_source_file orelse self.main_file orelse return null;
-    const ty = switch (self.selectNominalLeaf(name, from, false)) {
+    const ty = switch (self.selectNominalLeaf(name, self.environmentForSource(from).?, false)) {
         .resolved => |tid| tid,
         else => return null,
     };
@@ -151,7 +151,7 @@ fn namespacedPrefixType(self: *Lowering, object: *const Node) ?TypeId {
         .selected => |s| s,
         else => return null,
     };
-    const ty = switch (self.selectNominalLeaf(sel.member, sel.target.target_module_path, false)) {
+    const ty = switch (self.selectNominalLeaf(sel.member, sel.target.environment, false)) {
         .resolved => |tid| tid,
         else => return null,
     };
@@ -2118,9 +2118,9 @@ pub fn astChannelIsInferred(rt: ?*const Node) bool {
 /// one during a whole-program pass.
 pub fn declaredChannelTags(self: *Lowering, fd: *const ast.FnDecl) []const u32 {
     const node = astChannelNode(fd.return_type) orelse return &.{};
-    const saved = self.current_source_file;
-    defer self.setCurrentSourceFile(saved);
-    self.setCurrentSourceFile(fd.body.source_file orelse saved);
+    const saved = self.lexicalContext();
+    defer self.restoreLexicalContext(saved);
+    self.setCurrentEnvironment(self.functionEnvironment(fd));
     const ty = self.resolveType(node);
     if (ty.isBuiltin()) return &.{};
     const info = self.module.types.get(ty);
@@ -2216,7 +2216,7 @@ pub fn recordClosureShape(self: *Lowering, lam: *const ast.Lambda) void {
 /// single author is visible there.
 pub fn edgeCalleeDecl(self: *Lowering, name: []const u8, from: ?[]const u8) ?*const ast.FnDecl {
     if (from) |file| {
-        switch (self.selectCallableAuthor(name, file, .any_body)) {
+        switch (self.selectCallableAuthor(name, self.environmentForSource(file).?, .any_body)) {
             .func => |f| return f.decl,
             .ambiguous, .not_callable => return null,
             .none => {},

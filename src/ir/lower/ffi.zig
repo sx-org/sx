@@ -1080,7 +1080,7 @@ pub fn registerObjcDefinedClassMethods(self: *Lowering, fcd: *const ast.RuntimeC
         const body = method.body orelse continue;
         const fd = self.synthesizeFnDeclFromObjcMethod(method, body) orelse continue;
         const qualified = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ fcd.name, method.name }) catch continue;
-        self.program_index.registerFunction(qualified, fd, self.current_source_file);
+        self.program_index.registerFunction(qualified, fd, self.functionEnvironment(fd));
         self.declareFunction(fd, qualified);
 
         // Selector mangling — A.1's deriveObjcSelector handles

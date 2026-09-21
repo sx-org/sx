@@ -37,21 +37,22 @@ test "ProgramIndex borrows decl_table / import_graph without owning them" {
 test "ProgramIndex declaration facts round-trip through their identity" {
     var idx = ProgramIndex.init(std.testing.allocator);
     defer idx.deinit();
+    const env_a = try idx.declarations().internEnvironment("a.sx", &.{});
 
     // Minimal AST node reused wherever a *Node is required.
     var blk = ast.Node{ .span = .{ .start = 0, .end = 0 }, .data = .{ .block = .{ .stmts = &.{} } } };
 
     const fd = ast.FnDecl{ .name = "main", .params = &.{}, .return_type = null, .body = &blk };
-    idx.put(.function, idx.synthetic("main", "a.sx"), "main", &fd);
+    idx.put(.function, idx.synthetic("main", env_a), "main", &fd);
     try std.testing.expect(idx.lookup(.function, "main").? == &fd);
 
-    idx.put(.type_alias, idx.synthetic("ShaderHandle", "a.sx"), "ShaderHandle", .i64);
+    idx.put(.type_alias, idx.synthetic("ShaderHandle", env_a), "ShaderHandle", .i64);
     try std.testing.expectEqual(@as(?types.TypeId, .i64), idx.lookup(.type_alias, "ShaderHandle"));
 
-    idx.put(.global, idx.synthetic("g", "a.sx"), "g", .{ .id = inst.GlobalId.fromIndex(0), .ty = .i64 });
+    idx.put(.global, idx.synthetic("g", env_a), "g", .{ .id = inst.GlobalId.fromIndex(0), .ty = .i64 });
     try std.testing.expect(idx.lookup(.global, "g").?.id == inst.GlobalId.fromIndex(0));
 
-    idx.put(.module_const, idx.synthetic("AF_INET", "a.sx"), "AF_INET", .{ .value = &blk, .ty = .i32 });
+    idx.put(.module_const, idx.synthetic("AF_INET", env_a), "AF_INET", .{ .value = &blk, .ty = .i32 });
     try std.testing.expect(idx.lookup(.module_const, "AF_INET").?.value == &blk);
 
     const fcd = ast.RuntimeClassDecl{
@@ -62,63 +63,44 @@ test "ProgramIndex declaration facts round-trip through their identity" {
         .is_extern = true,
         .is_main = false,
     };
-    idx.put(.runtime_class, idx.synthetic("NSString", "a.sx"), "NSString", &fcd);
+    idx.put(.runtime_class, idx.synthetic("NSString", env_a), "NSString", &fcd);
     try std.testing.expect(idx.lookup(.runtime_class, "NSString").? == &fcd);
 
     // One declaration carries both protocol facts.
     const pd = ast.ProtocolDecl{ .name = "Show", .methods = &.{} };
-    const show = idx.synthetic("Show", "a.sx");
+    const show = idx.synthetic("Show", env_a);
     idx.put(.protocol, show, "Show", .{ .name = "Show", .kind = .erased, .methods = &.{} });
     idx.put(.protocol_ast, show, "Show", &pd);
     try std.testing.expectEqualStrings("Show", idx.lookup(.protocol, "Show").?.name);
     try std.testing.expect(idx.lookup(.protocol_ast, "Show").? == &pd);
 
     const list_sd = ast.StructDecl{ .name = "List", .field_names = &.{}, .field_name_starts = &.{}, .field_types = &.{}, .field_defaults = &.{} };
-    idx.put(.struct_template, idx.synthetic("List", "a.sx"), "List", .{ .name = "List", .type_params = &.{}, .field_names = &.{}, .field_type_nodes = &.{}, .decl = &list_sd });
+    idx.put(.struct_template, idx.synthetic("List", env_a), "List", .{ .name = "List", .type_params = &.{}, .field_names = &.{}, .field_type_nodes = &.{}, .decl = &list_sd });
     try std.testing.expectEqualStrings("List", idx.lookup(.struct_template, "List").?.name);
 
-    idx.put(.ufcs_alias, idx.synthetic("len", "a.sx"), "len", .{ .target = "list_len" });
+    idx.put(.ufcs_alias, idx.synthetic("len", env_a), "len", .{ .target = "list_len" });
     try std.testing.expectEqualStrings("list_len", idx.lookup(.ufcs_alias, "len").?.target);
 }
 
-// Facts belong to identities, so the SAME name authored in two modules holds
-// two independent facts. The per-source index reaches each author's own; the
-// program-wide index selects ONE identity without overwriting the other's fact.
 test "ProgramIndex keeps same-name authors' facts separate" {
     var idx = ProgramIndex.init(std.testing.allocator);
     defer idx.deinit();
+    const env_a = try idx.declarations().internEnvironment("same.sx", &.{"left"});
+    const env_b = try idx.declarations().internEnvironment("same.sx", &.{"right"});
 
-    var blk_a = ast.Node{ .span = .{ .start = 0, .end = 0 }, .data = .{ .block = .{ .stmts = &.{} } } };
-    var blk_b = ast.Node{ .span = .{ .start = 1, .end = 1 }, .data = .{ .block = .{ .stmts = &.{} } } };
-
-    const foo_a = idx.synthetic("Foo", "a.sx");
-    const foo_b = idx.synthetic("Foo", "b.sx");
-    idx.putInSource(.type_alias, foo_a, "a.sx", "Foo", .i64);
-    idx.putInSource(.type_alias, foo_b, "b.sx", "Foo", .f64);
-    try std.testing.expectEqual(@as(?types.TypeId, .i64), idx.lookupInSource(.type_alias, "a.sx", "Foo"));
-    try std.testing.expectEqual(@as(?types.TypeId, .f64), idx.lookupInSource(.type_alias, "b.sx", "Foo"));
+    const foo_a = idx.synthetic("Foo", env_a);
+    const foo_b = idx.synthetic("Foo", env_b);
+    idx.put(.type_alias, foo_a, "Foo", .i64);
+    idx.put(.type_alias, foo_b, "Foo", .f64);
+    try std.testing.expectEqual(@as(?types.TypeId, .i64), idx.lookupInEnvironment(.type_alias, env_a, "Foo"));
+    try std.testing.expectEqual(@as(?types.TypeId, .f64), idx.lookupInEnvironment(.type_alias, env_b, "Foo"));
     try std.testing.expectEqual(@as(?types.TypeId, .i64), idx.get(.type_alias, foo_a));
     try std.testing.expectEqual(@as(?types.TypeId, .f64), idx.lookup(.type_alias, "Foo"));
 
-    const k_a = idx.synthetic("K", "a.sx");
-    const k_b = idx.synthetic("K", "b.sx");
-    idx.putInSource(.module_const, k_a, "a.sx", "K", .{ .value = &blk_a, .ty = .i32 });
-    idx.putInSource(.module_const, k_b, "b.sx", "K", .{ .value = &blk_b, .ty = .f32 });
-    try std.testing.expect(idx.lookupInSource(.module_const, "a.sx", "K").?.value == &blk_a);
-    try std.testing.expect(idx.lookupInSource(.module_const, "b.sx", "K").?.value == &blk_b);
-
-    const g_a = idx.synthetic("g", "a.sx");
-    const g_b = idx.synthetic("g", "b.sx");
-    idx.putInSource(.global, g_a, "a.sx", "g", .{ .id = inst.GlobalId.fromIndex(0), .ty = .i64 });
-    idx.putInSource(.global, g_b, "b.sx", "g", .{ .id = inst.GlobalId.fromIndex(1), .ty = .f64 });
-    try std.testing.expect(idx.lookupInSource(.global, "a.sx", "g").?.id == inst.GlobalId.fromIndex(0));
-    try std.testing.expect(idx.lookupInSource(.global, "b.sx", "g").?.id == inst.GlobalId.fromIndex(1));
-
-    // Dropping a const evicts the author `a.sx` names, and only that one.
-    idx.dropFact(.module_const, k_a);
-    try std.testing.expect(idx.lookupInSource(.module_const, "a.sx", "K") == null);
-    try std.testing.expect(idx.get(.module_const, k_a) == null);
-    try std.testing.expect(idx.lookupInSource(.module_const, "b.sx", "K").?.value == &blk_b);
+    idx.dropFact(.type_alias, foo_a);
+    try std.testing.expect(idx.lookupInEnvironment(.type_alias, env_a, "Foo") == null);
+    try std.testing.expect(idx.get(.type_alias, foo_a) == null);
+    try std.testing.expectEqual(@as(?types.TypeId, .f64), idx.lookupInEnvironment(.type_alias, env_b, "Foo"));
 }
 
 /// Stand-in for the leaf-name lookup both array-dimension resolvers pass to the
@@ -333,11 +315,11 @@ test "moduleConstInt folds expression-RHS consts and rejects cycles" {
     var f_val = nFloat(4.0);
     var g_val = nFloat(4.5);
 
-    map.put(.module_const, map.synthetic("M", ""), "M", .{ .value = &m_val, .ty = .i64 });
-    map.put(.module_const, map.synthetic("N", ""), "N", .{ .value = &n_val, .ty = .i64 });
-    map.put(.module_const, map.synthetic("P", ""), "P", .{ .value = &p_val, .ty = .i64 });
-    map.put(.module_const, map.synthetic("F", ""), "F", .{ .value = &f_val, .ty = .f64 });
-    map.put(.module_const, map.synthetic("G", ""), "G", .{ .value = &g_val, .ty = .f64 });
+    map.put(.module_const, map.synthetic("M", null), "M", .{ .value = &m_val, .ty = .i64 });
+    map.put(.module_const, map.synthetic("N", null), "N", .{ .value = &n_val, .ty = .i64 });
+    map.put(.module_const, map.synthetic("P", null), "P", .{ .value = &p_val, .ty = .i64 });
+    map.put(.module_const, map.synthetic("F", null), "F", .{ .value = &f_val, .ty = .f64 });
+    map.put(.module_const, map.synthetic("G", null), "G", .{ .value = &g_val, .ty = .f64 });
 
     try std.testing.expectEqual(@as(?i64, 2), pi.moduleConstInt(&map, &table, "M"));
     try std.testing.expectEqual(@as(?i64, 3), pi.moduleConstInt(&map, &table, "N"));
@@ -356,9 +338,9 @@ test "moduleConstInt folds expression-RHS consts and rejects cycles" {
     var a_val = nBin(.add, &b_id, &zero);
     var b_val = nBin(.add, &a_id, &zero);
     var c_val = nBin(.add, &c_id, &zero);
-    map.put(.module_const, map.synthetic("A", ""), "A", .{ .value = &a_val, .ty = .i64 });
-    map.put(.module_const, map.synthetic("B", ""), "B", .{ .value = &b_val, .ty = .i64 });
-    map.put(.module_const, map.synthetic("C", ""), "C", .{ .value = &c_val, .ty = .i64 });
+    map.put(.module_const, map.synthetic("A", null), "A", .{ .value = &a_val, .ty = .i64 });
+    map.put(.module_const, map.synthetic("B", null), "B", .{ .value = &b_val, .ty = .i64 });
+    map.put(.module_const, map.synthetic("C", null), "C", .{ .value = &c_val, .ty = .i64 });
     try std.testing.expect(pi.moduleConstInt(&map, &table, "A") == null);
     try std.testing.expect(pi.moduleConstInt(&map, &table, "B") == null);
     try std.testing.expect(pi.moduleConstInt(&map, &table, "C") == null);
@@ -382,11 +364,11 @@ test "moduleConstIsFloatTyped judges a const by VALUE, catching untyped float-EX
     var l1 = nLit(1);
     var l2 = nLit(2);
     var ie_val = nBin(.add, &l1, &l2);
-    map.put(.module_const, map.synthetic("KT", ""), "KT", .{ .value = &kt_val, .ty = .f64 });
-    map.put(.module_const, map.synthetic("MI", ""), "MI", .{ .value = &mi_val, .ty = .i64 });
-    map.put(.module_const, map.synthetic("ML", ""), "ML", .{ .value = &ml_val, .ty = .f64 }); // pass-0 stores a float literal as f64
-    map.put(.module_const, map.synthetic("ME", ""), "ME", .{ .value = &me_val, .ty = .i64 }); // pass-0 placeholder for a binary_op
-    map.put(.module_const, map.synthetic("IE", ""), "IE", .{ .value = &ie_val, .ty = .i64 });
+    map.put(.module_const, map.synthetic("KT", null), "KT", .{ .value = &kt_val, .ty = .f64 });
+    map.put(.module_const, map.synthetic("MI", null), "MI", .{ .value = &mi_val, .ty = .i64 });
+    map.put(.module_const, map.synthetic("ML", null), "ML", .{ .value = &ml_val, .ty = .f64 }); // pass-0 stores a float literal as f64
+    map.put(.module_const, map.synthetic("ME", null), "ME", .{ .value = &me_val, .ty = .i64 }); // pass-0 placeholder for a binary_op
+    map.put(.module_const, map.synthetic("IE", null), "IE", .{ .value = &ie_val, .ty = .i64 });
 
     // Float-valued: a typed float const, an untyped float literal, AND an untyped
     // float EXPRESSION whose declared type is the i64 placeholder (judged by value).
@@ -404,8 +386,8 @@ test "moduleConstIsFloatTyped judges a const by VALUE, catching untyped float-EX
     var az = nFloat(0.0);
     var a_val = nBin(.add, &b_id, &az);
     var b_val = nBin(.add, &a_id, &az);
-    map.put(.module_const, map.synthetic("A", ""), "A", .{ .value = &a_val, .ty = .i64 });
-    map.put(.module_const, map.synthetic("B", ""), "B", .{ .value = &b_val, .ty = .i64 });
+    map.put(.module_const, map.synthetic("A", null), "A", .{ .value = &a_val, .ty = .i64 });
+    map.put(.module_const, map.synthetic("B", null), "B", .{ .value = &b_val, .ty = .i64 });
     // The `+ 0.0` literal still makes them float-valued (a finite, non-cyclic leaf
     // is reached before the cycle); the point is it TERMINATES.
     try std.testing.expect(pi.moduleConstIsFloatTyped(&map, &table, "A"));
@@ -422,9 +404,9 @@ test "moduleConstInt gates the fold on the declared type, not the initializer no
     // initializer must never be folded into a count: the count path
     // consults `ModuleConstInfo.ty`, not just the node shape.
     var int_val = nLit(4);
-    map.put(.module_const, map.synthetic("OK", ""), "OK", .{ .value = &int_val, .ty = .i64 });
-    map.put(.module_const, map.synthetic("STR", ""), "STR", .{ .value = &int_val, .ty = .string });
-    map.put(.module_const, map.synthetic("BOOLEAN", ""), "BOOLEAN", .{ .value = &int_val, .ty = .bool });
+    map.put(.module_const, map.synthetic("OK", null), "OK", .{ .value = &int_val, .ty = .i64 });
+    map.put(.module_const, map.synthetic("STR", null), "STR", .{ .value = &int_val, .ty = .string });
+    map.put(.module_const, map.synthetic("BOOLEAN", null), "BOOLEAN", .{ .value = &int_val, .ty = .bool });
 
     try std.testing.expectEqual(@as(?i64, 4), pi.moduleConstInt(&map, &table, "OK"));
     try std.testing.expect(pi.moduleConstInt(&map, &table, "STR") == null);
@@ -438,8 +420,8 @@ test "moduleConstInt gates the fold on the declared type, not the initializer no
     var m_lit = nLit(2);
     var add2 = nLit(2);
     var expr_val = nBin(.add, &m_lit, &add2);
-    map.put(.module_const, map.synthetic("KEXPR", ""), "KEXPR", .{ .value = &expr_val, .ty = .i64 });
-    map.put(.module_const, map.synthetic("STREXPR", ""), "STREXPR", .{ .value = &expr_val, .ty = .string });
+    map.put(.module_const, map.synthetic("KEXPR", null), "KEXPR", .{ .value = &expr_val, .ty = .i64 });
+    map.put(.module_const, map.synthetic("STREXPR", null), "STREXPR", .{ .value = &expr_val, .ty = .string });
     try std.testing.expectEqual(@as(?i64, 4), pi.moduleConstInt(&map, &table, "KEXPR"));
     try std.testing.expect(pi.moduleConstInt(&map, &table, "STREXPR") == null);
 }

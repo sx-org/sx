@@ -39,6 +39,24 @@ pub const ErrorAnalysis = struct {
         parent: ?*const LocalScope,
     };
 
+    const FunctionAuthor = struct { id: imports.DeclId, name: []const u8, decl: *const ast.FnDecl };
+
+    fn functionAuthors(self: ErrorAnalysis) []const FunctionAuthor {
+        var names = std.AutoHashMap(imports.DeclId, []const u8).init(self.l.alloc);
+        defer names.deinit();
+        var spellings = self.l.program_index.nameIndex(.function).iterator();
+        while (spellings.next()) |entry| {
+            const slot = names.getOrPut(entry.value_ptr.*) catch @panic("out of memory");
+            if (!slot.found_existing or std.mem.lessThan(u8, entry.key_ptr.*, slot.value_ptr.*)) slot.value_ptr.* = entry.key_ptr.*;
+        }
+        var authors = std.ArrayList(FunctionAuthor).empty;
+        for (self.l.program_index.declarations().entries.items) |info| {
+            const fd = Lowering.fnDeclOfRaw(info.ref orelse continue) orelse continue;
+            authors.append(self.l.alloc, .{ .id = info.id, .name = names.get(info.id) orelse fd.name, .decl = fd }) catch @panic("out of memory");
+        }
+        return authors.toOwnedSlice(self.l.alloc) catch @panic("out of memory");
+    }
+
     pub fn facts(self: ErrorAnalysis) ErrorFacts {
         return .{
             .inferred_error_sets = self.l.inferred_error_sets,
@@ -53,9 +71,6 @@ pub const ErrorAnalysis = struct {
             .field_access => |fa| {
                 if (fa.object.data == .identifier) {
                     const obj = fa.object.data.identifier.name;
-                    // A namespace- or type-qualified callee is spelled exactly as
-                    // its declaration is registered, so it outranks the bare name:
-                    // two modules may each author `parse`.
                     if (self.bindingType(enclosing_fd, obj)) |ty| return self.receiverMethod(ty, fa.field);
                     if (self.qualifiedDecl(obj, fa.field)) |q| return q;
                     return self.ufcsDecl(fa.field);
@@ -181,7 +196,12 @@ pub const ErrorAnalysis = struct {
     /// The declaration `"<head>.<method>"` names, else null.
     fn qualifiedDecl(self: ErrorAnalysis, head: []const u8, method: []const u8) ?*const ast.FnDecl {
         const qualified = std.fmt.allocPrint(self.l.alloc, "{s}.{s}", .{ head, method }) catch return null;
-        return self.l.edgeCalleeDecl(qualified, self.l.current_source_file);
+        defer self.l.alloc.free(qualified);
+        return switch (self.l.qualifiedMemberVerdict(qualified)) {
+            .selected => |selected| self.l.namespaceFnMember(&selected.target, selected.member),
+            .missing, .ambiguous => null,
+            .not_qualified => self.l.edgeCalleeDecl(qualified, self.l.current_source_file),
+        };
     }
 
     /// The method a call on a `ty` receiver dispatches to. `ty`'s own
@@ -344,7 +364,7 @@ pub const ErrorAnalysis = struct {
                 const callee = self.receiverMethod(ty, call.callee.data.field_access.field) orelse break :result;
                 if (callee.type_params.len != 0) break :result;
                 const ret = callee.return_type orelse break :result;
-                return self.l.resolveTypeInSource(callee.body.source_file, ret);
+                return self.l.resolveTypeInEnvironment(self.l.functionEnvironment(callee), ret);
             },
             .try_expr => |attempt| {
                 if (attempt.operand.data == .block) return self.receiverType(fd, attempt.operand);
@@ -576,28 +596,20 @@ pub const ErrorAnalysis = struct {
         var work = std.AutoHashMap(imports.DeclId, Node_).init(self.l.alloc);
         defer work.deinit();
 
-        // Seed each bare-`!` declaration with its direct escape sites. Several
-        // names may select one declaration (a bare and a namespace-qualified
-        // spelling); it converges once, under the smallest of them so the
-        // diagnostics below read the same on every run.
         {
-            const saved = self.l.current_source_file;
-            defer self.l.setCurrentSourceFile(saved);
-            var it = self.l.program_index.iterator(.function);
-            while (it.next()) |e| {
-                const fd = e.value;
+            const saved = self.l.lexicalContext();
+            defer self.l.restoreLexicalContext(saved);
+            const authors = self.functionAuthors();
+            defer self.l.alloc.free(authors);
+            for (authors) |e| {
+                const fd = e.decl;
                 if (!Lowering.astChannelIsInferred(fd.return_type)) continue;
                 const suppressed = std.mem.eql(u8, e.name, "main") or self.l.impl_method_names.contains(e.name);
-                const id = self.l.declId(.{ .fn_decl = fd }, fd.body.source_file);
-                if (work.getPtr(id)) |seen| {
-                    if (std.mem.lessThan(u8, e.name, seen.name)) seen.name = e.name;
-                    seen.suppress_empty_warning = seen.suppress_empty_warning or suppressed;
-                    continue;
-                }
+                const id = e.id;
                 var tags = std.ArrayList(u32).empty;
                 var edges = std.ArrayList(*const ast.FnDecl).empty;
                 var dyn = false;
-                self.l.setCurrentSourceFile(fd.body.source_file orelse saved);
+                self.l.setCurrentEnvironment(self.l.functionEnvironment(fd));
                 self.collectEscapes(fd.body, &tags, &edges, &dyn, fd);
                 work.put(id, .{
                     .fd = fd,
@@ -664,8 +676,8 @@ pub const ErrorAnalysis = struct {
             }
         }.lessThan);
 
-        const saved_file = self.l.current_source_file;
-        defer self.l.setCurrentSourceFile(saved_file);
+        const saved_file = self.l.lexicalContext();
+        defer self.l.restoreLexicalContext(saved_file);
 
         for (entries.items) |se| {
             const sorted = self.l.alloc.dupe(u32, se.node.tags.items) catch continue;
@@ -676,7 +688,7 @@ pub const ErrorAnalysis = struct {
             if (sorted.len == 0 and whole_return_is_channel and !se.node.dyn and !se.node.suppress_empty_warning) {
                 if (self.l.diagnostics) |diags| {
                     if (se.node.rt) |rt| {
-                        self.l.setCurrentSourceFile(se.node.source_file orelse saved_file);
+                        self.l.setCurrentSourceFile(se.node.source_file orelse saved_file.source_file);
                         diags.addFmt(.warn, rt.span, "function '{s}' is declared `!` but never errors — drop the `!`", .{se.node.name});
                     }
                 }
@@ -696,12 +708,13 @@ pub const ErrorAnalysis = struct {
         // param/return annotations must resolve where the fn is written, not
         // against whatever module the previous pipeline phase happened to
         // leave as the ambient context.
-        const saved = self.l.current_source_file;
-        defer self.l.setCurrentSourceFile(saved);
-        var it = self.l.program_index.iterator(.function);
-        while (it.next()) |e| {
-            self.l.setCurrentSourceFile(e.value.body.source_file orelse saved);
-            self.collectClosureShapes(e.value.body);
+        const saved = self.l.lexicalContext();
+        defer self.l.restoreLexicalContext(saved);
+        const authors = self.functionAuthors();
+        defer self.l.alloc.free(authors);
+        for (authors) |author| {
+            self.l.setCurrentEnvironment(self.l.functionEnvironment(author.decl));
+            self.collectClosureShapes(author.decl.body);
         }
     }
 

@@ -317,7 +317,7 @@ pub fn selectUfcsGenericByReceiver(self: *Lowering, name: []const u8, args_ast: 
     // Tier 1: directly-visible authors. Ambiguity is a user-facing error only here.
     if (self.current_source_file) |caller_file| {
         var res = self.resolver();
-        const set = res.collectVisibleAuthors(name, caller_file, .user_bare_flat);
+        const set = res.collectVisibleAuthors(name, self.environmentForSource(caller_file).?, .user_bare_flat);
         defer if (set.flat.len > 0) self.alloc.free(set.flat);
         var best: ?*const ast.FnDecl = null;
         var best_concrete = false;
@@ -1817,10 +1817,10 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     if (self.checkCallArity(fd, fd.name, args.items.len, false, c.callee.span)) return Ref.none;
                     const fid: FuncId = if (fd.extern_export == .extern_ or fd.body.data == .intrinsic_expr)
                         self.declFuncId(fd) orelse declared: {
-                            const saved_source = self.current_source_file;
-                            self.setCurrentSourceFile(sf.source);
+                            const saved_source = self.lexicalContext();
+                            self.setCurrentEnvironment(self.functionEnvironment(fd));
                             self.declareFunction(fd, fd.name);
-                            self.setCurrentSourceFile(saved_source);
+                            self.restoreLexicalContext(saved_source);
                             break :declared self.declFuncId(fd) orelse return self.emitError(fd.name, c.callee.span);
                         }
                     else
@@ -3688,7 +3688,7 @@ fn reflectionArgTypeForCursorCheck(self: *Lowering, a: *const Node) ?TypeId {
     };
     if (self.scope) |s| if (s.lookup(named) != null) return null;
     const from = self.current_source_file orelse self.main_file orelse return null;
-    return switch (self.selectNominalLeaf(named, from, false)) {
+    return switch (self.selectNominalLeaf(named, self.environmentForSource(from).?, false)) {
         .resolved => |t| t,
         else => null,
     };
@@ -4832,7 +4832,7 @@ pub fn reflectionErrorSentinel(self: *Lowering, name: []const u8) Ref {
 fn defaultArgAtCall(
     self: *Lowering,
     dflt: *const Node,
-    author_source: ?[]const u8,
+    author_environment: ?@import("../../imports.zig").EnvironmentId,
     call_site: *const Node,
 ) ?*Node {
     const n = self.alloc.create(Node) catch return null;
@@ -4846,10 +4846,13 @@ fn defaultArgAtCall(
     if (dflt.data == .caller_site) {
         n.span = call_site.span;
         n.source_file = call_site.source_file orelse self.current_source_file;
-    } else if (author_source orelse self.current_source_file) |src| {
-        n.source_file = src;
+    } else if (author_environment) |env| {
+        n.source_file = self.program_index.declarations().environment(env).source;
     }
-    self.authored_call_defaults.put(n, caller_site) catch return null;
+    self.authored_call_defaults.put(n, .{
+        .site = caller_site,
+        .environment = if (dflt.data == .caller_site) self.current_environment else author_environment,
+    }) catch return null;
     return n;
 }
 
@@ -4883,7 +4886,7 @@ pub fn lowerDefaultArg(self: *Lowering, fd: *const ast.FnDecl, idx: usize, call_
     // `context.allocator` resolve through the implicit context channel.
     var dem = self.enterDemand(lower_bound.paramDemand(self, fd, idx));
     defer dem.restore();
-    const authored = defaultArgAtCall(self, dflt, fd.body.source_file, call_site) orelse return null;
+    const authored = defaultArgAtCall(self, dflt, self.functionEnvironment(fd), call_site) orelse return null;
     return self.lowerExpr(authored);
 }
 
@@ -5529,7 +5532,7 @@ pub fn mapNamedArgs(
         if (slots[i] != null) continue;
         if (p.is_variadic or p.is_pack) continue; // an empty tail is legal
         if (p.default_expr) |def| {
-            slots[i] = defaultArgAtCall(self, def, callee.source, c.callee) orelse return stripNamedArgs(self, c);
+            slots[i] = defaultArgAtCall(self, def, self.functionEnvironment(fd), c.callee) orelse return stripNamedArgs(self, c);
         } else {
             missing.append(self.alloc, p.name) catch {};
             const undef = self.alloc.create(Node) catch unreachable;
@@ -5671,10 +5674,9 @@ pub fn expandCallDefaults(
     var new_args = self.alloc.alloc(*ast.Node, c.args.len + fill) catch return null;
     for (c.args, 0..) |arg, i| new_args[i] = arg;
     var i: usize = 0;
-    const default_source: ?[]const u8 = if (sel_author) |sf| sf.source else fd.body.source_file;
     while (i < fill) : (i += 1) {
         const def = fd.params[supplied + i].default_expr.?;
-        new_args[c.args.len + i] = defaultArgAtCall(self, def, default_source, c.callee) orelse return null;
+        new_args[c.args.len + i] = defaultArgAtCall(self, def, self.functionEnvironment(fd), c.callee) orelse return null;
     }
     const new_call = self.alloc.create(ast.Call) catch return null;
     new_call.* = .{ .callee = c.callee, .args = new_args };
@@ -5718,12 +5720,6 @@ pub fn userParamTypes(self: *Lowering, func: *const Function) []TypeId {
     return types_list.items;
 }
 
-/// Param types of a not-yet-lowered AST callee for arg target-typing,
-/// resolved in the callee's own module context (the source pin — see
-/// `resolveParamTypeInSource`). A generic callee's bare `T` leaves mean
-/// nothing as nominal names in that module: without this call's inferred
-/// `$T → concrete` bindings the pin would resolve `T` as an undeclared
-/// type in a non-main module and diagnose it unknown.
 /// Coerce already-lowered closure-call arguments to the closure's declared
 /// parameter types. The arg-lowering loop only sets `target_type`
 /// (which steers literal lowering) but does NOT itself coerce, so a concrete
@@ -5935,9 +5931,9 @@ pub fn resolveCallParamTypes(
         if (openSetReceiver(self, obj_ty)) |set_ty| {
             if (self.openSetOf(set_ty)) |set| {
                 if (lower_open_set.requiredMethod(set, fa.field)) |method| {
-                    const saved_source = self.current_source_file;
-                    self.setCurrentSourceFile(set.source_file);
-                    defer self.setCurrentSourceFile(saved_source);
+                    const saved_source = self.lexicalContext();
+                    self.setCurrentEnvironment(self.declarationEnvironment(.{ .open_set_decl = set.decl }, set.source_file));
+                    defer self.restoreLexicalContext(saved_source);
                     const demands = self.alloc.alloc(ParamDemand, method.params.len) catch return &.{};
                     for (method.params, 0..) |param, i|
                         demands[i] = .{ .coerce = self.resolveTypeWithBindings(param) };
