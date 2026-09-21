@@ -1833,6 +1833,16 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             }
             return val;
         },
+        .closure_signature_reject => {
+            if (self.externalErrorsExist()) return val;
+            if (self.diagnostics) |d| {
+                const cs = self.builder.current_span;
+                const span = ast.Span{ .start = cs.start, .end = cs.end };
+                d.addFmt(.err, span, "cannot convert '{s}' to '{s}': closure signatures differ", .{ self.formatSourceTypeName(src_ty), self.formatSourceTypeName(dst_ty) });
+                self.assignability_error_count += 1;
+            }
+            return val;
+        },
         // An empty-env unique erases like a bare function does: the lowered
         // function already takes the env slot, so the pair is {fn, null}.
         .unique_to_closure => {

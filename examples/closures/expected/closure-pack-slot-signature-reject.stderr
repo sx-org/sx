@@ -1,0 +1,5 @@
+error: cannot convert 'Closure() -> i64' to 'Closure(i64, i64) -> i64': closure signatures differ
+  --> examples/closures/closure-pack-slot-signature-reject.sx:3:5
+   |
+ 3 |     ignore(|| -> i64 0)
+   |     ^^^^^^^^^^^^^^^^^^^
