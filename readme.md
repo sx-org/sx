@@ -271,7 +271,7 @@ add :: (a: i64, b: i64) -> i64 {
 
 ```sx
 @import "modules/std.sx";              // flat — bare names
-math :: @import "modules/math";        // namespaced — math.name
+math :: @import "modules/math/vector3.sx";
 r :: @import "rich.sx";
 helper :: r.helper;                    // re-export
 private helper :: (x: i64) -> i64 { x * 2 }

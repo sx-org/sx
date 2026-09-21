@@ -1,0 +1,9 @@
+@import "modules/std.sx";
+a :: @import "1238-ffi-qualified-extern-globals-share-symbol/a.sx";
+b :: @import "1238-ffi-qualified-extern-globals-share-symbol/b.sx";
+
+main :: () -> i32 {
+    print("{} {} {}\n", @reinterpret(usize, *a.__stdinp) != 0,
+        @reinterpret(usize, *b.__stdinp) != 0, *a.__stdinp == *b.__stdinp);
+    0
+}

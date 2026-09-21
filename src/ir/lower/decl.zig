@@ -1666,7 +1666,7 @@ pub fn registerTopLevelGlobal(self: *Lowering, vd: *const ast.VarDecl) void {
             if (!global.is_extern or global.name != name_id) continue;
             if (!self.module.types.sameType(global.ty, var_ty)) {
                 if (self.diagnostics) |d| d.addFmt(.err, ty_span, "extern symbol '{s}' is already bound with a different type", .{sym_name});
-                return;
+                break;
             }
             break :shared @import("../inst.zig").GlobalId.fromIndex(@intCast(i));
         };
