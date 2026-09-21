@@ -373,7 +373,7 @@ pub const DocumentStore = struct {
         root.lexical_block = block;
         var duplicates = std.ArrayList(sx.ast.Span).empty;
         if (root.data == .root) try self.indexBlock(table, block, root.data.root.decls, &duplicates);
-        doc.declarations = .{ .table = table, .environment = environment };
+        doc.declarations = .{ .table = table, .environment = environment, .block = block };
 
         // Extract imports from AST — uses shared resolution logic from imports.zig
         var import_list = std.ArrayList(Import).empty;
@@ -393,6 +393,7 @@ pub const DocumentStore = struct {
         // Recursively analyze imported documents and pre-register their symbols
         var analyzer = sx.sema.Analyzer.init(self.allocator);
         analyzer.declarations = doc.declarations;
+        analyzer.selection.context = doc.declarations;
         for (duplicates.items) |span| {
             try analyzer.diagnostics.append(self.allocator, .{ .span = span, .message = "duplicate declaration", .level = .err });
         }
@@ -406,8 +407,8 @@ pub const DocumentStore = struct {
             }
 
             const imp_sema = imp_doc.sema orelse continue;
+            try (try analyzer.selection.inBlock(imp.block)).addImport(imp.ns, imp_sema.selection);
             if (imp.block != block) continue;
-            try analyzer.selection.addImport(imp.ns, imp_sema.selection);
             try analyzer.mergeMetadata(imp_sema);
 
             if (imp.ns) |ns_name| {

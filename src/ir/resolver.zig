@@ -3,6 +3,10 @@ const ast = @import("../ast.zig");
 const imports = @import("../imports.zig");
 const program_index = @import("program_index.zig");
 const ProgramIndex = program_index.ProgramIndex;
+const lookup = @import("../name_lookup.zig");
+
+pub const LookupContext = lookup.Context;
+pub const ScopeView = lookup.ScopeView;
 
 pub const RawDeclRef = imports.RawDeclRef;
 pub const RawAuthor = imports.RawAuthor;
@@ -217,110 +221,197 @@ pub const Resolver = struct {
         return .{ .index = index, .alloc = alloc };
     }
 
-    /// Own-environment and direct-import authors, before domain selection.
-    pub fn collectVisibleAuthors(
-        self: *Resolver,
-        name: []const u8,
-        from: imports.EnvironmentId,
-        vis: VisibilityMode,
-    ) AuthorSet {
-        const table = self.index.decl_table orelse return .{ .own = null, .flat = &.{} };
-        const own = table.rawAuthor(from, name);
+    pub fn plainImports(self: *Resolver, context: LookupContext, files: *std.ArrayList(LookupContext)) !void {
+        const table = context.table;
+        if (table.environment(context.environment).scope_path.len == 0) {
+            const direct = self.index.flatImports(context.environment) orelse return;
+            var it = direct.keyIterator();
+            while (it.next()) |source| {
+                const env = table.fileEnvironment(source.*) orelse continue;
+                try files.append(self.alloc, .{ .table = table, .environment = env });
+            }
+        } else if (context.block) |block| {
+            for (table.block(block).imports.items) |node| {
+                const imp = node.data.import_decl;
+                if (imp.name != null) continue;
+                const env = table.fileEnvironment(imp.path) orelse continue;
+                try files.append(self.alloc, .{ .table = table, .environment = env });
+            }
+        }
+    }
 
+    pub fn collectVisibleAuthors(self: *Resolver, name: []const u8, from: imports.EnvironmentId, vis: VisibilityMode) AuthorSet {
         switch (vis) {
             .user_bare_flat, .c_import_bare => {},
             .impl_transitive, .lowering_internal => @panic("collectVisibleAuthors: visibility mode has no single-hop author walk"),
         }
-        const direct = self.index.flatImports(from) orelse return .{ .own = own, .flat = &.{} };
+        const table = self.index.decl_table orelse return .{ .own = null, .flat = &.{} };
+        return self.collectInContext(name, .{ .table = table, .environment = from });
+    }
 
+    pub fn collectInContext(self: *Resolver, name: []const u8, context: LookupContext) AuthorSet {
+        const candidates = lookup.bare(self, context, name, context.source(), self.alloc) catch @panic("out of memory");
+        defer self.alloc.free(candidates.imported);
+        return self.authors(candidates);
+    }
+
+    fn authors(self: *Resolver, candidates: lookup.Candidates) AuthorSet {
+        const own = if (candidates.own) |decl| decl.table.author(decl.id, decl.info().source.?) else null;
         var flat = std.ArrayList(RawAuthor).empty;
-        var it = direct.iterator(); // ← the one graph iterator (invariant)
-        while (it.next()) |kv| {
-            const env = table.fileEnvironment(kv.key_ptr.*) orelse continue;
-            const cand = table.rawAuthor(env, name) orelse continue;
-            if (cand.visibility == .private) continue;
-            if (own) |author| if (self.sameIdentity(author, cand)) continue;
-            if (self.containsIdentity(flat.items, cand)) continue;
-            flat.append(self.alloc, cand) catch @panic("collectVisibleAuthors: OOM");
+        for (candidates.imported) |decl| {
+            const candidate = decl.table.author(decl.id, decl.info().source.?) orelse continue;
+            if (self.containsIdentity(flat.items, candidate)) continue;
+            flat.append(self.alloc, candidate) catch @panic("out of memory");
         }
-        return .{
-            .own = own,
-            .flat = flat.toOwnedSlice(self.alloc) catch @panic("collectVisibleAuthors: OOM"),
-        };
+        return .{ .own = own, .flat = flat.toOwnedSlice(self.alloc) catch @panic("out of memory") };
     }
 
     const Identity = union(enum) {
         declaration: imports.DeclId,
         type: @import("types.zig").TypeId,
         namespace: imports.EnvironmentId,
+        scope: imports.ScopeId,
+    };
+
+    pub const Qualifier = union(enum) {
+        namespace: LookupContext,
+        scope: ScopeView,
+    };
+
+    pub const Selected = struct {
+        declaration: imports.DeclId,
+        view: LookupContext,
+    };
+
+    pub const Selection = union(enum) {
+        missing,
+        ambiguous,
+        selected: Selected,
     };
 
     fn sameIdentity(self: *Resolver, a: RawAuthor, b: RawAuthor) bool {
-        if (a.id == b.id) return true;
         var visiting = std.ArrayList(imports.DeclId).empty;
         defer visiting.deinit(self.alloc);
-        const left = self.identity(a, &visiting) orelse return false;
-        const right = self.identity(b, &visiting) orelse return false;
+        return self.sameDeclaration(a.id, b.id, &visiting);
+    }
+
+    fn sameDeclaration(self: *Resolver, a: imports.DeclId, b: imports.DeclId, visiting: *std.ArrayList(imports.DeclId)) bool {
+        if (a == b) return true;
+        const left = self.identity(a, visiting) orelse return false;
+        const right = self.identity(b, visiting) orelse return false;
         return std.meta.eql(left, right);
     }
 
-    fn containsIdentity(self: *Resolver, authors: []const RawAuthor, candidate: RawAuthor) bool {
-        for (authors) |author| if (self.sameIdentity(author, candidate)) return true;
+    fn containsIdentity(self: *Resolver, authors_list: []const RawAuthor, candidate: RawAuthor) bool {
+        for (authors_list) |author| if (self.sameIdentity(author, candidate)) return true;
         return false;
     }
 
-    fn identity(self: *Resolver, author: RawAuthor, visiting: *std.ArrayList(imports.DeclId)) ?Identity {
-        for (visiting.items) |id| if (id == author.id) return null;
-        visiting.append(self.alloc, author.id) catch @panic("out of memory");
+    fn identity(self: *Resolver, id: imports.DeclId, visiting: *std.ArrayList(imports.DeclId)) ?Identity {
+        for (visiting.items) |previous| if (previous == id) return null;
+        visiting.append(self.alloc, id) catch @panic("out of memory");
         defer _ = visiting.pop();
         const table = self.index.declarations();
-        const env = table.get(author.id).environment orelse return .{ .declaration = author.id };
-        if (author.raw == .namespace_decl) {
-            const target = table.environment(env).namespaces.get(author.raw.namespace_decl.name) orelse return null;
+        const info = table.get(id);
+        if (info.scope) |scope| return .{ .scope = scope };
+        const env = info.environment orelse return .{ .declaration = id };
+        const ref = info.ref orelse return .{ .declaration = id };
+        if (ref == .namespace_decl) {
+            const target = table.environment(env).namespaces.get(info.name) orelse return null;
             return .{ .namespace = target.environment };
         }
-        if (author.raw != .const_decl) return .{ .declaration = author.id };
-        const path = imports.aliasPath(self.alloc, author.raw.const_decl.value) orelse {
-            if (self.index.get(.type_alias, author.id)) |ty| return .{ .type = ty };
-            return .{ .declaration = author.id };
+        if (ref != .const_decl) return .{ .declaration = id };
+        const path = imports.aliasPath(self.alloc, ref.const_decl.value) orelse {
+            if (self.index.get(.type_alias, id)) |ty| return .{ .type = ty };
+            return .{ .declaration = id };
         };
         defer self.alloc.free(path);
-        const raw = switch (author.raw.const_decl.value.data) {
-            .identifier => |id| id.is_raw,
+        const raw = switch (ref.const_decl.value.data) {
+            .identifier => |ident| ident.is_raw,
             .type_expr => |te| te.is_raw,
             else => true,
         };
         if (!raw) if (@import("type_resolver.zig").TypeResolver.resolvePrimitive(path)) |ty| return .{ .type = ty };
-        return self.pathIdentity(env, path, visiting, false);
+        const context = LookupContext{ .table = table, .environment = env, .block = info.lexical_block };
+        const target = self.selectPathInner(path, context, context.source(), visiting);
+        return if (target == .selected) self.identity(target.selected.declaration, visiting) else null;
     }
 
-    fn pathIdentity(self: *Resolver, env: imports.EnvironmentId, path: []const u8, visiting: *std.ArrayList(imports.DeclId), qualified: bool) ?Identity {
-        const table = self.index.declarations();
-        const dot = std.mem.indexOfScalar(u8, path, '.');
-        const name = if (dot) |i| path[0..i] else path;
-        var selected: ?Identity = null;
-        if (table.rawAuthor(env, name)) |author| {
-            if (qualified and author.visibility == .private) return null;
-            selected = self.identity(author, visiting);
-        } else if (!qualified) {
-            const direct = self.index.flatImports(env) orelse return null;
-            var it = direct.keyIterator();
-            while (it.next()) |source| {
-                const imported = table.fileEnvironment(source.*) orelse continue;
-                const author = table.rawAuthor(imported, name) orelse continue;
-                if (author.visibility == .private) continue;
-                const candidate = self.identity(author, visiting) orelse return null;
-                if (selected) |previous| {
-                    if (!std.meta.eql(previous, candidate)) return null;
-                } else selected = candidate;
-            }
+    fn choose(self: *Resolver, candidates: lookup.Candidates, view: LookupContext, visiting: *std.ArrayList(imports.DeclId)) Selection {
+        if (candidates.own) |decl| return .{ .selected = .{ .declaration = decl.id, .view = view } };
+        var selected: ?imports.DeclId = null;
+        for (candidates.imported) |decl| {
+            if (selected) |previous| {
+                if (!self.sameDeclaration(previous, decl.id, visiting)) return .ambiguous;
+            } else selected = decl.id;
         }
-        const result = selected orelse return null;
-        if (dot) |i| {
-            if (result != .namespace) return null;
-            return self.pathIdentity(result.namespace, path[i + 1 ..], visiting, true);
+        return if (selected) |id| .{ .selected = .{ .declaration = id, .view = view } } else .missing;
+    }
+
+    pub fn qualifier(self: *Resolver, selected: Selected) ?Qualifier {
+        var visiting = std.ArrayList(imports.DeclId).empty;
+        defer visiting.deinit(self.alloc);
+        return self.qualifierInner(selected, &visiting);
+    }
+
+    fn qualifierInner(self: *Resolver, selected: Selected, visiting: *std.ArrayList(imports.DeclId)) ?Qualifier {
+        const id = selected.declaration;
+        for (visiting.items) |previous| if (previous == id) return null;
+        visiting.append(self.alloc, id) catch @panic("out of memory");
+        defer _ = visiting.pop();
+        const table = self.index.declarations();
+        const info = table.get(id);
+        if (info.scope) |scope| return .{ .scope = .{ .path = table.scopeInfo(scope).path, .context = selected.view } };
+        const context = LookupContext.author(.{ .table = table, .id = id }) orelse return null;
+        const ref = info.ref orelse return null;
+        if (ref == .namespace_decl) {
+            const target = table.environment(context.environment).namespaces.get(info.name) orelse return null;
+            return .{ .namespace = .{ .table = table, .environment = target.environment } };
+        }
+        if (ref != .const_decl) return null;
+        const path = imports.aliasPath(self.alloc, ref.const_decl.value) orelse return null;
+        defer self.alloc.free(path);
+        const target = self.selectPathInner(path, context, context.source(), visiting);
+        return if (target == .selected) self.qualifierInner(target.selected, visiting) else null;
+    }
+
+    pub fn selectPath(self: *Resolver, path: []const u8, context: LookupContext) Selection {
+        var visiting = std.ArrayList(imports.DeclId).empty;
+        defer visiting.deinit(self.alloc);
+        return self.selectPathInner(path, context, context.source(), &visiting);
+    }
+
+    fn selectPathInner(self: *Resolver, path: []const u8, context: LookupContext, requester: []const u8, visiting: *std.ArrayList(imports.DeclId)) Selection {
+        var parts = std.mem.splitScalar(u8, path, '.');
+        const first = parts.next().?;
+        const candidates = lookup.bare(self, context, first, requester, self.alloc) catch @panic("out of memory");
+        defer self.alloc.free(candidates.imported);
+        var result = self.choose(candidates, context, visiting);
+        while (parts.next()) |name| {
+            if (result != .selected) return result;
+            const target = self.qualifierInner(result.selected, visiting) orelse return .missing;
+            result = self.selectMemberInner(target, name, requester, visiting);
         }
         return result;
+    }
+
+    pub fn selectMember(self: *Resolver, target: Qualifier, name: []const u8, requester: []const u8) Selection {
+        var visiting = std.ArrayList(imports.DeclId).empty;
+        defer visiting.deinit(self.alloc);
+        return self.selectMemberInner(target, name, requester, &visiting);
+    }
+
+    fn selectMemberInner(self: *Resolver, target: Qualifier, name: []const u8, requester: []const u8, visiting: *std.ArrayList(imports.DeclId)) Selection {
+        const view = switch (target) {
+            .namespace => |context| context,
+            .scope => |scope| scope.context,
+        };
+        const candidates: lookup.Candidates = switch (target) {
+            .namespace => |context| .{ .own = lookup.own(context, name, requester) },
+            .scope => |scope| lookup.scopeMembers(self, scope, name, requester, self.alloc) catch @panic("out of memory"),
+        };
+        defer self.alloc.free(candidates.imported);
+        return self.choose(candidates, view, visiting);
     }
 
     pub fn collectNamespaceAuthors(
@@ -369,11 +460,6 @@ pub const Resolver = struct {
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
-    /// Compute the verdict over a collected author set for `domain`: own-wins
-    /// when the querying module's own author is eligible; ≥2 distinct eligible
-    /// flat authors → ambiguous; exactly one → single; none eligible but authored
-    /// for this domain anywhere (non-flat-visible) → not_visible; otherwise
-    /// domain_filtered.
     fn verdictOver(
         self: *Resolver,
         domain: Domain,
@@ -392,6 +478,7 @@ pub const Resolver = struct {
             }
         }
         if (n == 1) return .single;
+        if (set.distinctCount() != 0) return .domain_filtered;
         if (self.authoredAsDomainAnywhere(domain, name, field)) return .not_visible;
         return .domain_filtered;
     }

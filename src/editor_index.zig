@@ -2,19 +2,10 @@ const std = @import("std");
 const ast = @import("ast.zig");
 const imports = @import("imports.zig");
 
-pub const Declaration = struct {
-    table: *const imports.DeclTable,
-    id: imports.DeclId,
+const lookup = @import("name_lookup.zig");
 
-    pub fn info(self: Declaration) imports.DeclInfo {
-        return self.table.get(self.id);
-    }
-};
-
-pub const DeclarationContext = struct {
-    table: *const imports.DeclTable,
-    environment: imports.EnvironmentId,
-};
+pub const Declaration = lookup.Declaration;
+pub const DeclarationContext = lookup.Context;
 
 pub const InstanceArgument = union(enum) {
     declaration: Declaration,
@@ -62,9 +53,11 @@ pub const Selection = struct {
     own: std.StringHashMap(Declaration),
     flat: std.ArrayList(*Selection) = .empty,
     namespaces: std.StringHashMap(std.ArrayList(*Selection)),
+    file: ?*Selection = null,
+    blocks: std.AutoHashMap(imports.LexicalBlockId, *Selection),
 
     pub fn init(alloc: std.mem.Allocator) Selection {
-        return .{ .alloc = alloc, .own = .init(alloc), .namespaces = .init(alloc) };
+        return .{ .alloc = alloc, .own = .init(alloc), .namespaces = .init(alloc), .blocks = .init(alloc) };
     }
 
     pub fn register(self: *Selection, nodes: []const *ast.Node) !void {
@@ -77,6 +70,9 @@ pub const Selection = struct {
             const name = node.data.declName() orelse (if (node.data == .import_decl) node.data.import_decl.name else null) orelse continue;
             const id = try table.internNamedNode(if (self.context) |ctx| ctx.environment else null, name, node);
             try self.own.put(name, .{ .table = table, .id = id });
+            if (node.data == .scope_decl) {
+                if (node.data.scope_decl.body_block) |block| try (try self.inBlock(block)).register(node.data.scope_decl.decls);
+            }
             if (node.data == .namespace_decl) {
                 const ns = node.data.namespace_decl;
                 const child = try self.alloc.create(Selection);
@@ -104,9 +100,15 @@ pub const Selection = struct {
         return if (decl.info().visibility == .public) decl else null;
     }
 
-    const Located = struct { selection: *const Selection, declaration: Declaration };
+    const Located = struct {
+        selection: *const Selection,
+        declaration: Declaration,
+        view: ?DeclarationContext = null,
+    };
     const Entity = union(enum) {
         declaration: Declaration,
+        scope: []const []const u8,
+        namespace: *const Selection,
         expression: struct { selection: *const Selection, node: *const ast.Node },
     };
 
@@ -116,6 +118,12 @@ pub const Selection = struct {
         for (visiting.items) |previous| if (std.meta.eql(previous, decl)) return null;
         visiting.append(self.alloc, decl) catch @panic("out of memory");
         defer _ = visiting.pop();
+        if (decl.info().scope) |scope| return .{ .scope = decl.table.scopeInfo(scope).path };
+        if (decl.info().kind == .namespace) {
+            const targets = self.namespace(decl.info().name) orelse return null;
+            if (targets.len != 1) return null;
+            return .{ .namespace = targets[0] };
+        }
         const ref = decl.info().ref orelse return .{ .declaration = decl };
         if (ref != .const_decl) return .{ .declaration = decl };
         const node = ref.const_decl.value;
@@ -148,6 +156,8 @@ pub const Selection = struct {
         if (std.meta.activeTag(a) != std.meta.activeTag(b)) return false;
         return switch (a) {
             .declaration => |d| std.meta.eql(d, b.declaration),
+            .scope => |path| sameFieldNames(path, b.scope),
+            .namespace => |selection| selection == b.namespace,
             .expression => |e| sameExpression(e.selection, e.node, b.expression.selection, b.expression.node, visiting),
         };
     }
@@ -246,7 +256,110 @@ pub const Selection = struct {
         return selected;
     }
 
+    pub fn inBlock(self: *Selection, block: imports.LexicalBlockId) !*Selection {
+        const file = self.file orelse self;
+        if (file.context.?.block == block) return file;
+        if (file.blocks.get(block)) |selection| return selection;
+        const selection = try self.alloc.create(Selection);
+        selection.* = Selection.init(self.alloc);
+        selection.file = file;
+        const table = file.context.?.table;
+        selection.context = .{ .table = table, .environment = table.block(block).environment, .block = block };
+        try file.blocks.put(block, selection);
+        return selection;
+    }
+
+    fn findFile(self: *const Selection, table: *const imports.DeclTable) ?*const Selection {
+        if (self.context) |context| if (context.table == table) return self.file orelse self;
+        for (self.flat.items) |imported| if (imported.findFile(table)) |found| return found;
+        var namespaces = self.namespaces.valueIterator();
+        while (namespaces.next()) |targets| for (targets.items) |target| {
+            if (target.findFile(table)) |found| return found;
+        };
+        var blocks = self.blocks.valueIterator();
+        while (blocks.next()) |block| if (block.*.findFile(table)) |found| return found;
+        return null;
+    }
+
+    fn owner(self: *const Selection, declaration: Declaration) *const Selection {
+        const file = (self.file orelse self).findFile(declaration.table).?;
+        return if (declaration.info().lexical_block) |block|
+            @constCast(file).inBlock(block) catch @panic("out of memory")
+        else
+            file;
+    }
+
+    pub fn plainImports(self: *const Selection, context: DeclarationContext, files: *std.ArrayList(DeclarationContext)) !void {
+        const file = (self.file orelse self).findFile(context.table).?;
+        const selection = if (context.table.environment(context.environment).scope_path.len == 0)
+            file
+        else if (context.block) |block|
+            try @constCast(file).inBlock(block)
+        else
+            return;
+        for (selection.flat.items) |imported| try files.append(self.alloc, imported.context.?.root());
+    }
+
+    fn choose(self: *const Selection, candidates: lookup.Candidates, view: DeclarationContext, visiting: *std.ArrayList(Declaration)) ?Located {
+        if (candidates.own) |decl| return .{ .selection = self.owner(decl), .declaration = decl, .view = view };
+        var selected: ?Located = null;
+        for (candidates.imported) |decl| {
+            const current = Located{ .selection = self.owner(decl), .declaration = decl, .view = view };
+            if (selected) |previous| {
+                if (!equivalent(previous, current, visiting)) return null;
+            } else selected = current;
+        }
+        return selected;
+    }
+
+    pub const Qualifier = union(enum) {
+        namespace: DeclarationContext,
+        scope: lookup.ScopeView,
+    };
+
+    fn qualifier(located: Located, visiting: *std.ArrayList(Declaration)) ?Qualifier {
+        const decl = located.declaration;
+        const self = located.selection;
+        for (visiting.items) |previous| if (std.meta.eql(previous, decl)) return null;
+        visiting.append(self.alloc, decl) catch @panic("out of memory");
+        defer _ = visiting.pop();
+        if (decl.info().scope) |scope| return .{ .scope = .{ .path = decl.table.scopeInfo(scope).path, .context = located.view.? } };
+        if (decl.info().kind == .namespace) {
+            const targets = self.namespace(decl.info().name) orelse return null;
+            if (targets.len != 1) return null;
+            return .{ .namespace = targets[0].context.? };
+        }
+        const ref = decl.info().ref orelse return null;
+        if (ref != .const_decl) return null;
+        const path = imports.aliasPath(self.alloc, ref.const_decl.value) orelse return null;
+        defer self.alloc.free(path);
+        const target = self.locate(path, visiting) orelse return null;
+        return qualifier(target, visiting);
+    }
+
+    fn locateContext(self: *const Selection, name: []const u8, context: DeclarationContext, requester: []const u8, visiting: *std.ArrayList(Declaration)) ?Located {
+        var parts = std.mem.splitScalar(u8, name, '.');
+        const candidates = lookup.bare(self, context, parts.next().?, requester, self.alloc) catch @panic("out of memory");
+        defer self.alloc.free(candidates.imported);
+        var selected = self.choose(candidates, context, visiting) orelse return null;
+        while (parts.next()) |member| {
+            const target = qualifier(selected, visiting) orelse return null;
+            const view = switch (target) {
+                .namespace => |ctx| ctx,
+                .scope => |scope| scope.context,
+            };
+            const members: lookup.Candidates = switch (target) {
+                .namespace => |ctx| .{ .own = lookup.own(ctx, member, requester) },
+                .scope => |scope| lookup.scopeMembers(self, scope, member, requester, self.alloc) catch @panic("out of memory"),
+            };
+            defer self.alloc.free(members.imported);
+            selected = self.choose(members, view, visiting) orelse return null;
+        }
+        return selected;
+    }
+
     fn locate(self: *const Selection, name: []const u8, visiting: *std.ArrayList(Declaration)) ?Located {
+        if (self.context) |context| return self.locateContext(name, context, context.source(), visiting);
         if (std.mem.indexOfScalar(u8, name, '.')) |dot| {
             const targets = self.namespace(name[0..dot]) orelse return null;
             const rest = name[dot + 1 ..];

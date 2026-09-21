@@ -937,3 +937,201 @@ test "scope merge duplicates and scope-name collisions diagnose the second decla
     try std.testing.expectEqual(spans.len, count);
     try expectSameFileFacts(&compiler.table, doc.declarations.?.table, doc.path);
 }
+
+const ScopeProbe = struct {
+    alloc: std.mem.Allocator,
+    directory: []const u8,
+    compiler: *CompilerFacts,
+    resolver: @import("../ir/resolver.zig").Resolver,
+    store: doc_mod.DocumentStore,
+
+    fn init(alloc: std.mem.Allocator, directory: []const u8) !ScopeProbe {
+        const path = try std.fmt.allocPrint(alloc, "{s}/main.sx", .{directory});
+        const bytes = try std.Io.Dir.readFileAlloc(.cwd(), test_io(), path, alloc, .limited(1 << 20));
+        const compiler = try alloc.create(CompilerFacts);
+        compiler.* = try compilerFacts(alloc, path, try alloc.dupeZ(u8, bytes));
+        try std.testing.expectEqual(@as(usize, 0), compiler.diagnostics.items.items.len);
+        const index = try alloc.create(@import("../ir/program_index.zig").ProgramIndex);
+        index.* = .init(alloc);
+        index.decl_table = &compiler.table;
+        index.flat_import_graph = &compiler.flat_imports;
+        var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+        try store.analyzeDocument(try store.getOrLoad(path));
+        return .{ .alloc = alloc, .directory = directory, .compiler = compiler, .resolver = .init(index, alloc), .store = store };
+    }
+
+    const Expected = union(enum) {
+        declaration: struct { file: []const u8, name: []const u8 },
+        missing,
+        ambiguous,
+    };
+
+    fn expect(self: *ScopeProbe, file: []const u8, block_owner: ?[]const u8, name: []const u8, expected: Expected) !void {
+        const path = try sx.imports.canonicalizePath(self.alloc, try std.fmt.allocPrint(self.alloc, "{s}/{s}", .{ self.directory, file }));
+        const table = &self.compiler.table;
+        var context = @import("../name_lookup.zig").Context{ .table = table, .environment = table.fileEnvironment(path).? };
+        const doc = try self.store.getOrLoad(path);
+        var selection = doc.sema.?.selection;
+        if (block_owner) |owner| {
+            const compiler_owner = self.resolver.selectPath(owner, context).selected.declaration;
+            const block = table.get(compiler_owner).lexical_block.?;
+            context.block = block;
+            context.environment = table.block(block).environment;
+            selection = try selection.inBlock(selection.select(owner).?.info().lexical_block.?);
+        }
+        const actual = self.resolver.selectPath(name, context);
+        const editor = selection.select(name);
+        switch (expected) {
+            .missing => {
+                try std.testing.expectEqual(.missing, std.meta.activeTag(actual));
+                try std.testing.expect(editor == null);
+            },
+            .ambiguous => {
+                try std.testing.expectEqual(.ambiguous, std.meta.activeTag(actual));
+                try std.testing.expect(editor == null);
+            },
+            .declaration => |decl| {
+                try std.testing.expectEqual(.selected, std.meta.activeTag(actual));
+                const info = table.get(actual.selected.declaration);
+                try std.testing.expectEqualStrings(decl.file, std.fs.path.basename(info.source.?));
+                try std.testing.expectEqualStrings(decl.name, info.name);
+                try std.testing.expectEqualStrings(info.source.?, editor.?.info().source.?);
+                try std.testing.expectEqualDeep(info.span, editor.?.info().span);
+            },
+        }
+    }
+};
+
+test "scope selection keeps importer namespace and alias viewpoints separate" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const io = test_io();
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(io, .{ .sub_path = "base.sx", .data = "geo :: scope { base :: 1; value :: 10; }" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "lib.sx", .data =
+        \\@import "base.sx";
+        \\geo :: scope { lib :: 2; }
+        \\G :: geo;
+    });
+    try tmp.dir.writeFile(io, .{ .sub_path = "extra.sx", .data = "geo :: scope { named_only :: 20; }" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data =
+        \\@import "lib.sx";
+        \\ns :: @import "lib.sx";
+        \\extra :: @import "extra.sx";
+        \\geo :: scope { value :: 30; }
+        \\..@import "absent.sx";
+        \\..extra;
+    });
+    var dirbuf: [4096]u8 = undefined;
+    var probe = try ScopeProbe.init(alloc, dirbuf[0..try tmp.dir.realPath(io, &dirbuf)]);
+    try probe.expect("main.sx", null, "geo.lib", .{ .declaration = .{ .file = "lib.sx", .name = "lib" } });
+    try probe.expect("main.sx", null, "geo.base", .missing);
+    try probe.expect("main.sx", null, "geo.named_only", .missing);
+    try probe.expect("main.sx", null, "geo.value", .{ .declaration = .{ .file = "main.sx", .name = "value" } });
+    try probe.expect("main.sx", null, "ns.geo.value", .{ .declaration = .{ .file = "base.sx", .name = "value" } });
+    try probe.expect("main.sx", null, "G.value", .{ .declaration = .{ .file = "base.sx", .name = "value" } });
+    try probe.expect("lib.sx", null, "geo.value", .{ .declaration = .{ .file = "base.sx", .name = "value" } });
+}
+
+test "scope lookup orders members block imports enclosing scopes and file lookup" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const io = test_io();
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(io, .{ .sub_path = "part.sx", .data = "geo :: scope { member :: 1; }" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "helpers.sx", .data = "member :: 2; helper :: 3; parent :: 4; top :: 5; geo :: scope { inner :: scope { carried :: 11; } }" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "fallback.sx", .data = "last :: 6;" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "inner.sx", .data = "near :: 12;" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data =
+        \\@import "part.sx";
+        \\@import "fallback.sx";
+        \\top :: 7;
+        \\geo :: scope {
+        \\    @import "helpers.sx";
+        \\    parent :: 8; near :: 13;
+        \\    inner :: scope { @import "inner.sx"; anchor :: 9; }
+        \\    Saved :: inner;
+        \\}
+        \\geo :: scope { sibling :: 10; }
+    });
+    var dirbuf: [4096]u8 = undefined;
+    var probe = try ScopeProbe.init(alloc, dirbuf[0..try tmp.dir.realPath(io, &dirbuf)]);
+    try probe.expect("main.sx", "geo.inner.anchor", "member", .{ .declaration = .{ .file = "part.sx", .name = "member" } });
+    try probe.expect("main.sx", "geo.inner.anchor", "helper", .{ .declaration = .{ .file = "helpers.sx", .name = "helper" } });
+    try probe.expect("main.sx", "geo.inner.anchor", "parent", .{ .declaration = .{ .file = "main.sx", .name = "parent" } });
+    try probe.expect("main.sx", "geo.inner.anchor", "top", .{ .declaration = .{ .file = "helpers.sx", .name = "top" } });
+    try probe.expect("main.sx", "geo.sibling", "top", .{ .declaration = .{ .file = "main.sx", .name = "top" } });
+    try probe.expect("main.sx", "geo.sibling", "helper", .missing);
+    try probe.expect("main.sx", "geo.inner.anchor", "last", .{ .declaration = .{ .file = "fallback.sx", .name = "last" } });
+    try probe.expect("main.sx", null, "geo.helper", .missing);
+    try probe.expect("main.sx", "geo.inner.anchor", "near", .{ .declaration = .{ .file = "inner.sx", .name = "near" } });
+    try probe.expect("main.sx", "geo.inner.anchor", "carried", .{ .declaration = .{ .file = "helpers.sx", .name = "carried" } });
+    try probe.expect("main.sx", null, "geo.inner.carried", .missing);
+    try probe.expect("main.sx", null, "geo.Saved.carried", .{ .declaration = .{ .file = "helpers.sx", .name = "carried" } });
+}
+
+test "scope member ambiguity is lazy and local declarations hide other files" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const io = test_io();
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(io, .{ .sub_path = "left.sx", .data = "geo :: scope { conflict :: 1; hidden :: 2; }" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "right.sx", .data = "geo :: scope { conflict :: 3; hidden :: struct { x: i64; } unique :: 5; }" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "foreign.h", .data = "long foreign(void);" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "c.sx", .data = "geo :: @import c { @include \"foreign.h\"; };" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data =
+        \\@import "left.sx";
+        \\@import "right.sx";
+        \\@import "c.sx";
+        \\geo :: scope { hidden :: 6; }
+    });
+    var dirbuf: [4096]u8 = undefined;
+    var probe = try ScopeProbe.init(alloc, dirbuf[0..try tmp.dir.realPath(io, &dirbuf)]);
+    try probe.expect("main.sx", null, "geo", .{ .declaration = .{ .file = "main.sx", .name = "geo" } });
+    try probe.expect("main.sx", null, "geo.unique", .{ .declaration = .{ .file = "right.sx", .name = "unique" } });
+    try probe.expect("main.sx", null, "geo.conflict", .ambiguous);
+    try probe.expect("main.sx", null, "geo.foreign", .missing);
+    try probe.expect("main.sx", null, "geo.hidden", .{ .declaration = .{ .file = "main.sx", .name = "hidden" } });
+    const scope = probe.compiler.root.data.root.decls[3].data.scope_decl.body_block.?;
+    const hidden_type = probe.resolver.resolveBare("hidden", probe.compiler.table.block(scope).environment, .bare_type);
+    try std.testing.expectEqual(.domain_filtered, hidden_type.verdict);
+}
+
+test "scope aliases preserve target identity and requester private authority" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const io = test_io();
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(io, .{ .sub_path = "target.sx", .data =
+        \\geo :: scope { private secret :: 1; public_value :: secret; }
+        \\G :: geo;
+        \\answer :: geo.public_value;
+    });
+    try tmp.dir.writeFile(io, .{ .sub_path = "alias.sx", .data =
+        \\ns :: @import "target.sx";
+        \\G :: ns.geo;
+        \\answer :: ns.geo.public_value;
+    });
+    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data =
+        \\@import "target.sx";
+        \\@import "alias.sx";
+    });
+    var dirbuf: [4096]u8 = undefined;
+    var probe = try ScopeProbe.init(alloc, dirbuf[0..try tmp.dir.realPath(io, &dirbuf)]);
+    try probe.expect("main.sx", null, "G.public_value", .{ .declaration = .{ .file = "target.sx", .name = "public_value" } });
+    try probe.expect("main.sx", null, "G.secret", .missing);
+    try probe.expect("target.sx", null, "G.secret", .{ .declaration = .{ .file = "target.sx", .name = "secret" } });
+    const root = @import("../name_lookup.zig").Context{ .table = &probe.compiler.table, .environment = probe.compiler.table.fileEnvironment(try std.fmt.allocPrint(alloc, "{s}/main.sx", .{probe.directory})).? };
+    const authors = probe.resolver.resolveBare("answer", root.environment, .value_const);
+    try std.testing.expectEqual(.single, authors.verdict);
+    const doc = probe.store.get(root.source()).?;
+    try std.testing.expect(doc.sema.?.selection.select("answer") != null);
+}
