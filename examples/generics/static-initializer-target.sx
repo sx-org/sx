@@ -1,0 +1,18 @@
+Value :: struct { n: i64; scale: f64; }
+
+Box :: struct ($T: Type) {
+    value: T;
+
+    init :: (value: T) -> Box(T) { Box(T){ value = value } }
+}
+
+formed :: () -> bool {
+    box := Box(Value).init(.{ scale = 2, n = 40 });
+    box.value.n == 40 and box.value.scale == 2.0
+}
+
+FORMED :: @run formed();
+
+main :: () -> i64 {
+    if formed() and FORMED { 0 } else { 1 }
+}
