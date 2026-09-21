@@ -1,0 +1,13 @@
+@import "modules/std.sx";
+cfg :: @import "./2769-diagnostics-expansion-deadlock-cross-file-cfg.sx";
+
+inline if SELF {
+    A :: 1;
+} else {
+    SELF :: false;
+    A :: 0;
+}
+
+main :: () {
+    print("{}\n", A);
+}
