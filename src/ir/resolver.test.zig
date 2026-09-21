@@ -92,6 +92,9 @@ test "resolver: collectVisibleAuthors — own author, two distinct flat authors,
 
     var facts = try buildFacts(alloc, io, absdir, main_path);
 
+    const main_env = facts.table.fileEnvironment(main_path).?;
+    try std.testing.expect(facts.flat_import_graph.contains(facts.table.environment(main_env).source));
+
     var idx = ProgramIndex.init(alloc);
     defer idx.deinit();
     idx.decl_table = &facts.table;

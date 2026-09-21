@@ -404,7 +404,7 @@ pub const ProtocolResolver = struct {
         var head: usize = 0;
         while (head < queue.items.len) : (head += 1) {
             const node = queue.items[head];
-            const direct = graph.get(node) orelse continue;
+            const direct = self.l.program_index.declarations().directImports(graph, self.l.environmentForSource(node).?) orelse continue;
             var it = direct.iterator();
             while (it.next()) |kv| {
                 const next = kv.key_ptr.*;

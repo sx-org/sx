@@ -1042,12 +1042,13 @@ const Group = struct {
         const imported = cache.modules.get(imp.path) orelse return;
 
         if (mint) {
+            const graph_source = self.program_index.declarations().environment(self.environmentForSource(source).?).source;
             if (self.program_index.import_graph) |graph| {
-                if (graph.getPtr(source)) |set| set.put(imp.path, {}) catch {};
+                if (graph.getPtr(graph_source)) |set| set.put(imp.path, {}) catch {};
             }
             if (imp.name == null) {
                 if (self.program_index.flat_import_graph) |graph| {
-                    if (graph.getPtr(source)) |set| set.put(imp.path, {}) catch {};
+                    if (graph.getPtr(graph_source)) |set| set.put(imp.path, {}) catch {};
                 }
             }
         }

@@ -2515,7 +2515,8 @@ pub fn lowerMainAndComptime(self: *Lowering, decls: []const *const Node) void {
 
 pub fn lowerRetainedSameNameAuthors(self: *Lowering) void {
     const module_decls = self.program_index.decl_table orelse return;
-    const main_file = self.main_file orelse return;
+    const main_env = self.environmentForSource(self.main_file orelse return).?;
+    const main_file = module_decls.environment(main_env).source;
     const flat_graph = self.program_index.flat_import_graph orelse return;
     const main_flat_edges = flat_graph.get(main_file);
 

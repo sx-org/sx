@@ -847,12 +847,7 @@ pub const DeclTable = struct {
     }
 
     pub fn directImports(self: *const DeclTable, graph: *const std.StringHashMap(std.StringHashMap(void)), env: EnvironmentId) ?std.StringHashMap(void) {
-        const root = self.fileEnvironment(self.environment(env).source).?;
-        var entries = graph.iterator();
-        while (entries.next()) |entry| {
-            if (self.fileEnvironment(entry.key_ptr.*) == root) return entry.value_ptr.*;
-        }
-        return null;
+        return graph.get(self.environment(env).source);
     }
 
     pub fn fileScope(self: *const DeclTable, path: []const u8) ?*Environment {
@@ -1056,12 +1051,14 @@ pub fn resolveImports(
     import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
     flat_import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
 ) !ResolvedModule {
+    const env = try cache.declarations.internEnvironment(file_path, &.{});
+    const canonical_file = cache.declarations.environment(env).source;
     // Record this file's edge set so `param_impl_map` lookups can filter
     // candidates by what's been imported from where. Populated as each
     // import resolves below; transitive closure computed on demand.
     if (import_graph) |g| {
-        if (!g.contains(file_path)) {
-            try g.put(file_path, std.StringHashMap(void).init(allocator));
+        if (!g.contains(canonical_file)) {
+            try g.put(canonical_file, std.StringHashMap(void).init(allocator));
         }
     }
     // FLAT-only edge set: identical to `import_graph` but records ONLY bare
@@ -1069,17 +1066,16 @@ pub fn resolveImports(
     // `ns :: @import "…"`. The bare-name disambiguation walks this to
     // decide which same-name authors a flat importer can actually reach.
     if (flat_import_graph) |g| {
-        if (!g.contains(file_path)) {
-            try g.put(file_path, std.StringHashMap(void).init(allocator));
+        if (!g.contains(canonical_file)) {
+            try g.put(canonical_file, std.StringHashMap(void).init(allocator));
         }
     }
     var mod = ResolvedModule{
         .path = file_path,
         .decls = &.{},
         .own_decls = &.{},
-        .environment = try cache.declarations.internEnvironment(file_path, &.{}),
+        .environment = env,
     };
-    const canonical_file = cache.declarations.environment(mod.environment).source;
     try chain.put(canonical_file, {});
     defer _ = chain.remove(canonical_file);
 
@@ -1202,7 +1198,7 @@ pub fn resolveImports(
         // and chain duplicates are still recorded so the graph reflects what
         // the user wrote (filter happens at lookup).
         if (import_graph) |g| {
-            if (g.getPtr(file_path)) |set| {
+            if (g.getPtr(canonical_file)) |set| {
                 set.put(resolved_path, {}) catch {};
             }
         }
@@ -1212,7 +1208,7 @@ pub fn resolveImports(
         // is the directory in the latter case).
         if (imp.name == null) {
             if (flat_import_graph) |g| {
-                if (g.getPtr(file_path)) |set| {
+                if (g.getPtr(canonical_file)) |set| {
                     set.put(resolved_path, {}) catch {};
                 }
             }
