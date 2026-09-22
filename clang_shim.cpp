@@ -152,6 +152,7 @@ static std::unique_ptr<clang::CompilerInstance>
 buildCompilerInstance(const char *filename,
                       const char **args, int num_args,
                       const llvm::SmallVectorImpl<const char *> &extra_flags,
+                      std::unique_ptr<clang::DiagnosticConsumer> consumer,
                       char **out_error)
 {
     // LLVM 21+: DiagnosticOptions is a plain value passed by reference (no
@@ -214,7 +215,7 @@ buildCompilerInstance(const char *filename,
     auto CI = std::make_unique<clang::CompilerInstance>(std::move(invocation));
     // Clang gates its stderr diagnostic summary on ShowCarets.
     CI->getDiagnosticOpts().ShowCarets = false;
-    CI->createDiagnostics(new CapturingDiagnosticConsumer());
+    CI->createDiagnostics(consumer.release());
     return CI;
 }
 
@@ -227,16 +228,17 @@ extern "C" SxCHeaderInfo *sx_clang_parse_header(
     llvm::SmallVector<const char *, 4> extra;
     extra.push_back("-fsyntax-only");
 
-    auto CI = buildCompilerInstance(filename, args, num_args, extra, out_error);
+    auto consumer = std::make_unique<CapturingDiagnosticConsumer>();
+    auto *diagnostics = consumer.get();
+    auto CI = buildCompilerInstance(filename, args, num_args, extra,
+                                    std::move(consumer), out_error);
     if (!CI) return nullptr;
 
     std::vector<SxCFunctionInfo> functions;
     CollectFunctionsAction action(functions);
     if (!CI->ExecuteAction(action)) {
-        const auto &diagnostics = static_cast<CapturingDiagnosticConsumer &>(
-            CI->getDiagnosticClient());
         if (out_error)
-            *out_error = strdup(diagnostics.first_error.value_or("failed to parse header").c_str());
+            *out_error = strdup(diagnostics->first_error->c_str());
         return nullptr;
     }
 
@@ -281,7 +283,8 @@ extern "C" LLVMModuleRef sx_clang_compile_to_module(
     llvm::LLVMContext &ctx = *llvm::unwrap(ctx_ref);
 
     llvm::SmallVector<const char *, 4> extra;
-    auto CI = buildCompilerInstance(filename, args, num_args, extra, out_error);
+    auto CI = buildCompilerInstance(filename, args, num_args, extra,
+                                    std::make_unique<CapturingDiagnosticConsumer>(), out_error);
     if (!CI) return nullptr;
 
     clang::EmitLLVMOnlyAction action(&ctx);
@@ -319,7 +322,8 @@ extern "C" LLVMMemoryBufferRef sx_clang_compile_to_object(
 
     llvm::SmallVector<const char *, 4> extra;
     extra.push_back("-fPIC");
-    auto CI = buildCompilerInstance(filename, args, num_args, extra, out_error);
+    auto CI = buildCompilerInstance(filename, args, num_args, extra,
+                                    std::make_unique<CapturingDiagnosticConsumer>(), out_error);
     if (!CI) return nullptr;
 
     clang::EmitLLVMOnlyAction action(&ctx);

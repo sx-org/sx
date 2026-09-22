@@ -1,0 +1,5 @@
+error: @import c failed: cannot parse 'nope.h': no expected directives found: consider use of 'expected-no-diagnostics'
+  --> examples/cimport/verify-missing-header.sx:1:1
+   |
+ 1 | @import c { @flags "-Xclang"; @flags "-verify"; @include "nope.h"; };
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
