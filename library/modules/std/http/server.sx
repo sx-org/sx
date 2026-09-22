@@ -1146,7 +1146,6 @@ private runHandlerJob :: (arg: usize) {
     a.deallocBytes(job);
 }
 
-// the fiber task — one per dispatched request in fiber mode. Runs
 // writeMore runs on the loop stack in finalizeFibers, outside this bounded fiber stack.
 private runFiberJob :: (arg: usize) {
     job : *HandlerJob = @reinterpret(*HandlerJob, arg);
