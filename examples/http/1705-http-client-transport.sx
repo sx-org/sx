@@ -36,7 +36,7 @@
 @import "modules/std.sx";
 socket :: @import "modules/std/socket.sx";
 fs     :: @import "modules/std/fs.sx";
-http   :: @import "modules/std/http.sx";
+@import "modules/std/http.sx";
 tlsp   :: @import "modules/std/http/tls_mbedtls.sx";
 
 PORT_MAIN :: 19023;   // plaintext main server (cases A, C)

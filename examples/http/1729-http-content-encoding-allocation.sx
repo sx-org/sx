@@ -1,16 +1,8 @@
-// NOT a corpus test (no expected/ marker): the allocation matrix is slow
-// (its --opt 3 LLVM build alone takes ~24 minutes). Run manually as
-// content-encoding evidence: `sx run <this file>` and `--opt 3`.
-// Allocation-failure sweep over the HTTP content-coding state. Each
-// allocation is failed in turn; constructors must return failure and
-// release every earlier allocation. The public client maps decoder
-// allocation failure without leaking or returning a partial response.
-
+// Manual allocation sweep: `sx run examples/http/1729-http-content-encoding-allocation.sx`.
+// The optimized build exceeds the corpus compile-time budget.
 @import "modules/std.sx";
-http :: @import "modules/std/http.sx";
-content :: @import "modules/std/http/content_encoding.sx";
-serverImpl :: @import "modules/std/http/server.sx";
-types :: @import "modules/std/http/types.sx";
+@import "modules/std/http.sx";
+wire :: @import "modules/std/http/wire.sx";
 event :: @import "modules/std/event.sx";
 
 FailingAllocator :: struct {
@@ -42,18 +34,18 @@ impl Allocator for FailingAllocator {
 
 emptySource :: (ctx: usize, offset: i64, dst: [*]u8, cap: i64) -> i64 { 0 }
 
-encodedCase :: (encoding: content.Encoding, failAt: i64) -> (bool, i64) {
+encodedCase :: (encoding: wire.Encoding, failAt: i64) -> (bool, i64) {
     gpa := GPA.init();
     failing : FailingAllocator = .{ parent = gpa, failAt = failAt };
-    state := content.createEncodedProducer(encoding, 6, emptySource, 0, failing);
+    state := wire.createEncodedProducer(encoding, 6, emptySource, 0, failing);
     success := state != null;
-    if state != null { content.destroyEncodedProducer(state, failing); }
+    if state != null { wire.destroyEncodedProducer(state, failing); }
     expected := if failAt == 0 then success and failing.failures == 0
                 else !success and failing.failures == 1;
     return expected and failing.live == 0 and gpa.allocCount == 0, failing.sequence;
 }
 
-encodedSweep :: (encoding: content.Encoding) -> bool {
+encodedSweep :: (encoding: wire.Encoding) -> bool {
     baseline, count := encodedCase(encoding, 0);
     if !baseline or count <= 1 { return false; }
     at : i64 = 1;
@@ -68,7 +60,7 @@ encodedSweep :: (encoding: content.Encoding) -> bool {
 outChanCase :: (lp: event.Loop, failAt: i64) -> (bool, i64) {
     gpa := GPA.init();
     failing : FailingAllocator = .{ parent = gpa, failAt = failAt };
-    channel := serverImpl.createOutChan(failing, lp);
+    channel := wire.createOutChan(failing, lp);
     success := channel != null;
     if channel != null { channel.release(); }
     expected := if failAt == 0 then success and failing.failures == 0
@@ -94,11 +86,11 @@ outChanSweep :: () -> bool {
 serializationCase :: (chunked: bool, fail: bool) -> bool {
     gpa := GPA.init();
     failing : FailingAllocator = .{ parent = gpa, failAt = if fail then 1 else 0 };
-    resp : types.Response = .{ body = "body" };
+    resp : http.Response = .{ body = "body" };
     date := "Thu, 01 Jan 1970 00:00:00 GMT";
     output := if chunked
-        then serverImpl.serializeChunkedHead(*resp, true, failing, date, "")
-        else serverImpl.serializeBytes(*resp, true, failing, false, date, "");
+        then wire.serializeChunkedHead(*resp, true, failing, date, "")
+        else wire.serializeBytes(*resp, true, failing, false, date, "");
     success := output.buf != null;
     if output.buf != null { failing.deallocBytes(output.buf); }
     expected := if fail then !success and failing.failures == 1 else success;

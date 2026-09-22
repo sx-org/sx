@@ -25,7 +25,7 @@
 // handler's *impact* (the connection is freed on time); it does not kill
 // the worker.
 @import "modules/std.sx";
-http :: @import "modules/std/http.sx";
+@import "modules/std/http.sx";
 
 PORT :: 18990;
 HANDLER_TIMEOUT_MS :: 40;

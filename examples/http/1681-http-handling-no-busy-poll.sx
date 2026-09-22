@@ -17,7 +17,7 @@
 //    the kernel until the keepalive deadline kills the conn.
 // 3. GPA leak gate: net-zero after close.
 @import "modules/std.sx";
-http :: @import "modules/std/http.sx";
+@import "modules/std/http.sx";
 
 PORT :: 18992;
 SLOW_SLEEP_US :: 300000;   // 300 ms of worker runtime while bytes are pending

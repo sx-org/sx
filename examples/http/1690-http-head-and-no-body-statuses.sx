@@ -21,7 +21,7 @@
 // head only, producer never invoked, no terminator; pooled HEAD → CL 11,
 // no body; GPA net-zero after close.
 @import "modules/std.sx";
-http :: @import "modules/std/http.sx";
+@import "modules/std/http.sx";
 
 PORT_A :: 19002;
 PORT_B :: 19003;

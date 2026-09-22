@@ -1,40 +1,20 @@
-// std.http — mbedTLS-backed TLS provider.
-//
-// Implements http's transport-seam protocols (TlsConn / TlsAcceptor, from
-// http/tls.sx) over the VENDORED mbedTLS (vendors/mbedtls). This is the ONLY
-// place that pulls in the crypto C: importing http alone stays plaintext; a
-// program opts into TLS by importing THIS module, constructing a `TlsServer`
-// from a cert+key, and handing `@server` to `Config.tls`. http.sx never
-// sees an mbedTLS type or error code — the impls below map every
-// `MBEDTLS_ERR_SSL_WANT_*` / `PEER_CLOSE_NOTIFY` onto the abstract `TlsStep`.
-//
-//   tlsp :: @import "modules/std/http/tls_mbedtls.sx";
-//   ts : tlsp.TlsServer = .{};
-//   ts.setup(certPem, keyPem, alloc);   // cert+key as PEM bytes
-//   cfg.tls = @ts;                       // erased ?TlsAcceptor
-//
-// The BIO thunks (tlsBioSend / tlsBioRecv) are the abi(.c) callbacks
-// mbedTLS calls to move ciphertext; they bridge the non-blocking fd's EAGAIN
-// onto MBEDTLS_ERR_SSL_WANT_READ/WANT_WRITE, which the handshake/read/write
-// surface back to the server loop as TlsStep.WantRead/WantWrite.
-
+// Importing this provider compiles mbedTLS; the HTTP facade itself does not.
 @import "modules/std/core.sx";          // Allocator
 @import "modules/std/list.sx";          // List
 @import "modules/std/mem.sx";
-@import "modules/std/http/tls.sx";      // TlsConn, TlsAcceptor, TlsStep (flat)
-clib    :: @import "modules/std/c.sx";
-socket  :: @import "modules/std/socket.sx";
-posix   :: @import "modules/std/posix.sx";
-fs      :: @import "modules/std/fs.sx";
-mbedtls :: @import "vendors/mbedtls/mbedtls.sx";
+@import "modules/std/http.sx";
+private clib    :: @import "modules/std/c.sx";
+private socket  :: @import "modules/std/socket.sx";
+private posix   :: @import "modules/std/posix.sx";
+private fs      :: @import "modules/std/fs.sx";
+private mbedtls :: @import "vendors/mbedtls/mbedtls.sx";
 
-// ── BIO bridge (abi(.c) callbacks) ──────────────────────────────────
 // mbedTLS hands each its pBio ctx = the *TlsSession (set via set_bio); the
 // thunk reads its fd and issues one raw nonblocking read/write, translating
 // the result into the byte count OR an mbedTLS WANT_* sentinel. EINTR is
 // retried in-thunk (a readiness loop has nothing else to do with it).
 
-tlsBioSend :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
+private tlsBioSend :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
     s : *TlsSession = ctx.(*TlsSession);
     while true {
         n := socket.write(s.fd, buf, len.(i64));
@@ -47,7 +27,7 @@ tlsBioSend :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
     return -1;
 }
 
-tlsBioRecv :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
+private tlsBioRecv :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
     s : *TlsSession = ctx.(*TlsSession);
     while true {
         n := socket.read(s.fd, buf, len.(i64));
@@ -61,49 +41,48 @@ tlsBioRecv :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
     return -1;
 }
 
-// ── per-connection session (impls TlsConn) ──────────────────────────
 // Heap-allocated by TlsServer.accept so its address is stable for set_bio's
 // pBio and for mbedTLS's own pointer into ssl. Owns the SslContext by value
 // + the fd + the allocator that minted it (to free itself in close).
-TlsSession :: struct {
+private TlsSession :: struct {
     ssl: mbedtls.SslContext;
     fd:  i32 = -1;
     a:   Allocator;
 }
 
-impl TlsConn for TlsSession {
-    handshake :: (self: *TlsSession) -> TlsStep {
+impl http.TlsConn for TlsSession {
+    handshake :: (self: *TlsSession) -> http.TlsStep {
         r := mbedtls.mbedtls_ssl_handshake(*self.ssl);
-        if r == 0 { return TlsStep.Done; }
-        if r == mbedtls.MBEDTLS_ERR_SSL_WANT_READ  { return TlsStep.WantRead; }
-        if r == mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE { return TlsStep.WantWrite; }
-        return TlsStep.Fatal;
+        if r == 0 { return http.TlsStep.Done; }
+        if r == mbedtls.MBEDTLS_ERR_SSL_WANT_READ  { return http.TlsStep.WantRead; }
+        if r == mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE { return http.TlsStep.WantWrite; }
+        return http.TlsStep.Fatal;
     }
 
-    read :: (self: *TlsSession, buf: [*]u8, cap: i64) -> (i64, TlsStep) {
+    read :: (self: *TlsSession, buf: [*]u8, cap: i64) -> (i64, http.TlsStep) {
         while true {
             r := mbedtls.mbedtls_ssl_read(*self.ssl, buf, cap.(usize));
-            if r > 0 { return r, TlsStep.Done; }
-            if r == mbedtls.MBEDTLS_ERR_SSL_WANT_READ  { return 0, TlsStep.WantRead; }
-            if r == mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE { return 0, TlsStep.WantWrite; }
-            if r == mbedtls.MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY { return 0, TlsStep.Closed; }
+            if r > 0 { return r, http.TlsStep.Done; }
+            if r == mbedtls.MBEDTLS_ERR_SSL_WANT_READ  { return 0, http.TlsStep.WantRead; }
+            if r == mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE { return 0, http.TlsStep.WantWrite; }
+            if r == mbedtls.MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY { return 0, http.TlsStep.Closed; }
             // a TLS 1.3 server (nginx/Go-class) sends 1-2
             // NewSessionTickets right after the handshake; mbedTLS surfaces
             // each as this NON-FATAL signal from ssl_read. Without the retry
             // the very first read against a mainstream server died Fatal.
             if r == mbedtls.MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET { continue; }
-            if r == 0 { return 0, TlsStep.Closed; }
-            return 0, TlsStep.Fatal;
+            if r == 0 { return 0, http.TlsStep.Closed; }
+            return 0, http.TlsStep.Fatal;
         }
-        return 0, TlsStep.Fatal;
+        return 0, http.TlsStep.Fatal;
     }
 
-    write :: (self: *TlsSession, buf: [*]u8, len: i64) -> (i64, TlsStep) {
+    write :: (self: *TlsSession, buf: [*]u8, len: i64) -> (i64, http.TlsStep) {
         r := mbedtls.mbedtls_ssl_write(*self.ssl, buf, len.(usize));
-        if r > 0 { return r, TlsStep.Done; }
-        if r == mbedtls.MBEDTLS_ERR_SSL_WANT_READ  { return 0, TlsStep.WantRead; }
-        if r == mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE { return 0, TlsStep.WantWrite; }
-        return 0, TlsStep.Fatal;
+        if r > 0 { return r, http.TlsStep.Done; }
+        if r == mbedtls.MBEDTLS_ERR_SSL_WANT_READ  { return 0, http.TlsStep.WantRead; }
+        if r == mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE { return 0, http.TlsStep.WantWrite; }
+        return 0, http.TlsStep.Fatal;
     }
 
     close :: (self: *TlsSession) {
@@ -116,7 +95,6 @@ impl TlsConn for TlsSession {
     }
 }
 
-// ── shared server config (impls TlsAcceptor) ────────────────────────
 // Holds the parsed cert chain, private key, RNG, and the SslConfig all
 // sessions share. MUST outlive the Server (Config.tls borrows `@this`).
 // `ok` gates accept: a failed setup never mints a session, so a misconfigured
@@ -125,7 +103,7 @@ impl TlsConn for TlsSession {
 // one SNI table entry — an extra identity served when the client's
 // serverName matches. Heap-created via the TlsServer's allocator (stable
 // address: the handshake callback dereferences it); freed by deinit.
-SniEntry :: struct {
+private SniEntry :: struct {
     name: [*]u8 = null;   // lowercased at add; DNS names match case-insensitively
     nameLen: i64 = 0;
     cert: mbedtls.X509Crt;
@@ -133,7 +111,7 @@ SniEntry :: struct {
 }
 
 // One retired ALPN list (see TlsServer.alpnOld).
-AlpnVec :: struct {
+private AlpnVec :: struct {
     vec: [*][*]u8 = null;
     n: i64 = 0;
 }
@@ -383,7 +361,7 @@ TlsServer :: struct {
 
     // Free the shared mbedTLS state. Call after the Server is fully torn down
     // (no session may still reference `conf`). Per-session state is freed by
-    // each TlsConn.close; this releases the shared config/cert/key/RNG plus
+    // each http.TlsConn.close; this releases the shared config/cert/key/RNG plus
     // the ALPN list, SNI table, and client-cert trust anchor.
     deinit :: (self: *TlsServer) {
         mbedtls.mbedtls_ssl_config_free(*self.conf);
@@ -422,7 +400,7 @@ TlsServer :: struct {
 
 // Free an ALPN pointer array + its owned strings (n live entries + the NULL
 // terminator slot).
-freeAlpn :: (a: Allocator, vec: [*][*]u8, n: i64) {
+private freeAlpn :: (a: Allocator, vec: [*][*]u8, n: i64) {
     i : i64 = 0;
     while i < n {
         a.deallocBytes(vec[i]);
@@ -438,7 +416,7 @@ freeAlpn :: (a: Allocator, vec: [*][*]u8, n: i64) {
 // clients legitimately connect by IP/other names and get the default
 // identity). A set_hs_own_cert failure aborts rather than serving the wrong
 // identity.
-tlsSniSelect :: (ctx: *void, ssl: *mbedtls.SslContext, name: [*]u8, nameLen: usize) -> i32 abi(.c) {
+private tlsSniSelect :: (ctx: *void, ssl: *mbedtls.SslContext, name: [*]u8, nameLen: usize) -> i32 abi(.c) {
     ts : *TlsServer = ctx.(*TlsServer);
     nlen : i64 = nameLen.(i64);
     i : i64 = 0;
@@ -467,7 +445,7 @@ tlsSniSelect :: (ctx: *void, ssl: *mbedtls.SslContext, name: [*]u8, nameLen: usi
 // (ptr, len_including_nul). mbedTLS's PEM parsers (x509_crt_parse / pk_parse_key)
 // REQUIRE the terminating NUL to be counted in buflen — a slice read from a file
 // won't have it, so we always re-buffer.
-nulDup :: (a: Allocator, src: []u8) -> ([*]u8, usize) {
+private nulDup :: (a: Allocator, src: []u8) -> ([*]u8, usize) {
     n := src.len;
     p : [*]u8 = a.alloc(u8, n + 1).ptr;
     if n > 0 { clib.memcpy(p, src.ptr, n); }
@@ -475,10 +453,10 @@ nulDup :: (a: Allocator, src: []u8) -> ([*]u8, usize) {
     return p, (n + 1).(usize);
 }
 
-impl TlsAcceptor for TlsServer {
+impl http.TlsAcceptor for TlsServer {
     // Mint a per-connection TLS session bound to `fd`. null = setup not done or
     // a per-session ssl_setup failure → the caller drops the connection.
-    accept :: (self: *TlsServer, fd: i32) -> ?TlsConn {
+    accept :: (self: *TlsServer, fd: i32) -> ?http.TlsConn {
         if !self.ok { return null; }
         s := self.a.create(TlsSession);
         mbedtls.mbedtls_ssl_init(*s.ssl);
@@ -494,7 +472,6 @@ impl TlsAcceptor for TlsServer {
     }
 }
 
-// ── client-side config (impls TlsDialer) ─────────────────────
 // The shared client TLS state: trust anchor + RNG + SslConfig. MUST outlive
 // every connection it minted (ClientOpts.tls borrows `@this`). Two
 // setups, both loud:
@@ -574,13 +551,13 @@ TlsClientConfig :: struct {
     }
 }
 
-impl TlsDialer for TlsClientConfig {
+impl http.TlsDialer for TlsClientConfig {
     // Mint a session over the CONNECTED (blocking) fd and run the handshake
     // to completion. null = not set up, session setup failure, or a failed
     // handshake — verification refusals surface here. `host` drives BOTH
     // the SNI extension and certificate verification (mbedTLS 3.6 requires
     // it whenever the peer cert is verified).
-    connect :: (self: *TlsClientConfig, fd: i32, host: string) -> ?TlsConn {
+    connect :: (self: *TlsClientConfig, fd: i32, host: string) -> ?http.TlsConn {
         if !self.ok { return null; }
         if host.len == 0 or host.len > 254 { return null; }
         hb : [256]u8 = ---;

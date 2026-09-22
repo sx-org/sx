@@ -1,10 +1,3 @@
-// std.http — a minimal blocking HTTP/1.1 client.
-//
-// One round trip is connect → send a request → read the response. It SHARES
-// the parsing types with the server (types.sx): a response's `Content-Length`
-// is found via the very same `findHeader`. The facade re-exports it as
-// http.Client / http.ClientResponse / http.dial.
-//
 // Sockets are BLOCKING — open a connection and call `request`. NOTE: a blocking
 // client cannot interleave a server driven by `tick` on the SAME thread; run
 // such a server on another thread (thread.Thread.spawn(... srv.run ...)) and
@@ -19,19 +12,17 @@
 //     it; drive a long-lived client under an arena (or reset per request).
 //   • `method`/`path`/`host`/`extraHeaders` are sent verbatim (no CRLF
 //     sanitisation) — pass trusted values.
+@import "modules/std/http/wire.sx";
 @import "modules/std/core.sx";         // Allocator
 @import "modules/std/fmt.sx";          // concat, intToString
 @import "modules/std/list.sx";         // List
 @import "modules/std/mem.sx";
 @import "modules/std/encoding.sx";     // hexValue
-clib :: @import "modules/std/c.sx";    // block ops (`c` is a ClientConn local throughout)
-socket :: @import "modules/std/socket.sx";
-@import "modules/std/http/tls.sx";     // TlsConn, TlsDialer (client TLS seam)
-types :: @import "modules/std/http/types.sx";
+private clib :: @import "modules/std/c.sx";
+private socket :: @import "modules/std/socket.sx";
 @import "modules/std/compress.sx";     // shared codec Error/Progress contract
-@import "modules/std/http/content_encoding.sx";
 
-HDR_ACCEPT_ENCODING :: "Accept-Encoding: gzip, deflate\r\n";
+private HDR_ACCEPT_ENCODING :: "Accept-Encoding: gzip, deflate\r\n";
 
 ClientErr :: error {
     Connect;    // socket()/connect()/resolve failed; or the connect timed out
@@ -95,7 +86,7 @@ ClientConn :: struct {
 
 // Open a connection to a prebuilt address (any family — unix included).
 // See ClientOpts for the timeout/TLS behavior.
-openAddr :: (a: *socket.Addr, opts: ClientOpts) -> (ClientConn, !ClientErr) {
+private openAddr :: (a: *socket.Addr, opts: ClientOpts) -> (ClientConn, !ClientErr) {
     c : ClientConn = .{};
     fd := socket.socket(socket.addrFamily(a), socket.SOCK_STREAM, 0);
     if fd < 0 { raise .Connect; }
@@ -123,7 +114,7 @@ openAddr :: (a: *socket.Addr, opts: ClientOpts) -> (ClientConn, !ClientErr) {
 
 // Resolve `host` (DNS or numeric) and open a connection. The TLS
 // verification name defaults to `host` when opts.tlsHost is "".
-open :: (host: string, port: i64, opts: ClientOpts) -> (ClientConn, !ClientErr) {
+private open :: (host: string, port: i64, opts: ClientOpts) -> (ClientConn, !ClientErr) {
     a, ok := socket.resolve(host, port);
     if !ok { raise .Connect; }
     o := opts;
@@ -132,7 +123,7 @@ open :: (host: string, port: i64, opts: ClientOpts) -> (ClientConn, !ClientErr) 
 }
 
 // Close the connection (TLS close_notify + session teardown first).
-closeConn :: (c: *ClientConn) {
+private closeConn :: (c: *ClientConn) {
     if c.tls != null {
         c.tls.close();
         c.tls = null;
@@ -146,7 +137,7 @@ closeConn :: (c: *ClientConn) {
 // One write step through the session. Over a BLOCKING fd a Want step can
 // only mean an io-timeout expiry (EAGAIN through the TLS bio) — retrying
 // would wait the whole timeout again, forever; it is a Send failure.
-connWriteStep :: (c: *ClientConn, buf: [*]u8, len: i64) -> i64 {
+private connWriteStep :: (c: *ClientConn, buf: [*]u8, len: i64) -> i64 {
     if c.tls != null {
         n, step := c.tls.write(buf, len);
         if step == TlsStep.Done { return n; }
@@ -160,11 +151,11 @@ connWriteStep :: (c: *ClientConn, buf: [*]u8, len: i64) -> i64 {
 // `connReadStep` sentinel: the read failed because the peer RST the conn.
 // Distinct from -1 (any other read fault) so the caller can tell a stale
 // keep-alive apart from a genuine receipt failure.
-READ_RESET :i64: -2;
+private READ_RESET :i64: -2;
 
 // One read step: > 0 bytes, 0 = orderly end of stream, READ_RESET = the peer
 // reset the conn, -1 = any other fault/timeout.
-connReadStep :: (c: *ClientConn, buf: [*]u8, cap: i64) -> i64 {
+private connReadStep :: (c: *ClientConn, buf: [*]u8, cap: i64) -> i64 {
     if c.tls != null {
         n, step := c.tls.read(buf, cap);
         if step == TlsStep.Done { return n; }
@@ -195,20 +186,20 @@ ClientResponse :: struct {
     // Transparent content decoding removes Content-Encoding and the encoded
     // Content-Length from headersRaw. null means no transform; a value names
     // the one coding removed. With acceptCompression=false this stays null.
-    decodedFrom: ?types.ContentCoding = null;
+    decodedFrom: ?ContentCoding = null;
 
     // Case-insensitive header lookup (`name` lowercase); "" when absent.
     // Reuses the server-side parser by viewing headersRaw as a request
     // header block — the shared-types payoff.
     header :: (self: *ClientResponse, name: string) -> string {
-        req : types.Request = .{ headersRaw = self.headersRaw };
-        return types.findHeader(*req, name);
+        req : Request = .{ headersRaw = self.headersRaw };
+        return findHeader(*req, name);
     }
 }
 
 // Open a blocking TCP connection to ip:port. `ip` is a packed IPv4 address in
 // the order socket.sockaddrIn wants (e.g. 0x0100007F for 127.0.0.1).
-dial :: (ip: u32, port: i64) -> (i32, !ClientErr) {
+private dial :: (ip: u32, port: i64) -> (i32, !ClientErr) {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { raise .Connect; }
     addr := socket.sockaddrIn(port, ip);
@@ -219,7 +210,7 @@ dial :: (ip: u32, port: i64) -> (i32, !ClientErr) {
 // Send one HTTP/1.1 request on `fd`. `extraHeaders` is preformatted
 // "Name: value\r\n" lines (may be ""); a Content-Length is added automatically
 // for a non-empty `body`. Concats through the current context allocator.
-send :: (fd: i32, method: string, path: string, host: string, extraHeaders: string, body: string) -> !ClientErr {
+private send :: (fd: i32, method: string, path: string, host: string, extraHeaders: string, body: string) -> !ClientErr {
     req := concat(method, " ");
     req = concat(req, path);
     req = concat(req, " HTTP/1.1\r\nHost: ");
@@ -248,7 +239,7 @@ send :: (fd: i32, method: string, path: string, host: string, extraHeaders: stri
 
 // Parse the status code out of a status line "HTTP/1.1 200 OK". Returns
 // (status, reason); status 0 signals a malformed line.
-parseStatusLine :: (line: string) -> (i64, string) {
+private parseStatusLine :: (line: string) -> (i64, string) {
     // skip the version token to the first space
     p : i64 = 0;
     while p < line.len and line.ptr[p] != ' ' { p += 1; }
@@ -269,7 +260,7 @@ parseStatusLine :: (line: string) -> (i64, string) {
 
 // Read a full response on `fd` into `buf` (caller-owned, `cap` bytes), using
 // the same transfer/content decoding as recvOn. Returns views INTO `buf`.
-recv :: (fd: i32, buf: [*]u8, cap: i64, requestMethod: string = "GET") -> (ClientResponse, !ClientErr) {
+private recv :: (fd: i32, buf: [*]u8, cap: i64, requestMethod: string = "GET") -> (ClientResponse, !ClientErr) {
     conn : ClientConn = .{ fd = fd, requestWasHead = ceAsciiIeq(requestMethod, "head") };
     recvOn(*conn, buf, cap)
 }
@@ -278,7 +269,7 @@ recv :: (fd: i32, buf: [*]u8, cap: i64, requestMethod: string = "GET") -> (Clien
 // The request is built into ONE allocation and freed before returning — no
 // arena required, nothing retained (a concat chain would leak every
 // intermediate into the caller's context).
-sendOn :: (c: *ClientConn, method: string, path: string, host: string, extraHeaders: string, body: string) -> !ClientErr {
+private sendOn :: (c: *ClientConn, method: string, path: string, host: string, extraHeaders: string, body: string) -> !ClientErr {
     advertise := c.acceptCompression
         and !hasHeader(extraHeaders, "accept-encoding")
         and !hasHeader(extraHeaders, "range");
@@ -331,7 +322,7 @@ sendOn :: (c: *ClientConn, method: string, path: string, host: string, extraHead
 }
 
 // Append `s` into the request build at offset `w`, returning the new offset.
-put :: (p: [*]u8, w: i64, s: string) -> i64 {
+private put :: (p: [*]u8, w: i64, s: string) -> i64 {
     if s.len > 0 { clib.memcpy(*p[w], s.ptr, s.len); }
     return w + s.len;
 }
@@ -339,14 +330,14 @@ put :: (p: [*]u8, w: i64, s: string) -> i64 {
 // ── URL fetch + redirects ─────────────────────────────────────
 
 // A parsed URL target. `host`/`path` are VIEWS into the parsed text.
-Url :: struct {
+private Url :: struct {
     https: bool = false;
     host: string = "";
     port: i64 = 0;      // defaulted from the scheme when absent
     path: string = "/";
 }
 
-startsWith :: (s: string, prefix: string) -> bool {
+private startsWith :: (s: string, prefix: string) -> bool {
     if s.len < prefix.len { return false; }
     i : i64 = 0;
     while i < prefix.len {
@@ -359,7 +350,7 @@ startsWith :: (s: string, prefix: string) -> bool {
 // Minimal absolute URL: scheme://host[:port][/path...]. Bracketed v6
 // literals supported ([::1]:8080); userinfo/query-split/fragments are the
 // caller's problem (the path view carries everything after the authority).
-parseUrl :: (url: string) -> (Url, bool) {
+private parseUrl :: (url: string) -> (Url, bool) {
     u : Url = .{};
     rest : string = "";
     if startsWith(url, "http://") {
@@ -424,7 +415,7 @@ parseUrl :: (url: string) -> (Url, bool) {
 // One request against a parsed URL over a FRESH connection; the conn is
 // returned (still open) alongside the response for the caller to reuse or
 // close. `verifyHost` is the TLS name ("" = the URL host).
-fetchHop :: (u: Url, method: string, body: string, opts: ClientOpts, verifyHost: string, buf: [*]u8, cap: i64) -> (ClientConn, ClientResponse, !ClientErr) {
+private fetchHop :: (u: Url, method: string, body: string, opts: ClientOpts, verifyHost: string, buf: [*]u8, cap: i64) -> (ClientConn, ClientResponse, !ClientErr) {
     o := opts;
     if u.https {
         if o.tls == null { raise .Tls; }   // never plaintext to an https target
@@ -445,7 +436,7 @@ fetchHop :: (u: Url, method: string, body: string, opts: ClientOpts, verifyHost:
 // Does a Connection header value contain the "close" token (ASCII-case-
 // insensitive, as one element of the comma-separated list, OWS-trimmed)?
 // Truncate at '#' — fragments never go on the wire (RFC 9112). "" → "/".
-stripFragment :: (s: string) -> string {
+private stripFragment :: (s: string) -> string {
     i : i64 = 0;
     while i < s.len {
         if s[i] == '#' { break; }
@@ -455,7 +446,7 @@ stripFragment :: (s: string) -> string {
     return string{ ptr = s.ptr, len = i };
 }
 
-connectionSaysClose :: (v: string) -> bool {
+private connectionSaysClose :: (v: string) -> bool {
     i : i64 = 0;
     while i < v.len {
         // token start: skip OWS and commas
@@ -482,7 +473,7 @@ connectionSaysClose :: (v: string) -> bool {
 
 // "chunked" exactly, ASCII-case-insensitively (RFC 9112: the only coding we
 // implement; it must also be the FINAL one, which an exact match enforces).
-teIsChunked :: (te: string) -> bool {
+private teIsChunked :: (te: string) -> bool {
     if te.len != 7 { return false; }
     want := "chunked";
     i : i64 = 0;
@@ -495,7 +486,7 @@ teIsChunked :: (te: string) -> bool {
     return true;
 }
 
-isRedirect :: (status: i64) -> bool {
+private isRedirect :: (status: i64) -> bool {
     return status == 301 or status == 302 or status == 303 or status == 307 or status == 308;
 }
 
@@ -510,7 +501,7 @@ isRedirect :: (status: i64) -> bool {
 // untrusted); http→https needs opts.tls (`ClientErr.Tls` mid-chain otherwise).
 // Timeouts are per OPERATION per HOP — a full chain can take up to
 // (maxRedirects + 1) × (connect + io) timeouts.
-fetch :: (method: string, url: string, body: string, opts: ClientOpts, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
+private fetch :: (method: string, url: string, body: string, opts: ClientOpts, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
     // Owned copies of the current target — Location views the response
     // buffer, which the next hop overwrites.
     hostb : [256]u8 = ---;
@@ -585,10 +576,10 @@ fetch :: (method: string, url: string, body: string, opts: ClientOpts, buf: [*]u
     raise .Url;   // unreachable — the loop returns or raises
 }
 
-CLIENT_WIRE_PIECE :: 16384;
-CLIENT_LINE_LIMIT :: 8192;
+private CLIENT_WIRE_PIECE :: 16384;
+private CLIENT_LINE_LIMIT :: 8192;
 
-EncodedChunkPhase :: enum {
+private EncodedChunkPhase :: enum {
     size;
     extension;
     sizeLf;
@@ -603,7 +594,7 @@ EncodedChunkPhase :: enum {
 // Feed one content-coded payload span into the decoder. The returned counts
 // are relative to this span/output window; `done` means the content coding
 // reached its terminal checksum/trailer.
-feedContentDecoder :: (decoder: *Decoder, input: string, output: string) -> (i64, i64, bool, !ClientErr) {
+private feedContentDecoder :: (decoder: *Decoder, input: string, output: string) -> (i64, i64, bool, !ClientErr) {
     progress := decoder.read(input, output) catch |e| {
         if e == .OutputLimit { raise .TooLarge; }
         raise .Recv;
@@ -611,7 +602,7 @@ feedContentDecoder :: (decoder: *Decoder, input: string, output: string) -> (i64
     return progress.consumed, progress.produced, progress.status == .done;
 }
 
-finishContentDecoder :: (decoder: *Decoder, output: string) -> (i64, bool, !ClientErr) {
+private finishContentDecoder :: (decoder: *Decoder, output: string) -> (i64, bool, !ClientErr) {
     progress := decoder.finish(output) catch |e| {
         if e == .OutputLimit { raise .TooLarge; }
         raise .Recv;
@@ -622,7 +613,7 @@ finishContentDecoder :: (decoder: *Decoder, output: string) -> (i64, bool, !Clie
 // Compact a parsed response header block in place, removing representation
 // metadata that no longer describes the transparently-decoded body. The body
 // remains at its original headEnd; only the public headersRaw view shrinks.
-normalizeDecodedHeaders :: (raw: [*]u8, len: i64) -> i64 {
+private normalizeDecodedHeaders :: (raw: [*]u8, len: i64) -> i64 {
     readAt : i64 = 0;
     writeAt : i64 = 0;
     while readAt < len {
@@ -654,7 +645,7 @@ normalizeDecodedHeaders :: (raw: [*]u8, len: i64) -> i64 {
 // in one 16 KiB stack window, so chunked and close-delimited responses do not
 // require buffering their encoded form. `initial` is the body prefix that
 // arrived with the header read and is copied before output can overwrite it.
-recvEncodedBody :: (c: *ClientConn, buf: [*]u8, cap: i64, headEnd: i64,
+private recvEncodedBody :: (c: *ClientConn, buf: [*]u8, cap: i64, headEnd: i64,
                       initial: string, contentLen: i64, chunked: bool,
                       encoding: Encoding) -> (i64, !ClientErr) {
     outputCap := cap - headEnd;
@@ -846,7 +837,7 @@ recvEncodedBody :: (c: *ClientConn, buf: [*]u8, cap: i64, headEnd: i64,
     outputAt
 }
 
-validContentLength :: (value: string) -> (i64, bool) {
+private validContentLength :: (value: string) -> (i64, bool) {
     if value.len == 0 { return 0, false; }
     result : i64 = 0;
     i : i64 = 0;
@@ -864,7 +855,7 @@ validContentLength :: (value: string) -> (i64, bool) {
 // Read a full response on an open ClientConn. The status and request method are
 // known before body framing is chosen: HEAD and 1xx/204/304 never consume a
 // body, and informational heads are consumed until the final response.
-responseHeadEnd :: (buf: [*]u8, len: i64) -> i64 {
+private responseHeadEnd :: (buf: [*]u8, len: i64) -> i64 {
     i : i64 = 0;
     while i + 3 < len {
         if buf[i] == '\r' and buf[i+1] == '\n' and buf[i+2] == '\r' and buf[i+3] == '\n' { return i + 4; }
@@ -873,16 +864,16 @@ responseHeadEnd :: (buf: [*]u8, len: i64) -> i64 {
     -1
 }
 
-recvOn :: (c: *ClientConn, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
+private recvOn :: (c: *ClientConn, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
     total : i64 = 0;
     headEnd : i64 = -1;
     headerStart : i64 = 0;
     contentLen : i64 = -1;
     chunked := false;
-    scan : types.ChunkScan = .{};
+    scan : ChunkScan = .{};
     decoded : i64 = -1;
     encoding := Encoding.identity;
-    decodedFrom : ?types.ContentCoding = null;
+    decodedFrom : ?ContentCoding = null;
     normalizedHeadersLen : i64 = -1;
     finalStatus: i64 = 0;
     finalReason: string = "";
@@ -917,17 +908,17 @@ recvOn :: (c: *ClientConn, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr)
             hdrs := string{ ptr = *buf[headerStart], len = headEnd - 2 - headerStart };
 
             if !(requestWasHead or code == 204 or code == 304) {
-                tmp : types.Request = .{ headersRaw = hdrs };
-                teCount := types.countHeader(*tmp, "transfer-encoding");
-                clCount := types.countHeader(*tmp, "content-length");
+                tmp : Request = .{ headersRaw = hdrs };
+                teCount := countHeader(*tmp, "transfer-encoding");
+                clCount := countHeader(*tmp, "content-length");
                 if teCount > 1 or clCount > 1 { raise .Recv; }
                 if teCount > 0 and clCount > 0 { raise .Recv; }
-                te := types.findHeader(*tmp, "transfer-encoding");
+                te := findHeader(*tmp, "transfer-encoding");
                 if te.len > 0 {
                     if !teIsChunked(te) { raise .Recv; }
                     chunked = true;
                 } else {
-                    cl := types.findHeader(*tmp, "content-length");
+                    cl := findHeader(*tmp, "content-length");
                     if clCount > 0 {
                         v, valid := validContentLength(cl);
                         if !valid { raise .Recv; }
@@ -937,17 +928,17 @@ recvOn :: (c: *ClientConn, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr)
 
                 rangeResponse := code == 206 or code == 416 or hasHeader(hdrs, "content-range");
                 if c.acceptCompression and !rangeResponse {
-                    ceCount := types.countHeader(*tmp, "content-encoding");
+                    ceCount := countHeader(*tmp, "content-encoding");
                     if ceCount > 0 {
                         if ceCount != 1 { raise .Recv; }
-                        encoding = parseContentEncoding(types.findHeader(*tmp, "content-encoding"));
+                        encoding = parseContentEncoding(findHeader(*tmp, "content-encoding"));
                         if encoding == .unacceptable { raise .Recv; }
                     }
                     if encoding != .identity {
                         initial := string{ ptr = *buf[headEnd], len = total - headEnd };
                         decoded = try recvEncodedBody(c, buf, cap, headEnd,
                             initial, contentLen, chunked, encoding);
-                        decodedFrom = if encoding == .gzip then types.ContentCoding.gzip else types.ContentCoding.deflate;
+                        decodedFrom = if encoding == .gzip then ContentCoding.gzip else ContentCoding.deflate;
                         normalizedHeadersLen = normalizeDecodedHeaders(*buf[headerStart], headEnd - 2 - headerStart);
                         total = headEnd + decoded;
                         break;
@@ -964,10 +955,10 @@ recvOn :: (c: *ClientConn, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr)
                 break;
             }
             if chunked {
-                r := types.decodeChunked(*buf[headEnd], total - headEnd, cap - headEnd, scan);
-                if r.status == types.ChunkStatus.OK { decoded = r.decodedLen; break; }
-                if r.status == types.ChunkStatus.TOO_BIG { raise .TooLarge; }
-                if r.status != types.ChunkStatus.NEED_MORE { raise .Recv; }
+                r := decodeChunked(*buf[headEnd], total - headEnd, cap - headEnd, scan);
+                if r.status == ChunkStatus.OK { decoded = r.decodedLen; break; }
+                if r.status == ChunkStatus.TOO_BIG { raise .TooLarge; }
+                if r.status != ChunkStatus.NEED_MORE { raise .Recv; }
                 scan.rp = r.resumeRp;
                 scan.decoded = r.resumeDecoded;
             } else if contentLen >= 0 and total - headEnd >= contentLen {
@@ -1009,7 +1000,7 @@ recvOn :: (c: *ClientConn, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr)
 
 // Convenience: dial ip:port, send the request, read the response into `buf`,
 // close the connection. One blocking round-trip.
-request :: (ip: u32, port: i64, method: string, path: string, host: string, extraHeaders: string, body: string, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
+private request :: (ip: u32, port: i64, method: string, path: string, host: string, extraHeaders: string, body: string, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
     fd := try dial(ip, port);
     defer socket.close(fd);
     try send(fd, method, path, host, extraHeaders, body);
@@ -1020,7 +1011,7 @@ request :: (ip: u32, port: i64, method: string, path: string, host: string, extr
 
 // One pooled keep-alive connection, keyed (https, host, port). `host` is a
 // pool-owned copy.
-PoolEntry :: struct {
+private PoolEntry :: struct {
     host: [*]u8 = null;
     hostLen: i64 = 0;
     port: i64 = 0;
@@ -1224,12 +1215,6 @@ ClientPool :: struct {
     }
 }
 
-// The client entry point. Its methods are thin static wrappers over the
-// free functions above. This mirrors http.Server: a consumer reaching the
-// client through the facade names `http.Client`, which pins resolution to
-// THIS module so the ClientResponse return type is visible at the call site
-// (a re-exported FREE function's struct return type is not — that is why the
-// public surface is `http.Client.request`, not `http.request`).
 Client :: struct {
     // Open a blocking TCP connection to ip:port (see free `dial`).
     dial :: (ip: u32, port: i64) -> (i32, !ClientErr) { return dial(ip, port); }

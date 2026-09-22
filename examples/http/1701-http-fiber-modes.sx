@@ -13,7 +13,7 @@
 //    fiber's); 100 KB chunked body de-chunked and verified byte-exact.
 // 4. GPA leak gate net-zero after close + runner.deinit().
 @import "modules/std.sx";
-http :: @import "modules/std/http.sx";
+@import "modules/std/http.sx";
 fs :: @import "modules/std/http/fiber_sched.sx";
 
 PORT :: 19016;

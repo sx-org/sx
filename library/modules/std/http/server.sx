@@ -1,24 +1,154 @@
-// std.http — the event-loop HTTP server.
-//
-// Config/Server + the connection state machine, pool dispatch, response
-// serialization, streaming, timeouts, observability. Drives the transport
-// seam (tls.sx) and reuses the shared types (types.sx), both flat-imported
-// so the server bodies read unqualified. Facade re-exports Server/Config/
-// Stats/EventKind under `http`.
 @import "modules/std/core.sx";         // out, @sizeOf, Allocator, Context
 @import "modules/std/mem.sx";          // Arena
 @import "modules/std/encoding.sx";     // hexValue
-clib   :: @import "modules/std/c.sx";  // namespace `clib` (not `c` — `c` is a local conn var throughout)
-socket :: @import "modules/std/socket.sx";
-thread :: @import "modules/std/thread.sx";
-event  :: @import "modules/std/event.sx";
-time   :: @import "modules/std/time.sx";
-@import "modules/std/http/types.sx";   // Request, Response, findHeader, decodeChunked, reasonFor, …
-@import "modules/std/http/tls.sx";     // TlsConn, TlsAcceptor, TlsStep
-@import "modules/std/http/fiber.sx";   // FiberRunner (fiber-handler seam)
-fs :: @import "modules/std/fs.sx";     // unlink for the AF_UNIX listener's socket file
+private clib   :: @import "modules/std/c.sx";
+private socket :: @import "modules/std/socket.sx";
+private thread :: @import "modules/std/thread.sx";
+private event  :: @import "modules/std/event.sx";
+private time   :: @import "modules/std/time.sx";
+private fs :: @import "modules/std/fs.sx";
 @import "modules/std/compress.sx";     // shared codec Error/Progress contract
-@import "modules/std/http/content_encoding.sx";
+
+@import "modules/std/http/wire.sx";
+
+private IMF_DATE_LEN :: 29;
+
+private imfTwo :: (n: i64, dst: [*]u8, off: i64) {
+    dst[off] = ('0' + n / 10).(u8);
+    dst[off + 1] = ('0' + n % 10).(u8);
+}
+
+// Civil-from-days calendar conversion; the fixed year field supports 1000..9999.
+private formatImfDate :: (secs: i64, dst: [*]u8) {
+    days := secs / 86400;
+    rem := secs % 86400;
+    if rem < 0 { rem += 86400; days -= 1; }
+    wd := (days + 4) % 7;
+    if wd < 0 { wd += 7; }
+    z := days + 719468;
+    era := (if z >= 0 then z else z - 146096) / 146097;
+    doe := z - era * 146097;
+    yoe := (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    y := yoe + era * 400;
+    doy := doe - (365 * yoe + yoe / 4 - yoe / 100);
+    mp := (5 * doy + 2) / 153;
+    d := doy - (153 * mp + 2) / 5 + 1;
+    m := if mp < 10 then mp + 3 else mp - 9;
+    if m <= 2 { y += 1; }
+
+    wnames := "SunMonTueWedThuFriSat";
+    mnames := "JanFebMarAprMayJunJulAugSepOctNovDec";
+    dst[0] = wnames[wd * 3];
+    dst[1] = wnames[wd * 3 + 1];
+    dst[2] = wnames[wd * 3 + 2];
+    dst[3] = ',';
+    dst[4] = ' ';
+    imfTwo(d, dst, 5);
+    dst[7] = ' ';
+    dst[8] = mnames[(m - 1) * 3];
+    dst[9] = mnames[(m - 1) * 3 + 1];
+    dst[10] = mnames[(m - 1) * 3 + 2];
+    dst[11] = ' ';
+    imfTwo(y / 100, dst, 12);
+    imfTwo(y % 100, dst, 14);
+    dst[16] = ' ';
+    imfTwo(rem / 3600, dst, 17);
+    dst[19] = ':';
+    imfTwo((rem % 3600) / 60, dst, 20);
+    dst[22] = ':';
+    imfTwo(rem % 60, dst, 23);
+    dst[25] = ' ';
+    dst[26] = 'G';
+    dst[27] = 'M';
+    dst[28] = 'T';
+}
+
+// Decode before removing dot segments; both passes write behind the read cursor.
+// Encoded '/' changes segmentation; encoded '?' cannot fit Request.path.
+private normalizePath :: (buf: [*]u8, len: i64) -> ?i64 {
+    rp : i64 = 0;
+    wp : i64 = 0;
+    while rp < len {
+        c := buf[rp];
+        if c == '%' {
+            if rp + 2 >= len { return null; }
+            hi := hexValue(buf[rp + 1]);
+            lo := hexValue(buf[rp + 2]);
+            if hi == null or lo == null { return null; }
+            d : i64 = hi * 16 + lo;
+            if d < ' ' or d == '\x7f' { return null; }
+            if d == '/' { return null; }
+            if d == '?' { return null; }
+            buf[wp] = d.(u8);
+            wp += 1;
+            rp += 3;
+        } else {
+            buf[wp] = c;
+            wp += 1;
+            rp += 1;
+        }
+    }
+    dl := wp;
+
+    rp = 0;
+    wp = 0;
+    while rp < dl {
+        se := rp + 1;
+        while se < dl and buf[se] != '/' { se += 1; }
+        sl := se - rp - 1;
+        if sl == 1 and buf[rp + 1] == '.' {
+            if se == dl { buf[wp] = '/'; wp += 1; }
+        } else if sl == 2 and buf[rp + 1] == '.' and buf[rp + 2] == '.' {
+            if wp == 0 { return null; }
+            wp -= 1;
+            while wp > 0 and buf[wp] != '/' { wp -= 1; }
+            if se == dl { buf[wp] = '/'; wp += 1; }
+        } else {
+            k := rp;
+            while k < se { buf[wp] = buf[k]; wp += 1; k += 1; }
+        }
+        rp = se;
+    }
+    if wp == 0 { buf[0] = '/'; wp = 1; }
+    return wp;
+}
+
+private hasCtrl :: (s: string) -> bool {
+    i := 0;
+    while i < s.len {
+        c := s[i];
+        if c < ' ' or c == '\x7f' { return true; }
+        i += 1;
+    }
+    return false;
+}
+
+private tokenListHas :: (list: string, tokenLower: string) -> bool {
+    i := 0;
+    while i < list.len {
+        while i < list.len and (list[i] == ' ' or list[i] == '\t' or list[i] == ',') { i += 1; }
+        if i >= list.len { break; }
+        s := i;
+        while i < list.len and list[i] != ',' { i += 1; }
+        e := i;
+        while e > s and (list[e - 1] == ' ' or list[e - 1] == '\t') { e -= 1; }
+        if asciiIeq(string{ ptr = *list[s], len = e - s }, tokenLower) { return true; }
+    }
+    return false;
+}
+
+// bLower must already be lowercase.
+private asciiIeq :: (a: string, bLower: string) -> bool {
+    if a.len != bLower.len { return false; }
+    i := 0;
+    while i < a.len {
+        c := a[i];
+        if c >= 'A' and c <= 'Z' { c = c + ' '; }
+        if c != bLower[i] { return false; }
+        i += 1;
+    }
+    return true;
+}
 
 HttpErr :: error {
     Bind;    // socket/bind/listen failed for the configured address; or
@@ -33,7 +163,7 @@ HttpErr :: error {
 // and the close()/stop() teardown). Stack-NUL-copies the path for the
 // syscall; sun_path bounds the length, so an over-long path is a no-op
 // (init already rejected it).
-unlinkPath :: (path: string) {
+private unlinkPath :: (path: string) {
     if path.len == 0 or path.len > 110 { return; }
     pb : [112]u8 = ---;
     clib.memcpy(*pb[0], path.ptr, path.len);
@@ -45,7 +175,7 @@ unlinkPath :: (path: string) {
 // tear down a bound-but-unusable listener on an init
 // error path — a failed construction never reaches close()/stop(), so the
 // AF_UNIX socket file the bind just created must be removed HERE.
-closeListener :: (lfd: i32, unixPath: string) {
+private closeListener :: (lfd: i32, unixPath: string) {
     socket.close(lfd);
     if unixPath.len > 0 { unlinkPath(unixPath); }
 }
@@ -264,7 +394,7 @@ Config :: struct {
     fibers: ?FiberRunner = null;
 }
 
-READ_BUF_INITIAL :: 16384;
+private READ_BUF_INITIAL :: 16384;
 
 // how large a persistent per-conn write buffer (Conn.wbuf)
 // may stay RETAINED once its connection closes. Unlike readBuf (bounded
@@ -273,16 +403,16 @@ READ_BUF_INITIAL :: 16384;
 // server's lifetime. An over-cap wbuf is freed at connClose; live
 // connections keep whatever they grew (a retention policy, not a size
 // limit).
-WBUF_RETAIN_CAP :: 65536;
+private WBUF_RETAIN_CAP :: 65536;
 
 // consecutive tick()/wait() failures run() tolerates (with backoff +
 // LISTEN_ERROR emissions) before concluding the loop is dead and returning.
-LOOP_FAULT_LIMIT :: 5;
+private LOOP_FAULT_LIMIT :: 5;
 
 // capacity of one streamed request's loop→worker body channel. The
 // loop parks the conn's read watch when it fills (backpressure); a bigger
 // buffer only smooths hand-offs, it never changes semantics.
-BODY_CHAN_CAP :: 65536;
+private BODY_CHAN_CAP :: 65536;
 
 // The bounded scratch a streamed/chunked response drains through.
 // Each refill pulls at most STREAM_PIECE bytes from the producer, frames
@@ -290,25 +420,25 @@ BODY_CHAN_CAP :: 65536;
 // server NEVER holds the whole body, only one bounded piece + its framing.
 // STREAM_BUF_CAP leaves room for the largest chunk header (16 hex digits
 // + CRLF) + the piece + trailing CRLF.
-STREAM_PIECE :: 16384;
-STREAM_BUF_CAP :: STREAM_PIECE + 32;
+private STREAM_PIECE :: 16384;
+private STREAM_BUF_CAP :: STREAM_PIECE + 32;
 
 // Connection slot states.
-CONN_FREE      :u8: 0;
-CONN_READING   :u8: 1;   // awaiting a complete request (deadline: request)
-CONN_WRITING   :u8: 2;   // response partially sent (deadline: request)
-CONN_KEEPALIVE :u8: 3;   // between requests (deadline: keepalive)
-CONN_HANDLING  :u8: 4;   // request dispatched to the pool: the loop must
+private CONN_FREE      :u8: 0;
+private CONN_READING   :u8: 1;   // awaiting a complete request (deadline: request)
+private CONN_WRITING   :u8: 2;   // response partially sent (deadline: request)
+private CONN_KEEPALIVE :u8: 3;   // between requests (deadline: keepalive)
+private CONN_HANDLING  :u8: 4;   // request dispatched to the pool: the loop must
                          // not read or serve the slot until the completion
                          // lands (response ordering; the worker itself owns
                          // a COPY of the request bytes — see HandlerJob)
-CONN_TLS_HANDSHAKE :u8: 5;// negotiating TLS before the first request:
+private CONN_TLS_HANDSHAKE :u8: 5;// negotiating TLS before the first request:
                          // readiness drives c.tls.handshake() incrementally
                          // (deadline: request) until Done → CONN_READING
-CONN_LINGER    :u8: 6;   // error response fully sent + SHUT_WR done:
+private CONN_LINGER    :u8: 6;   // error response fully sent + SHUT_WR done:
                          // reading + discarding inbound until EOF or the
                          // linger deadline, then close. Owes nothing.
-CONN_BODY      :u8: 7;   // headers dispatched to a pool worker, body
+private CONN_BODY      :u8: 7;   // headers dispatched to a pool worker, body
                          // still STREAMING: the loop keeps reading, decodes
                          // the framing incrementally and pushes the decoded
                          // bytes into the conn's BodyChan. At end-of-body
@@ -318,13 +448,13 @@ CONN_BODY      :u8: 7;   // headers dispatched to a pool worker, body
 // HINTS, not the source of truth: the sweep re-checks the conn's CURRENT
 // relevant deadline before evicting, so a stale entry (slot recycled,
 // deadline extended) costs one spurious pop — never a wrong eviction.
-DlEntry :: struct {
+private DlEntry :: struct {
     deadline: i64 = 0;
     slot: i64 = 0;
     gen: i64 = 0;
 }
 
-Conn :: struct {
+private Conn :: struct {
     fd: i32 = -1;
     state: u8 = 0;
     // O(1) slot recycling: singly-linked free list threaded through
@@ -381,7 +511,7 @@ Conn :: struct {
     //   hdrEnd  — cached index of the \r\n\r\n terminator (-1 = not seen);
     //   scanPos — bytes known to contain no terminator (scan resumes at
     //              scanPos - 3 so a straddling terminator is caught);
-    //   chunk_*  — resumable chunked-validation checkpoint (types.ChunkScan
+    //   chunk_*  — resumable chunked-validation checkpoint (ChunkScan
     //              shape) for the body after hdrEnd. Valid iff chunkActive.
     hdrEnd: i64 = -1;
     scanPos: i64 = 0;
@@ -472,7 +602,7 @@ Conn :: struct {
 // wakes the loop to resume. Heap-resident (ownAlloc): the conn and the
 // job each hold a reference; the LAST release destroys the primitives and
 // frees the buffer + the struct.
-BodyChan :: struct {
+private BodyChan :: struct {
     mu: thread.Mutex = .{};
     cv: thread.Cond = .{};
     buf: [*]u8 = null;
@@ -577,188 +707,24 @@ BodyChan :: struct {
 
 // The BodyReadFn the server wires into a streamed request's Request
 // (bodyReadCtx = the *BodyChan).
-bodyChanRead :: (ctx: usize, dst: [*]u8, cap: i64) -> i64 {
+private bodyChanRead :: (ctx: usize, dst: [*]u8, cap: i64) -> i64 {
     ch : *BodyChan = @reinterpret(*BodyChan, ctx);
     return ch.read(dst, cap);
 }
 
-// ── the worker→loop response-stream channel ────────────────────
-// BodyChan's reverse twin, one per pool-mode STREAMED response: the WORKER
-// that ran the handler keeps pulling the producer (inside the job's push
-// scope — request views and the per-request arena stay alive, which
-// retires the caller-owned-ctx UAF class) and feeds the bytes
-// here; the loop takes them nonblocking into the chunk-framing scratch.
-// Backpressure both ways: a full buffer BLOCKS the feeder on the cond; an
-// empty one marks `hungry` so the next feed wakes the loop
-// (resumeStreamPumps). Creation gives the worker one reference; queueing a
-// completion retains the connection's reference. The last release frees.
-// registered in PoolState.ochans so Server.close can abort every feeder
-// BEFORE joining the pool (a blocked feeder would deadlock the join).
-OUT_CHAN_CAP :: 65536;
-
-OutChanTake :: enum {
-    data;
-    pending;
-    eof;
-    producerFault;
-}
-
-OutChan :: struct {
-    mu: thread.Mutex = .{};
-    cv: thread.Cond = .{};
-    buf: [*]u8 = null;
-    cap: i64 = 0;
-    len: i64 = 0;
-    eof: bool = false;      // producer finished (worker side)
-    fault: bool = false;    // conn died / server closing — feeder aborts
-    producerFault: bool = false; // producer/codec failed; close without terminator
-    hungry: bool = false;   // loop found it empty; the next feed wakes lp
-    refs: i64 = 1;          // worker initially; retained once for completion/conn
-    alloc: Allocator;       // ownAlloc: frees buf + self on the last release
-    lp: event.Loop = .{};   // loop copy for the worker→loop wake
-
-    // Worker side: block until ALL n bytes are accepted or the conn
-    // faults. False = aborted (stop producing; the loop already closed).
-    feedAll :: (self: *OutChan, src: [*]u8, n: i64) -> bool {
-        off : i64 = 0;
-        while off < n {
-            self.mu.lock();
-            while self.cap - self.len == 0 and !self.fault {
-                self.cv.wait(*self.mu);
-            }
-            if self.fault { self.mu.unlock(); return false; }
-            space := self.cap - self.len;
-            rem := n - off;
-            take := if rem < space then rem else space;
-            clib.memcpy(*self.buf[self.len], *src[off], take);
-            self.len += take;
-            off += take;
-            w := self.hungry;
-            if w { self.hungry = false; }
-            self.mu.unlock();
-            if w { self.lp.wake(); }
-        }
-        return true;
-    }
-
-    // Worker side: the producer returned clean EOF. The loop's next take
-    // stages the terminator chunk after all buffered bytes drain.
-    finishEof :: (self: *OutChan) {
-        self.mu.lock();
-        self.eof = true;
-        w := self.hungry;
-        if w { self.hungry = false; }
-        self.mu.unlock();
-        if w { self.lp.wake(); }
-    }
-
-    // Worker side: source/codec failure. Already-buffered bytes may drain, but
-    // the loop then closes the connection without staging a zero chunk.
-    finishFault :: (self: *OutChan) {
-        self.mu.lock();
-        self.producerFault = true;
-        w := self.hungry;
-        if w { self.hungry = false; }
-        self.mu.unlock();
-        if w { self.lp.wake(); }
-    }
-
-    // Loop side, NONBLOCKING. A zero-byte result distinguishes pending, clean
-    // EOF, and producer fault so truncation can never masquerade as a clean
-    // terminating chunk.
-    take :: (self: *OutChan, dst: [*]u8, want: i64) -> (i64, OutChanTake) {
-        self.mu.lock();
-        n := if want < self.len then want else self.len;
-        if n > 0 {
-            clib.memcpy(dst, self.buf, n);
-            rest := self.len - n;
-            if rest > 0 { clib.memmove(self.buf, *self.buf[n], rest); }
-            self.len = rest;
-            self.cv.signal();   // space freed — unblock the feeder
-        }
-        status := OutChanTake.data;
-        if n == 0 {
-            if self.producerFault { status = .producerFault; }
-            else if self.eof { status = .eof; }
-            else { status = .pending; self.hungry = true; }
-        }
-        self.mu.unlock();
-        return n, status;
-    }
-
-    // Loop side (or Server.close): the connection is gone — wake and stop
-    // a blocked feeder. Idempotent.
-    abort :: (self: *OutChan) {
-        self.mu.lock();
-        self.fault = true;
-        self.cv.broadcast();
-        self.mu.unlock();
-    }
-
-    retain :: (self: *OutChan) {
-        self.mu.lock();
-        self.refs += 1;
-        self.mu.unlock();
-    }
-
-    // Drop one reference (conn or worker side); the last one destroys the
-    // primitives and frees the buffer + the struct itself.
-    release :: (self: *OutChan) {
-        self.mu.lock();
-        self.refs -= 1;
-        last := self.refs == 0;
-        self.mu.unlock();
-        if last {
-            self.mu.destroy();
-            self.cv.destroy();
-            a := self.alloc;
-            if self.buf != null { a.deallocBytes(self.buf); }
-            a.deallocBytes(self);
-        }
-    }
-}
-
-createOutChan :: (alloc: Allocator, lp: event.Loop) -> *OutChan {
-    result := alloc.create(OutChan);
-    if result == null { return null; }
-    result.* = OutChan{ alloc = alloc, lp = lp };
-    if !result.mu.setup() { alloc.deallocBytes(result); return null; }
-    if !result.cv.setup() {
-        result.mu.destroy();
-        alloc.deallocBytes(result);
-        return null;
-    }
-    bytes := alloc.alloc(u8, OUT_CHAN_CAP);
-    if bytes.ptr == null {
-        result.cv.destroy();
-        result.mu.destroy();
-        alloc.deallocBytes(result);
-        return null;
-    }
-    result.buf = bytes.ptr;
-    result.cap = OUT_CHAN_CAP;
-    result
-}
-
 // The listener's udata; connection udata is the slot index.
-LISTENER_UDATA :usize: 0xFFFFFFFF;
+private LISTENER_UDATA :usize: 0xFFFFFFFF;
 // The pool wake channel's udata.
-WAKE_UDATA :usize: 0xFFFFFFFE;
-
-// Serialized response bytes (shared by the inline and pooled paths).
-OutBytes :: struct {
-    buf: [*]u8 = null;
-    len: i64 = 0;
-}
+private WAKE_UDATA :usize: 0xFFFFFFFE;
 
 // storage for one cached IMF-fixdate (29 bytes used; struct-wrapped
 // so it can carry a `.{}` field default, like thread.MutexBuf).
-DateBuf :: struct {
+private DateBuf :: struct {
     bytes: [32]u8;
 }
 
 // One finished pool job, queued for the loop thread to attach.
-Completion :: struct {
+private Completion :: struct {
     slot: i64 = 0;
     gen: i64 = 0;
     out: OutBytes = .{};
@@ -777,7 +743,7 @@ Completion :: struct {
 // Heap-resident pool machinery: embeds a Mutex and is shared with
 // worker threads, so it must never move (the Server struct itself is
 // returned by value from init and may be copied).
-PoolState :: struct {
+private PoolState :: struct {
     pool: *thread.Pool = null;
     mu: thread.Mutex = .{};
     done: [*]Completion = null;
@@ -807,7 +773,7 @@ PoolState :: struct {
 // LOUDLY: the response bytes are freed and a streamed chan is aborted +
 // released (never a silently pinned worker or leaked chan) —
 // the conn is evicted at its deadline .
-queueCompletion :: (ps: *PoolState, alloc: Allocator, done: Completion) {
+private queueCompletion :: (ps: *PoolState, alloc: Allocator, done: Completion) {
     dropped := false;
     ps.mu.lock();
     if ps.doneLen < ps.doneCap {
@@ -830,7 +796,7 @@ queueCompletion :: (ps: *PoolState, alloc: Allocator, done: Completion) {
 // registry of channels being pumped (see PoolState.ochans). A chan
 // registered after close() flipped `closing` is aborted on the spot — the
 // pump's first feed fails and the worker proceeds straight to the join.
-ochanRegister :: (ps: *PoolState, ch: *OutChan) {
+private ochanRegister :: (ps: *PoolState, ch: *OutChan) {
     ps.mu.lock();
     ps.ochans[ps.ochansLen] = ch;
     ps.ochansLen += 1;
@@ -839,7 +805,7 @@ ochanRegister :: (ps: *PoolState, ch: *OutChan) {
     if late { ch.abort(); }
 }
 
-ochanUnregister :: (ps: *PoolState, ch: *OutChan) {
+private ochanUnregister :: (ps: *PoolState, ch: *OutChan) {
     ps.mu.lock();
     i : i64 = 0;
     while i < ps.ochansLen {
@@ -859,7 +825,7 @@ ochanUnregister :: (ps: *PoolState, ch: *OutChan) {
 // into the connection's read buffer — a handler-timeout can free/reuse the
 // slot and its buffer while the worker still runs). Freed as one block in
 // runHandlerJob.
-HandlerJob :: struct {
+private HandlerJob :: struct {
     handler: (*Request, *Response, usize) -> void;
     appCtx:  usize = 0;
     ps: *PoolState = null;
@@ -886,7 +852,7 @@ HandlerJob :: struct {
     srv: *Server = null;
 }
 
-addAcceptEncodingVary :: (resp: *Response) {
+private addAcceptEncodingVary :: (resp: *Response) {
     if !hasHeaderToken(resp.extraHeaders, "vary", "accept-encoding")
         and !hasHeaderToken(resp.extraHeaders, "vary", "*") {
         // A second Vary field is equivalent to extending the existing field,
@@ -895,7 +861,7 @@ addAcceptEncodingVary :: (resp: *Response) {
     }
 }
 
-hasStrongValidatorOrDigest :: (raw: string) -> bool {
+private hasStrongValidatorOrDigest :: (raw: string) -> bool {
     at : i64 = 0;
     while at < raw.len {
         lineEnd := at;
@@ -917,7 +883,7 @@ hasStrongValidatorOrDigest :: (raw: string) -> bool {
     false
 }
 
-setNotAcceptable :: (resp: *Response) {
+private setNotAcceptable :: (resp: *Response) {
     resp.* = Response{ status = 406, body = "", allowCompression = false };
     resp.addHeader("Vary", "Accept-Encoding");
 }
@@ -926,7 +892,7 @@ setNotAcceptable :: (resp: *Response) {
 // but before any response bytes are serialized. Fixed bodies are encoded in
 // the current per-request arena. Streamed bodies return the selected coding;
 // startStream / the pool worker drives a bounded incremental encoder.
-prepareContentEncoding :: (req: *Request, resp: *Response, enabled: bool, minSize: i64, level: i64, alloc: Allocator) -> Encoding {
+private prepareContentEncoding :: (req: *Request, resp: *Response, enabled: bool, minSize: i64, level: i64, alloc: Allocator) -> Encoding {
     // Message framing is exclusively server-owned. Reject a handler response
     // that tries to inject a second delimiter before any bytes are serialized.
     if hasHeader(resp.extraHeaders, "content-length") or hasHeader(resp.extraHeaders, "transfer-encoding") {
@@ -993,7 +959,7 @@ prepareContentEncoding :: (req: *Request, resp: *Response, enabled: bool, minSiz
 // the channel and the server, whose cfg.fibers parks the fiber). The
 // mutex is uncontended here (single thread) — kept for field-protocol
 // uniformity with the pool path, not for exclusion.
-bodyFiberRead :: (ctx: usize, dst: [*]u8, cap: i64) -> i64 {
+private bodyFiberRead :: (ctx: usize, dst: [*]u8, cap: i64) -> i64 {
     job : *HandlerJob = @reinterpret(*HandlerJob, ctx);
     ch := job.chan;
     if cap <= 0 { return 0; }
@@ -1028,7 +994,7 @@ bodyFiberRead :: (ctx: usize, dst: [*]u8, cap: i64) -> i64 {
 // The pool task: fabricated per-job arena over the (thread-safe) server
 // allocator; serialize into job-owned bytes; queue the completion; wake
 // the loop.
-runHandlerJob :: (arg: usize) {
+private runHandlerJob :: (arg: usize) {
     job : *HandlerJob = @reinterpret(*HandlerJob, arg);
     resp : Response = .{};
     arena := Arena.init(job.alloc, 65536);
@@ -1187,7 +1153,7 @@ runHandlerJob :: (arg: usize) {
 // shape; shallow clib.memcpy work only — writeMore runs later on the LOOP
 // stack in finalizeFibers, never on this bounded fiber stack). The job is
 // freed here; the runner reaps the fiber (env + stack) after this returns.
-runFiberJob :: (arg: usize) {
+private runFiberJob :: (arg: usize) {
     job : *HandlerJob = @reinterpret(*HandlerJob, arg);
     srv := job.srv;
     resp : Response = .{};
@@ -1246,125 +1212,9 @@ runFiberJob :: (arg: usize) {
     a.deallocBytes(job);
 }
 
-// ── single-pass response-head serialization ────────────────────
-// The head is built in ONE pass over shared literal pieces — no concat
-// chains, no context-allocator churn: respHeadLen computes the exact
-// byte count from the SAME literals respHeadWrite copies, so the two
-// cannot drift. decInto/statusLineFor (types.sx) keep the status and
-// Content-Length digits alloc-free.
-
-HDR_CL    : string : "\r\nContent-Length: ";
-HDR_TE    : string : "\r\nTransfer-Encoding: chunked";
-HDR_CT    : string : "\r\nContent-Type: ";
-HDR_DATE  : string : "\r\nDate: ";
-HDR_SRV   : string : "\r\nServer: ";
-HDR_KA    : string : "\r\nConnection: keep-alive\r\n";
-HDR_CLOSE : string : "\r\nConnection: close\r\n";
-HTTP_PFX  : string : "HTTP/1.1 ";
-
-// Append `s` at dst[off]; returns the new offset.
-putStr :: (dst: [*]u8, off: i64, s: string) -> i64 {
-    clib.memcpy(*dst[off], s.ptr, s.len);
-    return off + s.len;
-}
-
-// Exact byte length of the head respHeadWrite emits for the same
-// arguments. `chunked` selects Transfer-Encoding over Content-Length;
-// `noBodyStatus` (204/304, fixed-body only) omits Content-Length.
-// A NEGATIVE resp.status (buggy handler) yields zero digits from
-// decLen/decInto — len and write stay consistent (no overrun), the
-// line is just invalid ("HTTP/1.1  Status"), as any negative status is.
-respHeadLen :: (resp: *Response, keep: bool, date: string, serverName: string, noBodyStatus: bool, chunked: bool) -> i64 {
-    sl := statusLineFor(resp.status);
-    n : i64 = if sl.len > 0 then sl.len
-              else HTTP_PFX.len + decLen(resp.status) + 1 + reasonFor(resp.status).len;
-    if chunked { n += HDR_TE.len; }
-    else if !noBodyStatus { n += HDR_CL.len + decLen(resp.body.len); }
-    n += HDR_CT.len + resp.contentType.len;
-    n += HDR_DATE.len + date.len;
-    if serverName.len > 0 { n += HDR_SRV.len + serverName.len; }
-    n += if keep then HDR_KA.len else HDR_CLOSE.len;
-    n += resp.extraHeaders.len;
-    return n + 2;   // final "\r\n"
-}
-
-// Write the head into dst (caller sized it via respHeadLen); returns
-// the bytes written.
-respHeadWrite :: (resp: *Response, keep: bool, date: string, serverName: string, noBodyStatus: bool, chunked: bool, dst: [*]u8) -> i64 {
-    off : i64 = 0;
-    sl := statusLineFor(resp.status);
-    if sl.len > 0 { off = putStr(dst, off, sl); }
-    else {
-        off = putStr(dst, off, HTTP_PFX);
-        off += decInto(resp.status, *dst[off]);
-        dst[off] = ' ';
-        off += 1;
-        off = putStr(dst, off, reasonFor(resp.status));
-    }
-    if chunked { off = putStr(dst, off, HDR_TE); }
-    else if !noBodyStatus {
-        off = putStr(dst, off, HDR_CL);
-        off += decInto(resp.body.len, *dst[off]);
-    }
-    off = putStr(dst, off, HDR_CT);
-    off = putStr(dst, off, resp.contentType);
-    off = putStr(dst, off, HDR_DATE);
-    off = putStr(dst, off, date);
-    if serverName.len > 0 {
-        off = putStr(dst, off, HDR_SRV);
-        off = putStr(dst, off, serverName);
-    }
-    off = putStr(dst, off, if keep then HDR_KA else HDR_CLOSE);
-    if resp.extraHeaders.len > 0 { off = putStr(dst, off, resp.extraHeaders); }
-    dst[off] = '\r';
-    dst[off + 1] = '\n';
-    return off + 2;
-}
-
-// Build the response bytes: head + body — one allocation from `alloc`,
-// one pass. Used by POOL WORKERS (the completion owns the buffer); the
-// inline path serializes into the conn's persistent wbuf instead
-// (serializeResponse) and allocates nothing per response.
-//
-// (RFC 9110 §9.3.2, §6.4.1): `headOnly` is the HEAD-request flag —
-// the response keeps every header of the equivalent GET, INCLUDING the
-// Content-Length of the body the handler produced (that is the point of
-// HEAD), but the body bytes never go on the wire. Independently, a 204 or
-// 304 status suppresses the body no matter what the handler set, and
-// omits Content-Length entirely (a 204 MUST NOT carry one; for 304
-// omitting is the safe MAY — the peer frames both by status alone).
-// `date` is the IMF-fixdate for the response's Date header (from the
-// Server's per-second cache on the loop thread; stamped fresh by a pool
-// worker) and `serverName` the optional Server: header value ("" = none).
-serializeBytes :: (resp: *Response, keep: bool, alloc: Allocator, headOnly: bool, date: string, serverName: string) -> OutBytes {
-    noBodyStatus := resp.status == 204 or resp.status == 304;
-    hl := respHeadLen(resp, keep, date, serverName, noBodyStatus, false);
-    bodyLen : i64 = if headOnly or noBodyStatus then 0 else resp.body.len;
-    raw := alloc.allocBytes(hl + bodyLen);
-    if raw == null { return .{}; }
-    buf : [*]u8 = raw.([*]u8);
-    w := respHeadWrite(resp, keep, date, serverName, noBodyStatus, false, buf);
-    if bodyLen > 0 { clib.memcpy(*buf[w], resp.body.ptr, bodyLen); }
-    return OutBytes{ buf = buf, len = w + bodyLen };
-}
-
-// Build the HEAD of a chunked (streamed) response — status line,
-// Transfer-Encoding: chunked, connection mode, extra headers — and NOTHING
-// of the body. The body follows as chunks emitted incrementally by
-// writeMore pulling the producer. One allocation from `alloc` (pool
-// workers; the inline stream path writes into its scratch directly).
-serializeChunkedHead :: (resp: *Response, keep: bool, alloc: Allocator, date: string, serverName: string) -> OutBytes {
-    hl := respHeadLen(resp, keep, date, serverName, false, true);
-    raw := alloc.allocBytes(hl);
-    if raw == null { return .{}; }
-    buf : [*]u8 = raw.([*]u8);
-    w := respHeadWrite(resp, keep, date, serverName, false, true, buf);
-    return OutBytes{ buf = buf, len = w };
-}
-
 // Lowercase-hex of a non-negative chunk length, no "0x", no leading
 // zeros (RFC 7230 chunk-size). Returns the digit count written into `dst`.
-hexLenInto :: (n: i64, dst: [*]u8) -> i64 {
+private hexLenInto :: (n: i64, dst: [*]u8) -> i64 {
     if n == 0 { dst[0] = '0'; return 1; }
     // collect digits low-to-high into a small temp, then reverse.
     tmp : [16]u8 = ---;
@@ -2776,7 +2626,7 @@ Server :: struct {
     // plaintext, or TLS app-data once cfg.tls negotiated the session.
     // The (i64, !) contract is IDENTICAL to socket.readNb/writeNb
     // — `SockErr.WouldBlock` to pause (re-arm), `SockErr.Closed`/`Fault` to drop —
-    // so the callers stay unchanged. The TLS branch maps the abstract
+    // The TLS branch maps the abstract
     // TlsStep onto the same channel; a TlsStep.Closed (clean close_notify)
     // is `SockErr.Closed` exactly like a plaintext EOF.
     //

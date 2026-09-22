@@ -18,7 +18,7 @@
 // fixed array reached through the ctx word — NO heap alloc in the hook,
 // so this stays leak-clean).
 @import "modules/std.sx";
-http :: @import "modules/std/http.sx";
+@import "modules/std/http.sx";
 
 PORT :: 18972;
 NCONN :: 8;

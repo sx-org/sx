@@ -22,7 +22,7 @@
 // The atomic counter is what makes the pooled gate trustworthy: the loop
 // thread and worker threads bump it concurrently.
 @import "modules/std.sx";
-http :: @import "modules/std/http.sx";
+@import "modules/std/http.sx";
 cstd :: @import "modules/std/c.sx";
 
 PORT :: 18970;

@@ -1,7 +1,7 @@
 // std.http: a request is served when a second, unreferenced module also
 // imports the server module.
 @import "modules/std.sx";
-http :: @import "modules/std/http.sx";
+@import "modules/std/http.sx";
 side :: @import "2677-http-server-duplicate-import-side.sx";
 
 PORT :: 19131;

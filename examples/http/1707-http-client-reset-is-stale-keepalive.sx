@@ -14,7 +14,7 @@
 // RST instead of FIN (POSIX/BSD). So: connect, send a request the server never
 // reads, close the server side — the client's next read sees ECONNRESET.
 @import "modules/std.sx";
-http   :: @import "modules/std/http.sx";
+@import "modules/std/http.sx";
 socket :: @import "modules/std/socket.sx";
 
 PORT :: 19030;

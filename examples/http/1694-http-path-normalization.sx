@@ -23,7 +23,7 @@
 // with a SHRINKING path (decode + pop) rebuilt byte-exact; GPA net-zero.
 @import "modules/std.sx";
 mem  :: @import "modules/std/mem.sx";
-http :: @import "modules/std/http.sx";
+@import "modules/std/http.sx";
 
 PORT_A :: 19008;
 PORT_B :: 19009;
