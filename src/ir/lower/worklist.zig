@@ -58,7 +58,8 @@ const Item = struct {
     kind: Kind,
     impls: []const []const u8,
     environment: ?imports.EnvironmentId,
-    names: []const []const u8,
+    names: []const NameKey,
+    pending_imports: []const PendingImport,
     /// How many `@context.extend` declarations its unexpanded branches could
     /// still put into the program Context.
     contexts: u32,
@@ -68,6 +69,12 @@ const Item = struct {
 const NameKey = struct {
     environment: imports.EnvironmentId,
     name: []const u8,
+};
+
+const PendingImport = struct {
+    environment: imports.EnvironmentId,
+    block: ?imports.LexicalBlockId,
+    target: imports.EnvironmentId,
 };
 
 const NameKeyContext = struct {
@@ -146,24 +153,27 @@ pub const Worklist = struct {
     /// Register a module-scope driver with the contributions its unexpanded
     /// branches could still make. `cache` is every resolved module, so a
     /// branch-local `@import`'s module is counted too. Idempotent per node.
-    pub fn registerDriver(w: *Worklist, node: *const Node, environment: ?imports.EnvironmentId, cache: ?*const imports.ModuleCache) void {
+    pub fn registerDriver(w: *Worklist, node: *const Node, environment: ?imports.EnvironmentId, table: *const imports.DeclTable, cache: ?*const imports.ModuleCache) void {
         if (w.known.contains(node)) return;
         var scan = Scan{
             .alloc = w.alloc,
             .cache = cache,
+            .table = table,
             .impls = std.ArrayList([]const u8).empty,
-            .names = std.ArrayList([]const u8).empty,
-            .counted = std.StringHashMap(bool).init(w.alloc),
+            .names = .empty,
+            .counted = .init(w.alloc),
         };
         defer scan.counted.deinit();
-        scan.driver(node, 0, true);
+        scan.driver(node, 0, environment);
         const impls = scan.impls.toOwnedSlice(w.alloc) catch @panic("out of memory");
         const names = scan.names.toOwnedSlice(w.alloc) catch @panic("out of memory");
         for (impls) |p| bump(&w.open_impls, p);
-        if (environment) |env| {
-            if (names.len > 0) bumpBy(&w.open_environments, env, @intCast(names.len));
-            for (names) |name| bump(&w.open_decls, NameKey{ .environment = env, .name = name });
+        for (names) |name| {
+            bump(&w.open_environments, name.environment);
+            bump(&w.open_decls, name);
         }
+        const pending_imports = scan.pending_imports.toOwnedSlice(w.alloc) catch @panic("out of memory");
+        for (pending_imports) |imp| bump(&w.open_environments, imp.environment);
         w.open_contexts += scan.contexts;
         w.known.put(node, w.items.items.len) catch @panic("out of memory");
         w.items.append(w.alloc, .{
@@ -171,6 +181,7 @@ pub const Worklist = struct {
             .impls = impls,
             .environment = environment,
             .names = names,
+            .pending_imports = pending_imports,
             .contexts = scan.contexts,
             .retired = false,
         }) catch @panic("out of memory");
@@ -184,10 +195,11 @@ pub const Worklist = struct {
         if (item.retired) return;
         item.retired = true;
         for (item.impls) |p| drop(&w.open_impls, p);
-        if (item.environment) |env| {
-            if (item.names.len > 0) dropBy(&w.open_environments, env, @intCast(item.names.len));
-            for (item.names) |name| drop(&w.open_decls, NameKey{ .environment = env, .name = name });
+        for (item.names) |name| {
+            drop(&w.open_environments, name.environment);
+            drop(&w.open_decls, name);
         }
+        for (item.pending_imports) |imp| drop(&w.open_environments, imp.environment);
         w.open_contexts -= item.contexts;
     }
 
@@ -205,6 +217,7 @@ pub const Worklist = struct {
             .impls = &.{},
             .environment = null,
             .names = &.{},
+            .pending_imports = &.{},
             .contexts = 0,
             .retired = true,
         }) catch {};
@@ -323,6 +336,16 @@ pub const Worklist = struct {
         return (w.open_decls.get(.{ .environment = environment, .name = name }) orelse 0) > 0;
     }
 
+    pub fn pendingImports(w: *const Worklist, environment: imports.EnvironmentId, block: ?imports.LexicalBlockId, targets: *std.ArrayList(imports.EnvironmentId)) void {
+        for (w.items.items) |item| {
+            if (item.retired) continue;
+            for (item.pending_imports) |imp| {
+                if (imp.environment == environment and imp.block == block)
+                    targets.append(w.alloc, imp.target) catch @panic("out of memory");
+            }
+        }
+    }
+
     fn bump(map: anytype, key: anytype) void {
         bumpBy(map, key, 1);
     }
@@ -351,92 +374,58 @@ const Scan = struct {
     /// it, under the very path the node carries.
     cache: ?*const imports.ModuleCache,
     impls: std.ArrayList([]const u8),
-    names: std.ArrayList([]const u8),
+    names: std.ArrayList(NameKey),
+    pending_imports: std.ArrayList(PendingImport) = .empty,
+    table: *const imports.DeclTable,
     contexts: u32 = 0,
-    /// Modules already counted, and whether their NAMES were: a module a
-    /// diamond reaches twice contributes once, and one reached behind an alias
-    /// contributes no names until some path reaches it flat.
-    counted: std.StringHashMap(bool),
+    counted: std.StringHashMap(void),
 
-    /// `flat` is whether declarations found here would land in the registering
-    /// driver's own scope. They do in its own branches; behind a namespace
-    /// alias they never do — the scope gains the alias and nothing else.
-    fn driver(s: *Scan, node: *const Node, depth: u8, flat: bool) void {
+    fn driver(s: *Scan, node: *const Node, depth: u8, environment: ?imports.EnvironmentId) void {
         if (depth > 16) return;
         switch (node.data) {
             .if_expr => |ie| {
-                s.body(ie.then_branch, depth, flat);
-                if (ie.else_branch) |eb| s.body(eb, depth, flat);
+                s.body(ie.then_branch, depth, environment);
+                if (ie.else_branch) |eb| s.body(eb, depth, environment);
             },
-            .match_expr => |me| {
-                for (me.arms) |arm| s.body(arm.body, depth, flat);
-            },
-            .for_expr => |fe| s.body(fe.body, depth, flat),
+            .match_expr => |me| for (me.arms) |arm| s.body(arm.body, depth, environment),
+            .for_expr => |fe| s.body(fe.body, depth, environment),
             else => {},
         }
     }
 
-    fn body(s: *Scan, node: *const Node, depth: u8, flat: bool) void {
-        const stmts: []const *Node = if (node.data == .block)
-            node.data.block.stmts
-        else
-            &[_]*Node{@constCast(node)};
-        for (stmts) |stmt| {
-            switch (stmt.data) {
-                .if_expr, .match_expr, .for_expr => s.driver(stmt, depth + 1, flat),
-                .impl_block => |ib| s.addImpl(ib.protocol_name),
-                .import_decl => |imp| {
-                    if (flat) {
-                        if (imp.name) |ns| s.addName(ns);
-                    }
-                    s.module(imp.path, flat and imp.name == null, depth + 1);
-                },
-                .context_extend_decl => s.contexts += 1,
-                else => {},
-            }
-            if (flat) {
-                if (stmt.data.declName()) |name| s.addName(name);
-            }
+    fn body(s: *Scan, node: *const Node, depth: u8, environment: ?imports.EnvironmentId) void {
+        const stmts: []const *Node = if (node.data == .block) node.data.block.stmts else &.{@constCast(node)};
+        for (stmts) |stmt| s.declaration(stmt, depth, environment);
+    }
+
+    fn declaration(s: *Scan, node: *const Node, depth: u8, fallback: ?imports.EnvironmentId) void {
+        const environment = if (node.lexical_block) |block| s.table.block(block).environment else fallback;
+        if (node.data.declName()) |name| s.addName(environment, name);
+        switch (node.data) {
+            .if_expr, .match_expr, .for_expr => s.driver(node, depth + 1, environment),
+            .scope_decl => |scope| for (scope.decls) |decl| s.declaration(decl, depth + 1, environment),
+            .impl_block => |ib| s.addImpl(ib.protocol_name),
+            .context_extend_decl => s.contexts += 1,
+            .import_decl => |imp| {
+                if (imp.name) |name| s.addName(environment, name);
+                s.module(imp.path, if (imp.name == null) environment else null, node.lexical_block, depth + 1);
+            },
+            .namespace_decl => |ns| s.module(ns.target_module_path, null, null, depth + 1),
+            else => {},
         }
     }
 
-    /// The contribution surface of the module an `@import` names, counted
-    /// where selecting the branch would put it and merged nowhere. A flat
-    /// import would merge the module's declarations into the driver's scope,
-    /// so those are names that scope may still gain; behind an alias only the
-    /// alias is. Impls and `@context.extend` are program-global either way.
-    /// The module's flat imports are already part of its declaration list, and
-    /// the drivers it holds are swept exactly like the registering one — a
-    /// branch two modules away contributes the same.
-    fn module(s: *Scan, path: []const u8, flat: bool, depth: u8) void {
+    fn module(s: *Scan, path: []const u8, exposure: ?imports.EnvironmentId, block: ?imports.LexicalBlockId, depth: u8) void {
         if (depth > 16) return;
         const cache = s.cache orelse return;
         const resolved = cache.modules.get(path) orelse return;
-        const seen = s.counted.getOrPut(path) catch return;
-        const first = !seen.found_existing;
-        if (!first and (seen.value_ptr.* or !flat)) return;
-        seen.value_ptr.* = flat;
-        for (resolved.decls) |decl| {
-            if (imports.isModuleDriver(decl)) {
-                s.driver(decl, depth + 1, flat);
-                continue;
-            }
-            switch (decl.data) {
-                .impl_block => |ib| s.addImpl(ib.protocol_name),
-                .context_extend_decl => {
-                    if (first) s.contexts += 1;
-                },
-                .namespace_decl => |ns| {
-                    if (flat) s.addName(ns.name);
-                    s.module(ns.target_module_path, false, depth + 1);
-                },
-                else => {
-                    if (flat) {
-                        if (decl.data.declName()) |name| s.addName(name);
-                    }
-                },
-            }
+        if (exposure) |env| {
+            s.pending_imports.append(s.alloc, .{ .environment = env, .block = block, .target = resolved.environment }) catch @panic("out of memory");
         }
+        const seen = s.counted.getOrPut(path) catch @panic("out of memory");
+        if (seen.found_existing) return;
+        seen.value_ptr.* = {};
+        for (resolved.decls) |decl| s.declaration(decl, depth, resolved.environment);
     }
 
     /// An impl head reaches its protocol by whatever spelling is in scope
@@ -456,10 +445,11 @@ const Scan = struct {
         s.impls.append(s.alloc, name) catch {};
     }
 
-    fn addName(s: *Scan, name: []const u8) void {
+    fn addName(s: *Scan, environment: ?imports.EnvironmentId, name: []const u8) void {
+        const key = NameKey{ .environment = environment orelse return, .name = name };
         for (s.names.items) |seen| {
-            if (std.mem.eql(u8, seen, name)) return;
+            if (NameKeyContext.eql(.{}, seen, key)) return;
         }
-        s.names.append(s.alloc, name) catch {};
+        s.names.append(s.alloc, key) catch @panic("out of memory");
     }
 };

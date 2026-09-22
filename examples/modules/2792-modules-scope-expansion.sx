@@ -1,0 +1,12 @@
+@import "modules/std.sx";
+m :: @import "2792-modules-scope-expansion/generated.sx";
+@import "2792-modules-scope-expansion/generated.sx";
+inline if late.ready {
+    chosen :: scope {
+        inline if true { value :: 19; }
+    }
+}
+inline if true { late :: scope { ready :: true; } }
+main :: () {
+    print("{} {} {} {} {}\n", m.generated.read(), @sizeOf(generated.inner.Element), @sizeOf(shared.Element), @sizeOf(cursor.Element), chosen.value);
+}

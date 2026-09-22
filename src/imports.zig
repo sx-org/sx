@@ -865,6 +865,25 @@ pub const DeclTable = struct {
         return body_block;
     }
 
+    pub fn prepareExpansion(self: *DeclTable, node: *Node, owner: LexicalBlockId) std.mem.Allocator.Error!void {
+        ast.stampLexicalBlock(node, owner);
+        node.source_file = self.environment(self.block(owner).environment).source;
+        switch (node.data) {
+            .scope_decl => |scope| {
+                const child = try self.addScopeBlock(owner, node);
+                for (scope.decls) |decl| try self.prepareExpansion(decl, child);
+            },
+            .block => |body| for (body.stmts) |stmt| try self.prepareExpansion(stmt, owner),
+            .if_expr => |ie| {
+                try self.prepareExpansion(ie.then_branch, owner);
+                if (ie.else_branch) |other| try self.prepareExpansion(other, owner);
+            },
+            .match_expr => |me| for (me.arms) |arm| try self.prepareExpansion(arm.body, owner),
+            .for_expr => |fe| try self.prepareExpansion(fe.body, owner),
+            else => {},
+        }
+    }
+
     pub fn recordImport(self: *DeclTable, owner: LexicalBlockId, node: *const Node) !void {
         try self.block(owner).imports.append(self.alloc, node);
     }
@@ -1209,6 +1228,7 @@ fn resolveBlockImports(
             // `@import`s inside its bodies resolve now, re-entrantly and
             // CONTAINED — the windows and posix `std.fs` backends both load,
             // and neither reaches module scope until its branch is selected.
+            try cache.declarations.prepareExpansion(decl, block_id);
             try resolveBranchImports(allocator, io, decl, base_dir, file_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
             decl.source_file = file_path;
             reportDuplicateDecl(diagnostics, try mod.addOwnDecl(allocator, &cache.declarations, &decl_list, &own_decl_list, &seen_in_list, decl), decl);
@@ -1502,6 +1522,15 @@ fn resolveBranchBodyImports(
         body.data = .{ .block = .{ .stmts = stmts } };
     }
     for (stmts) |stmt| {
+        ast.stampLexicalBlock(stmt, body.lexical_block.?);
+        stmt.source_file = file_path;
+        if (stmt.data == .scope_decl) {
+            const child = stmt.data.scope_decl.body_block.?;
+            var scope_body = Node{ .span = stmt.span, .lexical_block = child, .data = .{ .block = .{ .stmts = stmt.data.scope_decl.decls } } };
+            try resolveBranchBodyImports(allocator, io, &scope_body, base_dir, file_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
+            stmt.data.scope_decl.decls = scope_body.data.block.stmts;
+            continue;
+        }
         if (isModuleDriver(stmt)) {
             try resolveBranchImports(allocator, io, stmt, base_dir, file_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
             continue;

@@ -49,12 +49,13 @@ pub fn expandModuleDrivers(self: *Lowering, decls: []const *Node) []const *Node 
         .expanded = std.AutoHashMap(*const Node, void).init(self.alloc),
         .raised = std.AutoHashMap(*const Node, void).init(self.alloc),
         .lists = std.AutoHashMap(ListKey, *Expanded).init(self.alloc),
-        .primed = std.StringHashMap(void).init(self.alloc),
+        .primed = .init(self.alloc),
         .spliced = std.ArrayList(*Node).empty,
         .parked = std.ArrayList(ParkedDriver).empty,
         .ledgers = std.ArrayList(*Ledger).empty,
         .cursors = std.ArrayList(*std.StringHashMap([]const u8)).empty,
         .runs = std.AutoHashMap(*const Node, RunResult).init(self.alloc),
+        .for_bodies = .init(self.alloc),
     };
     defer ex.deinit();
 
@@ -68,6 +69,7 @@ pub fn expandModuleDrivers(self: *Lowering, decls: []const *Node) []const *Node 
     ex.expandNamespaces(expanded);
     // A driver that could not decide is parked, not decided: run the drain to
     // quiescence, then write every list from its now-complete slots.
+    _ = ex.applyDeferredBindings();
     ex.drainParked();
     ex.flushLists();
     self.expansion.reportDeadlock(self.diagnostics);
@@ -140,6 +142,12 @@ const ParkedDriver = struct {
     awaited: []const u8,
 };
 
+const DeferredBinding = struct {
+    scope: *Node,
+    name: []const u8,
+    replacement: *const Node,
+};
+
 const Expansion = struct {
     self: *Lowering,
     /// The root declaration list — where an `inline for` looks up the curated
@@ -154,7 +162,7 @@ const Expansion = struct {
     lists: std.AutoHashMap(ListKey, *Expanded),
     /// Names a driver's condition already pulled into registration. Priming a
     /// name is a write to the real declaration facts, so it happens once.
-    primed: std.StringHashMap(void),
+    primed: std.AutoHashMap(imports.DeclId, void),
     /// Everything a taken group has put into module scope. Together with the
     /// textual root list this IS the decided declaration space — what a
     /// question asked by a later driver is answered against.
@@ -169,6 +177,8 @@ const Expansion = struct {
     /// Whether the fold being driven parked on a fact it could not answer.
     just_parked: bool = false,
     parked_any: bool = false,
+    deferred_bindings: std.ArrayList(DeferredBinding) = .empty,
+    for_bodies: std.AutoHashMap(*const Node, []const *Node),
 
     fn deinit(ex: *Expansion) void {
         ex.expanded.deinit();
@@ -189,6 +199,8 @@ const Expansion = struct {
             if (r.* == .parked) r.*.parked.destroy();
         }
         ex.runs.deinit();
+        ex.deferred_bindings.deinit(ex.self.alloc);
+        ex.for_bodies.deinit();
     }
 
     fn decided(ex: *Expansion, decl: *Node) void {
@@ -212,7 +224,7 @@ const Expansion = struct {
             defer ex.self.restoreLexicalContext(saved);
             ex.self.setDeclarationContext(decl);
             if (imports.isModuleDriver(decl)) {
-                ex.self.expansion.registerDriver(decl, ex.self.current_environment, ex.self.program_index.module_cache);
+                ex.self.expansion.registerDriver(decl, ex.self.current_environment, ex.self.program_index.declarations(), ex.self.program_index.module_cache);
                 continue;
             }
             if (decl.data == .scope_decl) {
@@ -428,6 +440,30 @@ const Expansion = struct {
         }
     }
 
+    fn applyDeferredBindings(ex: *Expansion) bool {
+        var changed = false;
+        var i: usize = 0;
+        while (i < ex.deferred_bindings.items.len) {
+            const binding = ex.deferred_bindings.items[i];
+            const selected = Group.scopeCursorBinding(ex, binding.scope, binding.name);
+            if (selected == .pending) {
+                i += 1;
+                continue;
+            }
+            if (selected == .cursor) {
+                var subst = ast.Substitution.init(ex.self.alloc);
+                defer subst.deinit();
+                subst.scope_shadow = .{ .context = ex, .select = Group.scopeCursorBinding, .defer_binding = Group.deferScopeBinding };
+                subst.author_source = binding.scope.source_file;
+                subst.put(binding.name, binding.replacement) catch @panic("out of memory");
+                ast.substituteCursor(binding.scope, &subst);
+            }
+            _ = ex.deferred_bindings.swapRemove(i);
+            changed = true;
+        }
+        return changed;
+    }
+
     /// Fold every parked driver whose awaited fact has fired, to quiescence.
     /// Resuming one retires it, which can close the set the next is waiting
     /// on — so the loop runs until nothing moves. Whatever is left is handed
@@ -435,7 +471,8 @@ const Expansion = struct {
     fn drainParked(ex: *Expansion) void {
         var progress = true;
         while (progress) {
-            progress = ex.advanceRuns();
+            progress = ex.applyDeferredBindings();
+            progress = ex.advanceRuns() or progress;
             var i: usize = 0;
             while (i < ex.parked.items.len) {
                 var p = ex.parked.items[i];
@@ -545,7 +582,7 @@ const Expansion = struct {
         var out = std.ArrayList(*const Node).empty;
         for (ex.scope) |decl| out.append(ex.self.alloc, decl) catch {};
         for (ex.spliced.items) |decl| out.append(ex.self.alloc, decl) catch {};
-        return out.toOwnedSlice(ex.self.alloc) catch &.{};
+        return ast.scopeDeclarations(ex.self.alloc, out.items) catch @panic("out of memory");
     }
 
     /// Execute the `@run` a driver condition reached. The wrapper lowers under
@@ -680,10 +717,13 @@ const Expansion = struct {
             .identifier => |id| {
                 if (ex.self.evalComptimeCondition(node)) |folded| return folded;
                 const cd = constNamed(ex, id.name, src) orelse {
-                    ex.awaitName(ex.self.environmentForSource(src), null, id.name);
+                    ex.awaitBareName(id.name);
                     return null;
                 };
-                return ex.driveCondition(cd.value, src, depth + 1);
+                const saved = ex.self.lexicalContext();
+                defer ex.self.restoreLexicalContext(saved);
+                ex.self.setDeclarationContext(cd);
+                return ex.driveCondition(cd.data.const_decl.value, cd.source_file, depth + 1);
             },
             // A comptime STRUCT root is a value, not a namespace: the field
             // projects here, and a miss is unfoldable rather than a name the
@@ -722,23 +762,27 @@ const Expansion = struct {
             .selected => |sel| {
                 const decl = ex.self.program_index.declaration(sel.author.id).node.?;
                 if (decl.data != .const_decl) return null;
+                const saved = ex.self.lexicalContext();
+                defer ex.self.restoreLexicalContext(saved);
+                ex.self.setAuthorContext(sel.author.id);
                 return ex.driveCondition(decl.data.const_decl.value, sel.author.source, depth + 1);
             },
             .missing => |m| {
-                ex.awaitName(m.environment, m.namespace, m.member);
+                _ = ex.self.namespaceMissWaits(m);
                 return null;
             },
-            .ambiguous, .not_qualified => return null,
+            .not_qualified => {
+                const head = path[0 .. std.mem.indexOfScalar(u8, path, '.') orelse path.len];
+                ex.awaitBareName(head);
+                return null;
+            },
+            .ambiguous => return null,
         }
     }
 
-    fn awaitName(ex: *Expansion, environment: ?imports.EnvironmentId, namespace: ?[]const u8, member: []const u8) void {
-        if (!ex.self.expansion.mayDeclare(environment orelse return, member)) return;
-        const fact = if (namespace) |ns|
-            std.fmt.allocPrint(ex.self.alloc, "'{s}' to declare '{s}'", .{ ns, member })
-        else
-            std.fmt.allocPrint(ex.self.alloc, "'{s}' to be declared", .{member});
-        ex.self.expansion.awaitFact(fact catch "a module scope to be final");
+    fn awaitBareName(ex: *Expansion, name: []const u8) void {
+        if (!ex.self.bareNamePending(name)) return;
+        ex.self.expansion.awaitFact(std.fmt.allocPrint(ex.self.alloc, "'{s}' to be declared", .{name}) catch @panic("out of memory"));
     }
 
     /// `T is <target>` as a driver condition. The question is answerable only
@@ -763,7 +807,9 @@ const Expansion = struct {
     /// the answer does not depend on where the driver sits among the
     /// declarations it asks about. A category target names no contract, and
     /// only the subject is registered.
-    fn primeMembershipFacts(ex: *Expansion, contract: ?[]const u8, target: *const Node, src: ?[]const u8) void {
+    fn primeMembershipFacts(ex: *Expansion, contract: ?[]const u8, target: *const Node, _: ?[]const u8) void {
+        const context = ex.self.lexicalContext();
+        defer ex.self.restoreLexicalContext(context);
         if (ast.bareName(protocolHead(target))) |tname| ex.primeDecl(tname);
         const proto_name = contract orelse return;
         ex.primeDecl(proto_name);
@@ -772,6 +818,7 @@ const Expansion = struct {
             if (decl.data != .impl_block) continue;
             const ib = decl.data.impl_block;
             if (!std.mem.eql(u8, ib.protocol_name, proto_name)) continue;
+            ex.self.setDeclarationContext(decl);
             if (ib.target_type.len > 0) ex.primeDecl(ib.target_type);
         }
         it = ex.decidedDecls();
@@ -781,35 +828,33 @@ const Expansion = struct {
             ex.self.setDeclarationContext(decl);
             ex.self.protocolResolver().registerImplBlock(&decl.data.impl_block, decl);
         }
-        ex.self.setCurrentSourceFile(src);
     }
 
     /// Register the declaration `name` denotes, wherever the program authors
     /// it. Only the type-shaped declarations a membership question can name
     /// answer here; everything else stays for the scan.
     fn primeDecl(ex: *Expansion, name: []const u8) void {
-        if (ex.mintTypeFnAlias(name)) return;
-        if (ex.primed.contains(name)) return;
-        ex.primed.put(name, {}) catch {};
-        var it = ex.decidedDecls();
-        while (it.next()) |decl| {
-            const declared = decl.data.declName() orelse continue;
-            if (!std.mem.eql(u8, declared, name)) continue;
-            ex.self.setDeclarationContext(decl);
-            switch (decl.data) {
+        const id = ex.declarationNamed(name) orelse return;
+        const decl = ex.self.program_index.declaration(id).node.?;
+        const context = ex.self.lexicalContext();
+        defer ex.self.restoreLexicalContext(context);
+        ex.self.setAuthorContext(id);
+        if (ex.mintTypeFnAlias(decl)) return;
+        if (ex.primed.contains(id)) return;
+        ex.primed.put(id, {}) catch @panic("out of memory");
+        switch (decl.data) {
+            .protocol_decl => |*pd| ex.self.registerProtocolDecl(pd),
+            .struct_decl => |*sd| ex.self.registerStructDecl(sd, decl.source_file),
+            .enum_decl => |*ed| ex.self.registerEnumDecl(ed),
+            .union_decl => |*ud| ex.self.registerUnionDecl(ud),
+            .const_decl => |cd| switch (cd.value.data) {
                 .protocol_decl => |*pd| ex.self.registerProtocolDecl(pd),
                 .struct_decl => |*sd| ex.self.registerStructDecl(sd, decl.source_file),
                 .enum_decl => |*ed| ex.self.registerEnumDecl(ed),
                 .union_decl => |*ud| ex.self.registerUnionDecl(ud),
-                .const_decl => |cd| switch (cd.value.data) {
-                    .protocol_decl => |*pd| ex.self.registerProtocolDecl(pd),
-                    .struct_decl => |*sd| ex.self.registerStructDecl(sd, decl.source_file),
-                    .enum_decl => |*ed| ex.self.registerEnumDecl(ed),
-                    .union_decl => |*ud| ex.self.registerUnionDecl(ud),
-                    else => {},
-                },
                 else => {},
-            }
+            },
+            else => {},
         }
     }
 
@@ -819,49 +864,46 @@ const Expansion = struct {
     /// declaration space, and its result is the binding. The mint is the alias's
     /// own writer — a resolved alias is the only evidence it happened, so a visit
     /// that parks before the ground is ready mints on resume instead.
-    fn mintTypeFnAlias(ex: *Expansion, name: []const u8) bool {
-        var it = ex.decidedDecls();
-        while (it.next()) |decl| {
-            if (decl.data != .const_decl) continue;
-            const cd = decl.data.const_decl;
-            if (!std.mem.eql(u8, cd.name, name)) continue;
-            if (cd.value.data != .call) continue;
-            if (!ex.typeFunctionCall(cd.value.data.call.callee)) continue;
-            if (ex.self.program_index.lookup(.type_alias, name)) |tid| {
-                if (tid != .unresolved) return true;
-            }
-            if (!ex.contextReady()) return true;
-            ex.self.setDeclarationContext(decl);
-            const minted = ex.self.evalComptimeType(cd.value) orelse return true;
-            ex.self.putTypeAlias(ex.self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), name, minted);
-            return true;
+    fn mintTypeFnAlias(ex: *Expansion, decl: *const Node) bool {
+        if (decl.data != .const_decl) return false;
+        const cd = decl.data.const_decl;
+        if (cd.value.data != .call or !ex.typeFunctionCall(cd.value.data.call.callee)) return false;
+        if (ex.self.program_index.lookupInEnvironment(.type_alias, ex.self.current_environment, cd.name)) |tid| {
+            if (tid != .unresolved) return true;
         }
-        return false;
+        if (!ex.contextReady()) return true;
+        const minted = ex.self.evalComptimeType(cd.value) orelse return true;
+        ex.self.putTypeAlias(ex.self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, minted);
+        return true;
     }
 
     /// Does `callee` name a non-generic function returning `Type`? That is the
     /// one call shape whose result IS a type identity, minted by evaluation
     /// rather than resolved from a spelling.
     fn typeFunctionCall(ex: *Expansion, callee: *const Node) bool {
-        const name = ast.bareName(callee) orelse return false;
-        var it = ex.decidedDecls();
-        while (it.next()) |decl| {
-            const declared = decl.data.declName() orelse continue;
-            if (!std.mem.eql(u8, declared, name)) continue;
-            const fd: *const ast.FnDecl = switch (decl.data) {
-                .fn_decl => |*f| f,
-                .const_decl => |cd| if (cd.value.data == .fn_decl) &cd.value.data.fn_decl else continue,
-                else => continue,
-            };
-            if (fd.type_params.len > 0) continue;
-            const rt = fd.return_type orelse continue;
-            if (rt.data == .type_expr and std.mem.eql(u8, rt.data.type_expr.name, "Type")) return true;
-        }
-        return false;
+        const name = imports.aliasPath(ex.self.alloc, callee) orelse return false;
+        defer ex.self.alloc.free(name);
+        const id = ex.declarationNamed(name) orelse return false;
+        const decl = ex.self.program_index.declaration(id).node.?;
+        const fd: *const ast.FnDecl = switch (decl.data) {
+            .fn_decl => |*f| f,
+            .const_decl => |cd| if (cd.value.data == .fn_decl) &cd.value.data.fn_decl else return false,
+            else => return false,
+        };
+        if (fd.type_params.len > 0) return false;
+        const rt = fd.return_type orelse return false;
+        return rt.data == .type_expr and std.mem.eql(u8, rt.data.type_expr.name, "Type");
+    }
+
+    fn declarationNamed(ex: *Expansion, name: []const u8) ?imports.DeclId {
+        const env = ex.self.current_environment orelse return null;
+        var resolver = ex.self.resolver();
+        const selected = resolver.selectPath(name, ex.self.lookupContext(env));
+        return if (selected == .selected) selected.selected.declaration else null;
     }
 
     fn decidedDecls(ex: *Expansion) DecidedDecls {
-        return .{ .textual = ex.scope, .spliced = ex.spliced.items };
+        return .{ .nodes = ex.decidedList() };
     }
 
     /// A `@error` reached in live code. A non-selected group never reaches
@@ -880,19 +922,13 @@ const Expansion = struct {
 /// what taken groups have added so far. A driver asking about the program is
 /// answered against both — a group already spliced is module scope.
 const DecidedDecls = struct {
-    textual: []const *Node,
-    spliced: []const *Node,
+    nodes: []const *const Node,
     i: usize = 0,
 
-    fn next(it: *DecidedDecls) ?*Node {
-        if (it.i < it.textual.len) {
-            defer it.i += 1;
-            return it.textual[it.i];
-        }
-        const k = it.i - it.textual.len;
-        if (k >= it.spliced.len) return null;
-        it.i += 1;
-        return it.spliced[k];
+    fn next(it: *DecidedDecls) ?*const Node {
+        if (it.i == it.nodes.len) return null;
+        defer it.i += 1;
+        return it.nodes[it.i];
     }
 };
 
@@ -930,6 +966,7 @@ const Group = struct {
     ex: *Expansion,
     out: *std.ArrayList(*Node),
     ledger: *Ledger,
+    defer_import_drivers: bool = false,
 
     /// Whether this driver's declarations still need their module-scope facts
     /// minted. A driver reached through a second view of its module produces
@@ -944,7 +981,10 @@ const Group = struct {
     /// per-`inline for` name ledger (null outside one); false means the
     /// expansion was abandoned after a diagnostic.
     fn expandDriver(g: *Group, decl: *const Node, src: ?[]const u8, declared: ?*std.StringHashMap([]const u8), cursor: []const u8) bool {
-        g.ex.self.expansion.registerDriver(decl, g.ex.self.environmentForSource(src), g.ex.self.program_index.module_cache);
+        const saved = g.ex.self.lexicalContext();
+        defer g.ex.self.restoreLexicalContext(saved);
+        g.ex.self.setDeclarationContext(decl);
+        g.ex.self.expansion.registerDriver(decl, g.ex.self.environmentForSource(src), g.ex.self.program_index.declarations(), g.ex.self.program_index.module_cache);
         g.ex.just_parked = false;
         const done = g.expandDriverBody(decl, src, declared, cursor);
         // A driver that parked is not decided: it holds its contributions until
@@ -964,6 +1004,7 @@ const Group = struct {
         const context = g.ex.self.lexicalContext();
         defer g.ex.self.restoreLexicalContext(context);
         g.ex.self.setCurrentEnvironment(g.ex.self.expansion.driverEnvironment(decl));
+        g.ex.self.current_lexical_block = decl.lexical_block;
         switch (decl.data) {
             .if_expr => |ie| {
                 const folded = g.ex.foldCondition(ie.condition, src);
@@ -1011,8 +1052,9 @@ const Group = struct {
                 if (!g.expandDriver(stmt, src, declared, cursor)) return false;
                 continue;
             }
-            g.ex.self.setCurrentSourceFile(src);
+            g.ex.self.setDeclarationContext(stmt);
             switch (stmt.data) {
+                .scope_decl => if (!g.spliceScope(stmt, src, mint)) return false,
                 .error_directive => g.ex.raise(stmt),
                 .import_decl => g.spliceImport(stmt, src, mint),
                 .asm_expr, .asm_global => g.spliceGlobalAsm(stmt, src, mint),
@@ -1063,11 +1105,13 @@ const Group = struct {
         const imported = cache.modules.get(imp.path) orelse return;
 
         if (mint) {
+            const table = self.program_index.declarations();
+            if (stmt.lexical_block) |block| table.recordImport(block, stmt) catch @panic("out of memory");
             const graph_source = self.program_index.declarations().environment(self.environmentForSource(source).?).source;
             if (self.program_index.import_graph) |graph| {
                 if (graph.getPtr(graph_source)) |set| set.put(imp.path, {}) catch {};
             }
-            if (imp.name == null) {
+            if (imp.name == null and self.program_index.declarations().environment(self.current_environment.?).scope_path.len == 0) {
                 if (self.program_index.flat_import_graph) |graph| {
                     if (graph.getPtr(graph_source)) |set| set.put(imp.path, {}) catch {};
                 }
@@ -1086,6 +1130,7 @@ const Group = struct {
                     .is_raw = imp.is_raw,
                 } },
                 .visibility = stmt.visibility,
+                .lexical_block = stmt.lexical_block,
             };
             ns_node.source_file = source;
             if (mint and !g.mintFacts(ns_node, source)) return;
@@ -1106,6 +1151,10 @@ const Group = struct {
         if (g.ledger.kind == .own) return;
         for (imported.decls) |decl| {
             if (imports.isModuleDriver(decl)) {
+                if (g.defer_import_drivers) {
+                    g.out.append(self.alloc, decl) catch @panic("out of memory");
+                    continue;
+                }
                 _ = g.expandDriver(decl, decl.source_file, null, "");
                 continue;
             }
@@ -1123,6 +1172,37 @@ const Group = struct {
             g.ex.decided(decl);
             g.out.append(self.alloc, decl) catch {};
         }
+    }
+
+    fn spliceScope(g: *Group, stmt: *Node, src: ?[]const u8, mint: bool) bool {
+        const self = g.ex.self;
+        const saved = self.lexicalContext();
+        defer self.restoreLexicalContext(saved);
+        if (mint) {
+            if (!g.mintFacts(stmt, src.?)) return true;
+            const table = self.program_index.declarations();
+            const child = stmt.data.scope_decl.body_block orelse
+                (table.addScopeBlock(stmt.lexical_block.?, stmt) catch @panic("out of memory"));
+            for (stmt.data.scope_decl.decls) |decl| ast.stampLexicalBlock(decl, child);
+            g.ex.registerDrivers(stmt.data.scope_decl.decls);
+            var out: std.ArrayList(*Node) = .empty;
+            const ledger = self.alloc.create(Ledger) catch @panic("out of memory");
+            ledger.* = .{ .kind = .transitive, .names = .init(self.alloc), .nodes = .init(self.alloc) };
+            g.ex.ledgers.append(self.alloc, ledger) catch @panic("out of memory");
+            var child_group = Group{ .ex = g.ex, .out = &out, .ledger = ledger, .defer_import_drivers = true };
+            for (stmt.data.scope_decl.decls) |decl| {
+                if (imports.isModuleDriver(decl)) {
+                    out.append(self.alloc, decl) catch @panic("out of memory");
+                } else if (!child_group.spliceGroup(decl, src, mint, null, "")) return false;
+            }
+            stmt.data.scope_decl.decls = out.toOwnedSlice(self.alloc) catch @panic("out of memory");
+            g.ex.expandListInto(stmt.data.scope_decl.decls, .transitive, .{ .slot = &stmt.data.scope_decl.decls });
+            var seen = std.AutoHashMap(*const Node, void).init(self.alloc);
+            defer seen.deinit();
+            g.ex.expandNamespaceNodes(stmt.data.scope_decl.decls, &seen);
+        }
+        g.emit(stmt);
+        return true;
     }
 
     /// Splice one declaration AUTHORED by the group. It becomes module surface
@@ -1180,6 +1260,29 @@ const Group = struct {
                 diags.addFmt(.err, decl.span, "duplicate top-level declaration '{s}'", .{decl.data.declName().?});
         }
         return claimed;
+    }
+
+    fn scopeCursorBinding(context: *anyopaque, node: *const Node, name: []const u8) ast.ScopeBinding {
+        const ex: *Expansion = @ptrCast(@alignCast(context));
+        const table = ex.self.program_index.declarations();
+        const block = node.data.scope_decl.body_block.?;
+        const env = table.block(block).environment;
+        var resolver = ex.self.resolver();
+        const candidates = @import("../../name_lookup.zig").scopeMembers(&resolver, .{
+            .path = table.environment(env).scope_path,
+            .context = .{ .table = table, .environment = env, .block = block },
+        }, name, table.environment(env).source, ex.self.alloc) catch @panic("out of memory");
+        defer ex.self.alloc.free(candidates.imported);
+        if (candidates.found()) return .member;
+        return if (ex.self.scopeMemberPending(.{
+            .path = table.environment(env).scope_path,
+            .context = .{ .table = table, .environment = env, .block = block },
+        }, name)) .pending else .cursor;
+    }
+
+    fn deferScopeBinding(context: *anyopaque, scope: *Node, name: []const u8, replacement: *const Node) void {
+        const ex: *Expansion = @ptrCast(@alignCast(context));
+        ex.deferred_bindings.append(ex.self.alloc, .{ .scope = scope, .name = name, .replacement = replacement }) catch @panic("out of memory");
     }
 
     /// Expand a module-scope `inline for` into one declaration group per
@@ -1255,50 +1358,58 @@ const Group = struct {
         declared.* = std.StringHashMap([]const u8).init(self.alloc);
         g.ex.cursors.append(self.alloc, declared) catch {};
 
-        for (literal.elements, 0..) |element, i| {
-            var subst = ast.Substitution.init(self.alloc);
-            defer subst.deinit();
-            subst.put(fe.captures[0].name, element) catch return true;
-            if (fe.captures.len > 1 and fe.captures[1].name.len > 0) {
-                const index_node = self.alloc.create(Node) catch return true;
-                index_node.* = .{ .span = decl.span, .data = .{ .int_literal = .{ .value = @intCast(i) } } };
-                subst.put(fe.captures[1].name, index_node) catch return true;
+        const bodies = g.ex.for_bodies.get(decl) orelse blk: {
+            var bodies: std.ArrayList(*Node) = .empty;
+            for (literal.elements, 0..) |element, i| {
+                var subst = ast.Substitution.init(self.alloc);
+                defer subst.deinit();
+                subst.scope_shadow = .{ .context = g.ex, .select = scopeCursorBinding, .defer_binding = deferScopeBinding };
+                subst.put(fe.captures[0].name, element) catch return true;
+                if (fe.captures.len > 1 and fe.captures[1].name.len > 0) {
+                    const index_node = self.alloc.create(Node) catch return true;
+                    index_node.* = .{ .span = decl.span, .data = .{ .int_literal = .{ .value = @intCast(i) } } };
+                    subst.put(fe.captures[1].name, index_node) catch return true;
+                }
+                const stmts: []const *Node = if (fe.body.data == .block)
+                    fe.body.data.block.stmts
+                else
+                    &[_]*Node{fe.body};
+                var iteration = std.ArrayList(*Node).empty;
+                defer iteration.deinit(self.alloc);
+                for (stmts) |stmt| {
+                    const clone = ast.cloneWithSubst(self.alloc, stmt, &subst) catch return true;
+                    if (stmt.lexical_block) |block| self.program_index.declarations().prepareExpansion(clone, block) catch @panic("out of memory");
+                    iteration.append(self.alloc, clone) catch return true;
+                }
+                const body = self.alloc.create(Node) catch return true;
+                body.* = .{
+                    .span = decl.span,
+                    .data = .{ .block = .{ .stmts = iteration.toOwnedSlice(self.alloc) catch return true, .produces_value = false } },
+                };
+                bodies.append(self.alloc, body) catch @panic("out of memory");
             }
+            const result = bodies.toOwnedSlice(self.alloc) catch @panic("out of memory");
+            g.ex.for_bodies.put(decl, result) catch @panic("out of memory");
+            break :blk result;
+        };
+        for (bodies, literal.elements, 0..) |body, element, i| {
             const cursor = renderCursor(self.alloc, fe.captures, element, i) catch return true;
-
-            const stmts: []const *Node = if (fe.body.data == .block)
-                fe.body.data.block.stmts
-            else
-                &[_]*Node{fe.body};
-            var iteration = std.ArrayList(*Node).empty;
-            defer iteration.deinit(self.alloc);
-            for (stmts) |stmt| {
-                const clone = ast.cloneWithSubst(self.alloc, stmt, &subst) catch return true;
-                iteration.append(self.alloc, clone) catch return true;
-            }
-            const body = self.alloc.create(Node) catch return true;
-            body.* = .{
-                .span = decl.span,
-                .data = .{ .block = .{ .stmts = iteration.toOwnedSlice(self.alloc) catch return true, .produces_value = false } },
-            };
             if (!g.spliceGroup(body, src, mint, declared, cursor)) return false;
         }
         return true;
     }
 };
 
-/// Follow an `inline for` iterable to the array literal it names: the literal
-/// written in the header, a `NAME :: .[…]` constant, or a chain of constant
-/// aliases ending in one. The driver's own file authors it when it can;
-/// otherwise any module's same-named constant answers, matching how a
-/// flat-imported list is reached.
 fn typeListLiteral(ex: *Expansion, node: *const Node, src: ?[]const u8, depth: u8) ?*const ast.ArrayLiteral {
     if (depth > 8) return null;
     switch (node.data) {
         .array_literal => |*al| return al,
         .identifier => |id| {
             const target = constNamed(ex, id.name, src) orelse return null;
-            return typeListLiteral(ex, target.value, src, depth + 1);
+            const saved = ex.self.lexicalContext();
+            defer ex.self.restoreLexicalContext(saved);
+            ex.self.setDeclarationContext(target);
+            return typeListLiteral(ex, target.data.const_decl.value, target.source_file, depth + 1);
         },
         .comptime_expr => |ce| return runTypeList(ex, node, ce.expr, src),
         else => return null,
@@ -1332,21 +1443,13 @@ fn runTypeList(ex: *Expansion, node: *const Node, expr: *const Node, src: ?[]con
     return literal;
 }
 
-fn constNamed(ex: *Expansion, name: []const u8, src: ?[]const u8) ?*const ast.ConstDecl {
-    var fallback: ?*const ast.ConstDecl = null;
-    var it = ex.decidedDecls();
-    while (it.next()) |decl| {
-        if (decl.data != .const_decl) continue;
-        const cd = &decl.data.const_decl;
-        if (!std.mem.eql(u8, cd.name, name)) continue;
-        if (src) |s| {
-            if (decl.source_file) |ds| {
-                if (std.mem.eql(u8, ds, s)) return cd;
-            }
-        }
-        if (fallback == null) fallback = cd;
-    }
-    return fallback;
+fn constNamed(ex: *Expansion, name: []const u8, src: ?[]const u8) ?*const Node {
+    const env = ex.self.environmentForSource(src) orelse return null;
+    var resolver = ex.self.resolver();
+    const selected = resolver.selectPath(name, ex.self.lookupContext(env));
+    if (selected != .selected) return null;
+    const node = ex.self.program_index.declaration(selected.selected.declaration).node orelse return null;
+    return if (node.data == .const_decl) node else null;
 }
 
 /// One expanded iteration's cursor bindings, rendered for diagnostics

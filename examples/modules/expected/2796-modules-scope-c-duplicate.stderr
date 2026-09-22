@@ -1,0 +1,5 @@
+error: duplicate top-level declaration 'generated_value'
+  --> examples/modules/2796-modules-scope-c-duplicate.sx:1:1
+   |
+ 1 | foreign :: scope {
+   | ^

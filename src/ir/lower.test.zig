@@ -3552,10 +3552,10 @@ test "expansion finality separates environments, names and retiring contribution
     var lowering = Lowering.init(&module);
     lowering.program_index.decl_table = &table;
     const work = &lowering.expansion;
-    work.registerDriver(drivers[0], first, null);
-    work.registerDriver(drivers[0], first, null);
-    work.registerDriver(drivers[1], first, null);
-    work.registerDriver(drivers[2], second, null);
+    work.registerDriver(drivers[0], first, &table, null);
+    work.registerDriver(drivers[0], first, &table, null);
+    work.registerDriver(drivers[1], first, &table, null);
+    work.registerDriver(drivers[2], second, &table, null);
 
     try std.testing.expect(!work.environmentFinal(first));
     try std.testing.expect(!work.environmentFinal(second));
@@ -3629,4 +3629,65 @@ test "namespace expansion keeps parked and published names in its environment" {
     lowering.setCurrentEnvironment(file);
     const miss = lowering.qualifiedMemberVerdict("nested.pending").missing;
     try std.testing.expectEqual(nested, miss.environment);
+}
+
+test "pending scope members and block imports retire at their owners" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var p = try parser.Parser.init(alloc,
+        \\inline if choose {
+        \\    outer :: scope {
+        \\        own :: 1;
+        \\        inner :: scope { leaf :: 2; }
+        \\        @import "part.sx";
+        \\    }
+        \\}
+        \\outer :: scope { other :: 3; }
+    );
+    const root = try p.parse();
+    var cache = imports.ModuleCache.init(alloc);
+    const table = &cache.declarations;
+    const file = try table.internEnvironment("main.sx", &.{});
+    const file_block = try table.addBlock(file, null, root);
+    const driver = root.data.root.decls[0];
+    try table.prepareExpansion(driver, file_block);
+    const pending = driver.data.if_expr.then_branch.data.block.stmts[0];
+    const pending_block = pending.data.scope_decl.body_block.?;
+    const outer = table.block(pending_block).environment;
+    const sibling = root.data.root.decls[1];
+    ast.stampLexicalBlock(sibling, file_block);
+    const sibling_block = try table.addScopeBlock(file_block, sibling);
+    const inner = table.findEnvironment("main.sx", &.{ "outer", "inner" }).?;
+    var imported = try parser.Parser.init(alloc, "offered :: true;");
+    const imported_root = try imported.parse();
+    const part = try table.internEnvironment("part.sx", &.{});
+    try cache.modules.put("part.sx", .{
+        .path = "part.sx",
+        .environment = part,
+        .decls = imported_root.data.root.decls,
+        .own_decls = imported_root.data.root.decls,
+    });
+    var work = @import("lower/worklist.zig").Worklist.init(alloc);
+    work.registerDriver(driver, file, table, &cache);
+    try std.testing.expect(work.mayDeclare(file, "outer"));
+    try std.testing.expect(!work.mayDeclare(file, "own"));
+    try std.testing.expect(work.mayDeclare(outer, "own"));
+    try std.testing.expect(work.mayDeclare(inner, "leaf"));
+    try std.testing.expect(!work.mayDeclare(outer, "leaf"));
+    var targets: std.ArrayList(imports.EnvironmentId) = .empty;
+    work.pendingImports(outer, pending_block, &targets);
+    try std.testing.expectEqualSlices(imports.EnvironmentId, &.{part}, targets.items);
+    targets.clearRetainingCapacity();
+    work.pendingImports(outer, sibling_block, &targets);
+    try std.testing.expectEqual(@as(usize, 0), targets.items.len);
+    try std.testing.expect(!work.mayDeclare(outer, "offered"));
+    try std.testing.expectEqual(@as(usize, 0), table.block(pending_block).imports.items.len);
+    try std.testing.expect(table.environment(outer).names.get("own") == null);
+    work.retire(driver);
+    try std.testing.expect(work.environmentFinal(file));
+    try std.testing.expect(work.environmentFinal(outer));
+    try std.testing.expect(work.environmentFinal(inner));
+    work.pendingImports(outer, pending_block, &targets);
+    try std.testing.expectEqual(@as(usize, 0), targets.items.len);
 }

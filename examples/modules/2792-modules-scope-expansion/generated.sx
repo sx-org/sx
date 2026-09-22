@@ -1,0 +1,14 @@
+T :: i64;
+shared :: scope { T :: i16; }
+inline for T in .[i8] {
+    generated :: scope {
+        T :: i32;
+        read :: () -> i64 { @sizeOf(T) }
+        inner :: scope { Element :: T; }
+    }
+    shared :: scope { Element :: T; }
+    cursor :: scope {
+        inline if false { T :: i32; }
+        Element :: T;
+    }
+}
