@@ -26,6 +26,14 @@ pub const CImportResult = struct {
     locations: []const CSourceLocation,
 };
 
+pub const CImportOutcome = union(enum) {
+    success: CImportResult,
+    failure: struct {
+        header: []const u8,
+        message: []const u8,
+    },
+};
+
 /// Info collected from c_import_decl AST nodes for native compilation.
 pub const CImportInfo = struct {
     sources: []const []const u8,
@@ -203,7 +211,7 @@ pub fn processCImport(
     includes: []const []const u8,
     defines: []const []const u8,
     flags: []const []const u8,
-) !CImportResult {
+) !CImportOutcome {
     // Build clang args: -I dirs, -D defines, raw flags
     var args_list = std.ArrayList([*c]const u8).empty;
 
@@ -241,10 +249,11 @@ pub fn processCImport(
         );
 
         if (info == null) {
-            if (err_msg) |e| {
-                std.debug.print("clang parse error for '{s}': {s}\n", .{ header, std.mem.span(e) });
-            }
-            return error.CompileError;
+            defer std.c.free(err_msg);
+            return .{ .failure = .{
+                .header = header,
+                .message = try allocator.dupe(u8, std.mem.span(err_msg)),
+            } };
         }
         defer c.sx_clang_free_header_info(info);
 
@@ -331,10 +340,10 @@ pub fn processCImport(
         }
     }
 
-    return .{
+    return .{ .success = .{
         .fn_decls = try all_decls.toOwnedSlice(allocator),
         .locations = try all_locs.toOwnedSlice(allocator),
-    };
+    } };
 }
 
 // ---------------------------------------------------------------------------

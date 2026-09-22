@@ -1078,10 +1078,10 @@ pub const DeclTable = struct {
     }
 };
 
-fn reportDuplicateName(diagnostics: ?*errors.DiagnosticList, added: bool, name: []const u8, span: ast.Span) void {
+fn reportDuplicateName(diagnostics: ?*errors.DiagnosticList, added: bool, name: []const u8, decl: *const Node) void {
     if (added) return;
     const diags = diagnostics orelse return;
-    diags.addFmt(.err, span, "duplicate top-level declaration '{s}'", .{name});
+    diags.addFmtInFile(.err, decl.source_file, decl.span, "duplicate top-level declaration '{s}'", .{name});
 }
 
 /// Build the diagnostic span for a failed import parse, from the parser's
@@ -1196,7 +1196,7 @@ fn stampRuntimeClassMethodSources(fcd: ast.RuntimeClassDecl, file_path: []const 
 fn reportDuplicateDecl(diagnostics: ?*errors.DiagnosticList, added: bool, decl: *const Node) void {
     if (added) return;
     const name = decl.data.declName() orelse return;
-    reportDuplicateName(diagnostics, added, name, decl.span);
+    reportDuplicateName(diagnostics, added, name, decl);
 }
 
 pub fn resolveImports(
@@ -1310,12 +1310,7 @@ fn resolveBlockImports(
             continue;
         }
         if (decl.data == .c_import_decl) {
-            const result = processCImport(allocator, io, decl, base_dir, null, stdlib_paths) catch |err| {
-                if (diagnostics) |diags| {
-                    diags.addFmt(.err, decl.span, "@import c failed: {}", .{err});
-                }
-                return error.ImportError;
-            };
+            const result = try processCImport(allocator, io, decl, base_dir, null, stdlib_paths, diagnostics);
             const ci = decl.data.c_import_decl;
 
             if (ci.name) |ns_name| {
@@ -1349,7 +1344,7 @@ fn resolveBlockImports(
                 ns_node.lexical_block = block_id;
                 // A `private ns :: @import c { … }` namespace stays file-local.
                 ns_node.visibility = decl.visibility;
-                reportDuplicateName(diagnostics, try mod.addOwnDecl(allocator, &cache.declarations, &decl_list, &own_decl_list, &seen_in_list, ns_node), ns_name, decl.span);
+                reportDuplicateName(diagnostics, try mod.addOwnDecl(allocator, &cache.declarations, &decl_list, &own_decl_list, &seen_in_list, ns_node), ns_name, decl);
             } else {
                 // Flat: add fn_decls directly + keep c_import_decl
                 for (result.fn_decls) |fd| {
@@ -1393,7 +1388,7 @@ fn resolveBlockImports(
 
         if (imp.name) |ns_name| {
             const added = try mod.addNamespace(allocator, &cache.declarations, &decl_list, &own_decl_list, &seen_in_list, ns_name, imported_mod, decl.span, imp.is_raw, decl.visibility, block_id);
-            reportDuplicateName(diagnostics, added, ns_name, decl.span);
+            reportDuplicateName(diagnostics, added, ns_name, decl);
         } else {
             try mod.mergeFlat(allocator, &decl_list, &seen_in_list, &seen_nodes, imported_mod);
         }
@@ -1410,14 +1405,24 @@ pub fn processCImport(
     base_dir: []const u8,
     root_path: ?[]const u8,
     stdlib_paths: []const []const u8,
+    diagnostics: ?*errors.DiagnosticList,
 ) !c_import.CImportResult {
-    const ci = &node.data.c_import_decl;
+    const operand = if (node.data == .spread_decl) node.data.spread_decl.source else node;
+    const ci = &operand.data.c_import_decl;
     for ([_]*[]const []const u8{ &ci.includes, &ci.sources }) |paths| {
         const resolved = try allocator.alloc([]const u8, paths.*.len);
         for (paths.*, resolved) |path, *out| out.* = try resolveImportPath(allocator, io, base_dir, path, root_path, stdlib_paths);
         paths.* = resolved;
     }
-    return c_import.processCImport(allocator, ci.includes, ci.defines, ci.flags);
+    return switch (try c_import.processCImport(allocator, ci.includes, ci.defines, ci.flags)) {
+        .success => |result| result,
+        .failure => |failure| {
+            if (diagnostics) |diags| {
+                diags.addFmtInFile(.err, node.source_file, node.span, "@import c failed: cannot parse '{s}': {s}", .{ failure.header, failure.message });
+            }
+            return error.ImportError;
+        },
+    };
 }
 
 fn resolveSpreadSource(
@@ -1439,10 +1444,7 @@ fn resolveSpreadSource(
             _ = try loadImport(allocator, io, imp.path, node, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
         },
         .c_import_decl => {
-            const result = processCImport(allocator, io, operand, base_dir, null, stdlib_paths) catch |err| {
-                if (diagnostics) |diags| diags.addFmt(.err, node.span, "@import c failed: {}", .{err});
-                return error.ImportError;
-            };
+            const result = try processCImport(allocator, io, node, base_dir, null, stdlib_paths, diagnostics);
             node.data.spread_decl.c_decls = result.fn_decls;
         },
         else => {},

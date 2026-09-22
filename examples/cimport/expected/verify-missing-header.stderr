@@ -1,0 +1,5 @@
+error: @import c failed: cannot parse 'nope.h': error reading 'nope.h': No such file or directory
+  --> examples/cimport/verify-missing-header.sx:1:1
+   |
+ 1 | @import c { @flags "-Xclang"; @flags "-verify"; @include "nope.h"; };
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

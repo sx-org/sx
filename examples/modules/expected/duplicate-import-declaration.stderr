@@ -1,0 +1,5 @@
+error: duplicate top-level declaration 'x'
+  --> examples/modules/duplicate-import-declaration/lib.sx:2:1
+   |
+ 2 | x :: 2;
+   | ^^^^^^^

@@ -1,0 +1,2 @@
+@import "duplicate-import-declaration/lib.sx";
+main :: () -> i32 { 0 }

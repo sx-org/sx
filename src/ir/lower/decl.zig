@@ -770,6 +770,10 @@ pub fn registerLiteralModuleConsts(self: *Lowering, decls: []const *const Node) 
                 const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = float_annotation orelse .i64, .declared_type = float_annotation };
                 self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, info);
             },
+            .call => if (Lowering.layoutQuery(cd.value) != null) {
+                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = float_annotation orelse .i64, .declared_type = float_annotation };
+                self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, info);
+            },
             // Bool/string literal consts carry their real type — registering
             // them here (not just in declaration-ordered pass 1) lets a
             // const ALIAS chain below resolve through them regardless of
@@ -1079,7 +1083,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                                     }
                                 } else if (selected_fd) |fd| {
                                     // Type-returning function: Foo :: Complex(u32)
-                                    if (fd.type_params.len > 0) {
+                                    if (fd.type_params.len > 0 and fnReturnsTypeValue(fd)) {
                                         if (!head_qualified and self.headFnLeak(callee_name, call_data.callee.span)) {
                                             self.putTypeAlias(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, .unresolved);
                                         } else if (self.instantiateTypeFunction(cd.name, callee_name, fd, call_data.args)) |result_ty| {
@@ -1393,6 +1397,7 @@ pub fn registerTypedModuleConst(self: *Lowering, cd: *const ast.ConstDecl) void 
     const ta = cd.type_annotation orelse return;
     switch (cd.value.data) {
         .int_literal, .float_literal, .bool_literal, .string_literal, .char_literal, .undef_literal, .null_literal, .binary_op, .unary_op, .struct_literal, .postfix_cast, .identifier, .field_access => {},
+        .call => if (Lowering.layoutQuery(cd.value) == null) return,
         else => return,
     }
     const ty = self.resolveType(ta);

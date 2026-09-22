@@ -1,0 +1,2 @@
+..@import c { @include "absent-header.h"; };
+main :: () {}
