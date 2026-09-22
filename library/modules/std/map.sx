@@ -32,7 +32,7 @@
 @import "modules/std/core.sx";
 @import "modules/std/hash.sx";
 @import "modules/std/mem.sx";
-c :: @import "modules/std/c.sx";
+@import "modules/std/c.sx";
 // `TypeInfo` is declared in core.sx; `@typeInfo`'s result type needs it in scope.
 
 // ── metadata byte (Zig-faithful) ─────────────────────────────────────

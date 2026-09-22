@@ -603,20 +603,10 @@ pub const Vm = struct {
         return self.run(func, argbuf.items);
     }
 
-    /// Materialize the default `Context` in comptime memory and return its address —
-    /// the VM analogue of the static `kDefaultContext` global. The
-    /// implicit-ctx param is an opaque `*void`, so the real Context type AND
-    /// its initializer come from the `kDefaultContext` global — the ONE
-    /// source of truth (lowering emits it EARLY for scan-time type-fn evals;
-    /// see `emitDefaultContextGlobalEarly`). Laying that constant into
-    /// comptime memory gives a context whose fn slots are real func-refs, so
-    /// a comptime body that allocates via `context.allocator` dispatches
-    /// through `call_indirect` to the thunk to `CAllocator.allocBytes` to
-    /// `libcMalloc` to the VM's native `malloc` — all on the VM, no host
-    /// heap. No hand-built shadow context exists: if the global is absent
-    /// (std not imported, or its defaults not yet constructible at this
-    /// point in the scan), bail LOUDLY — never a hardcoded thunk table that
-    /// drifts from the real protocol shape.
+    /// The opaque implicit context gets its type and initializer from
+    /// `kDefaultContext`. Its allocator slots dispatch through `CAllocator`
+    /// to `c.malloc`, backed by VM memory. The global must be available at
+    /// this point in lowering, including scan-time type-function evaluation.
     fn materializeDefaultContext(self: *Vm, module: *const Module) Error!Addr {
         const table = self.table orelse return self.failMsg("comptime VM: default context needs a type table");
         for (module.globals.items, 0..) |*g, i| {

@@ -1,11 +1,4 @@
-// The prelude facade: every name here is a RE-EXPORT. The implementations
-// live in the part-files (std/core.sx — compiler-coupled primitives,
-// std/fmt.sx — formatting + string helpers, std/list.sx — List); each
-// alias below is an ordinary OWN declaration of this file, so a flat
-// `@import "modules/std.sx"` sees the whole prelude bare, one hop —
-// visibility never chains, aliases are the re-export mechanism. The
-// part-file namespaces (`core` / `fmt` / `list`) and the namespace tail at
-// the bottom are carried to flat importers the same one level.
+..@import "modules/std/c.sx";
 
 core :: @import "modules/std/core.sx";
 fmt  :: @import "modules/std/fmt.sx";
@@ -116,7 +109,6 @@ cancel      :: ioMod.cancel;
 
 // --- The stdlib namespace tail: flat-importing std.sx carries these ---
 
-c       :: @import "modules/std/c.sx";
 posix   :: @import "modules/std/posix.sx";
 mem     :: @import "modules/std/mem.sx";
 allocString :: mem.allocString;

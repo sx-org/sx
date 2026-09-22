@@ -9,7 +9,7 @@ Tracer :: struct {
     count: i64;
 
     init :: () -> *Tracer {
-        t : *Tracer = c.libcMalloc(@sizeOf(Tracer));
+        t : *Tracer = c.malloc(@sizeOf(Tracer));
         t.count = 0;
         t
     }
@@ -18,10 +18,10 @@ Tracer :: struct {
 impl Allocator for Tracer {
     allocBytes :: (self: *Tracer, size: i64) -> *void {
         self.count += 1;
-        return c.libcMalloc(size);
+        return c.malloc(size);
     }
     deallocBytes :: (self: *Tracer, ptr: *void) {
-        c.libcFree(ptr);
+        c.free(ptr);
     }
 }
 

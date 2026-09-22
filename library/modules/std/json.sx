@@ -53,7 +53,7 @@
 
 @import "modules/std/core.sx";     // Allocator, Writer, @sizeOf, string
 @import "modules/std/list.sx";     // List
-c :: @import "modules/std/c.sx";
+@import "modules/std/c.sx";
 @import "modules/std/mem.sx";      // alloc
 // `toF64` / `shortest` / `floatBits` / `isNonFinite` — the exact
 // decimal <-> binary pair the reader and the writer share.
