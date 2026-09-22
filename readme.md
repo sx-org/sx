@@ -368,6 +368,7 @@ printAny(pkt);   // walk with @field / anyElement — no copies
 
 ```sx
 @import "modules/std.sx";
+@import "modules/std/io.sx";
 sched :: @import "modules/std/sched.sx";
 
 main :: () {
