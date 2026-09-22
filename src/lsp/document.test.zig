@@ -1418,6 +1418,29 @@ test "written targets exclude later spreads and combine competing nonlocal route
     try std.testing.expect(ambiguous and alias_ambiguous and missing and not_namespace);
 }
 
+test "alias target order excludes later local spreads and retains imported scope spreads" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    _ = try store.openOrUpdate("alias-part.sx", "Item :: struct { value: i64 = 7; }", 1);
+    _ = try store.openOrUpdate("alias-later.sx", "Item :: struct { value: i64 = 9; }", 1);
+    _ = try store.openOrUpdate("alias-facade.sx", "api :: scope { ..@import \"alias-part.sx\"; }", 1);
+    const doc = try store.openOrUpdate("alias-reader.sx",
+        \\@import "alias-facade.sx";
+        \\Alias :: api.Item;
+        \\api :: scope { ..@import "alias-later.sx"; }
+    , 1);
+    try store.analyzeDocument(doc);
+    const selection = doc.sema.?.selection;
+    const alias = selection.select("Alias").?;
+    const written = try selection.atWritten(alias.info().node.?);
+    const target = written.selectPath("api.Item");
+    try std.testing.expectEqual(.selected, std.meta.activeTag(target));
+    try std.testing.expectEqualStrings("alias-part.sx", std.fs.path.basename(target.selected.declaration.info().source.?));
+    try std.testing.expectEqual(.ambiguous, std.meta.activeTag(selection.selectPath("api.Item")));
+}
+
 test "self and parent spreads retain declaration identity and editor navigation" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

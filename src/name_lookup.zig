@@ -424,7 +424,7 @@ pub fn Query(comptime Backend: type) type {
         fn permitted(context: Context, node: *const ast.Node) bool {
             const order = context.order orelse return true;
             const written = context.table.written_targets.get(node).?;
-            return std.mem.eql(u8, order.source, written.source) and written.position < order.position;
+            return !std.mem.eql(u8, order.source, written.source) or written.position < order.position;
         }
 
         fn spreadMembers(self: *Self, context: Context, view: Context, pinned: bool, name: []const u8, requester: []const u8) Error!Candidates {
