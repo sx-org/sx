@@ -424,7 +424,7 @@ pub fn Query(comptime Backend: type) type {
         fn permitted(context: Context, node: *const ast.Node) bool {
             const order = context.order orelse return true;
             const written = context.table.written_targets.get(node).?;
-            return std.mem.eql(u8, order.source, written.source) and written.position < order.position;
+            return !std.mem.eql(u8, order.source, written.source) or written.position < order.position;
         }
 
         fn spreadMembers(self: *Self, context: Context, view: Context, pinned: bool, name: []const u8, requester: []const u8) Error!Candidates {
@@ -540,7 +540,7 @@ pub fn Query(comptime Backend: type) type {
                     candidate.pinned_view = view.pinned;
                 }
             }
-            if (view.context.order == null and result.items.len != 0) return .{ .imported = try result.toOwnedSlice(self.alloc) };
+            if (result.items.len != 0) return .{ .imported = try result.toOwnedSlice(self.alloc) };
             for (environments.items) |ctx| try self.append(&result, try self.spreadMembers(ctx, view.context, view.pinned, name, requester));
             return .{ .imported = try result.toOwnedSlice(self.alloc) };
         }
