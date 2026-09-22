@@ -3,8 +3,8 @@ c :: scope {
 
     Fd :: enum i32 { stdin = 0; stdout = 1; stderr = 2; raw = else; }
 
-    libcMalloc :: (size: i64) -> *void extern libc "malloc";
-    libcFree :: (ptr: *void) -> void extern libc "free";
+    malloc  :: (size: i64) -> *void extern libc;
+    free    :: (ptr: *void) -> void extern libc;
     memcpy  :: (dst: *void, src: *void, size: i64) -> *void extern libc;
     memset  :: (dst: *void, val: i64, size: i64) -> void extern libc;
     memmove :: (dst: *void, src: *void, size: i64) -> *void extern libc;
