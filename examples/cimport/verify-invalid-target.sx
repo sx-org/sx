@@ -1,0 +1,10 @@
+@import c {
+    @flags "-Xclang";
+    @flags "-verify";
+    @flags "-Xclang";
+    @flags "-target-cpu";
+    @flags "-Xclang";
+    @flags "bogus";
+    @include "verify-invalid-target/ok.h";
+};
+main :: () {}

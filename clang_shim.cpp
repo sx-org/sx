@@ -215,6 +215,7 @@ buildCompilerInstance(const char *filename,
     auto CI = std::make_unique<clang::CompilerInstance>(std::move(invocation));
     // Clang gates its stderr diagnostic summary on ShowCarets.
     CI->getDiagnosticOpts().ShowCarets = false;
+    CI->getDiagnosticOpts().VerifyDiagnostics = false;
     CI->createDiagnostics(consumer.release());
     return CI;
 }

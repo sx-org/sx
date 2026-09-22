@@ -1,0 +1,21 @@
+error: @import c failed: cannot parse 'examples/cimport/verify-invalid-target/ok.h': unknown target CPU 'bogus'
+  --> examples/cimport/verify-invalid-target.sx:1:1
+   |
+ 1 | @import c {
+   | ^^^^^^^^^^^
+ 2 |     @flags "-Xclang";
+   | ^^^^^^^^^^^^^^^^^^^^^
+ 3 |     @flags "-verify";
+   | ^^^^^^^^^^^^^^^^^^^^^
+ 4 |     @flags "-Xclang";
+   | ^^^^^^^^^^^^^^^^^^^^^
+ 5 |     @flags "-target-cpu";
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^
+ 6 |     @flags "-Xclang";
+   | ^^^^^^^^^^^^^^^^^^^^^
+ 7 |     @flags "bogus";
+   | ^^^^^^^^^^^^^^^^^^^
+ 8 |     @include "verify-invalid-target/ok.h";
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 9 | };
+   | ^^
