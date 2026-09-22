@@ -3050,7 +3050,12 @@ pub const Lowering = struct {
         }
     };
 
-    pub const MissingMember = struct { namespace: []const u8, member: []const u8, environment: ?imports_mod.EnvironmentId };
+    pub const MissingMember = struct {
+        namespace: []const u8,
+        member: []const u8,
+        environment: ?imports_mod.EnvironmentId,
+        scope_view: ?resolver_mod.ScopeView = null,
+    };
 
     /// Scope headers retain the querying view; aliases resolve in their author context.
     pub const QualifiedMemberVerdict = union(enum) {
@@ -3132,6 +3137,7 @@ pub const Lowering = struct {
                 .missing => return .{ .missing = .{
                     .namespace = path[qualifier_start .. start - 1],
                     .member = name,
+                    .scope_view = if (qualifier == .scope) qualifier.scope else null,
                     .environment = switch (qualifier) {
                         .namespace => |namespace| namespace.environment,
                         .scope => |scope| table.findEnvironment(scope.context.source(), scope.path),
@@ -3173,11 +3179,65 @@ pub const Lowering = struct {
     /// at finality the ordinary namespace diagnostic stands.
     pub fn namespaceMissWaits(self: *Lowering, miss: MissingMember) bool {
         if (!self.expansion.scheduled()) return false;
-        if (!self.expansion.mayDeclare(miss.environment orelse return false, miss.member)) return false;
+        const pending = if (miss.scope_view) |view| self.scopeMemberPending(view, miss.member) else self.expansion.mayDeclare(miss.environment orelse return false, miss.member);
+        if (!pending) return false;
         self.expansion.awaitFact(std.fmt.allocPrint(self.alloc, "'{s}' to declare '{s}'", .{
             miss.namespace, miss.member,
         }) catch "a module scope to be final");
         return true;
+    }
+
+    pub fn scopeMemberPending(self: *Lowering, view: resolver_mod.ScopeView, name: []const u8) bool {
+        const table = self.program_index.declarations();
+        if (table.findEnvironment(view.context.source(), view.path)) |env| {
+            if (self.expansion.mayDeclare(env, name)) return true;
+        }
+        var files: std.ArrayList(resolver_mod.LookupContext) = .empty;
+        defer files.deinit(self.alloc);
+        var resolver_ = self.resolver();
+        var context: ?resolver_mod.LookupContext = view.context;
+        while (context) |ctx| : (context = @import("../name_lookup.zig").parent(ctx)) {
+            resolver_.plainImports(ctx, &files) catch @panic("out of memory");
+            var pending: std.ArrayList(imports_mod.EnvironmentId) = .empty;
+            defer pending.deinit(self.alloc);
+            self.expansion.pendingImports(ctx.environment, ctx.block, &pending);
+            for (pending.items) |target| {
+                if (table.findEnvironment(table.environment(target).source, view.path)) |env| {
+                    if (table.environment(env).names.contains(name) or self.expansion.mayDeclare(env, name)) return true;
+                }
+            }
+        }
+        for (files.items) |file| {
+            const env = table.findEnvironment(file.source(), view.path) orelse continue;
+            if (self.expansion.mayDeclare(env, name)) return true;
+        }
+        return false;
+    }
+
+    pub fn bareNamePending(self: *Lowering, name: []const u8) bool {
+        const env = self.current_environment orelse return false;
+        const initial = self.lookupContext(env);
+        var context: ?resolver_mod.LookupContext = initial;
+        var resolver_ = self.resolver();
+        while (context) |ctx| : (context = @import("../name_lookup.zig").parent(ctx)) {
+            const environment = ctx.table.environment(ctx.environment);
+            if (environment.scope != null) {
+                if (self.scopeMemberPending(.{ .path = environment.scope_path, .context = initial }, name)) return true;
+            } else if (self.expansion.mayDeclare(ctx.environment, name)) return true;
+            var pending: std.ArrayList(imports_mod.EnvironmentId) = .empty;
+            defer pending.deinit(self.alloc);
+            self.expansion.pendingImports(ctx.environment, ctx.block, &pending);
+            for (pending.items) |target| {
+                if (ctx.table.environment(target).names.contains(name) or self.expansion.mayDeclare(target, name)) return true;
+            }
+            var files: std.ArrayList(resolver_mod.LookupContext) = .empty;
+            defer files.deinit(self.alloc);
+            resolver_.plainImports(ctx, &files) catch @panic("out of memory");
+            for (files.items) |file| {
+                if (self.expansion.mayDeclare(file.environment, name)) return true;
+            }
+        }
+        return false;
     }
 
     pub fn qualifiedMemberVerdict(self: *Lowering, path: []const u8) QualifiedMemberVerdict {

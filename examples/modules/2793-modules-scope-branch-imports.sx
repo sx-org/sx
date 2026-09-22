@@ -1,0 +1,16 @@
+@import "modules/std.sx";
+answer :: 90;
+geo :: scope {
+    inline if flag { selected :: 5; }
+    inline if true {
+        @import "2793-modules-scope-branch-imports/part.sx";
+        @import "2790-modules-scope-lexical-bodies/left.sx";
+        helper :: @import "2790-modules-scope-lexical-bodies/right.sx";
+        read :: () -> i64 { answer + helper.answer + selected }
+        nested :: scope { read :: () -> i64 { answer } }
+    }
+}
+geo :: scope { other :: () -> i64 { answer } }
+main :: () {
+    print("{} {} {}\n", geo.read(), geo.nested.read(), geo.other());
+}

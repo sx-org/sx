@@ -1,0 +1,4 @@
+inline for T in .[i8, i16] {
+    generated :: scope { value :: 1; }
+}
+main :: () -> i32 { 0 }

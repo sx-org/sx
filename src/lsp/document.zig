@@ -339,6 +339,7 @@ pub const DocumentStore = struct {
                     continue;
                 }
             }
+            if (sx.imports.isModuleDriver(decl)) try table.prepareExpansion(decl, block);
             if (decl.data == .scope_decl) {
                 const child = try table.addScopeBlock(block, decl);
                 try self.indexBlock(table, child, decl.data.scope_decl.decls, duplicates);

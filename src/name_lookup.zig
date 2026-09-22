@@ -50,7 +50,7 @@ pub fn own(context: Context, name: []const u8, requester: []const u8) ?Declarati
     return decl;
 }
 
-fn parent(context: Context) ?Context {
+pub fn parent(context: Context) ?Context {
     if (context.block) |id| {
         const enclosing = context.table.block(id).parent orelse return null;
         return .{ .table = context.table, .environment = context.table.block(enclosing).environment, .block = enclosing };

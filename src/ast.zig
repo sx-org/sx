@@ -1277,8 +1277,33 @@ pub const ImplBlock = struct {
 
 // ── Expansion cloning ───────────────────────────────────────────────────
 
-/// Name → replacement node, as bound by a module-scope `inline for` cursor.
-pub const Substitution = std.StringHashMap(*const Node);
+pub const ScopeBinding = enum { member, cursor, pending };
+
+pub const Substitution = struct {
+    bindings: std.StringHashMap(*const Node),
+    author_source: ?[]const u8 = null,
+    scope_shadow: ?struct {
+        context: *anyopaque,
+        select: *const fn (*anyopaque, *const Node, []const u8) ScopeBinding,
+        defer_binding: *const fn (*anyopaque, *Node, []const u8, *const Node) void,
+    } = null,
+
+    pub fn init(allocator: std.mem.Allocator) Substitution {
+        return .{ .bindings = .init(allocator) };
+    }
+
+    pub fn deinit(self: *Substitution) void {
+        self.bindings.deinit();
+    }
+
+    pub fn put(self: *Substitution, name: []const u8, node: *const Node) !void {
+        try self.bindings.put(name, node);
+    }
+
+    pub fn get(self: *const Substitution, name: []const u8) ?*const Node {
+        return self.bindings.get(name);
+    }
+};
 
 /// The bare NAME a node denotes, when it denotes one. `inline for` cursors
 /// bind type names, so only the two bare-name spellings answer.
@@ -1311,24 +1336,89 @@ pub fn cloneWithSubst(
             return copy;
         }
     }
+    var scoped = Substitution.init(allocator);
+    defer scoped.deinit();
+    const active = if (node.data == .scope_decl and subst.scope_shadow != null) blk: {
+        const shadow = subst.scope_shadow.?;
+        scoped.scope_shadow = shadow;
+        var it = subst.bindings.iterator();
+        while (it.next()) |binding| {
+            if (shadow.select(shadow.context, node, binding.key_ptr.*) == .cursor)
+                try scoped.put(binding.key_ptr.*, binding.value_ptr.*);
+        }
+        break :blk &scoped;
+    } else subst;
     const out = try allocator.create(Node);
     out.* = .{
         .span = node.span,
-        .data = try cloneData(allocator, node.data, subst),
+        .data = try cloneData(allocator, node.data, active),
         .source_file = node.source_file,
         .lexical_block = node.lexical_block,
         .visibility = node.visibility,
     };
     switch (out.data) {
+        .scope_decl => |*scope| {
+            scope.body_block = null;
+            if (subst.scope_shadow) |shadow| {
+                var it = subst.bindings.iterator();
+                while (it.next()) |binding| {
+                    if (shadow.select(shadow.context, node, binding.key_ptr.*) == .pending)
+                        shadow.defer_binding(shadow.context, out, binding.key_ptr.*, binding.value_ptr.*);
+                }
+            }
+        },
+        else => {},
+    }
+    substituteSpelling(out, subst);
+    return out;
+}
+
+pub fn substituteCursor(node: *Node, subst: *const Substitution) void {
+    if (subst.author_source) |source| {
+        if (node.source_file) |author| {
+            if (!std.mem.eql(u8, source, author)) return;
+        }
+    }
+    if (node.data == .scope_decl) {
+        var scoped = Substitution.init(subst.bindings.allocator);
+        defer scoped.deinit();
+        scoped.scope_shadow = subst.scope_shadow;
+        scoped.author_source = subst.author_source;
+        var it = subst.bindings.iterator();
+        while (it.next()) |binding| {
+            const selected = if (subst.scope_shadow) |shadow| shadow.select(shadow.context, node, binding.key_ptr.*) else .cursor;
+            switch (selected) {
+                .cursor => scoped.put(binding.key_ptr.*, binding.value_ptr.*) catch @panic("out of memory"),
+                .member => {},
+                .pending => {
+                    const shadow = subst.scope_shadow.?;
+                    shadow.defer_binding(shadow.context, node, binding.key_ptr.*, binding.value_ptr.*);
+                },
+            }
+        }
+        for (node.data.scope_decl.decls) |decl| substituteCursor(decl, &scoped);
+        return;
+    }
+    if (bareName(node)) |name| {
+        if (subst.get(name)) |replacement| node.data = replacement.data;
+    }
+    substituteSpelling(node, subst);
+    switch (node.data) {
+        inline else => |payload| substituteValue(@TypeOf(payload), payload, subst),
+    }
+}
+
+fn substituteSpelling(node: *Node, subst: *const Substitution) void {
+    switch (node.data) {
         .parameterized_type_expr => |*pt| {
             if (subst.get(pt.name)) |replacement| {
                 if (bareName(replacement)) |name| pt.name = name;
             }
         },
         .struct_literal => |*sl| {
-            if (sl.struct_name) |sn| {
-                if (subst.get(sn)) |replacement| {
-                    if (bareName(replacement)) |name| sl.struct_name = name;
+            if (sl.struct_name) |name| {
+                if (subst.get(name)) |replacement| {
+                    if (bareName(replacement)) |replacement_name| sl.struct_name = replacement_name;
                 }
             }
         },
@@ -1339,7 +1429,23 @@ pub fn cloneWithSubst(
         },
         else => {},
     }
-    return out;
+}
+
+fn substituteValue(comptime T: type, value: T, subst: *const Substitution) void {
+    if (comptime !holdsNode(T)) return;
+    switch (@typeInfo(T)) {
+        .pointer => |p| switch (p.size) {
+            .one => substituteCursor(value, subst),
+            .slice => for (value) |elem| substituteValue(p.child, elem, subst),
+            else => {},
+        },
+        .optional => |o| if (value) |inner| substituteValue(o.child, inner, subst),
+        .@"struct" => |s| inline for (s.fields) |f| substituteValue(f.type, @field(value, f.name), subst),
+        .@"union" => switch (value) {
+            inline else => |payload| substituteValue(@TypeOf(payload), payload, subst),
+        },
+        else => {},
+    }
 }
 
 pub fn stampLexicalBlock(node: *Node, block: LexicalBlockId) void {

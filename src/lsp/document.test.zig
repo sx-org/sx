@@ -785,6 +785,7 @@ test "scope declarations are indexed while spreads remain unsupported" {
     try std.testing.expectEqual(@as(usize, 1), sema.diagnostics.len);
     try std.testing.expectEqualStrings("scope spreads are not supported", sema.diagnostics[0].message);
     try std.testing.expectEqual(@as(usize, 2), sema.symbols.len);
+    try std.testing.expect(sema.selection.select("X") == null);
 }
 
 const CompilerFacts = struct {
@@ -1191,4 +1192,27 @@ test "scope aliases are designators and cannot initialize a value" {
     try std.testing.expectEqual(@as(usize, 1), diagnostics.len);
     try std.testing.expectEqualStrings("a scope is not a value", diagnostics[0].message);
     try std.testing.expectEqual(std.mem.lastIndexOf(u8, source, "Saved").?, diagnostics[0].span.?.start);
+}
+
+test "driver scope templates retain compiler and editor lexical parents without publishing names" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source: [:0]const u8 =
+        \\inline if true {
+        \\    generated :: scope { inner :: scope { value :: 1; } }
+        \\}
+    ;
+    var compiler = try compilerFacts(alloc, "driver-scopes.sx", source);
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const doc = try store.openOrUpdate("driver-scopes.sx", source, 1);
+    try store.analyzeDocument(doc);
+    try expectSameFileFacts(&compiler.table, doc.declarations.?.table, doc.path);
+    const driver = doc.root.?.data.root.decls[0];
+    const scope = driver.data.if_expr.then_branch.data.block.stmts[0];
+    const inner = scope.data.scope_decl.decls[0];
+    const table = doc.declarations.?.table;
+    try std.testing.expectEqual(scope.data.scope_decl.body_block.?, table.block(inner.data.scope_decl.body_block.?).parent.?);
+    try std.testing.expectEqual(inner.data.scope_decl.body_block.?, inner.data.scope_decl.decls[0].lexical_block.?);
+    try std.testing.expectEqual(@as(u32, 0), table.environment(table.block(inner.data.scope_decl.body_block.?).environment).names.count());
 }
