@@ -1310,12 +1310,7 @@ fn resolveBlockImports(
             continue;
         }
         if (decl.data == .c_import_decl) {
-            const result = processCImport(allocator, io, decl, base_dir, null, stdlib_paths) catch |err| {
-                if (diagnostics) |diags| {
-                    diags.addFmt(.err, decl.span, "@import c failed: {}", .{err});
-                }
-                return error.ImportError;
-            };
+            const result = try processCImport(allocator, io, decl, base_dir, null, stdlib_paths, diagnostics);
             const ci = decl.data.c_import_decl;
 
             if (ci.name) |ns_name| {
@@ -1410,14 +1405,24 @@ pub fn processCImport(
     base_dir: []const u8,
     root_path: ?[]const u8,
     stdlib_paths: []const []const u8,
+    diagnostics: ?*errors.DiagnosticList,
 ) !c_import.CImportResult {
-    const ci = &node.data.c_import_decl;
+    const operand = if (node.data == .spread_decl) node.data.spread_decl.source else node;
+    const ci = &operand.data.c_import_decl;
     for ([_]*[]const []const u8{ &ci.includes, &ci.sources }) |paths| {
         const resolved = try allocator.alloc([]const u8, paths.*.len);
         for (paths.*, resolved) |path, *out| out.* = try resolveImportPath(allocator, io, base_dir, path, root_path, stdlib_paths);
         paths.* = resolved;
     }
-    return c_import.processCImport(allocator, ci.includes, ci.defines, ci.flags);
+    return switch (try c_import.processCImport(allocator, ci.includes, ci.defines, ci.flags)) {
+        .success => |result| result,
+        .failure => |failure| {
+            if (diagnostics) |diags| {
+                diags.addFmtInFile(.err, node.source_file, node.span, "@import c failed: cannot parse '{s}': {s}", .{ failure.header, failure.message });
+            }
+            return error.ImportError;
+        },
+    };
 }
 
 fn resolveSpreadSource(
@@ -1439,10 +1444,7 @@ fn resolveSpreadSource(
             _ = try loadImport(allocator, io, imp.path, node, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
         },
         .c_import_decl => {
-            const result = processCImport(allocator, io, operand, base_dir, null, stdlib_paths) catch |err| {
-                if (diagnostics) |diags| diags.addFmt(.err, node.span, "@import c failed: {}", .{err});
-                return error.ImportError;
-            };
+            const result = try processCImport(allocator, io, node, base_dir, null, stdlib_paths, diagnostics);
             node.data.spread_decl.c_decls = result.fn_decls;
         },
         else => {},

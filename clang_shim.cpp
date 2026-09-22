@@ -12,6 +12,7 @@
 #include <clang/Frontend/CompilerInvocation.h>
 #include <clang/Frontend/FrontendAction.h>
 
+#include <llvm/ADT/SmallString.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/IR/Module.h>
@@ -24,6 +25,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -129,6 +131,21 @@ public:
     }
 };
 
+class CapturingDiagnosticConsumer : public clang::DiagnosticConsumer {
+public:
+    std::optional<std::string> first_error;
+
+    void HandleDiagnostic(clang::DiagnosticsEngine::Level level,
+                          const clang::Diagnostic &diagnostic) override {
+        clang::DiagnosticConsumer::HandleDiagnostic(level, diagnostic);
+        if (level >= clang::DiagnosticsEngine::Error && !first_error) {
+            llvm::SmallString<128> message;
+            diagnostic.FormatDiagnostic(message);
+            first_error = message.str().str();
+        }
+    }
+};
+
 /// Build a CompilerInstance from user args + filename using the Driver.
 /// Returns nullptr on failure (sets out_error).
 static std::unique_ptr<clang::CompilerInstance>
@@ -195,7 +212,9 @@ buildCompilerInstance(const char *filename,
     // createDiagnostics(DiagnosticConsumer*) is the convenience overload; it
     // builds a default VFS internally.
     auto CI = std::make_unique<clang::CompilerInstance>(std::move(invocation));
-    CI->createDiagnostics(new clang::DiagnosticConsumer());
+    // Clang gates its stderr diagnostic summary on ShowCarets.
+    CI->getDiagnosticOpts().ShowCarets = false;
+    CI->createDiagnostics(new CapturingDiagnosticConsumer());
     return CI;
 }
 
@@ -214,7 +233,10 @@ extern "C" SxCHeaderInfo *sx_clang_parse_header(
     std::vector<SxCFunctionInfo> functions;
     CollectFunctionsAction action(functions);
     if (!CI->ExecuteAction(action)) {
-        if (out_error) *out_error = strdup("failed to parse header");
+        const auto &diagnostics = static_cast<CapturingDiagnosticConsumer &>(
+            CI->getDiagnosticClient());
+        if (out_error)
+            *out_error = strdup(diagnostics.first_error.value_or("failed to parse header").c_str());
         return nullptr;
     }
 

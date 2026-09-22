@@ -1,6 +1,4 @@
-1 error generated.
-clang parse error for 'absent-header.h': failed to parse header
-error: @import c failed: error.CompileError
+error: @import c failed: cannot parse 'absent-header.h': error reading 'absent-header.h': No such file or directory
   --> examples/cimport/spread-missing-header.sx:1:1
    |
  1 | ..@import c { @include "absent-header.h"; };

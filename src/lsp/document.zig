@@ -303,14 +303,14 @@ pub const DocumentStore = struct {
                 else => unreachable,
             };
             if (decl.data == .spread_decl and decl.data.spread_decl.source.data == .c_import_decl) {
-                const result = try sx.imports.processCImport(self.allocator, self.io, decl.data.spread_decl.source, sx.imports.dirName(doc.path), self.rootPathOpt(), self.stdlib_paths);
+                const result = try sx.imports.processCImport(self.allocator, self.io, decl, sx.imports.dirName(doc.path), self.rootPathOpt(), self.stdlib_paths, null);
                 decl.data.spread_decl.c_decls = result.fn_decls;
                 if (publication == .published) for (result.fn_decls, result.locations) |generated, location| {
                     if (generated.data == .fn_decl) try doc.c_source_locations.put(generated.data.fn_decl.name, location);
                 };
             }
             if (decl.data == .c_import_decl and publication == .published) {
-                if (sx.imports.processCImport(self.allocator, self.io, decl, sx.imports.dirName(doc.path), self.rootPathOpt(), self.stdlib_paths)) |result| {
+                if (sx.imports.processCImport(self.allocator, self.io, decl, sx.imports.dirName(doc.path), self.rootPathOpt(), self.stdlib_paths, null)) |result| {
                     const ci = decl.data.c_import_decl;
                     for (result.fn_decls, result.locations) |fd, loc| {
                         if (ci.name == null) {
