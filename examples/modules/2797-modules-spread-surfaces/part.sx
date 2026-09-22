@@ -1,0 +1,3 @@
+value :: 10;
+extra :: 11;
+Control :: struct { x: i64; }

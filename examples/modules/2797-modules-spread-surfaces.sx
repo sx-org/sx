@@ -1,0 +1,10 @@
+@import "modules/std.sx";
+@import "2797-modules-spread-surfaces/facade.sx";
+n :: @import "2797-modules-spread-surfaces/facade.sx";
+geo :: scope { value :: 30; }
+surface :: scope { ..n; }
+main :: () {
+    widget := Widget{ x = 7 };
+    print("{} {} {} {} {} {} {}\n", value, n.value, surface.value,
+        geo.value, geo.extra, n.geo.value, widget.x);
+}

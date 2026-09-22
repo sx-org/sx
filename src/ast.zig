@@ -1559,6 +1559,9 @@ fn appendScopeDeclarations(alloc: std.mem.Allocator, decls: []const *const Node,
     for (decls) |decl| {
         if (decl.data == .scope_decl) {
             try appendScopeDeclarations(alloc, decl.data.scope_decl.decls, out);
-        } else try out.append(alloc, decl);
+        } else {
+            try out.append(alloc, decl);
+            if (decl.data == .spread_decl) if (decl.data.spread_decl.c_decls) |generated| try out.appendSlice(alloc, generated);
+        }
     }
 }

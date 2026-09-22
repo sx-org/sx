@@ -1,0 +1,16 @@
+@import "modules/std.sx";
+a :: scope {
+    ..a;
+    b :: scope {
+        ..a;
+        Item :: struct { x: i64; }
+        read :: (v: Item) -> i64 { v.x }
+    }
+}
+..a;
+..b;
+Reader :: read;
+main :: () {
+    value: a.b.b.Item = Item{ x = 42 };
+    print("{} {}\n", Reader(value), a.b.b.read(value));
+}

@@ -1,0 +1,11 @@
+error: spread target is not declared
+  --> examples/modules/2800-modules-spread-target-order.sx:1:1
+   |
+ 1 | ..Later;
+   | ^^^^^^^^
+
+error: unresolved 'Early' (in examples/modules/2800-modules-spread-target-order.sx fn main)
+  --> examples/modules/2800-modules-spread-target-order.sx:5:23
+   |
+ 5 | main :: () { value := Early.value; }
+   |                       ^^^^^

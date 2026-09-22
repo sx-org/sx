@@ -255,6 +255,9 @@ pub const Analyzer = struct {
         self.pending_visibility = node.visibility;
         defer self.pending_visibility = .public;
         switch (node.data) {
+            .spread_decl => |spread| {
+                if (spread.c_decls) |generated| for (generated) |decl| try self.registerTopLevelDeclPrefixed(decl, ns_prefix);
+            },
             .fn_decl => |fd| {
                 const ret_ty = self.resolveReturnType(fd) orelse
                     if (fd.is_arrow) self.inferFnReturnType(fd.params, fd.body) else null;
@@ -294,6 +297,7 @@ pub const Analyzer = struct {
                 });
             },
             .const_decl => |cd| {
+                self.setSelection(try self.selection.atWritten(node));
                 const ty = self.resolveTypeAnnotation(cd.type_annotation) orelse self.inferValueType(cd.value);
                 const kind = classifyConstDecl(cd);
                 const int_constant = self.constIndexValue(cd.value);
@@ -1148,6 +1152,14 @@ pub const Analyzer = struct {
                 self.in_c_conv = saved_cc;
             },
             .const_decl => |cd| {
+                self.setSelection(try self.selection.atWritten(node));
+                if (imports.aliasPath(self.allocator, cd.value)) |path| {
+                    defer self.allocator.free(path);
+                    if (self.selection.selectPath(path) == .ambiguous) {
+                        try self.diagnostics.append(self.allocator, .{ .level = .err, .span = cd.value.span, .message = "alias target is ambiguous" });
+                        return;
+                    }
+                }
                 try self.analyzeDesignator(cd.value);
             },
             .var_decl => |vd| {
@@ -1847,11 +1859,8 @@ pub const Analyzer = struct {
                 for (scope.decls) |decl| try self.analyzeTopLevelDecl(decl);
             },
             .spread_decl => {
-                try self.diagnostics.append(self.allocator, .{
-                    .level = .err,
-                    .span = node.span,
-                    .message = "scope spreads are not supported",
-                });
+                const target = self.selection.spreadTarget(node);
+                if (target.diagnostic()) |text| try self.diagnostics.append(self.allocator, .{ .level = .err, .span = node.span, .message = text });
             },
             .root => {
                 // Should not appear nested

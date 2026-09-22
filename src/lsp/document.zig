@@ -305,6 +305,9 @@ pub const DocumentStore = struct {
             if (decl.data == .spread_decl and decl.data.spread_decl.source.data == .c_import_decl) {
                 const result = try sx.imports.processCImport(self.allocator, self.io, decl.data.spread_decl.source, sx.imports.dirName(doc.path), self.rootPathOpt(), self.stdlib_paths);
                 decl.data.spread_decl.c_decls = result.fn_decls;
+                if (publication == .published) for (result.fn_decls, result.locations) |generated, location| {
+                    if (generated.data == .fn_decl) try doc.c_source_locations.put(generated.data.fn_decl.name, location);
+                };
             }
             if (decl.data == .c_import_decl and publication == .published) {
                 if (sx.imports.processCImport(self.allocator, self.io, decl, sx.imports.dirName(doc.path), self.rootPathOpt(), self.stdlib_paths)) |result| {
@@ -437,6 +440,8 @@ pub const DocumentStore = struct {
             try analyzer.diagnostics.append(self.allocator, .{ .span = span, .message = "duplicate declaration", .level = .err });
         }
 
+        var imported_symbols = std.AutoHashMap(sx.sema.Declaration, void).init(self.allocator);
+        defer imported_symbols.deinit();
         for (doc.imports) |imp| {
             const imp_doc = self.getOrLoad(imp.path) catch continue;
 
@@ -445,11 +450,10 @@ pub const DocumentStore = struct {
                 self.analyzeDocument(imp_doc) catch {};
             }
 
-            if (imp.exposure == .spread) continue;
-
             const imp_sema = imp_doc.sema orelse continue;
-            try (try analyzer.selection.inBlock(imp.block)).addImport(imp.ns, imp_sema.selection);
-            if (imp.block != block) continue;
+            if (imp.exposure == .spread) {
+                try analyzer.selection.spread_modules.put(imp.path, imp_sema.selection);
+            } else try (try analyzer.selection.inBlock(imp.block)).addImport(imp.ns, imp_sema.selection);
             try analyzer.mergeMetadata(imp_sema);
 
             if (imp.ns) |ns_name| {
@@ -463,24 +467,21 @@ pub const DocumentStore = struct {
                     .scope_depth = 0,
                     .origin = imp.path,
                 });
-            } else {
-                // Flat import: pre-register all top-level symbols with origin set
-                for (imp_sema.symbols) |sym| {
-                    if (sym.scope_depth == 0) {
-                        // Private module-scope symbols never cross a flat
-                        // import into another file.
-                        if (sym.visibility == .private) continue;
-                        try analyzer.preRegisterSymbol(.{
-                            .declaration = sym.declaration,
-                            .name = sym.name,
-                            .kind = sym.kind,
-                            .ty = sym.ty,
-                            .def_span = sym.def_span,
-                            .scope_depth = 0,
-                            .origin = sym.origin orelse imp.path,
-                        });
-                    }
-                }
+            }
+            for (imp_sema.symbols) |sym| {
+                if (sym.scope_depth != 0 or sym.visibility == .private) continue;
+                const declaration = sym.declaration orelse continue;
+                const entry = try imported_symbols.getOrPut(declaration);
+                if (entry.found_existing) continue;
+                try analyzer.preRegisterSymbol(.{
+                    .declaration = sym.declaration,
+                    .name = sym.name,
+                    .kind = sym.kind,
+                    .ty = sym.ty,
+                    .def_span = sym.def_span,
+                    .scope_depth = 0,
+                    .origin = sym.origin orelse imp.path,
+                });
             }
         }
 

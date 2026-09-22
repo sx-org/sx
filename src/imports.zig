@@ -1271,6 +1271,11 @@ fn resolveBlockImports(
         if (decl.data == .spread_decl) {
             try resolveSpreadSource(allocator, io, decl, base_dir, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
             try cache.declarations.recordSpread(block_id, decl, .published);
+            if (decl.data.spread_decl.source.data == .import_decl) {
+                const path = decl.data.spread_decl.source.data.import_decl.path;
+                if (cache.modules.get(path)) |imported_mod| try mod.mergeFlat(allocator, &decl_list, &seen_in_list, &seen_nodes, imported_mod);
+                if (import_graph) |graph| if (graph.getPtr(canonical_file)) |edges| try edges.put(path, {});
+            }
             try decl_list.append(allocator, decl);
             continue;
         }

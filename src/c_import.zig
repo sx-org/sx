@@ -953,6 +953,7 @@ pub fn collectCImportSources(allocator: std.mem.Allocator, root: *const Node) ![
                     },
                     .namespace_decl => |ns| try walk(infos_, seen_, alloc, ns.decls),
                     .scope_decl => |scope| try walk(infos_, seen_, alloc, scope.decls),
+                    .spread_decl => |spread| try walk(infos_, seen_, alloc, &.{spread.source}),
                     else => {},
                 }
             }

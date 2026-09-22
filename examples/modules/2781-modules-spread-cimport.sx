@@ -1,2 +1,9 @@
-..@import c { @include "stdint.h"; };
-main :: () -> i32 { 0 }
+@import "modules/std.sx";
+geo :: scope {
+    ..@import c {
+        @include "2781-modules-spread-cimport/value.h";
+        @source "2781-modules-spread-cimport/value.c";
+    };
+}
+..geo;
+main :: () { print("{} {}\n", geo.spread_value(), spread_value()); }
