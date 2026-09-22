@@ -10,7 +10,7 @@
 
 gSdlPlat : *SdlPlatform = null;
 
-SDL_GetBasePath :: () -> [*]u8 extern;
+SDL_GetBasePath :: () -> [*:0]u8 extern;
 
 // A macOS `.app` launched via Finder / `open` starts with CWD=`/`, so a
 // game's CWD-relative asset loads (`read_file_bytes("assets/...")`) miss and

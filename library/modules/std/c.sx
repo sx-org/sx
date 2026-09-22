@@ -19,7 +19,7 @@ close  :: (fd: Fd) -> i32 extern libc;
 open   :: (path: [*:0]u8, flags: i32, ..args: []i32) -> i32 extern libc;
 lseek  :: (fd: Fd, offset: i64, whence: i32) -> i64 extern libc;
 unlink :: (path: [*:0]u8) -> i32 extern libc;
-chdir  :: (path: [*]u8) -> i32 extern libc;
+chdir  :: (path: [*:0]u8) -> i32 extern libc;
 rmdir  :: (path: [*:0]u8) -> i32 extern libc;
 mkdir  :: (path: [*:0]u8, mode: u32) -> i32 extern libc;
 access :: (path: [*:0]u8, mode: i32) -> i32 extern libc;
