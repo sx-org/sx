@@ -11,6 +11,7 @@ const sx = struct {
 
 pub const Import = struct {
     block: sx.imports.LexicalBlockId,
+    exposure: enum { plain, spread } = .plain,
     declaration: ?sx.sema.Declaration = null,
     /// Namespace name. null for flat imports.
     ns: ?[]const u8,
@@ -257,11 +258,13 @@ pub const DocumentStore = struct {
                 }
                 continue;
             }
-            if (decl.data != .import_decl) continue;
-            const imp = decl.data.import_decl;
+            const operand = if (decl.data == .spread_decl) decl.data.spread_decl.source else decl;
+            if (operand.data != .import_decl) continue;
+            const imp = operand.data.import_decl;
             const resolved_path = try sx.imports.resolveImportPath(self.allocator, self.io, base_dir, imp.path, self.rootPathOpt(), self.stdlib_paths);
             try list.append(self.allocator, .{
                 .block = decl.lexical_block.?,
+                .exposure = if (decl.data == .spread_decl) .spread else .plain,
                 .ns = imp.name,
                 .path = resolved_path,
             });
@@ -270,28 +273,42 @@ pub const DocumentStore = struct {
 
     fn collectBranchImports(self: *DocumentStore, list: *std.ArrayList(Import), body: *sx.ast.Node, base_dir: []const u8, file_path: []const u8) anyerror!void {
         const stmts: []const *sx.ast.Node = if (body.data == .block) body.data.block.stmts else &[_]*sx.ast.Node{body};
-        const expanded = try sx.imports.expandDirectoryImports(self.allocator, self.io, stmts, base_dir, file_path, self.rootPathOpt(), self.stdlib_paths, null);
-        if (body.data == .block) body.data.block.stmts = expanded;
-        try self.collectImports(list, expanded, base_dir, file_path);
+        try self.collectImports(list, stmts, base_dir, file_path);
     }
 
-    fn expandDeclarations(self: *DocumentStore, doc: *Document, nodes: *[]const *sx.ast.Node) anyerror!void {
+    fn expandBranchDeclarations(self: *DocumentStore, doc: *Document, body: *sx.ast.Node) anyerror!void {
+        if (body.data == .block) {
+            try self.expandDeclarations(doc, &body.data.block.stmts, .deferred);
+        } else {
+            const original = try self.allocator.create(sx.ast.Node);
+            original.* = body.*;
+            var nodes: []const *sx.ast.Node = &.{original};
+            try self.expandDeclarations(doc, &nodes, .deferred);
+            body.data = .{ .block = .{ .stmts = nodes } };
+        }
+    }
+
+    fn expandDeclarations(self: *DocumentStore, doc: *Document, nodes: *[]const *sx.ast.Node, publication: sx.imports.Publication) anyerror!void {
         nodes.* = try sx.imports.expandDirectoryImports(self.allocator, self.io, nodes.*, sx.imports.dirName(doc.path), doc.path, self.rootPathOpt(), self.stdlib_paths, null);
         var expanded = std.ArrayList(*sx.ast.Node).empty;
         for (nodes.*) |decl| {
-            if (decl.data == .scope_decl) try self.expandDeclarations(doc, &decl.data.scope_decl.decls);
-            if (decl.data == .c_import_decl) {
-                const ci = decl.data.c_import_decl;
-                const includes = try self.allocator.alloc([]const u8, ci.includes.len);
-                for (ci.includes, includes) |include, *resolved| {
-                    resolved.* = try sx.imports.resolveImportPath(self.allocator, self.io, sx.imports.dirName(doc.path), include, self.rootPathOpt(), self.stdlib_paths);
-                }
-                if (sx.c_import.processCImport(
-                    self.allocator,
-                    includes,
-                    ci.defines,
-                    ci.flags,
-                )) |result| {
+            if (decl.data == .scope_decl) try self.expandDeclarations(doc, &decl.data.scope_decl.decls, publication);
+            if (sx.imports.isModuleDriver(decl)) switch (decl.data) {
+                .if_expr => |ie| {
+                    try self.expandBranchDeclarations(doc, ie.then_branch);
+                    if (ie.else_branch) |other| try self.expandBranchDeclarations(doc, other);
+                },
+                .match_expr => |me| for (me.arms) |arm| try self.expandBranchDeclarations(doc, arm.body),
+                .for_expr => |fe| try self.expandBranchDeclarations(doc, fe.body),
+                else => unreachable,
+            };
+            if (decl.data == .spread_decl and decl.data.spread_decl.source.data == .c_import_decl) {
+                const result = try sx.imports.processCImport(self.allocator, self.io, decl.data.spread_decl.source, sx.imports.dirName(doc.path), self.rootPathOpt(), self.stdlib_paths);
+                decl.data.spread_decl.c_decls = result.fn_decls;
+            }
+            if (decl.data == .c_import_decl and publication == .published) {
+                if (sx.imports.processCImport(self.allocator, self.io, decl, sx.imports.dirName(doc.path), self.rootPathOpt(), self.stdlib_paths)) |result| {
+                    const ci = decl.data.c_import_decl;
                     for (result.fn_decls, result.locations) |fd, loc| {
                         if (ci.name == null) {
                             fd.source_file = doc.path;
@@ -332,6 +349,7 @@ pub const DocumentStore = struct {
             sx.ast.stampLexicalBlock(decl, block);
             decl.source_file = source;
             sx.imports.stampFnBodySource(decl, source);
+            try table.recordWrittenTarget(block, decl);
             const name = decl.data.declName() orelse (if (decl.data == .import_decl) decl.data.import_decl.name else null);
             if (name) |n| {
                 if (!try table.claimNamed(env, n, decl)) {
@@ -339,13 +357,33 @@ pub const DocumentStore = struct {
                     continue;
                 }
             }
-            if (sx.imports.isModuleDriver(decl)) try table.prepareExpansion(decl, block);
+            if (sx.imports.isModuleDriver(decl)) {
+                try table.prepareExpansion(decl, block);
+                try self.indexDeferredSpreads(table, decl);
+            }
             if (decl.data == .scope_decl) {
                 const child = try table.addScopeBlock(block, decl);
                 try self.indexBlock(table, child, decl.data.scope_decl.decls, duplicates);
             } else if (decl.data == .import_decl) {
                 try table.recordImport(block, decl);
+            } else if (decl.data == .spread_decl) {
+                try table.recordSpread(block, decl, .published);
             }
+        }
+    }
+
+    fn indexDeferredSpreads(self: *DocumentStore, table: *sx.imports.DeclTable, node: *sx.ast.Node) anyerror!void {
+        switch (node.data) {
+            .spread_decl => try table.recordSpread(node.lexical_block.?, node, .deferred),
+            .scope_decl => |scope| for (scope.decls) |decl| try self.indexDeferredSpreads(table, decl),
+            .block => |body| for (body.stmts) |stmt| try self.indexDeferredSpreads(table, stmt),
+            .if_expr => |ie| {
+                try self.indexDeferredSpreads(table, ie.then_branch);
+                if (ie.else_branch) |other| try self.indexDeferredSpreads(table, other);
+            },
+            .match_expr => |me| for (me.arms) |arm| try self.indexDeferredSpreads(table, arm.body),
+            .for_expr => |fe| try self.indexDeferredSpreads(table, fe.body),
+            else => {},
         }
     }
 
@@ -363,7 +401,7 @@ pub const DocumentStore = struct {
 
         doc.c_source_locations = std.StringHashMap(sx.c_import.CSourceLocation).init(self.allocator);
         if (doc.root) |parsed_root| {
-            if (parsed_root.data == .root) try self.expandDeclarations(doc, &parsed_root.data.root.decls);
+            if (parsed_root.data == .root) try self.expandDeclarations(doc, &parsed_root.data.root.decls, .published);
         }
 
         const root = doc.root orelse return;
@@ -406,6 +444,8 @@ pub const DocumentStore = struct {
             if (imp_doc.sema == null) {
                 self.analyzeDocument(imp_doc) catch {};
             }
+
+            if (imp.exposure == .spread) continue;
 
             const imp_sema = imp_doc.sema orelse continue;
             try (try analyzer.selection.inBlock(imp.block)).addImport(imp.ns, imp_sema.selection);
