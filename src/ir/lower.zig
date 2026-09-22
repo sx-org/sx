@@ -1840,8 +1840,12 @@ pub const Lowering = struct {
         return self.comptimeIntNamed(name);
     }
 
-    pub fn evalConstCallInt(self: *Lowering, node: *const Node) ?i64 {
-        if (self.fieldCall(node) != null) return self.foldFieldInt(node, null);
+    pub const LayoutQuery = struct {
+        kind: enum { size, alignment },
+        type_arg: *const Node,
+    };
+
+    pub fn layoutQuery(node: *const Node) ?LayoutQuery {
         const c = switch (node.data) {
             .call => |call| call,
             else => return null,
@@ -1851,14 +1855,23 @@ pub const Lowering = struct {
             else => return null,
         };
         if (c.args.len != 1) return null;
-        const is_sz = std.mem.eql(u8, name, "@sizeOf");
-        const is_al = std.mem.eql(u8, name, "@alignOf");
-        if (!is_sz and !is_al) return null;
+        const kind: @FieldType(LayoutQuery, "kind") = if (std.mem.eql(u8, name, "@sizeOf"))
+            .size
+        else if (std.mem.eql(u8, name, "@alignOf"))
+            .alignment
+        else
+            return null;
+        return .{ .kind = kind, .type_arg = c.args[0] };
+    }
+
+    pub fn evalConstCallInt(self: *Lowering, node: *const Node) ?i64 {
+        if (self.fieldCall(node) != null) return self.foldFieldInt(node, null);
+        const query = layoutQuery(node) orelse return null;
         // A runtime Type arg is not a compile-time integer — and resolveTypeArg
         // would emit a spurious "unresolved type" diagnostic from this
         // SPECULATIVE fold context. Bail to the normal (dynamic) lowering.
-        if (!self.isStaticTypeArg(c.args[0])) return null;
-        const ty = self.resolveTypeArg(c.args[0]);
+        if (!self.isStaticTypeArg(query.type_arg)) return null;
+        const ty = self.resolveTypeArg(query.type_arg);
         if (ty == .unresolved) return null;
         // An open set's layout is not a number yet unless nothing can still grow
         // it: a folded position is fixed WHERE IT IS WRITTEN, so answering it here
@@ -1869,8 +1882,10 @@ pub const Lowering = struct {
             // type it dimensions well-formed for the rest of the pass, and the
             // build stops on the error before any of it is emitted.
         }
-        if (is_sz) return @intCast(self.typeSizeBytes(ty));
-        return @intCast(self.typeAlignBytes(ty));
+        return switch (query.kind) {
+            .size => @intCast(self.typeSizeBytes(ty)),
+            .alignment => @intCast(self.typeAlignBytes(ty)),
+        };
     }
 
     /// An `inline for` capture's aliased element re-rooted under a member read,

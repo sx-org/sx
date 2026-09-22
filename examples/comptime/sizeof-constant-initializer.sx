@@ -1,0 +1,4 @@
+@import "modules/std.sx";
+N :: @sizeOf(i32);
+Bytes :: [N]u8;
+main :: () -> i32 { N.(i32) }
