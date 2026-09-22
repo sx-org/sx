@@ -128,6 +128,14 @@ fn sameContext(a: Context, b: Context) bool {
     return a.table == b.table and a.environment == b.environment and a.block == b.block and std.meta.eql(a.order, b.order);
 }
 
+fn sameQualifier(a: Qualifier, b: Qualifier) bool {
+    if (std.meta.activeTag(a) != std.meta.activeTag(b)) return false;
+    return switch (a) {
+        .namespace => |ctx| sameContext(ctx, b.namespace),
+        .scope => |scope| samePath(scope.path, b.scope.path) and sameContext(scope.context, b.scope.context) and scope.pinned == b.scope.pinned,
+    };
+}
+
 pub fn Query(comptime Backend: type) type {
     return struct {
         backend: Backend,
@@ -302,6 +310,60 @@ pub fn Query(comptime Backend: type) type {
             const candidates = try self.surface(target, name, requester);
             defer self.alloc.free(candidates.imported);
             return self.choose(candidates);
+        }
+
+        pub fn enumerateMembers(self: *Self, target: Qualifier, requester: []const u8) Error![]const Selected {
+            var names = std.StringHashMap(void).init(self.alloc);
+            defer names.deinit();
+            var visited: std.ArrayList(Qualifier) = .empty;
+            defer visited.deinit(self.alloc);
+            try self.surfaceNames(target, &names, &visited);
+            var result: std.ArrayList(Selected) = .empty;
+            errdefer result.deinit(self.alloc);
+            var it = names.keyIterator();
+            while (it.next()) |name| {
+                const selected = try self.member(target, name.*, requester);
+                if (selected == .selected) try result.append(self.alloc, selected.selected);
+            }
+            return result.toOwnedSlice(self.alloc);
+        }
+
+        fn surfaceNames(self: *Self, target: Qualifier, names: *std.StringHashMap(void), visited: *std.ArrayList(Qualifier)) Error!void {
+            for (visited.items) |previous| if (sameQualifier(previous, target)) return;
+            try visited.append(self.alloc, target);
+            var environments: std.ArrayList(Context) = .empty;
+            defer environments.deinit(self.alloc);
+            const view = switch (target) {
+                .namespace => |ctx| blk: {
+                    try environments.append(self.alloc, ctx);
+                    break :blk ctx;
+                },
+                .scope => |scope| blk: {
+                    try self.scopeEnvironments(&environments, scope);
+                    break :blk scope.context;
+                },
+            };
+            for (environments.items) |ctx| {
+                var it = ctx.table.environment(ctx.environment).names.keyIterator();
+                while (it.next()) |name| try names.put(name.*, {});
+                if (self.contributions) |pending| for (pending.declarations) |decl| {
+                    if (decl.table == ctx.table and decl.info().environment == ctx.environment)
+                        try names.put(decl.info().name, {});
+                };
+                const nodes = try self.spreads(ctx);
+                defer self.alloc.free(nodes);
+                for (nodes) |node| {
+                    if (!permitted(ctx, node)) continue;
+                    const source = ctx.table.spread_sources.get(node).?;
+                    if (source == .c_import) {
+                        for (source.c_import) |id| try names.put(ctx.table.get(id).name, {});
+                    } else {
+                        const targets = try self.spreadTargets(ctx, node, view);
+                        defer self.alloc.free(targets);
+                        for (targets) |spread| try self.surfaceNames(spread, names, visited);
+                    }
+                }
+            }
         }
 
         pub fn spreadTarget(self: *Self, context: Context, node: *const ast.Node) Error!SpreadTarget {
@@ -547,12 +609,7 @@ pub fn Query(comptime Backend: type) type {
 
         pub fn surface(self: *Self, target: Qualifier, name: []const u8, requester: []const u8) Error!Candidates {
             for (self.surfaces.items) |previous| {
-                if (!std.mem.eql(u8, previous.name, name) or std.meta.activeTag(previous.target) != std.meta.activeTag(target)) continue;
-                const equal = switch (target) {
-                    .namespace => |ctx| sameContext(ctx, previous.target.namespace),
-                    .scope => |scope| samePath(scope.path, previous.target.scope.path) and sameContext(scope.context, previous.target.scope.context) and scope.pinned == previous.target.scope.pinned,
-                };
-                if (equal) return .{};
+                if (std.mem.eql(u8, previous.name, name) and sameQualifier(previous.target, target)) return .{};
             }
             try self.surfaces.append(self.alloc, .{ .target = target, .name = name });
             defer _ = self.surfaces.pop();

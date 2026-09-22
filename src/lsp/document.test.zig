@@ -1623,3 +1623,47 @@ test "a scope carried through scope spreads retains its members" {
         try std.testing.expectEqual(@as(usize, 0), sema.diagnostics.len);
     }
 }
+
+test "scope enumeration resolves spread conflicts privacy cycles and pinned aliases" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const part = try store.openOrUpdate("part.sx", "private secret :: 1; clash :: 2; value :: 3; carried :: 4;", 1);
+    try store.analyzeDocument(part);
+    const other = try store.openOrUpdate("other.sx", "clash :: 5;", 1);
+    try store.analyzeDocument(other);
+    const lib = try store.openOrUpdate("lib.sx",
+        \\geo :: scope { ..geo; ..@import "part.sx"; ..@import "other.sx"; value :: 6; }
+        \\Pinned :: geo;
+    , 1);
+    try store.analyzeDocument(lib);
+    const doc = try store.openOrUpdate("main.sx",
+        \\@import "lib.sx";
+        \\geo :: scope { value :: 7; }
+    , 1);
+    try store.analyzeDocument(doc);
+    const selected = doc.sema.?.selection;
+    const members = (try selected.members("geo")).?;
+    try std.testing.expectEqual(@as(usize, 2), members.len);
+    var found_value = false;
+    var found_carried = false;
+    for (members) |member| {
+        const info = member.declaration.info();
+        if (std.mem.eql(u8, info.name, "value")) {
+            found_value = true;
+            try std.testing.expectEqualStrings("main.sx", info.source.?);
+        }
+        if (std.mem.eql(u8, info.name, "carried")) {
+            found_carried = true;
+            try std.testing.expectEqualStrings("part.sx", info.source.?);
+        }
+    }
+    try std.testing.expect(found_value and found_carried);
+    const pinned = (try selected.members("Pinned")).?;
+    try std.testing.expectEqual(@as(usize, 2), pinned.len);
+    for (pinned) |member| {
+        if (std.mem.eql(u8, member.declaration.info().name, "value"))
+            try std.testing.expectEqualStrings("lib.sx", member.declaration.info().source.?);
+    }
+}
