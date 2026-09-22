@@ -1,34 +1,22 @@
-// Stress: the same board screen through the FLUENT library.
-//
-// A separate entry point importing exactly one library. The same screen again,
-// built the fluent way: a container is an ordinary value whose child list is an
-// explicit field initializer over `collectViews()`, so interception happens only
-// inside that named block.
 @import "modules/std.sx";
-@import "modules/ui/fluent/geometry.sx";
-@import "modules/ui/fluent/render.sx";
-@import "modules/ui/fluent/view.sx";
-@import "modules/ui/fluent/components.sx";
-@import "modules/ui/fluent/containers.sx";
-@import "modules/ui/fluent/runtime.sx";
-@import "modules/ui/fluent/storage.sx";
+@import "modules/ui/fluent.sx";
 
 BoardViewState :: struct {
     cellEids: [81]u64 = ---;
 }
 
-BoardView :: @OpenVariant(View) {
+BoardView :: @OpenVariant(fluent.View) {
     state: *BoardViewState = null;
     side: f32 = 0.0;
 
-    fit :: (self: *BoardView, proposal: ProposedSize) -> Size {
-        Size{ width = self.side, height = self.side }
+    fit :: (self: *BoardView, proposal: fluent.ProposedSize) -> fluent.Size {
+        fluent.Size{ width = self.side, height = self.side }
     }
 
-    layout :: (self: *BoardView, bounds: Frame) {}
+    layout :: (self: *BoardView, bounds: fluent.Frame) {}
 
-    render :: (self: *BoardView, rc: *RenderContext, frame: Frame) {
-        rc.addRect(frame, Color{ r = 26, g = 26, b = 26, a = 255 });
+    render :: (self: *BoardView, rc: *fluent.RenderContext, frame: fluent.Frame) {
+        rc.addRect(frame, fluent.Color{ r = 26, g = 26, b = 26, a = 255 });
     }
 }
 
@@ -36,39 +24,33 @@ main :: () -> i32 {
     st := BoardViewState{};
     for i in 0..81 { st.cellEids[i] = (i + 1).(u64); }
 
-    cells := VStack{ children = collectViews() {
+    cells := fluent.VStack{ children = fluent.collectViews() {
         for i in 0..81 {
-            Label{ text = "c" };
+            fluent.Label{ text = "c" };
         }
     } };
 
-    actions := VStack{ spacing = 8.0, children = collectViews() {
-        Button{ label = "New" };
-        Button{ label = "Hint" };
-        Button{ label = "Undo" };
+    actions := fluent.VStack{ spacing = 8.0, children = fluent.collectViews() {
+        fluent.Button{ label = "New" };
+        fluent.Button{ label = "Hint" };
+        fluent.Button{ label = "Undo" };
     } };
 
-    screen := VStack{ spacing = 12.0, children = collectViews() {
-        Label{ text = "sudoku" };
+    screen := fluent.VStack{ spacing = 12.0, children = fluent.collectViews() {
+        fluent.Label{ text = "sudoku" };
         cells;
         BoardView{ state = *st, side = 90.0 };
         actions;
     } };
 
     print("top {}\n", screen.children.len);
-    inner := screen.children.items[1].(VStack);
+    inner := screen.children.items[1].(fluent.VStack);
     print("cells {}\n", inner.children.len);
-    print("slot {} state {}\n", @sizeOf(View), @sizeOf(BoardViewState));
+    print("slot {} state {}\n", @sizeOf(fluent.View), @sizeOf(BoardViewState));
 
-    root : View = screen;
-    tree := RenderTree{};
-    renderRoot(*root, Size{ width = 200.0, height = 400.0 }, *tree);
-    print("commands {}\n", commandCount(*tree));
+    root : fluent.View = screen;
+    tree := fluent.RenderTree{};
+    fluent.renderRoot(*root, fluent.Size{ width = 200.0, height = 400.0 }, *tree);
+    print("commands {}\n", fluent.commandCount(*tree));
     0
 }
-
-// ** stdout **
-// top 4
-// cells 81
-// slot 64 state 648
-// commands 89

@@ -13,7 +13,7 @@
 @import "modules/ui/fluent/view.sx";
 @import "modules/ui/fluent/components.sx";
 
-ModFrames :: struct {
+private ModFrames :: struct {
     box: Frame;
     content: Frame;
 }

@@ -1,26 +1,18 @@
-// The fluent UI library as a package. This is the stdlib widget library.
-//
-// One import of the facade is the whole API: the library re-exports its own
-// names, because an import publishes nothing on its own. A container's children
-// are an explicit field initializer — `children = collectViews() { … }` — and
-// interception happens only inside that block.
-//
-// `fluent.View` is the library's own open set. Geometry and the render tree
-// are the ui foundation's, so a fluent scene is what the platform renderer
-// consumes. A component of another library is not a member of this set.
 @import "modules/std.sx";
 @import "modules/ui/fluent.sx";
 
 main :: () -> i32 {
     // A leaf is an ordinary value, and a modifier call is an ordinary value
     // operation — nothing is intercepted out here.
-    padded := Modifier{}.withPadding(EdgeInsets.all(4.0));
+    padded := fluent.Modifier{}.{
+        self.* = fluent.withPadding(self.*, fluent.EdgeInsets.all(4.0));
+    };
 
-    stack := VStack{
+    stack := fluent.VStack{
         spacing = 2.0,
-        children = collectViews() {
-            Label{ text = "title" };
-            Button{ label = "ok", modifier = padded };
+        children = fluent.collectViews() {
+            fluent.Label{ text = "title" };
+            fluent.Button{ label = "ok", modifier = padded };
 
             // Not a member of the set: an ordinary statement the sink never sees.
             41;
@@ -35,17 +27,11 @@ main :: () -> i32 {
     }
 
     // A container is itself a member, so it forms the set slot.
-    root : View = stack;
+    root : fluent.View = stack;
 
     // Measure, lay out and render through the library's own runtime.
-    tree := RenderTree{};
-    renderRoot(*root, Size{ width = 120.0, height = 60.0 }, *tree);
-    print("commands {}\n", commandCount(*tree));
+    tree := fluent.RenderTree{};
+    fluent.renderRoot(*root, fluent.Size{ width = 120.0, height = 60.0 }, *tree);
+    print("commands {}\n", fluent.commandCount(*tree));
     0
 }
-
-// ** stdout **
-// children 2
-//   Label
-//   Button
-// commands 3

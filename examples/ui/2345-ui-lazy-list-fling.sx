@@ -10,13 +10,13 @@
 
 MS :: 1_000_000;
 
-drag :: (st: *ListState, phase: ScrollPhase, dy: f32, atMs: i64) {
-    g := ScrollGesture{ phase = phase, delta = .{ x = 0.0, y = dy }, timeNs = (atMs * MS).(u64) };
+drag :: (st: *fluent.ListState, phase: fluent.ScrollPhase, dy: f32, atMs: i64) {
+    g := fluent.ScrollGesture{ phase = phase, delta = .{ x = 0.0, y = dy }, timeNs = (atMs * MS).(u64) };
     st.gesture(*g);
 }
 
 // Frames at 16 ms until the list rests; reports where it got to.
-settle :: (tag: string, st: *ListState, loop: *FrameLoop, fromMs: i64) -> i64 {
+settle :: (tag: string, st: *fluent.ListState, loop: *fluent.FrameLoop, fromMs: i64) -> i64 {
     now := fromMs;
     frames := 0;
     while true {
@@ -30,12 +30,12 @@ settle :: (tag: string, st: *ListState, loop: *FrameLoop, fromMs: i64) -> i64 {
 }
 
 main :: () -> i32 {
-    st := ListState.init(context.allocator);
-    root := UiRoot.init(Size{ width = 100.0, height = 100.0 }, context.allocator);
-    loop := FrameLoop.init(*root, closure(||_{ st = *st } -> View {
-        v : View = lazyList(st, 100,
+    st := fluent.ListState.init(context.allocator);
+    root := fluent.UiRoot.init(fluent.Size{ width = 100.0, height = 100.0 }, context.allocator);
+    loop := fluent.FrameLoop.init(*root, closure(||_{ st = *st } -> fluent.View {
+        v : fluent.View = fluent.lazyList(st, 100,
             closure(|i: i64| -> u64 { i.(u64) }),
-            closure(|i: i64| -> View { r : View = Rect{ height = 30.0 }; r }));
+            closure(|i: i64| -> fluent.View { r : fluent.View = fluent.Rect{ height = 30.0 }; r }));
         v
     }), context.allocator);
     loop.frame(0);
@@ -68,7 +68,7 @@ main :: () -> i32 {
     st.offset = 0.0;
     st.velocity = 500.0;
     loop.frame((now + 16) * MS);
-    w := ScrollGesture{ phase = .wheel, delta = .{ x = 0.0, y = -1.0 } };
+    w := fluent.ScrollGesture{ phase = .wheel, delta = .{ x = 0.0, y = -1.0 } };
     st.gesture(*w);
     print("wheel: velocity {}\n", st.velocity.(i64));
 

@@ -8,32 +8,32 @@
 @import "modules/std/mem.sx";
 @import "modules/ui/fluent.sx";
 
-at :: (x: f32, y: f32) -> InputEvent => .pointerDown(.{ position = .{ x = x, y = y } });
-to :: (x: f32, y: f32) -> InputEvent => .pointerMove(.{ position = .{ x = x, y = y } });
-lift :: (x: f32, y: f32) -> InputEvent => .pointerUp(.{ position = .{ x = x, y = y } });
-wheel :: (x: f32, y: f32, dy: f32) -> InputEvent =>
+at :: (x: f32, y: f32) -> fluent.InputEvent => .pointerDown(.{ position = .{ x = x, y = y } });
+to :: (x: f32, y: f32) -> fluent.InputEvent => .pointerMove(.{ position = .{ x = x, y = y } });
+lift :: (x: f32, y: f32) -> fluent.InputEvent => .pointerUp(.{ position = .{ x = x, y = y } });
+wheel :: (x: f32, y: f32, dy: f32) -> fluent.InputEvent =>
     .scroll(.{ position = .{ x = x, y = y }, delta = .{ x = 0.0, y = dy } });
 
 // One event per frame: the queue merges consecutive moves of one pointer.
-step :: (loop: *FrameLoop, ev: InputEvent) {
+step :: (loop: *fluent.FrameLoop, ev: fluent.InputEvent) {
     loop.root.queue.push(ev);
     loop.frame();
 }
 
 main :: () -> i32 {
-    root := UiRoot.init(Size{ width = 100.0, height = 200.0 }, context.allocator);
-    loop := FrameLoop.init(*root, closure(|| -> View {
-        v : View = zstack(ALIGN_TOP_LEADING) {
-            scrollable(Rect{ fill = Color.rgb(20, 20, 20) }, closure(|g: *ScrollGesture| {
+    root := fluent.UiRoot.init(fluent.Size{ width = 100.0, height = 200.0 }, context.allocator);
+    loop := fluent.FrameLoop.init(*root, closure(|| -> fluent.View {
+        v : fluent.View = fluent.zstack(fluent.ALIGN_TOP_LEADING) {
+            fluent.scrollable(fluent.Rect{ fill = fluent.Color.rgb(20, 20, 20) }, closure(|g: *fluent.ScrollGesture| {
                 print("  {} {},{}\n", g.phase, g.delta.x.(i64), g.delta.y.(i64))
             }));
-            tappable(Rect{}, closure(|| { print("  tap\n") }));
+            fluent.tappable(fluent.Rect{}, closure(|| { print("  tap\n") }));
             // Two 40-tall rows under a 60-tall clip: the second row shows
             // its top half only.
-            place(vstack(0.0) {
-                tappable(Rect{ height = 40.0 }, closure(|| { print("  tap row 1\n") }));
-                tappable(Rect{ height = 40.0 }, closure(|| { print("  tap row 2\n") }));
-            }, Mod{ margin = EdgeInsets{ top = 100.0, left = 0.0, bottom = 0.0, right = 0.0 },
+            fluent.place(fluent.vstack(0.0) {
+                fluent.tappable(fluent.Rect{ height = 40.0 }, closure(|| { print("  tap row 1\n") }));
+                fluent.tappable(fluent.Rect{ height = 40.0 }, closure(|| { print("  tap row 2\n") }));
+            }, fluent.Mod{ margin = fluent.EdgeInsets{ top = 100.0, left = 0.0, bottom = 0.0, right = 0.0 },
                 height = 60.0, clip = true });
         };
         v

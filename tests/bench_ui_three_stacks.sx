@@ -4,10 +4,6 @@
 //         tests/bench_ui_three_stacks.sx && .sx-tmp/bench-ui
 //
 // Same tree: a VStack of N Labels, one child per loop iteration, spacing 0.
-// Idiomatic construction in each library (see the lane files):
-//   compose — vstack block, bare Label expressions
-//   emit    — vstack closure, Label.emit()
-//   fluent  — VStack{ children = collectViews() { Label; } }
 //
 // Two phases, measured separately:
 //   BUILD — construct the tree BUILDS times (one construction is too short

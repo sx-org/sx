@@ -6,7 +6,6 @@
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
 @import "modules/ui/fluent.sx";
-fv :: @import "modules/ui/fluent/view.sx";
 
 // What the last build handed each item.
 ids : [4]u64 = .[0, 0, 0, 0];
@@ -16,32 +15,32 @@ keyed : bool = true;
 
 // Three rows from `start`, each claiming a counter seeded at ten times its
 // item.
-rows :: () -> View {
+rows :: () -> fluent.View {
     for i in start..start + 3 {
         prev : u64 = 0;
         if keyed { prev = context.fluentUi.enterKey(i.(u64)); }
-        id := elementId();
-        n := useState(i64, i * 10);
+        id := fluent.elementId();
+        n := fluent.useState(i64, i * 10);
         n.set(n.get() + 1);
         if keyed { context.fluentUi.leaveKey(prev); }
         ids[i] = id.value;
         counts[i] = n.get();
     }
-    v : View = Rect{};
+    v : fluent.View = fluent.Rect{};
     v
 }
 
 // A view that claims its counter in `layout`.
-Ticker :: @OpenVariant(fv.View) {
-    fit :: (self: *Ticker, proposal: ProposedSize) -> Size => Size.zero();
+Ticker :: @OpenVariant(fluent.View) {
+    fit :: (self: *Ticker, proposal: fluent.ProposedSize) -> fluent.Size => fluent.Size.zero();
 
-    layout :: (self: *Ticker, bounds: Frame) {
-        n := useState(i64, 0);
+    layout :: (self: *Ticker, bounds: fluent.Frame) {
+        n := fluent.useState(i64, 0);
         n.set(n.get() + 1);
         print("  laid out {} times, at {} ns\n", n.get(), context.fluentFrameNs);
     }
 
-    render :: (self: *Ticker, rc: *RenderContext, frame: Frame) {}
+    render :: (self: *Ticker, rc: *fluent.RenderContext, frame: fluent.Frame) {}
 }
 
 main :: () -> i32 {
@@ -51,8 +50,8 @@ main :: () -> i32 {
     while mode < 2 {
         k := mode == 0;
         keyed = k;
-        root := UiRoot.init(Size{ width = 100.0, height = 100.0 }, context.allocator);
-        loop := FrameLoop.init(*root, closure(|| -> View { rows() }), context.allocator);
+        root := fluent.UiRoot.init(fluent.Size{ width = 100.0, height = 100.0 }, context.allocator);
+        loop := fluent.FrameLoop.init(*root, closure(|| -> fluent.View { rows() }), context.allocator);
         start = 0;
         loop.frame(0);
         before := ids[1];
@@ -65,8 +64,8 @@ main :: () -> i32 {
         mode += 1;
     }
 
-    root := UiRoot.init(Size{ width = 100.0, height = 100.0 }, context.allocator);
-    ticks := FrameLoop.init(*root, closure(|| -> View { v : View = Ticker{}; v }), context.allocator);
+    root := fluent.UiRoot.init(fluent.Size{ width = 100.0, height = 100.0 }, context.allocator);
+    ticks := fluent.FrameLoop.init(*root, closure(|| -> fluent.View { v : fluent.View = Ticker{}; v }), context.allocator);
     ticks.frame(16_000_000);
     ticks.frame(32_000_000);
     root.deinit();

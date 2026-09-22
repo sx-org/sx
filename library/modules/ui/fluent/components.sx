@@ -109,8 +109,8 @@ Button :: @OpenVariant(View) {
     }
 }
 
-CARET_WIDTH :: 2.0;
-PREEDIT_RULE_HEIGHT :: 1.0;
+private CARET_WIDTH :: 2.0;
+private PREEDIT_RULE_HEIGHT :: 1.0;
 
 // The view of a `TextInputSession`. The session is the document and the field
 // holds none of it: it draws the committed run split at the caret, the marked

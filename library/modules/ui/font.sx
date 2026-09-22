@@ -19,8 +19,8 @@ LineMetrics :: struct {
 
 // With no face loaded, a line is `fontSize` tall and every byte advances 8 at
 // 16 pt.
-FONTLESS_ASCENT :: 0.8;
-FONTLESS_ADVANCE :: 0.5;
+private FONTLESS_ASCENT :: 0.8;
+private FONTLESS_ADVANCE :: 0.5;
 
 lineMetrics :: (fontSize: f32) -> LineMetrics {
     if gFont == null {

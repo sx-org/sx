@@ -31,16 +31,16 @@ main :: () {
     }
     s := surface?!;
 
-    tree := RenderTree.init();
-    ctx := RenderContext.init(*tree);
-    ctx.addRect(Frame.make(0.0, 0.0, 200.0, 120.0), BACKDROP);
+    tree := fluent.RenderTree.init();
+    ctx := fluent.RenderContext.init(*tree);
+    ctx.addRect(fluent.Frame.make(0.0, 0.0, 200.0, 120.0), BACKDROP);
 
-    column : View = place(
-        vstack(0.0) {
-            Label{ text = "the quick brown fox jumps over the lazy dog" };
+    column : fluent.View = fluent.place(
+        fluent.vstack(0.0) {
+            fluent.Label{ text = "the quick brown fox jumps over the lazy dog" };
         },
-        Mod{ margin = EdgeInsets.all(10.0), width = 120.0 });
-    renderRoot(*column, Size{ width = 200.0, height = 120.0 }, *tree);
+        fluent.Mod{ margin = fluent.EdgeInsets.all(10.0), width = 120.0 });
+    fluent.renderRoot(*column, fluent.Size{ width = 200.0, height = 120.0 }, *tree);
 
     // The label's node holds glyphs on more than one baseline.
     lines := 0;

@@ -189,16 +189,16 @@ measureText :: (text: string, fontSize: f32) -> Size {
     paragraphFor(text, fontSize, null).size
 }
 
-PARAGRAPH_CACHE_BYTES :: 4 * 1024 * 1024;
+private PARAGRAPH_CACHE_BYTES :: 4 * 1024 * 1024;
 
 // An unbounded layout is keyed at an infinite width.
-ParaKey :: struct {
+private ParaKey :: struct {
     hash: u64;
     sizeQ: u16;
     width: f32;
 }
 
-ParaEntry :: struct {
+private ParaEntry :: struct {
     key: ParaKey;
     text: string;
     para: Paragraph;

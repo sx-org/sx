@@ -33,7 +33,7 @@ Spacer :: @OpenVariant(View) {
 // What a stack's children come to on their own: the widest cross extent, the
 // summed main extent including the gaps, and how many spacers stand ready for
 // slack.
-StackMetrics :: struct {
+private StackMetrics :: struct {
     cross: f32 = 0.0;
     main: f32 = 0.0;
     spacers: i64 = 0;
@@ -42,7 +42,7 @@ StackMetrics :: struct {
 // A column proposes its own width and leaves height free; a row does the
 // opposite. A spacer's minimum lands on the main axis alone, so it never widens
 // a column or heightens a row, and each one counts toward the slack share.
-measureColumn :: (children: *List(View), width: ?f32, spacing: f32) -> StackMetrics {
+private measureColumn :: (children: *List(View), width: ?f32, spacing: f32) -> StackMetrics {
     m := StackMetrics{};
     for *c in children {
         if sp := c.*.(?Spacer) {
@@ -58,7 +58,7 @@ measureColumn :: (children: *List(View), width: ?f32, spacing: f32) -> StackMetr
     m
 }
 
-measureRow :: (children: *List(View), height: ?f32, spacing: f32) -> StackMetrics {
+private measureRow :: (children: *List(View), height: ?f32, spacing: f32) -> StackMetrics {
     m := StackMetrics{};
     for *c in children {
         if sp := c.*.(?Spacer) {
@@ -76,7 +76,7 @@ measureRow :: (children: *List(View), height: ?f32, spacing: f32) -> StackMetric
 
 // Slack goes to the spacers in equal parts, and a stack with none to give hands
 // out nothing.
-spacerShare :: (slack: f32, spacers: i64) -> f32 {
+private spacerShare :: (slack: f32, spacers: i64) -> f32 {
     if spacers == 0 or slack <= 0.0 { return 0.0; }
     slack / spacers
 }
@@ -173,7 +173,7 @@ ZStack :: @OpenVariant(View) {
 
 // Where one child sits, asked the same way by every pass. A spacer's frame is
 // its main-axis length plus its share of the slack, and nothing across.
-columnFrame :: (child: *View, bounds: Frame, alignment: HAlignment, y: f32, extra: f32) -> Frame {
+private columnFrame :: (child: *View, bounds: Frame, alignment: HAlignment, y: f32, extra: f32) -> Frame {
     if sp := child.*.(?Spacer) {
         return Frame.make(bounds.origin.x, y, 0.0, sp.minLength + extra);
     }
@@ -181,7 +181,7 @@ columnFrame :: (child: *View, bounds: Frame, alignment: HAlignment, y: f32, extr
     Frame.make(bounds.origin.x + alignH(alignment, s.width, bounds.size.width), y, s.width, s.height)
 }
 
-rowFrame :: (child: *View, bounds: Frame, alignment: VAlignment, x: f32, extra: f32) -> Frame {
+private rowFrame :: (child: *View, bounds: Frame, alignment: VAlignment, x: f32, extra: f32) -> Frame {
     if sp := child.*.(?Spacer) {
         return Frame.make(x, bounds.origin.y, sp.minLength + extra, 0.0);
     }
@@ -189,7 +189,7 @@ rowFrame :: (child: *View, bounds: Frame, alignment: VAlignment, x: f32, extra: 
     Frame.make(x, bounds.origin.y + alignV(alignment, s.height, bounds.size.height), s.width, s.height)
 }
 
-stackedFrame :: (child: *View, bounds: Frame, alignment: Alignment) -> Frame {
+private stackedFrame :: (child: *View, bounds: Frame, alignment: Alignment) -> Frame {
     s := child.fit(ProposedSize.fixed(bounds.size.width, bounds.size.height));
     Frame.make(
         bounds.origin.x + alignH(alignment.h, s.width, bounds.size.width),
