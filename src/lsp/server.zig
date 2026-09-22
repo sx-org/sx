@@ -407,7 +407,7 @@ pub const Server = struct {
                 // Search all type declarations for a matching method/variant/field
                 for (sema.symbols) |sym| {
                     if (sym.kind != .struct_type and sym.kind != .enum_type) continue;
-                    const lookup = self.findTypeDeclNode(sema, doc, sym.name) orelse continue;
+                    const lookup = self.findSelectedDecl(sema, doc, sym.name) orelse continue;
                     if (try self.sendMemberLocation(id_json, lookup, name, doc, origin)) return;
                 }
             }
@@ -495,17 +495,12 @@ pub const Server = struct {
                     return try self.sendResponse(id_json, hover_json);
                 }
             }
-            // Namespace member hover
-            if (self.findImportByNs(doc, qn.ns)) |imp| {
-                if (self.documents.get(imp.path)) |imp_doc| {
-                    if (imp_doc.root) |imp_root| {
-                        if (findDeclByName(imp_root, qn.member)) |decl| {
-                            const hover_text = try formatDeclHover(self.allocator, decl, imp_doc);
-                            const hover_json = try lsp.hoverJson(self.allocator, hover_text);
-                            return try self.sendResponse(id_json, hover_json);
-                        }
-                    }
-                }
+            var path_start = qn.full_start;
+            while (path_start > 0 and (isIdentChar(doc.source[path_start - 1]) or doc.source[path_start - 1] == '.')) path_start -= 1;
+            if (self.findSelectedDecl(sema, doc, doc.source[path_start..qn.full_end])) |selected| {
+                const hover_text = try formatDeclHover(self.allocator, selected.node, selected.doc);
+                const hover_json = try lsp.hoverJson(self.allocator, hover_text);
+                return try self.sendResponse(id_json, hover_json);
             }
             // Struct field hover (e.g. point.x)
             if (try self.formatStructFieldHover(doc, qn.ns, qn.member)) |hover_text| {
@@ -765,14 +760,11 @@ pub const Server = struct {
                         return try self.sendResponse(id_json, items_json);
                     }
                 }
-                // Check if prefix is a namespace — offer imported doc's declarations
-                if (self.findImportByNs(doc, prefix)) |imp| {
-                    if (self.documents.get(imp.path)) |imp_doc| {
-                        if (imp_doc.root) |imp_root| {
-                            if (imp_root.data == .root) {
-                                try collectDeclCompletions(self.allocator, &items, imp_root.data.root.decls);
-                            }
-                        }
+                if (try sema.selection.members(prefix)) |members| {
+                    defer sema.selection.alloc.free(members);
+                    for (members) |selected| {
+                        const node = selected.declaration.info().node orelse continue;
+                        try collectDeclCompletions(self.allocator, &items, &.{@constCast(node)});
                     }
                 } else if (doc.root) |root| {
                     // Try as type name directly (e.g. Vec2., Color.)
@@ -1032,10 +1024,21 @@ pub const Server = struct {
 
     fn collectDeclCompletions(allocator: std.mem.Allocator, items: *std.ArrayList(lsp.CompletionItem), decls: []const *sx.ast.Node) !void {
         for (decls) |decl| {
-            // Namespace-member completion offers ANOTHER file's declarations;
-            // its private names are not part of that surface.
-            if (decl.visibility == .private) continue;
             switch (decl.data) {
+                .scope_decl => |scope| try items.append(allocator, .{
+                    .label = scope.name,
+                    .kind = @intFromEnum(lsp.CompletionItemKind.Module),
+                }),
+                .import_decl => |imp| {
+                    if (imp.name) |name| try items.append(allocator, .{
+                        .label = name,
+                        .kind = @intFromEnum(lsp.CompletionItemKind.Module),
+                    });
+                },
+                .namespace_decl => |ns| try items.append(allocator, .{
+                    .label = ns.name,
+                    .kind = @intFromEnum(lsp.CompletionItemKind.Module),
+                }),
                 .fn_decl => |fd| {
                     var detail_buf = std.ArrayList(u8).empty;
                     try detail_buf.append(allocator, '(');
@@ -1131,7 +1134,7 @@ pub const Server = struct {
                 }
             }
         }
-        const lookup = self.findTypeDeclNode(sema, doc, name) orelse return;
+        const lookup = self.findSelectedDecl(sema, doc, name) orelse return;
         const node = lookup.node;
 
         if (node.data == .struct_decl) {
@@ -2110,12 +2113,10 @@ pub const Server = struct {
         return doc;
     }
 
-    const TypeDeclLookup = struct { node: *sx.ast.Node, doc: *const Document };
+    const DeclLookup = struct { node: *sx.ast.Node, doc: *const Document };
 
-    /// Given a type name, find its AST declaration node and the document it lives in.
-    /// Works for struct_decl, enum_decl, union_decl, and protocol_decl across files.
-    fn findTypeDeclNode(self: *Server, sema: SemaResult, doc: *const Document, type_name: []const u8) ?TypeDeclLookup {
-        const decl = sema.selection.select(type_name) orelse return null;
+    fn findSelectedDecl(self: *Server, sema: SemaResult, doc: *const Document, name: []const u8) ?DeclLookup {
+        const decl = sema.selection.select(name) orelse return null;
         const info = decl.info();
         const node = info.node orelse return null;
         const target = if (info.source) |source| self.documents.get(source) orelse return null else doc;
@@ -2123,7 +2124,7 @@ pub const Server = struct {
     }
 
     /// Send a go-to-definition response for a struct method, field, or enum variant.
-    fn sendMemberLocation(self: *Server, id_json: []const u8, lookup: TypeDeclLookup, member_name: []const u8, origin_doc: *const Document, origin: sx.ast.Span) !bool {
+    fn sendMemberLocation(self: *Server, id_json: []const u8, lookup: DeclLookup, member_name: []const u8, origin_doc: *const Document, origin: sx.ast.Span) !bool {
         if (lookup.node.data == .struct_decl) {
             const sd = lookup.node.data.struct_decl;
             // Check methods
@@ -2301,7 +2302,7 @@ pub const Server = struct {
         var buf = std.ArrayList(u8).empty;
         try buf.appendSlice(self.allocator, "```sx\ncontext: Context\n```\n\nassembled context fields:\n");
         var any = false;
-        if (self.findTypeDeclNode(sema, doc, "Context")) |lookup| {
+        if (self.findSelectedDecl(sema, doc, "Context")) |lookup| {
             if (lookup.node.data == .struct_decl) {
                 const sd = lookup.node.data.struct_decl;
                 for (sd.field_names, 0..) |fname, fi| {
@@ -2373,12 +2374,12 @@ pub const Server = struct {
     /// Resolve qualified name as struct/union method or field, send definition location.
     fn resolveStructMemberDef(self: *Server, id_json: []const u8, sema: SemaResult, doc: *const Document, ns: []const u8, member: []const u8, origin: sx.ast.Span) !bool {
         // Try ns as a type name directly
-        if (self.findTypeDeclNode(sema, doc, ns)) |lookup| {
+        if (self.findSelectedDecl(sema, doc, ns)) |lookup| {
             if (try self.sendMemberLocation(id_json, lookup, member, doc, origin)) return true;
         }
         // Try ns as a variable name → resolve to struct type
         if (resolveStructTypeName(sema, doc, ns)) |type_name| {
-            if (self.findTypeDeclNode(sema, doc, type_name)) |lookup| {
+            if (self.findSelectedDecl(sema, doc, type_name)) |lookup| {
                 if (try self.sendMemberLocation(id_json, lookup, member, doc, origin)) return true;
             }
         }
@@ -2554,7 +2555,7 @@ pub const Server = struct {
         const sema = doc.sema orelse return null;
         const struct_name = resolveStructTypeName(sema, doc, obj_name) orelse return null;
 
-        const lookup = self.findTypeDeclNode(sema, doc, struct_name) orelse return null;
+        const lookup = self.findSelectedDecl(sema, doc, struct_name) orelse return null;
         if (lookup.node.data != .struct_decl) return null;
         const sd = lookup.node.data.struct_decl;
         const lookup_doc = lookup.doc;
@@ -2592,7 +2593,7 @@ pub const Server = struct {
         for (sema.symbols) |sym| {
             if (sym.kind != .enum_type) continue;
 
-            const lookup = self.findTypeDeclNode(sema, doc, sym.name) orelse continue;
+            const lookup = self.findSelectedDecl(sema, doc, sym.name) orelse continue;
             if (lookup.node.data != .enum_decl) continue;
             const ed = lookup.node.data.enum_decl;
             const lookup_doc = lookup.doc;
@@ -4618,7 +4619,7 @@ test "editor namespace signatures types and navigation select the same declarati
     try std.testing.expect(!sema.struct_types.local.contains("b.Item"));
     var server: Server = undefined;
     server.documents = store;
-    const lookup = server.findTypeDeclNode(sema, doc, "b.Item").?;
+    const lookup = server.findSelectedDecl(sema, doc, "b.Item").?;
     try std.testing.expect(lookup.doc == right);
     try std.testing.expect(lookup.node == sema.selection.select("b.Item").?.info().node.?);
 }
@@ -4653,4 +4654,70 @@ test "generic member navigation and completion use the instance author" {
     try std.testing.expectEqual(@as(usize, 1), completions.items.len);
     try std.testing.expectEqualStrings("bool", completions.items[0].detail.?);
     try std.testing.expectEqualStrings("```sx\nAlias(i64).value : bool\n```", (try server.formatInstanceFieldHover(member.instance.?, "value")).?);
+}
+
+fn scopeRequest(alloc: std.mem.Allocator, method: []const u8, needle: []const u8) !std.json.Value {
+    const io = test_io();
+    var store = doc_mod.DocumentStore.init(alloc, io, &.{}, alloc);
+    const lib = try store.openOrUpdate("lib.sx",
+        \\Item :: struct { plain: i32; }
+        \\read :: () -> i32 { 1 }
+        \\geo :: scope { Item :: struct { scoped: i64; } read :: () -> i64 { 2 } }
+    , 1);
+    try store.analyzeDocument(lib);
+    const doc = try store.openOrUpdate("main.sx",
+        \\@import "lib.sx";
+        \\n :: @import "lib.sx";
+        \\main :: () { a: n.Item = ---; b: geo.Item = ---; x := n.read(); y := geo.read(); }
+    , 1);
+    try store.analyzeDocument(doc);
+    const offset: u32 = @intCast(std.mem.indexOf(u8, doc.source, needle).? + std.mem.indexOfScalar(u8, needle, '.').? + 1);
+    const pos = Server.spanToRange(doc.source, .{ .start = offset, .end = offset }).start;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const out = try tmp.dir.createFile(io, "response", .{});
+    defer out.close(io);
+    var input = std.Io.Reader.fixed("");
+    var transport = Transport.init(alloc, io, &input, out);
+    var server = Server{ .allocator = alloc, .documents = store, .transport = &transport, .io = io, .project_diag_uris = std.StringHashMap(void).init(alloc) };
+    const request = try std.fmt.allocPrint(alloc,
+        \\{{"jsonrpc":"2.0","id":1,"method":"textDocument/{s}","params":{{"textDocument":{{"uri":"file://main.sx"}},"position":{{"line":{d},"character":{d}}}}}}}
+    , .{ method, pos.line, pos.character });
+    try std.testing.expect(server.handleMessage(request));
+    const wire = try tmp.dir.readFileAlloc(io, "response", alloc, .limited(1024 * 1024));
+    var reader = std.Io.Reader.fixed(wire);
+    var response_transport = Transport.init(alloc, io, &reader, out);
+    const response = try std.json.parseFromSlice(std.json.Value, alloc, try response_transport.readMessage(), .{});
+    return response.value.object.get("result").?;
+}
+
+test "lsp/hover: imported scope members render their selected declarations" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const result = try scopeRequest(alloc, "hover", "geo.Item");
+    try std.testing.expect(result == .object);
+    try std.testing.expectEqualStrings("```sx\nItem :: struct { scoped: i64 }\n```", result.object.get("contents").?.object.get("value").?.string);
+    const function = try scopeRequest(alloc, "hover", "geo.read");
+    try std.testing.expect(function == .object);
+    try std.testing.expectEqualStrings("```sx\nread :: () -> i64\n```", function.object.get("contents").?.object.get("value").?.string);
+}
+
+test "lsp/completion: imported scope lists its members" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const result = try scopeRequest(arena.allocator(), "completion", "geo.Item");
+    const items = result.object.get("items").?.array.items;
+    try std.testing.expectEqual(@as(usize, 2), items.len);
+    var found_item = false;
+    var found_read = false;
+    for (items) |item| {
+        const label = item.object.get("label").?.string;
+        found_item = found_item or std.mem.eql(u8, label, "Item");
+        if (std.mem.eql(u8, label, "read")) {
+            found_read = true;
+            try std.testing.expectEqualStrings("() -> i64", item.object.get("detail").?.string);
+        }
+    }
+    try std.testing.expect(found_item and found_read);
 }

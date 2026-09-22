@@ -391,6 +391,16 @@ pub const Selection = struct {
         return query.select(name, context, context.source()) catch @panic("out of memory");
     }
 
+    pub fn members(self: *const Selection, name: []const u8) !?[]const lookup.Selected {
+        var query = lookup.Query(*const Selection).init(self, self.alloc);
+        defer query.deinit();
+        const context = self.context orelse return null;
+        const selected = try query.select(name, context, context.source());
+        if (selected != .selected) return null;
+        const target = try query.qualifier(selected.selected) orelse return null;
+        return try query.enumerateMembers(target, context.source());
+    }
+
     pub fn select(self: *const Selection, name: []const u8) ?Declaration {
         var visiting = std.ArrayList(Declaration).empty;
         defer visiting.deinit(self.alloc);
