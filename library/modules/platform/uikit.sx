@@ -18,7 +18,6 @@
 
 UIApplicationMain :: (argc: i32, argv: *void, principalClass: *NSString, delegateClass: *NSString) -> i32 extern;
 dlsym             :: (handle: *void, name: [*]u8) -> *void extern;
-chdir             :: (path: [*]u8) -> i32 extern;
 
 // kEAGLRenderingAPIOpenGLES3 = 3
 EAGL_API_GLES3 :: 3;
@@ -1005,7 +1004,7 @@ uikitChdirToBundle :: () {
     bundle := NSBundle.mainBundle();
     rsrc := bundle.resourcePath();
     if rsrc == null { return; }
-    chdir(rsrc.UTF8String());
+    c.chdir(rsrc.UTF8String());
 }
 
 // Pull the first UITouch out of an NSSet<UITouch *> and convert its

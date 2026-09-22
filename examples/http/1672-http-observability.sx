@@ -278,12 +278,9 @@ main :: () -> i32 {
     return 0;
 }
 
-clib :: @library "c";
-usleep :: (usec: i64) -> i32 extern clib;
-
 // Slow handler: pins the single pool worker long enough that the backlog
 // fills and later requests are shed with 503.
 slowHandler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
-    usleep(40000);   // 40 ms
+    c.usleep(40000);
     resp.body = "ok";
 }

@@ -2,9 +2,6 @@
 //
 // We use opengl.sx's runtime-loaded function-pointer variables for every
 // GL call, populated via `loadGl(@eglGetProcAddress)` in `init()`.
-// `extern` decls for the same names would collide with opengl.sx's
-// global variables and silently win — that produces NULL function-
-// pointer calls (PC=0 crash) because the variables are uninitialized.
 //
 // Conventions:
 //   - One shared VAO with the renderer's fixed 16-float layout
