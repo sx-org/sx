@@ -440,8 +440,10 @@ pub const DocumentStore = struct {
             try analyzer.diagnostics.append(self.allocator, .{ .span = span, .message = "duplicate declaration", .level = .err });
         }
 
-        var imported_symbols = std.AutoHashMap(sx.sema.Declaration, void).init(self.allocator);
-        defer imported_symbols.deinit();
+        var symbol_candidates = std.ArrayList(sx.sema.Symbol).empty;
+        defer symbol_candidates.deinit(self.allocator);
+        var candidate_declarations = std.AutoHashMap(sx.sema.Declaration, void).init(self.allocator);
+        defer candidate_declarations.deinit();
         for (doc.imports) |imp| {
             const imp_doc = self.getOrLoad(imp.path) catch continue;
 
@@ -457,8 +459,7 @@ pub const DocumentStore = struct {
             try analyzer.mergeMetadata(imp_sema);
 
             if (imp.ns) |ns_name| {
-                // Namespaced import: register one namespace symbol
-                try analyzer.preRegisterSymbol(.{
+                try symbol_candidates.append(self.allocator, .{
                     .declaration = imp.declaration,
                     .name = ns_name,
                     .kind = .namespace,
@@ -468,22 +469,20 @@ pub const DocumentStore = struct {
                     .origin = imp.path,
                 });
             }
-            for (imp_sema.symbols) |sym| {
-                if (sym.scope_depth != 0 or sym.visibility == .private) continue;
-                const declaration = sym.declaration orelse continue;
-                const entry = try imported_symbols.getOrPut(declaration);
-                if (entry.found_existing) continue;
-                try analyzer.preRegisterSymbol(.{
-                    .declaration = sym.declaration,
-                    .name = sym.name,
-                    .kind = sym.kind,
-                    .ty = sym.ty,
-                    .def_span = sym.def_span,
-                    .scope_depth = 0,
-                    .origin = sym.origin orelse imp.path,
-                });
+            for ([_][]const sx.sema.Symbol{ imp_sema.symbols, imp_sema.imported_candidates }) |symbols| {
+                for (symbols) |sym| {
+                    const declaration = sym.declaration orelse continue;
+                    const entry = try candidate_declarations.getOrPut(declaration);
+                    if (entry.found_existing) continue;
+                    var candidate = sym;
+                    candidate.scope_depth = 0;
+                    candidate.origin = sym.origin orelse imp.path;
+                    try symbol_candidates.append(self.allocator, candidate);
+                }
             }
         }
+
+        analyzer.imported_candidates = try symbol_candidates.toOwnedSlice(self.allocator);
 
         // Run sema on this file's own AST
         analyzer.source = doc.source;

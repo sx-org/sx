@@ -884,6 +884,9 @@ test "compiler and editor retain scope block imports without file-level leakage"
     try std.testing.expectEqual(compiler.table.environment(geo).scope.?, other_scope);
     try std.testing.expect(doc.sema.?.selection.select("left") == null);
     try std.testing.expect(doc.sema.?.selection.select("right") == null);
+    for (doc.sema.?.symbols) |symbol| {
+        try std.testing.expect(!std.mem.eql(u8, symbol.name, "left") and !std.mem.eql(u8, symbol.name, "right"));
+    }
     const detail = compiler.table.findEnvironment(path, &.{ "geo", "detail" }).?;
     const read = compiler.table.get(compiler.table.environment(detail).names.get("read").?).node.?;
     try std.testing.expectEqual(read.lexical_block.?, read.data.fn_decl.body.lexical_block.?);
@@ -1480,8 +1483,9 @@ test "spread-imported functions keep signatures and declaration navigation" {
     const alloc = arena.allocator();
     var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
     _ = try store.openOrUpdate("spread-function.sx", "read :: () -> i64 { 9 }", 1);
+    _ = try store.openOrUpdate("spread-scope.sx", "geo :: scope { ..@import \"spread-function.sx\"; }", 1);
     const source =
-        \\geo :: scope { ..@import "spread-function.sx"; }
+        \\@import "spread-scope.sx";
         \\..geo;
         \\main :: () { x := read(); y := geo.read(); }
     ;
@@ -1489,6 +1493,14 @@ test "spread-imported functions keep signatures and declaration navigation" {
     try store.analyzeDocument(doc);
     const sema = doc.sema.?;
     const read = sema.selection.select("read").?;
+    var offered: usize = 0;
+    for (sema.symbols) |symbol| {
+        if (std.mem.eql(u8, symbol.name, "read")) {
+            try std.testing.expectEqualDeep(read, symbol.declaration.?);
+            offered += 1;
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 1), offered);
     try std.testing.expectEqual(@as(u8, 64), sema.fn_signatures.get("geo.read").?.return_type.signed);
     var uses: usize = 0;
     for (sema.references) |reference| {
@@ -1499,5 +1511,41 @@ test "spread-imported functions keep signatures and declaration navigation" {
         };
     }
     try std.testing.expectEqual(@as(usize, 2), uses);
+    try std.testing.expectEqual(@as(usize, 0), sema.diagnostics.len);
+}
+
+test "imported file symbols select bare declarations through hiding and ambiguity" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    _ = try store.openOrUpdate("completion-handle.sx", "handle_only :: 4;", 1);
+    _ = try store.openOrUpdate("completion-wire.sx", "transitive :: 5;", 1);
+    _ = try store.openOrUpdate("completion-plain.sx",
+        \\@import "completion-wire.sx";
+        \\value :: 1;
+        \\shared :: 1;
+        \\from_plain :: 2;
+        \\private hidden :: 3;
+    , 1);
+    _ = try store.openOrUpdate("completion-spread.sx", "shared :: 2; from_spread :: 3;", 1);
+    const doc = try store.openOrUpdate("completion-main.sx",
+        \\n :: @import "completion-handle.sx";
+        \\@import "completion-plain.sx";
+        \\..@import "completion-spread.sx";
+        \\value :: 9;
+    , 1);
+    try store.analyzeDocument(doc);
+    const sema = doc.sema.?;
+    var offered = std.StringHashMap(void).init(alloc);
+    for (sema.symbols) |symbol| {
+        const selected = sema.selection.select(symbol.name).?;
+        try std.testing.expectEqualDeep(selected, symbol.declaration.?);
+        try std.testing.expect(!(try offered.getOrPut(symbol.name)).found_existing);
+    }
+    try std.testing.expectEqual(@as(u32, 4), offered.count());
+    for ([_][]const u8{ "n", "from_plain", "from_spread", "value" }) |name| {
+        try std.testing.expect(offered.contains(name));
+    }
     try std.testing.expectEqual(@as(usize, 0), sema.diagnostics.len);
 }

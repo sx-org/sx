@@ -110,6 +110,7 @@ pub const SemaResult = struct {
     declarations: ?DeclarationContext = null,
     selection: *Selection,
     symbols: []const Symbol,
+    imported_candidates: []const Symbol = &.{},
     references: []const Reference,
     member_refs: []const MemberRef,
     diagnostics: []const Diagnostic,
@@ -131,6 +132,7 @@ pub const Analyzer = struct {
     selection: *Selection,
     allocator: std.mem.Allocator,
     symbols: std.ArrayList(Symbol),
+    imported_candidates: []const Symbol = &.{},
     references: std.ArrayList(Reference),
     member_refs: std.ArrayList(MemberRef),
     /// Source text — lets `spanOf` map an AST string slice back to a Span.
@@ -191,6 +193,15 @@ pub const Analyzer = struct {
         if (root.data != .root) return error.InvalidRoot;
         self.selection.context = self.declarations;
         try self.selection.register(root.data.root.decls);
+        var imported_names = std.StringHashMap(void).init(self.allocator);
+        defer imported_names.deinit();
+        for (self.imported_candidates) |symbol| {
+            const selected = self.selection.select(symbol.name) orelse continue;
+            if (!std.meta.eql(@as(?Declaration, selected), symbol.declaration)) continue;
+            const entry = try imported_names.getOrPut(symbol.name);
+            if (entry.found_existing) continue;
+            try self.preRegisterSymbol(symbol);
+        }
 
         // Pass 1: Register all top-level declarations so forward references work.
         for (root.data.root.decls) |decl| {
@@ -213,6 +224,7 @@ pub const Analyzer = struct {
             .declarations = self.declarations,
             .selection = self.selection,
             .symbols = try self.symbols.toOwnedSlice(self.allocator),
+            .imported_candidates = self.imported_candidates,
             .references = try self.references.toOwnedSlice(self.allocator),
             .member_refs = try self.member_refs.toOwnedSlice(self.allocator),
             .diagnostics = try self.diagnostics.toOwnedSlice(self.allocator),
