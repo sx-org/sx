@@ -1,0 +1,10 @@
+@import "modules/std.sx";
+@import "qualified-alias-through-scope-spread/facade.sx";
+
+Alias :: api.Item;
+
+main :: () {
+    item: Alias = .{};
+    direct: api.Item = item;
+    print("{}\n", direct.value);
+}
