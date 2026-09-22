@@ -305,6 +305,9 @@ pub const DocumentStore = struct {
             if (decl.data == .spread_decl and decl.data.spread_decl.source.data == .c_import_decl) {
                 const result = try sx.imports.processCImport(self.allocator, self.io, decl.data.spread_decl.source, sx.imports.dirName(doc.path), self.rootPathOpt(), self.stdlib_paths);
                 decl.data.spread_decl.c_decls = result.fn_decls;
+                if (publication == .published) for (result.fn_decls, result.locations) |generated, location| {
+                    if (generated.data == .fn_decl) try doc.c_source_locations.put(generated.data.fn_decl.name, location);
+                };
             }
             if (decl.data == .c_import_decl and publication == .published) {
                 if (sx.imports.processCImport(self.allocator, self.io, decl, sx.imports.dirName(doc.path), self.rootPathOpt(), self.stdlib_paths)) |result| {
@@ -357,33 +360,14 @@ pub const DocumentStore = struct {
                     continue;
                 }
             }
-            if (sx.imports.isModuleDriver(decl)) {
-                try table.prepareExpansion(decl, block);
-                try self.indexDeferredSpreads(table, decl);
-            }
             if (decl.data == .scope_decl) {
-                const child = try table.addScopeBlock(block, decl);
+                const child = decl.data.scope_decl.body_block.?;
                 try self.indexBlock(table, child, decl.data.scope_decl.decls, duplicates);
             } else if (decl.data == .import_decl) {
                 try table.recordImport(block, decl);
             } else if (decl.data == .spread_decl) {
                 try table.recordSpread(block, decl, .published);
             }
-        }
-    }
-
-    fn indexDeferredSpreads(self: *DocumentStore, table: *sx.imports.DeclTable, node: *sx.ast.Node) anyerror!void {
-        switch (node.data) {
-            .spread_decl => try table.recordSpread(node.lexical_block.?, node, .deferred),
-            .scope_decl => |scope| for (scope.decls) |decl| try self.indexDeferredSpreads(table, decl),
-            .block => |body| for (body.stmts) |stmt| try self.indexDeferredSpreads(table, stmt),
-            .if_expr => |ie| {
-                try self.indexDeferredSpreads(table, ie.then_branch);
-                if (ie.else_branch) |other| try self.indexDeferredSpreads(table, other);
-            },
-            .match_expr => |me| for (me.arms) |arm| try self.indexDeferredSpreads(table, arm.body),
-            .for_expr => |fe| try self.indexDeferredSpreads(table, fe.body),
-            else => {},
         }
     }
 
@@ -411,7 +395,10 @@ pub const DocumentStore = struct {
         const block = try table.addBlock(environment, null, root);
         root.lexical_block = block;
         var duplicates = std.ArrayList(sx.ast.Span).empty;
-        if (root.data == .root) try self.indexBlock(table, block, root.data.root.decls, &duplicates);
+        if (root.data == .root) {
+            for (root.data.root.decls) |decl| try table.prepareExpansion(decl, block);
+            try self.indexBlock(table, block, root.data.root.decls, &duplicates);
+        }
         doc.declarations = .{ .table = table, .environment = environment, .block = block };
 
         // Extract imports from AST — uses shared resolution logic from imports.zig
@@ -437,6 +424,10 @@ pub const DocumentStore = struct {
             try analyzer.diagnostics.append(self.allocator, .{ .span = span, .message = "duplicate declaration", .level = .err });
         }
 
+        var symbol_candidates = std.ArrayList(sx.sema.Symbol).empty;
+        defer symbol_candidates.deinit(self.allocator);
+        var candidate_declarations = std.AutoHashMap(sx.sema.Declaration, void).init(self.allocator);
+        defer candidate_declarations.deinit();
         for (doc.imports) |imp| {
             const imp_doc = self.getOrLoad(imp.path) catch continue;
 
@@ -445,16 +436,14 @@ pub const DocumentStore = struct {
                 self.analyzeDocument(imp_doc) catch {};
             }
 
-            if (imp.exposure == .spread) continue;
-
             const imp_sema = imp_doc.sema orelse continue;
-            try (try analyzer.selection.inBlock(imp.block)).addImport(imp.ns, imp_sema.selection);
-            if (imp.block != block) continue;
+            if (imp.exposure == .spread) {
+                try analyzer.selection.spread_modules.put(imp.path, imp_sema.selection);
+            } else try (try analyzer.selection.inBlock(imp.block)).addImport(imp.ns, imp_sema.selection);
             try analyzer.mergeMetadata(imp_sema);
 
             if (imp.ns) |ns_name| {
-                // Namespaced import: register one namespace symbol
-                try analyzer.preRegisterSymbol(.{
+                try symbol_candidates.append(self.allocator, .{
                     .declaration = imp.declaration,
                     .name = ns_name,
                     .kind = .namespace,
@@ -463,26 +452,21 @@ pub const DocumentStore = struct {
                     .scope_depth = 0,
                     .origin = imp.path,
                 });
-            } else {
-                // Flat import: pre-register all top-level symbols with origin set
-                for (imp_sema.symbols) |sym| {
-                    if (sym.scope_depth == 0) {
-                        // Private module-scope symbols never cross a flat
-                        // import into another file.
-                        if (sym.visibility == .private) continue;
-                        try analyzer.preRegisterSymbol(.{
-                            .declaration = sym.declaration,
-                            .name = sym.name,
-                            .kind = sym.kind,
-                            .ty = sym.ty,
-                            .def_span = sym.def_span,
-                            .scope_depth = 0,
-                            .origin = sym.origin orelse imp.path,
-                        });
-                    }
+            }
+            for ([_][]const sx.sema.Symbol{ imp_sema.symbols, imp_sema.imported_candidates }) |symbols| {
+                for (symbols) |sym| {
+                    const declaration = sym.declaration orelse continue;
+                    const entry = try candidate_declarations.getOrPut(declaration);
+                    if (entry.found_existing) continue;
+                    var candidate = sym;
+                    candidate.scope_depth = 0;
+                    candidate.origin = sym.origin orelse imp.path;
+                    try symbol_candidates.append(self.allocator, candidate);
                 }
             }
         }
+
+        analyzer.imported_candidates = try symbol_candidates.toOwnedSlice(self.allocator);
 
         // Run sema on this file's own AST
         analyzer.source = doc.source;

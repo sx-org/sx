@@ -538,6 +538,7 @@ pub const WrittenTarget = struct {
 };
 
 pub const SpreadSource = union(enum) {
+    missing,
     module: []const u8,
     path: *const Node,
     c_import: []const DeclId,
@@ -895,6 +896,7 @@ pub const DeclTable = struct {
         node.source_file = self.environment(self.block(owner).environment).source;
         if (node.data == .const_decl) try self.recordWrittenTarget(owner, node);
         switch (node.data) {
+            .spread_decl => try self.recordSpread(owner, node, .deferred),
             .scope_decl => |scope| {
                 const child = try self.addScopeBlock(owner, node);
                 for (scope.decls) |decl| try self.prepareExpansion(decl, child);
@@ -931,12 +933,13 @@ pub const DeclTable = struct {
         const source: SpreadSource = switch (spread.source.data) {
             .import_decl => |imp| .{ .module = imp.path },
             .c_import_decl => blk: {
+                const decls = spread.c_decls orelse break :blk .missing;
                 const env = self.block(owner).environment;
-                for (spread.c_decls.?) |decl| {
+                for (decls) |decl| {
                     ast.stampLexicalBlock(decl, owner);
                     decl.source_file = self.environment(env).source;
                 }
-                break :blk .{ .c_import = try self.memberIds(env, spread.c_decls.?) };
+                break :blk .{ .c_import = try self.memberIds(env, decls) };
             },
             else => .{ .path = spread.source },
         };
@@ -1234,6 +1237,7 @@ pub fn resolveImports(
     const block_id = try cache.declarations.addBlock(env, null, root);
     root.lexical_block = block_id;
     if (root.data != .root) return .{ .path = file_path, .decls = &.{}, .own_decls = &.{}, .environment = env };
+    for (root.data.root.decls) |decl| try cache.declarations.prepareExpansion(decl, block_id);
     return resolveBlockImports(allocator, io, &root.data.root.decls, block_id, base_dir, file_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
 }
 
@@ -1256,6 +1260,9 @@ fn resolveBlockImports(
     const canonical_file = cache.declarations.environment(env).source;
     var mod = ResolvedModule{ .path = file_path, .decls = &.{}, .own_decls = &.{}, .environment = env };
     nodes.* = try expandDirectoryImports(allocator, io, nodes.*, base_dir, file_path, null, stdlib_paths, diagnostics);
+    for (nodes.*) |decl| if (decl.data == .spread_decl) {
+        try cache.declarations.recordSpread(block_id, decl, .published);
+    };
 
     var decl_list = std.ArrayList(*Node).empty;
     var own_decl_list = std.ArrayList(*Node).empty;
@@ -1270,7 +1277,12 @@ fn resolveBlockImports(
         try cache.declarations.recordWrittenTarget(block_id, decl);
         if (decl.data == .spread_decl) {
             try resolveSpreadSource(allocator, io, decl, base_dir, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
-            try cache.declarations.recordSpread(block_id, decl, .published);
+            try cache.declarations.recordSpread(block_id, decl, .deferred);
+            if (decl.data.spread_decl.source.data == .import_decl) {
+                const path = decl.data.spread_decl.source.data.import_decl.path;
+                if (cache.modules.get(path)) |imported_mod| try mod.mergeFlat(allocator, &decl_list, &seen_in_list, &seen_nodes, imported_mod);
+                if (import_graph) |graph| if (graph.getPtr(canonical_file)) |edges| try edges.put(path, {});
+            }
             try decl_list.append(allocator, decl);
             continue;
         }
@@ -1279,7 +1291,7 @@ fn resolveBlockImports(
             const added = try mod.addOwnDecl(allocator, &cache.declarations, &decl_list, &own_decl_list, &seen_in_list, decl);
             reportDuplicateDecl(diagnostics, added, decl);
             if (added) {
-                const child = try cache.declarations.addScopeBlock(block_id, decl);
+                const child = decl.data.scope_decl.body_block.?;
                 const body = try resolveBlockImports(allocator, io, &decl.data.scope_decl.decls, child, base_dir, file_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
                 decl.data.scope_decl.decls = body.decls;
             }
@@ -1292,7 +1304,6 @@ fn resolveBlockImports(
             // `@import`s inside its bodies resolve now, re-entrantly and
             // CONTAINED — the windows and posix `std.fs` backends both load,
             // and neither reaches module scope until its branch is selected.
-            try cache.declarations.prepareExpansion(decl, block_id);
             try resolveBranchImports(allocator, io, decl, base_dir, file_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
             decl.source_file = file_path;
             reportDuplicateDecl(diagnostics, try mod.addOwnDecl(allocator, &cache.declarations, &decl_list, &own_decl_list, &seen_in_list, decl), decl);
@@ -1602,6 +1613,9 @@ fn resolveBranchBodyImports(
     } else if (body.data == .import_decl or (body.data == .spread_decl and body.data.spread_decl.source.data == .import_decl)) {
         body.data = .{ .block = .{ .stmts = stmts } };
     }
+    for (stmts) |stmt| if (stmt.data == .spread_decl) {
+        try cache.declarations.recordSpread(body.lexical_block.?, stmt, .deferred);
+    };
     for (stmts) |stmt| {
         ast.stampLexicalBlock(stmt, body.lexical_block.?);
         stmt.source_file = file_path;

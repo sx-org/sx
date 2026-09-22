@@ -583,9 +583,7 @@ pub fn lowerDecls(self: *Lowering, authored: []const *const Node) void {
             .impl_block => {
                 self.protocolResolver().registerImplBlock(&decl.data.impl_block, decl);
             },
-            .spread_decl => {
-                if (self.diagnostics) |d| d.add(.err, "scope spreads are not supported", decl.span);
-            },
+            .spread_decl => {},
             .runtime_class_decl => {
                 self.registerRuntimeClassDecl(&decl.data.runtime_class_decl);
             },
@@ -1169,7 +1167,9 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                 self.protocolResolver().registerImplBlock(&decl.data.impl_block, decl);
             },
             .spread_decl => {
-                if (self.diagnostics) |d| d.add(.err, "scope spreads are not supported", decl.span);
+                var resolver = self.resolver();
+                const target = resolver.spreadTarget(self.lookupContext(self.current_environment.?), decl);
+                if (target.diagnostic()) |text| if (self.diagnostics) |d| d.add(.err, text, decl.span);
             },
             .runtime_class_decl => {
                 self.registerRuntimeClassDecl(&decl.data.runtime_class_decl);

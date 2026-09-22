@@ -110,6 +110,7 @@ pub const SemaResult = struct {
     declarations: ?DeclarationContext = null,
     selection: *Selection,
     symbols: []const Symbol,
+    imported_candidates: []const Symbol = &.{},
     references: []const Reference,
     member_refs: []const MemberRef,
     diagnostics: []const Diagnostic,
@@ -131,6 +132,7 @@ pub const Analyzer = struct {
     selection: *Selection,
     allocator: std.mem.Allocator,
     symbols: std.ArrayList(Symbol),
+    imported_candidates: []const Symbol = &.{},
     references: std.ArrayList(Reference),
     member_refs: std.ArrayList(MemberRef),
     /// Source text — lets `spanOf` map an AST string slice back to a Span.
@@ -191,6 +193,15 @@ pub const Analyzer = struct {
         if (root.data != .root) return error.InvalidRoot;
         self.selection.context = self.declarations;
         try self.selection.register(root.data.root.decls);
+        var imported_names = std.StringHashMap(void).init(self.allocator);
+        defer imported_names.deinit();
+        for (self.imported_candidates) |symbol| {
+            const selected = self.selection.select(symbol.name) orelse continue;
+            if (!std.meta.eql(@as(?Declaration, selected), symbol.declaration)) continue;
+            const entry = try imported_names.getOrPut(symbol.name);
+            if (entry.found_existing) continue;
+            try self.preRegisterSymbol(symbol);
+        }
 
         // Pass 1: Register all top-level declarations so forward references work.
         for (root.data.root.decls) |decl| {
@@ -213,6 +224,7 @@ pub const Analyzer = struct {
             .declarations = self.declarations,
             .selection = self.selection,
             .symbols = try self.symbols.toOwnedSlice(self.allocator),
+            .imported_candidates = self.imported_candidates,
             .references = try self.references.toOwnedSlice(self.allocator),
             .member_refs = try self.member_refs.toOwnedSlice(self.allocator),
             .diagnostics = try self.diagnostics.toOwnedSlice(self.allocator),
@@ -255,6 +267,9 @@ pub const Analyzer = struct {
         self.pending_visibility = node.visibility;
         defer self.pending_visibility = .public;
         switch (node.data) {
+            .spread_decl => |spread| {
+                if (spread.c_decls) |generated| for (generated) |decl| try self.registerTopLevelDeclPrefixed(decl, ns_prefix);
+            },
             .fn_decl => |fd| {
                 const ret_ty = self.resolveReturnType(fd) orelse
                     if (fd.is_arrow) self.inferFnReturnType(fd.params, fd.body) else null;
@@ -294,6 +309,7 @@ pub const Analyzer = struct {
                 });
             },
             .const_decl => |cd| {
+                self.setSelection(try self.selection.atWritten(node));
                 const ty = self.resolveTypeAnnotation(cd.type_annotation) orelse self.inferValueType(cd.value);
                 const kind = classifyConstDecl(cd);
                 const int_constant = self.constIndexValue(cd.value);
@@ -1148,6 +1164,14 @@ pub const Analyzer = struct {
                 self.in_c_conv = saved_cc;
             },
             .const_decl => |cd| {
+                self.setSelection(try self.selection.atWritten(node));
+                if (imports.aliasPath(self.allocator, cd.value)) |path| {
+                    defer self.allocator.free(path);
+                    if (self.selection.selectPath(path) == .ambiguous) {
+                        try self.diagnostics.append(self.allocator, .{ .level = .err, .span = cd.value.span, .message = "alias target is ambiguous" });
+                        return;
+                    }
+                }
                 try self.analyzeDesignator(cd.value);
             },
             .var_decl => |vd| {
@@ -1847,11 +1871,8 @@ pub const Analyzer = struct {
                 for (scope.decls) |decl| try self.analyzeTopLevelDecl(decl);
             },
             .spread_decl => {
-                try self.diagnostics.append(self.allocator, .{
-                    .level = .err,
-                    .span = node.span,
-                    .message = "scope spreads are not supported",
-                });
+                const target = self.selection.spreadTarget(node);
+                if (target.diagnostic()) |text| try self.diagnostics.append(self.allocator, .{ .level = .err, .span = node.span, .message = text });
             },
             .root => {
                 // Should not appear nested

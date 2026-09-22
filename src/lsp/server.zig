@@ -3822,6 +3822,42 @@ test "lsp/project: contextual literals select routing from index-named target sl
     try std.testing.expectEqual(@as(u32, 4), diagnostics[0].range.start.line);
 }
 
+test "lsp/project: unloadable spread sources return diagnostics" {
+    const io = test_io();
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(io, .{ .sub_path = "bad.sx", .data = "bad :: enum { a, b }" });
+    const cases = [_]struct { source: [:0]const u8, diagnostic: []const u8 }{
+        .{ .source = "..@import \"bad.sx\";", .diagnostic = "parse error" },
+        .{ .source = "n :: @import \"bad.sx\"; ..n;", .diagnostic = "parse error" },
+        .{ .source = "geo :: scope { ..@import \"bad.sx\"; }", .diagnostic = "parse error" },
+        .{ .source = "..@import \"nope.sx\";", .diagnostic = "cannot read import" },
+        .{ .source = "@import \"bad.sx\"; ..@import c { @include \"nope.h\"; };", .diagnostic = "parse error" },
+    };
+    for (cases) |case| {
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+        var dirbuf: [4096]u8 = undefined;
+        const directory = dirbuf[0..try tmp.dir.realPath(io, &dirbuf)];
+        const path = try std.fmt.allocPrint(alloc, "{s}/main.sx", .{directory});
+        var store = doc_mod.DocumentStore.init(alloc, io, &.{}, alloc);
+        _ = try store.openOrUpdate(path, case.source, 1);
+        var server = Server{
+            .allocator = alloc,
+            .documents = store,
+            .transport = undefined,
+            .io = io,
+            .project_diag_uris = std.StringHashMap(void).init(alloc),
+        };
+        var found = false;
+        for (server.collectProjectDiagnostics(path)) |diag| {
+            found = found or std.mem.indexOf(u8, diag.message, case.diagnostic) != null;
+        }
+        try std.testing.expect(found);
+    }
+}
+
 test "lsp/project: whole-program check attributes a reachable error to its module" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

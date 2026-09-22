@@ -774,20 +774,6 @@ test "editor structural alias cycles do not form an identity" {
     try std.testing.expect(doc.sema.?.selection.select("Loop") == null);
 }
 
-test "scope declarations are indexed while spreads remain unsupported" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
-    const doc = try store.openOrUpdate("scope.sx", "geo :: scope { X :: 1; } ..geo;", 1);
-    try store.analyzeDocument(doc);
-    const sema = doc.sema orelse return error.MissingAnalysis;
-    try std.testing.expectEqual(@as(usize, 1), sema.diagnostics.len);
-    try std.testing.expectEqualStrings("scope spreads are not supported", sema.diagnostics[0].message);
-    try std.testing.expectEqual(@as(usize, 2), sema.symbols.len);
-    try std.testing.expect(sema.selection.select("X") == null);
-}
-
 const CompilerFacts = struct {
     table: sx.imports.DeclTable,
     root: *@import("../ast.zig").Node,
@@ -896,6 +882,8 @@ test "compiler and editor retain scope block imports without file-level leakage"
     try expectSameFileFacts(&compiler.table, other_doc.declarations.?.table, other_doc.path);
     const other_scope = compiler.table.get(compiler.table.fileScope(other_doc.path).?.names.get("geo").?).scope.?;
     try std.testing.expectEqual(compiler.table.environment(geo).scope.?, other_scope);
+    try std.testing.expect(doc.sema.?.selection.select("left") == null);
+    try std.testing.expect(doc.sema.?.selection.select("right") == null);
     for (doc.sema.?.symbols) |symbol| {
         try std.testing.expect(!std.mem.eql(u8, symbol.name, "left") and !std.mem.eql(u8, symbol.name, "right"));
     }
@@ -1023,8 +1011,6 @@ test "scope selection keeps importer namespace and alias viewpoints separate" {
         \\ns :: @import "lib.sx";
         \\extra :: @import "extra.sx";
         \\geo :: scope { value :: 30; }
-        \\..@import "extra.sx";
-        \\..extra;
     });
     var dirbuf: [4096]u8 = undefined;
     var probe = try ScopeProbe.init(alloc, dirbuf[0..try tmp.dir.realPath(io, &dirbuf)]);
@@ -1273,7 +1259,7 @@ test "directory spread sources retain written order without import exposure" {
         try std.testing.expect(!compiler.flat_imports.get(doc.path).?.contains(path));
     }
     try probe.expect("main.sx", null, "Plain", .{ .declaration = .{ .file = "plain.sx", .name = "Plain" } });
-    try probe.expect("main.sx", null, "SpreadOnly", .missing);
+    try probe.expect("main.sx", null, "SpreadOnly", .{ .declaration = .{ .file = "a.sx", .name = "SpreadOnly" } });
 }
 
 test "deferred spread templates retain C declaration ownership without publication" {
@@ -1352,6 +1338,236 @@ test "deferred spread templates retain C declaration ownership without publicati
         try std.testing.expect(store.get(imp.path).?.sema != null);
         try std.testing.expect(compiler.table.fileEnvironment(imp.path) != null);
     }
-    try std.testing.expect(doc.sema.?.selection.select("c_value") == null);
-    try std.testing.expect(!doc.c_source_locations.contains("c_value"));
+    try std.testing.expect(doc.sema.?.selection.select("c_value") != null);
+    try std.testing.expect(doc.c_source_locations.contains("c_value"));
+}
+
+test "spread surfaces layer declarations and carry blocks without plain-import leakage" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const io = test_io();
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(io, .{ .sub_path = "wire.sx", .data = "internal :: 1;" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "part.sx", .data = "value :: 2; extra :: 3; geo :: scope { part :: 4; }" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "lib.sx", .data =
+        \\@import "wire.sx";
+        \\private source :: @import "part.sx";
+        \\..source;
+        \\value :: 5;
+        \\Renamed :: source.extra;
+        \\geo :: scope { ..source; }
+    });
+    try tmp.dir.writeFile(io, .{ .sub_path = "other.sx", .data = "geo :: scope { local :: 6; }" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data =
+        \\@import "lib.sx";
+        \\@import "other.sx";
+        \\n :: @import "lib.sx";
+        \\geo :: scope { anchor :: 7; }
+        \\surface :: scope { ..n; }
+    });
+    var dirbuf: [4096]u8 = undefined;
+    var probe = try ScopeProbe.init(alloc, dirbuf[0..try tmp.dir.realPath(io, &dirbuf)]);
+    try probe.expect("main.sx", null, "value", .{ .declaration = .{ .file = "lib.sx", .name = "value" } });
+    try probe.expect("main.sx", null, "n.value", .{ .declaration = .{ .file = "lib.sx", .name = "value" } });
+    try probe.expect("main.sx", null, "surface.value", .{ .declaration = .{ .file = "lib.sx", .name = "value" } });
+    try probe.expect("main.sx", null, "geo.extra", .{ .declaration = .{ .file = "part.sx", .name = "extra" } });
+    try probe.expect("main.sx", "geo.anchor", "part", .{ .declaration = .{ .file = "part.sx", .name = "part" } });
+    try probe.expect("main.sx", null, "n.geo.local", .missing);
+    try probe.expect("main.sx", null, "n.internal", .missing);
+    try probe.expect("main.sx", null, "source", .missing);
+    try probe.expect("lib.sx", null, "internal", .{ .declaration = .{ .file = "wire.sx", .name = "internal" } });
+}
+
+test "written targets exclude later spreads and combine competing nonlocal routes" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    _ = try store.openOrUpdate("ordered-other.sx", "choice :: scope { other :: 1; }", 1);
+    const doc = try store.openOrUpdate("ordered.sx",
+        \\pool :: scope { choice :: scope { chosen :: 2; } }
+        \\Early :: choice;
+        \\..pool;
+        \\Late :: choice;
+        \\box :: scope {
+        \\    @import "ordered-other.sx";
+        \\    ..choice;
+        \\    Alias :: choice;
+        \\}
+        \\..absent;
+        \\value :: 3;
+        \\..value;
+    , 1);
+    try store.analyzeDocument(doc);
+    const selection = doc.sema.?.selection;
+    try std.testing.expect(selection.select("Early.chosen") == null);
+    try std.testing.expect(selection.select("Late.chosen") != null);
+    const diags = doc.sema.?.diagnostics;
+    var ambiguous = false;
+    var alias_ambiguous = false;
+    var missing = false;
+    var not_namespace = false;
+    for (diags) |diag| {
+        ambiguous = ambiguous or std.mem.eql(u8, diag.message, "spread target is ambiguous");
+        alias_ambiguous = alias_ambiguous or std.mem.eql(u8, diag.message, "alias target is ambiguous");
+        missing = missing or std.mem.eql(u8, diag.message, "spread target is not declared");
+        not_namespace = not_namespace or std.mem.eql(u8, diag.message, "spread target is not a scope or namespace");
+    }
+    try std.testing.expect(ambiguous and alias_ambiguous and missing and not_namespace);
+}
+
+test "self and parent spreads retain declaration identity and editor navigation" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const source =
+        \\a :: scope {
+        \\    ..a;
+        \\    b :: scope { ..a; x :: 8; }
+        \\}
+        \\..a.b;
+        \\main :: () { y := a.b.b.x; z := x; }
+    ;
+    const doc = try store.openOrUpdate("spread-navigation.sx", source, 1);
+    try store.analyzeDocument(doc);
+    const sema = doc.sema.?;
+    const x = sema.selection.select("a.b.x").?;
+    try std.testing.expectEqualDeep(x, sema.selection.select("a.b.b.x").?);
+    try std.testing.expectEqualDeep(x, sema.selection.select("x").?);
+    try std.testing.expect(sema.selection.select("a.b.absent") == null);
+    const qualified = std.mem.indexOf(u8, source, "a.b.b.x").? + "a.b.b.".len;
+    const bare = std.mem.lastIndexOf(u8, source, "x;").?;
+    var uses: usize = 0;
+    for (sema.references) |reference| {
+        if (reference.span.start != qualified and reference.span.start != bare) continue;
+        try std.testing.expectEqualDeep(x, sema.symbols[reference.symbol_index].declaration.?);
+        uses += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 2), uses);
+    try std.testing.expectEqual(@as(usize, 0), sema.diagnostics.len);
+}
+
+test "a scope spread uses the looking file's blocks while a scope alias keeps its author view" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const io = test_io();
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(io, .{ .sub_path = "lib.sx", .data =
+        \\parts :: scope { value :: 1; }
+        \\Saved :: parts;
+        \\geo :: scope { ..parts; }
+        \\frozen :: scope { ..Saved; }
+    });
+    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data =
+        \\@import "lib.sx";
+        \\n :: @import "lib.sx";
+        \\parts :: scope { value :: 2; }
+        \\qualified :: scope { ..n.parts; }
+    });
+    var dirbuf: [4096]u8 = undefined;
+    var probe = try ScopeProbe.init(alloc, dirbuf[0..try tmp.dir.realPath(io, &dirbuf)]);
+    try probe.expect("main.sx", null, "geo.value", .{ .declaration = .{ .file = "main.sx", .name = "value" } });
+    try probe.expect("main.sx", null, "frozen.value", .{ .declaration = .{ .file = "lib.sx", .name = "value" } });
+    try probe.expect("main.sx", null, "qualified.value", .{ .declaration = .{ .file = "lib.sx", .name = "value" } });
+    try probe.expect("lib.sx", null, "geo.value", .{ .declaration = .{ .file = "lib.sx", .name = "value" } });
+}
+
+test "spread-imported functions keep signatures and declaration navigation" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    _ = try store.openOrUpdate("spread-function.sx", "read :: () -> i64 { 9 }", 1);
+    _ = try store.openOrUpdate("spread-scope.sx", "geo :: scope { ..@import \"spread-function.sx\"; }", 1);
+    const source =
+        \\@import "spread-scope.sx";
+        \\..geo;
+        \\main :: () { x := read(); y := geo.read(); }
+    ;
+    const doc = try store.openOrUpdate("spread-reader.sx", source, 1);
+    try store.analyzeDocument(doc);
+    const sema = doc.sema.?;
+    const read = sema.selection.select("read").?;
+    var offered: usize = 0;
+    for (sema.symbols) |symbol| {
+        if (std.mem.eql(u8, symbol.name, "read")) {
+            try std.testing.expectEqualDeep(read, symbol.declaration.?);
+            offered += 1;
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 1), offered);
+    try std.testing.expectEqual(@as(u8, 64), sema.fn_signatures.get("geo.read").?.return_type.signed);
+    var uses: usize = 0;
+    for (sema.references) |reference| {
+        const symbol = sema.symbols[reference.symbol_index];
+        if (symbol.declaration) |declaration| if (std.meta.eql(declaration, read)) {
+            try std.testing.expectEqualStrings("spread-function.sx", std.fs.path.basename(symbol.origin.?));
+            uses += 1;
+        };
+    }
+    try std.testing.expectEqual(@as(usize, 2), uses);
+    try std.testing.expectEqual(@as(usize, 0), sema.diagnostics.len);
+}
+
+test "imported file symbols select bare declarations through hiding and ambiguity" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    _ = try store.openOrUpdate("completion-handle.sx", "handle_only :: 4;", 1);
+    _ = try store.openOrUpdate("completion-wire.sx", "transitive :: 5;", 1);
+    _ = try store.openOrUpdate("completion-plain.sx",
+        \\@import "completion-wire.sx";
+        \\value :: 1;
+        \\shared :: 1;
+        \\from_plain :: 2;
+        \\private hidden :: 3;
+    , 1);
+    _ = try store.openOrUpdate("completion-spread.sx", "shared :: 2; from_spread :: 3;", 1);
+    const doc = try store.openOrUpdate("completion-main.sx",
+        \\n :: @import "completion-handle.sx";
+        \\@import "completion-plain.sx";
+        \\..@import "completion-spread.sx";
+        \\value :: 9;
+    , 1);
+    try store.analyzeDocument(doc);
+    const sema = doc.sema.?;
+    var offered = std.StringHashMap(void).init(alloc);
+    for (sema.symbols) |symbol| {
+        const selected = sema.selection.select(symbol.name).?;
+        try std.testing.expectEqualDeep(selected, symbol.declaration.?);
+        try std.testing.expect(!(try offered.getOrPut(symbol.name)).found_existing);
+    }
+    try std.testing.expectEqual(@as(u32, 4), offered.count());
+    for ([_][]const u8{ "n", "from_plain", "from_spread", "value" }) |name| {
+        try std.testing.expect(offered.contains(name));
+    }
+    try std.testing.expectEqual(@as(usize, 0), sema.diagnostics.len);
+}
+
+test "a scope carried through scope spreads retains its members" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var probe = try ScopeProbe.init(alloc, "examples/modules/2801-modules-carried-scope-members");
+    for ([_][]const u8{ "main.sx", "spread-import.sx", "spread-handle.sx" }) |file| {
+        try probe.expect(file, null, "geo", .{ .declaration = .{ .file = "source.sx", .name = "geo" } });
+        try probe.expect(file, null, "geo.deep", .{ .declaration = .{ .file = "source.sx", .name = "deep" } });
+        const doc = try probe.store.getOrLoad(try std.fmt.allocPrint(alloc, "{s}/{s}", .{ probe.directory, file }));
+        const sema = doc.sema.?;
+        const geo = sema.selection.select("geo").?;
+        var offered: usize = 0;
+        for (sema.symbols) |symbol| {
+            if (!std.mem.eql(u8, symbol.name, "geo")) continue;
+            try std.testing.expectEqualDeep(geo, symbol.declaration.?);
+            offered += 1;
+        }
+        try std.testing.expectEqual(@as(usize, 1), offered);
+        try std.testing.expectEqual(@as(usize, 0), sema.diagnostics.len);
+    }
 }

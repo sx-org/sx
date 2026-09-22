@@ -1,5 +1,5 @@
-error: scope spreads are not supported
-  --> examples/modules/2782-modules-spread-path.sx:1:1
+error: spread target is not a scope or namespace
+  --> examples/modules/2782-modules-spread-path.sx:2:1
    |
- 1 | ..geo.scope;
+ 2 | ..geo.value;
    | ^^^^^^^^^^^^

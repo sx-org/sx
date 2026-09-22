@@ -1,0 +1,5 @@
+..Later;
+Early :: Later;
+pool :: scope { Later :: scope { value :: 1; } }
+..pool;
+main :: () { value := Early.value; }

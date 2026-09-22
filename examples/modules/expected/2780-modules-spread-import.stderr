@@ -1,5 +1,1 @@
-error: scope spreads are not supported
-  --> examples/modules/2780-modules-spread-import.sx:1:1
-   |
- 1 | ..@import "modules/std.sx";
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+

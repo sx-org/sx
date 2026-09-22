@@ -1,0 +1,3 @@
+..@import "hub.sx";
+..hub;
+read :: () -> i64 { return geo.deep; }

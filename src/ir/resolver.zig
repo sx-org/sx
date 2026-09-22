@@ -258,9 +258,10 @@ pub const Resolver = struct {
     }
 
     fn authors(self: *Resolver, candidates: lookup.Candidates) AuthorSet {
-        const own = if (candidates.own) |decl| decl.table.author(decl.id, decl.info().source.?) else null;
+        const own = if (candidates.own) |selected| selected.declaration.table.author(selected.declaration.id, selected.declaration.info().source.?) else null;
         var flat = std.ArrayList(RawAuthor).empty;
-        for (candidates.imported) |decl| {
+        for (candidates.imported) |selected| {
+            const decl = selected.declaration;
             const candidate = decl.table.author(decl.id, decl.info().source.?) orelse continue;
             if (self.containsIdentity(flat.items, candidate)) continue;
             flat.append(self.alloc, candidate) catch @panic("out of memory");
@@ -275,14 +276,12 @@ pub const Resolver = struct {
         scope: imports.ScopeId,
     };
 
-    pub const Qualifier = union(enum) {
-        namespace: LookupContext,
-        scope: ScopeView,
-    };
+    pub const Qualifier = lookup.Qualifier;
 
     pub const Selected = struct {
         declaration: imports.DeclId,
         view: LookupContext,
+        pinned_view: bool = false,
     };
 
     pub const Selection = union(enum) {
@@ -334,86 +333,57 @@ pub const Resolver = struct {
             else => true,
         };
         if (!raw) if (@import("type_resolver.zig").TypeResolver.resolvePrimitive(path)) |ty| return .{ .type = ty };
-        const context = LookupContext{ .table = table, .environment = env, .block = info.lexical_block };
-        const target = self.selectPathInner(path, context, context.source(), visiting);
+        const context = LookupContext.author(.{ .table = table, .id = id }).?;
+        const target = self.selectPath(path, context);
         return if (target == .selected) self.identity(target.selected.declaration, visiting) else null;
     }
 
-    fn choose(self: *Resolver, candidates: lookup.Candidates, view: LookupContext, visiting: *std.ArrayList(imports.DeclId)) Selection {
-        if (candidates.own) |decl| return .{ .selected = .{ .declaration = decl.id, .view = view } };
-        var selected: ?imports.DeclId = null;
-        for (candidates.imported) |decl| {
-            if (selected) |previous| {
-                if (!self.sameDeclaration(previous, decl.id, visiting)) return .ambiguous;
-            } else selected = decl.id;
-        }
-        return if (selected) |id| .{ .selected = .{ .declaration = id, .view = view } } else .missing;
+    pub fn moduleContext(_: *Resolver, context: LookupContext, path: []const u8) ?LookupContext {
+        return .{ .table = context.table, .environment = context.table.fileEnvironment(path) orelse return null };
+    }
+
+    pub fn namespaceContext(_: *Resolver, decl: lookup.Declaration) ?LookupContext {
+        const info = decl.info();
+        const target = decl.table.environment(info.environment.?).namespaces.get(info.name) orelse return null;
+        return .{ .table = decl.table, .environment = target.environment };
+    }
+
+    pub fn equivalentDeclarations(self: *Resolver, a: lookup.Declaration, b: lookup.Declaration) bool {
+        var visiting = std.ArrayList(imports.DeclId).empty;
+        defer visiting.deinit(self.alloc);
+        return self.sameDeclaration(a.id, b.id, &visiting);
+    }
+
+    fn selection(result: lookup.Selection) Selection {
+        return switch (result) {
+            .missing => .missing,
+            .ambiguous => .ambiguous,
+            .selected => |selected| .{ .selected = .{ .declaration = selected.declaration.id, .view = selected.view, .pinned_view = selected.pinned_view } },
+        };
     }
 
     pub fn qualifier(self: *Resolver, selected: Selected) ?Qualifier {
-        var visiting = std.ArrayList(imports.DeclId).empty;
-        defer visiting.deinit(self.alloc);
-        return self.qualifierInner(selected, &visiting);
-    }
-
-    fn qualifierInner(self: *Resolver, selected: Selected, visiting: *std.ArrayList(imports.DeclId)) ?Qualifier {
-        const id = selected.declaration;
-        for (visiting.items) |previous| if (previous == id) return null;
-        visiting.append(self.alloc, id) catch @panic("out of memory");
-        defer _ = visiting.pop();
-        const table = self.index.declarations();
-        const info = table.get(id);
-        if (info.scope) |scope| return .{ .scope = .{ .path = table.scopeInfo(scope).path, .context = selected.view } };
-        const context = LookupContext.author(.{ .table = table, .id = id }) orelse return null;
-        const ref = info.ref orelse return null;
-        if (ref == .namespace_decl) {
-            const target = table.environment(context.environment).namespaces.get(info.name) orelse return null;
-            return .{ .namespace = .{ .table = table, .environment = target.environment } };
-        }
-        if (ref != .const_decl) return null;
-        const path = imports.aliasPath(self.alloc, ref.const_decl.value) orelse return null;
-        defer self.alloc.free(path);
-        const target = self.selectPathInner(path, context, context.source(), visiting);
-        return if (target == .selected) self.qualifierInner(target.selected, visiting) else null;
+        var query = lookup.Query(*Resolver).init(self, self.alloc);
+        defer query.deinit();
+        return query.qualifier(.{ .declaration = .{ .table = self.index.declarations(), .id = selected.declaration }, .view = selected.view, .pinned_view = selected.pinned_view }) catch @panic("out of memory");
     }
 
     pub fn selectPath(self: *Resolver, path: []const u8, context: LookupContext) Selection {
-        var visiting = std.ArrayList(imports.DeclId).empty;
-        defer visiting.deinit(self.alloc);
-        return self.selectPathInner(path, context, context.source(), &visiting);
-    }
-
-    fn selectPathInner(self: *Resolver, path: []const u8, context: LookupContext, requester: []const u8, visiting: *std.ArrayList(imports.DeclId)) Selection {
-        var parts = std.mem.splitScalar(u8, path, '.');
-        const first = parts.next().?;
-        const candidates = lookup.bare(self, context, first, requester, self.alloc) catch @panic("out of memory");
-        defer self.alloc.free(candidates.imported);
-        var result = self.choose(candidates, context, visiting);
-        while (parts.next()) |name| {
-            if (result != .selected) return result;
-            const target = self.qualifierInner(result.selected, visiting) orelse return .missing;
-            result = self.selectMemberInner(target, name, requester, visiting);
-        }
-        return result;
+        var query = lookup.Query(*Resolver).init(self, self.alloc);
+        defer query.deinit();
+        return selection(query.select(path, context, context.source()) catch @panic("out of memory"));
     }
 
     pub fn selectMember(self: *Resolver, target: Qualifier, name: []const u8, requester: []const u8) Selection {
-        var visiting = std.ArrayList(imports.DeclId).empty;
-        defer visiting.deinit(self.alloc);
-        return self.selectMemberInner(target, name, requester, &visiting);
+        var query = lookup.Query(*Resolver).init(self, self.alloc);
+        defer query.deinit();
+        return selection(query.member(target, name, requester) catch @panic("out of memory"));
     }
 
-    fn selectMemberInner(self: *Resolver, target: Qualifier, name: []const u8, requester: []const u8, visiting: *std.ArrayList(imports.DeclId)) Selection {
-        const view = switch (target) {
-            .namespace => |context| context,
-            .scope => |scope| scope.context,
-        };
-        const candidates: lookup.Candidates = switch (target) {
-            .namespace => |context| lookup.namespaceMembers(self, context, name, requester, self.alloc) catch @panic("out of memory"),
-            .scope => |scope| lookup.scopeMembers(self, scope, name, requester, self.alloc) catch @panic("out of memory"),
-        };
-        defer self.alloc.free(candidates.imported);
-        return self.choose(candidates, view, visiting);
+    pub fn spreadTarget(self: *Resolver, context: LookupContext, node: *const ast.Node) lookup.SpreadTarget {
+        var query = lookup.Query(*Resolver).init(self, self.alloc);
+        defer query.deinit();
+        return query.spreadTarget(context, node) catch @panic("out of memory");
     }
 
     pub fn collectNamespaceAuthors(

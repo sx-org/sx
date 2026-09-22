@@ -688,6 +688,7 @@ pub const Lowering = struct {
     current_source_file: ?[]const u8 = null,
     current_environment: ?imports_mod.EnvironmentId = null,
     current_lexical_block: ?imports_mod.LexicalBlockId = null,
+    current_lookup_order: ?@import("../name_lookup.zig").Order = null,
     /// Uncached nested bodies remain part of the active constant expansion.
     module_const_frame: ?*const ConstFoldFrame = null,
     untyped_const_frame: ?*const UntypedConstFrame = null,
@@ -2488,16 +2489,18 @@ pub const Lowering = struct {
         source_file: ?[]const u8,
         environment: ?imports_mod.EnvironmentId,
         block: ?imports_mod.LexicalBlockId = null,
+        order: ?@import("../name_lookup.zig").Order = null,
     };
 
     pub fn lexicalContext(self: *const Lowering) LexicalContext {
-        return .{ .source_file = self.current_source_file, .environment = self.current_environment, .block = self.current_lexical_block };
+        return .{ .source_file = self.current_source_file, .environment = self.current_environment, .block = self.current_lexical_block, .order = self.current_lookup_order };
     }
 
     pub fn restoreLexicalContext(self: *Lowering, context: LexicalContext) void {
         self.current_source_file = context.source_file;
         self.current_environment = context.environment;
         self.current_lexical_block = context.block;
+        self.current_lookup_order = context.order;
         if (self.diagnostics) |d| d.current_source_file = context.source_file;
     }
 
@@ -2528,13 +2531,16 @@ pub const Lowering = struct {
     }
 
     pub fn lookupContext(self: *Lowering, environment: imports_mod.EnvironmentId) resolver_mod.LookupContext {
-        return .{ .table = self.program_index.declarations(), .environment = environment, .block = if (environment == self.current_environment) self.current_lexical_block else null };
+        return .{ .table = self.program_index.declarations(), .environment = environment, .block = if (environment == self.current_environment) self.current_lexical_block else null, .order = if (environment == self.current_environment) self.current_lookup_order else null };
     }
 
     pub fn setAuthorContext(self: *Lowering, id: imports_mod.DeclId) void {
         const info = self.program_index.declaration(id);
         self.setCurrentEnvironment(info.environment);
         self.current_lexical_block = info.lexical_block;
+        if (info.node) |node| if (self.program_index.declarations().written_targets.get(node)) |target| {
+            self.current_lookup_order = .{ .source = target.source, .position = target.position };
+        };
     }
 
     pub fn setFunctionContext(self: *Lowering, fd: *const ast.FnDecl) void {
@@ -2547,6 +2553,7 @@ pub const Lowering = struct {
         if (node.lexical_block) |block| {
             self.setCurrentEnvironment(self.program_index.declarations().block(block).environment);
             self.current_lexical_block = block;
+            if (self.program_index.declarations().written_targets.get(node)) |target| self.current_lookup_order = .{ .source = target.source, .position = target.position };
             return;
         }
         if (self.program_index.declarations().by_node.get(@intFromPtr(node))) |id| {

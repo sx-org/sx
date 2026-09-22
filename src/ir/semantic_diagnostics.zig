@@ -1,5 +1,6 @@
 const std = @import("std");
 const ast = @import("../ast.zig");
+const imports = @import("../imports.zig");
 const contracts = @import("../contracts.zig");
 const errors = @import("../errors.zig");
 const types = @import("types.zig");
@@ -149,7 +150,18 @@ pub const UnknownTypeChecker = struct {
                 .impl_block => |ib| for (ib.methods) |method| {
                     if (method.data == .fn_decl) decl_checker.checkFnSignatureTypes(&method.data.fn_decl, &declared);
                 },
-                .var_decl, .const_decl, .union_decl, .enum_decl => decl_checker.checkValueTypes(decl, &declared, &.{}, &.{}),
+                .const_decl => |cd| {
+                    if (imports.aliasPath(self.alloc, cd.value)) |path| {
+                        defer self.alloc.free(path);
+                        if (self.lowering) |l| {
+                            var resolver = l.resolver();
+                            if (resolver.selectPath(path, l.lookupContext(l.current_environment.?)) == .ambiguous)
+                                self.diagnostics.add(.err, "alias target is ambiguous", cd.value.span);
+                        }
+                    }
+                    decl_checker.checkValueTypes(decl, &declared, &.{}, &.{});
+                },
+                .var_decl, .union_decl, .enum_decl => decl_checker.checkValueTypes(decl, &declared, &.{}, &.{}),
                 else => {},
             }
         }
