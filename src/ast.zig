@@ -819,6 +819,7 @@ pub const ScopeDecl = struct {
 
 pub const SpreadDecl = struct {
     source: *Node,
+    c_decls: ?[]const *Node = null,
 };
 
 pub const ImportDecl = struct {

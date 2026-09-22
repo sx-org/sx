@@ -867,7 +867,7 @@ test "compiler and editor retain scope block imports without file-level leakage"
         \\    y :: 2;
         \\    c :: @import c { @include "local.h"; };
         \\    detail :: scope { value :: 3; }
-        \\    ..@import "absent.sx";
+        \\    ..@import "right.sx";
         \\    ..geo;
         \\}
         \\x :: 4;
@@ -1023,7 +1023,7 @@ test "scope selection keeps importer namespace and alias viewpoints separate" {
         \\ns :: @import "lib.sx";
         \\extra :: @import "extra.sx";
         \\geo :: scope { value :: 30; }
-        \\..@import "absent.sx";
+        \\..@import "extra.sx";
         \\..extra;
     });
     var dirbuf: [4096]u8 = undefined;
@@ -1215,4 +1215,143 @@ test "driver scope templates retain compiler and editor lexical parents without 
     try std.testing.expectEqual(scope.data.scope_decl.body_block.?, table.block(inner.data.scope_decl.body_block.?).parent.?);
     try std.testing.expectEqual(inner.data.scope_decl.body_block.?, inner.data.scope_decl.decls[0].lexical_block.?);
     try std.testing.expectEqual(@as(u32, 0), table.environment(table.block(inner.data.scope_decl.body_block.?).environment).names.count());
+}
+
+test "directory spread sources retain written order without import exposure" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const io = test_io();
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.createDir(io, "parts", .default_dir);
+    try tmp.dir.writeFile(io, .{ .sub_path = "plain.sx", .data = "Plain :: 1;" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "parts/a.sx", .data = "SpreadOnly :: 2;" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "parts/b.sx", .data = "Another :: 3;" });
+    const source: [:0]const u8 =
+        \\@import "plain.sx";
+        \\Before :: pkg;
+        \\..@import "parts";
+        \\After :: pkg;
+        \\box :: scope { ..pkg; }
+        \\private pkg :: @import "plain.sx";
+    ;
+    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data = source });
+    var dirbuf: [4096]u8 = undefined;
+    var probe = try ScopeProbe.init(alloc, dirbuf[0..try tmp.dir.realPath(io, &dirbuf)]);
+    const compiler = probe.compiler;
+    const doc = try probe.store.getOrLoad(compiler.table.environment(compiler.table.block(compiler.root.lexical_block.?).environment).source);
+    try expectSameFileFacts(&compiler.table, doc.declarations.?.table, doc.path);
+    for ([_]*const sx.imports.DeclTable{ &compiler.table, doc.declarations.?.table }, [_]*@import("../ast.zig").Node{ compiler.root, doc.root.? }) |table, root| {
+        const block = table.block(root.lexical_block.?);
+        try std.testing.expectEqual(@as(usize, 2), block.imports.items.len);
+        try std.testing.expectEqual(@as(usize, 2), block.spreads.items.len);
+        try std.testing.expectEqual(@as(u32, 4), table.environment(block.environment).names.count());
+        const before = table.written_targets.get(root.data.root.decls[1]).?;
+        const after = table.written_targets.get(root.data.root.decls[4]).?;
+        const first = table.written_targets.get(block.spreads.items[0]).?;
+        const second = table.written_targets.get(block.spreads.items[1]).?;
+        try std.testing.expect(before.position < first.position and first.position < after.position);
+        try std.testing.expectEqual(first.position, second.position);
+        try std.testing.expectEqual(root.lexical_block.?, first.block);
+        try std.testing.expectEqualStrings(doc.path, first.source);
+        try std.testing.expectEqualStrings(first.source, first.operand.source_file.?);
+        try std.testing.expectEqualStrings(first.source, before.operand.source_file.?);
+        try std.testing.expectEqualStrings("a.sx", std.fs.path.basename(table.spread_sources.get(block.spreads.items[0]).?.module));
+        try std.testing.expectEqualStrings("b.sx", std.fs.path.basename(table.spread_sources.get(block.spreads.items[1]).?.module));
+        const scope = root.data.root.decls[5].data.scope_decl;
+        const path_spread = table.block(scope.body_block.?).spreads.items[0];
+        const target = table.written_targets.get(path_spread).?;
+        try std.testing.expectEqual(scope.body_block.?, target.block);
+        try std.testing.expectEqualStrings("pkg", table.spread_sources.get(path_spread).?.path.data.identifier.name);
+        try std.testing.expect(table.by_node.get(@intFromPtr(path_spread)) == null);
+    }
+    for (compiler.table.block(compiler.root.lexical_block.?).spreads.items) |node| {
+        const path = compiler.table.spread_sources.get(node).?.module;
+        try std.testing.expect(compiler.table.fileEnvironment(path) != null);
+        try std.testing.expect(probe.store.get(path).?.sema != null);
+        try std.testing.expect(!compiler.flat_imports.get(doc.path).?.contains(path));
+    }
+    try probe.expect("main.sx", null, "Plain", .{ .declaration = .{ .file = "plain.sx", .name = "Plain" } });
+    try probe.expect("main.sx", null, "SpreadOnly", .missing);
+}
+
+test "deferred spread templates retain C declaration ownership without publication" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const io = test_io();
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.createDir(io, "parts", .default_dir);
+    try tmp.dir.writeFile(io, .{ .sub_path = "parts/a.sx", .data = "A :: 1;" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "parts/b.sx", .data = "B :: 2;" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "local.h", .data = "long c_value(void);" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "local.c", .data = "long c_value(void) { return 1; }" });
+    const source: [:0]const u8 =
+        \\..@import c { @include "local.h"; @source "local.c"; };
+        \\inline if true {
+        \\    box :: scope {
+        \\        ..@import "parts";
+        \\        Alias :: box;
+        \\        ..@import c { @include "local.h"; @source "local.c"; };
+        \\        ..Alias;
+        \\    }
+        \\}
+    ;
+    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data = source });
+    var dirbuf: [4096]u8 = undefined;
+    const path = try std.fmt.allocPrint(alloc, "{s}/main.sx", .{dirbuf[0..try tmp.dir.realPath(io, &dirbuf)]});
+    var compiler = try compilerFacts(alloc, path, source);
+    try std.testing.expectEqual(@as(usize, 0), compiler.diagnostics.items.items.len);
+    var store = doc_mod.DocumentStore.init(alloc, io, &.{}, alloc);
+    const doc = try store.openOrUpdate(path, source, 1);
+    try store.analyzeDocument(doc);
+    try expectSameFileFacts(&compiler.table, doc.declarations.?.table, path);
+    for ([_]*const sx.imports.DeclTable{ &compiler.table, doc.declarations.?.table }, [_]*@import("../ast.zig").Node{ compiler.root, doc.root.? }) |table, root| {
+        const top = root.lexical_block.?;
+        const scope_node = root.data.root.decls[1].data.if_expr.then_branch.data.block.stmts[0];
+        const scope = scope_node.data.scope_decl;
+        const block = scope.body_block.?;
+        try std.testing.expectEqual(@as(usize, 1), table.block(top).spreads.items.len);
+        try std.testing.expectEqual(@as(usize, 0), table.block(block).spreads.items.len);
+        try std.testing.expectEqual(@as(usize, 0), table.block(block).imports.items.len);
+        try std.testing.expectEqual(@as(u32, 0), table.environment(table.block(block).environment).names.count());
+        const first = table.written_targets.get(scope.decls[0]).?;
+        const second = table.written_targets.get(scope.decls[1]).?;
+        const alias = table.written_targets.get(scope.decls[2]).?;
+        const c_spread = table.written_targets.get(scope.decls[3]).?;
+        const path_spread = table.written_targets.get(scope.decls[4]).?;
+        try std.testing.expectEqual(first.position, second.position);
+        try std.testing.expect(first.position < alias.position and alias.position < c_spread.position and c_spread.position < path_spread.position);
+        try std.testing.expectEqual(block, alias.block);
+        try std.testing.expectEqualStrings(doc.path, alias.source);
+        const outer_id = table.spread_sources.get(root.data.root.decls[0]).?.c_import[0];
+        const inner_id = table.spread_sources.get(scope.decls[3]).?.c_import[0];
+        try std.testing.expect(outer_id != inner_id);
+        const outer = table.get(outer_id);
+        const inner = table.get(inner_id);
+        try std.testing.expectEqualStrings("c_value", inner.name);
+        try std.testing.expectEqualStrings(outer.source.?, inner.source.?);
+        try std.testing.expectEqual(top, outer.lexical_block.?);
+        try std.testing.expectEqual(block, inner.lexical_block.?);
+        try std.testing.expectEqualDeep(&[_][]const u8{"box"}, table.environment(inner.environment.?).scope_path);
+        try std.testing.expect(table.fileScope(doc.path).?.names.get("c_value") == null);
+        const ci = c_spread.operand.data.c_import_decl;
+        try std.testing.expect(std.mem.endsWith(u8, ci.includes[0], "/local.h"));
+        try std.testing.expect(std.mem.endsWith(u8, ci.sources[0], "/local.c"));
+        var subst = @import("../ast.zig").Substitution.init(alloc);
+        const clone = try @import("../ast.zig").cloneWithSubst(alloc, scope.decls[3], &subst);
+        try std.testing.expectEqualDeep(scope.decls[3].span, clone.span);
+        try std.testing.expectEqual(block, clone.lexical_block.?);
+        try std.testing.expectEqualStrings(doc.path, clone.data.spread_decl.c_decls.?[0].source_file.?);
+    }
+    try std.testing.expectEqual(@as(usize, 2), doc.imports.len);
+    for (doc.imports) |imp| {
+        try std.testing.expectEqual(.spread, imp.exposure);
+        try std.testing.expect(store.get(imp.path).?.sema != null);
+        try std.testing.expect(compiler.table.fileEnvironment(imp.path) != null);
+    }
+    try std.testing.expect(doc.sema.?.selection.select("c_value") == null);
+    try std.testing.expect(!doc.c_source_locations.contains("c_value"));
 }

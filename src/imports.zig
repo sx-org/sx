@@ -527,7 +527,23 @@ pub const LexicalBlock = struct {
     parent: ?LexicalBlockId,
     node: *const Node,
     imports: std.ArrayList(*const Node) = .empty,
+    spreads: std.ArrayList(*const Node) = .empty,
 };
+
+pub const WrittenTarget = struct {
+    source: []const u8,
+    block: LexicalBlockId,
+    position: u32,
+    operand: *const Node,
+};
+
+pub const SpreadSource = union(enum) {
+    module: []const u8,
+    path: *const Node,
+    c_import: []const DeclId,
+};
+
+pub const Publication = enum { deferred, published };
 
 const EnvironmentKey = struct {
     source: []const u8,
@@ -689,6 +705,8 @@ pub const DeclTable = struct {
     scopes: std.ArrayList(Scope) = .empty,
     scopes_by_path: std.HashMap([]const []const u8, ScopeId, ScopePathContext, std.hash_map.default_max_load_percentage),
     blocks: std.ArrayList(LexicalBlock) = .empty,
+    written_targets: std.AutoHashMap(*const Node, WrittenTarget),
+    spread_sources: std.AutoHashMap(*const Node, SpreadSource),
     // Namespace selections borrow member slices across expansion.
     member_slices: std.ArrayList([]const DeclId) = .empty,
 
@@ -699,6 +717,8 @@ pub const DeclTable = struct {
             .files = std.StringHashMap(EnvironmentId).init(alloc),
             .scoped_environments = .init(alloc),
             .scopes_by_path = .init(alloc),
+            .written_targets = .init(alloc),
+            .spread_sources = .init(alloc),
         };
     }
 
@@ -723,8 +743,13 @@ pub const DeclTable = struct {
         }
         self.scopes.deinit(self.alloc);
         self.scopes_by_path.deinit();
-        for (self.blocks.items) |*block_info| block_info.imports.deinit(self.alloc);
+        for (self.blocks.items) |*block_info| {
+            block_info.imports.deinit(self.alloc);
+            block_info.spreads.deinit(self.alloc);
+        }
         self.blocks.deinit(self.alloc);
+        self.written_targets.deinit();
+        self.spread_sources.deinit();
         for (self.member_slices.items) |slice| self.alloc.free(slice);
         self.member_slices.deinit(self.alloc);
     }
@@ -868,6 +893,7 @@ pub const DeclTable = struct {
     pub fn prepareExpansion(self: *DeclTable, node: *Node, owner: LexicalBlockId) std.mem.Allocator.Error!void {
         ast.stampLexicalBlock(node, owner);
         node.source_file = self.environment(self.block(owner).environment).source;
+        if (node.data == .const_decl) try self.recordWrittenTarget(owner, node);
         switch (node.data) {
             .scope_decl => |scope| {
                 const child = try self.addScopeBlock(owner, node);
@@ -886,6 +912,36 @@ pub const DeclTable = struct {
 
     pub fn recordImport(self: *DeclTable, owner: LexicalBlockId, node: *const Node) !void {
         try self.block(owner).imports.append(self.alloc, node);
+    }
+
+    pub fn recordWrittenTarget(self: *DeclTable, owner: LexicalBlockId, node: *Node) !void {
+        const operand = switch (node.data) {
+            .const_decl => |decl| decl.value,
+            .spread_decl => |spread| spread.source,
+            else => return,
+        };
+        const source = self.environment(self.block(owner).environment).source;
+        operand.source_file = source;
+        try self.written_targets.put(node, .{ .source = source, .block = owner, .position = node.span.start, .operand = operand });
+    }
+
+    pub fn recordSpread(self: *DeclTable, owner: LexicalBlockId, node: *Node, publication: Publication) !void {
+        try self.recordWrittenTarget(owner, node);
+        const spread = node.data.spread_decl;
+        const source: SpreadSource = switch (spread.source.data) {
+            .import_decl => |imp| .{ .module = imp.path },
+            .c_import_decl => blk: {
+                const env = self.block(owner).environment;
+                for (spread.c_decls.?) |decl| {
+                    ast.stampLexicalBlock(decl, owner);
+                    decl.source_file = self.environment(env).source;
+                }
+                break :blk .{ .c_import = try self.memberIds(env, spread.c_decls.?) };
+            },
+            else => .{ .path = spread.source },
+        };
+        try self.spread_sources.put(node, source);
+        if (publication == .published) try self.block(owner).spreads.append(self.alloc, node);
     }
 
     pub fn fileEnvironment(self: *const DeclTable, path: []const u8) ?EnvironmentId {
@@ -1210,6 +1266,14 @@ fn resolveBlockImports(
 
     for (nodes.*) |decl| {
         ast.stampLexicalBlock(decl, block_id);
+        decl.source_file = canonical_file;
+        try cache.declarations.recordWrittenTarget(block_id, decl);
+        if (decl.data == .spread_decl) {
+            try resolveSpreadSource(allocator, io, decl, base_dir, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
+            try cache.declarations.recordSpread(block_id, decl, .published);
+            try decl_list.append(allocator, decl);
+            continue;
+        }
         if (decl.data == .scope_decl) {
             decl.source_file = file_path;
             const added = try mod.addOwnDecl(allocator, &cache.declarations, &decl_list, &own_decl_list, &seen_in_list, decl);
@@ -1235,42 +1299,13 @@ fn resolveBlockImports(
             continue;
         }
         if (decl.data == .c_import_decl) {
-            // Resolve `@source` / `@include` paths through the same chain
-            // as `@import`: importing-file's directory → CWD → stdlib
-            // search paths. This lets sx-library modules ship their own
-            // C helpers (e.g. the Android JNI insets bridge) without
-            // forcing every consumer to vendor an identically-named copy.
-            {
-                const ci_pre = decl.data.c_import_decl;
-                if (ci_pre.sources.len > 0) {
-                    var resolved = try allocator.alloc([]const u8, ci_pre.sources.len);
-                    for (ci_pre.sources, 0..) |raw_src, idx| {
-                        resolved[idx] = try resolveImportPath(allocator, io, base_dir, raw_src, null, stdlib_paths);
-                    }
-                    decl.data.c_import_decl.sources = resolved;
-                }
-                if (ci_pre.includes.len > 0) {
-                    var resolved = try allocator.alloc([]const u8, ci_pre.includes.len);
-                    for (ci_pre.includes, 0..) |raw_inc, idx| {
-                        resolved[idx] = try resolveImportPath(allocator, io, base_dir, raw_inc, null, stdlib_paths);
-                    }
-                    decl.data.c_import_decl.includes = resolved;
-                }
-            }
-            const ci = decl.data.c_import_decl;
-
-            // Parse headers to get synthetic function declarations
-            const result = c_import.processCImport(
-                allocator,
-                ci.includes,
-                ci.defines,
-                ci.flags,
-            ) catch |err| {
+            const result = processCImport(allocator, io, decl, base_dir, null, stdlib_paths) catch |err| {
                 if (diagnostics) |diags| {
                     diags.addFmt(.err, decl.span, "@import c failed: {}", .{err});
                 }
                 return error.ImportError;
             };
+            const ci = decl.data.c_import_decl;
 
             if (ci.name) |ns_name| {
                 // Namespaced: wrap fn_decls + c_import_decl in a namespace
@@ -1355,6 +1390,52 @@ fn resolveBlockImports(
 
     try mod.finalize(allocator, &decl_list, &own_decl_list);
     return mod;
+}
+
+pub fn processCImport(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    node: *Node,
+    base_dir: []const u8,
+    root_path: ?[]const u8,
+    stdlib_paths: []const []const u8,
+) !c_import.CImportResult {
+    const ci = &node.data.c_import_decl;
+    for ([_]*[]const []const u8{ &ci.includes, &ci.sources }) |paths| {
+        const resolved = try allocator.alloc([]const u8, paths.*.len);
+        for (paths.*, resolved) |path, *out| out.* = try resolveImportPath(allocator, io, base_dir, path, root_path, stdlib_paths);
+        paths.* = resolved;
+    }
+    return c_import.processCImport(allocator, ci.includes, ci.defines, ci.flags);
+}
+
+fn resolveSpreadSource(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    node: *Node,
+    base_dir: []const u8,
+    chain: *std.StringHashMap(void),
+    cache: *ModuleCache,
+    source_map: ?*std.StringHashMap([:0]const u8),
+    diagnostics: ?*errors.DiagnosticList,
+    stdlib_paths: []const []const u8,
+    import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
+    flat_import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
+) !void {
+    const operand = node.data.spread_decl.source;
+    switch (operand.data) {
+        .import_decl => |imp| {
+            _ = try loadImport(allocator, io, imp.path, node, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
+        },
+        .c_import_decl => {
+            const result = processCImport(allocator, io, operand, base_dir, null, stdlib_paths) catch |err| {
+                if (diagnostics) |diags| diags.addFmt(.err, node.span, "@import c failed: {}", .{err});
+                return error.ImportError;
+            };
+            node.data.spread_decl.c_decls = result.fn_decls;
+        },
+        else => {},
+    }
 }
 
 fn loadImport(
@@ -1518,12 +1599,18 @@ fn resolveBranchBodyImports(
     const stmts = try expandDirectoryImports(allocator, io, original, base_dir, file_path, null, stdlib_paths, diagnostics);
     if (body.data == .block) {
         body.data.block.stmts = stmts;
-    } else if (body.data == .import_decl) {
+    } else if (body.data == .import_decl or (body.data == .spread_decl and body.data.spread_decl.source.data == .import_decl)) {
         body.data = .{ .block = .{ .stmts = stmts } };
     }
     for (stmts) |stmt| {
         ast.stampLexicalBlock(stmt, body.lexical_block.?);
         stmt.source_file = file_path;
+        try cache.declarations.recordWrittenTarget(body.lexical_block.?, stmt);
+        if (stmt.data == .spread_decl) {
+            try resolveSpreadSource(allocator, io, stmt, base_dir, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
+            try cache.declarations.recordSpread(body.lexical_block.?, stmt, .deferred);
+            continue;
+        }
         if (stmt.data == .scope_decl) {
             const child = stmt.data.scope_decl.body_block.?;
             var scope_body = Node{ .span = stmt.span, .lexical_block = child, .data = .{ .block = .{ .stmts = stmt.data.scope_decl.decls } } };
@@ -1553,17 +1640,23 @@ pub fn expandDirectoryImports(
 ) ![]const *Node {
     var expanded = std.ArrayList(*Node).empty;
     for (nodes) |node| {
-        if (node.data != .import_decl) {
+        const operand = if (node.data == .spread_decl) node.data.spread_decl.source else node;
+        if (operand.data != .import_decl) {
             try expanded.append(allocator, node);
             continue;
         }
-        const resolved = try resolveImportPath(allocator, io, base_dir, node.data.import_decl.path, root_path, stdlib_paths);
-        const paths = try importFiles(allocator, io, resolved, file_path, node, diagnostics);
+        const resolved = try resolveImportPath(allocator, io, base_dir, operand.data.import_decl.path, root_path, stdlib_paths);
+        const paths = try importFiles(allocator, io, resolved, file_path, operand, diagnostics);
         for (paths) |path| {
             const imported = try allocator.create(Node);
-            imported.* = node.*;
+            imported.* = operand.*;
             imported.data.import_decl.path = path;
-            try expanded.append(allocator, imported);
+            if (node.data == .spread_decl) {
+                const spread = try allocator.create(Node);
+                spread.* = node.*;
+                spread.data.spread_decl.source = imported;
+                try expanded.append(allocator, spread);
+            } else try expanded.append(allocator, imported);
         }
     }
     return expanded.toOwnedSlice(allocator);

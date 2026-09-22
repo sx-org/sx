@@ -2456,7 +2456,7 @@ pub const Server = struct {
 
         // Also check imported docs for flat-imported functions
         for (doc.imports) |imp| {
-            if (imp.ns != null) continue; // skip namespaced
+            if (imp.exposure != .plain or imp.ns != null) continue;
             if (self.documents.get(imp.path)) |imp_doc| {
                 if (imp_doc.root) |imp_root| {
                     if (imp_root.data == .root) {
