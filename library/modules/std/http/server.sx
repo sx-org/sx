@@ -166,7 +166,7 @@ HttpErr :: error {
 private unlinkPath :: (path: string) {
     if path.len == 0 or path.len > 110 { return; }
     pb : [112]u8 = ---;
-    clib.memcpy(*pb[0], path.ptr, path.len);
+    clib.c.memcpy(*pb[0], path.ptr, path.len);
     pb[path.len] = 0;
     p : cstring = .{ ptr = *pb[0], len = path.len };
     fs.deleteFile(p);
@@ -637,9 +637,9 @@ private BodyChan :: struct {
             return 0;
         }
         n := if want < self.len then want else self.len;
-        clib.memcpy(dst, self.buf, n);
+        clib.c.memcpy(dst, self.buf, n);
         rest := self.len - n;
-        if rest > 0 { clib.memmove(self.buf, *self.buf[n], rest); }
+        if rest > 0 { clib.c.memmove(self.buf, *self.buf[n], rest); }
         self.len = rest;
         wake := self.stalled;
         if wake { self.stalled = false; }
@@ -658,7 +658,7 @@ private BodyChan :: struct {
         space := self.cap - self.len;
         take := if n < space then n else space;
         if take > 0 {
-            clib.memcpy(*self.buf[self.len], src, take);
+            clib.c.memcpy(*self.buf[self.len], src, take);
             self.len += take;
             self.cv.signal();
         }
@@ -967,9 +967,9 @@ private bodyFiberRead :: (ctx: usize, dst: [*]u8, cap: i64) -> i64 {
         ch.mu.lock();
         if ch.len > 0 {
             n := if cap < ch.len then cap else ch.len;
-            clib.memcpy(dst, ch.buf, n);
+            clib.c.memcpy(dst, ch.buf, n);
             rest := ch.len - n;
-            if rest > 0 { clib.memmove(ch.buf, *ch.buf[n], rest); }
+            if rest > 0 { clib.c.memmove(ch.buf, *ch.buf[n], rest); }
             ch.len = rest;
             wake := ch.stalled;
             if wake { ch.stalled = false; }
@@ -1147,12 +1147,7 @@ private runHandlerJob :: (arg: usize) {
 }
 
 // the fiber task — one per dispatched request in fiber mode. Runs
-// ON the loop thread, cooperatively: wires the SUSPENDING reader, runs the
-// handler, then completes the request same-thread — gen-checked
-// serialization straight into the conn's persistent wbuf (the inline-path
-// shape; shallow clib.memcpy work only — writeMore runs later on the LOOP
-// stack in finalizeFibers, never on this bounded fiber stack). The job is
-// freed here; the runner reaps the fiber (env + stack) after this returns.
+// writeMore runs on the loop stack in finalizeFibers, outside this bounded fiber stack.
 private runFiberJob :: (arg: usize) {
     job : *HandlerJob = @reinterpret(*HandlerJob, arg);
     srv := job.srv;
@@ -1198,7 +1193,7 @@ private runFiberJob :: (arg: usize) {
             // Drop the consumed request bytes (accumulate dispatch; the
             // streamed dispatch consumed its headers up front → 0).
             rest := c.readLen - job.consumed;
-            if rest > 0 { clib.memmove(c.readBuf, *c.readBuf[job.consumed], rest); }
+            if rest > 0 { clib.c.memmove(c.readBuf, *c.readBuf[job.consumed], rest); }
             c.readLen = rest;
             c.resetParse();
             c.fiberEarly = early;
@@ -2137,7 +2132,7 @@ Server :: struct {
             consec += 1;
             self.emit(EventKind.LISTEN_ERROR, -1, consec);
             if consec < LOOP_FAULT_LIMIT {
-                clib.usleep((consec * 10000).(u32));   // 10/20/30/40 ms — no hot spin
+                clib.c.usleep((consec * 10000).(u32));
             }
         }
         loopDead := consec >= LOOP_FAULT_LIMIT;
@@ -2379,7 +2374,7 @@ Server :: struct {
                 if took > 0 {
                     progressed = true;
                     rest := c.readLen - took;
-                    if rest > 0 { clib.memmove(c.readBuf, *c.readBuf[took], rest); }
+                    if rest > 0 { clib.c.memmove(c.readBuf, *c.readBuf[took], rest); }
                     c.readLen = rest;
                     c.bodyRemaining -= took;
                 }
@@ -2428,7 +2423,7 @@ Server :: struct {
                 }
                 consumed := e + 2;
                 rest := c.readLen - consumed;
-                if rest > 0 { clib.memmove(c.readBuf, *c.readBuf[consumed], rest); }
+                if rest > 0 { clib.c.memmove(c.readBuf, *c.readBuf[consumed], rest); }
                 c.readLen = rest;
                 progressed = true;
                 if size == 0 {
@@ -2449,7 +2444,7 @@ Server :: struct {
                 if took > 0 {
                     progressed = true;
                     rest := c.readLen - took;
-                    if rest > 0 { clib.memmove(c.readBuf, *c.readBuf[took], rest); }
+                    if rest > 0 { clib.c.memmove(c.readBuf, *c.readBuf[took], rest); }
                     c.readLen = rest;
                     c.bodyRemaining -= took;
                 }
@@ -2467,7 +2462,7 @@ Server :: struct {
                     return;
                 }
                 rest := c.readLen - 2;
-                if rest > 0 { clib.memmove(c.readBuf, *c.readBuf[2], rest); }
+                if rest > 0 { clib.c.memmove(c.readBuf, *c.readBuf[2], rest); }
                 c.readLen = rest;
                 progressed = true;
                 c.bchState = 0;
@@ -2480,7 +2475,7 @@ Server :: struct {
             if c.readLen < 2 { break; }
             if c.readBuf[0] == '\r' and c.readBuf[1] == '\n' {
                 rest := c.readLen - 2;
-                if rest > 0 { clib.memmove(c.readBuf, *c.readBuf[2], rest); }
+                if rest > 0 { clib.c.memmove(c.readBuf, *c.readBuf[2], rest); }
                 c.readLen = rest;
                 self.bodyEof(slot);
                 break;
@@ -2506,7 +2501,7 @@ Server :: struct {
                 return;
             }
             rest := c.readLen - (te + 2);
-            if rest > 0 { clib.memmove(c.readBuf, *c.readBuf[te + 2], rest); }
+            if rest > 0 { clib.c.memmove(c.readBuf, *c.readBuf[te + 2], rest); }
             c.readLen = rest;
             progressed = true;
         }
@@ -2613,7 +2608,7 @@ Server :: struct {
         if want > self.cfg.readBufCap { want = self.cfg.readBufCap; }
         if want <= c.readCap { return false; }   // already at the limit
         nb : [*]u8 = self.ownAlloc.alloc(u8, want).ptr;
-        if c.readLen > 0 { clib.memcpy(nb, c.readBuf, c.readLen); }
+        if c.readLen > 0 { clib.c.memcpy(nb, c.readBuf, c.readLen); }
         self.ownAlloc.deallocBytes(c.readBuf);
         c.readBuf = nb;
         c.readCap = want;
@@ -3258,7 +3253,7 @@ Server :: struct {
             job : *HandlerJob = self.ownAlloc.allocBytes(@sizeOf(HandlerJob) + hdrTotal).(*HandlerJob);
             jb : [*]u8 = @reinterpret([*]u8, job);
             raw : [*]u8 = *jb[@sizeOf(HandlerJob)];
-            clib.memcpy(raw, c.readBuf, hdrTotal);
+            clib.c.memcpy(raw, c.readBuf, hdrTotal);
             jreq := req;
             jreq.body = "";
             jreq.method = string{ ptr = raw, len = req.method.len };
@@ -3316,7 +3311,7 @@ Server :: struct {
             // Drop the consumed header region NOW — from here the front of
             // readBuf is body framing (the job owns its own header copy).
             rest := c.readLen - hdrTotal;
-            if rest > 0 { clib.memmove(c.readBuf, *c.readBuf[hdrTotal], rest); }
+            if rest > 0 { clib.c.memmove(c.readBuf, *c.readBuf[hdrTotal], rest); }
             c.readLen = rest;
             c.resetParse();
             self.setDeadline(slot, self.cfg.timeoutRequestMs);
@@ -3451,7 +3446,7 @@ Server :: struct {
             job : *HandlerJob = self.ownAlloc.allocBytes(@sizeOf(HandlerJob) + total).(*HandlerJob);
             jb : [*]u8 = @reinterpret([*]u8, job);
             raw : [*]u8 = *jb[@sizeOf(HandlerJob)];
-            clib.memcpy(raw, c.readBuf, total);
+            clib.c.memcpy(raw, c.readBuf, total);
             jreq := req;
             jreq.method      = string{ ptr = raw, len = req.method.len };
             if !pathStaticRoot { jreq.path = string{ ptr = *raw[pathOff], len = req.path.len }; }
@@ -3540,7 +3535,7 @@ Server :: struct {
         // drainCompletions instead — never inside the worker.
         self.stRequests += 1;
         rest := c.readLen - total;
-        if rest > 0 { clib.memmove(c.readBuf, *c.readBuf[total], rest); }
+        if rest > 0 { clib.c.memmove(c.readBuf, *c.readBuf[total], rest); }
         c.readLen = rest;
         c.resetParse();   // the next pipelined request now starts at 0
         self.writeMore(slot);
@@ -3643,7 +3638,7 @@ Server :: struct {
         bodyLen : i64 = if headOnly or noBody then 0 else resp.body.len;
         self.ensureWbuf(slot, hl + bodyLen);
         w := respHeadWrite(resp, keep, date, self.cfg.serverName, noBody, false, c.wbuf);
-        if bodyLen > 0 { clib.memcpy(*c.wbuf[w], resp.body.ptr, bodyLen); }
+        if bodyLen > 0 { clib.c.memcpy(*c.wbuf[w], resp.body.ptr, bodyLen); }
         c.outBuf = c.wbuf;
         c.outLen = w + bodyLen;
         c.outSent = 0;
@@ -3766,7 +3761,7 @@ Server :: struct {
                     continue;
                 }
                 sb : [*]u8 = raw.([*]u8);
-                clib.memcpy(sb, done.out.buf, done.out.len);
+                clib.c.memcpy(sb, done.out.buf, done.out.len);
                 self.ownAlloc.deallocBytes(done.out.buf);
                 c.outBuf = sb;
                 c.outLen = done.out.len;
@@ -3795,7 +3790,7 @@ Server :: struct {
             // drop the served bytes (memmove — overlap-safe, and the
             // kernel-grade copy beats a byte loop on multi-KB pipelines)
             rest := c.readLen - done.consumed;
-            if rest > 0 { clib.memmove(c.readBuf, *c.readBuf[done.consumed], rest); }
+            if rest > 0 { clib.c.memmove(c.readBuf, *c.readBuf[done.consumed], rest); }
             c.readLen = rest;
             c.resetParse();   // the next pipelined request now starts at 0
             c.state = CONN_READING;

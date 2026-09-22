@@ -644,6 +644,6 @@ Into :: constraint(Target: Type) {
 }
 
 // Raw libc lives in its dependency-free leaf module; core owns no externs.
-c :: @import "modules/std/c.sx";
+@import "modules/std/c.sx";
 
 @import "modules/std/encoding.sx";

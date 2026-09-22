@@ -180,7 +180,7 @@ fsCreateDirAll :: (path: [:0]u8) -> bool {
     // Do not recurse below a drive root such as C:\\.
     if last > 0 and !(last == 2 and path[1] == ':') {
         parent := allocString(last);
-        fsWindowsC.memcpy(parent.ptr, path.ptr, last);
+        fsWindowsC.c.memcpy(parent.ptr, path.ptr, last);
         parentOk := fsCreateDirAll(parent);
         context.allocator.deallocBytes(parent.ptr);
         if !parentOk { return false; }

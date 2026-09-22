@@ -5,7 +5,7 @@
 // the loop thread and worker threads). atomic.sx has no naked asm — safe to
 // import here.
 @import "modules/std/atomic.sx";
-c :: @import "modules/std/c.sx";
+@import "modules/std/c.sx";
 
 // --- Typed allocation helpers ---
 //

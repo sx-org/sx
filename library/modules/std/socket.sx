@@ -15,17 +15,17 @@
 
 clib  :: @import "modules/std/c.sx";     // namespace `clib` (not `c` — `c` is a local fd var throughout)
 posix :: @import "modules/std/posix.sx";
-libc  :: clib.libc;   // the socket-specific externs below bind through the shared libc handle
+libc  :: clib.c.libc;
 // errno constants live in std/posix.sx — consumers reference `posix.EAGAIN` etc.
 // directly (a cross-module value-const can't be re-aliased at module scope).
 
 // POSIX socket API. Cross-cutting fd primitives are re-exported from std/c.sx
 // so existing socket.read/write/close callers keep their source-level API
 // without duplicating the libc declarations.
-read  :: clib.read;
-write :: clib.write;
-close :: clib.close;
-fcntl :: clib.fcntl;
+read  :: clib.c.read;
+write :: clib.c.write;
+close :: clib.c.close;
+fcntl :: clib.c.fcntl;
 socket     :: (domain: i32, kind: i32, protocol: i32) -> i32 extern libc;
 setsockopt :: (fd: i32, level: i32, optname: i32, optval: *i32, optlen: u32) -> i32 extern libc;
 bind       :: (fd: i32, addr: *SockAddr, addrlen: u32) -> i32 extern libc;
@@ -464,8 +464,8 @@ inline if @host.os == .macos or @host.os == .ios {
         c, ae := acceptNb(fd);
         if ae == .WouldBlock { raise .WouldBlock; }
         if ae { raise .Fault; }
-        if fcntl(c, F_SETFD, FD_CLOEXEC) < 0 { clib.close(c); raise .Fault; }
-        if !setNonblocking(c) { clib.close(c); raise .Fault; }
+        if fcntl(c, F_SETFD, FD_CLOEXEC) < 0 { clib.c.close(c); raise .Fault; }
+        if !setNonblocking(c) { clib.c.close(c); raise .Fault; }
         return c;
     }
 }
@@ -537,7 +537,7 @@ acceptNb :: (fd: i32) -> (i32, !SockErr) {
 // or a peer reset is Closed.
 readNb :: (fd: i32, buf: [*]u8, cap: i64) -> (i64, !SockErr) {
     while true {
-        n := clib.read(fd, buf, cap);
+        n := clib.c.read(fd, buf, cap);
         if n > 0 { return n; }
         if n == 0 { raise .Closed; }
         e := errno();
@@ -553,7 +553,7 @@ readNb :: (fd: i32, buf: [*]u8, cap: i64) -> (i64, !SockErr) {
 // fewer — the caller continues from there on the next writability).
 writeNb :: (fd: i32, buf: [*]u8, len: i64) -> (i64, !SockErr) {
     while true {
-        n := clib.write(fd, buf, len);
+        n := clib.c.write(fd, buf, len);
         if n >= 0 { return n; }
         e := errno();
         if e == posix.EINTR { continue; }

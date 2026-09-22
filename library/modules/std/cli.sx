@@ -33,7 +33,7 @@
 @import "modules/std/core.sx";
 @import "modules/build.sx";
 proc :: @import "modules/std/process.sx";
-c :: @import "modules/std/c.sx"; // the shared libc handle for the per-OS externs below
+@import "modules/std/c.sx";
 
 // The argv externs below are OS-specific — not in the shared c.sx surface —
 // so keep them here, bound through the shared libc handle.

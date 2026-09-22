@@ -29,7 +29,7 @@
 @import "modules/std/fmt.sx";
 @import "modules/std/list.sx";
 @import "modules/std/mem.sx";
-c :: @import "modules/std/c.sx";
+@import "modules/std/c.sx";
 // True cancellation: `suspendRaw` reads the spawned fiber's cancel
 // flag — a `*Atomic(bool)` back-ref to the `Future.canceled` — to decide whether
 // to raise `IoErr.Canceled` on resume. atomic.sx has no naked asm, so it is safe

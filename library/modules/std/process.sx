@@ -1,7 +1,7 @@
 @import "modules/std/core.sx";   // @SourceSite
 @import "modules/std/fmt.sx";
 @import "modules/std/mem.sx";
-c :: @import "modules/std/c.sx"; // c.exit (_exit) + the shared libc handle
+@import "modules/std/c.sx";
 posix :: @import "modules/std/posix.sx";
 trace :: @import "modules/std/trace.sx";
 

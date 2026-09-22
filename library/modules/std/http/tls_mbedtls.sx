@@ -445,7 +445,7 @@ private tlsSniSelect :: (ctx: *void, ssl: *mbedtls.SslContext, name: [*]u8, name
 private nulDup :: (a: Allocator, src: []u8) -> ([*]u8, usize) {
     n := src.len;
     p : [*]u8 = a.alloc(u8, n + 1).ptr;
-    if n > 0 { clib.memcpy(p, src.ptr, n); }
+    if n > 0 { clib.c.memcpy(p, src.ptr, n); }
     p[n] = 0;
     return p, (n + 1).(usize);
 }

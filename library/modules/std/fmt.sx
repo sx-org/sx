@@ -3,7 +3,7 @@
 // file directly — std.sx re-exports every public name here.
 @import "modules/std/core.sx";
 @import "modules/std/writer.sx";
-c :: @import "modules/std/c.sx";
+@import "modules/std/c.sx";
 
 intToString :: (n: i64) -> string {
     sb := StringBuilder.init();

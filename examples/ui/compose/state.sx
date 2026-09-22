@@ -12,7 +12,7 @@
 @import "modules/std/mem.sx";
 @import "examples/ui/compose/identity.sx";
 
-c :: @import "modules/std/c.sx";
+@import "modules/std/c.sx";
 
 State :: struct ($T: Type) {
     ptr: *T;

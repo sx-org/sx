@@ -14,7 +14,7 @@
 @import "modules/ui/fluent/identity.sx";
 @import "modules/ui/fluent/wire.sx";
 
-private c :: @import "modules/std/c.sx";
+@import "modules/std/c.sx";
 
 State :: struct ($T: Type) {
     ptr: *T;
