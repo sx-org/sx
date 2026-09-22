@@ -433,8 +433,6 @@ private fetchHop :: (u: Url, method: string, body: string, opts: ClientOpts, ver
     return c, r;
 }
 
-// Does a Connection header value contain the "close" token (ASCII-case-
-// insensitive, as one element of the comma-separated list, OWS-trimmed)?
 // Truncate at '#' — fragments never go on the wire (RFC 9112). "" → "/".
 private stripFragment :: (s: string) -> string {
     i : i64 = 0;
@@ -610,9 +608,8 @@ private finishContentDecoder :: (decoder: *Decoder, output: string) -> (i64, boo
     return progress.produced, progress.status == .done;
 }
 
-// Compact a parsed response header block in place, removing representation
-// metadata that no longer describes the transparently-decoded body. The body
-// remains at its original headEnd; only the public headersRaw view shrinks.
+// Header compaction leaves the decoded body at its original headEnd;
+// only the public headersRaw view shrinks.
 private normalizeDecodedHeaders :: (raw: [*]u8, len: i64) -> i64 {
     readAt : i64 = 0;
     writeAt : i64 = 0;

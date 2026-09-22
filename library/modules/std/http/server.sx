@@ -2620,16 +2620,6 @@ Server :: struct {
         return true;
     }
 
-    // ── Transport seam ────────────────────────────────────
-    // readMore / writeMore go through these instead of calling
-    // socket.*_nb directly, so a connection is transport-agnostic:
-    // plaintext, or TLS app-data once cfg.tls negotiated the session.
-    // The (i64, !) contract is IDENTICAL to socket.readNb/writeNb
-    // — `SockErr.WouldBlock` to pause (re-arm), `SockErr.Closed`/`Fault` to drop —
-    // The TLS branch maps the abstract
-    // TlsStep onto the same channel; a TlsStep.Closed (clean close_notify)
-    // is `SockErr.Closed` exactly like a plaintext EOF.
-    //
     // CROSS-DIRECTION WANTS: a DATA-phase TLS
     // read may return WantWrite (the session must flush a pending record
     // before it can deliver plaintext) and a write may return WantRead (the

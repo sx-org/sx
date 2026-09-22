@@ -66,10 +66,7 @@ impl http.TlsConn for TlsSession {
             if r == mbedtls.MBEDTLS_ERR_SSL_WANT_READ  { return 0, http.TlsStep.WantRead; }
             if r == mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE { return 0, http.TlsStep.WantWrite; }
             if r == mbedtls.MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY { return 0, http.TlsStep.Closed; }
-            // a TLS 1.3 server (nginx/Go-class) sends 1-2
-            // NewSessionTickets right after the handshake; mbedTLS surfaces
-            // each as this NON-FATAL signal from ssl_read. Without the retry
-            // the very first read against a mainstream server died Fatal.
+            // Session tickets are nonfatal control records; keep reading app data.
             if r == mbedtls.MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET { continue; }
             if r == 0 { return 0, http.TlsStep.Closed; }
             return 0, http.TlsStep.Fatal;
