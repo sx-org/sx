@@ -1,0 +1,16 @@
+@import "modules/std.sx";
+
+Table :: struct {
+    Check: (*Env) -> u8 abi(.c);
+}
+
+Env :: *Table;
+
+check :: (env: *Env) -> u8 abi(.c) { 17 }
+through :: (env: *Env) -> u8 { env.*.Check(env) }
+
+main :: () {
+    table := Table{Check = check};
+    pointer := *table;
+    print("{}\n", through(*pointer));
+}

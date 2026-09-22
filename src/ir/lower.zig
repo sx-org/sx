@@ -761,6 +761,7 @@ pub const Lowering = struct {
     /// speculatively from several resolution layers and from EACH member
     /// decl's registration, all of which close the same loop.
     alias_cycle_diagnosed: std.AutoHashMap(usize, void) = undefined,
+    resolving_type_aliases: std.AutoHashMap(imports_mod.DeclId, void),
     /// The SSA `Ref`s produced by lowering a narrowed identifier — the bridge
     /// from name-keyed narrowing to the Ref-keyed `coerceMode` unwrap gate.
     /// Cleared per function body (the `Ref` space is per-function).
@@ -1433,6 +1434,7 @@ pub const Lowering = struct {
             .init_recipe_owners = std.AutoHashMap(FuncId, ?FuncId).init(module.alloc),
             .env_lambdas = std.AutoHashMap(TypeId, *const ast.Lambda).init(module.alloc),
             .alias_cycle_diagnosed = std.AutoHashMap(usize, void).init(module.alloc),
+            .resolving_type_aliases = std.AutoHashMap(imports_mod.DeclId, void).init(module.alloc),
             .narrowed_refs = std.AutoHashMap(Ref, void).init(module.alloc),
             .convert_reentrancy = std.AutoHashMap(u64, void).init(module.alloc),
             .inferred_error_sets = std.AutoHashMap(imports_mod.DeclId, []const u32).init(module.alloc),

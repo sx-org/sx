@@ -1,0 +1,11 @@
+@import "modules/std.sx";
+
+Table :: struct { check: () -> u8; }
+check :: () -> u8 { 23 }
+
+main :: () {
+    table := Table{check = check};
+    pointer := *table;
+    indirect := *pointer;
+    print("{}\n", indirect.*.check());
+}

@@ -2770,17 +2770,6 @@ fn resolveBuiltinAliasChain(
     return resolveBuiltinAliasChain(self, next, depth + 1);
 }
 
-/// Resolve an as-yet-unregistered alias author directly to a terminal named
-/// type when raw import/declaration facts already prove the whole chain. This
-/// is principally the declaration-ABI path for `Alias :: foreign.P`: function
-/// signatures and aggregate fields may precede either alias declaration in
-/// source, while the imported protocol's canonical aggregate layout must be
-/// known before their IR types are interned. Materializing a terminal protocol
-/// is safe and exactly-once through `registered_protocol_decls`; other named
-/// kinds are used only when their ordinary scan already registered a slot.
-/// A builtin RHS (`BOOL :: i8`) has no named terminal; intern the primitive
-/// here so a signature that names the alias is that primitive. An identifier
-/// chain (`MYB2 :: MYB; MYB :: i8`) walks each hop the same way.
 fn resolvePendingAliasType(self: *Lowering, author: resolver_mod.RawAuthor, alias_name: []const u8) ?TypeId {
     if (resolveBuiltinAliasChain(self, author, 0)) |tid| {
         self.putTypeAlias(self.declId(author.raw, author.source), alias_name, tid);
@@ -2817,7 +2806,18 @@ fn resolvePendingAliasType(self: *Lowering, author: resolver_mod.RawAuthor, alia
             // exact declaration slot is authoritative and must not be looked
             // up through the alias compatibility map.
             if (self.namedRefTid(terminal.raw, terminal_name)) |named| break :blk named;
-            break :blk self.program_index.get(.type_alias, terminal.id) orelse return null;
+            if (self.program_index.get(.type_alias, terminal.id)) |ty| break :blk ty;
+            const cd = terminal.raw.const_decl;
+            if (!isCompositeAliasRhs(cd.value.data) and !addrOfAliasRhs(cd.value)) return null;
+            const entry = self.resolving_type_aliases.getOrPut(terminal.id) catch @panic("out of memory");
+            if (entry.found_existing) return null;
+            defer _ = self.resolving_type_aliases.remove(terminal.id);
+            const saved_context = self.lexicalContext();
+            self.setAuthorContext(terminal.id);
+            defer self.restoreLexicalContext(saved_context);
+            if (!typeNodeLeavesReady(self, cd.value, terminal.source)) return null;
+            registerCompositeAlias(self, cd, terminal.source);
+            break :blk self.program_index.get(.type_alias, terminal.id).?;
         },
         else => self.namedRefTid(terminal.raw, terminal_name) orelse return null,
     };
