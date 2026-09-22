@@ -80,6 +80,18 @@ pub const SpreadTarget = union(enum) {
     }
 };
 
+/// Undecided contributions are queried without publishing them into lexical environments.
+pub const Contributions = struct {
+    declarations: []const Declaration,
+    spreads: []const *const ast.Node,
+    imports: []const Import,
+
+    pub const Import = struct {
+        context: Context,
+        target: Context,
+    };
+};
+
 pub const Candidates = struct {
     own: ?Selected = null,
     imported: []const Selected = &.{},
@@ -119,6 +131,7 @@ fn sameContext(a: Context, b: Context) bool {
 pub fn Query(comptime Backend: type) type {
     return struct {
         backend: Backend,
+        contributions: ?Contributions = null,
         alloc: std.mem.Allocator,
         surfaces: std.ArrayList(Surface) = .empty,
         targets: std.ArrayList(*const ast.Node) = .empty,
@@ -139,6 +152,40 @@ pub fn Query(comptime Backend: type) type {
             self.targets.deinit(self.alloc);
             self.aliases.deinit(self.alloc);
             self.carriers.deinit(self.alloc);
+        }
+
+        fn local(self: *Self, context: Context, name: []const u8, requester: []const u8) Error!Candidates {
+            if (own(context, name, requester)) |decl| return .{ .own = .{ .declaration = decl, .view = context } };
+            var result: std.ArrayList(Selected) = .empty;
+            errdefer result.deinit(self.alloc);
+            if (self.contributions) |pending| for (pending.declarations) |decl| {
+                const info = decl.info();
+                if (decl.table != context.table or info.environment != context.environment or !std.mem.eql(u8, info.name, name)) continue;
+                if (info.visibility == .private and !std.mem.eql(u8, info.source.?, requester)) continue;
+                try result.append(self.alloc, .{ .declaration = decl, .view = context });
+            };
+            return .{ .imported = try result.toOwnedSlice(self.alloc) };
+        }
+
+        fn plainImports(self: *Self, context: Context, files: *std.ArrayList(Context)) Error!void {
+            try self.backend.plainImports(context, files);
+            if (self.contributions) |pending| for (pending.imports) |imp| {
+                if (imp.context.table == context.table and imp.context.environment == context.environment and imp.context.block == context.block)
+                    try files.append(self.alloc, imp.target);
+            };
+        }
+
+        fn spreads(self: *Self, context: Context) Error![]const *const ast.Node {
+            var result: std.ArrayList(*const ast.Node) = .empty;
+            errdefer result.deinit(self.alloc);
+            for (context.table.blocks.items) |block| {
+                if (block.environment == context.environment) try result.appendSlice(self.alloc, block.spreads.items);
+            }
+            if (self.contributions) |pending| for (pending.spreads) |node| {
+                const block = node.lexical_block.?;
+                if (context.table.block(block).environment == context.environment) try result.append(self.alloc, node);
+            };
+            return result.toOwnedSlice(self.alloc);
         }
 
         fn append(self: *Self, list: *std.ArrayList(Selected), candidates: Candidates) Error!void {
@@ -203,7 +250,10 @@ pub fn Query(comptime Backend: type) type {
             const info = decl.info();
             if (info.scope) |scope| return .{ .scope = .{ .path = decl.table.scopeInfo(scope).path, .context = selected.view, .pinned = selected.pinned_view } };
             if (info.kind == .namespace) {
-                var context = self.backend.namespaceContext(decl) orelse return null;
+                var context = if (self.contributions != null and info.node != null and info.node.?.data == .import_decl)
+                    self.backend.moduleContext(Context.author(decl).?, info.node.?.data.import_decl.path) orelse return null
+                else
+                    self.backend.namespaceContext(decl) orelse return null;
                 if (selected.view.order) |order| if (std.mem.eql(u8, order.source, context.source())) {
                     context.order = order;
                 };
@@ -288,6 +338,89 @@ pub fn Query(comptime Backend: type) type {
             }
         }
 
+        fn qualifiers(self: *Self, selected: Selected, result: *std.ArrayList(Qualifier)) Error!void {
+            const decl = selected.declaration;
+            const info = decl.info();
+            if (info.scope != null or info.kind == .namespace) {
+                if (try self.qualifier(selected)) |target| try result.append(self.alloc, target);
+                return;
+            }
+            for (self.aliases.items) |previous| if (std.meta.eql(previous, decl)) return;
+            const ref = info.ref orelse return;
+            if (ref != .const_decl) return;
+            const path = imports.aliasPath(self.alloc, ref.const_decl.value) orelse return;
+            defer self.alloc.free(path);
+            try self.aliases.append(self.alloc, decl);
+            defer _ = self.aliases.pop();
+            const start = result.items.len;
+            try self.pathQualifiers(path, Context.author(decl).?, result);
+            for (result.items[start..]) |*target| {
+                const context = switch (target.*) {
+                    .scope => |*scope| blk: {
+                        scope.pinned = true;
+                        break :blk &scope.context;
+                    },
+                    .namespace => |*namespace| namespace,
+                };
+                context.order = null;
+                if (selected.view.order) |order| if (std.mem.eql(u8, order.source, context.source())) {
+                    context.order = order;
+                };
+            }
+        }
+
+        fn candidateQualifiers(self: *Self, candidates: Candidates, result: *std.ArrayList(Qualifier)) Error!void {
+            defer self.alloc.free(candidates.imported);
+            if (candidates.own) |selected| try self.qualifiers(selected, result);
+            for (candidates.imported) |selected| try self.qualifiers(selected, result);
+        }
+
+        // Mutually exclusive branches can name different targets until selection.
+        fn pathQualifiers(self: *Self, path: []const u8, context: Context, result: *std.ArrayList(Qualifier)) Error!void {
+            var parts = std.mem.splitScalar(u8, path, '.');
+            var targets: std.ArrayList(Qualifier) = .empty;
+            defer targets.deinit(self.alloc);
+            try self.candidateQualifiers(try self.bare(context, parts.next().?, context.source()), &targets);
+            while (parts.next()) |name| {
+                var next: std.ArrayList(Qualifier) = .empty;
+                errdefer next.deinit(self.alloc);
+                for (targets.items) |target| try self.candidateQualifiers(try self.surface(target, name, context.source()), &next);
+                targets.deinit(self.alloc);
+                targets = next;
+            }
+            try result.appendSlice(self.alloc, targets.items);
+        }
+
+        fn spreadTargets(self: *Self, context: Context, node: *const ast.Node, view: Context) Error![]const Qualifier {
+            var result: std.ArrayList(Qualifier) = .empty;
+            errdefer result.deinit(self.alloc);
+            const source = context.table.spread_sources.get(node).?;
+            if (self.contributions != null and source == .path) {
+                for (self.targets.items) |previous| if (previous == node) return &.{};
+                try self.targets.append(self.alloc, node);
+                defer _ = self.targets.pop();
+                const written = context.table.written_targets.get(node).?;
+                const path = imports.aliasPath(self.alloc, source.path).?;
+                defer self.alloc.free(path);
+                try self.pathQualifiers(path, .{
+                    .table = context.table,
+                    .environment = context.table.block(written.block).environment,
+                    .block = written.block,
+                    .order = .{ .source = written.source, .position = written.position },
+                }, &result);
+                for (result.items) |*target| {
+                    if (target.* == .scope) {
+                        if (!target.scope.pinned) target.scope.context = view;
+                        target.scope.context.order = null;
+                    } else target.namespace.order = null;
+                }
+            } else {
+                const resolved = try self.spreadTargetInView(context, node, view);
+                if (resolved == .target) try result.append(self.alloc, resolved.target);
+            }
+            return result.toOwnedSlice(self.alloc);
+        }
+
         fn permitted(context: Context, node: *const ast.Node) bool {
             const order = context.order orelse return true;
             const written = context.table.written_targets.get(node).?;
@@ -297,19 +430,20 @@ pub fn Query(comptime Backend: type) type {
         fn spreadMembers(self: *Self, context: Context, view: Context, pinned: bool, name: []const u8, requester: []const u8) Error!Candidates {
             var result = std.ArrayList(Selected).empty;
             errdefer result.deinit(self.alloc);
-            for (context.table.blocks.items) |block| {
-                if (block.environment != context.environment) continue;
-                for (block.spreads.items) |node| {
-                    if (!permitted(context, node)) continue;
-                    const resolved = try self.spreadTargetInView(context, node, view);
-                    switch (resolved) {
-                        .target => |target| try self.appendCarried(&result, try self.surface(target, name, requester), view, pinned),
-                        .c_import => |ids| for (ids) |id| {
-                            const decl = Declaration{ .table = context.table, .id = id };
-                            if (std.mem.eql(u8, decl.info().name, name)) try result.append(self.alloc, .{ .declaration = decl, .view = context });
-                        },
-                        else => {},
+            const nodes = try self.spreads(context);
+            defer self.alloc.free(nodes);
+            for (nodes) |node| {
+                if (!permitted(context, node)) continue;
+                const source = context.table.spread_sources.get(node).?;
+                if (source == .c_import) {
+                    for (source.c_import) |id| {
+                        const decl = Declaration{ .table = context.table, .id = id };
+                        if (std.mem.eql(u8, decl.info().name, name)) try result.append(self.alloc, .{ .declaration = decl, .view = context });
                     }
+                } else {
+                    const targets = try self.spreadTargets(context, node, view);
+                    defer self.alloc.free(targets);
+                    for (targets) |target| try self.appendCarried(&result, try self.surface(target, name, requester), view, pinned);
                 }
             }
             return .{ .imported = try result.toOwnedSlice(self.alloc) };
@@ -318,7 +452,7 @@ pub fn Query(comptime Backend: type) type {
         fn imported(self: *Self, context: Context, name: []const u8, requester: []const u8) Error!Candidates {
             var files = std.ArrayList(Context).empty;
             defer files.deinit(self.alloc);
-            try self.backend.plainImports(context, &files);
+            try self.plainImports(context, &files);
             var result = std.ArrayList(Selected).empty;
             errdefer result.deinit(self.alloc);
             for (files.items) |file| {
@@ -348,22 +482,21 @@ pub fn Query(comptime Backend: type) type {
             if (path.len > owner_path.len and samePath(path[0..owner_path.len], owner_path)) {
                 try self.addEnvironment(list, context, path);
             }
-            for (context.table.blocks.items) |block| {
-                if (block.environment != context.environment) continue;
-                for (block.spreads.items) |node| {
-                    if (!permitted(context, node)) continue;
-                    const target = try self.spreadTarget(context, node);
-                    if (target != .target) continue;
-                    switch (target.target) {
-                        .namespace => |file| try self.carriedEnvironments(list, file, path),
-                        .scope => |scope| {
-                            var environments = std.ArrayList(Context).empty;
-                            defer environments.deinit(self.alloc);
-                            try self.scopeEnvironments(&environments, scope);
-                            for (environments.items) |env| try self.carriedEnvironments(list, env, path);
-                        },
-                    }
-                }
+            const nodes = try self.spreads(context);
+            defer self.alloc.free(nodes);
+            for (nodes) |node| {
+                if (!permitted(context, node)) continue;
+                const targets = try self.spreadTargets(context, node, context);
+                defer self.alloc.free(targets);
+                for (targets) |target| switch (target) {
+                    .namespace => |file| try self.carriedEnvironments(list, file, path),
+                    .scope => |scope| {
+                        var environments = std.ArrayList(Context).empty;
+                        defer environments.deinit(self.alloc);
+                        try self.scopeEnvironments(&environments, scope);
+                        for (environments.items) |env| try self.carriedEnvironments(list, env, path);
+                    },
+                };
             }
         }
 
@@ -375,7 +508,7 @@ pub fn Query(comptime Backend: type) type {
             while (current) |ctx| : (current = parent(ctx)) {
                 var files = std.ArrayList(Context).empty;
                 defer files.deinit(self.alloc);
-                try self.backend.plainImports(ctx, &files);
+                try self.plainImports(ctx, &files);
                 for (files.items) |file| try self.carriedEnvironments(list, file, view.path);
             }
             for (list.items) |*ctx| ctx.order = view.context.order;
@@ -388,13 +521,23 @@ pub fn Query(comptime Backend: type) type {
             var result = std.ArrayList(Selected).empty;
             errdefer result.deinit(self.alloc);
             for (environments.items) |ctx| {
-                if (own(ctx, name, requester)) |decl| {
-                    const candidate = Selected{ .declaration = decl, .view = view.context, .pinned_view = view.pinned };
-                    if (std.mem.eql(u8, ctx.source(), view.context.source())) {
-                        result.deinit(self.alloc);
-                        return .{ .own = candidate };
+                const candidates = try self.local(ctx, name, requester);
+                if (std.mem.eql(u8, ctx.source(), view.context.source()) and candidates.found()) {
+                    result.deinit(self.alloc);
+                    if (candidates.own) |candidate| return .{ .own = .{ .declaration = candidate.declaration, .view = view.context, .pinned_view = view.pinned } };
+                    result = .empty;
+                    try self.append(&result, candidates);
+                    for (result.items) |*candidate| {
+                        candidate.view = view.context;
+                        candidate.pinned_view = view.pinned;
                     }
-                    try result.append(self.alloc, candidate);
+                    return .{ .imported = try result.toOwnedSlice(self.alloc) };
+                }
+                const start = result.items.len;
+                try self.append(&result, candidates);
+                for (result.items[start..]) |*candidate| {
+                    candidate.view = view.context;
+                    candidate.pinned_view = view.pinned;
                 }
             }
             if (view.context.order == null and result.items.len != 0) return .{ .imported = try result.toOwnedSlice(self.alloc) };
@@ -414,7 +557,13 @@ pub fn Query(comptime Backend: type) type {
             try self.surfaces.append(self.alloc, .{ .target = target, .name = name });
             defer _ = self.surfaces.pop();
             return switch (target) {
-                .namespace => |ctx| if (own(ctx, name, requester)) |decl| .{ .own = .{ .declaration = decl, .view = ctx, .pinned_view = true } } else self.spreadMembers(ctx, ctx, true, name, requester),
+                .namespace => |ctx| blk: {
+                    var candidates = try self.local(ctx, name, requester);
+                    if (candidates.own) |*selected| selected.pinned_view = true;
+                    if (candidates.found()) break :blk candidates;
+                    self.alloc.free(candidates.imported);
+                    break :blk try self.spreadMembers(ctx, ctx, true, name, requester);
+                },
                 .scope => |scope| self.scopeMembers(scope, name, requester),
             };
         }
@@ -425,10 +574,11 @@ pub fn Query(comptime Backend: type) type {
             errdefer ordered.deinit(self.alloc);
             while (current) |ctx| : (current = parent(ctx)) {
                 const environment = ctx.table.environment(ctx.environment);
-                const members: Candidates = if (environment.scope == null)
-                    .{ .own = if (own(ctx, name, requester)) |decl| .{ .declaration = decl, .view = context } else null }
+                var members: Candidates = if (environment.scope == null)
+                    try self.local(ctx, name, requester)
                 else
                     try self.surface(.{ .scope = .{ .path = environment.scope_path, .context = context } }, name, requester);
+                if (members.own) |*selected| selected.view = context;
                 if (members.own != null or (context.order == null and members.found())) {
                     ordered.deinit(self.alloc);
                     return members;

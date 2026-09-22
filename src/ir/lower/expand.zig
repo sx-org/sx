@@ -1057,6 +1057,7 @@ const Group = struct {
                 .scope_decl => if (!g.spliceScope(stmt, src, mint)) return false,
                 .error_directive => g.ex.raise(stmt),
                 .import_decl => g.spliceImport(stmt, src, mint),
+                .spread_decl => g.spliceSpread(stmt, src, mint),
                 .asm_expr, .asm_global => g.spliceGlobalAsm(stmt, src, mint),
                 else => if (!g.spliceDecl(stmt, src, mint, declared, cursor)) return false,
             }
@@ -1093,25 +1094,37 @@ const Group = struct {
         g.out.append(g.ex.self.alloc, stmt) catch {};
     }
 
+    fn spliceSpread(g: *Group, stmt: *Node, src: ?[]const u8, mint: bool) void {
+        const table = g.ex.self.program_index.declarations();
+        if (mint) table.recordSpread(stmt.lexical_block.?, stmt, .published) catch @panic("out of memory");
+        g.emit(stmt);
+        if (stmt.data.spread_decl.source.data == .import_decl) {
+            g.spliceModule(stmt.data.spread_decl.source.data.import_decl, stmt, src, mint, false);
+        }
+    }
+
     /// Splice a branch-local `@import`. Its module resolved re-entrantly during
     /// import resolution and has been waiting in the module cache under the
     /// canonical path the node now carries; selecting the branch is what makes
     /// it a real edge of the importing file.
     fn spliceImport(g: *Group, stmt: *const Node, src: ?[]const u8, mint: bool) void {
+        g.spliceModule(stmt.data.import_decl, stmt, src, mint, true);
+    }
+
+    fn spliceModule(g: *Group, imp: ast.ImportDecl, stmt: *const Node, src: ?[]const u8, mint: bool, plain: bool) void {
         const self = g.ex.self;
-        const imp = stmt.data.import_decl;
         const source = src orelse self.main_file orelse return;
         const cache = self.program_index.module_cache orelse return;
         const imported = cache.modules.get(imp.path) orelse return;
 
         if (mint) {
             const table = self.program_index.declarations();
-            if (stmt.lexical_block) |block| table.recordImport(block, stmt) catch @panic("out of memory");
+            if (plain) if (stmt.lexical_block) |block| table.recordImport(block, stmt) catch @panic("out of memory");
             const graph_source = self.program_index.declarations().environment(self.environmentForSource(source).?).source;
             if (self.program_index.import_graph) |graph| {
                 if (graph.getPtr(graph_source)) |set| set.put(imp.path, {}) catch {};
             }
-            if (imp.name == null and self.program_index.declarations().environment(self.current_environment.?).scope_path.len == 0) {
+            if (plain and imp.name == null and self.program_index.declarations().environment(self.current_environment.?).scope_path.len == 0) {
                 if (self.program_index.flat_import_graph) |graph| {
                     if (graph.getPtr(graph_source)) |set| set.put(imp.path, {}) catch {};
                 }
@@ -1149,6 +1162,7 @@ const Group = struct {
         // merged list is unexpanded: this is the only place a module reached
         // solely through a branch is ever walked, so its own drivers fold here.
         if (g.ledger.kind == .own) return;
+        g.ex.registerDrivers(imported.decls);
         for (imported.decls) |decl| {
             if (imports.isModuleDriver(decl)) {
                 if (g.defer_import_drivers) {

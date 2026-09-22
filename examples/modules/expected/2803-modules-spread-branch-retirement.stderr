@@ -1,0 +1,5 @@
+error: cannot evaluate this module-scope `inline if` condition; it must fold to a compile-time constant
+  --> examples/modules/2803-modules-spread-branch-retirement.sx:1:11
+   |
+ 1 | inline if api.ready { chosen :: 1; }
+   |           ^^^^^^^^^

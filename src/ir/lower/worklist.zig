@@ -40,6 +40,7 @@ const errors = @import("../../errors.zig");
 const imports = @import("../../imports.zig");
 const comptime_vm = @import("../comptime_vm.zig");
 const Node = ast.Node;
+const lookup = @import("../../name_lookup.zig");
 
 /// What a driver is. The drain treats all three alike — register, run, retire
 /// — and the kind exists so a class can be recognized in the registry.
@@ -60,6 +61,8 @@ const Item = struct {
     environment: ?imports.EnvironmentId,
     names: []const NameKey,
     pending_imports: []const PendingImport,
+    declarations: []const imports.DeclId,
+    spreads: []const PendingSpread,
     /// How many `@context.extend` declarations its unexpanded branches could
     /// still put into the program Context.
     contexts: u32,
@@ -69,6 +72,11 @@ const Item = struct {
 const NameKey = struct {
     environment: imports.EnvironmentId,
     name: []const u8,
+};
+
+const PendingSpread = struct {
+    node: *const Node,
+    environment: imports.EnvironmentId,
 };
 
 const PendingImport = struct {
@@ -153,7 +161,7 @@ pub const Worklist = struct {
     /// Register a module-scope driver with the contributions its unexpanded
     /// branches could still make. `cache` is every resolved module, so a
     /// branch-local `@import`'s module is counted too. Idempotent per node.
-    pub fn registerDriver(w: *Worklist, node: *const Node, environment: ?imports.EnvironmentId, table: *const imports.DeclTable, cache: ?*const imports.ModuleCache) void {
+    pub fn registerDriver(w: *Worklist, node: *const Node, environment: ?imports.EnvironmentId, table: *imports.DeclTable, cache: ?*const imports.ModuleCache) void {
         if (w.known.contains(node)) return;
         var scan = Scan{
             .alloc = w.alloc,
@@ -174,6 +182,8 @@ pub const Worklist = struct {
         }
         const pending_imports = scan.pending_imports.toOwnedSlice(w.alloc) catch @panic("out of memory");
         for (pending_imports) |imp| bump(&w.open_environments, imp.environment);
+        const spreads = scan.spreads.toOwnedSlice(w.alloc) catch @panic("out of memory");
+        for (spreads) |spread| bump(&w.open_environments, spread.environment);
         w.open_contexts += scan.contexts;
         w.known.put(node, w.items.items.len) catch @panic("out of memory");
         w.items.append(w.alloc, .{
@@ -182,6 +192,8 @@ pub const Worklist = struct {
             .environment = environment,
             .names = names,
             .pending_imports = pending_imports,
+            .declarations = scan.declarations.toOwnedSlice(w.alloc) catch @panic("out of memory"),
+            .spreads = spreads,
             .contexts = scan.contexts,
             .retired = false,
         }) catch @panic("out of memory");
@@ -200,6 +212,7 @@ pub const Worklist = struct {
             drop(&w.open_decls, name);
         }
         for (item.pending_imports) |imp| drop(&w.open_environments, imp.environment);
+        for (item.spreads) |spread| drop(&w.open_environments, spread.environment);
         w.open_contexts -= item.contexts;
     }
 
@@ -218,6 +231,8 @@ pub const Worklist = struct {
             .environment = null,
             .names = &.{},
             .pending_imports = &.{},
+            .declarations = &.{},
+            .spreads = &.{},
             .contexts = 0,
             .retired = true,
         }) catch {};
@@ -346,6 +361,26 @@ pub const Worklist = struct {
         }
     }
 
+    pub fn contributions(w: *const Worklist, table: *const imports.DeclTable) lookup.Contributions {
+        var declarations: std.ArrayList(lookup.Declaration) = .empty;
+        var spreads: std.ArrayList(*const Node) = .empty;
+        var pending_imports: std.ArrayList(lookup.Contributions.Import) = .empty;
+        for (w.items.items) |item| {
+            if (item.retired) continue;
+            for (item.declarations) |id| declarations.append(w.alloc, .{ .table = table, .id = id }) catch @panic("out of memory");
+            for (item.spreads) |spread| spreads.append(w.alloc, spread.node) catch @panic("out of memory");
+            for (item.pending_imports) |imp| pending_imports.append(w.alloc, .{
+                .context = .{ .table = table, .environment = imp.environment, .block = imp.block },
+                .target = .{ .table = table, .environment = imp.target },
+            }) catch @panic("out of memory");
+        }
+        return .{
+            .declarations = declarations.toOwnedSlice(w.alloc) catch @panic("out of memory"),
+            .spreads = spreads.toOwnedSlice(w.alloc) catch @panic("out of memory"),
+            .imports = pending_imports.toOwnedSlice(w.alloc) catch @panic("out of memory"),
+        };
+    }
+
     fn bump(map: anytype, key: anytype) void {
         bumpBy(map, key, 1);
     }
@@ -376,7 +411,9 @@ const Scan = struct {
     impls: std.ArrayList([]const u8),
     names: std.ArrayList(NameKey),
     pending_imports: std.ArrayList(PendingImport) = .empty,
-    table: *const imports.DeclTable,
+    table: *imports.DeclTable,
+    declarations: std.ArrayList(imports.DeclId) = .empty,
+    spreads: std.ArrayList(PendingSpread) = .empty,
     contexts: u32 = 0,
     counted: std.StringHashMap(void),
 
@@ -400,7 +437,11 @@ const Scan = struct {
 
     fn declaration(s: *Scan, node: *const Node, depth: u8, fallback: ?imports.EnvironmentId) void {
         const environment = if (node.lexical_block) |block| s.table.block(block).environment else fallback;
-        if (node.data.declName()) |name| s.addName(environment, name);
+        if (node.data.declName() orelse (if (node.data == .import_decl) node.data.import_decl.name else null)) |name| {
+            s.addName(environment, name);
+            const id = s.table.internNamedNode(environment, name, node) catch @panic("out of memory");
+            s.declarations.append(s.alloc, id) catch @panic("out of memory");
+        }
         switch (node.data) {
             .if_expr, .match_expr, .for_expr => s.driver(node, depth + 1, environment),
             .scope_decl => |scope| for (scope.decls) |decl| s.declaration(decl, depth + 1, environment),
@@ -411,6 +452,11 @@ const Scan = struct {
                 s.module(imp.path, if (imp.name == null) environment else null, node.lexical_block, depth + 1);
             },
             .namespace_decl => |ns| s.module(ns.target_module_path, null, null, depth + 1),
+            .spread_decl => {
+                s.spreads.append(s.alloc, .{ .node = node, .environment = environment.? }) catch @panic("out of memory");
+                const source = s.table.spread_sources.get(node).?;
+                if (source == .module) s.module(source.module, null, null, depth + 1);
+            },
             else => {},
         }
     }

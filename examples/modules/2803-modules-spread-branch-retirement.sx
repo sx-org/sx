@@ -1,0 +1,4 @@
+inline if api.ready { chosen :: 1; }
+pool :: scope { ready :: true; }
+api :: scope { inline if false { ..pool; } }
+main :: () {}

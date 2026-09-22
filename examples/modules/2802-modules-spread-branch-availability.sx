@@ -1,0 +1,12 @@
+@import "modules/std.sx";
+private facade :: @import "2802-modules-spread-branch-availability/facade.sx";
+..facade;
+inline if api.ready { qualified :: 17; }
+inline if ready { bare :: 23; }
+reservoir :: scope { choice :: scope { earlyReady :: true; } }
+fallback :: scope {}
+inline if ready { route :: reservoir; } else { route :: fallback; }
+inline if ready { ..route; }
+inline if true { ..choice; }
+inline if choice.earlyReady { ordered :: 31; }
+main :: () { print("{} {} {} {}\n", qualified, bare, api.answer(), ordered); }

@@ -3691,3 +3691,57 @@ test "pending scope members and block imports retire at their owners" {
     work.pendingImports(outer, pending_block, &targets);
     try std.testing.expectEqual(@as(usize, 0), targets.items.len);
 }
+
+test "pending spreads keep member finality separate from environment closure" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var p = try parser.Parser.init(alloc,
+        \\pool :: scope { ready :: true; }
+        \\api :: scope {
+        \\    inline if choose { ..pool; }
+        \\    inline if later { other :: 1; }
+        \\}
+        \\api :: scope {}
+    );
+    const root = try p.parse();
+    var table = imports.DeclTable.init(alloc);
+    const file = try table.internEnvironment("main.sx", &.{});
+    const file_block = try table.addBlock(file, null, root);
+    for (root.data.root.decls) |decl| {
+        try table.prepareExpansion(decl, file_block);
+        try std.testing.expect(try table.claim(file, decl));
+    }
+    const pool = root.data.root.decls[0];
+    const pool_env = table.block(pool.data.scope_decl.body_block.?).environment;
+    try std.testing.expect(try table.claim(pool_env, pool.data.scope_decl.decls[0]));
+    const api = root.data.root.decls[1];
+    const api_env = table.block(api.data.scope_decl.body_block.?).environment;
+    const sibling_block = root.data.root.decls[2].data.scope_decl.body_block.?;
+    const spread_driver = api.data.scope_decl.decls[0];
+    const other_driver = api.data.scope_decl.decls[1];
+    var module = ir_mod.Module.init(alloc);
+    defer module.deinit();
+    var lowering = Lowering.init(&module);
+    lowering.program_index.decl_table = &table;
+    lowering.setCurrentEnvironment(api_env);
+    lowering.current_lexical_block = sibling_block;
+    const work = &lowering.expansion;
+    work.registerDriver(spread_driver, api_env, &table, null);
+    work.registerDriver(other_driver, api_env, &table, null);
+    work.folding = true;
+    try std.testing.expect(!work.environmentFinal(api_env));
+    try std.testing.expect(!work.mayDeclare(api_env, "ready"));
+    try std.testing.expect(lowering.bareNamePending("ready"));
+    try std.testing.expect(!lowering.bareNamePending("absent"));
+    try std.testing.expect(!lowering.bareNamePending("pool"));
+    try std.testing.expect(lowering.namespaceMissWaits(.{ .namespace = "api", .environment = api_env, .member = "ready" }));
+    try std.testing.expectEqual(@as(usize, 0), table.block(api.data.scope_decl.body_block.?).spreads.items.len);
+    work.retire(spread_driver);
+    try std.testing.expect(!work.environmentFinal(api_env));
+    try std.testing.expect(!lowering.bareNamePending("ready"));
+    try std.testing.expect(!lowering.namespaceMissWaits(.{ .namespace = "api", .environment = api_env, .member = "ready" }));
+    try std.testing.expect(lowering.bareNamePending("other"));
+    work.retire(other_driver);
+    try std.testing.expect(work.environmentFinal(api_env));
+}
