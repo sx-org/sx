@@ -4,9 +4,7 @@
 main :: () -> i32 {
     // A leaf is an ordinary value, and a modifier call is an ordinary value
     // operation — nothing is intercepted out here.
-    padded := fluent.Modifier{}.{
-        self.* = fluent.withPadding(self.*, fluent.EdgeInsets.all(4.0));
-    };
+    padded := fluent.Modifier{}.withPadding(fluent.EdgeInsets.all(4.0));
 
     stack := fluent.VStack{
         spacing = 2.0,
