@@ -3186,65 +3186,52 @@ pub const Lowering = struct {
     /// at finality the ordinary namespace diagnostic stands.
     pub fn namespaceMissWaits(self: *Lowering, miss: MissingMember) bool {
         if (!self.expansion.scheduled()) return false;
-        const pending = if (miss.scope_view) |view| self.scopeMemberPending(view, miss.member) else self.expansion.mayDeclare(miss.environment orelse return false, miss.member);
-        if (!pending) return false;
+        const target: resolver_mod.Resolver.Qualifier = if (miss.scope_view) |view|
+            .{ .scope = view }
+        else
+            .{ .namespace = .{ .table = self.program_index.declarations(), .environment = miss.environment orelse return false } };
+        if (!self.pendingLookup(target, miss.member)) return false;
         self.expansion.awaitFact(std.fmt.allocPrint(self.alloc, "'{s}' to declare '{s}'", .{
             miss.namespace, miss.member,
         }) catch "a module scope to be final");
         return true;
     }
 
-    pub fn scopeMemberPending(self: *Lowering, view: resolver_mod.ScopeView, name: []const u8) bool {
+    fn pendingLookup(self: *Lowering, target: ?resolver_mod.Resolver.Qualifier, name: []const u8) bool {
+        const lookup = @import("../name_lookup.zig");
         const table = self.program_index.declarations();
-        if (table.findEnvironment(view.context.source(), view.path)) |env| {
-            if (self.expansion.mayDeclare(env, name)) return true;
-        }
-        var files: std.ArrayList(resolver_mod.LookupContext) = .empty;
-        defer files.deinit(self.alloc);
         var resolver_ = self.resolver();
-        var context: ?resolver_mod.LookupContext = view.context;
-        while (context) |ctx| : (context = @import("../name_lookup.zig").parent(ctx)) {
-            resolver_.plainImports(ctx, &files) catch @panic("out of memory");
-            var pending: std.ArrayList(imports_mod.EnvironmentId) = .empty;
-            defer pending.deinit(self.alloc);
-            self.expansion.pendingImports(ctx.environment, ctx.block, &pending);
-            for (pending.items) |target| {
-                if (table.findEnvironment(table.environment(target).source, view.path)) |env| {
-                    if (table.environment(env).names.contains(name) or self.expansion.mayDeclare(env, name)) return true;
-                }
-            }
-        }
-        for (files.items) |file| {
-            const env = table.findEnvironment(file.source(), view.path) orelse continue;
-            if (self.expansion.mayDeclare(env, name)) return true;
-        }
-        return false;
+        var query = lookup.Query(*resolver_mod.Resolver).init(&resolver_, self.alloc);
+        defer query.deinit();
+        const context = self.lookupContext(self.current_environment orelse if (target) |qualifier| switch (qualifier) {
+            .namespace => |namespace| namespace.environment,
+            .scope => |scope| scope.context.environment,
+        } else return false);
+        const published = if (target) |qualifier|
+            query.surface(qualifier, name, context.source()) catch @panic("out of memory")
+        else
+            query.bare(context, name, context.source()) catch @panic("out of memory");
+        defer self.alloc.free(published.imported);
+        if (published.found()) return false;
+        const contributions = self.expansion.contributions(table);
+        defer self.alloc.free(contributions.declarations);
+        defer self.alloc.free(contributions.spreads);
+        defer self.alloc.free(contributions.imports);
+        query.contributions = contributions;
+        const possible = if (target) |qualifier|
+            query.surface(qualifier, name, context.source()) catch @panic("out of memory")
+        else
+            query.bare(context, name, context.source()) catch @panic("out of memory");
+        defer self.alloc.free(possible.imported);
+        return possible.found();
+    }
+
+    pub fn scopeMemberPending(self: *Lowering, view: resolver_mod.ScopeView, name: []const u8) bool {
+        return self.pendingLookup(.{ .scope = view }, name);
     }
 
     pub fn bareNamePending(self: *Lowering, name: []const u8) bool {
-        const env = self.current_environment orelse return false;
-        const initial = self.lookupContext(env);
-        var context: ?resolver_mod.LookupContext = initial;
-        var resolver_ = self.resolver();
-        while (context) |ctx| : (context = @import("../name_lookup.zig").parent(ctx)) {
-            const environment = ctx.table.environment(ctx.environment);
-            if (environment.scope != null) {
-                if (self.scopeMemberPending(.{ .path = environment.scope_path, .context = initial }, name)) return true;
-            } else if (self.expansion.mayDeclare(ctx.environment, name)) return true;
-            var pending: std.ArrayList(imports_mod.EnvironmentId) = .empty;
-            defer pending.deinit(self.alloc);
-            self.expansion.pendingImports(ctx.environment, ctx.block, &pending);
-            for (pending.items) |target| {
-                if (ctx.table.environment(target).names.contains(name) or self.expansion.mayDeclare(target, name)) return true;
-            }
-            var files: std.ArrayList(resolver_mod.LookupContext) = .empty;
-            defer files.deinit(self.alloc);
-            resolver_.plainImports(ctx, &files) catch @panic("out of memory");
-            for (files.items) |file| {
-                if (self.expansion.mayDeclare(file.environment, name)) return true;
-            }
-        }
-        return false;
+        return self.pendingLookup(null, name);
     }
 
     pub fn qualifiedMemberVerdict(self: *Lowering, path: []const u8) QualifiedMemberVerdict {
