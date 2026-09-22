@@ -4,6 +4,7 @@
 // outlive the frame that appended it: `Allocator.make` is where it lives.
 
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 Sizable :: interface {
     size :: (self: *Self) -> i64;

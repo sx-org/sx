@@ -2,6 +2,7 @@
 // and appended to a `List`.
 
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 Sizable :: interface {
     size :: (self: *Self) -> i64;

@@ -398,18 +398,21 @@ test "plan: free-function UFCS prepends receiver, distinct from namespace_fn" {
     var l = Lowering.init(&module);
     const cr = CallResolver{ .l = &l };
 
-    // struct Counter, and a FREE ufcs function `bump :: ufcs (c: Counter) ->
-    // i32` — NOT registered as `Counter.bump`, so it can only be reached via
-    // UFCS. Dot-dispatch is OPT-IN: the fn carries `is_ufcs` and is
-    // registered in `fn_ast_map`, where the plan's opt-in gate reads it.
+    const table = l.program_index.declarations();
+    l.program_index.decl_table = table;
+    const env = try table.internEnvironment("main.sx", &.{});
+    l.setCurrentEnvironment(env);
+
     const counter = module.types.intern(.{ .@"struct" = .{ .name = module.types.internString("Counter"), .fields = &.{} } });
     const c_param = ast.Param{ .name = "c", .name_span = .{ .start = 0, .end = 0 }, .type_expr = typeExpr(alloc, "Counter") };
     const params = [_]ast.Param{c_param};
     const ret_stmt = mk(alloc, .{ .return_stmt = .{ .value = intLit(alloc, 7) } });
     const body = mk(alloc, .{ .block = .{ .stmts = &[_]*Node{ret_stmt} } });
-    const fd = ast.FnDecl{ .name = "bump", .params = &params, .return_type = typeExpr(alloc, "i32"), .body = body, .is_ufcs = true };
-    l.program_index.registerFunction("bump", &fd, null);
-    l.lowerFunction(&fd, "bump", false);
+    const function = mk(alloc, .{ .fn_decl = .{ .name = "bump", .params = &params, .return_type = typeExpr(alloc, "i32"), .body = body, .is_ufcs = true } });
+    try std.testing.expect(try table.claim(env, function));
+    const fd = &function.data.fn_decl;
+    l.program_index.registerFunction("bump", fd, env);
+    l.lowerFunction(fd, "bump", false);
     const fid = l.resolveFuncByName("bump").?;
     module.functions.items[@intFromEnum(fid)].has_implicit_ctx = true;
 

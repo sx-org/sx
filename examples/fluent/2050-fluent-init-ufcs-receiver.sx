@@ -11,6 +11,7 @@
 // receiver is an ordinary expression, so it can be the result of a chain or of a
 // trailing-block call.
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 @import "modules/std/list.sx";
 
 // --- A fixed target that is an open set: the value IS the slot ---

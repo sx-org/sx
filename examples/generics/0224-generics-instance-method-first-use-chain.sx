@@ -3,6 +3,7 @@
 // author + bindings BEFORE the method has ever monomorphized. No other use of
 // `get` may precede f1 in this file, so f1's call is the first use.
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 Buf :: struct { data: []u8; }
 

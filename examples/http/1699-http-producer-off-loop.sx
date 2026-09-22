@@ -27,6 +27,7 @@
 //    aborted stream).
 // 5. GPA leak gate: net-zero after srv.close() (channel, job, scratch).
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 @import "modules/std/http.sx";
 
 clib :: @library "c";

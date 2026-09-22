@@ -11,6 +11,7 @@
 //     thunk.
 
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 VL :: interface(T: Type) { get :: (self: *Self) -> T; }
 IntCell :: struct { v: i64; }

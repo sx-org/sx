@@ -15,6 +15,7 @@
 // The compiler never looks at what a call is NAMED. Only statement role,
 // ordinary type, conformance, and lexical scope matter.
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 @import "modules/fluent.sx";
 
 Drawable :: constraint {

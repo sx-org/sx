@@ -4,6 +4,7 @@
 // `?cstring` is the slice's own 16 bytes with a null `ptr` meaning absent.
 
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 strlen :: (s: [*:0]u8) -> usize extern "strlen";
 
