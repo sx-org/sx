@@ -360,33 +360,14 @@ pub const DocumentStore = struct {
                     continue;
                 }
             }
-            if (sx.imports.isModuleDriver(decl)) {
-                try table.prepareExpansion(decl, block);
-                try self.indexDeferredSpreads(table, decl);
-            }
             if (decl.data == .scope_decl) {
-                const child = try table.addScopeBlock(block, decl);
+                const child = decl.data.scope_decl.body_block.?;
                 try self.indexBlock(table, child, decl.data.scope_decl.decls, duplicates);
             } else if (decl.data == .import_decl) {
                 try table.recordImport(block, decl);
             } else if (decl.data == .spread_decl) {
                 try table.recordSpread(block, decl, .published);
             }
-        }
-    }
-
-    fn indexDeferredSpreads(self: *DocumentStore, table: *sx.imports.DeclTable, node: *sx.ast.Node) anyerror!void {
-        switch (node.data) {
-            .spread_decl => try table.recordSpread(node.lexical_block.?, node, .deferred),
-            .scope_decl => |scope| for (scope.decls) |decl| try self.indexDeferredSpreads(table, decl),
-            .block => |body| for (body.stmts) |stmt| try self.indexDeferredSpreads(table, stmt),
-            .if_expr => |ie| {
-                try self.indexDeferredSpreads(table, ie.then_branch);
-                if (ie.else_branch) |other| try self.indexDeferredSpreads(table, other);
-            },
-            .match_expr => |me| for (me.arms) |arm| try self.indexDeferredSpreads(table, arm.body),
-            .for_expr => |fe| try self.indexDeferredSpreads(table, fe.body),
-            else => {},
         }
     }
 
@@ -414,7 +395,10 @@ pub const DocumentStore = struct {
         const block = try table.addBlock(environment, null, root);
         root.lexical_block = block;
         var duplicates = std.ArrayList(sx.ast.Span).empty;
-        if (root.data == .root) try self.indexBlock(table, block, root.data.root.decls, &duplicates);
+        if (root.data == .root) {
+            for (root.data.root.decls) |decl| try table.prepareExpansion(decl, block);
+            try self.indexBlock(table, block, root.data.root.decls, &duplicates);
+        }
         doc.declarations = .{ .table = table, .environment = environment, .block = block };
 
         // Extract imports from AST — uses shared resolution logic from imports.zig

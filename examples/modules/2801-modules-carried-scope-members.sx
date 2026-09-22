@@ -1,0 +1,4 @@
+@import "modules/std.sx";
+@import "2801-modules-carried-scope-members/hub.sx";
+..hub;
+main :: () { print("{}\n", geo.deep); }

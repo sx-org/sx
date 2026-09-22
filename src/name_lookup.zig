@@ -263,6 +263,7 @@ pub fn Query(comptime Backend: type) type {
             defer _ = self.targets.pop();
             const written = context.table.written_targets.get(node).?;
             switch (context.table.spread_sources.get(node).?) {
+                .missing => return .missing,
                 .module => |path| return if (self.backend.moduleContext(context, path)) |module| .{ .target = .{ .namespace = module } } else .missing,
                 .c_import => |ids| return .{ .c_import = ids },
                 .path => |operand| {
@@ -340,7 +341,10 @@ pub fn Query(comptime Backend: type) type {
             for (self.carriers.items) |previous| if (sameContext(previous, context)) return;
             try self.carriers.append(self.alloc, context);
             defer _ = self.carriers.pop();
-            try self.addEnvironment(list, context, path);
+            const owner_path = context.table.environment(context.environment).scope_path;
+            if (path.len > owner_path.len and samePath(path[0..owner_path.len], owner_path)) {
+                try self.addEnvironment(list, context, path);
+            }
             for (context.table.blocks.items) |block| {
                 if (block.environment != context.environment) continue;
                 for (block.spreads.items) |node| {
@@ -350,11 +354,10 @@ pub fn Query(comptime Backend: type) type {
                     switch (target.target) {
                         .namespace => |file| try self.carriedEnvironments(list, file, path),
                         .scope => |scope| {
-                            if (path.len <= scope.path.len or !samePath(path[0..scope.path.len], scope.path)) continue;
                             var environments = std.ArrayList(Context).empty;
                             defer environments.deinit(self.alloc);
                             try self.scopeEnvironments(&environments, scope);
-                            for (environments.items) |env| try self.addEnvironment(list, env, path);
+                            for (environments.items) |env| try self.carriedEnvironments(list, env, path);
                         },
                     }
                 }

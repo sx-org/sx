@@ -1549,3 +1549,12 @@ test "imported file symbols select bare declarations through hiding and ambiguit
     }
     try std.testing.expectEqual(@as(usize, 0), sema.diagnostics.len);
 }
+
+test "a scope carried through scope spreads retains its members" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var probe = try ScopeProbe.init(alloc, "examples/modules/2801-modules-carried-scope-members");
+    try probe.expect("main.sx", null, "geo", .{ .declaration = .{ .file = "source.sx", .name = "geo" } });
+    try probe.expect("main.sx", null, "geo.deep", .{ .declaration = .{ .file = "source.sx", .name = "deep" } });
+}
