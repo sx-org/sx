@@ -32,9 +32,6 @@
 @import "modules/std.sx";
 http :: @import "modules/std/http.sx";
 
-clib :: @library "c";
-usleep :: (usec: i64) -> i32 extern clib;
-
 PORT :: 19013;
 CL_BODY_LEN :: 200000;   // cases 1 + 3
 CH1 :: 50000;            // case 2 chunk sizes
@@ -54,7 +51,7 @@ Obs :: struct {
 route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     obs : *Obs = @reinterpret(*Obs, ctx);
     if req.path == "/sum" or req.path == "/slowsum" {
-        if req.path == "/slowsum" { usleep(60000); }   // let the channel fill (backpressure)
+        if req.path == "/slowsum" { c.usleep(60000); }   // let the channel fill (backpressure)
         scratch : [8192]u8 = ---;
         total : i64 = 0;
         h : i64 = 0;

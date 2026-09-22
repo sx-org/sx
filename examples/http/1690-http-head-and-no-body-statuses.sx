@@ -23,9 +23,6 @@
 @import "modules/std.sx";
 http :: @import "modules/std/http.sx";
 
-libc :: @library "c";
-usleep :: (usec: i64) -> i32 extern libc;   // the /hang route's worker stall
-
 PORT_A :: 19002;
 PORT_B :: 19003;
 
@@ -63,7 +60,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
         return;
     }
     if strIs(req.path, "/hang") {
-        usleep(200000);              // outlive the pooled handler deadline
+        c.usleep(200000);              // outlive the pooled handler deadline
         resp.body = "late";
         return;
     }

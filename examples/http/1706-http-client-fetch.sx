@@ -255,9 +255,6 @@ teardown :: (rc: i32, sa: *http.Server, ta: *thread.Thread, sb: *http.Server, tb
     return rc;
 }
 
-clib :: @library "c";
-usleep :: (usec: i64) -> i32 extern clib;
-
 sleepMs :: (ms: i64) {
-    usleep(ms * 1000);
+    c.usleep((ms * 1000).(u32));
 }

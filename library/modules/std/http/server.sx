@@ -20,12 +20,6 @@ fs :: @import "modules/std/fs.sx";     // unlink for the AF_UNIX listener's sock
 @import "modules/std/compress.sx";     // shared codec Error/Progress contract
 @import "modules/std/http/content_encoding.sx";
 
-libc :: clib.libc;
-// run()'s backoff between consecutive loop failures (never on the
-// serving fast path — only after tick() itself has already failed).
-usleep :: (usec: i64) -> i32 extern libc;
-// (the overlap-safe memmove is clib.memmove — the shared libc surface.)
-
 HttpErr :: error {
     Bind;    // socket/bind/listen failed for the configured address; or
              // bindAddr / unixPath was unusable
@@ -2293,7 +2287,7 @@ Server :: struct {
             consec += 1;
             self.emit(EventKind.LISTEN_ERROR, -1, consec);
             if consec < LOOP_FAULT_LIMIT {
-                usleep(consec * 10000);   // 10/20/30/40 ms — no hot spin
+                clib.usleep((consec * 10000).(u32));   // 10/20/30/40 ms — no hot spin
             }
         }
         loopDead := consec >= LOOP_FAULT_LIMIT;

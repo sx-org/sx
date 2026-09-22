@@ -83,7 +83,6 @@ ActivityClass :: @JniClass("android/app/Activity") extern {
 sx_android_set_asset_manager :: (mgr: *void) extern;
 
 __android_log_print :: (prio: i32, tag: *u8, fmt: *u8) -> i32 extern;
-usleep              :: (us: u32) -> i32 extern;
 
 // libandroid
 ANativeWindow_fromSurface :: (env: *void, surface: *void) -> *void extern;
@@ -286,7 +285,7 @@ sxAndroidStartRenderThread :: (plat: *AndroidPlatform, entryFn: () -> void) {
 sxAndroidRenderThreadEntry :: (arg: *void) -> *void abi(.c) {
     plat : *AndroidPlatform = arg.(*AndroidPlatform);
     while plat.appWindow == null and !plat.shouldStop {
-        usleep(1000);
+        c.usleep(1000);
     }
     if plat.shouldStop { return null; }
 
@@ -443,7 +442,7 @@ impl Platform for AndroidPlatform {
             t0 := androidNowNs();
             frameFn();
             remaining := budgetNs - (androidNowNs() - t0);
-            if remaining > 0 { usleep((remaining / 1000).(u32)); }
+            if remaining > 0 { c.usleep((remaining / 1000).(u32)); }
         }
     }
 

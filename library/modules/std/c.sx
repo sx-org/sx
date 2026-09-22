@@ -1,19 +1,3 @@
-// modules/std/c.sx — THE single libc surface. Mirrors Zig's `std.c`: one
-// declaration site for every raw libc/POSIX symbol the stdlib touches, with
-// per-OS quirks (errno location symbol) resolved HERE via `inline if @host.os`.
-//
-// Every module that needs a libc symbol imports THIS and calls `c.read(...)`
-// etc. — no module redeclares `libc :: @library "c"` or its own `extern`
-// slice. `@library` constants dedup program-wide, and the compiler dedups
-// extern decls by symbol (rejecting a divergent signature), so a single
-// canonical decl here is both the source of truth and drift-proof.
-//
-// Dependency-free by design: imports NOTHING. `inline if @host.os` is resolved by
-// the compiler's module-scope expansion and needs no import (see
-// std/target.sx), so
-// even the lowest-level modules (core, map, io) can depend on this with no
-// import cycle.
-
 libc :: @library "c";
 
 // A POSIX descriptor: the standard streams by name, any other as itself.
@@ -22,11 +6,6 @@ Fd :: enum i32 { stdin = 0; stdout = 1; stderr = 2; raw = else; }
 // ── memory ────────────────────────────────────────────────────────────────
 // Raw libc allocation + block ops. The Allocator protocol (std/mem.sx) is the
 // real allocation surface; these are the escape hatch allocators build on.
-//
-// The allocation pair keeps sx-side prefixes because function authors are
-// still indexed program-wide: the bare C names can steal unrelated language
-// functions/resolution paths even when every libc use is namespace-qualified.
-// The linked symbols remain `malloc` / `free`.
 libcMalloc :: (size: i64) -> *void extern libc "malloc";
 libcFree :: (ptr: *void) -> void extern libc "free";
 memcpy  :: (dst: *void, src: *void, size: i64) -> *void extern libc;
@@ -40,6 +19,7 @@ close  :: (fd: Fd) -> i32 extern libc;
 open   :: (path: [*:0]u8, flags: i32, ..args: []i32) -> i32 extern libc;
 lseek  :: (fd: Fd, offset: i64, whence: i32) -> i64 extern libc;
 unlink :: (path: [*:0]u8) -> i32 extern libc;
+chdir  :: (path: [*:0]u8) -> i32 extern libc;
 rmdir  :: (path: [*:0]u8) -> i32 extern libc;
 mkdir  :: (path: [*:0]u8, mode: u32) -> i32 extern libc;
 access :: (path: [*:0]u8, mode: i32) -> i32 extern libc;
@@ -65,6 +45,7 @@ inline match @host.pointerSize {
     else: @error("std/c.sx: unsupported pointer size for C timespec");
 }
 
+usleep :: (usec: u32) -> i32 extern libc;
 clock_gettime :: (clockId: i32, ts: *Timespec) -> i32 extern libc;
 
 // libc `struct tm` (broken-down civil time). The two trailing POSIX fields
