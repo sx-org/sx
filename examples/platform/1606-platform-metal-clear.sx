@@ -13,6 +13,7 @@
 //   xcrun simctl launch --terminate-running-process booted co.swipelab.metalclear
 
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 @import "modules/ffi/objc.sx";
 @import "modules/build.sx";
 @import "modules/platform/api.sx";

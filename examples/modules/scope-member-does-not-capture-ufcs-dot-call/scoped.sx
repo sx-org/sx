@@ -1,0 +1,3 @@
+other :: scope {
+    scaled :: (value: i64) -> i64 { value * 2 }
+}

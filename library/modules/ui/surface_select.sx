@@ -6,6 +6,7 @@
 // exists — the caller's graceful skip, which is what keeps the wider test
 // suite host-agnostic.
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 @import "modules/ui/font.sx";
 @import "modules/ui/surface.sx";
 @import "modules/gpu/offscreen_gl.sx";

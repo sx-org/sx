@@ -6,6 +6,7 @@
 // directly into it. A callee that never writes never evaluates the expression
 // at all — the explicitly lazy API.
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 Button :: struct {
     label: string = "";

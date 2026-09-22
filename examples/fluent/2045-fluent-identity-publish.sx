@@ -13,6 +13,7 @@
 // which is what a handle a sink RETAINS requires: a handle borrowing a
 // caller local would outlive it.
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 @import "modules/fluent.sx";
 
 Drawable :: interface {
