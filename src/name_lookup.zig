@@ -123,11 +123,12 @@ pub fn Query(comptime Backend: type) type {
         surfaces: std.ArrayList(Surface) = .empty,
         targets: std.ArrayList(*const ast.Node) = .empty,
         aliases: std.ArrayList(Declaration) = .empty,
-        carriers: std.ArrayList(Context) = .empty,
+        carriers: std.ArrayList(Carrier) = .empty,
 
         const Self = @This();
         const Error = std.mem.Allocator.Error;
         const Surface = struct { target: Qualifier, name: []const u8 };
+        const Carrier = struct { context: Context, path: []const []const u8 };
 
         pub fn init(backend: Backend, alloc: std.mem.Allocator) Self {
             return .{ .backend = backend, .alloc = alloc };
@@ -338,8 +339,10 @@ pub fn Query(comptime Backend: type) type {
         }
 
         fn carriedEnvironments(self: *Self, list: *std.ArrayList(Context), context: Context, path: []const []const u8) Error!void {
-            for (self.carriers.items) |previous| if (sameContext(previous, context)) return;
-            try self.carriers.append(self.alloc, context);
+            for (self.carriers.items) |previous| {
+                if (sameContext(previous.context, context) and samePath(previous.path, path)) return;
+            }
+            try self.carriers.append(self.alloc, .{ .context = context, .path = path });
             defer _ = self.carriers.pop();
             const owner_path = context.table.environment(context.environment).scope_path;
             if (path.len > owner_path.len and samePath(path[0..owner_path.len], owner_path)) {

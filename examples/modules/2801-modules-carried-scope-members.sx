@@ -1,4 +1,6 @@
 @import "modules/std.sx";
 @import "2801-modules-carried-scope-members/hub.sx";
 ..hub;
-main :: () { print("{}\n", geo.deep); }
+spread_import :: @import "2801-modules-carried-scope-members/spread-import.sx";
+spread_handle :: @import "2801-modules-carried-scope-members/spread-handle.sx";
+main :: () { print("{} {} {}\n", geo.deep, spread_import.read(), spread_handle.read()); }

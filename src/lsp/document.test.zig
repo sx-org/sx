@@ -1555,6 +1555,19 @@ test "a scope carried through scope spreads retains its members" {
     defer arena.deinit();
     const alloc = arena.allocator();
     var probe = try ScopeProbe.init(alloc, "examples/modules/2801-modules-carried-scope-members");
-    try probe.expect("main.sx", null, "geo", .{ .declaration = .{ .file = "source.sx", .name = "geo" } });
-    try probe.expect("main.sx", null, "geo.deep", .{ .declaration = .{ .file = "source.sx", .name = "deep" } });
+    for ([_][]const u8{ "main.sx", "spread-import.sx", "spread-handle.sx" }) |file| {
+        try probe.expect(file, null, "geo", .{ .declaration = .{ .file = "source.sx", .name = "geo" } });
+        try probe.expect(file, null, "geo.deep", .{ .declaration = .{ .file = "source.sx", .name = "deep" } });
+        const doc = try probe.store.getOrLoad(try std.fmt.allocPrint(alloc, "{s}/{s}", .{ probe.directory, file }));
+        const sema = doc.sema.?;
+        const geo = sema.selection.select("geo").?;
+        var offered: usize = 0;
+        for (sema.symbols) |symbol| {
+            if (!std.mem.eql(u8, symbol.name, "geo")) continue;
+            try std.testing.expectEqualDeep(geo, symbol.declaration.?);
+            offered += 1;
+        }
+        try std.testing.expectEqual(@as(usize, 1), offered);
+        try std.testing.expectEqual(@as(usize, 0), sema.diagnostics.len);
+    }
 }
