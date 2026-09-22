@@ -5,6 +5,7 @@
 // method words resolved to their thunks. Allocating through the escaped handle
 // at runtime is allocating through the real allocator.
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 Holder :: struct { a: Allocator; k: i64; }
 

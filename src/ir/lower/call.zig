@@ -81,7 +81,7 @@ const DestinationFirstUfcs = struct {
 fn destinationFirstUfcs(self: *Lowering, fa: *const ast.FieldAccess, call_args: []const *Node) ?DestinationFirstUfcs {
     const alias_target = self.ufcsAliasTarget(fa.field);
     const eff_field = alias_target orelse fa.field;
-    const fd0 = self.program_index.lookup(.function, eff_field) orelse return null;
+    const fd0 = self.ufcsFunction(eff_field) orelse return null;
     if (alias_target == null and !fd0.is_ufcs) return null;
 
     // A method the receiver's own type provides wins over a free function.
@@ -94,7 +94,7 @@ fn destinationFirstUfcs(self: *Lowering, fa: *const ast.FieldAccess, call_args: 
         eff_args.append(self.alloc, fa.object) catch return null;
         for (call_args) |a| eff_args.append(self.alloc, a) catch return null;
         var amb = false;
-        if (self.selectUfcsGenericByReceiver(eff_field, eff_args.items, &amb, fd0)) |sel| {
+        if (self.selectUfcsGenericByReceiver(eff_field, eff_args.items, &amb)) |sel| {
             fd = sel;
         } else if (amb) {
             // A tie between receivers is a fact only the dot-call has: the ordinary
@@ -290,73 +290,39 @@ fn rankUfcsCand(self: *Lowering, maybe_fd: ?*const ast.FnDecl, args_ast: []const
     }
 }
 
-/// A bare-ufcs name resolves through a single
-/// last-wins `fn_ast_map` winner (`fd0`), which may be a same-named generic ufcs
-/// whose receiver does NOT match the call's receiver (e.g. user `cancel :: ufcs
-/// (t: *Task($R))` shadowed by the stdlib `cancel :: ufcs (f: *Future($R))`).
-/// Pick the most receiver-specific BINDING author, in two tiers so visibility is
-/// respected (the non-transitive import model) without losing receiver-reachable
-/// namespaced methods:
-///
-///   Tier 1 — DIRECTLY-VISIBLE authors (own + one-hop flat, via
-///   `collectVisibleAuthors`). A genuine user-facing ambiguity (two distinct
-///   equally-specific VISIBLE binders) sets `ambiguous.*` here.
-///   Tier 2 (only if no visible author binds) — receiver-reachable methods that
-///   aren't flat-visible (a `*Task($R)` method reached through a `sched ::
-///   @import` namespace). Scan all module authors for the unique most-specific
-///   binder; on a tie among non-visible binders DON'T cry ambiguous — defer to
-///   `fd0` (the global last-wins) so a transitively-hidden collision never
-///   surfaces as a false error.
-///
-/// MUST be called identically from call planning (`calls.zig`) and lowering so
-/// the planned result type and the dispatched function never disagree (which
-/// would misbox the result). Returns null when nothing binds (the caller falls
-/// back to `fd0` if it binds, else diagnoses — never monomorphizes `.unresolved`).
-pub fn selectUfcsGenericByReceiver(self: *Lowering, name: []const u8, args_ast: []const *const Node, ambiguous: *bool, fd0: ?*const ast.FnDecl) ?*const ast.FnDecl {
-    ambiguous.* = false;
-    // Tier 1: directly-visible authors. Ambiguity is a user-facing error only here.
-    if (self.current_source_file) |caller_file| {
-        var res = self.resolver();
-        const set = res.collectVisibleAuthors(name, self.environmentForSource(caller_file).?, .user_bare_flat);
-        defer if (set.flat.len > 0) self.alloc.free(set.flat);
-        var best: ?*const ast.FnDecl = null;
-        var best_concrete = false;
-        var tie = false;
-        if (set.own) |own| rankUfcsCand(self, Lowering.fnDeclOfRaw(own.raw), args_ast, &best, &best_concrete, &tie);
-        for (set.flat) |fa| rankUfcsCand(self, Lowering.fnDeclOfRaw(fa.raw), args_ast, &best, &best_concrete, &tie);
-        if (best) |b| {
-            if (tie) {
-                ambiguous.* = true;
-                return null;
-            }
-            return b;
-        }
+pub fn ufcsFunction(self: *Lowering, name: []const u8) ?*const ast.FnDecl {
+    const environment = self.current_environment orelse self.environmentForSource(self.current_source_file) orelse return null;
+    var resolver = self.resolver();
+    const candidates = resolver.collectInContext(name, self.lookupContext(environment));
+    defer self.alloc.free(candidates.flat);
+    if (candidates.own) |author| {
+        return if (self.callableAuthorFn(author)) |selected| selected.decl else null;
     }
-    // Tier 2: receiver-reachable but not flat-visible (namespaced methods defined
-    // alongside the receiver type). Pick the unique most-specific binder; on a
-    // hidden tie defer to `fd0` rather than reporting a false ambiguity.
-    const decls = self.program_index.decl_table orelse return null;
+    for (candidates.flat) |author| {
+        if (self.callableAuthorFn(author)) |selected| return selected.decl;
+    }
+    return null;
+}
+
+pub fn selectUfcsGenericByReceiver(self: *Lowering, name: []const u8, args_ast: []const *const Node, ambiguous: *bool) ?*const ast.FnDecl {
+    ambiguous.* = false;
+    const environment = self.current_environment orelse self.environmentForSource(self.current_source_file) orelse return null;
+    var resolver = self.resolver();
+    const candidates = resolver.collectInContext(name, self.lookupContext(environment));
+    defer self.alloc.free(candidates.flat);
     var best: ?*const ast.FnDecl = null;
     var best_concrete = false;
     var tie = false;
-    for (decls.environments.items) |env| {
-        const info = decls.get(env.names.get(name) orelse continue);
-        const ref = info.ref orelse continue;
-        // A private method is receiver-reachable only from its own file.
-        if (info.visibility == .private) {
-            const requester = self.current_source_file orelse self.main_file orelse env.source;
-            if (!std.mem.eql(u8, requester, env.source)) continue;
-        }
-        rankUfcsCand(self, Lowering.fnDeclOfRaw(ref), args_ast, &best, &best_concrete, &tie);
+    if (candidates.own) |author| {
+        if (self.callableAuthorFn(author)) |selected|
+            rankUfcsCand(self, selected.decl, args_ast, &best, &best_concrete, &tie);
     }
-    if (best == null) return null;
-    if (tie) {
-        if (fd0) |w| {
-            if (self.ufcsGenericBindsAll(w, args_ast)) return w;
-        }
-        return null;
+    for (candidates.flat) |author| {
+        if (self.callableAuthorFn(author)) |selected|
+            rankUfcsCand(self, selected.decl, args_ast, &best, &best_concrete, &tie);
     }
-    return best;
+    ambiguous.* = tie;
+    return if (tie) null else best;
 }
 
 /// True when every module authoring `name` declares it `private` (and at
@@ -718,7 +684,7 @@ fn calleeMayHaveVariadicParam(self: *Lowering, c: *const ast.Call, sel_author: ?
                 // Namespaced / UFCS free fn by bare member name; anything we
                 // can't resolve stays conservative.
                 const eff = self.ufcsAliasTarget(fa.field) orelse fa.field;
-                if (self.program_index.lookup(.function, eff)) |fd| break :blk fd;
+                if (self.ufcsFunction(eff)) |fd| break :blk fd;
                 return true;
             },
             else => return true,
@@ -2348,7 +2314,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             // diagnostic; otherwise the existing first-wins lazy path.
             const alias_target = self.ufcsAliasTarget(fa.field);
             const eff_field = alias_target orelse fa.field;
-            const ufcs_fd = self.program_index.lookup(.function, eff_field);
+            const ufcs_fd = self.ufcsFunction(eff_field);
             const ufcs_opted_in = alias_target != null or (ufcs_fd != null and ufcs_fd.?.is_ufcs);
 
             if (ufcs_opted_in) {
@@ -2386,7 +2352,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         for (c.args) |arg| eff_args.append(self.alloc, arg) catch unreachable;
                         var fd = fd0;
                         var amb = false;
-                        if (self.selectUfcsGenericByReceiver(eff_field, eff_args.items, &amb, fd0)) |sel| {
+                        if (self.selectUfcsGenericByReceiver(eff_field, eff_args.items, &amb)) |sel| {
                             fd = sel;
                         } else if (amb) {
                             if (self.diagnostics) |d|
@@ -2472,7 +2438,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             }
 
             // A fn by this name exists but is not dot-callable: tailored help.
-            if (ufcs_fd != null or self.resolveFuncByName(fa.field) != null) {
+            if (ufcs_fd != null) {
                 if (self.diagnostics) |d| {
                     const id = d.addFmtId(.err, c.callee.span, "'{s}' is not a ufcs function — a plain function does not dispatch via dot-call", .{fa.field});
                     d.addHelpFmt(id, c.callee.span, null, "call it directly (`{s}(receiver, ...)`) or declare it `{s} :: ufcs (...) {{ ... }}`", .{ fa.field, fa.field });
@@ -5131,14 +5097,9 @@ fn namedCalleeDecl(
             if (self.plainStructMethod(obj_ty, fa.field)) |method| {
                 return .{ .fd = method.fd, .source = method.fd.body.source_file, .receiver_params = 1 };
             }
-            const eff = blk: {
-                if (self.ufcsAliasTarget(fa.field)) |target| {
-                    break :blk if (self.scope) |scope| scope.lookupFn(target) orelse target else target;
-                }
-                break :blk if (self.scope) |scope| scope.lookupFn(fa.field) orelse fa.field else fa.field;
-            };
-            if (self.program_index.lookup(.function, eff)) |fd| {
-                if (fd.is_ufcs or self.ufcsAliasTarget(fa.field) != null) {
+            const alias_target = self.ufcsAliasTarget(fa.field);
+            if (self.ufcsFunction(alias_target orelse fa.field)) |fd| {
+                if (fd.is_ufcs or alias_target != null) {
                     return .{ .fd = fd, .source = fd.body.source_file, .receiver_params = 1 };
                 }
             }
@@ -6066,11 +6027,6 @@ pub fn resolveCallParamTypes(
                 }
             }
         }
-        // A ufcs target is keyed on the BARE field name, which no arm above
-        // consults — the same declaration named-argument binding resolves. The
-        // name is shared program-wide, so the author is picked by RECEIVER, the
-        // way dispatch picks it, and a declaration whose own receiver parameter
-        // does not take this one names a different call.
         if (namedCalleeDecl(self, c, sel_author, qualified_selected, null, false)) |callee| {
             if (callee.receiver_params == 1) {
                 var eff_args = std.ArrayList(*const Node).empty;
@@ -6079,7 +6035,7 @@ pub fn resolveCallParamTypes(
                 for (c.args) |a| eff_args.append(self.alloc, a) catch unreachable;
                 var amb = false;
                 const fd = if (callee.fd.type_params.len > 0 and callee.fd.is_ufcs)
-                    self.selectUfcsGenericByReceiver(fa.field, eff_args.items, &amb, callee.fd) orelse callee.fd
+                    self.selectUfcsGenericByReceiver(fa.field, eff_args.items, &amb) orelse callee.fd
                 else
                     callee.fd;
                 const all = astCalleeParamTypes(self, fd, eff_args.items);

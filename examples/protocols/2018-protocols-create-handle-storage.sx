@@ -5,6 +5,7 @@
 // of some conformer type — the handle is written into the storage afterwards,
 // and dispatch goes through the stored handle.
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 Shape :: interface {
     area :: (self: *Self) -> i64;

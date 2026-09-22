@@ -1,0 +1,8 @@
+@import "modules/std.sx";
+@import "scope-member-does-not-capture-ufcs-dot-call/scoped.sx";
+@import "scope-member-does-not-capture-ufcs-dot-call/visible.sx";
+
+main :: () {
+    value: i64 = 3;
+    print("{}\n", value.scaled());
+}

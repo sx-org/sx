@@ -15,6 +15,7 @@
 // There is no compiler-global "current sink" either: `run` takes the sink
 // explicitly, so the same block observed twice is just two ordinary calls.
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 @import "modules/fluent.sx";
 
 Drawable :: interface {

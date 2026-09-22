@@ -4,6 +4,7 @@
 // rejects loudly — bad signature, truncation, and a corrupted CRC each
 // hit their own error tag.
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 roundtrip :: (fmt: png.PixelFormat, channels: i64) {
     w := 5;

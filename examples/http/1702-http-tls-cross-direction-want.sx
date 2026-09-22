@@ -34,6 +34,7 @@
 //     loop for the whole handler run and starve the request).
 //   + net-zero GPA gate across the whole run.
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 cstd   :: @import "modules/std/c.sx";
 socket :: @import "modules/std/socket.sx";
 @import "modules/std/http.sx";

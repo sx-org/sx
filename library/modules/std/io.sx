@@ -7,10 +7,6 @@
 // of `CAllocator`) + the generic free-fns layered over the protocol
 // (`async` / `await` / `cancel` + the `Future($R)` type).
 //
-// Consumers reach these through std.sx (`Future` / `async` / `await` /
-// `cancel` / `CBlockingIo` re-exports), never by importing this file
-// directly.
-//
 // BLOCKING SEMANTICS: the M:1 default has no scheduler and no
 // suspension. `async(worker)` runs the worker to COMPLETION inline, so the
 // returned `Future` is born `.ready` and `await` yields immediately.

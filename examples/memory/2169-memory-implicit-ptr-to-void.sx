@@ -1,6 +1,7 @@
 // *T / [*]T / slice `.ptr` convert to `*void` without a glyph. Gaining a
 // pointee is explicit: `raw.(*T)`.
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 c :: @import "modules/std/c.sx";
 
 take :: (p: *void) -> i64 {

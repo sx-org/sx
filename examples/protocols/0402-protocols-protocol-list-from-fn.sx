@@ -3,6 +3,7 @@
 // referent with `Allocator.make`, so the appended handle outlives that frame.
 
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 Sizable :: interface {
     size :: (self: *Self) -> i64;

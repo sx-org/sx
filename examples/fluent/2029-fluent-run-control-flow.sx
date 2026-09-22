@@ -11,6 +11,7 @@
 // start, so the same block observed by two sinks reports the same sites in the
 // same order.
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 @import "modules/fluent.sx";
 
 Drawable :: constraint {

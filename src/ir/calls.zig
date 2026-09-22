@@ -544,7 +544,7 @@ pub const CallResolver = struct {
                 // not-a-ufcs-function diagnostic).
                 const alias_target = self.l.ufcsAliasTarget(cfa.field);
                 const eff_field = alias_target orelse cfa.field;
-                const ufcs_fd = self.l.program_index.lookup(.function, eff_field);
+                const ufcs_fd = self.l.ufcsFunction(eff_field);
                 const opted_in = alias_target != null or (ufcs_fd != null and ufcs_fd.?.is_ufcs);
                 if (!opted_in) return .{ .kind = .unresolved, .return_type = .unresolved };
                 // Generic ufcs target: infer the return type with the
@@ -556,21 +556,13 @@ pub const CallResolver = struct {
                             return .{ .kind = .unresolved, .return_type = .unresolved };
                         eff_call_args[0] = cfa.object;
                         @memcpy(eff_call_args[1..], c.args);
-                        // RESELECT by receiver — the same selector + `fd0`
-                        // lowering uses — so the PLANNED return type matches the
-                        // function lowering actually dispatches. The last-wins
-                        // `fd0p` can be a wrong-receiver overload (e.g. a
-                        // `*Other($T)->string` winner over the `*Box($T)->i64`
-                        // receiver-match); typing the call by `fd0p` while
-                        // lowering calls the other one misboxes the result.
-                        // A `*const Node` view of the
-                        // args drives the receiver-aware selection.
+                        // Typing and dispatch must use the same receiver-selected declaration.
                         const sel_args = self.l.alloc.alloc(*const ast.Node, c.args.len + 1) catch
                             return .{ .kind = .unresolved, .return_type = .unresolved };
                         sel_args[0] = cfa.object;
                         for (c.args, 0..) |a, i| sel_args[i + 1] = a;
                         var amb = false;
-                        const fd = self.l.selectUfcsGenericByReceiver(eff_field, sel_args, &amb, fd0p) orelse fd0p;
+                        const fd = self.l.selectUfcsGenericByReceiver(eff_field, sel_args, &amb) orelse fd0p;
                         var c2 = c.*;
                         c2.args = eff_call_args;
                         return .{
