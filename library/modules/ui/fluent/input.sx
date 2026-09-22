@@ -27,7 +27,7 @@
 @import "modules/ui/fluent/frame.sx";
 
 // How far a pointer travels from its down point before it is a drag.
-DRAG_SLOP :: 8.0;
+private DRAG_SLOP :: 8.0;
 
 // A component wrapped in its own hit region. The child is stored inline at its
 // own type, so an interactive element is one value and the calls into it stay
@@ -95,7 +95,7 @@ HitTarget :: struct {
 // drag, either of which may be missing. `inside` follows the pointer off and
 // back onto its hit region, and only an up taken inside taps; a drag turns it
 // off for good.
-PointerSequence :: struct {
+private PointerSequence :: struct {
     pointer: PointerId = .{ value = 0 };
     element: ?u64 = null;
     scroller: ?u64 = null;

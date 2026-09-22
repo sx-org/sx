@@ -12,8 +12,9 @@
 @import "modules/std/core.sx";
 @import "modules/std/mem.sx";
 @import "modules/ui/fluent/identity.sx";
+@import "modules/ui/fluent/wire.sx";
 
-c :: @import "modules/std/c.sx";
+private c :: @import "modules/std/c.sx";
 
 State :: struct ($T: Type) {
     ptr: *T;
@@ -25,11 +26,11 @@ State :: struct ($T: Type) {
 }
 
 // The domain separates state keys from the element ids the same sites mint.
-STATE_DOMAIN :: "ui.fluent.state.v1";
+private STATE_DOMAIN :: "ui.fluent.state.v1";
 
 // One site's persistent storage. `ty` is compared on every rebind, so a site
 // whose payload type changes is refused rather than reinterpreted.
-StateEntry :: struct {
+private StateEntry :: struct {
     key: u64 = 0;
     ty: Type;
     size: i64 = 0;
@@ -99,7 +100,7 @@ useState :: ($T: Type, default: T, site: SiteId = siteOf(@caller)) -> State(T) {
     store := context.fluentState;
     process.assert(store.inBuild, "useState outside a build transaction — call beginBuild first");
 
-    hasher := siteHasher(site, STATE_DOMAIN, context.fluentUi.scopeKey);
+    hasher := siteHasher(site.key, STATE_DOMAIN, context.fluentUi.scopeKey);
     hasher.writeU64Le(context.fluentUi.nextOccurrence(site.key).(u64));
     key := hasher.state;
 

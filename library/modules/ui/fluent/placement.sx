@@ -11,9 +11,9 @@
 @import "modules/ui/types.sx";
 @import "modules/ui/render.sx";
 @import "modules/ui/fluent/view.sx";
-@import "modules/ui/fluent/components.sx";
+@import "modules/ui/fluent/wire.sx";
 
-ModFrames :: struct {
+private ModFrames :: struct {
     box: Frame;
     content: Frame;
 }

@@ -139,7 +139,7 @@ ScrollRegion :: struct {
 }
 
 // How deep clips nest.
-CLIP_STACK :: 16;
+private CLIP_STACK :: 16;
 
 // Stateful builder — views use this to emit render nodes
 

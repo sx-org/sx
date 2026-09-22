@@ -17,20 +17,7 @@
 @import "modules/ui/fluent/modifier.sx";
 @import "modules/ui/fluent/identity.sx";
 @import "modules/ui/fluent/focus.sx";
-
-// One box, one command: a stroke rides ON the fill, a radius rounds what is
-// drawn, and a plain fill is the unrounded rect.
-paintBox :: (rc: *RenderContext, frame: Frame, fill: Color, corner: f32, border: ?Stroke) {
-    if s := border {
-        rc.addStrokedRect(frame, fill, s.color, s.width, corner);
-        return;
-    }
-    if corner > 0.0 {
-        rc.addRoundedRect(frame, fill, corner);
-    } else {
-        rc.addRect(frame, fill);
-    }
-}
+@import "modules/ui/fluent/wire.sx";
 
 // Text that wraps to the width it is proposed and is as tall as its lines.
 Label :: @OpenVariant(View) {
@@ -109,8 +96,8 @@ Button :: @OpenVariant(View) {
     }
 }
 
-CARET_WIDTH :: 2.0;
-PREEDIT_RULE_HEIGHT :: 1.0;
+private CARET_WIDTH :: 2.0;
+private PREEDIT_RULE_HEIGHT :: 1.0;
 
 // The view of a `TextInputSession`. The session is the document and the field
 // holds none of it: it draws the committed run split at the caret, the marked

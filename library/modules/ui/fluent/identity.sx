@@ -16,6 +16,7 @@
 @import "modules/std/core.sx";
 @import "modules/std/mem.sx";
 @import "modules/std/source_site.sx";
+@import "modules/ui/fluent/wire.sx";
 
 // A call site reduced to what identity needs, plus the position a diagnostic
 // prints. `key` is `@SourceSite.id`, so two sites collide only where their
@@ -35,18 +36,10 @@ ElementId :: struct { value: u64 = 0; }
 
 // The domain separates fluent element ids from every other key space built
 // on the same source-site state.
-ELEMENT_DOMAIN :: "ui.fluent.element.v1";
-
-// Resumes the hash from the site fingerprint the compiler already folded.
-siteHasher :: (site: SiteId, domain: string, scopeKey: u64) -> SourceSiteHasher {
-    hasher := SourceSiteHasher{ state = site.key };
-    hasher.writeString(domain);
-    hasher.writeU64Le(scopeKey);
-    hasher
-}
+private ELEMENT_DOMAIN :: "ui.fluent.element.v1";
 
 // One site's tally within the build in progress.
-SiteCount :: struct {
+private SiteCount :: struct {
     key: u64 = 0;
     count: i64 = 0;
 }
@@ -110,7 +103,7 @@ Identity :: struct {
 elementId :: (site: SiteId = siteOf(@caller)) -> ElementId {
     process.assert(context.fluentUi != null, "elementId outside a fluent build — push .{ fluentUi = *root.identity }");
     occurrence := context.fluentUi.nextOccurrence(site.key);
-    hasher := siteHasher(site, ELEMENT_DOMAIN, context.fluentUi.scopeKey);
+    hasher := siteHasher(site.key, ELEMENT_DOMAIN, context.fluentUi.scopeKey);
     hasher.writeU64Le(occurrence.(u64));
     ElementId{ value = hasher.state }
 }

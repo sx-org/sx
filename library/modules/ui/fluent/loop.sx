@@ -38,7 +38,7 @@
 
 // What a frame arena starts with. A reset keeps the largest chunk, so the pair
 // settles at the high-water mark of one frame and allocates nothing after.
-FRAME_ARENA_BYTES :: 8192;
+private FRAME_ARENA_BYTES :: 8192;
 
 // The clock the frame runs on, for whatever advances by time between frames.
 @context.extend fluentFrameNs: i64 = 0;

@@ -1,10 +1,6 @@
 // Three UI View sets in one program: the stdlib fluent library plus the
 // compose and emit example packages.
 //
-// They are separate packages, not modes of one. Each is imported under its own
-// name, and each `View` is its own open set: three sets declaring the same three
-// methods and sharing no components.
-//
 // A component joins a set by DECLARING itself into it, and each of these
 // declared itself into exactly one — so `compose.Label` is a member of
 // `compose.View` and of nothing else. compose and fluent both measure and
@@ -14,34 +10,29 @@
 
 c :: @import "examples/ui/compose.sx";
 e :: @import "examples/ui/emit.sx";
-f :: @import "modules/ui/fluent.sx";
+@import "modules/ui/fluent.sx";
 
 main :: () -> i32 {
     // Each library's own component forms its own library's slot.
     cv : c.View = c.Label{ text = "composed" };
     ev : e.View = e.Label{ text = "emitted" };
-    fv : f.View = f.Label{ text = "fluent" };
+    fv : fluent.View = fluent.Label{ text = "fluent" };
 
     // Each set answers for the member it carries — three distinct `Label`s.
     print("{} {} {}\n", @typeOf(cv), @typeOf(ev), @typeOf(fv));
 
     // Three sets, each laid out on its own members.
-    print("sets {} {} {}\n", @sizeOf(c.View), @sizeOf(e.View), @sizeOf(f.View));
+    print("sets {} {} {}\n", @sizeOf(c.View), @sizeOf(e.View), @sizeOf(fluent.View));
 
     // Each library renders through its own runtime, into the tree type that
     // library speaks.
     ct := c.RenderTree{};
     et := e.RenderTree{};
-    ft := f.RenderTree{};
+    ft := fluent.RenderTree{};
     c.renderRoot(*cv, c.Size{ width = 80.0, height = 20.0 }, *ct);
     e.renderRoot(*ev, e.Size{ width = 80.0, height = 20.0 }, *et);
-    f.renderRoot(*fv, f.Size{ width = 80.0, height = 20.0 }, *ft);
+    fluent.renderRoot(*fv, fluent.Size{ width = 80.0, height = 20.0 }, *ft);
     print("commands {} {} {}\n",
-        c.commandCount(*ct), e.commandCount(*et), f.commandCount(*ft));
+        c.commandCount(*ct), e.commandCount(*et), fluent.commandCount(*ft));
     0
 }
-
-// ** stdout **
-// Label Label Label
-// sets 72 64 64
-// commands 1 1 1
