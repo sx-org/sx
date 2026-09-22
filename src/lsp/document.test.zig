@@ -1441,6 +1441,35 @@ test "alias target order excludes later local spreads and retains imported scope
     try std.testing.expectEqual(.ambiguous, std.meta.activeTag(selection.selectPath("api.Item")));
 }
 
+test "scope declarations hide spread members in direct and alias target lookup" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    _ = try store.openOrUpdate("layered-part.sx", "Item :: struct { value: i64 = 7; }", 1);
+    _ = try store.openOrUpdate("layered-facade.sx",
+        \\api :: scope {
+        \\    ..@import "layered-part.sx";
+        \\    Item :: struct { value: i64 = 1; }
+        \\}
+    , 1);
+    const doc = try store.openOrUpdate("layered-reader.sx",
+        \\@import "layered-facade.sx";
+        \\Alias :: api.Item;
+    , 1);
+    try store.analyzeDocument(doc);
+    const selection = doc.sema.?.selection;
+    const direct = selection.selectPath("api.Item");
+    try std.testing.expectEqual(.selected, std.meta.activeTag(direct));
+    try std.testing.expectEqualStrings("layered-facade.sx", std.fs.path.basename(direct.selected.declaration.info().source.?));
+    const alias = selection.select("Alias").?;
+    const written = try selection.atWritten(alias.info().node.?);
+    const target = written.selectPath("api.Item");
+    try std.testing.expectEqual(.selected, std.meta.activeTag(target));
+    try std.testing.expectEqualDeep(direct.selected.declaration, target.selected.declaration);
+    try std.testing.expectEqual(@as(usize, 0), doc.sema.?.diagnostics.len);
+}
+
 test "self and parent spreads retain declaration identity and editor navigation" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

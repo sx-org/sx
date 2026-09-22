@@ -540,7 +540,7 @@ pub fn Query(comptime Backend: type) type {
                     candidate.pinned_view = view.pinned;
                 }
             }
-            if (view.context.order == null and result.items.len != 0) return .{ .imported = try result.toOwnedSlice(self.alloc) };
+            if (result.items.len != 0) return .{ .imported = try result.toOwnedSlice(self.alloc) };
             for (environments.items) |ctx| try self.append(&result, try self.spreadMembers(ctx, view.context, view.pinned, name, requester));
             return .{ .imported = try result.toOwnedSlice(self.alloc) };
         }
