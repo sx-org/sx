@@ -195,7 +195,7 @@ buildCompilerInstance(const char *filename,
     // createDiagnostics(DiagnosticConsumer*) is the convenience overload; it
     // builds a default VFS internally.
     auto CI = std::make_unique<clang::CompilerInstance>(std::move(invocation));
-    CI->createDiagnostics(new clang::IgnoringDiagConsumer());
+    CI->createDiagnostics(new clang::DiagnosticConsumer());
     return CI;
 }
 
