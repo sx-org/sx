@@ -1,0 +1,10 @@
+Request :: struct {
+    read: BodyReadFn = null;
+}
+
+BodyReadFn :: () -> i64;
+
+main :: () -> i32 {
+    req: Request = .{};
+    if req.read == null { 0 } else { 1 }
+}

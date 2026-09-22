@@ -2021,6 +2021,27 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 return self.emitError(func_name, c.callee.span);
             }
 
+            const field_ty = self.inferExprType(c.callee);
+            if (self.callableShapeOf(field_ty)) |shape| {
+                const addr: ?Ref = switch (shape) {
+                    .unique, .nominal => if (self.isLvalueExpr(c.callee)) self.lowerExprAsPtr(c.callee) else blk: {
+                        const value = self.lowerExpr(c.callee);
+                        const slot = self.builder.alloca(field_ty);
+                        self.builder.store(slot, value);
+                        break :blk slot;
+                    },
+                    .closure, .fn_ptr => null,
+                };
+                if (callValue(self, .{
+                    .ty = field_ty,
+                    .ref = if (addr == null) self.lowerExpr(c.callee) else Ref.none,
+                    .addr = addr,
+                    .node = c.callee,
+                    .name = fa.field,
+                    .origin = .value,
+                }, c, args.items, c.callee.span)) |r| return r;
+            }
+
             // Method call: obj.method(args) → prepend obj (or &obj for *Self receivers)
             // For ptr.*.method(): pass the pointer directly instead of loading + re-addressing.
             // This ensures mutations through self: *T are visible after the call.
@@ -2045,48 +2066,6 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     obj_ty = oinfo_nrw.optional.child;
                     obj = self.builder.emit(.{ .optional_unwrap = .{ .operand = obj } }, obj_ty);
                 }
-            }
-
-            // A CALLABLE field is called as a value, not dispatched as a method.
-            switch (self.lookupField(obj_ty, fa.field)) {
-                .hit, .private => |h| if (self.callableShapeOf(h.ty)) |shape| {
-                    if (self.mentionField(obj_ty, fa.field, c.callee.span) == .private) return Ref.none;
-                    var cv: CalleeValue = .{ .ty = h.ty, .ref = Ref.none, .node = c.callee, .name = fa.field, .origin = .value };
-                    switch (shape) {
-                        // The field IS the receiver storage: GEP its slot from a
-                        // base lowered ONCE, so the call writes the field and a
-                        // side-effecting receiver is evaluated a single time.
-                        .unique, .nominal => cv.addr = blk: {
-                            const slot_ty = self.module.types.ptrTo(h.ty);
-                            if (!obj_ty.isBuiltin()) {
-                                const oi = self.module.types.get(obj_ty);
-                                if (oi == .pointer)
-                                    break :blk self.builder.structGepTyped(obj, h.index, slot_ty, oi.pointer.pointee);
-                            }
-                            const base = if (self.isLvalueExpr(c.callee))
-                                self.lowerExprAsPtr(effective_obj_node)
-                            else b2: {
-                                const b = self.builder.alloca(obj_ty);
-                                self.builder.store(b, obj);
-                                break :b2 b;
-                            };
-                            break :blk self.builder.structGepTyped(base, h.index, slot_ty, obj_ty);
-                        },
-                        // A `Closure` / fn-pointer field is a plain value read.
-                        // `structGet` requires an aggregate, so a `*T` receiver
-                        // loads through the pointer first.
-                        .closure, .fn_ptr => {
-                            var agg = obj;
-                            if (!obj_ty.isBuiltin()) {
-                                const oi = self.module.types.get(obj_ty);
-                                if (oi == .pointer) agg = self.builder.load(obj, oi.pointer.pointee);
-                            }
-                            cv.ref = self.builder.structGet(agg, h.index, h.ty);
-                        },
-                    }
-                    if (callValue(self, cv, c, args.items, c.callee.span)) |r| return r;
-                },
-                .missing => {},
             }
 
             // Receiver is an OPEN SET (or a pointer to one) and the field names a
