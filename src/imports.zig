@@ -1078,10 +1078,10 @@ pub const DeclTable = struct {
     }
 };
 
-fn reportDuplicateName(diagnostics: ?*errors.DiagnosticList, added: bool, name: []const u8, span: ast.Span) void {
+fn reportDuplicateName(diagnostics: ?*errors.DiagnosticList, added: bool, name: []const u8, decl: *const Node) void {
     if (added) return;
     const diags = diagnostics orelse return;
-    diags.addFmt(.err, span, "duplicate top-level declaration '{s}'", .{name});
+    diags.addFmtInFile(.err, decl.source_file, decl.span, "duplicate top-level declaration '{s}'", .{name});
 }
 
 /// Build the diagnostic span for a failed import parse, from the parser's
@@ -1196,7 +1196,7 @@ fn stampRuntimeClassMethodSources(fcd: ast.RuntimeClassDecl, file_path: []const 
 fn reportDuplicateDecl(diagnostics: ?*errors.DiagnosticList, added: bool, decl: *const Node) void {
     if (added) return;
     const name = decl.data.declName() orelse return;
-    reportDuplicateName(diagnostics, added, name, decl.span);
+    reportDuplicateName(diagnostics, added, name, decl);
 }
 
 pub fn resolveImports(
@@ -1349,7 +1349,7 @@ fn resolveBlockImports(
                 ns_node.lexical_block = block_id;
                 // A `private ns :: @import c { … }` namespace stays file-local.
                 ns_node.visibility = decl.visibility;
-                reportDuplicateName(diagnostics, try mod.addOwnDecl(allocator, &cache.declarations, &decl_list, &own_decl_list, &seen_in_list, ns_node), ns_name, decl.span);
+                reportDuplicateName(diagnostics, try mod.addOwnDecl(allocator, &cache.declarations, &decl_list, &own_decl_list, &seen_in_list, ns_node), ns_name, decl);
             } else {
                 // Flat: add fn_decls directly + keep c_import_decl
                 for (result.fn_decls) |fd| {
@@ -1393,7 +1393,7 @@ fn resolveBlockImports(
 
         if (imp.name) |ns_name| {
             const added = try mod.addNamespace(allocator, &cache.declarations, &decl_list, &own_decl_list, &seen_in_list, ns_name, imported_mod, decl.span, imp.is_raw, decl.visibility, block_id);
-            reportDuplicateName(diagnostics, added, ns_name, decl.span);
+            reportDuplicateName(diagnostics, added, ns_name, decl);
         } else {
             try mod.mergeFlat(allocator, &decl_list, &seen_in_list, &seen_nodes, imported_mod);
         }
