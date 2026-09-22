@@ -1,5 +1,5 @@
 // std.http — DATA-phase TLS cross-direction wants. The transport seam
-// (TlsConn) may return WantWrite from a READ (the session must flush a
+// (http.TlsConn) may return WantWrite from a READ (the session must flush a
 // pending record before it can deliver plaintext) or WantRead from a WRITE
 // (the session needs a peer message before its ciphertext can proceed) —
 // renegotiation / ticket-flush shaped flows. The server must track the
@@ -34,16 +34,15 @@
 //     loop for the whole handler run and starve the request).
 //   + net-zero GPA gate across the whole run.
 @import "modules/std.sx";
-@import "modules/std/http/tls.sx";   // TlsConn, TlsAcceptor, TlsStep (flat)
 cstd   :: @import "modules/std/c.sx";
 socket :: @import "modules/std/socket.sx";
-http   :: @import "modules/std/http.sx";
+@import "modules/std/http.sx";
 
 PORT :: 19017;
 
 // ── fake TLS provider ────────────────────────────────────────────────
 // Passthrough byte relay over the conn's fd with one injected cross-
-// direction want per mode. Single-threaded: every TlsConn call happens on
+// direction want per mode. Single-threaded: every http.TlsConn call happens on
 // the loop thread (== main here), so the acceptor's counters are plain.
 
 MODE_PASS :: 0;   // pure passthrough (health-check conns)
@@ -86,12 +85,12 @@ drainFd :: (c: *FakeConn) -> i64 {
     return got;
 }
 
-impl TlsConn for FakeConn {
-    handshake :: (self: *FakeConn) -> TlsStep {
-        return TlsStep.Done;   // passthrough: no real negotiation
+impl http.TlsConn for FakeConn {
+    handshake :: (self: *FakeConn) -> http.TlsStep {
+        return http.TlsStep.Done;   // passthrough: no real negotiation
     }
 
-    read :: (self: *FakeConn, buf: [*]u8, cap: i64) -> (i64, TlsStep) {
+    read :: (self: *FakeConn, buf: [*]u8, cap: i64) -> (i64, http.TlsStep) {
         // Held-back bytes first — the retry after an injected WantWrite.
         if self.pendOff < self.pendLen {
             n := self.pendLen - self.pendOff;
@@ -99,7 +98,7 @@ impl TlsConn for FakeConn {
             cstd.memcpy(buf, *self.pend[self.pendOff], n);
             self.pendOff += n;
             if self.pendOff == self.pendLen { self.pendOff = 0; self.pendLen = 0; }
-            return n, TlsStep.Done;
+            return n, http.TlsStep.Done;
         }
         // Injection point: mode R on the 1st data-bearing read, mode B on
         // the 2nd — drain the fd fully (kernel buffer goes quiet: no more
@@ -109,14 +108,14 @@ impl TlsConn for FakeConn {
         if self.mode == MODE_B { injectAt = 1; }
         if !self.rdInjected and injectAt >= 0 and self.dataReads >= injectAt {
             got := drainFd(self);
-            if got < 0 { return 0, TlsStep.Fatal; }
+            if got < 0 { return 0, http.TlsStep.Fatal; }
             if got > 0 {
                 self.rdInjected = true;
                 self.dataReads += 1;
                 self.acc.rdInjections += 1;
-                return 0, TlsStep.WantWrite;
+                return 0, http.TlsStep.WantWrite;
             }
-            return 0, TlsStep.WantRead;   // nothing buffered yet — plain would-block
+            return 0, http.TlsStep.WantRead;   // nothing buffered yet — plain would-block
         }
         n, re := socket.readNb(self.fd, buf, cap);
         if re == .WouldBlock {
@@ -127,17 +126,17 @@ impl TlsConn for FakeConn {
             if self.mode == MODE_H and !self.rdInjected and self.dataReads >= 1 {
                 self.rdInjected = true;
                 self.acc.hInjections += 1;
-                return 0, TlsStep.WantWrite;
+                return 0, http.TlsStep.WantWrite;
             }
-            return 0, TlsStep.WantRead;
+            return 0, http.TlsStep.WantRead;
         }
-        if re == .Closed { return 0, TlsStep.Closed; }
-        if re { return 0, TlsStep.Fatal; }
+        if re == .Closed { return 0, http.TlsStep.Closed; }
+        if re { return 0, http.TlsStep.Fatal; }
         self.dataReads += 1;
-        return n, TlsStep.Done;
+        return n, http.TlsStep.Done;
     }
 
-    write :: (self: *FakeConn, buf: [*]u8, len: i64) -> (i64, TlsStep) {
+    write :: (self: *FakeConn, buf: [*]u8, len: i64) -> (i64, http.TlsStep) {
         if self.mode == MODE_W {
             if self.wrWaiting {
                 // Needs one fresh peer byte (a "handshake record") before the
@@ -149,22 +148,22 @@ impl TlsConn for FakeConn {
                 n, re := socket.readNb(self.fd, *tick[0], 8);
                 if re == .WouldBlock {
                     self.acc.wrExtraRetries += 1;
-                    return 0, TlsStep.WantRead;
+                    return 0, http.TlsStep.WantRead;
                 }
-                if re { return 0, TlsStep.Fatal; }
+                if re { return 0, http.TlsStep.Fatal; }
                 _ := n;   // consumed (never surfaced as app data)
                 self.wrWaiting = false;
             } else if !self.wrInjected {
                 self.wrInjected = true;
                 self.wrWaiting = true;
                 self.acc.wrDeclared += 1;
-                return 0, TlsStep.WantRead;
+                return 0, http.TlsStep.WantRead;
             }
         }
         n, we := socket.writeNb(self.fd, buf, len);
-        if we == .WouldBlock { return 0, TlsStep.WantWrite; }
-        if we { return 0, TlsStep.Fatal; }
-        return n, TlsStep.Done;
+        if we == .WouldBlock { return 0, http.TlsStep.WantWrite; }
+        if we { return 0, http.TlsStep.Fatal; }
+        return n, http.TlsStep.Done;
     }
 
     close :: (self: *FakeConn) {
@@ -182,8 +181,8 @@ FakeAcceptor :: struct {
     wrExtraRetries: i64 = 0; // write retries while waiting with nothing inbound
 }
 
-impl TlsAcceptor for FakeAcceptor {
-    accept :: (self: *FakeAcceptor, fd: i32) -> ?TlsConn {
+impl http.TlsAcceptor for FakeAcceptor {
+    accept :: (self: *FakeAcceptor, fd: i32) -> ?http.TlsConn {
         self.nAccepts += 1;
         mode := MODE_PASS;
         if self.nAccepts == 1 { mode = MODE_R; }

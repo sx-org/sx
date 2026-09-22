@@ -21,7 +21,7 @@
 // 4. The connection closes (closeAfter honored).
 // 5. GPA leak gate: net-zero — a clobbered 8 MB outBuf would leak.
 @import "modules/std.sx";
-http :: @import "modules/std/http.sx";
+@import "modules/std/http.sx";
 
 PORT :: 18993;
 BODY_LEN :: 8388608;    // 8 MB — beyond send-buffer autotune caps on both OSes

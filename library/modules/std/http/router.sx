@@ -1,15 +1,3 @@
-// std.http_router: a thin ergonomic layer over the
-// std.http server core. Method+path ROUTING with path PARAMS (/users/:id),
-// QUERY-string parsing, urlencoded FORM parsing, and JSON request/response
-// helpers over std/json — so apps stop hand-rolling `if req.path == …`.
-//
-// The router is a CONSUMER of the public Server/Request/Response API: it
-// touches http.sx not at all. It exposes ONE plain handler
-// (Router.dispatch) you hand to Server.init, and the Router itself is
-// reached through the server's `ctx` word (the established no-globals
-// pattern). Route handlers get a *RouteCtx carrying the request, response,
-// extracted path params, and the app's OWN ctx word (Router.appCtx).
-//
 // MEMORY: route registration captures the Router's owning allocator
 // (init) and grows the route table through it — the table outlives any
 // transient per-request scope, per the long-lived-container rule. The
@@ -34,20 +22,20 @@
 // streamed parts, per-part headers). This layer covers only
 // application/x-www-form-urlencoded.
 
+@import "modules/std/http/wire.sx";
 @import "modules/std/fmt.sx";          // concat
 @import "modules/std/mem.sx";
 @import "modules/std/writer.sx";       // StringBuilder
 @import "modules/std/encoding.sx";     // hexValue
-types :: @import "modules/std/http/types.sx";
-json  :: @import "modules/std/json.sx";   // router uses `json.Value` / `json.parse` (namespaced)
+private json  :: @import "modules/std/json.sx";
 
 // Fixed capacities for the per-request scratch. A request that exceeds any
 // of these simply drops the overflow (the extra params/pairs are not
 // visible) rather than allocating — bounded memory is the contract.
-MAX_PARAMS  :: 16;   // path params per route (e.g. /a/:x/b/:y → 2)
-MAX_QUERY   :: 32;   // query pairs parsed from ?a=1&b=2
-MAX_FORM    :: 64;   // urlencoded form fields
-MAX_SEGS    :: 32;   // path segments a pattern/path may have
+private MAX_PARAMS  :: 16;
+private MAX_QUERY   :: 32;
+private MAX_FORM    :: 64;
+private MAX_SEGS    :: 32;
 
 // One (name → value) pair. `name`/`value` are VIEWS — params point into the
 // request's path (untouched during dispatch); decoded query/form values
@@ -74,8 +62,8 @@ Route :: struct {
 // on first access and cached here, so a handler that never asks pays
 // nothing.
 RouteCtx :: struct {
-    req: *types.Request = null;
-    resp: *types.Response = null;
+    req: *Request = null;
+    resp: *Response = null;
     appCtx: usize = 0;          // the word the app gave Router.init
 
     // path params (filled by the match)
@@ -198,7 +186,7 @@ RouteCtx :: struct {
 
 // ── string helpers ───────────────────────────────────────────────────
 
-strEq :: (a: string, b: string) -> bool {
+private strEq :: (a: string, b: string) -> bool {
     if a.len != b.len { return false; }
     i := 0;
     while i < a.len {
@@ -209,7 +197,7 @@ strEq :: (a: string, b: string) -> bool {
 }
 
 // Case-insensitive ASCII equality (for method comparison).
-ciEq :: (a: string, b: string) -> bool {
+private ciEq :: (a: string, b: string) -> bool {
     if a.len != b.len { return false; }
     i := 0;
     while i < a.len {
@@ -224,7 +212,7 @@ ciEq :: (a: string, b: string) -> bool {
 }
 
 // The portion of a request path before any '?': "/users/42?x=1" → "/users/42".
-pathOnly :: (path: string) -> string {
+private pathOnly :: (path: string) -> string {
     i := 0;
     while i < path.len {
         if path[i] == '?' { return string{ ptr = path.ptr, len = i }; }
@@ -234,7 +222,7 @@ pathOnly :: (path: string) -> string {
 }
 
 // The query string AFTER the '?': "/s?a=1&b=2" → "a=1&b=2"; "" when none.
-queryStringOf :: (path: string) -> string {
+private queryStringOf :: (path: string) -> string {
     i := 0;
     while i < path.len {
         if path[i] == '?' {
@@ -251,7 +239,7 @@ queryStringOf :: (path: string) -> string {
 // from `s` into `dst` (must be >= s.len bytes — decoding only shrinks).
 // Returns the decoded byte length. A malformed `%` (truncated or non-hex)
 // is passed through literally rather than dropped.
-urlDecodeInto :: (s: string, dst: [*]u8) -> i64 {
+private urlDecodeInto :: (s: string, dst: [*]u8) -> i64 {
     di : i64 = 0;
     i := 0;
     while i < s.len {
@@ -276,7 +264,7 @@ urlDecodeInto :: (s: string, dst: [*]u8) -> i64 {
 
 // True if a raw token needs decoding (has a '%' or '+'); a clean token is
 // returned as a zero-copy view, no arena byte spent.
-needsDecode :: (s: string) -> bool {
+private needsDecode :: (s: string) -> bool {
     i := 0;
     while i < s.len {
         if s[i] == '%' or s[i] == '+' { return true; }
@@ -287,7 +275,7 @@ needsDecode :: (s: string) -> bool {
 
 // Decode a token: a clean one is a view into the source; one with escapes
 // is decoded into the per-request arena (context.allocator).
-decodeToken :: (s: string) -> string {
+private decodeToken :: (s: string) -> string {
     if !needsDecode(s) { return s; }
     buf : [*]u8 = context.allocator.alloc(u8, if s.len > 0 then s.len else 1).ptr;
     n := urlDecodeInto(s, buf);
@@ -297,7 +285,7 @@ decodeToken :: (s: string) -> string {
 // Parse `a=1&b=two&flag` into up to `cap` decoded KV pairs at `out`.
 // A pair with no '=' (`flag`) has value "". Keys AND values are decoded
 // (percent + '+'). Returns the number of pairs written (overflow dropped).
-parsePairs :: (s: string, out: [*]KV, cap: i64) -> i64 {
+private parsePairs :: (s: string, out: [*]KV, cap: i64) -> i64 {
     n : i64 = 0;
     i := 0;
     while i < s.len and n < cap {
@@ -337,7 +325,7 @@ parsePairs :: (s: string, out: [*]KV, cap: i64) -> i64 {
 // split on '/'. Returns (true, nParams) on a match; false otherwise.
 // Trailing-slash insensitive: "/users" matches "/users/" (empty trailing
 // segments are ignored on both sides).
-matchPattern :: (pattern: string, path: string, params: [*]KV) -> (bool, i64 = 0) {
+private matchPattern :: (pattern: string, path: string, params: [*]KV) -> (bool, i64 = 0) {
     pi := 0;   // pattern cursor
     xi := 0;   // path cursor
     n : i64 = 0;
@@ -375,7 +363,7 @@ matchPattern :: (pattern: string, path: string, params: [*]KV) -> (bool, i64 = 0
 
 // ── the Router ───────────────────────────────────────────────────────
 
-MAX_ROUTES :: 128;
+private MAX_ROUTES :: 128;
 
 Router :: struct {
     routes: [MAX_ROUTES]Route = ---;
@@ -416,8 +404,7 @@ Router :: struct {
 // a path that matches a pattern but whose method no route registered → 405
 // with an `Allow` header listing the methods registered for that path.
 //
-// Use it as:  srv, e := http.Server.init(cfg, http.dispatch, @router);
-dispatch :: (req: *types.Request, resp: *types.Response, ctx: usize) {
+dispatch :: (req: *Request, resp: *Response, ctx: usize) {
     self : *Router = @reinterpret(*Router, ctx);
     path := pathOnly(req.path);    
 

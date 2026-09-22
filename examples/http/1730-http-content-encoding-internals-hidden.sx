@@ -1,12 +1,9 @@
-// HTTP exposes only the typed ContentCoding result, never helper aliases.
-// Flat imports in client/server remain implementation details.
-@import "modules/std.sx";
-http :: @import "modules/std/http.sx";
+@import "modules/std/http.sx";
 
 main :: () -> i32 {
-    a : http.client.Encoding = ---;
-    b : http.client.Decoder = ---;
-    c : http.server.Encoding = ---;
-    d : http.server.EncodedProducer = ---;
+    coding : http.ContentCoding = .gzip;
+    decoder : http.Decoder = ---;
+    conn : http.Conn = ---;
+    client : http.client.Client = ---;
     0
 }

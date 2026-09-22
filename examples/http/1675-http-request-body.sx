@@ -20,7 +20,7 @@
 // no per-request / decode leak. Single-thread tick harness (1633-style).
 @import "modules/std.sx";
 mem  :: @import "modules/std/mem.sx";
-http :: @import "modules/std/http.sx";
+@import "modules/std/http.sx";
 
 PORT :: 18975;
 

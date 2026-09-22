@@ -30,7 +30,7 @@
 //   6. GPA leak gate: net-zero after srv.close() (channel, job, wbuf all
 //      reclaimed; the discarded /count completion freed).
 @import "modules/std.sx";
-http :: @import "modules/std/http.sx";
+@import "modules/std/http.sx";
 
 PORT :: 19013;
 CL_BODY_LEN :: 200000;   // cases 1 + 3

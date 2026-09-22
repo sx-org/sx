@@ -8,6 +8,7 @@ web framework. See [SECURITY.md](../SECURITY.md) for the security posture.
 
 ```sx
 @import "modules/std.sx";
+@import "modules/std/http.sx";
 
 handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     if req.path == "/healthz" { resp.body = "ok"; return; }
@@ -26,7 +27,7 @@ main :: () -> i32 {
 `Server.run()` loops until `Server.stop()` is requested, then drains and returns;
 `Server.close()` frees everything. `Server.tick(maxWaitMs)` runs one bounded
 loop iteration — useful for driving the server and its clients in one thread
-(every `examples/http/*` test does this).
+(see `examples/http/1633-http-server.sx`).
 
 ---
 
@@ -391,7 +392,7 @@ mbedTLS-backed acceptor. Only a program that imports the provider compiles the
 crypto; plaintext servers link none of it.
 
 ```sx
-http :: @import "modules/std/http.sx";
+@import "modules/std/http.sx";
 tls  :: @import "modules/std/http/tls_mbedtls.sx";
 
 main :: () -> i32 {
@@ -585,7 +586,7 @@ subprocess-isolated, on macOS and validated end-to-end on aarch64-Linux.
   `maxBody`.
 - Graceful shutdown (`stop`), the `Stats` counters + `onEvent` hook, and the
   per-request handler timeout (hard in pool mode).
-- `std/http_router`: method+path routing, path params, query/urlencoded-form
+- `http.Router`: method+path routing, path params, query/urlencoded-form
   parsing, JSON request/response helpers (over `std/json`).
 - Underlying `std/socket`, `std/event`, `std/thread`, `std/mem` — the stable
   subset this server stands on; per-OS-correct on macOS + Linux.
@@ -617,7 +618,7 @@ subprocess-isolated, on macOS and validated end-to-end on aarch64-Linux.
 
 - **Inline handler timeout** — cooperative only; no hard preemption (use pool
   mode).
-- **multipart/form-data** — out of scope in `std/http_router` (urlencoded only).
+- **multipart/form-data** — out of scope in `http.Router` (urlencoded only).
 - **Long-running fuzz / load / stress harnesses** — a bounded fuzz *smoke* runs
   in the corpus; exhaustive fuzzing and load testing belong in CI (see
   `tests/`), not the per-build suite.

@@ -26,7 +26,7 @@
 //    header + bytes — is freed in runHandlerJob; the discarded late
 //    completion's buffer is freed in drainCompletions).
 @import "modules/std.sx";
-http :: @import "modules/std/http.sx";
+@import "modules/std/http.sx";
 
 PORT :: 18991;
 HANDLER_TIMEOUT_MS :: 40;

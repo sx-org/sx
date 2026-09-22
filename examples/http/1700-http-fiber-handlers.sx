@@ -27,7 +27,7 @@
 //   7. GPA leak gate net-zero after close + runner.deinit() (fiber envs +
 //      structs reaped; channel + job memory reclaimed; List backings freed).
 @import "modules/std.sx";
-http :: @import "modules/std/http.sx";
+@import "modules/std/http.sx";
 fs :: @import "modules/std/http/fiber_sched.sx";
 
 clib :: @library "c";

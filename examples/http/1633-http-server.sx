@@ -4,7 +4,7 @@
 // 404 routing, and half-a-header eviction at the request deadline
 // while the server keeps serving others.
 @import "modules/std.sx";
-http :: @import "modules/std/http.sx";
+@import "modules/std/http.sx";
 
 PORT :: 18933;
 

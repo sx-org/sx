@@ -1,9 +1,9 @@
 # Fuzzing std.http
 
-The HTTP/1.1 request parser (`library/modules/std/http.sx` —
-`tryServeOne`, the H1 hardening block, the `decodeChunked`
-decoder) must NEVER crash, panic, abort, hang, double-free, or leak on
-hostile input. It may only ever respond (400/413/431/501/504/…) or
+The HTTP/1.1 request parser (`Server.tryServeOne` in
+`library/modules/std/http/server.sx` and `decodeChunked` in
+`library/modules/std/http/wire.sx`) must NEVER crash, panic, abort, hang,
+double-free, or leak on hostile input. It may only ever respond (400/413/431/501/504/…) or
 cleanly close the connection.
 
 ## In-corpus smoke (runs on every `zig build test`)

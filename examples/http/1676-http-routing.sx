@@ -1,18 +1,5 @@
-// std.http_router: method+path routing, path params,
-// query/form parsing, and JSON request/response helpers over the std.http
-// server core. Drives a routed live server in ONE thread via Server.tick
-// (1633-style) and asserts:
-//   • GET / and GET /hello → distinct handlers, both 200;
-//   • GET /users/:id → path param extracted (/users/42 → id="42", echoed);
-//   • GET /search?q=hello+world&n=3 → q="hello world" (decoded), n="3";
-//   • POST /form (urlencoded a=1&b=hi%20there) → fields decoded;
-//   • GET /j (JSON response) → Content-Type application/json + valid body;
-//   • POST /echojson (JSON request) → reads a field from the posted body;
-//   • GET /nope → 404; PUT /hello (registered GET only) → 405 + Allow.
-// The whole run is under a GPA: net-zero allocations after close (the
-// router/param machinery must not leak per request).
 @import "modules/std.sx";
-http :: @import "modules/std/http.sx";
+@import "modules/std/http.sx";
 
 PORT :: 18980;
 

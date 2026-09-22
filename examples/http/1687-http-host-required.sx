@@ -9,7 +9,7 @@
 // 1.1 request with one Host → 200; a Host-less 1.0 request → 200; GPA
 // net-zero after close.
 @import "modules/std.sx";
-http :: @import "modules/std/http.sx";
+@import "modules/std/http.sx";
 
 PORT :: 18998;
 

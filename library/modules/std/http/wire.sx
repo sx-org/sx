@@ -1,15 +1,169 @@
-// HTTP content-coding helpers shared by the client and server.
-//
-// This module deliberately keeps HTTP policy separate from the codec APIs:
-// RFC 9110 `deflate` is the zlib-wrapped RFC 1950 representation, while
-// `gzip` is RFC 1952. The concrete encoders/decoders remain the public
-// std.zlib and std.gzip types; HTTP only selects and drives them.
-
 @import "modules/std/core.sx";
 @import "modules/std/mem.sx";
+@import "modules/std/encoding.sx";
 @import "modules/std/compress.sx";
-gzipCodec :: @import "modules/std/codecs/gzip.sx";
-zlibCodec :: @import "modules/std/codecs/zlib.sx";
+..@import "modules/std/http/types.sx";
+..@import "modules/std/http/tls.sx";
+..@import "modules/std/http/fiber.sx";
+private clib :: @import "modules/std/c.sx";
+private thread :: @import "modules/std/thread.sx";
+private event :: @import "modules/std/event.sx";
+private gzipCodec :: @import "modules/std/codecs/gzip.sx";
+private zlibCodec :: @import "modules/std/codecs/zlib.sx";
+
+ChunkStatus :: enum {
+    NEED_MORE;
+    OK;
+    BAD;
+    TOO_BIG;
+    OVERFLOW;
+}
+
+// On NEED_MORE, resume fields point to the first incomplete chunk element.
+private ChunkResult :: struct {
+    status: ChunkStatus = ChunkStatus.NEED_MORE;
+    decodedLen: i64 = 0;
+    rawLen: i64 = 0;
+
+    resumeRp: i64 = 0;
+    resumeDecoded: i64 = 0;
+}
+
+// The checkpoint advances only at chunk boundaries, bounding rescans on partial reads.
+ChunkScan :: struct {
+    rp: i64 = 0;
+    decoded: i64 = 0;
+}
+
+// Compaction destroys framing, so validation must confirm the entire body first.
+decodeChunked :: (src: [*]u8, avail: i64, maxBody: i64, resume: ChunkScan) -> ChunkResult {
+    scan := decodeChunkedPass(src, avail, maxBody, false, resume);
+    if scan.status != ChunkStatus.OK { return scan; }
+
+    return decodeChunkedPass(src, avail, maxBody, true, ChunkScan{});
+}
+
+private decodeChunkedPass :: (src: [*]u8, avail: i64, maxBody: i64, commit: bool, resume: ChunkScan) -> ChunkResult {
+    rp : i64 = resume.rp;
+    wp : i64 = 0;
+    decoded : i64 = resume.decoded;
+    cpRp : i64 = resume.rp;
+    cpDecoded : i64 = resume.decoded;
+    while true {
+        cpRp = rp;
+        cpDecoded = decoded;
+        size : i64 = 0;
+        digits : i64 = 0;
+
+        if rp >= avail { return ChunkResult{ status = ChunkStatus.NEED_MORE, resumeRp = cpRp, resumeDecoded = cpDecoded }; }
+        while rp < avail {
+            hv := hexValue(src[rp]);
+            if hv == null { break; }
+
+            // Largest size for which size * 16 + 15 fits in i64.
+            if size > (0x07FFFFFFFFFFFFFF) { return ChunkResult{ status = ChunkStatus.OVERFLOW }; }
+            size = size * 16 + hv;
+            if size < 0 { return ChunkResult{ status = ChunkStatus.OVERFLOW }; }
+            digits += 1;
+            rp += 1;
+        }
+        if digits == 0 { return ChunkResult{ status = ChunkStatus.BAD }; }
+
+        if rp >= avail { return ChunkResult{ status = ChunkStatus.NEED_MORE, resumeRp = cpRp, resumeDecoded = cpDecoded }; }
+        if src[rp] != ';' and src[rp] != '\r' { return ChunkResult{ status = ChunkStatus.BAD }; }
+
+        if src[rp] == ';' {
+            while rp < avail and src[rp] != '\r' { rp += 1; }
+        }
+
+        if rp + 1 >= avail { return ChunkResult{ status = ChunkStatus.NEED_MORE, resumeRp = cpRp, resumeDecoded = cpDecoded }; }
+        if src[rp] != '\r' or src[rp + 1] != '\n' { return ChunkResult{ status = ChunkStatus.BAD }; }
+        rp += 2;
+
+        if size == 0 {
+            while true {
+                if rp + 1 >= avail { return ChunkResult{ status = ChunkStatus.NEED_MORE, resumeRp = cpRp, resumeDecoded = cpDecoded }; }
+                if src[rp] == '\r' and src[rp + 1] == '\n' { rp += 2; break; }
+
+                ts := rp;
+                while rp < avail and src[rp] != '\r' { rp += 1; }
+                if rp + 1 >= avail { return ChunkResult{ status = ChunkStatus.NEED_MORE, resumeRp = cpRp, resumeDecoded = cpDecoded }; }
+                if src[rp] != '\r' or src[rp + 1] != '\n' { return ChunkResult{ status = ChunkStatus.BAD }; }
+                if rp == ts { rp += 2; break; }
+                rp += 2;
+            }
+            return ChunkResult{ status = ChunkStatus.OK, decodedLen = decoded, rawLen = rp };
+        }
+
+        if decoded + size > maxBody { return ChunkResult{ status = ChunkStatus.TOO_BIG }; }
+
+        if rp + size + 1 >= avail { return ChunkResult{ status = ChunkStatus.NEED_MORE, resumeRp = cpRp, resumeDecoded = cpDecoded }; }
+
+        if commit and wp != rp {
+            clib.memmove(*src[wp], *src[rp], size);
+        }
+        wp += size;
+        rp += size;
+
+        if src[rp] != '\r' or src[rp + 1] != '\n' { return ChunkResult{ status = ChunkStatus.BAD }; }
+        rp += 2;
+        decoded += size;
+    }
+
+    return ChunkResult{ status = ChunkStatus.BAD };
+}
+
+private decInto :: (n: i64, dst: [*]u8) -> i64 {
+    if n == 0 { dst[0] = '0'; return 1; }
+    tmp : [20]u8 = ---;
+    cnt : i64 = 0;
+    v := n;
+    while v > 0 {
+        tmp[cnt] = ('0' + v % 10).(u8);
+        v = v / 10;
+        cnt += 1;
+    }
+    i : i64 = 0;
+    while i < cnt {
+        dst[i] = tmp[cnt - 1 - i];
+        i += 1;
+    }
+    return cnt;
+}
+
+private decLen :: (n: i64) -> i64 {
+    if n == 0 { return 1; }
+    c : i64 = 0;
+    v := n;
+    while v > 0 { c += 1; v = v / 10; }
+    return c;
+}
+
+private statusLineFor :: (status: i64) -> string {
+    if status == 200 { return "HTTP/1.1 200 OK"; }
+    if status == 201 { return "HTTP/1.1 201 Created"; }
+    if status == 204 { return "HTTP/1.1 204 No Content"; }
+    if status == 206 { return "HTTP/1.1 206 Partial Content"; }
+    if status == 301 { return "HTTP/1.1 301 Moved Permanently"; }
+    if status == 302 { return "HTTP/1.1 302 Found"; }
+    if status == 304 { return "HTTP/1.1 304 Not Modified"; }
+    if status == 400 { return "HTTP/1.1 400 Bad Request"; }
+    if status == 401 { return "HTTP/1.1 401 Unauthorized"; }
+    if status == 403 { return "HTTP/1.1 403 Forbidden"; }
+    if status == 404 { return "HTTP/1.1 404 Not Found"; }
+    if status == 405 { return "HTTP/1.1 405 Method Not Allowed"; }
+    if status == 406 { return "HTTP/1.1 406 Not Acceptable"; }
+    if status == 408 { return "HTTP/1.1 408 Request Timeout"; }
+    if status == 413 { return "HTTP/1.1 413 Content Too Large"; }
+    if status == 417 { return "HTTP/1.1 417 Expectation Failed"; }
+    if status == 431 { return "HTTP/1.1 431 Request Header Fields Too Large"; }
+    if status == 500 { return "HTTP/1.1 500 Internal Server Error"; }
+    if status == 501 { return "HTTP/1.1 501 Not Implemented"; }
+    if status == 503 { return "HTTP/1.1 503 Service Unavailable"; }
+    if status == 504 { return "HTTP/1.1 504 Gateway Timeout"; }
+    if status == 505 { return "HTTP/1.1 505 HTTP Version Not Supported"; }
+    return "";
+}
 
 Encoding :: enum {
     identity;
@@ -18,10 +172,8 @@ Encoding :: enum {
     unacceptable;
 }
 
-// Parsed Accept-Encoding preferences. Identity acceptability is deliberately
-// retained independently from the preferred coding: a policy decision that
-// prevents transformation may only fall back to identity when identityQ > 0.
-AcceptEncoding :: struct {
+// A policy that forbids transformation can serve identity only when identityQ > 0.
+private AcceptEncoding :: struct {
     headers: string = "";
     found: bool = false;
     gzipQ: i64 = 0;
@@ -29,10 +181,6 @@ AcceptEncoding :: struct {
     identityQ: i64 = 1000;
     wildcardQ: i64 = -1;
 }
-
-// A response producer has the same shape as http.StreamProducer. Keeping the
-// signature local avoids importing http/types.sx back into this helper.
-Producer :: (ctx: usize, offset: i64, dst: [*]u8, dstCap: i64) -> i64;
 
 asciiLower :: (c: u8) -> u8 {
     c + if 'A' <= c <= 'Z' then ' ' else 0
@@ -48,7 +196,7 @@ ceAsciiIeq :: (a: string, b: string) -> bool {
     true
 }
 
-asciiIprefix :: (value: string, prefix: string) -> bool {
+private asciiIprefix :: (value: string, prefix: string) -> bool {
     if value.len < prefix.len { return false; }
     i : i64 = 0;
     while i < prefix.len {
@@ -58,7 +206,7 @@ asciiIprefix :: (value: string, prefix: string) -> bool {
     true
 }
 
-isOws :: (c: u8) -> bool { c == ' ' or c == '\t' }
+private isOws :: (c: u8) -> bool { c == ' ' or c == '\t' }
 
 trimOws :: (value: string) -> string {
     first : i64 = 0;
@@ -68,8 +216,6 @@ trimOws :: (value: string) -> string {
     value[first..last]
 }
 
-// Return the first value of `name` in a raw header block. Header names are
-// matched case-insensitively and OWS is trimmed from both value edges.
 header :: (raw: string, name: string) -> string {
     at : i64 = 0;
     while at < raw.len {
@@ -101,8 +247,6 @@ hasHeader :: (raw: string, name: string) -> bool {
     false
 }
 
-// True when any occurrence of `name` contains `token` as a complete
-// comma-delimited item. Parameters after ';' are ignored for the match.
 hasHeaderToken :: (raw: string, name: string, token: string) -> bool {
     lineAt : i64 = 0;
     while lineAt < raw.len {
@@ -130,16 +274,15 @@ hasHeaderToken :: (raw: string, name: string, token: string) -> bool {
     false
 }
 
-// Parse one RFC qvalue to thousandths. Invalid values are treated as zero:
-// refusing a coding is safer than silently accepting a malformed weight.
-quality :: (value: string) -> i64 {
+// RFC qvalues use thousandths; malformed weights refuse the coding.
+private quality :: (value: string) -> i64 {
     v := trimOws(value);
     if v.len == 0 { return 0; }
     whole := v[0];
     if whole != '0' and whole != '1' { return 0; }
     if v.len == 1 { return if whole == '1' then 1000 else 0; }
     if v[1] != '.' { return 0; }
-    if v.len > 5 { return 0; } // at most three fractional digits
+    if v.len > 5 { return 0; }
     result : i64 = 0;
     scale : i64 = 100;
     i : i64 = 2;
@@ -155,15 +298,13 @@ quality :: (value: string) -> i64 {
     result
 }
 
-// Extract q from one comma-delimited coding item. Unknown parameters are
-// ignored; duplicate q parameters conservatively take the lowest value.
-itemQuality :: (item: string) -> i64 {
+private itemQuality :: (item: string) -> i64 {
     q : i64 = 1000;
     seen := false;
     at : i64 = 0;
     while at < item.len and item[at] != ';' { at += 1; }
     while at < item.len {
-        at += 1; // ';'
+        at += 1;
         while at < item.len and isOws(item[at]) { at += 1; }
         nameAt := at;
         while at < item.len and item[at] != '=' and item[at] != ';' { at += 1; }
@@ -184,8 +325,7 @@ itemQuality :: (item: string) -> i64 {
     q
 }
 
-// Parse all Accept-Encoding lines. Duplicate entries conservatively take the
-// lowest q so a later permissive occurrence cannot bypass an explicit refusal.
+// Duplicate entries take the lowest quality to preserve explicit refusals.
 parseAcceptEncoding :: (headers: string) -> AcceptEncoding {
     result: AcceptEncoding = .{ headers = headers };
     gzipQ:  i64 = -1;
@@ -229,8 +369,6 @@ parseAcceptEncoding :: (headers: string) -> AcceptEncoding {
         lineAt = lineEnd;
     }
 
-    // An absent field means no content coding was requested. An empty field
-    // likewise means identity only.
     result.found = found;
     if !found { return result; }
     if gzipQ < 0 { gzipQ = wildcardQ; }
@@ -245,8 +383,7 @@ parseAcceptEncoding :: (headers: string) -> AcceptEncoding {
     result
 }
 
-// Choose between supported automatic representations. An absent field means
-// the server keeps identity; equal positive weights prefer gzip, then deflate.
+// Equal positive weights prefer gzip; an absent field keeps identity.
 preferredEncoding :: (accept: *AcceptEncoding) -> Encoding {
     if !accept.found { return .identity; }
     if accept.gzipQ > 0 and accept.gzipQ >= accept.deflateQ and accept.gzipQ >= accept.identityQ { return .gzip; }
@@ -259,10 +396,7 @@ preferredEncoding :: (accept: *AcceptEncoding) -> Encoding {
 
 identityAcceptable :: (accept: *AcceptEncoding) -> bool { accept.identityQ > 0 }
 
-// Find an explicit q for an arbitrary content-coding token. This is used for
-// handler-supplied/stacked representations, which must be preserved only when
-// the requester accepts every coding in the stack.
-explicitQuality :: (headers: string, wanted: string) -> i64 {
+private explicitQuality :: (headers: string, wanted: string) -> i64 {
     best : i64 = -1;
     lineAt : i64 = 0;
     while lineAt < headers.len {
@@ -293,7 +427,7 @@ explicitQuality :: (headers: string, wanted: string) -> i64 {
     best
 }
 
-codingQuality :: (accept: *AcceptEncoding, coding: string) -> i64 {
+private codingQuality :: (accept: *AcceptEncoding, coding: string) -> i64 {
     if !accept.found { return 1000; }
     if ceAsciiIeq(coding, "identity") { return accept.identityQ; }
     if ceAsciiIeq(coding, "gzip") { return accept.gzipQ; }
@@ -304,7 +438,7 @@ codingQuality :: (accept: *AcceptEncoding, coding: string) -> i64 {
     0
 }
 
-isTchar :: (c: u8) -> bool {
+private isTchar :: (c: u8) -> bool {
     if c >= 'a' and c <= 'z' { return true; }
     if c >= 'A' and c <= 'Z' { return true; }
     if c >= '0' and c <= '9' { return true; }
@@ -313,7 +447,7 @@ isTchar :: (c: u8) -> bool {
         or c == '_' or c == '`' or c == '|' or c == '~'
 }
 
-validCodingToken :: (value: string) -> bool {
+private validCodingToken :: (value: string) -> bool {
     if value.len == 0 { return false; }
     i : i64 = 0;
     while i < value.len {
@@ -323,8 +457,6 @@ validCodingToken :: (value: string) -> bool {
     true
 }
 
-// Validate every Content-Encoding field/item and require every stacked coding
-// to be acceptable. No field means the identity representation.
 contentCodingAcceptable :: (accept: *AcceptEncoding, raw: string) -> bool {
     found := false;
     lineAt : i64 = 0;
@@ -353,12 +485,6 @@ contentCodingAcceptable :: (accept: *AcceptEncoding, raw: string) -> bool {
     true
 }
 
-// Compatibility wrapper for existing internal callers.
-select :: (headers: string) -> Encoding {
-    accept := parseAcceptEncoding(headers);
-    preferredEncoding(*accept)
-}
-
 parseContentEncoding :: (value: string) -> Encoding {
     v := trimOws(value);
     if !validCodingToken(v) { return .unacceptable; }
@@ -368,8 +494,6 @@ parseContentEncoding :: (value: string) -> Encoding {
     .unacceptable
 }
 
-// Conservative response allowlist: avoid wasting cycles recompressing data
-// formats that already carry their own compression.
 compressibleContentType :: (value: string) -> bool {
     end : i64 = 0;
     while end < value.len and value[end] != ';' { end += 1; }
@@ -391,12 +515,12 @@ encode :: (data: string, encoding: Encoding, level: i64, alloc: Allocator) -> (s
     raise .Unsupported;
 }
 
-EncoderStorage :: union {
+private EncoderStorage :: union {
     gzip: gzipCodec.Encoder;
     deflate: zlibCodec.Encoder;
 }
 
-Encoder :: struct {
+private Encoder :: struct {
     encoding: Encoding;
     storage: EncoderStorage;
 
@@ -433,7 +557,7 @@ Encoder :: struct {
     }
 }
 
-DecoderStorage :: union {
+private DecoderStorage :: union {
     gzip: gzipCodec.Decoder;
     deflate: zlibCodec.Decoder;
 }
@@ -475,12 +599,10 @@ Decoder :: struct {
     }
 }
 
-// Bounded adapter over a response producer. It retains at most one 16 KiB
-// source piece and the codec's fixed-size state, irrespective of total body
-// length. `next` fills one caller-provided output piece.
-SOURCE_PIECE :: 16384;
+// Source buffering stays bounded independently of the response body length.
+private SOURCE_PIECE :: 16384;
 
-EncodedProduceStatus :: enum {
+private EncodedProduceStatus :: enum {
     data;
     pending;
     done;
@@ -492,7 +614,7 @@ EncodedProduceStep :: struct {
 }
 
 EncodedProducer :: struct {
-    source: Producer;
+    source: StreamProducer;
     sourceCtx: usize;
     sourceOff: i64;
     input: [*]u8;
@@ -503,7 +625,7 @@ EncodedProducer :: struct {
     encoder: Encoder;
     alloc: Allocator;
 
-    init :: (encoding: Encoding, level: i64, source: Producer, sourceCtx: usize, alloc: Allocator) -> (EncodedProducer, !Error) {
+    init :: (encoding: Encoding, level: i64, source: StreamProducer, sourceCtx: usize, alloc: Allocator) -> (EncodedProducer, !Error) {
         input := alloc.allocBytes(SOURCE_PIECE);
         if input == null { raise .AllocationFailed; }
         encoder := Encoder.init(encoding, level, alloc) catch |e| {
@@ -524,9 +646,7 @@ EncodedProducer :: struct {
         }
     }
 
-    // Perform at most one bounded source pull OR one codec drive. `pending`
-    // means forward progress without output and is never confused with EOF;
-    // event-loop callers yield before asking for another step.
+    // pending makes progress without output; event-loop callers yield before retrying.
     next :: (self: *EncodedProducer, output: string) -> (EncodedProduceStep, !Error) {
         if self.finished { return EncodedProduceStep{ status = EncodedProduceStatus.done }; }
         if self.inputAt < self.inputLen {
@@ -566,7 +686,7 @@ EncodedProducer :: struct {
     }
 }
 
-createEncodedProducer :: (encoding: Encoding, level: i64, source: Producer, sourceCtx: usize, alloc: Allocator) -> *EncodedProducer {
+createEncodedProducer :: (encoding: Encoding, level: i64, source: StreamProducer, sourceCtx: usize, alloc: Allocator) -> *EncodedProducer {
     result := alloc.create(EncodedProducer);
     if result == null { return null; }
     state := EncodedProducer.init(encoding, level, source, sourceCtx, alloc) catch {
@@ -581,4 +701,226 @@ destroyEncodedProducer :: (state: *EncodedProducer, alloc: Allocator) {
     if state == null { return; }
     state.deinit();
     alloc.deallocBytes(state);
+}
+
+private OUT_CHAN_CAP :: 65536;
+
+private OutChanTake :: enum {
+    data;
+    pending;
+    eof;
+    producerFault;
+}
+
+// A full channel blocks the worker; an empty channel makes the next feed wake
+// the loop. Server.close aborts feeders before joining the pool.
+OutChan :: struct {
+    mu: thread.Mutex = .{};
+    cv: thread.Cond = .{};
+    buf: [*]u8 = null;
+    cap: i64 = 0;
+    len: i64 = 0;
+    eof: bool = false;
+    fault: bool = false;
+    producerFault: bool = false;
+    hungry: bool = false;
+    // The worker owns the initial reference; a queued completion retains one.
+    refs: i64 = 1;
+    alloc: Allocator;
+    lp: event.Loop = .{};
+
+    feedAll :: (self: *OutChan, src: [*]u8, n: i64) -> bool {
+        off : i64 = 0;
+        while off < n {
+            self.mu.lock();
+            while self.cap - self.len == 0 and !self.fault {
+                self.cv.wait(*self.mu);
+            }
+            if self.fault { self.mu.unlock(); return false; }
+            space := self.cap - self.len;
+            rem := n - off;
+            take := if rem < space then rem else space;
+            clib.memcpy(*self.buf[self.len], *src[off], take);
+            self.len += take;
+            off += take;
+            w := self.hungry;
+            if w { self.hungry = false; }
+            self.mu.unlock();
+            if w { self.lp.wake(); }
+        }
+        return true;
+    }
+
+    finishEof :: (self: *OutChan) {
+        self.mu.lock();
+        self.eof = true;
+        w := self.hungry;
+        if w { self.hungry = false; }
+        self.mu.unlock();
+        if w { self.lp.wake(); }
+    }
+
+    finishFault :: (self: *OutChan) {
+        self.mu.lock();
+        self.producerFault = true;
+        w := self.hungry;
+        if w { self.hungry = false; }
+        self.mu.unlock();
+        if w { self.lp.wake(); }
+    }
+
+    take :: (self: *OutChan, dst: [*]u8, want: i64) -> (i64, OutChanTake) {
+        self.mu.lock();
+        n := if want < self.len then want else self.len;
+        if n > 0 {
+            clib.memcpy(dst, self.buf, n);
+            rest := self.len - n;
+            if rest > 0 { clib.memmove(self.buf, *self.buf[n], rest); }
+            self.len = rest;
+            self.cv.signal();
+        }
+        status := OutChanTake.data;
+        if n == 0 {
+            if self.producerFault { status = .producerFault; }
+            else if self.eof { status = .eof; }
+            else { status = .pending; self.hungry = true; }
+        }
+        self.mu.unlock();
+        return n, status;
+    }
+
+    abort :: (self: *OutChan) {
+        self.mu.lock();
+        self.fault = true;
+        self.cv.broadcast();
+        self.mu.unlock();
+    }
+
+    retain :: (self: *OutChan) {
+        self.mu.lock();
+        self.refs += 1;
+        self.mu.unlock();
+    }
+
+    release :: (self: *OutChan) {
+        self.mu.lock();
+        self.refs -= 1;
+        last := self.refs == 0;
+        self.mu.unlock();
+        if last {
+            self.mu.destroy();
+            self.cv.destroy();
+            a := self.alloc;
+            if self.buf != null { a.deallocBytes(self.buf); }
+            a.deallocBytes(self);
+        }
+    }
+}
+
+createOutChan :: (alloc: Allocator, lp: event.Loop) -> *OutChan {
+    result := alloc.create(OutChan);
+    if result == null { return null; }
+    result.* = OutChan{ alloc = alloc, lp = lp };
+    if !result.mu.setup() { alloc.deallocBytes(result); return null; }
+    if !result.cv.setup() {
+        result.mu.destroy();
+        alloc.deallocBytes(result);
+        return null;
+    }
+    bytes := alloc.alloc(u8, OUT_CHAN_CAP);
+    if bytes.ptr == null {
+        result.cv.destroy();
+        result.mu.destroy();
+        alloc.deallocBytes(result);
+        return null;
+    }
+    result.buf = bytes.ptr;
+    result.cap = OUT_CHAN_CAP;
+    result
+}
+
+OutBytes :: struct {
+    buf: [*]u8 = null;
+    len: i64 = 0;
+}
+
+private HDR_CL    : string : "\r\nContent-Length: ";
+private HDR_TE    : string : "\r\nTransfer-Encoding: chunked";
+private HDR_CT    : string : "\r\nContent-Type: ";
+private HDR_DATE  : string : "\r\nDate: ";
+private HDR_SRV   : string : "\r\nServer: ";
+private HDR_KA    : string : "\r\nConnection: keep-alive\r\n";
+private HDR_CLOSE : string : "\r\nConnection: close\r\n";
+private HTTP_PFX  : string : "HTTP/1.1 ";
+
+private putStr :: (dst: [*]u8, off: i64, s: string) -> i64 {
+    clib.memcpy(*dst[off], s.ptr, s.len);
+    return off + s.len;
+}
+
+respHeadLen :: (resp: *Response, keep: bool, date: string, serverName: string, noBodyStatus: bool, chunked: bool) -> i64 {
+    sl := statusLineFor(resp.status);
+    n : i64 = if sl.len > 0 then sl.len
+              else HTTP_PFX.len + decLen(resp.status) + 1 + reasonFor(resp.status).len;
+    if chunked { n += HDR_TE.len; }
+    else if !noBodyStatus { n += HDR_CL.len + decLen(resp.body.len); }
+    n += HDR_CT.len + resp.contentType.len;
+    n += HDR_DATE.len + date.len;
+    if serverName.len > 0 { n += HDR_SRV.len + serverName.len; }
+    n += if keep then HDR_KA.len else HDR_CLOSE.len;
+    n += resp.extraHeaders.len;
+    return n + 2;
+}
+
+respHeadWrite :: (resp: *Response, keep: bool, date: string, serverName: string, noBodyStatus: bool, chunked: bool, dst: [*]u8) -> i64 {
+    off : i64 = 0;
+    sl := statusLineFor(resp.status);
+    if sl.len > 0 { off = putStr(dst, off, sl); }
+    else {
+        off = putStr(dst, off, HTTP_PFX);
+        off += decInto(resp.status, *dst[off]);
+        dst[off] = ' ';
+        off += 1;
+        off = putStr(dst, off, reasonFor(resp.status));
+    }
+    if chunked { off = putStr(dst, off, HDR_TE); }
+    else if !noBodyStatus {
+        off = putStr(dst, off, HDR_CL);
+        off += decInto(resp.body.len, *dst[off]);
+    }
+    off = putStr(dst, off, HDR_CT);
+    off = putStr(dst, off, resp.contentType);
+    off = putStr(dst, off, HDR_DATE);
+    off = putStr(dst, off, date);
+    if serverName.len > 0 {
+        off = putStr(dst, off, HDR_SRV);
+        off = putStr(dst, off, serverName);
+    }
+    off = putStr(dst, off, if keep then HDR_KA else HDR_CLOSE);
+    if resp.extraHeaders.len > 0 { off = putStr(dst, off, resp.extraHeaders); }
+    dst[off] = '\r';
+    dst[off + 1] = '\n';
+    return off + 2;
+}
+
+// HEAD retains the GET Content-Length but omits the body; 204/304 omit both.
+serializeBytes :: (resp: *Response, keep: bool, alloc: Allocator, headOnly: bool, date: string, serverName: string) -> OutBytes {
+    noBodyStatus := resp.status == 204 or resp.status == 304;
+    hl := respHeadLen(resp, keep, date, serverName, noBodyStatus, false);
+    bodyLen : i64 = if headOnly or noBodyStatus then 0 else resp.body.len;
+    raw := alloc.allocBytes(hl + bodyLen);
+    if raw == null { return .{}; }
+    buf : [*]u8 = raw.([*]u8);
+    w := respHeadWrite(resp, keep, date, serverName, noBodyStatus, false, buf);
+    if bodyLen > 0 { clib.memcpy(*buf[w], resp.body.ptr, bodyLen); }
+    return OutBytes{ buf = buf, len = w + bodyLen };
+}
+
+serializeChunkedHead :: (resp: *Response, keep: bool, alloc: Allocator, date: string, serverName: string) -> OutBytes {
+    hl := respHeadLen(resp, keep, date, serverName, false, true);
+    raw := alloc.allocBytes(hl);
+    if raw == null { return .{}; }
+    buf : [*]u8 = raw.([*]u8);
+    w := respHeadWrite(resp, keep, date, serverName, false, true, buf);
+    return OutBytes{ buf = buf, len = w };
 }

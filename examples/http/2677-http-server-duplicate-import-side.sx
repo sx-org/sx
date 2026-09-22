@@ -1,1 +1,1 @@
-http :: @import "modules/std/http.sx";
+@import "modules/std/http.sx";

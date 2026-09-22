@@ -31,7 +31,7 @@
 @import "modules/std.sx";
 socket :: @import "modules/std/socket.sx";
 fs     :: @import "modules/std/fs.sx";
-http   :: @import "modules/std/http.sx";
+@import "modules/std/http.sx";
 
 PORT_A :: 19019;
 PORT_B :: 19020;
