@@ -37,10 +37,10 @@ main :: () -> i32 {
     // what it never made, so both ledgers reading zero is the contract. The
     // reporting stays outside the `away` region: formatting allocates through
     // the ambient allocator, and these counts are the carriers' alone.
-    home := TrackingAllocator.init(context.allocator);
-    away := TrackingAllocator.init(context.allocator);
+    home := mem.TrackingAllocator.init(context.allocator);
+    away := mem.TrackingAllocator.init(context.allocator);
     // A tree is a frame's memory rather than a carrier's, so trees build here.
-    scratch := Arena.init(context.allocator, 4096);
+    scratch := mem.Arena.init(context.allocator, 4096);
 
     // Identity: five sites tally past the first buffer the list takes.
     sites := 0;
@@ -125,7 +125,7 @@ main :: () -> i32 {
         push .{ allocator = scratch } {
             tree : View = vstack(0.0) {
                 tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {});
-                focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 }, closure(|ev: *KeyEvent|_{ hit } {
+                focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 }, mem.closure(|ev: *KeyEvent|_{ hit } {
                     hit.* += 1;
                 }))
             };
@@ -155,8 +155,8 @@ main :: () -> i32 {
     // A `discard` is where a snapshot's allocator moves: it lets the buffers go
     // first, so the fills after it come from the arena it names.
     stamps := Identity.init(home);
-    first := Arena.init(home, 2048);
-    second := Arena.init(home, 2048);
+    first := mem.Arena.init(home, 2048);
+    second := mem.Arena.init(home, 2048);
     moved := CommittedUiSnapshot.init(first);
     untouched := true;
     push .{ composeUi = *stamps } {
@@ -189,12 +189,12 @@ main :: () -> i32 {
         app := UiRoot.init(Size{ width = 60.0, height = 40.0 }, home);
         builds := *built;
         seen := *taken;
-        spin := FrameLoop.init(*app, closure(||_{ builds, seen } -> View {
+        spin := FrameLoop.init(*app, mem.closure(||_{ builds, seen } -> View {
             builds.* += 1;
             n := useState(i64, 0);
             n.set(n.get() + 1);
             v : View = vstack(0.0) {
-                tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, closure(||_{ seen } {
+                tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, mem.closure(||_{ seen } {
                     seen.* += 1;
                 }))
             };

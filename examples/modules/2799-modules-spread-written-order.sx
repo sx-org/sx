@@ -1,0 +1,6 @@
+@import "2799-modules-spread-written-order/other.sx";
+pool :: scope { Choice :: scope { value :: 1; } }
+..pool;
+..Choice;
+Alias :: Choice;
+main :: () {}

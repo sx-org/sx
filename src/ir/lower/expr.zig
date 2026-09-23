@@ -10,6 +10,7 @@ const unescape = @import("../../unescape.zig");
 const literal_fields = @import("../../literal_fields.zig");
 const contracts = @import("../../contracts.zig");
 const errors = @import("../../errors.zig");
+const imports_mod = @import("../../imports.zig");
 const TypeResolver = @import("../type_resolver.zig").TypeResolver;
 const CallResolver = @import("../calls.zig").CallResolver;
 
@@ -291,9 +292,9 @@ fn inferGenericLiteral(self: *Lowering, sl: *const ast.StructLiteral, tmpl: *con
                 if (self.matchTypeParam(node, tp.name)) generic = true;
             }
             if (!generic) {
-                const saved_src = self.current_source_file;
-                defer self.setCurrentSourceFile(saved_src);
-                if (tmpl.source_file) |sf| self.setCurrentSourceFile(sf);
+                const saved_src = self.lexicalContext();
+                defer self.restoreLexicalContext(saved_src);
+                self.setCurrentEnvironment(self.declarationEnvironment(.{ .struct_decl = tmpl.decl }, tmpl.source_file));
                 target = self.resolveTypeWithBindings(node);
             }
         }
@@ -425,7 +426,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
                     if (optional_iface or (!t.isBuiltin() and self.module.types.get(t) == .optional)) {
                         d.addHelpFmt(id, span, null, "absence of '?{s}' is spelled 'null'", .{shown});
                     } else {
-                        d.addHelpFmt(id, span, null, "bind a named value, or write it through 'Allocator.make'", .{});
+                        d.addHelpFmt(id, span, null, "bind a named value, or write it through 'mem.make'", .{});
                     }
                 }
                 return self.builder.constUndef(t);
@@ -463,7 +464,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
             if (self.qualifiedTypeName(fa.object)) |path| {
                 defer self.alloc.free(path);
                 switch (self.qualifiedMemberVerdict(path)) {
-                    .selected => |sel| resolved = switch (self.selectNominalLeaf(sel.member, sel.target.target_module_path, false)) {
+                    .selected => |sel| resolved = switch (self.selectNominalLeaf(sel.member, self.program_index.declaration(sel.author.id).environment.?, false)) {
                         .resolved => |ty| ty,
                         else => .unresolved,
                     },
@@ -486,7 +487,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
                 if (obj_name) |on| {
                     const from = self.current_source_file orelse self.main_file;
                     if (from) |f| {
-                        resolved = switch (self.selectNominalLeaf(on, f, false)) {
+                        resolved = switch (self.selectNominalLeaf(on, self.environmentForSource(f).?, false)) {
                             .resolved => |ty| ty,
                             else => .unresolved,
                         };
@@ -568,7 +569,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         // see owns its name over a same-name generic template imported flat.
         const concrete = blk: {
             const from = self.current_source_file orelse self.main_file orelse break :blk false;
-            break :blk switch (self.selectNominalLeaf(name, from, false)) {
+            break :blk switch (self.selectNominalLeaf(name, self.environmentForSource(from).?, false)) {
                 .resolved => |lt| self.hasPlainStructAuthor(lt),
                 else => false,
             };
@@ -1420,9 +1421,9 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
                     const synth = self.alloc.create(Node) catch null;
                     if (synth) |n| {
                         n.* = .{ .span = span, .data = .{ .identifier = .{ .name = sel.member } } };
-                        const saved_src = self.current_source_file;
-                        self.setCurrentSourceFile(sel.target.target_module_path);
-                        defer self.setCurrentSourceFile(saved_src);
+                        const saved_src = self.lexicalContext();
+                        self.setAuthorContext(sel.author.id);
+                        defer self.restoreLexicalContext(saved_src);
                         return self.lowerExpr(n);
                     }
                 },
@@ -1434,7 +1435,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
                 },
                 .ambiguous => |alias| {
                     if (self.diagnostics) |d|
-                        d.addFmt(.err, span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{alias});
+                        alias.diagnose(d, span);
                     return Ref.none;
                 },
                 .not_qualified => {},
@@ -1453,8 +1454,8 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
         if (!self.identifierBindsVisibleValue(root)) {
             switch (self.qualifiedMemberVerdict(object_path)) {
                 .selected => |sel| {
-                    const saved_global_src = self.current_source_file;
-                    self.setCurrentSourceFile(sel.target.target_module_path);
+                    const saved_global_src = self.lexicalContext();
+                    self.setAuthorContext(sel.author.id);
                     var global_info: ?program_index_mod.GlobalInfo = null;
                     if (self.program_index.lookup(.global, sel.member)) |fallback| {
                         switch (self.selectGlobalAuthor(sel.member)) {
@@ -1463,16 +1464,16 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
                             else => {},
                         }
                     }
-                    self.setCurrentSourceFile(saved_global_src);
+                    self.restoreLexicalContext(saved_global_src);
                     if (global_info) |gi| {
                         const value = self.builder.emit(.{ .global_get = gi.id }, gi.ty);
                         return self.lowerFieldAccessOnType(value, gi.ty, fa.field, span);
                     }
 
-                    const saved_src = self.current_source_file;
-                    self.setCurrentSourceFile(sel.target.target_module_path);
+                    const saved_src = self.lexicalContext();
+                    self.setAuthorContext(sel.author.id);
                     const ty = self.resolveNominalLeaf(sel.member, false, span);
-                    self.setCurrentSourceFile(saved_src);
+                    self.restoreLexicalContext(saved_src);
                     if (ty != .unresolved and !ty.isBuiltin()) {
                         const info = self.module.types.get(ty);
                         if (info == .@"enum") {
@@ -1492,9 +1493,9 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
                     if (synth) |n| {
                         n.* = .{ .span = fa.object.span, .data = .{ .identifier = .{ .name = sel.member } } };
                         const stripped = ast.FieldAccess{ .object = n, .field = fa.field, .is_optional = fa.is_optional };
-                        const saved_member_src = self.current_source_file;
-                        self.setCurrentSourceFile(sel.target.target_module_path);
-                        defer self.setCurrentSourceFile(saved_member_src);
+                        const saved_member_src = self.lexicalContext();
+                        self.setAuthorContext(sel.author.id);
+                        defer self.restoreLexicalContext(saved_member_src);
                         return self.lowerFieldAccess(&stripped, span);
                     }
                 },
@@ -1506,7 +1507,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
                 },
                 .ambiguous => |alias| {
                     if (self.diagnostics) |d|
-                        d.addFmt(.err, fa.object.span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{alias});
+                        alias.diagnose(d, fa.object.span);
                     return Ref.none;
                 },
                 .not_qualified => {},
@@ -1600,7 +1601,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
         const head_name = fa.object.data.identifier.name;
         var author_tracked = false;
         if (self.current_source_file orelse self.main_file) |from| {
-            switch (self.selectNominalLeaf(head_name, from, false)) {
+            switch (self.selectNominalLeaf(head_name, self.environmentForSource(from).?, false)) {
                 .resolved => |head_ty| {
                     if (!head_ty.isBuiltin() and self.plain_struct_authors.contains(head_ty)) {
                         author_tracked = true;
@@ -3703,13 +3704,16 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
     const authored_default = self.authored_call_defaults.get(node);
     const saved_scope_for_default = self.scope;
     const saved_default_call_site = self.active_default_call_site;
-    if (authored_default) |call_site| {
+    const saved_default_context = self.lexicalContext();
+    if (authored_default) |dflt| {
         self.scope = null;
-        self.active_default_call_site = call_site;
+        self.active_default_call_site = dflt.site;
+        self.setCurrentEnvironment(dflt.environment);
     }
     defer if (authored_default != null) {
         self.scope = saved_scope_for_default;
         self.active_default_call_site = saved_default_call_site;
+        self.restoreLexicalContext(saved_default_context);
     };
 
     // Stamp this node's source span onto the instructions it emits (it
@@ -3724,6 +3728,12 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
     // the body's defining-module pin for the whole recursive lowering.
     const author = Lowering.AuthorScope.enter(self, node);
     defer author.leave();
+    if (self.isScopeDesignator(node)) {
+        if (self.diagnostics) |d| d.add(.err, "a scope is not a value", node.span);
+        const name = imports_mod.aliasPath(self.alloc, node).?;
+        defer self.alloc.free(name);
+        return self.emitPlaceholder(name);
+    }
     const result = lowerExprInner(self, node);
     const ty = self.builder.getRefType(result);
     const produces_failable = blk: {
@@ -3956,7 +3966,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                 // pick. `.none` after a visible name is the registration-only
                 // author (no per-source partition) — emit its global value.
                 switch (self.selectModuleConst(id.name)) {
-                    .resolved => |sel| break :blk self.emitModuleConst(id.name, sel.info, sel.source),
+                    .resolved => |sel| break :blk self.emitModuleConst(id.name, sel.info, sel.environment),
                     // Own const author with no materialized value (unsupported
                     // shape, e.g. an array const) — fall through; the tail of
                     // identifier lowering diagnoses it as unresolved.
@@ -3980,7 +3990,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                 std.mem.eql(u8, eff_fn_name, id.name) and
                 (if (self.scope) |scope| scope.lookup(id.name) == null else true) and
                 self.current_source_file != null and
-                self.selectCallableAuthor(id.name, self.current_source_file.?, .plain_free) == .func;
+                self.selectCallableAuthor(id.name, self.environmentForSource(self.current_source_file.?).?, .non_generic) == .func;
             if (self.program_index.contains(.function, eff_fn_name) or fn_author_only) {
                 // Visibility check only for user-typed bare names (id.name
                 // == eff_fn_name) without a UFCS alias. Mangled local-
@@ -4001,7 +4011,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                 // as Any.
                 if (self.target_type == .any or self.target_type == .type_value) {
                     const fd_any: ?*const ast.FnDecl = self.program_index.lookup(.function, eff_fn_name) orelse fd_blk: {
-                        switch (self.selectCallableAuthor(id.name, self.current_source_file.?, .plain_free)) {
+                        switch (self.selectCallableAuthor(id.name, self.environmentForSource(self.current_source_file.?).?, .non_generic)) {
                             .func => |sf| break :fd_blk sf.decl,
                             else => break :fd_blk null,
                         }
@@ -4031,7 +4041,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                         (if (self.scope) |scope| scope.lookup(id.name) == null else true))
                     {
                         if (self.current_source_file) |caller_file| {
-                            switch (self.selectCallableAuthor(id.name, caller_file, .plain_free)) {
+                            switch (self.selectCallableAuthor(id.name, self.environmentForSource(caller_file).?, .non_generic)) {
                                 .func => |sf| {
                                     var selected = sf;
                                     break :blk_fv self.selectedFuncId(&selected);

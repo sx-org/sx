@@ -1,23 +1,7 @@
-// std.http — the sched.sx-backed FiberRunner provider.
-//
-// Opt-in: importing this module compiles the M:1 fiber runtime (std/sched
-// — aarch64-pinned context-switch asm). A fiber-handler server does:
-//
-//     fs :: @import "modules/std/http/fiber_sched.sx";
-//     …
-//     runner := fs.SchedRunner.init();          // value, allocator-style
-//     cfg : http.Config = .{ …, fibers = runner };
-//     srv, e := http.Server.init(cfg, handler, ctx);
-//     … srv.run() / tick loop … srv.close();
-//     runner.deinit();                          // caller owns the runner
-//
-// The runner (and the allocator its Scheduler captured at init) must
-// OUTLIVE the Server. drive() maps to Scheduler.poll(0), which drains the
-// ready queue and never blocks; a handler that used the scheduler's own
-// fd-blocking would make poll bail loudly (fiber handlers do their I/O
-// waiting through req.readBody — the server's loop owns the fds).
-@import "modules/std/http/fiber.sx";
-sched :: @import "modules/std/sched.sx";
+// The scheduler uses aarch64 context-switch assembly and is opt-in.
+// The runner and its allocator must outlive the HTTP server.
+@import "modules/std/http.sx";
+private sched :: @import "modules/std/sched.sx";
 
 SchedRunner :: struct {
     s: sched.Scheduler;
@@ -37,7 +21,7 @@ SchedRunner :: struct {
     }
 }
 
-impl FiberRunner for SchedRunner {
+impl http.FiberRunner for SchedRunner {
     spawn :: (self: *SchedRunner, entry: *void, arg: *void) -> usize {
         f := self.s.spawn(||_{ entry, arg } {
             entryFn := @reinterpret((*void) -> void, entry);

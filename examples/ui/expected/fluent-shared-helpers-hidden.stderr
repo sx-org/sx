@@ -1,0 +1,11 @@
+error: namespace 'fluent' has no member 'paintBox'
+  --> examples/ui/fluent-shared-helpers-hidden.sx:6:5
+   |
+ 6 |     fluent.paintBox(*rc, fluent.Frame.make(0, 0, 10, 10), fluent.Color.rgb(1, 2, 3), 0.0, null);
+   |     ^^^^^^^^^^^^^^^
+
+error: namespace 'fluent' has no member 'siteHasher'
+  --> examples/ui/fluent-shared-helpers-hidden.sx:7:5
+   |
+ 7 |     fluent.siteHasher(fluent.SiteId{}, "probe", 0);
+   |     ^^^^^^^^^^^^^^^^^

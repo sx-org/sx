@@ -13,7 +13,7 @@ report :: (label: string, ok: bool) {
 }
 
 main :: () {
-    gpa := GPA.init();
+    gpa := mem.GPA.init();
 
     // ── basic usage: put 0..5, iterate (sum keys), get each back ──────────
     m : HashMap(i64, i64) = .{};

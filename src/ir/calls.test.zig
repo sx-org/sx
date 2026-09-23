@@ -398,18 +398,21 @@ test "plan: free-function UFCS prepends receiver, distinct from namespace_fn" {
     var l = Lowering.init(&module);
     const cr = CallResolver{ .l = &l };
 
-    // struct Counter, and a FREE ufcs function `bump :: ufcs (c: Counter) ->
-    // i32` — NOT registered as `Counter.bump`, so it can only be reached via
-    // UFCS. Dot-dispatch is OPT-IN: the fn carries `is_ufcs` and is
-    // registered in `fn_ast_map`, where the plan's opt-in gate reads it.
+    const table = l.program_index.declarations();
+    l.program_index.decl_table = table;
+    const env = try table.internEnvironment("main.sx", &.{});
+    l.setCurrentEnvironment(env);
+
     const counter = module.types.intern(.{ .@"struct" = .{ .name = module.types.internString("Counter"), .fields = &.{} } });
     const c_param = ast.Param{ .name = "c", .name_span = .{ .start = 0, .end = 0 }, .type_expr = typeExpr(alloc, "Counter") };
     const params = [_]ast.Param{c_param};
     const ret_stmt = mk(alloc, .{ .return_stmt = .{ .value = intLit(alloc, 7) } });
     const body = mk(alloc, .{ .block = .{ .stmts = &[_]*Node{ret_stmt} } });
-    const fd = ast.FnDecl{ .name = "bump", .params = &params, .return_type = typeExpr(alloc, "i32"), .body = body, .is_ufcs = true };
-    l.program_index.registerFunction("bump", &fd, null);
-    l.lowerFunction(&fd, "bump", false);
+    const function = mk(alloc, .{ .fn_decl = .{ .name = "bump", .params = &params, .return_type = typeExpr(alloc, "i32"), .body = body, .is_ufcs = true } });
+    try std.testing.expect(try table.claim(env, function));
+    const fd = &function.data.fn_decl;
+    l.program_index.registerFunction("bump", fd, env);
+    l.lowerFunction(fd, "bump", false);
     const fid = l.resolveFuncByName("bump").?;
     module.functions.items[@intFromEnum(fid)].has_implicit_ctx = true;
 
@@ -438,13 +441,26 @@ test "plan: qualified namespace function" {
     var l = Lowering.init(&module);
     const cr = CallResolver{ .l = &l };
 
-    // mathlib.square :: () -> i64  — registered under its qualified name, lazy.
-    const fd = ast.FnDecl{ .name = "mathlib.square", .params = &.{}, .return_type = typeExpr(alloc, "i64"), .body = emptyBody(alloc) };
-    l.program_index.registerFunction("mathlib.square", &fd, null);
+    const table = l.program_index.declarations();
+    l.program_index.decl_table = table;
+    const env = try table.internEnvironment("main.sx", &.{});
+    const target = try table.internEnvironment("lib.sx", &.{});
+    const function = mk(alloc, .{ .fn_decl = .{ .name = "square", .params = &.{}, .return_type = typeExpr(alloc, "i64"), .body = emptyBody(alloc) } });
+    try std.testing.expect(try table.claim(target, function));
+    const ns = mk(alloc, .{ .namespace_decl = .{
+        .name = "mathlib",
+        .target_module_path = "lib.sx",
+        .decls = &.{function},
+        .own_decls = &.{function},
+    } });
+    try std.testing.expect(try table.claim(env, ns));
+    l.setCurrentEnvironment(env);
+    l.program_index.registerFunction("square", &function.data.fn_decl, target);
 
     const call = callNode(alloc, fieldAccess(alloc, ident(alloc, "mathlib"), "square"), &.{});
     const p = cr.plan(&call.data.call);
     try std.testing.expectEqual(CallPlan.Kind.namespace_fn, p.kind);
-    try std.testing.expectEqualStrings("mathlib.square", p.target.named);
+    try std.testing.expectEqual(&function.data.fn_decl, p.target.selected.decl);
+    try std.testing.expect(!l.program_index.contains(.function, "mathlib.square"));
     try std.testing.expectEqual(TypeId.i64, p.return_type);
 }

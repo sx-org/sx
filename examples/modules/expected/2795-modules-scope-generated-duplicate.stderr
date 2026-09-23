@@ -1,0 +1,5 @@
+error: duplicate top-level declaration 'value'
+  --> examples/modules/2795-modules-scope-generated-duplicate.sx:2:26
+   |
+ 2 |     generated :: scope { value :: 1; }
+   |                          ^^^^^^^^^^^

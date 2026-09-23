@@ -1,0 +1,8 @@
+@import "modules/std.sx";
+direct :: @import "self-scoped-c/direct.sx";
+
+main :: () -> i32 {
+    fd: c.Fd = direct.writeDirect(.stdout);
+    c.write(fd, "std\n".ptr, 4);
+    0
+}

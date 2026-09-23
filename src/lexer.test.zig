@@ -654,3 +654,12 @@ test "an unbalanced closer saturates rather than underflowing" {
     //              }  }  a  {  eof
     try std.testing.expectEqualSlices(u32, &.{ 0, 0, 0, 0, 1 }, tl.depths);
 }
+
+test "scope is a keyword while its raw spelling is an identifier" {
+    var tl = try lexT("scope `scope x.scope");
+    defer deinitT(&tl);
+    try std.testing.expectEqualSlices(Tag, &.{ .kw_scope, .identifier, .identifier, .dot, .kw_scope, .eof }, tl.tags);
+    try std.testing.expect(tl.flags[1].is_raw);
+    try std.testing.expect(Tag.kw_scope.isKeyword());
+    try std.testing.expectEqual(Tag.Family.keyword, Tag.kw_scope.family());
+}

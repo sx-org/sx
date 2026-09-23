@@ -33,6 +33,7 @@ pub const TypeResolver = struct {
     types: *TypeTable,
     diagnostics: ?*errors.DiagnosticList,
     index: *ProgramIndex,
+    environment: ?@import("../imports.zig").EnvironmentId = null,
 
     /// Every builtin whose spelling is a fixed keyword. The integer aliases are
     /// NOT here — `types.lookupIntAlias` owns them, so a spelling and a width
@@ -271,36 +272,37 @@ pub const TypeResolver = struct {
     /// (`false`) and resolves to the builtin int type. The string-prefix
     /// recursion always passes `false`: the inner names (`*T`/`?T`) are bare,
     /// never raw.
-    pub fn resolveNamed(name: []const u8, table: *TypeTable, facts: ?*const ProgramIndex, skip_builtin: bool) TypeId {
+    pub fn resolveNamed(name: []const u8, table: *TypeTable, facts: ?*const ProgramIndex, environment: ?@import("../imports.zig").EnvironmentId, skip_builtin: bool) TypeId {
         if (!skip_builtin) {
             if (resolvePrimitive(name)) |id| return id;
         }
 
         // Many-pointer: [*]T.
         if (name.len >= 4 and name[0] == '[' and name[1] == '*' and name[2] == ']') {
-            return table.manyPtrTo(resolveNamed(name[3..], table, facts, false));
+            return table.manyPtrTo(resolveNamed(name[3..], table, facts, environment, false));
         }
         // Pointer: *T.
         if (name.len >= 2 and name[0] == '*') {
-            return table.ptrTo(resolveNamed(name[1..], table, facts, false));
+            return table.ptrTo(resolveNamed(name[1..], table, facts, environment, false));
         }
         // Optional: ?T.
         if (name.len >= 2 and name[0] == '?') {
-            return table.optionalOf(resolveNamed(name[1..], table, facts, false));
+            return table.optionalOf(resolveNamed(name[1..], table, facts, environment, false));
         }
-        // Named struct/enum/union — already-registered wins, then alias, then
-        // a fresh empty-struct stub for an as-yet-unregistered name.
+        if (facts) |index| if (environment) |env| {
+            if (index.lookupInEnvironment(.type_alias, env, name)) |ty| return ty;
+        };
         const name_id = table.internString(name);
         if (table.findByName(name_id)) |existing| return existing;
-        if (facts) |index| {
+        if (environment == null) if (facts) |index| {
             if (index.lookup(.type_alias, name)) |alias_ty| return alias_ty;
-        }
+        };
         return table.intern(.{ .@"struct" = .{ .name = name_id, .fields = &.{} } });
     }
 
     /// Resolve a bare type name through the declaration facts. `skip_builtin`
     /// carries the backtick raw escape — see `resolveNamed`.
     pub fn resolveName(self: TypeResolver, name: []const u8, skip_builtin: bool) TypeId {
-        return resolveNamed(name, self.types, self.index, skip_builtin);
+        return resolveNamed(name, self.types, self.index, self.environment, skip_builtin);
     }
 };

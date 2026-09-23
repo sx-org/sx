@@ -32,7 +32,7 @@
 @import "modules/std/core.sx";
 @import "modules/std/hash.sx";
 @import "modules/std/mem.sx";
-c :: @import "modules/std/c.sx";
+@import "modules/std/c.sx";
 // `TypeInfo` is declared in core.sx; `@typeInfo`'s result type needs it in scope.
 
 // ── metadata byte (Zig-faithful) ─────────────────────────────────────
@@ -149,9 +149,9 @@ HashMap :: struct ($K: Type, $V: Type) {
         oldVals := self.values;
         oldCap  := self.cap;
 
-        nm : [*]u8 = alloc.alloc(u8, newCap).ptr;
-        nk : [*]K  = alloc.alloc(K, newCap).ptr;
-        nv : [*]V  = alloc.alloc(V, newCap).ptr;
+        nm : [*]u8 = mem.alloc(alloc, u8, newCap).ptr;
+        nk : [*]K  = mem.alloc(alloc, K, newCap).ptr;
+        nv : [*]V  = mem.alloc(alloc, V, newCap).ptr;
         c.memset(nm, 0, newCap);              // every bucket -> META_FREE
 
         self.metadata   = nm;
@@ -380,9 +380,9 @@ HashMap :: struct ($K: Type, $V: Type) {
     clone :: (self: *HashMap(K, V), alloc: Allocator = context.allocator) -> HashMap(K, V) {
         r : HashMap(K, V) = .{};
         if self.cap == 0 { return r; }
-        nm : [*]u8 = alloc.alloc(u8, self.cap).ptr;
-        nk : [*]K  = alloc.alloc(K, self.cap).ptr;
-        nv : [*]V  = alloc.alloc(V, self.cap).ptr;
+        nm : [*]u8 = mem.alloc(alloc, u8, self.cap).ptr;
+        nk : [*]K  = mem.alloc(alloc, K, self.cap).ptr;
+        nv : [*]V  = mem.alloc(alloc, V, self.cap).ptr;
         c.memcpy(nm, self.metadata, self.cap);
         c.memcpy(nk, self.keys,   self.cap * @sizeOf(K));
         c.memcpy(nv, self.values, self.cap * @sizeOf(V));
@@ -527,7 +527,7 @@ IndexMap :: struct ($K: Type, $V: Type) {
         if self.ecap >= n { return; }
         newCap := if self.ecap == 0 then 8 else self.ecap;
         while newCap < n { newCap = newCap * 2; }
-        np : [*]IMEntry(K, V) = alloc.alloc(IMEntry(K, V), newCap).ptr;
+        np : [*]IMEntry(K, V) = mem.alloc(alloc, IMEntry(K, V), newCap).ptr;
         if self.ecount > 0 { c.memcpy(np, self.entries, self.ecount * @sizeOf(IMEntry(K, V))); }
         if self.ecap > 0 { alloc.deallocBytes(self.entries); }
         self.entries = np;
@@ -542,7 +542,7 @@ IndexMap :: struct ($K: Type, $V: Type) {
         newIcap := 8;
         while newIcap < need { newIcap = newIcap * 2; }
         if self.icap > 0 { alloc.deallocBytes(self.index); }
-        ni : [*]i64 = alloc.alloc(i64, newIcap).ptr;
+        ni : [*]i64 = mem.alloc(alloc, i64, newIcap).ptr;
         s := 0;
         while s < newIcap { ni[s] = -1; s += 1; }
         self.index = ni;
@@ -635,7 +635,7 @@ IndexMap :: struct ($K: Type, $V: Type) {
         while want < need { want = want * 2; }
         if want == self.icap { return; }
         if self.icap > 0 { alloc.deallocBytes(self.index); }
-        ni : [*]i64 = alloc.alloc(i64, want).ptr;
+        ni : [*]i64 = mem.alloc(alloc, i64, want).ptr;
         s := 0;
         while s < want { ni[s] = -1; s += 1; }
         self.index = ni;

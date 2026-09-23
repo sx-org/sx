@@ -1,0 +1,2 @@
+@import c { @flags "-Xclang"; @flags "-verify"; @include "nope.h"; };
+main :: () {}

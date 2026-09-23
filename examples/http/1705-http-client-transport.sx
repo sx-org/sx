@@ -10,10 +10,6 @@
 //       connect + poll + SO_ERROR), ioTimeoutMs (SO_RCVTIMEO/SNDTIMEO),
 //       tls (a TlsDialer; erased) + tlsHost (verification/SNI name —
 //       defaults to the dialed host).
-//   Client.sendOn / recvOn / closeConn — session-aware send/recv: route
-//       through the TLS session when present; recvOn decodes
-//       Transfer-Encoding: chunked responses in place via the SHARED
-//       types.decodeChunked (the server's own slowloris-safe decoder).
 //   tls_mbedtls.TlsClientConfig     — the client TLS provider: setupFiles
 //       (explicit trust anchor + hostname verification; a self-signed
 //       server cert can BE the anchor) or insecure() (VERIFY_NONE, loudly
@@ -36,7 +32,7 @@
 @import "modules/std.sx";
 socket :: @import "modules/std/socket.sx";
 fs     :: @import "modules/std/fs.sx";
-http   :: @import "modules/std/http.sx";
+@import "modules/std/http.sx";
 tlsp   :: @import "modules/std/http/tls_mbedtls.sx";
 
 PORT_MAIN :: 19023;   // plaintext main server (cases A, C)

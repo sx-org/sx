@@ -1,0 +1,5 @@
+foreign :: scope {
+    generated_value :: () -> i64 { 9 }
+    @import c { @include "2794-modules-scope-c-ownership/api.h"; };
+}
+main :: () -> i32 { 0 }

@@ -11,6 +11,7 @@
 //     thunk.
 
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 VL :: interface(T: Type) { get :: (self: *Self) -> T; }
 IntCell :: struct { v: i64; }
@@ -29,7 +30,7 @@ zipMap :: (mapper: Closure(..sources.T) -> $R, ..sources: VL) -> VL($R) {
     c : Combined($R, ..sources.T) = ---;
     c.sources = .{..sources};
     c.value = mapper(..sources.get);
-    return context.allocator.make(c).(VL(R));
+    return mem.make(context.allocator, c).(VL(R));
 }
 
 main :: () -> i32 {

@@ -16,6 +16,7 @@
 @import "modules/std/core.sx";
 @import "modules/std/mem.sx";
 @import "modules/std/source_site.sx";
+@import "modules/ui/fluent/wire.sx";
 
 // A call site reduced to what identity needs, plus the position a diagnostic
 // prints. `key` is `@SourceSite.id`, so two sites collide only where their
@@ -35,18 +36,10 @@ ElementId :: struct { value: u64 = 0; }
 
 // The domain separates fluent element ids from every other key space built
 // on the same source-site state.
-ELEMENT_DOMAIN :: "ui.fluent.element.v1";
-
-// Resumes the hash from the site fingerprint the compiler already folded.
-siteHasher :: (site: SiteId, domain: string, scope: u64) -> SourceSiteHasher {
-    hasher := SourceSiteHasher{ state = site.key };
-    hasher.writeString(domain);
-    hasher.writeU64Le(scope);
-    hasher
-}
+private ELEMENT_DOMAIN :: "ui.fluent.element.v1";
 
 // One site's tally within the build in progress.
-SiteCount :: struct {
+private SiteCount :: struct {
     key: u64 = 0;
     count: i64 = 0;
 }
@@ -55,7 +48,7 @@ SiteCount :: struct {
 // the root's memory, never the frame's.
 Identity :: struct {
     counts: List(SiteCount) = .{};
-    scope: u64 = 0;
+    scopeKey: u64 = 0;
     gpa: Allocator;
 
     init :: (gpa: Allocator) -> Identity => .{ gpa = gpa };
@@ -71,20 +64,20 @@ Identity :: struct {
     // Scopes nest: the new scope is the one in force folded with `key`, and
     // what comes back restores it.
     enterKey :: (self: *Identity, key: u64) -> u64 {
-        prev := self.scope;
+        prev := self.scopeKey;
         hasher := SourceSiteHasher{ state = prev };
         hasher.writeU64Le(key);
-        self.scope = hasher.state;
+        self.scopeKey = hasher.state;
         prev
     }
 
     leaveKey :: (self: *Identity, prev: u64) {
-        self.scope = prev;
+        self.scopeKey = prev;
     }
 
     nextOccurrence :: (self: *Identity, site: u64) -> i64 {
         hasher := SourceSiteHasher{ state = site };
-        hasher.writeU64Le(self.scope);
+        hasher.writeU64Le(self.scopeKey);
         key := hasher.state;
         for c, i in self.counts, 0.. {
             if c.key == key {
@@ -110,7 +103,7 @@ Identity :: struct {
 elementId :: (site: SiteId = siteOf(@caller)) -> ElementId {
     process.assert(context.fluentUi != null, "elementId outside a fluent build — push .{ fluentUi = *root.identity }");
     occurrence := context.fluentUi.nextOccurrence(site.key);
-    hasher := siteHasher(site, ELEMENT_DOMAIN, context.fluentUi.scope);
+    hasher := siteHasher(site.key, ELEMENT_DOMAIN, context.fluentUi.scopeKey);
     hasher.writeU64Le(occurrence.(u64));
     ElementId{ value = hasher.state }
 }

@@ -74,8 +74,8 @@ farOverflowRaises :: (alloc: Allocator) -> bool {
 MIXED : string : "{\"n\":-7,\"ratio\":1.5,\"xs\":[0.1,-0.5,3.0],\"scale\":1e-7,\"big\":1000000000.0}";
 
 main :: () -> ! {
-    gpa := GPA.init();
-    arena := Arena.init(gpa, 8192);
+    gpa := mem.GPA.init();
+    arena := mem.Arena.init(gpa, 8192);
     defer arena.deinit();
 
     report("half-writes-plain",     emits(1.5, "1.5"));

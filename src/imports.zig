@@ -25,6 +25,7 @@ pub fn dirName(path: []const u8) []const u8 {
 fn lexicalNormalize(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
     const is_abs = path.len > 0 and path[0] == '/';
     var stack = std.ArrayList([]const u8).empty;
+    defer stack.deinit(allocator);
     var it = std.mem.tokenizeScalar(u8, path, '/');
     while (it.next()) |seg| {
         if (std.mem.eql(u8, seg, ".")) continue;
@@ -42,6 +43,7 @@ fn lexicalNormalize(allocator: std.mem.Allocator, path: []const u8) ![]const u8 
     }
     if (stack.items.len == 0) return try allocator.dupe(u8, if (is_abs) "/" else ".");
     var out = std.ArrayList(u8).empty;
+    errdefer out.deinit(allocator);
     if (is_abs) try out.append(allocator, '/');
     for (stack.items, 0..) |seg, i| {
         if (i > 0) try out.append(allocator, '/');
@@ -65,26 +67,27 @@ fn relativeTo(path: []const u8, base: []const u8) ?[]const u8 {
     return null;
 }
 
-/// Canonicalize a resolved import path so the SAME source file gets ONE
-/// spelling everywhere it is keyed — module cache, `flat_import_graph`,
-/// `module_decls`, decl table, namespace edges. Lexically
-/// normalizes (strip `./`, collapse `a/../b`) and re-relativizes an
-/// absolute path against the process CWD when the file lives under it, so
-/// an absolute entry path produces the same cwd-relative keys (and the same
-/// cwd-relative diagnostic spellings) as a relative one. Lexical only — no
-/// realpath/symlink churn; the physical `getcwd` AND the logical `$PWD`
-/// (differs when the shell cd'd through a symlink) are both tried as bases.
 pub fn canonicalizePath(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
     const norm = try lexicalNormalize(allocator, path);
+    errdefer allocator.free(norm);
     if (norm.len == 0 or norm[0] != '/') return norm;
     var buf: [4096]u8 = undefined;
     if (getcwd(&buf, buf.len)) |cwd_z| {
-        if (relativeTo(norm, std.mem.span(cwd_z))) |rel| return try allocator.dupe(u8, rel);
+        if (relativeTo(norm, std.mem.span(cwd_z))) |rel| {
+            const result = try allocator.dupe(u8, rel);
+            allocator.free(norm);
+            return result;
+        }
     }
     if (c_getenv("PWD")) |pwd_z| {
         const pwd = try lexicalNormalize(allocator, std.mem.span(pwd_z));
+        defer allocator.free(pwd);
         if (pwd.len > 0 and pwd[0] == '/') {
-            if (relativeTo(norm, pwd)) |rel| return try allocator.dupe(u8, rel);
+            if (relativeTo(norm, pwd)) |rel| {
+                const result = try allocator.dupe(u8, rel);
+                allocator.free(norm);
+                return result;
+            }
         }
     }
     return norm;
@@ -323,22 +326,12 @@ pub const ResolvedModule = struct {
     /// Decls authored in this file. What flat importers of THIS module see
     /// (their visibility BFS joins these names in via `import_graph`).
     own_decls: []const *Node,
-    /// Names authored in this file (plus namespace aliases this file
-    /// introduces), each mapped to its declared visibility. Used as the
-    /// per-file leaf in the visibility lookup; importers do NOT splice this
-    /// into their own scope — they walk the import graph at query time
-    /// instead, and a `.private` entry is visible only to this file itself.
-    scope: std.StringHashMap(ast.Visibility),
+    environment: EnvironmentId,
 
-    /// Add a declaration authored in this file. Updates scope + own_decls +
-    /// the global flat decl list; dedups by name through `seen_list` (which
-    /// already holds the names `mergeFlat` appended, so an
-    /// authored decl that collides with a transitively-imported one stays
-    /// out of the global list while still entering `own_decls` for
-    /// importer-visibility purposes).
     pub fn addOwnDecl(
         self: *ResolvedModule,
         allocator: std.mem.Allocator,
+        table: *DeclTable,
         list: *std.ArrayList(*Node),
         own_list: *std.ArrayList(*Node),
         seen_list: *std.StringHashMap(void),
@@ -346,13 +339,8 @@ pub const ResolvedModule = struct {
     ) !bool {
         var append_to_global = true;
         if (decl.data.declName()) |name| {
-            if (self.scope.contains(name)) return false;
-            try self.scope.put(name, decl.visibility);
+            if (!try table.claim(self.environment, decl)) return false;
             if (seen_list.contains(name)) {
-                // A cross-module name collision: drop from the global list
-                // (first-wins) UNLESS this is a per-source decl (a type, alias,
-                // or non-function const), which must reach registration as a
-                // distinct author of its own module.
                 append_to_global = isPerSourceDecl(decl);
             } else {
                 try seen_list.put(name, {});
@@ -363,17 +351,6 @@ pub const ResolvedModule = struct {
         return true;
     }
 
-    /// Flat-import another module. The imported names are NOT added to
-    /// `self.scope` — visibility joins per-file scopes at lookup time via
-    /// `import_graph`. We only need to append `other.decls` (the full
-    /// transitive list) to the global `list` so the lowering pass can
-    /// still resolve transitively-imported callees.
-    ///
-    /// Deduped two ways: named decls by name (first-wins on cross-module
-    /// collisions), and EVERY decl by node identity. The latter matters for
-    /// anonymous decls — `impl` blocks have no `declName`, so under a diamond
-    /// import the same cached node would otherwise be appended once per path
-    /// and registered twice (e.g. `duplicate impl 'Into'`).
     pub fn mergeFlat(
         self: *ResolvedModule,
         allocator: std.mem.Allocator,
@@ -387,15 +364,6 @@ pub const ResolvedModule = struct {
             if (seen_nodes.contains(decl)) continue;
             if (decl.data.declName()) |name| {
                 if (seen_list.contains(name)) {
-                    // First-wins on a cross-module name collision — EXCEPT a
-                    // per-source decl (a named type, or any non-function const:
-                    // type alias + value const), each of which must reach
-                    // registration as a distinct same-name author of its own
-                    // module (types, aliases and value consts). Only
-                    // FUNCTIONS keep first-wins (the shadowed author
-                    // stays reachable via its qualified name / SelectedFunc).
-                    // Node identity (above) still de-dups a diamond import of the
-                    // SAME decl.
                     if (!isPerSourceDecl(decl)) continue;
                 } else {
                     try seen_list.put(name, {});
@@ -406,45 +374,23 @@ pub const ResolvedModule = struct {
         }
     }
 
-    /// A decl that must register PER-SOURCE: each same-name author across modules
-    /// registers against its OWN module rather than collapsing to a single
-    /// first-wins winner. NAMED types and every non-function `const_decl` (type
-    /// aliases + inline type decls + VALUE consts, source-keyed via the alias /
-    /// const caches) are per-source — that is what prevents same-name collapse for
-    /// types/aliases and supports same-name value consts. So is every
-    /// compiler-gated declaration — an `@` name — whose
-    /// declaration-site gate (the contract registry, the intrinsic registry) runs
-    /// in lowering and must see each author. Everything
-    /// else keeps the first-wins name-merge: FUNCTIONS (the shadowed
-    /// author stays reachable via its qualified name / SelectedFunc), and crucially
-    /// `var_decl`s, including a `extern` extern global declared in two files
-    /// (e.g. `__stdinp : *void extern;`) that MUST resolve to the ONE libSystem
-    /// symbol, not split into a duplicate `__stdinp.1`.
     pub fn isPerSourceDecl(decl: *const Node) bool {
         if (decl.data.declName()) |name| {
             if (name.len > 0 and name[0] == '@') return true;
         }
         return switch (decl.data) {
-            .struct_decl, .enum_decl, .union_decl, .error_set_decl, .protocol_decl, .open_set_decl, .runtime_class_decl => true,
-            .fn_decl => |fd| fd.body.data == .intrinsic_expr,
-            .const_decl => |cd| cd.value.data != .fn_decl or cd.value.data.fn_decl.body.data == .intrinsic_expr,
+            .struct_decl, .enum_decl, .union_decl, .error_set_decl, .protocol_decl, .open_set_decl, .runtime_class_decl, .scope_decl => true,
+            .fn_decl => |fd| fd.extern_export == .extern_ or fd.body.data == .intrinsic_expr,
+            .const_decl => |cd| cd.value.data != .fn_decl or isPerSourceDecl(cd.value),
+            .var_decl => true,
             else => false,
         };
     }
 
-    /// Add another module as a namespaced import. The alias `name` becomes
-    /// part of this module's own decls (so a flat-importer of this module
-    /// sees the alias one hop out — matching authored names).
-    ///
-    /// Returns `false` (and adds nothing) when `name` already names a decl
-    /// authored in THIS module — symmetric to `addOwnDecl`, so a namespace
-    /// alias colliding with a prior same-module name is dropped rather than
-    /// shadowing it. The caller surfaces the drop via `reportDuplicateName`;
-    /// the reverse order (alias first, then a same-name authored decl) is
-    /// caught by `addOwnDecl` seeing the alias already in `scope`.
     pub fn addNamespace(
         self: *ResolvedModule,
         allocator: std.mem.Allocator,
+        table: *DeclTable,
         list: *std.ArrayList(*Node),
         own_list: *std.ArrayList(*Node),
         seen_list: *std.StringHashMap(void),
@@ -453,8 +399,8 @@ pub const ResolvedModule = struct {
         span: ast.Span,
         is_raw: bool,
         visibility: ast.Visibility,
+        lexical_block: LexicalBlockId,
     ) !bool {
-        if (self.scope.contains(name)) return false;
         const ns_node = try allocator.create(Node);
         ns_node.* = .{
             .span = span,
@@ -466,8 +412,6 @@ pub const ResolvedModule = struct {
                     // to. `decls` stays the full transitive list so
                     // the lowering pass can still resolve transitive callees.
                     .own_decls = other.own_decls,
-                    // The aliased module's resolved path (== the `resolved_path`
-                    // computed for this import). Retained for `buildImportFacts`.
                     .target_module_path = other.path,
                     // Carry the backtick raw escape from the `name :: @import …`
                     // form so a reserved-name namespace is exempt from the decl
@@ -480,7 +424,9 @@ pub const ResolvedModule = struct {
             // module's namespace surface.
             .visibility = visibility,
         };
-        try self.scope.put(name, visibility);
+        ns_node.source_file = self.path;
+        ns_node.lexical_block = lexical_block;
+        if (!try table.claim(self.environment, ns_node)) return false;
         try seen_list.put(name, {});
         try list.append(allocator, ns_node);
         try own_list.append(allocator, ns_node);
@@ -498,18 +444,17 @@ pub const ResolvedModule = struct {
     }
 };
 
-/// Module cache: maps resolved file paths to their ResolvedModules.
-pub const ModuleCache = std.StringHashMap(ResolvedModule);
+pub const ModuleCache = struct {
+    modules: std.StringHashMap(ResolvedModule),
+    declarations: DeclTable,
 
-// ── Raw import facts (the unified-resolver store) ──
-//
-// `buildImportFacts` produces two source-keyed views over the resolved program,
-// callable WITHOUT IR lowering (the LSP reuses it later): a scalar per-module
-// raw-decl index (`name → RawDeclRef`) and the namespace import edges
-// (`importer → alias → NamespaceTarget`). Both are built from each module's
-// `own_decls` (the main module plus every cache entry). Function authors are
-// read out of `name → RawDeclRef` directly (`fnDeclOfRaw`), so there is no
-// separate function-only index.
+    pub fn init(allocator: std.mem.Allocator) ModuleCache {
+        return .{
+            .modules = std.StringHashMap(ResolvedModule).init(allocator),
+            .declarations = DeclTable.init(allocator),
+        };
+    }
+};
 
 /// A named top-level declaration the resolver may select, kept as the raw AST
 /// node pointer (NOT pre-classified — a `const_decl` whose value is a function
@@ -530,64 +475,119 @@ pub const RawDeclRef = union(enum) {
     namespace_decl: *const ast.NamespaceDecl,
 };
 
-/// A raw declaration paired with the source file that authors it.
-/// `visibility` is the declaration's module-scope visibility; `vis_source` is
-/// the privacy AUTHORITY — the exact declaring source file when it differs
-/// from `source` (a directory-import module aggregates several files). Null
-/// means `source` IS the authority. Only privacy checks read these; every
-/// registration lookup stays keyed by `source`.
 pub const RawAuthor = struct {
+    id: DeclId,
     raw: RawDeclRef,
     source: []const u8,
     visibility: ast.Visibility = .public,
-    vis_source: ?[]const u8 = null,
+};
 
-    /// The exact source file whose declarations may use this author when it
-    /// is private.
-    pub fn visAuthority(self: RawAuthor) []const u8 {
-        return self.vis_source orelse self.source;
+pub fn aliasPath(allocator: std.mem.Allocator, node: *const Node) ?[]const u8 {
+    return switch (node.data) {
+        .identifier => |id| allocator.dupe(u8, id.name) catch @panic("out of memory"),
+        .type_expr => |te| allocator.dupe(u8, te.name) catch @panic("out of memory"),
+        .field_access => |fa| blk: {
+            const object = aliasPath(allocator, fa.object) orelse break :blk null;
+            defer allocator.free(object);
+            break :blk std.fmt.allocPrint(allocator, "{s}.{s}", .{ object, fa.field }) catch @panic("out of memory");
+        },
+        else => null,
+    };
+}
+
+pub const EnvironmentId = enum(u32) { _ };
+pub const ScopeId = enum(u32) { _ };
+pub const LexicalBlockId = ast.LexicalBlockId;
+
+const ScopePathContext = struct {
+    pub fn hash(_: @This(), path: []const []const u8) u64 {
+        var h = std.hash.Wyhash.init(0);
+        for (path) |part| {
+            std.hash.autoHash(&h, part.len);
+            h.update(part);
+        }
+        return h.final();
+    }
+
+    pub fn eql(_: @This(), a: []const []const u8, b: []const []const u8) bool {
+        if (a.len != b.len) return false;
+        for (a, b) |left, right| {
+            if (!std.mem.eql(u8, left, right)) return false;
+        }
+        return true;
     }
 };
 
-/// One module's scalar raw-decl index: `name → ONE RawDeclRef`. Scalar because
-/// `addOwnDecl` refuses a same-module same-name second author (returns false),
-/// so a module's `own_decls` carries at most one author per name. Cross-module
-/// multiplicity lives one level up, keyed by path in `ModuleDecls`.
-/// `private_names` is the subset declared `private` — those never cross a flat
-/// or namespace boundary out of their declaring file.
-pub const ModuleRawDeclIndex = struct {
-    source: []const u8,
-    names: std.StringHashMap(RawDeclRef),
-    private_names: std.StringHashMap(void),
+pub const Scope = struct {
+    path: []const []const u8,
 };
 
-/// `path → ModuleRawDeclIndex`. Two modules each authoring `f` are retained
-/// under their own paths — the cross-module same-name authors the unified
-/// resolver's collector will surface.
-pub const ModuleDecls = std.StringHashMap(ModuleRawDeclIndex);
+pub const LexicalBlock = struct {
+    environment: EnvironmentId,
+    parent: ?LexicalBlockId,
+    node: *const Node,
+    imports: std.ArrayList(*const Node) = .empty,
+    spreads: std.ArrayList(*const Node) = .empty,
+};
 
-/// One namespace import edge: `alias :: @import "…"` (or `alias :: @import c …`).
-/// `target_module_path` is captured at resolution time (otherwise lost — it is
-/// not derivable from the namespace node alone). Every alias is module surface
-/// under the carry rule — there is no per-edge visibility flag.
+pub const WrittenTarget = struct {
+    source: []const u8,
+    block: LexicalBlockId,
+    position: u32,
+    operand: *const Node,
+};
+
+pub const SpreadSource = union(enum) {
+    missing,
+    module: []const u8,
+    path: *const Node,
+    c_import: []const DeclId,
+};
+
+pub const Publication = enum { deferred, published };
+
+const EnvironmentKey = struct {
+    source: []const u8,
+    scope_path: []const []const u8,
+};
+
+const EnvironmentKeyContext = struct {
+    pub fn hash(_: @This(), key: EnvironmentKey) u64 {
+        var h = std.hash.Wyhash.init(0);
+        h.update(key.source);
+        for (key.scope_path) |part| {
+            std.hash.autoHash(&h, part.len);
+            h.update(part);
+        }
+        return h.final();
+    }
+
+    pub fn eql(_: @This(), a: EnvironmentKey, b: EnvironmentKey) bool {
+        if (!std.mem.eql(u8, a.source, b.source) or a.scope_path.len != b.scope_path.len) return false;
+        for (a.scope_path, b.scope_path) |left, right| {
+            if (!std.mem.eql(u8, left, right)) return false;
+        }
+        return true;
+    }
+};
+
+pub const Environment = struct {
+    source: []const u8,
+    scope_path: []const []const u8,
+    scope: ?ScopeId = null,
+    names: std.StringHashMap(DeclId),
+    namespaces: std.StringHashMap(NamespaceTarget),
+};
+
 pub const NamespaceTarget = struct {
     alias: []const u8,
     importer_source: []const u8,
+    environment: EnvironmentId,
     target_module_path: []const u8,
     own_decls: []const *Node,
-    /// The `DeclId` of each member in `own_decls`, in slice order. Filled by
-    /// `buildDeclTable`. Lets a member be addressed by stable
-    /// id without re-deriving it from the node pointer.
-    member_ids: []const DeclId = &.{},
-    /// The alias declaration's own visibility (`private ns :: @import "…"`).
-    /// A private alias resolves only for its `importer_source` file: it is
-    /// never carried by flat imports and never traversable through the
-    /// importer's namespace surface from another module.
+    member_ids: []const DeclId,
     visibility: ast.Visibility = .public,
 };
-
-/// `importer_source → alias → NamespaceTarget`.
-pub const NamespaceEdges = std.StringHashMap(std.StringHashMap(NamespaceTarget));
 
 /// The `RawDeclRef` a top-level node carries, or null when the node is not a
 /// selectable named declaration (e.g. `impl_block`, `ufcs_alias`, a flat
@@ -610,86 +610,6 @@ pub fn rawDeclRefOf(decl: *const Node) ?RawDeclRef {
     };
 }
 
-/// Index one module's authored decls (`own_decls`) into `decls[path]` and record
-/// any namespace aliases into `ns_edges[path]`. First-wins WITHIN a module;
-/// `own_decls` is already name-deduped by `addOwnDecl`, so the first-wins guard
-/// never actually fires here.
-fn indexModuleDecls(
-    allocator: std.mem.Allocator,
-    decls: *ModuleDecls,
-    ns_edges: *NamespaceEdges,
-    path: []const u8,
-    own_decls: []const *Node,
-) !void {
-    for (own_decls) |decl| try indexOneDecl(allocator, decls, ns_edges, path, decl);
-}
-
-/// Index ONE authored declaration into `decls[path]` (+ its namespace edge).
-/// The same writer serves the up-front walk and lowering's incremental splice
-/// of a selected module-scope expansion group — a group's declarations are
-/// module surface exactly like textual ones, so their raw facts are minted the
-/// same way, just later.
-pub fn indexOneDecl(
-    allocator: std.mem.Allocator,
-    decls: *ModuleDecls,
-    ns_edges: *NamespaceEdges,
-    path: []const u8,
-    decl: *const Node,
-) !void {
-    const gop = try decls.getOrPut(path);
-    if (!gop.found_existing) gop.value_ptr.* = .{
-        .source = path,
-        .names = std.StringHashMap(RawDeclRef).init(allocator),
-        .private_names = std.StringHashMap(void).init(allocator),
-    };
-    const index = gop.value_ptr;
-    const ref = rawDeclRefOf(decl) orelse return;
-    const name = decl.data.declName() orelse return;
-    const name_gop = try index.names.getOrPut(name);
-    if (!name_gop.found_existing) {
-        name_gop.value_ptr.* = ref;
-        if (decl.visibility == .private) try index.private_names.put(name, {});
-    }
-
-    if (decl.data == .namespace_decl) {
-        const ns = &decl.data.namespace_decl;
-        const edge_gop = try ns_edges.getOrPut(path);
-        if (!edge_gop.found_existing) edge_gop.value_ptr.* = std.StringHashMap(NamespaceTarget).init(allocator);
-        const tgt_gop = try edge_gop.value_ptr.getOrPut(ns.name);
-        if (!tgt_gop.found_existing) tgt_gop.value_ptr.* = .{
-            .alias = ns.name,
-            .importer_source = path,
-            .target_module_path = ns.target_module_path,
-            .own_decls = ns.own_decls,
-            .visibility = decl.visibility,
-        };
-    }
-}
-
-/// Build the raw import facts from a resolved program: the main module (keyed by
-/// `main_path`) plus every cached module (keyed by its own path). No IR lowering
-/// required.
-pub fn buildImportFacts(
-    allocator: std.mem.Allocator,
-    main_path: []const u8,
-    main_mod: ResolvedModule,
-    cache: *const ModuleCache,
-) !struct { decls: ModuleDecls, ns_edges: NamespaceEdges } {
-    var decls = ModuleDecls.init(allocator);
-    var ns_edges = NamespaceEdges.init(allocator);
-    try indexModuleDecls(allocator, &decls, &ns_edges, main_path, main_mod.own_decls);
-    var it = cache.iterator();
-    while (it.next()) |entry| {
-        try indexModuleDecls(allocator, &decls, &ns_edges, entry.key_ptr.*, entry.value_ptr.own_decls);
-    }
-    return .{ .decls = decls, .ns_edges = ns_edges };
-}
-
-// ── DeclTable: a stable DeclId for every declaration ──
-//
-// `buildDeclTable` lifts every `RawDeclRef` the import facts hold into a stable
-// `DeclId` carrying source + name + AST node identity + span + `DeclKind`.
-
 /// The taxonomy of a declaration, mirroring the `RawDeclRef` variants so a
 /// `DeclTable` row carries its kind without re-switching on the AST node.
 pub const DeclKind = enum {
@@ -704,9 +624,11 @@ pub const DeclKind = enum {
     open_set,
     runtime_class,
     namespace,
+    scope,
     /// A name lowering mints with no authoring AST declaration.
     synthetic,
     ufcs_alias,
+    other,
 };
 
 fn declKindOf(ref: RawDeclRef) DeclKind {
@@ -737,14 +659,19 @@ pub fn authorNodePtrOf(ref: RawDeclRef) usize {
 /// The declaration a `const_decl` wrapper defines (`S :: struct { … }` wraps a
 /// `struct_decl`), or null when the ref is not a wrapper. Wrapper and inner
 /// author share one identity.
-fn innerDeclRef(ref: RawDeclRef) ?RawDeclRef {
+pub fn innerDeclRef(ref: RawDeclRef) ?RawDeclRef {
     if (ref != .const_decl) return null;
     return rawDeclRefOf(ref.const_decl.value);
 }
 
-/// A stable identifier for one declaration, assigned by `DeclTable` in module-
-/// walk order. Process-local: it indexes the table's `entries`; the LSP
-/// stabilizes it to `(source, index)`.
+fn memberName(node: *const Node) ?[]const u8 {
+    return switch (node.data) {
+        .library_decl => |decl| decl.name,
+        .framework_decl => |decl| decl.name,
+        else => node.data.declName(),
+    };
+}
+
 pub const DeclId = enum(u32) { _ };
 
 /// One `DeclTable` row: a `RawDeclRef` lifted to a stable `DeclId`, with its
@@ -753,10 +680,14 @@ pub const DeclId = enum(u32) { _ };
 pub const DeclInfo = struct {
     id: DeclId,
     source: ?[]const u8,
+    environment: ?EnvironmentId,
+    lexical_block: ?LexicalBlockId = null,
+    scope: ?ScopeId = null,
+    node: ?*const Node = null,
+    visibility: ast.Visibility = .public,
     name: []const u8,
-    /// Null for a synthesized identity, which no AST node authors.
     ref: ?RawDeclRef,
-    span: ast.Span,
+    span: ?ast.Span,
     kind: DeclKind,
 };
 
@@ -769,14 +700,59 @@ pub const DeclTable = struct {
     alloc: std.mem.Allocator,
     entries: std.ArrayList(DeclInfo) = .empty,
     by_node: std.AutoHashMap(usize, DeclId),
+    environments: std.ArrayList(Environment) = .empty,
+    files: std.StringHashMap(EnvironmentId),
+    scoped_environments: std.HashMap(EnvironmentKey, EnvironmentId, EnvironmentKeyContext, std.hash_map.default_max_load_percentage),
+    scopes: std.ArrayList(Scope) = .empty,
+    scopes_by_path: std.HashMap([]const []const u8, ScopeId, ScopePathContext, std.hash_map.default_max_load_percentage),
+    blocks: std.ArrayList(LexicalBlock) = .empty,
+    written_targets: std.AutoHashMap(*const Node, WrittenTarget),
+    spread_sources: std.AutoHashMap(*const Node, SpreadSource),
+    // Namespace selections borrow member slices across expansion.
+    member_slices: std.ArrayList([]const DeclId) = .empty,
 
     pub fn init(alloc: std.mem.Allocator) DeclTable {
-        return .{ .alloc = alloc, .by_node = std.AutoHashMap(usize, DeclId).init(alloc) };
+        return .{
+            .alloc = alloc,
+            .by_node = std.AutoHashMap(usize, DeclId).init(alloc),
+            .files = std.StringHashMap(EnvironmentId).init(alloc),
+            .scoped_environments = .init(alloc),
+            .scopes_by_path = .init(alloc),
+            .written_targets = .init(alloc),
+            .spread_sources = .init(alloc),
+        };
     }
 
     pub fn deinit(self: *DeclTable) void {
         self.entries.deinit(self.alloc);
         self.by_node.deinit();
+        for (self.environments.items) |*env| {
+            self.alloc.free(env.source);
+            for (env.scope_path) |part| self.alloc.free(part);
+            self.alloc.free(env.scope_path);
+            env.names.deinit();
+            env.namespaces.deinit();
+        }
+        self.environments.deinit(self.alloc);
+        var spellings = self.files.keyIterator();
+        while (spellings.next()) |path| self.alloc.free(path.*);
+        self.files.deinit();
+        self.scoped_environments.deinit();
+        for (self.scopes.items) |scope| {
+            for (scope.path) |part| self.alloc.free(part);
+            self.alloc.free(scope.path);
+        }
+        self.scopes.deinit(self.alloc);
+        self.scopes_by_path.deinit();
+        for (self.blocks.items) |*block_info| {
+            block_info.imports.deinit(self.alloc);
+            block_info.spreads.deinit(self.alloc);
+        }
+        self.blocks.deinit(self.alloc);
+        self.written_targets.deinit();
+        self.spread_sources.deinit();
+        for (self.member_slices.items) |slice| self.alloc.free(slice);
+        self.member_slices.deinit(self.alloc);
     }
 
     pub fn get(self: *const DeclTable, id: DeclId) DeclInfo {
@@ -789,10 +765,12 @@ pub const DeclTable = struct {
         return self.by_node.get(authorNodePtrOf(ref));
     }
 
-    /// Intern one declaration by its author ref, returning its (possibly
-    /// pre-existing) `DeclId`. First-wins / diamond dedup by node identity,
-    /// matching how the scalar import facts dedup.
-    pub fn internRef(self: *DeclTable, source: ?[]const u8, name: []const u8, ref: RawDeclRef, span: ast.Span) !DeclId {
+    pub fn internRef(self: *DeclTable, source: ?[]const u8, name: []const u8, ref: RawDeclRef, span: ?ast.Span) !DeclId {
+        const env = if (source) |path| try self.internEnvironment(path, &.{}) else null;
+        return self.internRefInEnvironment(env, name, ref, span);
+    }
+
+    pub fn internRefInEnvironment(self: *DeclTable, env: ?EnvironmentId, name: []const u8, ref: RawDeclRef, span: ?ast.Span) !DeclId {
         const key = authorNodePtrOf(ref);
         if (self.by_node.get(key)) |existing| return existing;
         const inner = innerDeclRef(ref);
@@ -805,7 +783,8 @@ pub const DeclTable = struct {
         const id: DeclId = @enumFromInt(@as(u32, @intCast(self.entries.items.len)));
         try self.entries.append(self.alloc, .{
             .id = id,
-            .source = source,
+            .source = if (env) |id_env| self.environment(id_env).source else null,
+            .environment = env,
             .name = name,
             .ref = ref,
             .span = span,
@@ -816,120 +795,293 @@ pub const DeclTable = struct {
         return id;
     }
 
-    /// Intern one top-level decl node. The node's stamped source identifies its
-    /// declaring file; `source` supplies the file for unstamped nodes.
     pub fn intern(self: *DeclTable, source: ?[]const u8, decl: *const Node) !DeclId {
-        if (rawDeclRefOf(decl)) |ref|
-            return self.internRef(decl.source_file orelse source, decl.data.declName().?, ref, decl.span);
-        std.debug.assert(decl.data == .ufcs_alias);
-        const key = @intFromPtr(&decl.data.ufcs_alias);
-        if (self.by_node.get(key)) |id| return id;
-        const id = try self.internSynthetic(decl.source_file orelse source, decl.data.ufcs_alias.name);
-        self.entries.items[@intFromEnum(id)].kind = .ufcs_alias;
-        self.entries.items[@intFromEnum(id)].span = decl.span;
-        try self.by_node.put(key, id);
+        const env = if (decl.lexical_block) |b| self.block(b).environment else if (decl.source_file orelse source) |path| try self.internEnvironment(path, &.{}) else null;
+        return self.internInEnvironment(env, decl);
+    }
+
+    pub fn internInEnvironment(self: *DeclTable, env: ?EnvironmentId, decl: *const Node) !DeclId {
+        return self.internNamedNode(env, memberName(decl).?, decl);
+    }
+
+    pub fn internNamedNode(self: *DeclTable, env: ?EnvironmentId, name: []const u8, decl: *const Node) !DeclId {
+        const id = if (rawDeclRefOf(decl)) |ref|
+            try self.internRefInEnvironment(env, name, ref, decl.span)
+        else blk: {
+            const key = @intFromPtr(decl);
+            if (self.by_node.get(key)) |existing| break :blk existing;
+            const fresh = try self.syntheticInEnvironment(env, name);
+            self.entries.items[@intFromEnum(fresh)].kind = switch (decl.data) {
+                .ufcs_alias => .ufcs_alias,
+                .scope_decl => .scope,
+                .import_decl => .namespace,
+                else => .other,
+            };
+            try self.by_node.put(key, fresh);
+            break :blk fresh;
+        };
+        const info = &self.entries.items[@intFromEnum(id)];
+        info.node = decl;
+        info.visibility = decl.visibility;
+        info.span = decl.span;
+        info.lexical_block = decl.lexical_block;
         return id;
     }
 
     /// Mint an identity for a name lowering synthesizes — a fresh id every
     /// call, since no AST node addresses it.
     pub fn internSynthetic(self: *DeclTable, source: ?[]const u8, name: []const u8) !DeclId {
+        const env = if (source) |path| try self.internEnvironment(path, &.{}) else null;
+        return self.syntheticInEnvironment(env, name);
+    }
+
+    pub fn syntheticInEnvironment(self: *DeclTable, env: ?EnvironmentId, name: []const u8) !DeclId {
         const id: DeclId = @enumFromInt(@as(u32, @intCast(self.entries.items.len)));
         try self.entries.append(self.alloc, .{
             .id = id,
-            .source = source,
+            .source = if (env) |id_env| self.environment(id_env).source else null,
+            .environment = env,
             .name = name,
             .ref = null,
-            .span = .{ .start = 0, .end = 0 },
+            .span = null,
             .kind = .synthetic,
         });
         return id;
     }
 
-    fn internModule(self: *DeclTable, source: []const u8, own_decls: []const *Node) !void {
-        for (own_decls) |decl| {
-            if (rawDeclRefOf(decl) == null) continue;
-            _ = try self.intern(source, decl);
+    pub fn environment(self: *const DeclTable, id: EnvironmentId) *Environment {
+        return &self.environments.items[@intFromEnum(id)];
+    }
+
+    pub fn scopeInfo(self: *const DeclTable, id: ScopeId) Scope {
+        return self.scopes.items[@intFromEnum(id)];
+    }
+
+    fn internScope(self: *DeclTable, path: []const []const u8) !ScopeId {
+        if (self.scopes_by_path.get(path)) |id| return id;
+        const parts = try self.alloc.alloc([]const u8, path.len);
+        for (path, parts) |part, *copy| copy.* = try self.alloc.dupe(u8, part);
+        const id: ScopeId = @enumFromInt(@as(u32, @intCast(self.scopes.items.len)));
+        try self.scopes.append(self.alloc, .{ .path = parts });
+        try self.scopes_by_path.put(parts, id);
+        return id;
+    }
+
+    pub fn block(self: *const DeclTable, id: LexicalBlockId) *LexicalBlock {
+        return &self.blocks.items[@intFromEnum(id)];
+    }
+
+    pub fn addBlock(self: *DeclTable, env: EnvironmentId, parent: ?LexicalBlockId, node: *const Node) !LexicalBlockId {
+        const id: LexicalBlockId = @enumFromInt(@as(u32, @intCast(self.blocks.items.len)));
+        try self.blocks.append(self.alloc, .{ .environment = env, .parent = parent, .node = node });
+        return id;
+    }
+
+    pub fn addScopeBlock(self: *DeclTable, parent: LexicalBlockId, decl: *Node) !LexicalBlockId {
+        const author_env = self.block(parent).environment;
+        const path = try std.mem.concat(self.alloc, []const u8, &.{ self.environment(author_env).scope_path, &.{decl.data.scope_decl.name} });
+        defer self.alloc.free(path);
+        const scope_id = try self.internScope(path);
+        const env = try self.internEnvironment(self.environment(author_env).source, path);
+        self.environment(env).scope = scope_id;
+        const id = try self.internInEnvironment(author_env, decl);
+        self.entries.items[@intFromEnum(id)].scope = scope_id;
+        const body_block = try self.addBlock(env, parent, decl);
+        decl.data.scope_decl.body_block = body_block;
+        return body_block;
+    }
+
+    pub fn prepareExpansion(self: *DeclTable, node: *Node, owner: LexicalBlockId) std.mem.Allocator.Error!void {
+        ast.stampLexicalBlock(node, owner);
+        node.source_file = self.environment(self.block(owner).environment).source;
+        if (node.data == .const_decl) try self.recordWrittenTarget(owner, node);
+        switch (node.data) {
+            .spread_decl => try self.recordSpread(owner, node, .deferred),
+            .scope_decl => |scope| {
+                const child = try self.addScopeBlock(owner, node);
+                for (scope.decls) |decl| try self.prepareExpansion(decl, child);
+            },
+            .block => |body| for (body.stmts) |stmt| try self.prepareExpansion(stmt, owner),
+            .if_expr => |ie| {
+                try self.prepareExpansion(ie.then_branch, owner);
+                if (ie.else_branch) |other| try self.prepareExpansion(other, owner);
+            },
+            .match_expr => |me| for (me.arms) |arm| try self.prepareExpansion(arm.body, owner),
+            .for_expr => |fe| try self.prepareExpansion(fe.body, owner),
+            else => {},
         }
     }
 
-    /// Debug cross-check: every `RawDeclRef` the import facts
-    /// hold round-trips `RawDeclRef → DeclId → AST node ptr` back to the same
-    /// node, with matching name. Asserts; call only under `builtin.mode == .Debug`.
-    pub fn verifyRoundTrip(self: *const DeclTable, decls: *const ModuleDecls, ns_edges: *const NamespaceEdges) void {
-        var mit = decls.iterator();
-        while (mit.next()) |m| {
-            var nit = m.value_ptr.names.iterator();
-            while (nit.next()) |kv| {
-                const ref = kv.value_ptr.*;
-                const id = self.declIdForRef(ref) orelse @panic("DeclTable round-trip: module ref has no DeclId");
-                const info = self.get(id);
-                std.debug.assert(self.declIdForRef(info.ref.?).? == id);
-                std.debug.assert(std.mem.eql(u8, info.name, kv.key_ptr.*));
-            }
-        }
-        var nsit = ns_edges.iterator();
-        while (nsit.next()) |imp| {
-            var ait = imp.value_ptr.valueIterator();
-            while (ait.next()) |target| {
-                for (target.own_decls) |decl| {
-                    const ref = rawDeclRefOf(decl) orelse continue;
-                    const id = self.declIdForRef(ref) orelse @panic("DeclTable round-trip: ns member has no DeclId");
-                    std.debug.assert(self.declIdForRef(self.get(id).ref.?).? == id);
+    pub fn recordImport(self: *DeclTable, owner: LexicalBlockId, node: *const Node) !void {
+        try self.block(owner).imports.append(self.alloc, node);
+    }
+
+    pub fn recordWrittenTarget(self: *DeclTable, owner: LexicalBlockId, node: *Node) !void {
+        const operand = switch (node.data) {
+            .const_decl => |decl| decl.value,
+            .spread_decl => |spread| spread.source,
+            else => return,
+        };
+        const source = self.environment(self.block(owner).environment).source;
+        operand.source_file = source;
+        try self.written_targets.put(node, .{ .source = source, .block = owner, .position = node.span.start, .operand = operand });
+    }
+
+    pub fn recordSpread(self: *DeclTable, owner: LexicalBlockId, node: *Node, publication: Publication) !void {
+        try self.recordWrittenTarget(owner, node);
+        const spread = node.data.spread_decl;
+        const source: SpreadSource = switch (spread.source.data) {
+            .import_decl => |imp| .{ .module = imp.path },
+            .c_import_decl => blk: {
+                const decls = spread.c_decls orelse break :blk .missing;
+                const env = self.block(owner).environment;
+                for (decls) |decl| {
+                    ast.stampLexicalBlock(decl, owner);
+                    decl.source_file = self.environment(env).source;
                 }
+                break :blk .{ .c_import = try self.memberIds(env, decls) };
+            },
+            else => .{ .path = spread.source },
+        };
+        try self.spread_sources.put(node, source);
+        if (publication == .published) try self.block(owner).spreads.append(self.alloc, node);
+    }
+
+    pub fn fileEnvironment(self: *const DeclTable, path: []const u8) ?EnvironmentId {
+        return self.files.get(path);
+    }
+
+    pub fn findEnvironment(self: *const DeclTable, source: []const u8, path: []const []const u8) ?EnvironmentId {
+        const root = self.fileEnvironment(source) orelse return null;
+        if (path.len == 0) return root;
+        return self.scoped_environments.get(.{ .source = self.environment(root).source, .scope_path = path });
+    }
+
+    fn indexFile(self: *DeclTable, path: []const u8, id: EnvironmentId) !void {
+        const owned = try self.alloc.dupe(u8, path);
+        errdefer self.alloc.free(owned);
+        const entry = try self.files.getOrPut(owned);
+        if (entry.found_existing) {
+            self.alloc.free(owned);
+        } else entry.value_ptr.* = id;
+    }
+
+    pub fn internEnvironment(self: *DeclTable, path: []const u8, scope_path: []const []const u8) !EnvironmentId {
+        const root = if (self.fileEnvironment(path)) |id| id else blk: {
+            const canonical = try canonicalizePath(self.alloc, path);
+            if (self.files.get(canonical)) |id| {
+                self.alloc.free(canonical);
+                try self.indexFile(path, id);
+                break :blk id;
+            }
+            const id: EnvironmentId = @enumFromInt(@as(u32, @intCast(self.environments.items.len)));
+            try self.environments.append(self.alloc, .{
+                .source = canonical,
+                .scope_path = &.{},
+                .names = std.StringHashMap(DeclId).init(self.alloc),
+                .namespaces = std.StringHashMap(NamespaceTarget).init(self.alloc),
+            });
+            try self.indexFile(canonical, id);
+            try self.indexFile(path, id);
+            break :blk id;
+        };
+        if (scope_path.len == 0) return root;
+        const source = self.environment(root).source;
+        if (self.scoped_environments.get(.{ .source = source, .scope_path = scope_path })) |id| return id;
+        const parts = try self.alloc.alloc([]const u8, scope_path.len);
+        for (scope_path, parts) |part, *copy| copy.* = try self.alloc.dupe(u8, part);
+        const id: EnvironmentId = @enumFromInt(@as(u32, @intCast(self.environments.items.len)));
+        try self.environments.append(self.alloc, .{
+            .source = try self.alloc.dupe(u8, source),
+            .scope_path = parts,
+            .names = std.StringHashMap(DeclId).init(self.alloc),
+            .namespaces = std.StringHashMap(NamespaceTarget).init(self.alloc),
+        });
+        const env = self.environment(id);
+        try self.scoped_environments.put(.{ .source = env.source, .scope_path = env.scope_path }, id);
+        return id;
+    }
+
+    pub fn directImports(self: *const DeclTable, graph: *const std.StringHashMap(std.StringHashMap(void)), env: EnvironmentId) ?std.StringHashMap(void) {
+        return graph.get(self.environment(env).source);
+    }
+
+    pub fn fileScope(self: *const DeclTable, path: []const u8) ?*Environment {
+        return self.environment(self.fileEnvironment(path) orelse return null);
+    }
+
+    pub fn claim(self: *DeclTable, env: EnvironmentId, decl: *const Node) std.mem.Allocator.Error!bool {
+        return self.claimNamed(env, decl.data.declName() orelse return true, decl);
+    }
+
+    pub fn claimNamed(self: *DeclTable, env: EnvironmentId, name: []const u8, decl: *const Node) std.mem.Allocator.Error!bool {
+        if (self.environment(env).names.get(name)) |previous| {
+            if (decl.data != .scope_decl or self.get(previous).kind != .scope) return false;
+            _ = try self.internNamedNode(env, name, decl);
+            return true;
+        }
+        const id = try self.internNamedNode(env, name, decl);
+        try self.environment(env).names.put(name, id);
+        if (decl.data == .namespace_decl) try self.publishNamespace(env, decl);
+        return true;
+    }
+
+    pub fn memberIds(self: *DeclTable, env: EnvironmentId, nodes: []const *Node) ![]const DeclId {
+        var ids = std.ArrayList(DeclId).empty;
+        for (nodes) |node| {
+            if (memberName(node) == null) continue;
+            const author_env = if (node.lexical_block) |b| self.block(b).environment else if (node.source_file) |path| try self.internEnvironment(path, &.{}) else env;
+            const id = try self.internInEnvironment(author_env, node);
+            try ids.append(self.alloc, id);
+        }
+        const members = try ids.toOwnedSlice(self.alloc);
+        try self.member_slices.append(self.alloc, members);
+        return members;
+    }
+
+    fn publishNamespace(self: *DeclTable, importer: EnvironmentId, decl: *const Node) !void {
+        const ns = decl.data.namespace_decl;
+        const target_env = if (self.fileEnvironment(ns.target_module_path) == self.fileEnvironment(self.environment(importer).source)) blk: {
+            const path = try std.mem.concat(self.alloc, []const u8, &.{ self.environment(importer).scope_path, &.{ns.name} });
+            defer self.alloc.free(path);
+            break :blk try self.internEnvironment(ns.target_module_path, path);
+        } else try self.internEnvironment(ns.target_module_path, &.{});
+        if (self.environment(target_env).scope_path.len > 0) {
+            const body_block = try self.addBlock(target_env, decl.lexical_block, decl);
+            // C namespace lookup selects the first member of a name; every prototype retains its identity.
+            for (ns.own_decls) |member| {
+                if (rawDeclRefOf(member) == null) continue;
+                ast.stampLexicalBlock(member, body_block);
+                _ = try self.claim(target_env, member);
             }
         }
+        const ids = try self.memberIds(target_env, ns.own_decls);
+        try self.environment(importer).namespaces.put(ns.name, .{
+            .alias = ns.name,
+            .importer_source = self.environment(importer).source,
+            .environment = target_env,
+            .target_module_path = ns.target_module_path,
+            .own_decls = ns.own_decls,
+            .member_ids = ids,
+            .visibility = decl.visibility,
+        });
+    }
+
+    pub fn rawAuthor(self: *const DeclTable, env: EnvironmentId, name: []const u8) ?RawAuthor {
+        const scope = self.environment(env);
+        return self.author(scope.names.get(name) orelse return null, scope.source);
+    }
+
+    pub fn author(self: *const DeclTable, id: DeclId, source: []const u8) ?RawAuthor {
+        const info = self.get(id);
+        return .{ .id = id, .raw = info.ref orelse return null, .source = info.source orelse source, .visibility = info.visibility };
     }
 };
 
-/// Build the `DeclTable` from the resolved program + the import facts: every
-/// module author (main + cache) interned first, then every namespace member
-/// (reusing the module author's id when it is also a module decl, minting a new
-/// id for a synthetic C-import member). `ns_edges` is updated in place so each
-/// `NamespaceTarget.member_ids` lists its members' ids. Built from the SAME
-/// modules `buildImportFacts` walks; no IR lowering required.
-pub fn buildDeclTable(
-    allocator: std.mem.Allocator,
-    main_path: []const u8,
-    main_mod: ResolvedModule,
-    cache: *const ModuleCache,
-    decls: *const ModuleDecls,
-    ns_edges: *NamespaceEdges,
-) !DeclTable {
-    var table = DeclTable.init(allocator);
-    try table.internModule(main_path, main_mod.own_decls);
-    var it = cache.iterator();
-    while (it.next()) |entry| {
-        try table.internModule(entry.key_ptr.*, entry.value_ptr.own_decls);
-    }
-
-    var nsit = ns_edges.iterator();
-    while (nsit.next()) |imp| {
-        var ait = imp.value_ptr.valueIterator();
-        while (ait.next()) |target| {
-            var ids = std.ArrayList(DeclId).empty;
-            for (target.own_decls) |decl| {
-                if (rawDeclRefOf(decl) == null) continue;
-                const id = try table.intern(target.target_module_path, decl);
-                try ids.append(allocator, id);
-            }
-            target.member_ids = try ids.toOwnedSlice(allocator);
-        }
-    }
-
-    if (builtin.mode == .Debug) table.verifyRoundTrip(decls, ns_edges);
-    return table;
-}
-
-/// Surface a same-module duplicate top-level declaration as a hard error at an
-/// explicit name + span. `addOwnDecl` / `addNamespace` return `false` when the
-/// name is already in this module's scope and drop the second author; without
-/// this the drop is silent, and the scalar `ModuleRawDeclIndex` would lose an
-/// authored name with no diagnostic.
-fn reportDuplicateName(diagnostics: ?*errors.DiagnosticList, added: bool, name: []const u8, span: ast.Span) void {
+fn reportDuplicateName(diagnostics: ?*errors.DiagnosticList, added: bool, name: []const u8, decl: *const Node) void {
     if (added) return;
     const diags = diagnostics orelse return;
-    diags.addFmt(.err, span, "duplicate top-level declaration '{s}'", .{name});
+    diags.addFmtInFile(.err, decl.source_file, decl.span, "duplicate top-level declaration '{s}'", .{name});
 }
 
 /// Build the diagnostic span for a failed import parse, from the parser's
@@ -1044,7 +1196,7 @@ fn stampRuntimeClassMethodSources(fcd: ast.RuntimeClassDecl, file_path: []const 
 fn reportDuplicateDecl(diagnostics: ?*errors.DiagnosticList, added: bool, decl: *const Node) void {
     if (added) return;
     const name = decl.data.declName() orelse return;
-    reportDuplicateName(diagnostics, added, name, decl.span);
+    reportDuplicateName(diagnostics, added, name, decl);
 }
 
 pub fn resolveImports(
@@ -1061,12 +1213,14 @@ pub fn resolveImports(
     import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
     flat_import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
 ) !ResolvedModule {
+    const env = try cache.declarations.internEnvironment(file_path, &.{});
+    const canonical_file = cache.declarations.environment(env).source;
     // Record this file's edge set so `param_impl_map` lookups can filter
     // candidates by what's been imported from where. Populated as each
     // import resolves below; transitive closure computed on demand.
     if (import_graph) |g| {
-        if (!g.contains(file_path)) {
-            try g.put(file_path, std.StringHashMap(void).init(allocator));
+        if (!g.contains(canonical_file)) {
+            try g.put(canonical_file, std.StringHashMap(void).init(allocator));
         }
     }
     // FLAT-only edge set: identical to `import_graph` but records ONLY bare
@@ -1074,33 +1228,75 @@ pub fn resolveImports(
     // `ns :: @import "…"`. The bare-name disambiguation walks this to
     // decide which same-name authors a flat importer can actually reach.
     if (flat_import_graph) |g| {
-        if (!g.contains(file_path)) {
-            try g.put(file_path, std.StringHashMap(void).init(allocator));
+        if (!g.contains(canonical_file)) {
+            try g.put(canonical_file, std.StringHashMap(void).init(allocator));
         }
     }
-    var mod = ResolvedModule{
-        .path = file_path,
-        .decls = &.{},
-        .own_decls = &.{},
-        .scope = std.StringHashMap(ast.Visibility).init(allocator),
-    };
+    try chain.put(canonical_file, {});
+    defer _ = chain.remove(canonical_file);
+    const block_id = try cache.declarations.addBlock(env, null, root);
+    root.lexical_block = block_id;
+    if (root.data != .root) return .{ .path = file_path, .decls = &.{}, .own_decls = &.{}, .environment = env };
+    for (root.data.root.decls) |decl| try cache.declarations.prepareExpansion(decl, block_id);
+    return resolveBlockImports(allocator, io, &root.data.root.decls, block_id, base_dir, file_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
+}
 
-    if (root.data != .root) {
-        mod.decls = &.{};
-        return mod;
-    }
+fn resolveBlockImports(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    nodes: *[]const *Node,
+    block_id: LexicalBlockId,
+    base_dir: []const u8,
+    file_path: []const u8,
+    chain: *std.StringHashMap(void),
+    cache: *ModuleCache,
+    source_map: ?*std.StringHashMap([:0]const u8),
+    diagnostics: ?*errors.DiagnosticList,
+    stdlib_paths: []const []const u8,
+    import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
+    flat_import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
+) anyerror!ResolvedModule {
+    const env = cache.declarations.block(block_id).environment;
+    const canonical_file = cache.declarations.environment(env).source;
+    var mod = ResolvedModule{ .path = file_path, .decls = &.{}, .own_decls = &.{}, .environment = env };
+    nodes.* = try expandDirectoryImports(allocator, io, nodes.*, base_dir, file_path, null, stdlib_paths, diagnostics);
+    for (nodes.*) |decl| if (decl.data == .spread_decl) {
+        try cache.declarations.recordSpread(block_id, decl, .published);
+    };
 
     var decl_list = std.ArrayList(*Node).empty;
     var own_decl_list = std.ArrayList(*Node).empty;
-    // Name set spanning every decl already appended to `decl_list` — used
-    // by `mergeFlat` to dedupe across diamond imports; `mod.scope` is
-    // non-transitive and cannot serve as the dedup key.
     var seen_in_list = std.StringHashMap(void).init(allocator);
     // Node-identity set for the same purpose, covering anonymous decls
     // (impl blocks) that carry no name to dedupe on.
     var seen_nodes = std.AutoHashMap(*Node, void).init(allocator);
 
-    for (root.data.root.decls) |decl| {
+    for (nodes.*) |decl| {
+        ast.stampLexicalBlock(decl, block_id);
+        decl.source_file = canonical_file;
+        try cache.declarations.recordWrittenTarget(block_id, decl);
+        if (decl.data == .spread_decl) {
+            try resolveSpreadSource(allocator, io, decl, base_dir, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
+            try cache.declarations.recordSpread(block_id, decl, .deferred);
+            if (decl.data.spread_decl.source.data == .import_decl) {
+                const path = decl.data.spread_decl.source.data.import_decl.path;
+                if (cache.modules.get(path)) |imported_mod| try mod.mergeFlat(allocator, &decl_list, &seen_in_list, &seen_nodes, imported_mod);
+                if (import_graph) |graph| if (graph.getPtr(canonical_file)) |edges| try edges.put(path, {});
+            }
+            try decl_list.append(allocator, decl);
+            continue;
+        }
+        if (decl.data == .scope_decl) {
+            decl.source_file = file_path;
+            const added = try mod.addOwnDecl(allocator, &cache.declarations, &decl_list, &own_decl_list, &seen_in_list, decl);
+            reportDuplicateDecl(diagnostics, added, decl);
+            if (added) {
+                const child = decl.data.scope_decl.body_block.?;
+                const body = try resolveBlockImports(allocator, io, &decl.data.scope_decl.decls, child, base_dir, file_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
+                decl.data.scope_decl.decls = body.decls;
+            }
+            continue;
+        }
         if (isModuleDriver(decl)) {
             // A module-scope `inline if` / comptime `match` / `inline for` is
             // OPAQUE here: its groups stay inside the node until lowering
@@ -1110,46 +1306,12 @@ pub fn resolveImports(
             // and neither reaches module scope until its branch is selected.
             try resolveBranchImports(allocator, io, decl, base_dir, file_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
             decl.source_file = file_path;
-            reportDuplicateDecl(diagnostics, try mod.addOwnDecl(allocator, &decl_list, &own_decl_list, &seen_in_list, decl), decl);
+            reportDuplicateDecl(diagnostics, try mod.addOwnDecl(allocator, &cache.declarations, &decl_list, &own_decl_list, &seen_in_list, decl), decl);
             continue;
         }
         if (decl.data == .c_import_decl) {
-            // Resolve `@source` / `@include` paths through the same chain
-            // as `@import`: importing-file's directory → CWD → stdlib
-            // search paths. This lets sx-library modules ship their own
-            // C helpers (e.g. the Android JNI insets bridge) without
-            // forcing every consumer to vendor an identically-named copy.
-            {
-                const ci_pre = decl.data.c_import_decl;
-                if (ci_pre.sources.len > 0) {
-                    var resolved = try allocator.alloc([]const u8, ci_pre.sources.len);
-                    for (ci_pre.sources, 0..) |raw_src, idx| {
-                        resolved[idx] = try resolveImportPath(allocator, io, base_dir, raw_src, null, stdlib_paths);
-                    }
-                    decl.data.c_import_decl.sources = resolved;
-                }
-                if (ci_pre.includes.len > 0) {
-                    var resolved = try allocator.alloc([]const u8, ci_pre.includes.len);
-                    for (ci_pre.includes, 0..) |raw_inc, idx| {
-                        resolved[idx] = try resolveImportPath(allocator, io, base_dir, raw_inc, null, stdlib_paths);
-                    }
-                    decl.data.c_import_decl.includes = resolved;
-                }
-            }
+            const result = try processCImport(allocator, io, decl, base_dir, null, stdlib_paths, diagnostics);
             const ci = decl.data.c_import_decl;
-
-            // Parse headers to get synthetic function declarations
-            const result = c_import.processCImport(
-                allocator,
-                ci.includes,
-                ci.defines,
-                ci.flags,
-            ) catch |err| {
-                if (diagnostics) |diags| {
-                    diags.addFmt(.err, decl.span, "@import c failed: {}", .{err});
-                }
-                return error.ImportError;
-            };
 
             if (ci.name) |ns_name| {
                 // Namespaced: wrap fn_decls + c_import_decl in a namespace
@@ -1179,62 +1341,54 @@ pub fn resolveImports(
                     },
                 };
                 ns_node.source_file = file_path;
+                ns_node.lexical_block = block_id;
                 // A `private ns :: @import c { … }` namespace stays file-local.
                 ns_node.visibility = decl.visibility;
-                if (mod.scope.contains(ns_name)) {
-                    reportDuplicateName(diagnostics, false, ns_name, decl.span);
-                } else {
-                    try mod.scope.put(ns_name, decl.visibility);
-                    try seen_in_list.put(ns_name, {});
-                    try decl_list.append(allocator, ns_node);
-                    try own_decl_list.append(allocator, ns_node);
-                }
+                reportDuplicateName(diagnostics, try mod.addOwnDecl(allocator, &cache.declarations, &decl_list, &own_decl_list, &seen_in_list, ns_node), ns_name, decl);
             } else {
                 // Flat: add fn_decls directly + keep c_import_decl
                 for (result.fn_decls) |fd| {
                     fd.source_file = file_path;
-                    reportDuplicateDecl(diagnostics, try mod.addOwnDecl(allocator, &decl_list, &own_decl_list, &seen_in_list, fd), fd);
+                    ast.stampLexicalBlock(fd, block_id);
+                    reportDuplicateDecl(diagnostics, try mod.addOwnDecl(allocator, &cache.declarations, &decl_list, &own_decl_list, &seen_in_list, fd), fd);
                 }
                 decl.source_file = file_path;
-                reportDuplicateDecl(diagnostics, try mod.addOwnDecl(allocator, &decl_list, &own_decl_list, &seen_in_list, decl), decl);
+                reportDuplicateDecl(diagnostics, try mod.addOwnDecl(allocator, &cache.declarations, &decl_list, &own_decl_list, &seen_in_list, decl), decl);
             }
             continue;
         }
         if (decl.data != .import_decl) {
             decl.source_file = file_path;
             stampFnBodySource(decl, file_path);
-            reportDuplicateDecl(diagnostics, try mod.addOwnDecl(allocator, &decl_list, &own_decl_list, &seen_in_list, decl), decl);
+            reportDuplicateDecl(diagnostics, try mod.addOwnDecl(allocator, &cache.declarations, &decl_list, &own_decl_list, &seen_in_list, decl), decl);
             continue;
         }
+        try cache.declarations.recordImport(block_id, decl);
         const imp = decl.data.import_decl;
 
-        const resolved_path = try resolveImportPath(allocator, io, base_dir, imp.path, null, stdlib_paths);
+        const resolved_path = imp.path;
 
         // Record direct-import edge file_path → resolved_path. Self-imports
         // and chain duplicates are still recorded so the graph reflects what
         // the user wrote (filter happens at lookup).
         if (import_graph) |g| {
-            if (g.getPtr(file_path)) |set| {
+            if (g.getPtr(canonical_file)) |set| {
                 set.put(resolved_path, {}) catch {};
             }
         }
-        // The same edge, FLAT-only: recorded only for a bare `@import`
-        // (`imp.name == null`), excluding a namespaced `ns :: @import`. Covers
-        // both a flat file import and a flat directory import (`resolved_path`
-        // is the directory in the latter case).
-        if (imp.name == null) {
+        if (imp.name == null and cache.declarations.block(block_id).parent == null) {
             if (flat_import_graph) |g| {
-                if (g.getPtr(file_path)) |set| {
+                if (g.getPtr(canonical_file)) |set| {
                     set.put(resolved_path, {}) catch {};
                 }
             }
         }
 
-        const imported_mod = (try loadImport(allocator, io, resolved_path, file_path, decl, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph)) orelse continue;
+        const imported_mod = (try loadImport(allocator, io, resolved_path, decl, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph)) orelse continue;
 
         if (imp.name) |ns_name| {
-            const added = try mod.addNamespace(allocator, &decl_list, &own_decl_list, &seen_in_list, ns_name, imported_mod, decl.span, imp.is_raw, decl.visibility);
-            reportDuplicateName(diagnostics, added, ns_name, decl.span);
+            const added = try mod.addNamespace(allocator, &cache.declarations, &decl_list, &own_decl_list, &seen_in_list, ns_name, imported_mod, decl.span, imp.is_raw, decl.visibility, block_id);
+            reportDuplicateName(diagnostics, added, ns_name, decl);
         } else {
             try mod.mergeFlat(allocator, &decl_list, &seen_in_list, &seen_nodes, imported_mod);
         }
@@ -1244,14 +1398,63 @@ pub fn resolveImports(
     return mod;
 }
 
-/// Load the module an already-resolved `@import` path names — from the cache,
-/// as a file, or as a directory aggregate — and cache it. Null when the path
-/// is on the current chain (a cycle): the caller adds nothing.
+pub fn processCImport(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    node: *Node,
+    base_dir: []const u8,
+    root_path: ?[]const u8,
+    stdlib_paths: []const []const u8,
+    diagnostics: ?*errors.DiagnosticList,
+) !c_import.CImportResult {
+    const operand = if (node.data == .spread_decl) node.data.spread_decl.source else node;
+    const ci = &operand.data.c_import_decl;
+    for ([_]*[]const []const u8{ &ci.includes, &ci.sources }) |paths| {
+        const resolved = try allocator.alloc([]const u8, paths.*.len);
+        for (paths.*, resolved) |path, *out| out.* = try resolveImportPath(allocator, io, base_dir, path, root_path, stdlib_paths);
+        paths.* = resolved;
+    }
+    return switch (try c_import.processCImport(allocator, ci.includes, ci.defines, ci.flags)) {
+        .success => |result| result,
+        .failure => |failure| {
+            if (diagnostics) |diags| {
+                diags.addFmtInFile(.err, node.source_file, node.span, "@import c failed: cannot parse '{s}': {s}", .{ failure.header, failure.message });
+            }
+            return error.ImportError;
+        },
+    };
+}
+
+fn resolveSpreadSource(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    node: *Node,
+    base_dir: []const u8,
+    chain: *std.StringHashMap(void),
+    cache: *ModuleCache,
+    source_map: ?*std.StringHashMap([:0]const u8),
+    diagnostics: ?*errors.DiagnosticList,
+    stdlib_paths: []const []const u8,
+    import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
+    flat_import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
+) !void {
+    const operand = node.data.spread_decl.source;
+    switch (operand.data) {
+        .import_decl => |imp| {
+            _ = try loadImport(allocator, io, imp.path, node, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
+        },
+        .c_import_decl => {
+            const result = try processCImport(allocator, io, node, base_dir, null, stdlib_paths, diagnostics);
+            node.data.spread_decl.c_decls = result.fn_decls;
+        },
+        else => {},
+    }
+}
+
 fn loadImport(
     allocator: std.mem.Allocator,
     io: std.Io,
     resolved_path: []const u8,
-    file_path: []const u8,
     decl: *const Node,
     chain: *std.StringHashMap(void),
     cache: *ModuleCache,
@@ -1262,47 +1465,11 @@ fn loadImport(
     flat_import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
 ) anyerror!?ResolvedModule {
     if (chain.contains(resolved_path)) return null;
-    if (cache.get(resolved_path)) |cached| return cached;
+    if (cache.modules.get(resolved_path)) |cached| return cached;
 
-    if (try loadFileModule(allocator, io, resolved_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph)) |result| {
-        return result;
-    } else {
-        // File read failed — try as directory import. An extensionless
-        // path that names a directory next to a same-named `.sx` file
-        // is ambiguous: require the explicit `.sx` spelling for the
-        // file rather than silently picking the directory. Exception:
-        // when the sibling `.sx` is the importing file itself (a test
-        // importing its own companion directory), the directory is the
-        // only sensible target.
-        const raw_spelling = decl.data.import_decl.path;
-        const sibling_sx = try std.fmt.allocPrint(allocator, "{s}.sx", .{resolved_path});
-        const sibling_exists = if (std.mem.eql(u8, sibling_sx, file_path))
-            false
-        else if (std.Io.Dir.readFileAlloc(.cwd(), io, sibling_sx, allocator, .limited(10 * 1024 * 1024))) |_|
-            true
-        else |_|
-            false;
-        if (sibling_exists) {
-            const is_dir = if (std.Io.Dir.openDir(.cwd(), io, resolved_path, .{})) |d| dir_blk: {
-                d.close(io);
-                break :dir_blk true;
-            } else |_| false;
-            if (is_dir) {
-                if (diagnostics) |diags| {
-                    diags.addFmt(.err, decl.span, "ambiguous import '{s}': both a file '{s}.sx' and a directory '{s}' exist — write \"{s}.sx\" to import the file", .{ raw_spelling, raw_spelling, raw_spelling, raw_spelling });
-                }
-                return error.ImportError;
-            }
-        }
-        const result = resolveDirectoryImport(allocator, io, resolved_path, chain, cache, source_map, diagnostics, decl.span, stdlib_paths, import_graph, flat_import_graph) catch {
-            if (diagnostics) |diags| {
-                diags.addFmt(.err, decl.span, "cannot read import '{s}' (not a file or directory)", .{resolved_path});
-            }
-            return error.ImportError;
-        };
-        try cache.put(resolved_path, result);
-        return result;
-    }
+    if (try loadFileModule(allocator, io, resolved_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph)) |result| return result;
+    if (diagnostics) |diags| diags.addFmt(.err, decl.span, "cannot read import '{s}' (not a file or directory)", .{resolved_path});
+    return error.ImportError;
 }
 
 /// Parse and resolve the module file at `resolved_path` and cache it. Null when
@@ -1334,13 +1501,10 @@ fn loadFileModule(
         return error.ImportError;
     };
 
-    // Push onto chain before recursing, pop after
-    try chain.put(resolved_path, {});
     const imp_dir = dirName(resolved_path);
     const result = try resolveImports(allocator, io, imp_root, imp_dir, resolved_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
-    _ = chain.remove(resolved_path);
 
-    try cache.put(resolved_path, result);
+    try cache.modules.put(resolved_path, result);
     return result;
 }
 
@@ -1365,7 +1529,7 @@ pub fn loadCoreModule(
     flat_import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
 ) !void {
     const path = resolveImportPath(allocator, io, dirName(mod.path), core_module, null, stdlib_paths) catch return;
-    if (cache.contains(path) or sameFileIdentity(allocator, path, mod.path)) return;
+    if (cache.modules.contains(path) or sameFileIdentity(allocator, path, mod.path)) return;
     const core = (try loadFileModule(allocator, io, path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph)) orelse return;
 
     var list = std.ArrayList(*Node).empty;
@@ -1444,148 +1608,112 @@ fn resolveBranchBodyImports(
     import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
     flat_import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
 ) anyerror!void {
-    const stmts: []const *Node = if (body.data == .block) body.data.block.stmts else &[_]*Node{body};
+    const original: []const *Node = if (body.data == .block) body.data.block.stmts else &[_]*Node{body};
+    const stmts = try expandDirectoryImports(allocator, io, original, base_dir, file_path, null, stdlib_paths, diagnostics);
+    if (body.data == .block) {
+        body.data.block.stmts = stmts;
+    } else if (body.data == .import_decl or (body.data == .spread_decl and body.data.spread_decl.source.data == .import_decl)) {
+        body.data = .{ .block = .{ .stmts = stmts } };
+    }
+    for (stmts) |stmt| if (stmt.data == .spread_decl) {
+        try cache.declarations.recordSpread(body.lexical_block.?, stmt, .deferred);
+    };
     for (stmts) |stmt| {
+        ast.stampLexicalBlock(stmt, body.lexical_block.?);
+        stmt.source_file = file_path;
+        try cache.declarations.recordWrittenTarget(body.lexical_block.?, stmt);
+        if (stmt.data == .spread_decl) {
+            try resolveSpreadSource(allocator, io, stmt, base_dir, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
+            try cache.declarations.recordSpread(body.lexical_block.?, stmt, .deferred);
+            continue;
+        }
+        if (stmt.data == .scope_decl) {
+            const child = stmt.data.scope_decl.body_block.?;
+            var scope_body = Node{ .span = stmt.span, .lexical_block = child, .data = .{ .block = .{ .stmts = stmt.data.scope_decl.decls } } };
+            try resolveBranchBodyImports(allocator, io, &scope_body, base_dir, file_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
+            stmt.data.scope_decl.decls = scope_body.data.block.stmts;
+            continue;
+        }
         if (isModuleDriver(stmt)) {
             try resolveBranchImports(allocator, io, stmt, base_dir, file_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
             continue;
         }
         if (stmt.data != .import_decl) continue;
-        const resolved_path = try resolveImportPath(allocator, io, base_dir, stmt.data.import_decl.path, null, stdlib_paths);
-        _ = try loadImport(allocator, io, resolved_path, file_path, stmt, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
-        stmt.data.import_decl.path = resolved_path;
+        const resolved_path = stmt.data.import_decl.path;
+        _ = try loadImport(allocator, io, resolved_path, stmt, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
     }
 }
 
-/// Resolve a directory import by aggregating all .sx files in the directory.
-fn resolveDirectoryImport(
+pub fn expandDirectoryImports(
     allocator: std.mem.Allocator,
     io: std.Io,
-    dir_path: []const u8,
-    chain: *std.StringHashMap(void),
-    cache: *ModuleCache,
-    source_map: ?*std.StringHashMap([:0]const u8),
-    diagnostics: ?*errors.DiagnosticList,
-    span: ast.Span,
+    nodes: []const *Node,
+    base_dir: []const u8,
+    file_path: []const u8,
+    root_path: ?[]const u8,
     stdlib_paths: []const []const u8,
-    import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
-    flat_import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
-) anyerror!ResolvedModule {
-    // Open the directory with iteration capability
-    const dir = std.Io.Dir.openDir(.cwd(), io, dir_path, .{ .iterate = true }) catch {
-        return error.ImportError;
+    diagnostics: ?*errors.DiagnosticList,
+) ![]const *Node {
+    var expanded = std.ArrayList(*Node).empty;
+    for (nodes) |node| {
+        const operand = if (node.data == .spread_decl) node.data.spread_decl.source else node;
+        if (operand.data != .import_decl) {
+            try expanded.append(allocator, node);
+            continue;
+        }
+        const resolved = try resolveImportPath(allocator, io, base_dir, operand.data.import_decl.path, root_path, stdlib_paths);
+        const paths = try importFiles(allocator, io, resolved, file_path, operand, diagnostics);
+        for (paths) |path| {
+            const imported = try allocator.create(Node);
+            imported.* = operand.*;
+            imported.data.import_decl.path = path;
+            if (node.data == .spread_decl) {
+                const spread = try allocator.create(Node);
+                spread.* = node.*;
+                spread.data.spread_decl.source = imported;
+                try expanded.append(allocator, spread);
+            } else try expanded.append(allocator, imported);
+        }
+    }
+    return expanded.toOwnedSlice(allocator);
+}
+
+fn importFiles(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    path: []const u8,
+    file_path: []const u8,
+    node: *const Node,
+    diagnostics: ?*errors.DiagnosticList,
+) ![]const []const u8 {
+    const dir = std.Io.Dir.openDir(.cwd(), io, path, .{ .iterate = true }) catch {
+        const files = try allocator.alloc([]const u8, 1);
+        files[0] = path;
+        return files;
     };
     defer dir.close(io);
-
-    // Collect all .sx file names
-    var file_names = std.ArrayList([]const u8).empty;
-    var it = dir.iterate();
-    while (it.next(io) catch null) |entry| {
-        if (entry.kind != .file) continue;
-        if (!std.mem.endsWith(u8, entry.name, ".sx")) continue;
-        const name_copy = try allocator.dupe(u8, entry.name);
-        try file_names.append(allocator, name_copy);
+    const sibling = try std.fmt.allocPrint(allocator, "{s}.sx", .{path});
+    const importer = try canonicalizePath(allocator, file_path);
+    if (!std.mem.eql(u8, sibling, importer)) {
+        if (std.Io.Dir.readFileAlloc(.cwd(), io, sibling, allocator, .limited(10 * 1024 * 1024))) |_| {
+            if (diagnostics) |diags| {
+                const spelling = node.data.import_decl.path;
+                diags.addFmt(.err, node.span, "ambiguous import '{s}': both a file '{s}.sx' and a directory '{s}' exist — write \"{s}.sx\" to import the file", .{ spelling, spelling, spelling, spelling });
+            }
+            return error.ImportError;
+        } else |_| {}
     }
-
-    // Sort alphabetically for deterministic ordering
-    std.mem.sort([]const u8, file_names.items, {}, struct {
+    var paths = std.ArrayList([]const u8).empty;
+    var it = dir.iterate();
+    while (try it.next(io)) |entry| {
+        if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".sx")) continue;
+        const joined = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ path, entry.name });
+        try paths.append(allocator, try canonicalizePath(allocator, joined));
+    }
+    std.mem.sort([]const u8, paths.items, {}, struct {
         fn lessThan(_: void, a: []const u8, b: []const u8) bool {
             return std.mem.order(u8, a, b) == .lt;
         }
     }.lessThan);
-
-    // Add directory to chain for circular import detection
-    try chain.put(dir_path, {});
-    defer _ = chain.remove(dir_path);
-
-    // Merge all files into a combined module. From an importer's perspective
-    // a directory is one big module: the combined module's `own_decls` is
-    // the union of every file's `own_decls`, so flat-importing the directory
-    // exposes everything the files themselves authored — but not what those
-    // files transitively imported from outside the directory.
-    var combined = ResolvedModule{
-        .path = dir_path,
-        .decls = &.{},
-        .own_decls = &.{},
-        .scope = std.StringHashMap(ast.Visibility).init(allocator),
-    };
-    var decl_list = std.ArrayList(*Node).empty;
-    var own_decl_list = std.ArrayList(*Node).empty;
-    var seen_in_list = std.StringHashMap(void).init(allocator);
-    var seen_nodes = std.AutoHashMap(*Node, void).init(allocator);
-
-    for (file_names.items) |file_name| {
-        // `dir_path` arrives canonical from `resolveImportPath`, but the join
-        // can still de-canonicalize (e.g. a `.` dir_path → `./x.sx`), so the
-        // per-file key goes through the same chokepoint.
-        const file_path = try canonicalizePath(allocator, try std.fmt.allocPrint(allocator, "{s}/{s}", .{ dir_path, file_name }));
-
-        if (chain.contains(file_path)) continue;
-
-        const file_mod = if (cache.get(file_path)) |cached|
-            cached
-        else file_blk: {
-            const imp_bytes = std.Io.Dir.readFileAlloc(.cwd(), io, file_path, allocator, .limited(10 * 1024 * 1024)) catch {
-                if (diagnostics) |diags| {
-                    diags.addFmt(.err, span, "cannot read '{s}' in directory import", .{file_path});
-                }
-                return error.ImportError;
-            };
-            const imp_source = try allocator.dupeZ(u8, imp_bytes);
-
-            if (source_map) |sm| {
-                sm.put(file_path, imp_source) catch {};
-            }
-
-            var p = try parser.Parser.init(allocator, imp_source);
-            const imp_root = p.parse() catch {
-                if (diagnostics) |diags| {
-                    diags.addFmtInFile(.err, file_path, importErrSpan(&p), "parse error in '{s}': {s}", .{ file_path, p.err_msg orelse "unknown" });
-                }
-                return error.ImportError;
-            };
-
-            try chain.put(file_path, {});
-            const result = try resolveImports(allocator, io, imp_root, dir_path, file_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
-            _ = chain.remove(file_path);
-
-            try cache.put(file_path, result);
-            break :file_blk result;
-        };
-
-        // Source-order matters: a file's own decls (e.g. `impl Foo` blocks)
-        // may reference types defined in OTHER files that THIS file imports.
-        // `file_mod.decls` already lists transitive-imported decls before
-        // the file's own decls (resolveImports processes `@import` lines in
-        // source order, and @imports usually come first), so iterating it
-        // directly preserves the scan order the lowering pass needs to
-        // register `Event` (a payload enum) before `handle_event(e: *Event)`
-        // triggers the placeholder-struct fallback in `resolveTypeName`.
-        for (file_mod.decls) |decl| {
-            if (seen_nodes.contains(decl)) continue;
-            if (decl.data.declName()) |name| {
-                if (seen_in_list.contains(name)) continue;
-                try seen_in_list.put(name, {});
-            }
-            try seen_nodes.put(decl, {});
-            try decl_list.append(allocator, decl);
-        }
-        // Separately track which decls the directory `re-exports` to its
-        // flat-importers. Position in `own_decl_list` doesn't matter — it's
-        // only consumed by the importer-side visibility join (`isNameVisible`
-        // in lower.zig) which treats it as a set.
-        for (file_mod.own_decls) |decl| {
-            if (decl.data.declName()) |name| {
-                if (combined.scope.contains(name)) continue;
-                // A private member-file decl stays private through the
-                // directory aggregate: importers of the directory must not
-                // see it, while the member file's own scope keeps it usable.
-                try combined.scope.put(name, decl.visibility);
-            }
-            try own_decl_list.append(allocator, decl);
-        }
-    }
-
-    try combined.finalize(allocator, &decl_list, &own_decl_list);
-    return combined;
+    return paths.toOwnedSlice(allocator);
 }

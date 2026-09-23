@@ -10,7 +10,7 @@
 //   - public std.gzip is sufficient for a .tgs payload (no shell/dependency).
 
 @import "modules/std.sx";
-http :: @import "modules/std/http.sx";
+@import "modules/std/http.sx";
 socket :: @import "modules/std/socket.sx";
 ClientResponse :: http.ClientResponse;
 

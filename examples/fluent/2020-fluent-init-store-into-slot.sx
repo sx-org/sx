@@ -6,6 +6,7 @@
 // directly into it. A callee that never writes never evaluates the expression
 // at all — the explicitly lazy API.
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 Button :: struct {
     label: string = "";
@@ -14,7 +15,7 @@ Button :: struct {
 
 // The initializer shape: reserve, write, hand back the pointer.
 store :: (value: $I/@Init($T)) -> *T {
-    dest := context.allocator.create(T);
+    dest := mem.create(context.allocator, T);
     value.write(dest);
     dest
 }
@@ -35,11 +36,11 @@ main :: () -> i32 {
 
     b := store(Button{ label = "Play", alpha = alpha });
     print("stored: {} {}\n", b.label, b.alpha);
-    context.allocator.destroy(b);
+    mem.destroy(context.allocator, b);
 
     f := storeVia(Button{ label = "Forwarded" });
     print("forwarded: {} {}\n", f.label, f.alpha);
-    context.allocator.destroy(f);
+    mem.destroy(context.allocator, f);
 
     print("declined: {}\n", countOnly(Button{ label = "never built" }));
     0

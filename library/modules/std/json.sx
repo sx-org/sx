@@ -53,7 +53,7 @@
 
 @import "modules/std/core.sx";     // Allocator, Writer, @sizeOf, string
 @import "modules/std/list.sx";     // List
-c :: @import "modules/std/c.sx";
+@import "modules/std/c.sx";
 @import "modules/std/mem.sx";      // alloc
 // `toF64` / `shortest` / `floatBits` / `isNonFinite` — the exact
 // decimal <-> binary pair the reader and the writer share.
@@ -105,7 +105,7 @@ Object :: struct {
     put :: (self: *Object, key: string, v: Value, alloc: Allocator = context.allocator) {
         if self.len >= self.cap {
             newCap := if self.cap == 0 then 4 else self.cap * 2;
-            newItems : [*]Member = alloc.alloc(Member, newCap).ptr;
+            newItems : [*]Member = mem.alloc(alloc, Member, newCap).ptr;
             if self.len > 0 {
                 c.memcpy(newItems, self.items, self.len * @sizeOf(Member));
                 alloc.deallocBytes(self.items);
@@ -279,8 +279,8 @@ JsonWriter :: struct {
             } else if c < ' ' {
                 self.out.write(s[run..i]);
                 u : [6]u8 = .['\\', 'u', '0', '0',
-                              hexDigit((c.(i64) >> 4) & 0xF),
-                              hexDigit(c.(i64) & 0xF)];
+                              encoding.hexDigit((c.(i64) >> 4) & 0xF),
+                              encoding.hexDigit(c.(i64) & 0xF)];
                 self.out.write(u[..]);
             } else {
                 i += 1;
@@ -343,7 +343,7 @@ JsonWriter :: struct {
 // keeps `src` alive for as long as the tree is used.
 //
 //     gpa   := GPA.init();
-//     arena := Arena.init(gpa, 4096);
+//     arena := mem.Arena.init(gpa, 4096);
 //     defer arena.deinit();
 //     root  := try parse(src, arena);   // composites + decoded strings in arena
 
@@ -387,7 +387,7 @@ JsonParser :: struct {
         v := 0;
         k := 0;
         while k < 4 {
-            if d := hexValue(self.src[i + k]) { v = v * 16 + d; } else { raise .BadEscape; }
+            if d := encoding.hexValue(self.src[i + k]) { v = v * 16 + d; } else { raise .BadEscape; }
             k += 1;
         }
         return v;
@@ -423,10 +423,10 @@ JsonParser :: struct {
                         lo := try self.readHex4(lpos + 2, end);
                         if lo < 0xDC00 or lo > 0xDFFF { raise .BadEscape; }
                         cp := 0x10000 + ((u - 0xD800) << 10) + (lo - 0xDC00);
-                        if seq := encodeUtf8(cp, out[di..]) { di += seq.len; } else { raise .BadEscape; }
+                        if seq := encoding.encodeUtf8(cp, out[di..]) { di += seq.len; } else { raise .BadEscape; }
                         i = lpos + 6;
                     } else {
-                        if seq := encodeUtf8(u, out[di..]) { di += seq.len; } else { raise .BadEscape; }
+                        if seq := encoding.encodeUtf8(u, out[di..]) { di += seq.len; } else { raise .BadEscape; }
                         i = hpos + 4;
                     }
                 }
@@ -469,7 +469,7 @@ JsonParser :: struct {
             return self.src[start..end];
         }
         rawLen := end - start;        // decoded length <= rawLen (escapes shrink)
-        out := self.alloc.alloc(u8, rawLen);
+        out := mem.alloc(self.alloc, u8, rawLen);
         dlen := try self.decodeInto(start, end, out);
         self.pos = end + 1;
         return out[..dlen];

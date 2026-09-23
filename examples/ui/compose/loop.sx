@@ -47,7 +47,7 @@ UiRoot :: struct {
     focus: FocusRouter = .{};
     queue: InputQueue;
     snapshot: CommittedUiSnapshot;
-    arenas: [2]Arena;
+    arenas: [2]mem.Arena;
     parity: i64 = 0;
 
     // The snapshot starts on `gpa` holding nothing; the first commit is what
@@ -61,7 +61,7 @@ UiRoot :: struct {
             taps = Router.init(gpa),
             queue = InputQueue.init(gpa),
             snapshot = CommittedUiSnapshot.init(gpa),
-            arenas = .[Arena.init(gpa, FRAME_ARENA_BYTES), Arena.init(gpa, FRAME_ARENA_BYTES)],
+            arenas = .[mem.Arena.init(gpa, FRAME_ARENA_BYTES), mem.Arena.init(gpa, FRAME_ARENA_BYTES)],
         }
     }
 
@@ -114,7 +114,7 @@ FrameLoop :: struct {
         .{ root = root, build = build, buildAllocator = buildAllocator };
 
     deinit :: (self: *FrameLoop) {
-        free(self.build, self.buildAllocator)
+        mem.free(self.build, self.buildAllocator)
     }
 
     frame :: (self: *FrameLoop) {

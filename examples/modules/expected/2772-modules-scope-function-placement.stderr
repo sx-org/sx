@@ -1,0 +1,5 @@
+error: a scope block is only allowed at file top level or inside another scope
+  --> examples/modules/2772-modules-scope-function-placement.sx:2:12
+   |
+ 2 |     geo :: scope {}
+   |            ^^^^^

@@ -26,6 +26,14 @@ pub const CImportResult = struct {
     locations: []const CSourceLocation,
 };
 
+pub const CImportOutcome = union(enum) {
+    success: CImportResult,
+    failure: struct {
+        header: []const u8,
+        message: []const u8,
+    },
+};
+
 /// Info collected from c_import_decl AST nodes for native compilation.
 pub const CImportInfo = struct {
     sources: []const []const u8,
@@ -203,7 +211,7 @@ pub fn processCImport(
     includes: []const []const u8,
     defines: []const []const u8,
     flags: []const []const u8,
-) !CImportResult {
+) !CImportOutcome {
     // Build clang args: -I dirs, -D defines, raw flags
     var args_list = std.ArrayList([*c]const u8).empty;
 
@@ -241,10 +249,11 @@ pub fn processCImport(
         );
 
         if (info == null) {
-            if (err_msg) |e| {
-                std.debug.print("clang parse error for '{s}': {s}\n", .{ header, std.mem.span(e) });
-            }
-            return error.CompileError;
+            defer std.c.free(err_msg);
+            return .{ .failure = .{
+                .header = header,
+                .message = try allocator.dupe(u8, std.mem.span(err_msg)),
+            } };
         }
         defer c.sx_clang_free_header_info(info);
 
@@ -331,10 +340,10 @@ pub fn processCImport(
         }
     }
 
-    return .{
+    return .{ .success = .{
         .fn_decls = try all_decls.toOwnedSlice(allocator),
         .locations = try all_locs.toOwnedSlice(allocator),
-    };
+    } };
 }
 
 // ---------------------------------------------------------------------------
@@ -347,6 +356,7 @@ fn collectExternRefTargets(valid: *std.StringHashMap(void), decls: []const *Node
     for (decls) |d| {
         switch (d.data) {
             .library_decl => |ld| try valid.put(ld.name, {}),
+            .scope_decl => |scope| try collectExternRefTargets(valid, scope.decls),
             .namespace_decl => |ns| {
                 // A NAMED `@import c` unit lowers to a namespace wrapping
                 // its c_import_decl — the namespace name is the unit ref.
@@ -372,10 +382,11 @@ fn checkExternRefs(valid: *const std.StringHashMap(void), decls: []const *Node, 
                 if (fd.extern_export != .extern_) continue;
                 const ref = fd.extern_lib orelse continue;
                 if (!valid.contains(ref)) {
-                    diags.addFmt(.err, d.span, "extern library '{s}' is not declared; expected a @library constant or a named '@import c' unit", .{ref});
+                    diags.addFmtInFile(.err, d.source_file, d.span, "extern library '{s}' is not declared; expected a @library constant or a named '@import c' unit", .{ref});
                 }
             },
             .namespace_decl => |ns| checkExternRefs(valid, ns.decls, diags),
+            .scope_decl => |scope| checkExternRefs(valid, scope.decls, diags),
             else => {},
         }
     }
@@ -950,6 +961,8 @@ pub fn collectCImportSources(allocator: std.mem.Allocator, root: *const Node) ![
                         }
                     },
                     .namespace_decl => |ns| try walk(infos_, seen_, alloc, ns.decls),
+                    .scope_decl => |scope| try walk(infos_, seen_, alloc, scope.decls),
+                    .spread_decl => |spread| try walk(infos_, seen_, alloc, &.{spread.source}),
                     else => {},
                 }
             }

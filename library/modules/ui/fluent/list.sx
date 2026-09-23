@@ -29,17 +29,17 @@
 @import "modules/ui/fluent/identity.sx";
 @import "modules/ui/fluent/loop.sx";
 
-ESTIMATED_ROW_HEIGHT :: 44.0;
+private ESTIMATED_ROW_HEIGHT :: 44.0;
 // Points per wheel unit.
-WHEEL_STEP :: 40.0;
+private WHEEL_STEP :: 40.0;
 // What a fling keeps of its velocity per millisecond.
-FLING_DECAY :: 0.998;
+private FLING_DECAY :: 0.998;
 // Points per second under which a fling has come to rest.
-FLING_FLOOR :: 20.0;
+private FLING_FLOOR :: 20.0;
 // A release this long after the last move flings nothing.
-FLING_HOLD_NS :: 100_000_000;
+private FLING_HOLD_NS :: 100_000_000;
 // A frame this late advances a fling as if it were this late.
-FLING_STEP_CAP_NS :: 250_000_000;
+private FLING_STEP_CAP_NS :: 250_000_000;
 
 ListState :: struct {
     gpa: Allocator;
@@ -149,7 +149,7 @@ ListState :: struct {
     }
 }
 
-Row :: struct {
+private Row :: struct {
     index: i64;
     view: View;
     height: f32;
@@ -284,7 +284,7 @@ LazyList :: @OpenVariant(View) {
     // win the points they cover; the rows draw under the list's clip.
     render :: (self: *LazyList, rc: *RenderContext, frame: Frame) {
         st := self.state;
-        rc.scrollRegion(self.id.value, frame, closure(|g: *ScrollGesture|_{ st } { st.gesture(g) }));
+        rc.scrollRegion(self.id.value, frame, mem.closure(|g: *ScrollGesture|_{ st } { st.gesture(g) }));
         rc.pushClip(frame);
         for *r in self.rows {
             if r.index >= st.first and r.index <= st.last {

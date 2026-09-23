@@ -17,10 +17,7 @@
 //    the kernel until the keepalive deadline kills the conn.
 // 3. GPA leak gate: net-zero after close.
 @import "modules/std.sx";
-http :: @import "modules/std/http.sx";
-
-clib :: @library "c";
-usleep :: (usec: i64) -> i32 extern clib;
+@import "modules/std/http.sx";
 
 PORT :: 18992;
 SLOW_SLEEP_US :: 300000;   // 300 ms of worker runtime while bytes are pending
@@ -28,7 +25,7 @@ MAX_TICKS :: 100;          // spin would burn thousands of iterations in 300 ms
 
 route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     if req.path == "/slow" {
-        usleep(SLOW_SLEEP_US);
+        c.usleep(SLOW_SLEEP_US);
         resp.body = "slow-ok";
         return;
     }
@@ -93,7 +90,7 @@ main :: () -> i32 {
         // are reported every wait() and the loop spins doing nothing.
         req2 := "GET /fast HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n";
         socket.write(ca, req2.ptr, req2.len);
-        usleep(10000);   // let the bytes land
+        c.usleep(10000);   // let the bytes land
 
         // Count loop iterations until both responses are in (worker sleeps
         // 300 ms; a sleeping loop needs ~10-20 tick(30)s, a spinning one

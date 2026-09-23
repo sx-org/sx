@@ -1,0 +1,4 @@
+@import "modules/std.sx";
+..@import "2780-modules-spread-import/facade.sx";
+@import "2780-modules-spread-import/sibling.sx";
+main :: () { print("{} {}\n", geo.left, geo.right); }

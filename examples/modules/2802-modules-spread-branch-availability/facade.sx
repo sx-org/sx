@@ -1,0 +1,11 @@
+inline if source.ready { enabled :: true; }
+inline if enabled { ..api; }
+api :: scope {
+    inline if enabled {
+        private part :: @import "part.sx";
+        ..part;
+    }
+}
+source :: scope {
+    inline if true { ..@import "part.sx"; }
+}

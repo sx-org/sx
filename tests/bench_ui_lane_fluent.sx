@@ -1,24 +1,22 @@
-// Fluent lane for tests/bench_ui_three_stacks.sx. `collectViews` intercepts
-// Label expressions only when View is this module's name for fluent.View.
 @import "modules/std.sx";
 @import "modules/ui/fluent.sx";
 
-slotBytes :: () -> i64 => @sizeOf(View);
+slotBytes :: () -> i64 => @sizeOf(fluent.View);
 
-build :: (n: i64) -> VStack {
-    VStack{ children = collectViews() {
+build :: (n: i64) -> fluent.VStack {
+    fluent.VStack{ children = fluent.collectViews() {
         for i in 0..n {
-            Label{ text = "c" };
+            fluent.Label{ text = "c" };
         }
     } }
 }
 
 warmup :: (n: i64) -> i64 {
     stack := build(n);
-    root : View = stack;
-    tree := RenderTree{};
-    renderRoot(*root, Size{ width = 200.0, height = 400.0 }, *tree);
-    commandCount(*tree)
+    root : fluent.View = stack;
+    tree := fluent.RenderTree{};
+    fluent.renderRoot(*root, fluent.Size{ width = 200.0, height = 400.0 }, *tree);
+    fluent.commandCount(*tree)
 }
 
 sample :: (n: i64, builds: i64, walks: i64) -> (i64, i64, i64) {
@@ -32,14 +30,14 @@ sample :: (n: i64, builds: i64, walks: i64) -> (i64, i64, i64) {
     }
     t1 := time.monoNs();
     stack := build(n);
-    tree := RenderTree{};
-    root : View = stack;
+    tree := fluent.RenderTree{};
+    root : fluent.View = stack;
     k := 0;
     while k < walks {
         tree.nodes.len = 0;
-        renderRoot(*root, Size{ width = 200.0, height = 400.0 }, *tree);
+        fluent.renderRoot(*root, fluent.Size{ width = 200.0, height = 400.0 }, *tree);
         k = k + 1;
     }
     t2 := time.monoNs();
-    .{t1 - t0, t2 - t1, commandCount(*tree) + (built - builds * n)}
+    .{t1 - t0, t2 - t1, fluent.commandCount(*tree) + (built - builds * n)}
 }

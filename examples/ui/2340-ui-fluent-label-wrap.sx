@@ -7,7 +7,7 @@
 @import "modules/std/mem.sx";
 @import "modules/ui/fluent.sx";
 
-show :: (tag: string, root: *UiRoot) {
+show :: (tag: string, root: *fluent.UiRoot) {
     print("{}\n", tag);
     for n in root.snapshot.scene.nodes {
         lines := 0;
@@ -22,12 +22,12 @@ show :: (tag: string, root: *UiRoot) {
 }
 
 main :: () -> i32 {
-    root := UiRoot.init(Size{ width = 64.0, height = 80.0 }, context.allocator);
-    loop := FrameLoop.init(*root, closure(|| -> View {
-        v : View = vstack(4.0) {
-            Label{ text = "wrap me please" };
-            hstack(0.0) {
-                Label{ text = "wrap me please" };
+    root := fluent.UiRoot.init(fluent.Size{ width = 64.0, height = 80.0 }, context.allocator);
+    loop := fluent.FrameLoop.init(*root, mem.closure(|| -> fluent.View {
+        v : fluent.View = fluent.vstack(4.0) {
+            fluent.Label{ text = "wrap me please" };
+            fluent.hstack(0.0) {
+                fluent.Label{ text = "wrap me please" };
             };
         };
         v

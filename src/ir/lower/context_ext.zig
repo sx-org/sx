@@ -107,13 +107,7 @@ pub fn collectContextExtensions(self: *Lowering, decls: []const *const Node) voi
     }
 }
 
-/// Assemble the program Context: append every valid collected field to the
-/// registered `Context` struct type (declared EMPTY in core.sx — 100% of the
-/// fields come from `@context.extend` declarations, in sort order). The
-/// authoritative call is pass 1a' in `lowerRoot` (after `scanDecls` — every
-/// named type registered, diagnostics live). Each field's type resolves in
-/// its DECLARING module's visibility context, exactly like a namespaced
-/// callee's return type (`resolveTypeInSource`).
+/// Context fields form one program-wide layout; field types resolve where authored.
 pub fn assembleContext(self: *Lowering) void {
     _ = assembleContextImpl(self, .final);
 }
@@ -182,7 +176,7 @@ fn assembleContextImpl(self: *Lowering, mode: enum { early, final }) bool {
                 d.addFmtInFile(.err, e.module_path, e.type_expr.span, "cannot resolve the type of context field '{s}'", .{e.name});
             continue;
         }
-        const fty = self.resolveTypeInSource(e.module_path, e.type_expr);
+        const fty = self.resolveTypeInEnvironment(self.environmentForSource(e.module_path), e.type_expr);
         if (fty == .unresolved) {
             if (mode == .early) return false;
             self.context_structural_error = true;
@@ -316,9 +310,9 @@ pub fn contextExtensionDefault(self: *Lowering, fname: []const u8, fty: types_mo
         if (!std.mem.eql(u8, e.name, fname)) continue;
         if (!e.valid) return null;
         const de = e.default_expr orelse return null;
-        const saved = self.current_source_file;
-        defer self.setCurrentSourceFile(saved);
-        self.setCurrentSourceFile(e.module_path);
+        const saved = self.lexicalContext();
+        defer self.restoreLexicalContext(saved);
+        self.setDeclarationContext(de);
         const vd = ast.VarDecl{
             .name = e.name,
             .name_span = e.name_span,
@@ -365,6 +359,7 @@ fn gatherEntries(
             // `ns :: @import "m"` still contributes m's context fields —
             // imports gate existence, never visibility.
             .namespace_decl => |ns| gatherEntries(self, ns.decls, entries, seen_nodes),
+            .scope_decl => |scope| gatherEntries(self, scope.decls, entries, seen_nodes),
             else => {},
         }
     }
@@ -396,6 +391,7 @@ fn findContextStructDecl(decls: []const *const Node) ?ContextStructRef {
             .const_decl => |cd| if (std.mem.eql(u8, cd.name, "Context") and cd.value.data == .struct_decl)
                 return .{ .node = decl, .decl = cd.value.data.struct_decl },
             .namespace_decl => |ns| if (findContextStructDecl(ns.decls)) |found| return found,
+            .scope_decl => |scope| if (findContextStructDecl(scope.decls)) |found| return found,
             else => {},
         }
     }

@@ -284,9 +284,7 @@ pub fn tryPackImplMatch(
     bindings.put(pd.type_params[0].name, dst_ty) catch return null;
     if (entry.ret_var_name) |rv| bindings.put(rv, src_ret) catch return null;
 
-    var pack_bindings = std.StringHashMap([]const TypeId).init(self.alloc);
-    defer pack_bindings.deinit();
-    pack_bindings.put(entry.pack_var_name, tail_owned) catch return null;
+    bindings.put(entry.pack_var_name, table.intern(.{ .pack = .{ .elements = tail_owned } })) catch return null;
 
     // Mangled name keyed on the CONCRETE source so distinct shapes
     // monomorphise separately. Same scheme as the concrete path:
@@ -298,14 +296,7 @@ pub fn tryPackImplMatch(
     self.convert_reentrancy.put(guard_key, {}) catch {};
     defer _ = self.convert_reentrancy.remove(guard_key);
 
-    if (!self.lowered_functions.contains(mangled)) {
-        const saved_pack = self.pack_bindings;
-        self.pack_bindings = pack_bindings;
-        defer self.pack_bindings = saved_pack;
-        self.monomorphizeFunction(fd, mangled, &bindings);
-    }
-
-    const fid = self.resolveFuncByName(mangled) orelse return null;
+    const fid = self.monomorphizeFunction(fd, mangled, &bindings) orelse return null;
     const func = &self.module.functions.items[@intFromEnum(fid)];
     const ret_ty = func.ret;
     const params = func.params;
@@ -417,11 +408,7 @@ pub fn lowerConvert(self: *Lowering, operand: Ref, operand_node: *const Node, sr
     self.convert_reentrancy.put(guard_key, {}) catch {};
     defer _ = self.convert_reentrancy.remove(guard_key);
 
-    if (!self.lowered_functions.contains(mangled)) {
-        self.monomorphizeFunction(fd, mangled, &bindings);
-    }
-
-    const fid = self.resolveFuncByName(mangled) orelse return null;
+    const fid = self.monomorphizeFunction(fd, mangled, &bindings) orelse return null;
     const func = &self.module.functions.items[@intFromEnum(fid)];
     const ret_ty = func.ret;
     const params = func.params;
@@ -905,7 +892,7 @@ pub fn buildProtocolErasure(self: *Lowering, operand: Ref, operand_node: *const 
 /// storage of its own to borrow.
 pub fn refuseRvalueInterfaceErasure(self: *Lowering, proto_name: []const u8, span: ast.Span) void {
     if (self.diagnostics) |d| {
-        d.addFmt(.err, span, "cannot borrow a temporary into a '{s}' handle — bind the value where it lives, or write it through 'Allocator.make' and use the handle over that", .{proto_name});
+        d.addFmt(.err, span, "cannot borrow a temporary into a '{s}' handle — bind the value where it lives, or write it through 'mem.make' and use the handle over that", .{proto_name});
     }
 }
 
@@ -1335,7 +1322,7 @@ pub fn bareFnNameSignature(self: *Lowering, node: *const Node) ?TypeId {
     const name = node.data.identifier.name;
     if (self.scope) |scope| if (scope.lookup(name) != null) return null;
     if (self.ufcsAliasTarget(name) != null) return null;
-    const fd: *const ast.FnDecl = switch (self.selectCallableAuthor(name, self.current_source_file orelse return null, .plain_free)) {
+    const fd: *const ast.FnDecl = switch (self.selectCallableAuthor(name, self.environmentForSource(self.current_source_file orelse return null).?, .non_generic)) {
         .func => |sf| sf.decl,
         .none => self.program_index.lookup(.function, name) orelse return null,
         .ambiguous, .not_callable => return null,
@@ -1553,7 +1540,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
                 const cs = self.builder.current_span;
                 const span = ast.Span{ .start = cs.start, .end = cs.end };
                 const id = d.addFmtId(.err, span, "a capturing lambda does not erase to '{s}' — its environment has no home here", .{self.module.types.formatTypeName(self.alloc, dst_ty, null)});
-                d.addHelpFmt(id, span, null, "persist it with 'closure(f)', or 'closure(f, alloc)' to choose the allocator; a pointer to it ('*f') erases by borrowing", .{});
+                d.addHelpFmt(id, span, null, "persist it with 'mem.closure(f)', or 'mem.closure(f, alloc)' to choose the allocator; a pointer to it ('*f') erases by borrowing", .{});
             }
             return val;
         },

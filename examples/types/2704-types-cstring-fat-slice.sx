@@ -4,6 +4,7 @@
 // `?cstring` is the slice's own 16 bytes with a null `ptr` meaning absent.
 
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 strlen :: (s: [*:0]u8) -> usize extern "strlen";
 
@@ -17,7 +18,7 @@ main :: () -> i32 {
     print("{} {} {}\n", c.len, c == "hi", c == s);
 
     view : string = c;
-    print("{} {}\n", view.len, c.clone().len);
+    print("{} {}\n", view.len, mem.clone(c).len);
 
     absent : ?cstring = null;
     present : ?cstring = c;

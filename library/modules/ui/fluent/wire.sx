@@ -1,0 +1,25 @@
+@import "modules/std/source_site.sx";
+@import "modules/ui/types.sx";
+@import "modules/ui/render.sx";
+
+// One box, one command: a stroke rides ON the fill, a radius rounds what is
+// drawn, and a plain fill is the unrounded rect.
+paintBox :: (rc: *RenderContext, frame: Frame, fill: Color, corner: f32, border: ?Stroke) {
+    if s := border {
+        rc.addStrokedRect(frame, fill, s.color, s.width, corner);
+        return;
+    }
+    if corner > 0.0 {
+        rc.addRoundedRect(frame, fill, corner);
+    } else {
+        rc.addRect(frame, fill);
+    }
+}
+
+// Resumes the hash from the site fingerprint the compiler already folded.
+siteHasher :: (siteKey: u64, domain: string, scopeKey: u64) -> SourceSiteHasher {
+    hasher := SourceSiteHasher{ state = siteKey };
+    hasher.writeString(domain);
+    hasher.writeU64Le(scopeKey);
+    hasher
+}

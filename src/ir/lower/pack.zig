@@ -1,4 +1,5 @@
 const std = @import("std");
+const instances = @import("../instances.zig");
 const ast = @import("../../ast.zig");
 const Node = ast.Node;
 const types = @import("../types.zig");
@@ -8,6 +9,7 @@ const lower_bound = @import("bound.zig");
 
 const TypeId = types.TypeId;
 const Ref = inst_mod.Ref;
+const FuncId = inst_mod.FuncId;
 const Function = inst_mod.Function;
 
 const lower = @import("../lower.zig");
@@ -1155,11 +1157,7 @@ pub fn lowerPackFnCallNamed(
     }
     const mangled = name_buf.items;
 
-    if (!self.lowered_functions.contains(mangled)) {
-        self.monomorphizePackFn(fd, mangled, pack_arg_types.items, call_node, &tparam_bindings);
-    }
-
-    const fid = self.resolveFuncByName(mangled) orelse return self.builder.constInt(0, .void);
+    const fid = self.monomorphizePackFn(fd, mangled, pack_arg_types.items, call_node, &tparam_bindings) orelse return Ref.none;
     const func = &self.module.functions.items[@intFromEnum(fid)];
     const ret_ty = func.ret;
     const params = func.params;
@@ -1181,9 +1179,25 @@ pub fn monomorphizePackFn(
     arg_types: []const TypeId,
     call_node: *const ast.Call,
     type_bindings: *const std.StringHashMap(TypeId),
-) void {
-    const owned_name = self.alloc.dupe(u8, mangled_name) catch return;
-    self.lowered_functions.put(owned_name, {}) catch {};
+) ?FuncId {
+    var arguments = std.ArrayList(instances.Argument).empty;
+    defer arguments.deinit(self.alloc);
+    instances.appendBindings(self.alloc, &arguments, type_bindings);
+    for (fd.params, 0..) |p, i| {
+        if (isPackParam(p)) break;
+        if (i >= call_node.args.len) break;
+        if (p.is_comptime) {
+            const argument = instances.Argument.literal(call_node.args[i]) orelse break;
+            arguments.append(self.alloc, argument) catch @panic("out of memory");
+        }
+    }
+    arguments.append(self.alloc, .{ .pack = arg_types }) catch @panic("out of memory");
+    const key: instances.Key = .{
+        .declaration = self.declId(.{ .fn_decl = fd }, fd.body.source_file),
+        .arguments = arguments.items,
+    };
+    if (self.pack_instances.get(key)) |fid| return fid;
+    const owned_name = self.instanceName(mangled_name);
 
     // Flow narrowing is per-function: this monomorphized pack body
     // has its own `Ref` space (overlapping the caller's), so isolate it from the
@@ -1191,22 +1205,15 @@ pub fn monomorphizePackFn(
     var nested_guard = Lowering.NestedBodyGuard.enterCached(self);
     defer nested_guard.restore();
 
-    // Find the pack param's name and position in fd.params, plus its
-    // constraint protocol (`..xs: Box` ⇒ "Box"; comptime `..$args` has none).
-    var pack_name: []const u8 = "";
-    var pack_param_idx: usize = std.math.maxInt(usize);
-    var pack_proto: ?[]const u8 = null;
-    for (fd.params, 0..) |p, i| {
-        if (isPackParam(p)) {
-            pack_name = p.name;
-            pack_param_idx = i;
-            if (p.is_pack and p.type_expr.data == .type_expr) {
-                pack_proto = p.type_expr.data.type_expr.name;
-            }
-            break;
-        }
-    }
-    if (pack_param_idx == std.math.maxInt(usize)) return;
+    const pack_param_idx = for (fd.params, 0..) |p, i| {
+        if (isPackParam(p)) break i;
+    } else unreachable;
+    const pack_param = fd.params[pack_param_idx];
+    const pack_name = pack_param.name;
+    const pack_proto: ?[]const u8 = if (pack_param.is_pack and pack_param.type_expr.data == .type_expr)
+        pack_param.type_expr.data.type_expr.name
+    else
+        null;
 
     // Save state — mirrors monomorphizeFunction. The mono body's exit is
     // isolated by the guard above, which owns the inline-return target.
@@ -1256,14 +1263,14 @@ pub fn monomorphizePackFn(
     var pack_arg_idents = std.ArrayList(*const Node).empty;
     defer pack_arg_idents.deinit(self.alloc);
     for (arg_types, 0..) |_, i| {
-        const synth_name = std.fmt.allocPrint(self.alloc, "__pack_{s}_{d}", .{ pack_name, i }) catch return;
-        pack_synth_names.append(self.alloc, synth_name) catch return;
-        const ident_node = self.alloc.create(Node) catch return;
+        const synth_name = std.fmt.allocPrint(self.alloc, "__pack_{s}_{d}", .{ pack_name, i }) catch return null;
+        pack_synth_names.append(self.alloc, synth_name) catch return null;
+        const ident_node = self.alloc.create(Node) catch return null;
         ident_node.* = .{
             .span = fd.body.span,
             .data = .{ .identifier = .{ .name = synth_name } },
         };
-        pack_arg_idents.append(self.alloc, ident_node) catch return;
+        pack_arg_idents.append(self.alloc, ident_node) catch return null;
     }
 
     // Resolve return type. When the declared type is a generic
@@ -1274,22 +1281,22 @@ pub fn monomorphizePackFn(
     // `return X;` instead.
     var pre_pan = std.StringHashMap([]const *const Node).init(self.alloc);
     defer pre_pan.deinit();
-    pre_pan.put(pack_name, pack_arg_idents.items) catch return;
+    pre_pan.put(pack_name, pack_arg_idents.items) catch return null;
     var pre_ppc = std.StringHashMap(u32).init(self.alloc);
     defer pre_ppc.deinit();
-    pre_ppc.put(pack_name, @intCast(arg_types.len)) catch return;
+    pre_ppc.put(pack_name, @intCast(arg_types.len)) catch return null;
     var pre_pat = std.StringHashMap([]const TypeId).init(self.alloc);
     defer pre_pat.deinit();
     // This call's pack param joins the packs the instance's own bindings carry
     // (`$F/(..$A)`); the map is replaced wholesale below.
     if (self.pack_arg_types) |installed| {
         var it = installed.iterator();
-        while (it.next()) |e| pre_pat.put(e.key_ptr.*, e.value_ptr.*) catch return;
+        while (it.next()) |e| pre_pat.put(e.key_ptr.*, e.value_ptr.*) catch return null;
     }
-    pre_pat.put(pack_name, arg_types) catch return;
+    pre_pat.put(pack_name, arg_types) catch return null;
     var pre_pcon = std.StringHashMap([]const u8).init(self.alloc);
     defer pre_pcon.deinit();
-    if (pack_proto) |proto| pre_pcon.put(pack_name, proto) catch return;
+    if (pack_proto) |proto| pre_pcon.put(pack_name, proto) catch return null;
     self.pack_arg_nodes = pre_pan;
     self.pack_param_count = pre_ppc;
     self.pack_arg_types = pre_pat;
@@ -1300,8 +1307,8 @@ pub fn monomorphizePackFn(
     // bare-visible — mirrors the body pin further down and the
     // `monomorphizeFunction` pin. The comptime call-site args below are
     // lowered AFTER this restore, in the caller's context.
-    const saved_sig_src = self.current_source_file;
-    if (fd.body.source_file) |src| self.setCurrentSourceFile(src);
+    const saved_sig_src = self.lexicalContext();
+    self.setFunctionContext(fd);
 
     const declared_is_generic_ret = blk: {
         const rt = fd.return_type orelse break :blk false;
@@ -1325,7 +1332,7 @@ pub fn monomorphizePackFn(
         params.append(self.alloc, .{
             .name = self.module.types.internString("__sx_ctx"),
             .ty = self.module.types.ptrTo(.void),
-        }) catch return;
+        }) catch return null;
     }
     for (fd.params, 0..) |p, i| {
         if (i == pack_param_idx) continue;
@@ -1334,18 +1341,19 @@ pub fn monomorphizePackFn(
         params.append(self.alloc, .{
             .name = self.module.types.internString(p.name),
             .ty = pty,
-        }) catch return;
+        }) catch return null;
     }
     for (arg_types, 0..) |ty, i| {
         params.append(self.alloc, .{
             .name = self.module.types.internString(pack_synth_names.items[i]),
             .ty = ty,
-        }) catch return;
+        }) catch return null;
     }
-    self.setCurrentSourceFile(saved_sig_src);
+    self.restoreLexicalContext(saved_sig_src);
 
     const name_id = self.module.types.internString(owned_name);
-    _ = self.builder.beginFunction(name_id, params.items, ret_ty);
+    const fid = self.builder.beginFunction(name_id, params.items, ret_ty);
+    self.pack_instances.put(instances.ownKey(self.alloc, key), fid) catch @panic("out of memory");
     self.builder.currentFunc().has_implicit_ctx = wants_ctx;
     self.builder.currentFunc().is_naked = (fd.abi == .naked);
     self.builder.currentFunc().is_get = fd.is_get;
@@ -1376,7 +1384,7 @@ pub fn monomorphizePackFn(
             if (ct_arg_idx < call_node.args.len) {
                 const call_arg = call_node.args[ct_arg_idx];
                 self.stampCallerSource(call_arg);
-                cpn.put(p.name, call_arg) catch return;
+                cpn.put(p.name, call_arg) catch return null;
                 // Bind as a runtime local for bare-name access.
                 // Lower the call arg as a value, then alloca + store.
                 const val = self.lowerExpr(call_arg);
@@ -1388,11 +1396,6 @@ pub fn monomorphizePackFn(
             ct_arg_idx += 1;
             continue;
         }
-        // Pin to the pack fn's OWN module: a fixed-prefix param whose
-        // type is bare-visible only in the defining module must resolve
-        // there, not in the caller's restored context. Mirrors the
-        // signature build above and `resolveParamTypeInSource` at the
-        // cross-module call-arg typing sites.
         const pty = self.resolveDeclParamType(fd, i);
         const slot = self.builder.alloca(pty);
         self.builder.store(slot, Ref.fromIndex(param_idx));
@@ -1411,7 +1414,7 @@ pub fn monomorphizePackFn(
         const slot = self.builder.alloca(ty);
         self.builder.store(slot, Ref.fromIndex(param_idx));
         scope.put(synth_name, .{ .ref = slot, .ty = ty, .is_alloca = true });
-        pack_param_slots.append(self.alloc, slot) catch return;
+        pack_param_slots.append(self.alloc, slot) catch return null;
         param_idx += 1;
     }
 
@@ -1435,14 +1438,15 @@ pub fn monomorphizePackFn(
     // Mirrors `lowerFunctionBodyInto`, which switches to `func.source_file`;
     // the defining path is stamped on the body node by `resolveImports`. A
     // synthesized/sourceless body keeps the caller's context.
-    const saved_source = self.current_source_file;
-    defer self.setCurrentSourceFile(saved_source);
-    if (fd.body.source_file) |src| self.setCurrentSourceFile(src);
+    const saved_source = self.lexicalContext();
+    defer self.restoreLexicalContext(saved_source);
+    self.setFunctionContext(fd);
 
     // Delegate to the shared body owner (mirrors the decl + generic paths) so
     // this pack-fn instance can't drift from them.
     self.lowerFunctionBody(fd.body, ret_ty);
     self.builder.finalize();
+    return fid;
 }
 
 /// Pack-fn: has a trailing heterogeneous pack param (`is_variadic

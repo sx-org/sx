@@ -1,0 +1,11 @@
+error: unknown constraint or interface 'http.TlsAcceptor' in impl — not declared or imported in this module
+  --> examples/modules/2778-modules-scope-nested.sx:4:5
+   |
+ 4 |     impl http.TlsAcceptor for MyServer {}
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: unknown constraint or interface 'P' in impl — not declared or imported in this module
+  --> examples/modules/2778-modules-scope-nested.sx:5:5
+   |
+ 5 |     impl P for geo.Vec2 {}
+   |     ^^^^^^^^^^^^^^^^^^^^^^

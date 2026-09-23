@@ -20,7 +20,7 @@ main :: () {
     print("twice {}\n", twice(3));
 
     // A capturing literal reaches a `Closure` slot through `closure`.
-    inc : Closure(i64) -> i64 = closure(|x: i64|_{ n } x + n);
+    inc : Closure(i64) -> i64 = mem.closure(|x: i64|_{ n } x + n);
     print("inc {}\n", inc(3));
 
     // Annotated params and return type.
@@ -63,5 +63,5 @@ main :: () {
     // A closure literal is a default; the `|` after it closes the outer list.
     nest := |f: Closure(i64) -> i64 = |y: i64| y| f(4);
     print("closure-default {}\n", nest(inc));
-    free(inc);
+    mem.free(inc);
 }

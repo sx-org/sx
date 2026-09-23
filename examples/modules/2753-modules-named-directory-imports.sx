@@ -1,0 +1,3 @@
+pkg :: @import "2753-modules-named-directory-imports";
+
+main :: () -> i32 { 0 }

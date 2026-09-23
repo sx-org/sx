@@ -1776,16 +1776,6 @@ fn countRealBodies(module: *ir_mod.Module, name: []const u8) usize {
     return n;
 }
 
-// Two flat-imported modules each author `greet`. The first-wins merge keeps
-// a.sx's author in the merged decl list (the WINNER) and drops b.sx's, which
-// the `module_decls` raw facts still retain. `main` itself can't bare-call
-// `greet` — two flat authors make it ambiguous — so it calls a.sx's
-// `use_greet` wrapper, whose own-author call to `greet` binds a.sx's winner.
-// Before `lowerRetainedSameNameAuthors` runs, only the winner has a real body;
-// the shadowed author has no slot at all. The pass declares that author its OWN
-// same-name FuncId and lowers its body there, so BOTH authors carry distinct,
-// non-extern bodies, while `resolveFuncByName` still returns the winner (the
-// name-keyed slot).
 test "lower: shadowed same-name author gets its own FuncId + real body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1838,16 +1828,7 @@ test "lower: shadowed same-name author gets its own FuncId + real body" {
 
     // Per-module visibility scopes + authored-function index, wired exactly as
     // `core.zig` does before `lowerRoot`.
-    var module_scopes = std.StringHashMap(std.StringHashMap(@import("../ast.zig").Visibility)).init(alloc);
-    try module_scopes.put(main_path, mod.scope);
-    var cache_it = cache.iterator();
-    while (cache_it.next()) |entry| {
-        try module_scopes.put(entry.key_ptr.*, entry.value_ptr.scope);
-    }
-    // Raw import facts: both `selectCallableAuthor` and
-    // `lowerRetainedSameNameAuthors` read function authors out of `module_decls`.
-    // Wired exactly as `core.zig` does.
-    var facts = try imports.buildImportFacts(alloc, main_path, mod, &cache);
+    const table = &cache.declarations;
 
     const resolved_root = try alloc.create(Node);
     resolved_root.* = .{ .span = root.span, .data = .{ .root = .{ .decls = mod.decls } } };
@@ -1859,10 +1840,9 @@ test "lower: shadowed same-name author gets its own FuncId + real body" {
     lowering.main_file = main_path;
     lowering.resolved_root = resolved_root;
     lowering.diagnostics = &diagnostics;
-    lowering.program_index.module_scopes = &module_scopes;
     lowering.program_index.import_graph = &import_graph;
     lowering.program_index.flat_import_graph = &flat_import_graph;
-    lowering.program_index.module_decls = &facts.decls;
+    lowering.program_index.decl_table = table;
 
     lowering.lowerRoot(resolved_root);
     try std.testing.expect(!diagnostics.hasErrors());
@@ -1890,24 +1870,16 @@ test "lower: shadowed same-name author gets its own FuncId + real body" {
     try std.testing.expect(first != null and second != null);
     try std.testing.expect(first.? != second.?);
 
-    // The identity map must be keyed by the STABLE AST field
-    // pointer for BOTH same-name authors — the exact pointers `fn_ast_map` and
-    // the `module_decls` raw facts carry — not a per-iteration switch-capture
-    // temporary. If the winner were keyed by `&fd` (the scanDecls bug), this
-    // lookup by the stable `fn_ast_map` pointer would miss (null). Bare-call
-    // routing goes through exactly these pointers, so the round-trip must hold.
     const winner_fd = lowering.program_index.lookup(.function, "greet").?;
     const winner_fid = lowering.declFuncId(winner_fd);
     try std.testing.expect(winner_fid != null);
     // Round-trips to the first-wins winner FuncId (resolveFuncByName's pick).
     try std.testing.expectEqual(lowering.resolveFuncByName("greet").?, winner_fid.?);
 
-    // The shadowed author's stable pointer lives in `module_decls`; find the one
-    // that is NOT the winner and confirm IT round-trips to a DISTINCT FuncId.
     var shadow_fd: ?*const ast.FnDecl = null;
-    var md_it = facts.decls.iterator();
-    while (md_it.next()) |path_entry| {
-        if (path_entry.value_ptr.names.get("greet")) |ref| {
+    for (table.environments.items) |env| {
+        if (env.names.get("greet")) |id| {
+            const ref = table.get(id).ref orelse continue;
             if (ref == .fn_decl and ref.fn_decl != winner_fd) shadow_fd = ref.fn_decl;
         }
     }
@@ -1927,9 +1899,9 @@ test "lower: shadowed same-name author gets its own FuncId + real body" {
     // Imported modules are keyed by their CANONICAL path.
     const a_path = try imports.canonicalizePath(alloc, try std.fmt.allocPrint(alloc, "{s}/a.sx", .{absdir}));
     const b_path = try imports.canonicalizePath(alloc, try std.fmt.allocPrint(alloc, "{s}/b.sx", .{absdir}));
-    try std.testing.expect(lowering.selectCallableAuthor("greet", main_path, .any_body) == .ambiguous);
-    try std.testing.expect(lowering.selectCallableAuthor("greet", a_path, .any_body) == .none);
-    switch (lowering.selectCallableAuthor("greet", b_path, .any_body)) {
+    try std.testing.expect(lowering.selectCallableAuthor("greet", lowering.environmentForSource(main_path).?, .all) == .ambiguous);
+    try std.testing.expect(lowering.selectCallableAuthor("greet", lowering.environmentForSource(a_path).?, .all) == .none);
+    switch (lowering.selectCallableAuthor("greet", lowering.environmentForSource(b_path).?, .all)) {
         .func => |sf| {
             try std.testing.expectEqual(shadow_fd.?, sf.decl);
             try std.testing.expectEqualStrings(b_path, sf.source);
@@ -1939,7 +1911,7 @@ test "lower: shadowed same-name author gets its own FuncId + real body" {
         else => return error.TestUnexpectedResult,
     }
     // A name no module authors (and no flat import provides) never routes.
-    try std.testing.expect(lowering.selectCallableAuthor("nonexistent", b_path, .any_body) == .none);
+    try std.testing.expect(lowering.selectCallableAuthor("nonexistent", lowering.environmentForSource(b_path).?, .all) == .none);
 }
 
 // The scan populates the source-keyed caches partitioned by the registering
@@ -1998,13 +1970,7 @@ test "lower: scan populates source-keyed caches per declaring source" {
         &flat_import_graph,
     );
 
-    var module_scopes = std.StringHashMap(std.StringHashMap(@import("../ast.zig").Visibility)).init(alloc);
-    try module_scopes.put(main_path, mod.scope);
-    var cache_it = cache.iterator();
-    while (cache_it.next()) |entry| {
-        try module_scopes.put(entry.key_ptr.*, entry.value_ptr.scope);
-    }
-    var facts = try imports.buildImportFacts(alloc, main_path, mod, &cache);
+    const table = &cache.declarations;
 
     const resolved_root = try alloc.create(Node);
     resolved_root.* = .{ .span = root.span, .data = .{ .root = .{ .decls = mod.decls } } };
@@ -2016,10 +1982,9 @@ test "lower: scan populates source-keyed caches per declaring source" {
     lowering.main_file = main_path;
     lowering.resolved_root = resolved_root;
     lowering.diagnostics = &diagnostics;
-    lowering.program_index.module_scopes = &module_scopes;
     lowering.program_index.import_graph = &import_graph;
     lowering.program_index.flat_import_graph = &flat_import_graph;
-    lowering.program_index.module_decls = &facts.decls;
+    lowering.program_index.decl_table = table;
 
     lowering.lowerRoot(resolved_root);
     try std.testing.expect(!diagnostics.hasErrors());
@@ -2030,13 +1995,13 @@ test "lower: scan populates source-keyed caches per declaring source" {
     const idx = &lowering.program_index;
 
     // SAME alias name `Color` lands a DISTINCT entry under each source key.
-    const color_a = idx.lookupInSource(.type_alias, a_path, "Color").?;
-    const color_b = idx.lookupInSource(.type_alias, b_path, "Color").?;
+    const color_a = idx.lookupInEnvironment(.type_alias, idx.declarations().fileEnvironment(a_path), "Color").?;
+    const color_b = idx.lookupInEnvironment(.type_alias, idx.declarations().fileEnvironment(b_path), "Color").?;
     try std.testing.expect(color_a != color_b); // *u8 vs *u16 — source-partitioned
 
     // SAME const name `K` lands a DISTINCT entry (distinct value node) per source.
-    const k_a = idx.lookupInSource(.module_const, a_path, "K").?;
-    const k_b = idx.lookupInSource(.module_const, b_path, "K").?;
+    const k_a = idx.lookupInEnvironment(.module_const, idx.declarations().fileEnvironment(a_path), "K").?;
+    const k_b = idx.lookupInEnvironment(.module_const, idx.declarations().fileEnvironment(b_path), "K").?;
     try std.testing.expect(k_a.value != k_b.value);
 
     // The global maps stay keyed by NAME alone — a hashmap key holds exactly
@@ -3511,4 +3476,272 @@ test "inline exit: every inlined body form exits to its own destination, never t
             return err;
         };
     }
+}
+
+test "function bodies and signatures retain distinct environments in one file" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var first_parser = try parser.Parser.init(alloc, "T :: U; U :: i64; K :: V; V :: 11; answer :: () -> T { K }");
+    var second_parser = try parser.Parser.init(alloc, "T :: U; U :: i32; K :: V; V :: 22; answer :: () -> T { K }");
+    const first = try first_parser.parse();
+    const second = try second_parser.parse();
+    var table = imports.DeclTable.init(alloc);
+    const first_env = try table.internEnvironment("same.sx", &.{"first"});
+    const second_env = try table.internEnvironment("same.sx", &.{"second"});
+    for (first.data.root.decls) |node| try std.testing.expect(try table.claim(first_env, node));
+    for (second.data.root.decls) |node| try std.testing.expect(try table.claim(second_env, node));
+    const root_env = try table.internEnvironment("same.sx", &.{});
+    var namespace = Node{ .span = first.span, .data = .{ .namespace_decl = .{
+        .name = "first",
+        .target_module_path = "same.sx",
+        .decls = first.data.root.decls,
+        .own_decls = first.data.root.decls,
+    } } };
+    try std.testing.expect(try table.claim(root_env, &namespace));
+
+    var module = ir_mod.Module.init(alloc);
+    defer module.deinit();
+    var lowering = Lowering.init(&module);
+    lowering.program_index.decl_table = &table;
+    lowering.main_file = "same.sx";
+    const declarations = try std.mem.concat(alloc, *Node, &.{ first.data.root.decls, second.data.root.decls });
+    lowering.scanDecls(declarations);
+    lowering.setCurrentEnvironment(second_env);
+    const first_fn = &first.data.root.decls[4].data.fn_decl;
+    const second_fn = &second.data.root.decls[4].data.fn_decl;
+    const first_id = lowering.bareAuthorFuncId(first_fn, "answer", "same.sx");
+    const second_id = lowering.bareAuthorFuncId(second_fn, "answer", "same.sx");
+    try std.testing.expect(first_id != second_id);
+    try std.testing.expectEqual(first_env, lowering.functionEnvironment(first_fn).?);
+    try std.testing.expectEqual(second_env, lowering.current_environment.?);
+    try std.testing.expectEqual(TypeId.i64, module.getFunction(first_id).ret);
+    try std.testing.expectEqual(TypeId.i32, module.getFunction(second_id).ret);
+    var values: [2]?i64 = .{ null, null };
+    for ([_]FuncId{ first_id, second_id }, &values) |id, *value| {
+        for (module.getFunction(id).blocks.items) |block| {
+            for (block.insts.items) |instruction| {
+                if (instruction.op == .const_int) value.* = instruction.op.const_int;
+            }
+        }
+    }
+    try std.testing.expectEqual(@as(?i64, 11), values[0]);
+    try std.testing.expectEqual(@as(?i64, 22), values[1]);
+    lowering.setCurrentEnvironment(root_env);
+    try std.testing.expectEqual(first_fn, lowering.qualifiedFnMember("first.answer").?);
+    try std.testing.expect(!lowering.program_index.contains(.function, "first.answer"));
+}
+
+test "expansion finality separates environments, names and retiring contributions" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var p = try parser.Parser.init(alloc,
+        \\inline if true { x :: 1; y :: 2; }
+        \\inline if true { x :: 3; }
+        \\inline if true { x :: 4; }
+    );
+    const root = try p.parse();
+    const drivers = root.data.root.decls;
+    for (drivers) |driver| driver.source_file = "same.sx";
+    var table = imports.DeclTable.init(alloc);
+    const first = try table.internEnvironment("same.sx", &.{"first"});
+    const second = try table.internEnvironment("same.sx", &.{"second"});
+    var module = ir_mod.Module.init(alloc);
+    defer module.deinit();
+    var lowering = Lowering.init(&module);
+    lowering.program_index.decl_table = &table;
+    const work = &lowering.expansion;
+    work.registerDriver(drivers[0], first, &table, null);
+    work.registerDriver(drivers[0], first, &table, null);
+    work.registerDriver(drivers[1], first, &table, null);
+    work.registerDriver(drivers[2], second, &table, null);
+
+    try std.testing.expect(!work.environmentFinal(first));
+    try std.testing.expect(!work.environmentFinal(second));
+    const x = try alloc.dupe(u8, "x");
+    try std.testing.expect(work.mayDeclare(first, x));
+    try std.testing.expect(work.mayDeclare(first, "y"));
+    try std.testing.expect(!work.mayDeclare(second, "y"));
+    work.folding = true;
+    try std.testing.expect(!lowering.namespaceMissWaits(.{ .namespace = "ns", .environment = second, .member = "y" }));
+    try std.testing.expect(work.awaited == null);
+    try std.testing.expect(lowering.namespaceMissWaits(.{ .namespace = "ns", .environment = first, .member = "y" }));
+
+    work.retire(drivers[0]);
+    work.retire(drivers[0]);
+    work.awaited = null;
+    try std.testing.expect(!lowering.namespaceMissWaits(.{ .namespace = "ns", .environment = first, .member = "y" }));
+    try std.testing.expect(!work.environmentFinal(first));
+    try std.testing.expect(work.mayDeclare(first, x));
+    work.retire(drivers[1]);
+    try std.testing.expect(work.environmentFinal(first));
+    try std.testing.expect(!work.mayDeclare(first, x));
+    try std.testing.expect(!work.environmentFinal(second));
+    try std.testing.expect(work.mayDeclare(second, x));
+    work.retire(drivers[2]);
+    try std.testing.expect(work.environmentFinal(second));
+    try std.testing.expect(!work.mayDeclare(second, x));
+}
+
+test "namespace expansion keeps parked and published names in its environment" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var p = try parser.Parser.init(alloc,
+        \\OperatingSystem :: enum { linux }
+        \\inline if pending { pending :: true; }
+        \\inline if true { ready :: 1; }
+    );
+    const root = try p.parse();
+    for (root.data.root.decls) |driver| driver.source_file = "same.sx";
+    var file_parser = try parser.Parser.init(alloc, "inline if top_pending { top_pending :: true; }");
+    const file_root = try file_parser.parse();
+    const file_driver = file_root.data.root.decls[0];
+    file_driver.source_file = "same.sx";
+    var namespace = Node{ .span = root.span, .source_file = "same.sx", .data = .{ .namespace_decl = .{
+        .name = "nested",
+        .target_module_path = "same.sx",
+        .decls = root.data.root.decls,
+        .own_decls = root.data.root.decls,
+    } } };
+    var table = imports.DeclTable.init(alloc);
+    const file = try table.internEnvironment("same.sx", &.{});
+    try std.testing.expect(try table.claim(file, &namespace));
+    const nested = table.environment(file).namespaces.get("nested").?.environment;
+    var module = ir_mod.Module.init(alloc);
+    defer module.deinit();
+    var lowering = Lowering.init(&module);
+    lowering.program_index.decl_table = &table;
+    lowering.main_file = "same.sx";
+    lowering.setCurrentEnvironment(file);
+    _ = @import("lower/expand.zig").expandModuleDrivers(&lowering, &.{ file_driver, &namespace });
+
+    try std.testing.expect(lowering.expansion.mayDeclare(file, "top_pending"));
+    try std.testing.expect(!lowering.expansion.mayDeclare(nested, "top_pending"));
+    try std.testing.expect(!lowering.expansion.mayDeclare(file, "pending"));
+    try std.testing.expect(!lowering.expansion.environmentFinal(nested));
+    try std.testing.expect(lowering.expansion.mayDeclare(nested, "pending"));
+    try std.testing.expect(!lowering.expansion.mayDeclare(nested, "ready"));
+    try std.testing.expect(table.rawAuthor(file, "ready") == null);
+    const ready = table.rawAuthor(nested, "ready").?;
+    try std.testing.expectEqual(nested, table.get(ready.id).environment.?);
+    lowering.setCurrentEnvironment(file);
+    const miss = lowering.qualifiedMemberVerdict("nested.pending").missing;
+    try std.testing.expectEqual(nested, miss.environment);
+}
+
+test "pending scope members and block imports retire at their owners" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var p = try parser.Parser.init(alloc,
+        \\inline if choose {
+        \\    outer :: scope {
+        \\        own :: 1;
+        \\        inner :: scope { leaf :: 2; }
+        \\        @import "part.sx";
+        \\    }
+        \\}
+        \\outer :: scope { other :: 3; }
+    );
+    const root = try p.parse();
+    var cache = imports.ModuleCache.init(alloc);
+    const table = &cache.declarations;
+    const file = try table.internEnvironment("main.sx", &.{});
+    const file_block = try table.addBlock(file, null, root);
+    const driver = root.data.root.decls[0];
+    try table.prepareExpansion(driver, file_block);
+    const pending = driver.data.if_expr.then_branch.data.block.stmts[0];
+    const pending_block = pending.data.scope_decl.body_block.?;
+    const outer = table.block(pending_block).environment;
+    const sibling = root.data.root.decls[1];
+    ast.stampLexicalBlock(sibling, file_block);
+    const sibling_block = try table.addScopeBlock(file_block, sibling);
+    const inner = table.findEnvironment("main.sx", &.{ "outer", "inner" }).?;
+    var imported = try parser.Parser.init(alloc, "offered :: true;");
+    const imported_root = try imported.parse();
+    const part = try table.internEnvironment("part.sx", &.{});
+    try cache.modules.put("part.sx", .{
+        .path = "part.sx",
+        .environment = part,
+        .decls = imported_root.data.root.decls,
+        .own_decls = imported_root.data.root.decls,
+    });
+    var work = @import("lower/worklist.zig").Worklist.init(alloc);
+    work.registerDriver(driver, file, table, &cache);
+    try std.testing.expect(work.mayDeclare(file, "outer"));
+    try std.testing.expect(!work.mayDeclare(file, "own"));
+    try std.testing.expect(work.mayDeclare(outer, "own"));
+    try std.testing.expect(work.mayDeclare(inner, "leaf"));
+    try std.testing.expect(!work.mayDeclare(outer, "leaf"));
+    var targets: std.ArrayList(imports.EnvironmentId) = .empty;
+    work.pendingImports(outer, pending_block, &targets);
+    try std.testing.expectEqualSlices(imports.EnvironmentId, &.{part}, targets.items);
+    targets.clearRetainingCapacity();
+    work.pendingImports(outer, sibling_block, &targets);
+    try std.testing.expectEqual(@as(usize, 0), targets.items.len);
+    try std.testing.expect(!work.mayDeclare(outer, "offered"));
+    try std.testing.expectEqual(@as(usize, 0), table.block(pending_block).imports.items.len);
+    try std.testing.expect(table.environment(outer).names.get("own") == null);
+    work.retire(driver);
+    try std.testing.expect(work.environmentFinal(file));
+    try std.testing.expect(work.environmentFinal(outer));
+    try std.testing.expect(work.environmentFinal(inner));
+    work.pendingImports(outer, pending_block, &targets);
+    try std.testing.expectEqual(@as(usize, 0), targets.items.len);
+}
+
+test "pending spreads keep member finality separate from environment closure" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var p = try parser.Parser.init(alloc,
+        \\pool :: scope { ready :: true; }
+        \\api :: scope {
+        \\    inline if choose { ..pool; }
+        \\    inline if later { other :: 1; }
+        \\}
+        \\api :: scope {}
+    );
+    const root = try p.parse();
+    var table = imports.DeclTable.init(alloc);
+    const file = try table.internEnvironment("main.sx", &.{});
+    const file_block = try table.addBlock(file, null, root);
+    for (root.data.root.decls) |decl| {
+        try table.prepareExpansion(decl, file_block);
+        try std.testing.expect(try table.claim(file, decl));
+    }
+    const pool = root.data.root.decls[0];
+    const pool_env = table.block(pool.data.scope_decl.body_block.?).environment;
+    try std.testing.expect(try table.claim(pool_env, pool.data.scope_decl.decls[0]));
+    const api = root.data.root.decls[1];
+    const api_env = table.block(api.data.scope_decl.body_block.?).environment;
+    const sibling_block = root.data.root.decls[2].data.scope_decl.body_block.?;
+    const spread_driver = api.data.scope_decl.decls[0];
+    const other_driver = api.data.scope_decl.decls[1];
+    var module = ir_mod.Module.init(alloc);
+    defer module.deinit();
+    var lowering = Lowering.init(&module);
+    lowering.program_index.decl_table = &table;
+    lowering.setCurrentEnvironment(api_env);
+    lowering.current_lexical_block = sibling_block;
+    const work = &lowering.expansion;
+    work.registerDriver(spread_driver, api_env, &table, null);
+    work.registerDriver(other_driver, api_env, &table, null);
+    work.folding = true;
+    try std.testing.expect(!work.environmentFinal(api_env));
+    try std.testing.expect(!work.mayDeclare(api_env, "ready"));
+    try std.testing.expect(lowering.bareNamePending("ready"));
+    try std.testing.expect(!lowering.bareNamePending("absent"));
+    try std.testing.expect(!lowering.bareNamePending("pool"));
+    try std.testing.expect(lowering.namespaceMissWaits(.{ .namespace = "api", .environment = api_env, .member = "ready" }));
+    try std.testing.expectEqual(@as(usize, 0), table.block(api.data.scope_decl.body_block.?).spreads.items.len);
+    work.retire(spread_driver);
+    try std.testing.expect(!work.environmentFinal(api_env));
+    try std.testing.expect(!lowering.bareNamePending("ready"));
+    try std.testing.expect(!lowering.namespaceMissWaits(.{ .namespace = "api", .environment = api_env, .member = "ready" }));
+    try std.testing.expect(lowering.bareNamePending("other"));
+    work.retire(other_driver);
+    try std.testing.expect(work.environmentFinal(api_env));
 }

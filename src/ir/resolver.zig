@@ -1,39 +1,13 @@
-//! The unified sx name/type resolver — the shared author-collection layer.
-//!
-//! A read-only facade over the borrowed import facts on a
-//! `*ProgramIndex` (`module_decls` / `namespace_edges`) and the existing
-//! `import_graph` / `flat_import_graph` views. It OWNS nothing import-derived;
-//! those maps live in `imports.zig`/`core.zig` and are borrowed here.
-//!
-//! Two collectors sit on top of these facts:
-//!   - `collectVisibleAuthors` — own author ∪ the flat-import edge walk. THE one
-//!     graph-walk, and the permanent root of flat-import name resolution.
-//!   - `collectNamespaceAuthors` — a single already-selected namespace target's
-//!     members. NO graph walk.
-//!
-//! Two lazy resolution functions build on the collectors:
-//!   - `resolveBare(name, from, domain)` — collect bare authors + compute verdict.
-//!     The caller owns the returned `ResolvedAuthors.set.flat` slice.
-//!   - `resolveQualified(target, name)` — collect namespace authors + compute verdict.
-//!     Returns no allocation (namespace sets are always single-module, flat=&.{}).
-//!
-//! Both are RAW-author collectors returning verdicts: they say WHO authors a name
-//! and whether that author wins outright, is ambiguous, not-visible, etc.
-//! Per-domain lowering decides what to do with the verdict.
-//!
-//! Falsifiable invariant: there is EXACTLY ONE iterator over
-//! `flat_import_graph`/`import_graph` in this file — inside
-//! `collectVisibleAuthors`. `collectNamespaceAuthors` iterates one
-//! `NamespaceTarget.own_decls` slice and touches no graph. This is what keeps
-//! callable and type resolution on the SAME cross-module edge-walk.
-
 const std = @import("std");
 const ast = @import("../ast.zig");
 const imports = @import("../imports.zig");
 const program_index = @import("program_index.zig");
 const ProgramIndex = program_index.ProgramIndex;
+const lookup = @import("../name_lookup.zig");
 
-// ── Raw-fact aliases (defined in imports.zig by buildImportFacts) ──────────
+pub const LookupContext = lookup.Context;
+pub const ScopeView = lookup.ScopeView;
+
 pub const RawDeclRef = imports.RawDeclRef;
 pub const RawAuthor = imports.RawAuthor;
 pub const NamespaceTarget = imports.NamespaceTarget;
@@ -44,9 +18,6 @@ pub const NamespaceTarget = imports.NamespaceTarget;
 pub const AuthorSet = struct {
     /// The author declared in the querying module itself, if any.
     own: ?RawAuthor,
-    /// Distinct flat-import authors. Diamond imports of the SAME author (same
-    /// AST node reached over two edges, e.g. a directory aggregate and one of
-    /// its member files) collapse to a single entry. Always disjoint from `own`.
     flat: []const RawAuthor,
 
     /// own + flat, counted by author identity. `flat` is already deduped and
@@ -134,12 +105,11 @@ pub const Domain = enum {
 pub fn eligibleKind(domain: Domain, raw: RawDeclRef, field: ?[]const u8) bool {
     return switch (domain) {
         .bare_type => switch (raw) {
-            .struct_decl, .enum_decl, .union_decl, .error_set_decl,
-            .protocol_decl, .open_set_decl, .runtime_class_decl => true,
+            .struct_decl, .enum_decl, .union_decl, .error_set_decl, .protocol_decl, .open_set_decl, .runtime_class_decl => true,
             else => false,
         },
         .value_const => raw == .const_decl,
-        .callable => if (fnDeclOf(raw)) |fd| isPlainFreeFnDecl(fd) else false,
+        .callable => if (fnDeclOf(raw)) |fd| fd.type_params.len == 0 and fd.body.data != .intrinsic_expr else false,
         .generic_struct_head => if (structDeclOf(raw)) |sd| sd.type_params.len > 0 else false,
         .type_fn_head => if (fnDeclOf(raw)) |fd| fd.type_params.len > 0 else false,
         .protocol_head => raw == .protocol_decl,
@@ -172,23 +142,6 @@ pub fn fnDeclOf(raw: RawDeclRef) ?*const ast.FnDecl {
     };
 }
 
-/// A PLAIN free function — no type params, an ordinary (non-`extern`/
-/// compiler-provided/`#compiler`/`extern`) body — the only callable kind the bare-call
-/// verdict counts.
-pub fn isPlainFreeFnDecl(fd: *const ast.FnDecl) bool {
-    if (fd.type_params.len > 0) return false;
-    // An `extern` import is an external C symbol with no sx-lowerable body —
-    // dispatched name-keyed first-wins, exactly like a `extern` body, so it
-    // is NOT a plain free fn (excluded from the bare-call ambiguity verdict and
-    // the out-of-line-slot / shadow-author pass). `export` DEFINES a real sx
-    // body, so it stays plain-free.
-    if (fd.extern_export == .extern_) return false;
-    return switch (fd.body.data) {
-        .intrinsic_expr => false,
-        else => true,
-    };
-}
-
 /// True when the raw author is a struct carrying a const member named `field`.
 pub fn structHasConstMember(raw: RawDeclRef, field: []const u8) bool {
     return switch (raw) {
@@ -215,14 +168,24 @@ pub fn authorSetHasStructConst(set: AuthorSet, field: []const u8) bool {
 /// function, or protocol. Used by lowering's parameterized-head classification.
 pub fn classifyHeadKind(raw: RawDeclRef, gs: *bool, tf: *bool, pr: *bool) void {
     switch (raw) {
-        .struct_decl => |sd| if (sd.type_params.len > 0) { gs.* = true; },
-        .fn_decl => |fd| if (fd.type_params.len > 0) { tf.* = true; },
+        .struct_decl => |sd| if (sd.type_params.len > 0) {
+            gs.* = true;
+        },
+        .fn_decl => |fd| if (fd.type_params.len > 0) {
+            tf.* = true;
+        },
         .const_decl => |cd| switch (cd.value.data) {
-            .struct_decl => |*sd| if (sd.type_params.len > 0) { gs.* = true; },
-            .fn_decl => |*fd| if (fd.type_params.len > 0) { tf.* = true; },
+            .struct_decl => |*sd| if (sd.type_params.len > 0) {
+                gs.* = true;
+            },
+            .fn_decl => |*fd| if (fd.type_params.len > 0) {
+                tf.* = true;
+            },
             else => {},
         },
-        .protocol_decl => { pr.* = true; },
+        .protocol_decl => {
+            pr.* = true;
+        },
         else => {},
     }
 }
@@ -253,85 +216,185 @@ pub fn runtimeClassWinsType(set: AuthorSet, verdict: Verdict) bool {
 pub const Resolver = struct {
     index: *ProgramIndex,
     alloc: std.mem.Allocator,
+    context: ?LookupContext = null,
 
     pub fn init(index: *ProgramIndex, alloc: std.mem.Allocator) Resolver {
         return .{ .index = index, .alloc = alloc };
     }
 
-    /// THE single graph-walk in this file (falsifiable invariant):
-    /// the own author declared in `from` ∪ the flat-import authors reachable
-    /// over the edge set `vis` chooses. RAW — selectors decide eligibility, not
-    /// this. `from` is the querying module's source path.
-    ///
-    /// Edge set by mode: `flat_import_graph` for `user_bare_flat`/`c_import_bare`.
-    /// `impl_transitive` and `lowering_internal` are not single-hop author walks —
-    /// reaching them here is a wiring bug, so we trip loudly.
-    pub fn collectVisibleAuthors(
-        self: *Resolver,
-        name: []const u8,
-        from: []const u8,
-        vis: VisibilityMode,
-    ) AuthorSet {
-        const decls = self.index.module_decls orelse return .{ .own = null, .flat = &.{} };
-
-        const own: ?RawAuthor = blk: {
-            const mod = decls.get(from) orelse break :blk null;
-            const ref = mod.names.get(name) orelse break :blk null;
-            const vis_own: ast.Visibility = if (mod.private_names.contains(name)) .private else .public;
-            break :blk .{ .raw = ref, .source = mod.source, .visibility = vis_own };
-        };
-
-        const graph = (switch (vis) {
-            .user_bare_flat, .c_import_bare => self.index.flat_import_graph,
-            .impl_transitive, .lowering_internal => @panic(
-                "collectVisibleAuthors: vis mode performs no single-hop author walk",
-            ),
-        }) orelse return .{ .own = own, .flat = &.{} };
-
-        const direct = graph.get(from) orelse return .{ .own = own, .flat = &.{} };
-
-        var flat = std.ArrayList(RawAuthor).empty;
-        var it = direct.iterator(); // ← the one graph iterator (invariant)
-        while (it.next()) |kv| {
-            const dep = decls.get(kv.key_ptr.*) orelse continue;
-            const ref = dep.names.get(name) orelse continue;
-            // A flat import never carries a private declaration out of its
-            // declaring file — the author simply does not exist for `from`.
-            if (dep.private_names.contains(name)) continue;
-            const cand = RawAuthor{ .raw = ref, .source = dep.source };
-            if (sameAuthor(own, cand)) continue;
-            if (containsAuthor(flat.items, cand)) continue;
-            flat.append(self.alloc, cand) catch @panic("collectVisibleAuthors: OOM");
+    pub fn plainImports(self: *Resolver, context: LookupContext, files: *std.ArrayList(LookupContext)) !void {
+        const table = context.table;
+        if (table.environment(context.environment).scope_path.len == 0) {
+            const direct = self.index.flatImports(context.environment) orelse return;
+            var it = direct.keyIterator();
+            while (it.next()) |source| {
+                const env = table.fileEnvironment(source.*) orelse continue;
+                try files.append(self.alloc, .{ .table = table, .environment = env });
+            }
+        } else if (context.block) |block| {
+            for (table.block(block).imports.items) |node| {
+                const imp = node.data.import_decl;
+                if (imp.name != null) continue;
+                const env = table.fileEnvironment(imp.path) orelse continue;
+                try files.append(self.alloc, .{ .table = table, .environment = env });
+            }
         }
-        return .{
-            .own = own,
-            .flat = flat.toOwnedSlice(self.alloc) catch @panic("collectVisibleAuthors: OOM"),
+    }
+
+    pub fn collectVisibleAuthors(self: *Resolver, name: []const u8, from: imports.EnvironmentId, vis: VisibilityMode) AuthorSet {
+        switch (vis) {
+            .user_bare_flat, .c_import_bare => {},
+            .impl_transitive, .lowering_internal => @panic("collectVisibleAuthors: visibility mode has no single-hop author walk"),
+        }
+        const table = self.index.decl_table orelse return .{ .own = null, .flat = &.{} };
+        const context = if (self.context) |ctx| (if (ctx.environment == from) ctx else LookupContext{ .table = table, .environment = from }) else LookupContext{ .table = table, .environment = from };
+        return self.collectInContext(name, context);
+    }
+
+    pub fn collectInContext(self: *Resolver, name: []const u8, context: LookupContext) AuthorSet {
+        const candidates = lookup.bare(self, context, name, context.source(), self.alloc) catch @panic("out of memory");
+        defer self.alloc.free(candidates.imported);
+        return self.authors(candidates);
+    }
+
+    fn authors(self: *Resolver, candidates: lookup.Candidates) AuthorSet {
+        const own = if (candidates.own) |selected| selected.declaration.table.author(selected.declaration.id, selected.declaration.info().source.?) else null;
+        var flat = std.ArrayList(RawAuthor).empty;
+        for (candidates.imported) |selected| {
+            const decl = selected.declaration;
+            const candidate = decl.table.author(decl.id, decl.info().source.?) orelse continue;
+            if (self.containsIdentity(flat.items, candidate)) continue;
+            flat.append(self.alloc, candidate) catch @panic("out of memory");
+        }
+        return .{ .own = own, .flat = flat.toOwnedSlice(self.alloc) catch @panic("out of memory") };
+    }
+
+    const Identity = union(enum) {
+        declaration: imports.DeclId,
+        type: @import("types.zig").TypeId,
+        namespace: imports.EnvironmentId,
+        scope: imports.ScopeId,
+    };
+
+    pub const Qualifier = lookup.Qualifier;
+
+    pub const Selected = struct {
+        declaration: imports.DeclId,
+        view: LookupContext,
+        pinned_view: bool = false,
+    };
+
+    pub const Selection = union(enum) {
+        missing,
+        ambiguous,
+        selected: Selected,
+    };
+
+    fn sameIdentity(self: *Resolver, a: RawAuthor, b: RawAuthor) bool {
+        var visiting = std.ArrayList(imports.DeclId).empty;
+        defer visiting.deinit(self.alloc);
+        return self.sameDeclaration(a.id, b.id, &visiting);
+    }
+
+    fn sameDeclaration(self: *Resolver, a: imports.DeclId, b: imports.DeclId, visiting: *std.ArrayList(imports.DeclId)) bool {
+        if (a == b) return true;
+        const left = self.identity(a, visiting) orelse return false;
+        const right = self.identity(b, visiting) orelse return false;
+        return std.meta.eql(left, right);
+    }
+
+    fn containsIdentity(self: *Resolver, authors_list: []const RawAuthor, candidate: RawAuthor) bool {
+        for (authors_list) |author| if (self.sameIdentity(author, candidate)) return true;
+        return false;
+    }
+
+    fn identity(self: *Resolver, id: imports.DeclId, visiting: *std.ArrayList(imports.DeclId)) ?Identity {
+        for (visiting.items) |previous| if (previous == id) return null;
+        visiting.append(self.alloc, id) catch @panic("out of memory");
+        defer _ = visiting.pop();
+        const table = self.index.declarations();
+        const info = table.get(id);
+        if (info.scope) |scope| return .{ .scope = scope };
+        const env = info.environment orelse return .{ .declaration = id };
+        const ref = info.ref orelse return .{ .declaration = id };
+        if (ref == .namespace_decl) {
+            const target = table.environment(env).namespaces.get(info.name) orelse return null;
+            return .{ .namespace = target.environment };
+        }
+        if (ref != .const_decl) return .{ .declaration = id };
+        const path = imports.aliasPath(self.alloc, ref.const_decl.value) orelse {
+            if (self.index.get(.type_alias, id)) |ty| return .{ .type = ty };
+            return .{ .declaration = id };
+        };
+        defer self.alloc.free(path);
+        const raw = switch (ref.const_decl.value.data) {
+            .identifier => |ident| ident.is_raw,
+            .type_expr => |te| te.is_raw,
+            else => true,
+        };
+        if (!raw) if (@import("type_resolver.zig").TypeResolver.resolvePrimitive(path)) |ty| return .{ .type = ty };
+        const context = LookupContext.author(.{ .table = table, .id = id }).?;
+        const target = self.selectPath(path, context);
+        return if (target == .selected) self.identity(target.selected.declaration, visiting) else null;
+    }
+
+    pub fn moduleContext(_: *Resolver, context: LookupContext, path: []const u8) ?LookupContext {
+        return .{ .table = context.table, .environment = context.table.fileEnvironment(path) orelse return null };
+    }
+
+    pub fn namespaceContext(_: *Resolver, decl: lookup.Declaration) ?LookupContext {
+        const info = decl.info();
+        const target = decl.table.environment(info.environment.?).namespaces.get(info.name) orelse return null;
+        return .{ .table = decl.table, .environment = target.environment };
+    }
+
+    pub fn equivalentDeclarations(self: *Resolver, a: lookup.Declaration, b: lookup.Declaration) bool {
+        var visiting = std.ArrayList(imports.DeclId).empty;
+        defer visiting.deinit(self.alloc);
+        return self.sameDeclaration(a.id, b.id, &visiting);
+    }
+
+    fn selection(result: lookup.Selection) Selection {
+        return switch (result) {
+            .missing => .missing,
+            .ambiguous => .ambiguous,
+            .selected => |selected| .{ .selected = .{ .declaration = selected.declaration.id, .view = selected.view, .pinned_view = selected.pinned_view } },
         };
     }
 
-    /// Container collector for ONE already-selected namespace target. Iterates
-    /// the target's `own_decls` and touches NO import graph. A
-    /// namespace's `own_decls` is name-deduped, so a name has at most one author
-    /// here — returned as `own`, sourced to the target's module path.
+    pub fn qualifier(self: *Resolver, selected: Selected) ?Qualifier {
+        var query = lookup.Query(*Resolver).init(self, self.alloc);
+        defer query.deinit();
+        return query.qualifier(.{ .declaration = .{ .table = self.index.declarations(), .id = selected.declaration }, .view = selected.view, .pinned_view = selected.pinned_view }) catch @panic("out of memory");
+    }
+
+    pub fn selectPath(self: *Resolver, path: []const u8, context: LookupContext) Selection {
+        var query = lookup.Query(*Resolver).init(self, self.alloc);
+        defer query.deinit();
+        return selection(query.select(path, context, context.source()) catch @panic("out of memory"));
+    }
+
+    pub fn selectMember(self: *Resolver, target: Qualifier, name: []const u8, requester: []const u8) Selection {
+        var query = lookup.Query(*Resolver).init(self, self.alloc);
+        defer query.deinit();
+        return selection(query.member(target, name, requester) catch @panic("out of memory"));
+    }
+
+    pub fn spreadTarget(self: *Resolver, context: LookupContext, node: *const ast.Node) lookup.SpreadTarget {
+        var query = lookup.Query(*Resolver).init(self, self.alloc);
+        defer query.deinit();
+        return query.spreadTarget(context, node) catch @panic("out of memory");
+    }
+
     pub fn collectNamespaceAuthors(
         self: *Resolver,
         target: NamespaceTarget,
         name: []const u8,
     ) AuthorSet {
-        _ = self;
-        for (target.own_decls) |decl| {
-            const dn = decl.data.declName() orelse continue;
-            if (!std.mem.eql(u8, dn, name)) continue;
-            const ref = imports.rawDeclRefOf(decl) orelse continue;
-            return .{ .own = .{
-                .raw = ref,
-                .source = target.target_module_path,
-                .visibility = decl.visibility,
-                // Privacy authority is the EXACT declaring file — for a
-                // directory-import namespace that is the member file, not the
-                // directory module path.
-                .vis_source = decl.source_file,
-            }, .flat = &.{} };
+        const table = self.index.declarations();
+        for (target.member_ids) |id| {
+            if (!std.mem.eql(u8, table.get(id).name, name)) continue;
+            return .{ .own = table.author(id, target.target_module_path), .flat = &.{} };
         }
         return .{ .own = null, .flat = &.{} };
     }
@@ -345,7 +408,7 @@ pub const Resolver = struct {
     pub fn resolveBare(
         self: *Resolver,
         name: []const u8,
-        from: []const u8,
+        from: imports.EnvironmentId,
         domain: Domain,
     ) ResolvedAuthors {
         const set = self.collectVisibleAuthors(name, from, .user_bare_flat);
@@ -369,11 +432,6 @@ pub const Resolver = struct {
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
-    /// Compute the verdict over a collected author set for `domain`: own-wins
-    /// when the querying module's own author is eligible; ≥2 distinct eligible
-    /// flat authors → ambiguous; exactly one → single; none eligible but authored
-    /// for this domain anywhere (non-flat-visible) → not_visible; otherwise
-    /// domain_filtered.
     fn verdictOver(
         self: *Resolver,
         domain: Domain,
@@ -392,6 +450,7 @@ pub const Resolver = struct {
             }
         }
         if (n == 1) return .single;
+        if (set.distinctCount() != 0) return .domain_filtered;
         if (self.authoredAsDomainAnywhere(domain, name, field)) return .not_visible;
         return .domain_filtered;
     }
@@ -406,37 +465,12 @@ pub const Resolver = struct {
         name: []const u8,
         field: ?[]const u8,
     ) bool {
-        const decls = self.index.module_decls orelse return false;
-        var it = decls.valueIterator();
-        while (it.next()) |m| {
-            if (m.names.get(name)) |ref| {
-                // A private-only author is invisible everywhere but its own
-                // file (which the own/flat walk already served), so it must
-                // not turn "undeclared" into a misleading not-visible leak.
-                if (m.private_names.contains(name)) continue;
-                if (eligibleKind(domain, ref, field)) return true;
-            }
+        const table = self.index.decl_table orelse return false;
+        for (table.environments.items) |env| {
+            const info = table.get(env.names.get(name) orelse continue);
+            if (info.visibility == .private) continue;
+            if (eligibleKind(domain, info.ref orelse continue, field)) return true;
         }
         return false;
     }
 };
-
-// ── Private identity helpers ─────────────────────────────────────────────────
-
-fn authorNodePtr(ref: RawDeclRef) usize {
-    return switch (ref) {
-        inline else => |p| @intFromPtr(p),
-    };
-}
-
-fn sameAuthor(a: ?RawAuthor, b: RawAuthor) bool {
-    const aa = a orelse return false;
-    return authorNodePtr(aa.raw) == authorNodePtr(b.raw);
-}
-
-fn containsAuthor(list: []const RawAuthor, b: RawAuthor) bool {
-    for (list) |x| {
-        if (authorNodePtr(x.raw) == authorNodePtr(b.raw)) return true;
-    }
-    return false;
-}

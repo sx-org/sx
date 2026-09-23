@@ -61,9 +61,9 @@ gPlat     : *UIKitPlatform      = null;
 gGpu      : *MetalGPU           = null;
 gRenderer : *UIRenderer         = null;
 gGlyphs   : *GlyphCache         = null;
-gRoot     : *UiRoot             = null;
-gLoop     : *FrameLoop          = null;
-gSession  : *TextInputSession   = null;
+gRoot     : *fluent.UiRoot = null;
+gLoop     : *fluent.FrameLoop = null;
+gSession  : *fluent.TextInputSession = null;
 gInsetBottom : f32  = 0.0;
 // The keyboard this vehicle asked for, and the keyboard on screen.
 gKeyboardUp   : bool = false;
@@ -105,7 +105,7 @@ frame :: () {
     if !gGpu.beginFrame(bg) { return; }
     gPlat.sampleKeyboard();
     gInsetBottom = gPlat.safeInsets().bottom;
-    gRoot.viewport = Size{ width = fc.viewportW, height = fc.viewportH };
+    gRoot.viewport = fluent.Size{ width = fc.viewportW, height = fc.viewportH };
     gLoop.frame();
 
     // A swipe dismisses the keyboard without passing through the focus
@@ -141,43 +141,43 @@ frame :: () {
 main :: () -> i32 {
     inline if @host.os != .ios { return 0; }
 
-    plat := context.allocator.make(UIKitPlatform{ gpuMode = .metal });
+    plat := mem.make(context.allocator, UIKitPlatform{ gpuMode = .metal });
     if !plat.init("Sx Text Field", 0, 0) { return 1; }
     gPlat = plat;
 
     // Device and queue come up without a layer, so the UI pipeline and the
     // atlas are built here — and the font, whose path resolves against the
     // bundle the platform init already chdir'd into.
-    gGpu = context.allocator.make(MetalGPU{});
+    gGpu = mem.make(context.allocator, MetalGPU{});
     if !gGpu.init(null, 0, 0) { return 1; }
 
-    gRenderer = context.allocator.make(UIRenderer{});
+    gRenderer = mem.make(context.allocator, UIRenderer{});
     gRenderer.gpu = gGpu.(GPU);
     gRenderer.init();
 
-    gGlyphs = context.allocator.make(GlyphCache{});
+    gGlyphs = mem.make(context.allocator, GlyphCache{});
     gGlyphs.gpu = gGpu.(GPU);
     if !gGlyphs.init(BUNDLE_FACE, FONT_SIZE) { return 1; }
-    setGlobalFont(gGlyphs);
+    fluent.setGlobalFont(gGlyphs);
 
-    gSession = context.allocator.make(TextInputSession.init(*plat.imeQueue));
-    gRoot = context.allocator.make(UiRoot.init(Size{ width = 0.0, height = 0.0 }, context.allocator));
+    gSession = mem.make(context.allocator, fluent.TextInputSession.init(*plat.imeQueue));
+    gRoot = mem.make(context.allocator, fluent.UiRoot.init(fluent.Size{ width = 0.0, height = 0.0 }, context.allocator));
 
     doc := gSession;
-    gLoop = context.allocator.make(FrameLoop.init(gRoot, closure(||_{ doc } -> View {
+    gLoop = mem.make(context.allocator, fluent.FrameLoop.init(gRoot, mem.closure(||_{ doc } -> fluent.View {
         // The background declares its region FIRST, so the field's own
         // region — declared later — wins the points it covers and only a
         // tap outside reaches this one.
-        v : View = zstack(ALIGN_BOTTOM) {
-            tappable(Rect{ fill = Color.rgb(18, 23, 33) }, closure(|| {
+        v : fluent.View = fluent.zstack(fluent.ALIGN_BOTTOM) {
+            fluent.tappable(fluent.Rect{ fill = fluent.Color.rgb(18, 23, 33) }, mem.closure(|| {
                 context.fluentFocus.clearFocus()
             }));
-            place(textField(doc, FONT_SIZE), Mod{
+            fluent.place(fluent.textField(doc, FONT_SIZE), fluent.Mod{
                 width = FIELD_WIDTH,
                 height = FIELD_HEIGHT,
-                bg = Color.rgb(38, 46, 62),
+                bg = fluent.Color.rgb(38, 46, 62),
                 corner = 8.0,
-                margin = EdgeInsets{ top = 0.0, left = 0.0,
+                margin = fluent.EdgeInsets{ top = 0.0, left = 0.0,
                     bottom = gInsetBottom + FIELD_LIFT, right = 0.0 },
             })
         };

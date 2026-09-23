@@ -55,6 +55,7 @@ pub const Tag = enum(u8) {
     kw_export, // export (define + expose: external linkage, C ABI)
     kw_asm, // asm (inline assembly expression / global asm decl)
     kw_private, // private (file-local visibility: module-scope decls and struct fields)
+    kw_scope,
 
     // Symbols
     colon, // :
@@ -275,6 +276,7 @@ pub const Tag = enum(u8) {
             .kw_export,
             .kw_asm,
             .kw_private,
+            .kw_scope,
             => .keyword,
             .at_run,
             .at_import,
@@ -399,6 +401,7 @@ pub const Tag = enum(u8) {
             .kw_export,
             .kw_asm,
             .kw_private,
+            .kw_scope,
             => true,
             .int_literal,
             .float_literal,
@@ -552,6 +555,7 @@ pub const keywords = std.StaticStringMap(Tag).initComptime(.{
     // declaring source file. A reserved word; `` `private `` stays usable as a
     // raw identifier.
     .{ "private", .kw_private },
+    .{ "scope", .kw_scope },
 });
 
 pub fn getKeyword(bytes: []const u8) ?Tag {

@@ -31,27 +31,9 @@ fn contextualArgumentFits(l: *Lowering, node: *const Node, ty: TypeId) bool {
     };
 }
 
-/// Generic substitution + monomorphization-key construction. Owns:
-///   - the type-name mangler (`mangleTypeName` / `mangleParamList`) — the leaf
-///     fragment every mono key is built from,
-///   - the generic mono key (`mangleGenericName`) and the comptime-value mono
-///     fragment (`appendComptimeValueMangle`),
-///   - type-parameter substitution: `buildTypeBindings` (call-site inference)
-///     and `inferGenericReturnType` (generic return resolution).
-///
-/// A `*Lowering` facade (like `CallResolver` / `ExprTyper`):
-/// substitution reads live type-binding / scope state and the type resolver
-/// helpers, so it borrows `*Lowering` rather than re-threading every field.
-/// `Lowering` keeps a thin `mangleTypeName` wrapper (it has ~30 cross-cutting
-/// callers — impl-map keys, conversion keys, shape keys — well beyond
-/// generics); the rest call through `Lowering.genericResolver()`.
 pub const GenericResolver = struct {
     l: *Lowering,
 
-    // ── Mono-key construction ───────────────────────────────────────────
-
-    /// Mangle a TypeId into its mono-key fragment ("i64", "ptr_T", "SL_T",
-    /// "AR_n_T", struct name, "tu_X_Y", …). Recursive for compound shapes.
     pub fn mangleTypeName(self: GenericResolver, ty: TypeId) []const u8 {
         if (self.l.module.types.canonicalType(ty) != ty) {
             const info = self.l.module.types.get(ty);
@@ -215,16 +197,9 @@ pub const GenericResolver = struct {
         bindings: *const std.StringHashMap(TypeId),
     ) []const u8 {
         var mangled = std.ArrayList(u8).empty;
-        // The base carries `fd`'s declaration identity: two modules may author
-        // the same generic spelling, and a bare-name base would make the first
-        // monomorph answer both authors' call sites.
         mangled.appendSlice(self.l.alloc, self.l.declIdentityName(base_name, fd)) catch @panic("out of memory while mangling generic function");
         for (fd.type_params) |tp| {
             const ty = bindings.get(tp.name) orelse .unresolved;
-            // `mangleTypeName` is the complete semantic type key (including
-            // nominal ids). Dynamic storage is mandatory: a long source-
-            // qualified base must never truncate into another declaration's
-            // monomorph.
             mangled.appendSlice(self.l.alloc, "__") catch @panic("out of memory while mangling generic function");
             const type_name_str = self.mangleTypeName(ty);
             mangled.appendSlice(self.l.alloc, type_name_str) catch @panic("out of memory while mangling generic function");
@@ -482,9 +457,9 @@ pub const GenericResolver = struct {
         // planned call result carries a channel `errorChannelOf` can read.
         // The binding-building above
         // stays in the call-site context (its args are typed there).
-        const saved_src = self.l.current_source_file;
-        defer self.l.setCurrentSourceFile(saved_src);
-        if (fd.body.source_file) |src| self.l.setCurrentSourceFile(src);
+        const saved_src = self.l.lexicalContext();
+        defer self.l.restoreLexicalContext(saved_src);
+        self.l.setFunctionContext(fd);
         return self.l.resolveTypeWithBindings(fd.return_type.?);
     }
 };

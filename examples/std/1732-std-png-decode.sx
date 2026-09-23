@@ -4,12 +4,13 @@
 // rejects loudly — bad signature, truncation, and a corrupted CRC each
 // hit their own error tag.
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 roundtrip :: (fmt: png.PixelFormat, channels: i64) {
     w := 5;
     h := 4;
     n := w * h * channels;
-    src := context.allocator.alloc(u8, n);
+    src := mem.alloc(context.allocator, u8, n);
     i := 0;
     while i < n { src[i] = ((i * 7 + channels * 13) % 256).(u8); i += 1; }
 
@@ -37,7 +38,7 @@ main :: () {
     // Bottom-up storage encodes through the negative stride and decodes
     // back TOP-DOWN: the first decoded row is the last stored one.
     w := 3; h := 2;
-    src := context.allocator.alloc(u8, w * h * 4);
+    src := mem.alloc(context.allocator, u8, w * h * 4);
     i := 0;
     while i < w * h * 4 { src[i] = i.(u8); i += 1; }
     img : png.Image = .{
@@ -62,7 +63,7 @@ main :: () {
         png.Image{ pixels = "", width = 0, height = 0, format = .rgba }
     };
     // Flip one payload byte inside IHDR so its CRC mismatches.
-    corrupt := context.allocator.alloc(u8, data.len);
+    corrupt := mem.alloc(context.allocator, u8, data.len);
     i = 0;
     while i < data.len { corrupt[i] = data[i]; i += 1; }
     corrupt[16] = corrupt[16] ^ 0xff;

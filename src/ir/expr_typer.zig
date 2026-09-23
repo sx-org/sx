@@ -228,7 +228,7 @@ pub const ExprTyper = struct {
                     // authors and stays only as the untracked-head fallback.
                     var author_tracked = false;
                     if (self.l.current_source_file orelse self.l.main_file) |from| {
-                        switch (self.l.selectNominalLeaf(obj_name, from, false)) {
+                        switch (self.l.selectNominalLeaf(obj_name, self.l.environmentForSource(from).?, false)) {
                             .resolved => |head_ty| {
                                 if (!head_ty.isBuiltin() and self.l.plain_struct_authors.contains(head_ty)) {
                                     author_tracked = true;
@@ -324,9 +324,9 @@ pub const ExprTyper = struct {
                         switch (self.l.qualifiedMemberVerdict(path)) {
                             .selected => |sel| {
                                 const synth = Node{ .span = node.span, .data = .{ .identifier = .{ .name = sel.member } } };
-                                const saved_src = self.l.current_source_file;
-                                self.l.setCurrentSourceFile(sel.target.target_module_path);
-                                defer self.l.setCurrentSourceFile(saved_src);
+                                const saved_src = self.l.lexicalContext();
+                                self.l.setAuthorContext(sel.author.id);
+                                defer self.l.restoreLexicalContext(saved_src);
                                 return self.l.inferExprType(&synth);
                             },
                             .not_qualified, .missing, .ambiguous => {},
@@ -344,8 +344,8 @@ pub const ExprTyper = struct {
                     if (!self.l.identifierBindsVisibleValue(root)) {
                         switch (self.l.qualifiedMemberVerdict(path)) {
                             .selected => |sel| {
-                                const saved_src = self.l.current_source_file;
-                                self.l.setCurrentSourceFile(sel.target.target_module_path);
+                                const saved_src = self.l.lexicalContext();
+                                self.l.setAuthorContext(sel.author.id);
                                 var global_info: ?program_index_mod.GlobalInfo = null;
                                 if (self.l.program_index.lookup(.global, sel.member)) |fallback| {
                                     switch (self.l.selectGlobalAuthor(sel.member)) {
@@ -354,9 +354,9 @@ pub const ExprTyper = struct {
                                         else => {},
                                     }
                                 }
-                                self.l.setCurrentSourceFile(saved_src);
+                                self.l.restoreLexicalContext(saved_src);
                                 if (global_info) |gi| return self.l.resolveFieldType(gi.ty, fa.field);
-                                switch (self.l.selectNominalLeaf(sel.member, sel.target.target_module_path, false)) {
+                                switch (self.l.selectNominalLeaf(sel.member, self.l.program_index.declaration(sel.author.id).environment.?, false)) {
                                     .resolved => |ty| if (!ty.isBuiltin() and self.l.isPayloadlessVariant(ty, fa.field)) return ty,
                                     else => {},
                                 }
@@ -440,7 +440,7 @@ pub const ExprTyper = struct {
                     // (`BoxI :: Box(i64)`) infers the type it names — the
                     // global `findByName` below knows only registered type
                     // NAMES and would mint a stub under the alias spelling.
-                    const leaf: ?TypeId = if (self.l.current_source_file) |from| switch (self.l.selectNominalLeaf(name, from, false)) {
+                    const leaf: ?TypeId = if (self.l.current_source_file) |from| switch (self.l.selectNominalLeaf(name, self.l.environmentForSource(from).?, false)) {
                         .resolved => |tid| tid,
                         else => null,
                     } else null;
@@ -479,7 +479,7 @@ pub const ExprTyper = struct {
                         if (self.l.qualifiedTypeName(fa.object)) |path| {
                             defer self.l.alloc.free(path);
                             switch (self.l.qualifiedMemberVerdict(path)) {
-                                .selected => |sel| switch (self.l.selectNominalLeaf(sel.member, sel.target.target_module_path, false)) {
+                                .selected => |sel| switch (self.l.selectNominalLeaf(sel.member, self.l.program_index.declaration(sel.author.id).environment.?, false)) {
                                     .resolved => |oty| if (!oty.isBuiltin() and self.l.module.types.get(oty) == .@"enum" and self.l.module.types.get(oty).@"enum".hasPayload()) return oty,
                                     else => {},
                                 },

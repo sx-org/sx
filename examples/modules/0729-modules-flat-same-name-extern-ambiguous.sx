@@ -1,0 +1,4 @@
+@import "0729-modules-flat-same-name-extern-ambiguous/a.sx";
+@import "0729-modules-flat-same-name-extern-ambiguous/b.sx";
+
+main :: () -> i32 { absval(-7) }

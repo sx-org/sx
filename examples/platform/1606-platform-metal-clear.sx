@@ -13,6 +13,7 @@
 //   xcrun simctl launch --terminate-running-process booted co.swipelab.metalclear
 
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 @import "modules/ffi/objc.sx";
 @import "modules/build.sx";
 @import "modules/platform/api.sx";
@@ -105,11 +106,11 @@ frame :: () {
 main :: () -> i32 {
     inline if @host.os != .ios { return 0; }
 
-    plat := context.allocator.make(UIKitPlatform{ gpuMode = .metal });
+    plat := mem.make(context.allocator, UIKitPlatform{ gpuMode = .metal });
     if !plat.init("Metal Clear", 0, 0) { return 1; }
     gPlat = plat;
 
-    gGpu = context.allocator.make(MetalGPU{});
+    gGpu = mem.make(context.allocator, MetalGPU{});
 
     uikitAppRun(plat, frame);
     plat.shutdown();

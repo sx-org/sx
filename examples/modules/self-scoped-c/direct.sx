@@ -1,0 +1,6 @@
+@import "modules/std/c.sx";
+
+writeDirect :: (fd: c.Fd) -> c.Fd {
+    c.write(fd, "direct\n".ptr, 7);
+    fd
+}

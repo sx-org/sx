@@ -145,7 +145,10 @@ fn importHeader(
     var buf: [4096]u8 = undefined;
     const len = try tmp.dir.realPath(io, &buf);
     const path = try std.fmt.allocPrint(alloc, "{s}/h.h", .{buf[0..len]});
-    return c_import.processCImport(alloc, &.{path}, &.{}, flags);
+    return switch (try c_import.processCImport(alloc, &.{path}, &.{}, flags)) {
+        .success => |result| result,
+        .failure => error.CompileError,
+    };
 }
 
 fn findFn(result: c_import.CImportResult, name: []const u8) !ast.FnDecl {

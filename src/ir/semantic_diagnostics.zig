@@ -1,5 +1,6 @@
 const std = @import("std");
 const ast = @import("../ast.zig");
+const imports = @import("../imports.zig");
 const contracts = @import("../contracts.zig");
 const errors = @import("../errors.zig");
 const types = @import("types.zig");
@@ -68,7 +69,7 @@ pub const UnknownTypeChecker = struct {
     /// `null` (unit tests) keeps the walk-everything behavior.
     lowering: ?*lower.Lowering = null,
 
-    pub fn run(self: UnknownTypeChecker, decls: []const *const Node) void {
+    pub fn run(self: UnknownTypeChecker, authored: []const *const Node) void {
         // Reserved-type-name binding diagnostic: rejects any
         // parameter name or `var` / `:=` / typed-local binding name spelled as a
         // reserved/builtin type name. Runs over EVERY compiled module — imported
@@ -80,7 +81,8 @@ pub const UnknownTypeChecker = struct {
         // tracks each module's source file (via the diagnostic list's
         // `current_source_file`, saved/restored per node) so an imported-module
         // diagnostic renders against that module's text.
-        for (decls) |decl| self.checkBindingNames(decl);
+        for (authored) |decl| self.checkBindingNames(decl);
+        const decls = ast.scopeDeclarations(self.alloc, authored) catch @panic("out of memory");
 
         // `@` contract identity: an `@`-named declaration is legal only in the
         // module the registry says owns it, so a lookalike cannot stand in for
@@ -138,6 +140,7 @@ pub const UnknownTypeChecker = struct {
             // permission to retain whichever facade was visited last.
             const author_source = decl.source_file orelse self.main_file;
             if (author_source) |sf| self.diagnostics.current_source_file = sf;
+            if (self.lowering) |l| l.setDeclarationContext(decl);
             var decl_checker = checker;
             decl_checker.author_source = author_source;
             switch (decl.data) {
@@ -147,7 +150,18 @@ pub const UnknownTypeChecker = struct {
                 .impl_block => |ib| for (ib.methods) |method| {
                     if (method.data == .fn_decl) decl_checker.checkFnSignatureTypes(&method.data.fn_decl, &declared);
                 },
-                .var_decl, .const_decl, .union_decl, .enum_decl => decl_checker.checkValueTypes(decl, &declared, &.{}, &.{}),
+                .const_decl => |cd| {
+                    if (imports.aliasPath(self.alloc, cd.value)) |path| {
+                        defer self.alloc.free(path);
+                        if (self.lowering) |l| {
+                            var resolver = l.resolver();
+                            if (resolver.selectPath(path, l.lookupContext(l.current_environment.?)) == .ambiguous)
+                                self.diagnostics.add(.err, "alias target is ambiguous", cd.value.span);
+                        }
+                    }
+                    decl_checker.checkValueTypes(decl, &declared, &.{}, &.{});
+                },
+                .var_decl, .union_decl, .enum_decl => decl_checker.checkValueTypes(decl, &declared, &.{}, &.{}),
                 else => {},
             }
         }
@@ -438,6 +452,11 @@ pub const UnknownTypeChecker = struct {
             .library_decl => |ld| self.checkDeclName(node, ld.name, ld.is_raw),
             .import_decl => |imp| if (imp.name) |n| self.checkDeclName(node, n, imp.is_raw),
             .c_import_decl => |cid| if (cid.name) |n| self.checkDeclName(node, n, cid.is_raw),
+            .scope_decl => |scope| {
+                self.checkDeclName(node, scope.name, scope.is_raw);
+                for (scope.decls) |decl| self.checkBindingNames(decl);
+            },
+            .spread_decl => {},
             // ── Leaves & pure type-expression nodes: no binding sites below. ──
             // Type-expression subtrees carry only type names (no value
             // bindings). Listing each tag explicitly (rather than an `else`) is

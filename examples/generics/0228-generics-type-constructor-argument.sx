@@ -26,7 +26,7 @@ hold :: (v: $V) -> Box(V) { Box(V){ inner = v, tag = 0 } }
 boxedSize :: (v: $V) -> i64 { @sizeOf(Box(V)) }
 
 newBox :: (v: $V) -> *Box(V) {
-    p := context.allocator.create(Box(V));
+    p := mem.create(context.allocator, Box(V));
     p.inner = v;
     p.tag = 7;
     p
@@ -34,7 +34,7 @@ newBox :: (v: $V) -> *Box(V) {
 
 main :: () {
     // A `$T: Type` parameter binds from the constructor call.
-    p := context.allocator.create(Box(f64));
+    p := mem.create(context.allocator, Box(f64));
     p.inner = 2.5;
     p.tag = 1;
     print("{} {}\n", p.inner, p.tag);

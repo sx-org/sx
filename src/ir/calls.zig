@@ -132,7 +132,7 @@ pub const CallResolver = struct {
         non_callable: struct { member: []const u8, span: ast.Span },
         missing: struct { namespace: []const u8, member: []const u8, span: ast.Span },
         not_visible: struct { alias: []const u8, span: ast.Span },
-        ambiguous: struct { alias: []const u8, span: ast.Span },
+        ambiguous: struct { alias: Lowering.AmbiguousQualified, span: ast.Span },
     };
 
     /// Infer the IR type a call expression evaluates to (without lowering it).
@@ -544,7 +544,7 @@ pub const CallResolver = struct {
                 // not-a-ufcs-function diagnostic).
                 const alias_target = self.l.ufcsAliasTarget(cfa.field);
                 const eff_field = alias_target orelse cfa.field;
-                const ufcs_fd = self.l.program_index.lookup(.function, eff_field);
+                const ufcs_fd = self.l.ufcsFunction(eff_field);
                 const opted_in = alias_target != null or (ufcs_fd != null and ufcs_fd.?.is_ufcs);
                 if (!opted_in) return .{ .kind = .unresolved, .return_type = .unresolved };
                 // Generic ufcs target: infer the return type with the
@@ -556,21 +556,13 @@ pub const CallResolver = struct {
                             return .{ .kind = .unresolved, .return_type = .unresolved };
                         eff_call_args[0] = cfa.object;
                         @memcpy(eff_call_args[1..], c.args);
-                        // RESELECT by receiver — the same selector + `fd0`
-                        // lowering uses — so the PLANNED return type matches the
-                        // function lowering actually dispatches. The last-wins
-                        // `fd0p` can be a wrong-receiver overload (e.g. a
-                        // `*Other($T)->string` winner over the `*Box($T)->i64`
-                        // receiver-match); typing the call by `fd0p` while
-                        // lowering calls the other one misboxes the result.
-                        // A `*const Node` view of the
-                        // args drives the receiver-aware selection.
+                        // Typing and dispatch must use the same receiver-selected declaration.
                         const sel_args = self.l.alloc.alloc(*const ast.Node, c.args.len + 1) catch
                             return .{ .kind = .unresolved, .return_type = .unresolved };
                         sel_args[0] = cfa.object;
                         for (c.args, 0..) |a, i| sel_args[i + 1] = a;
                         var amb = false;
-                        const fd = self.l.selectUfcsGenericByReceiver(eff_field, sel_args, &amb, fd0p) orelse fd0p;
+                        const fd = self.l.selectUfcsGenericByReceiver(eff_field, sel_args, &amb) orelse fd0p;
                         var c2 = c.*;
                         c2.args = eff_call_args;
                         return .{
@@ -696,7 +688,7 @@ pub const CallResolver = struct {
                     };
                     return .{
                         .kind = .namespace_fn,
-                        .return_type = if (qfd.return_type) |rt| self.l.resolveTypeInSource(self.l.program_index.functionSource(qualified), rt) else .void,
+                        .return_type = if (qfd.return_type) |rt| self.l.resolveTypeInEnvironment(self.l.functionEnvironment(qfd), rt) else .void,
                         .target = .{ .named = qualified },
                         .expands_defaults = defaultsFor(qfd, c.args.len),
                     };
@@ -722,7 +714,7 @@ pub const CallResolver = struct {
                     // `bfd`'s own source.
                     return .{
                         .kind = .namespace_fn,
-                        .return_type = if (bfd.return_type) |rt| self.l.resolveTypeInSource(bfd.body.source_file, rt) else .void,
+                        .return_type = if (bfd.return_type) |rt| self.l.resolveTypeInEnvironment(self.l.functionEnvironment(bfd), rt) else .void,
                         .target = .{ .named = cfa.field },
                         .expands_defaults = defaultsFor(bfd, c.args.len),
                     };
@@ -814,11 +806,11 @@ pub const CallResolver = struct {
                     scoped;
                 if (!std.mem.eql(u8, name, bare_name)) return .none;
                 if (self.l.scope) |scope| if (scope.lookup(bare_name) != null) return .none;
-                return self.l.selectCallableAuthor(bare_name, caller_file, .any_body);
+                return self.l.selectCallableAuthor(bare_name, self.l.environmentForSource(caller_file).?, .all);
             },
             .field_access => |cfa| {
                 if (!self.objectIsValue(cfa.object)) return .none;
-                return self.l.selectCallableAuthor(cfa.field, caller_file, .plain_free);
+                return self.l.selectCallableAuthor(cfa.field, self.l.environmentForSource(caller_file).?, .non_generic);
             },
             else => return .none,
         }
@@ -840,7 +832,7 @@ pub const CallResolver = struct {
     }
 
     fn selectedGlobal(self: CallResolver, sel: Lowering.QualifiedMember) ?program_index.GlobalInfo {
-        if (self.l.program_index.lookupInSource(.global, sel.author.source, sel.member)) |g| return g;
+        if (self.l.program_index.get(.global, sel.author.id)) |g| return g;
         // Duplicate extern declarations may intentionally share the one
         // registered symbol.  The raw selected author still proves that this
         // fallback denotes the same global domain, rather than a same-spelled
@@ -853,7 +845,7 @@ pub const CallResolver = struct {
     fn selectedObjectIsValue(self: CallResolver, sel: Lowering.QualifiedMember) bool {
         return switch (sel.author.raw) {
             .var_decl => true,
-            .const_decl => self.l.sourceModuleConst(sel.author.source, sel.member) != null,
+            .const_decl => self.l.program_index.get(.module_const, sel.author.id) != null,
             else => false,
         };
     }
@@ -914,7 +906,7 @@ pub const CallResolver = struct {
 
         switch (self.l.qualifiedMemberVerdict(path)) {
             .selected => |sel| {
-                if (self.l.namespaceFnMember(&sel.target, sel.member)) |fd| {
+                if (self.l.selectedFunction(sel)) |fd| {
                     self.l.alloc.free(path);
                     return .{ .func = .{
                         .decl = fd,
@@ -942,7 +934,7 @@ pub const CallResolver = struct {
             .ambiguous => |alias| {
                 return .{ .ambiguous = .{
                     .alias = alias,
-                    .span = pathSliceSpan(c.callee, path, alias),
+                    .span = pathSliceSpan(c.callee, path, alias.name),
                 } };
             },
             .not_qualified => {},
@@ -970,19 +962,9 @@ pub const CallResolver = struct {
             } },
             .ambiguous => |alias| return .{ .ambiguous = .{
                 .alias = alias,
-                .span = pathSliceSpan(fa.object, object_path, alias),
+                .span = pathSliceSpan(fa.object, object_path, alias.name),
             } },
             .not_qualified => self.l.alloc.free(object_path),
-        }
-        // Source-less unit/comptime hosts carry no import facts and register
-        // namespace functions only under their qualified key. That narrow form
-        // must not weaken source-backed programs (where an unknown dotted root
-        // remains a value/unresolved receiver and cannot cross-bind by
-        // terminal name).
-        if (self.l.current_source_file == null and self.l.main_file == null and fa.object.data == .identifier) {
-            const qualified = std.fmt.allocPrint(self.l.alloc, "{s}.{s}", .{ fa.object.data.identifier.name, fa.field }) catch
-                @panic("out of memory while classifying source-less qualified call");
-            if (self.l.program_index.contains(.function, qualified)) return .type_prefix;
         }
         return switch (self.l.staticStructHead(fa.object)) {
             .resolved, .ambiguous, .not_visible => .type_prefix,
@@ -1007,7 +989,7 @@ pub const CallResolver = struct {
         else if (self.l.declFuncId(fd)) |fid|
             self.l.module.functions.items[@intFromEnum(fid)].ret
         else if (fd.return_type) |rt|
-            self.l.resolveTypeInSource(sf.source, rt)
+            self.l.resolveTypeInEnvironment(self.l.functionEnvironment(sf.decl), rt)
         else
             .void;
         const has_ctx = if (self.l.declFuncId(fd)) |fid|
@@ -1048,10 +1030,10 @@ pub const CallResolver = struct {
         } else if (self.l.declFuncId(fd)) |fid|
             self.l.module.functions.items[@intFromEnum(fid)].ret
         else blk: {
-            const saved = self.l.current_source_file;
-            self.l.setCurrentSourceFile(Lowering.plainStructMethodSource(method));
+            const saved = self.l.lexicalContext();
+            self.l.setFunctionContext(fd);
             const ret = self.l.resolveReturnType(fd);
-            self.l.setCurrentSourceFile(saved);
+            self.l.restoreLexicalContext(saved);
             break :blk ret;
         };
         const has_ctx = if (self.l.declFuncId(fd)) |fid|

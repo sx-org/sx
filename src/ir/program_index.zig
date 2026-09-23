@@ -234,11 +234,6 @@ const ModuleConstCtx = struct {
     pub fn evalConstFieldAccessInt(_: ModuleConstCtx, _: *const Node) ?i64 {
         return null;
     }
-    // The GLOBAL-map fold carries no namespace-import facts (no `namespace_edges`
-    // / per-source const cache), so a qualified-member const `m.CAP` can only be
-    // resolved by the SOURCE-AWARE path (`SourceConstCtx` / `Lowering`). Null
-    // here. A qualified const used inside another module const's RHS
-    // folds through `SourceConstCtx`, not this ctx, so this is not a live gap.
     pub fn lookupQualifiedConst(_: ModuleConstCtx, _: []const u8, _: []const u8) ?i64 {
         return null;
     }
@@ -888,28 +883,7 @@ pub fn FactValue(comptime fact: Fact) type {
     return @typeInfo(@FieldType(DeclFacts, @tagName(fact))).optional.child;
 }
 
-/// Single lowering access point for declaration facts and import / visibility
-/// facts. `Lowering` embeds one `ProgramIndex` by value and reaches every
-/// fact through `self.program_index.<accessor>`.
-///
-/// A declaration's facts are stored under its `imports.DeclId` — the identity
-/// of where it is written. A name reaches a fact in two steps: the per-fact
-/// name index selects ONE `DeclId`, then `get` reads that declaration's fact.
-/// Two declarations spelled the same hold separate rows and can never merge.
-///
-/// OWNS `facts`, the name indexes and `owned_decl_table`. BORROWS
-/// `module_scopes` / `import_graph` / `flat_import_graph` / `module_decls` /
-/// `namespace_edges` / `module_cache` (pointers into maps owned by the
-/// compilation driver, `core.zig`) — those are read-only views and are never
-/// freed here. `decl_table` is the driver's table, borrowed and APPENDED to —
-/// `declarations()` interns synthesized and comptime-registered identities
-/// into it.
-///
-/// Every owned map allocates through the compilation allocator passed to
-/// `init` (arena-backed in both the driver and the tests).
 pub const ProgramIndex = struct {
-    /// The lowering/compilation allocator (`module.alloc`), retained so the
-    /// source-keyed name indexes below can lazily create their inner maps.
     alloc: std.mem.Allocator,
     /// Identities for a lowering with no driver behind it (the unit tests, the
     /// comptime VM): `declarations()` prefers the borrowed `decl_table`.
@@ -918,15 +892,11 @@ pub const ProgramIndex = struct {
     facts: std.AutoHashMap(imports.DeclId, DeclFacts),
     /// Per-fact name → identity. Selection only; never storage.
     names: [std.meta.fields(Fact).len]std.StringHashMap(imports.DeclId),
-    /// Declaring source → name → identity, for the facts a source-aware
-    /// resolution partitions (`type_alias` / `module_const` / `global`).
-    source_names: std.StringHashMap(std.StringHashMap(imports.DeclId)),
+    environment_names: std.AutoHashMap(imports.EnvironmentId, std.StringHashMap(imports.DeclId)),
     /// Erased/bound protocol TypeId → its declaration.
     protocol_types: std.AutoHashMap(TypeId, imports.DeclId),
 
     // ── Import / visibility ──
-    /// Per-module visible names, keyed by source file. Borrowed view.
-    module_scopes: ?*std.StringHashMap(std.StringHashMap(ast.Visibility)) = null,
     /// Module path → set of directly imported paths (param_impl visibility
     /// filter). Borrowed view.
     import_graph: ?*std.StringHashMap(std.StringHashMap(void)) = null,
@@ -935,16 +905,7 @@ pub const ProgramIndex = struct {
     /// `ns :: @import`). The bare-name disambiguation walks this to
     /// decide which same-name authors a flat importer can reach. Borrowed view.
     flat_import_graph: ?*std.StringHashMap(std.StringHashMap(void)) = null,
-    /// Per-module scalar raw-decl index (`path → name → RawDeclRef`), built by
-    /// `imports.buildImportFacts`. The unified resolver's raw-fact store.
-    /// Borrowed view.
-    module_decls: ?*imports.ModuleDecls = null,
-    /// Namespace import edges (`importer → alias → NamespaceTarget`), built by
-    /// `imports.buildImportFacts`, carrying each alias's resolved target path.
-    /// Borrowed view.
-    namespace_edges: ?*imports.NamespaceEdges = null,
-    /// Stable `DeclId` for every declaration, built by `imports.buildDeclTable`
-    /// in parallel with the import facts. Borrowed and appended to.
+    /// Shared import environments and declaration identities, borrowed and appended to.
     decl_table: ?*imports.DeclTable = null,
     /// Every resolved module keyed by canonical path. A `@import` written
     /// inside a module-scope expansion body resolves re-entrantly but stays
@@ -969,7 +930,7 @@ pub const ProgramIndex = struct {
             .owned_decl_table = imports.DeclTable.init(alloc),
             .facts = std.AutoHashMap(imports.DeclId, DeclFacts).init(alloc),
             .names = names,
-            .source_names = std.StringHashMap(std.StringHashMap(imports.DeclId)).init(alloc),
+            .environment_names = .init(alloc),
             .protocol_types = std.AutoHashMap(TypeId, imports.DeclId).init(alloc),
         };
     }
@@ -978,9 +939,9 @@ pub const ProgramIndex = struct {
         self.owned_decl_table.deinit();
         self.facts.deinit();
         for (&self.names) |*index| index.deinit();
-        var it = self.source_names.valueIterator();
+        var it = self.environment_names.valueIterator();
         while (it.next()) |index| index.deinit();
-        self.source_names.deinit();
+        self.environment_names.deinit();
         self.protocol_types.deinit();
     }
 
@@ -1001,20 +962,26 @@ pub const ProgramIndex = struct {
     /// The identity of the declaration `ref` authors, interning it when the
     /// driver's walk never reached it (a synthesized or comptime-registered
     /// declaration).
-    pub fn internRef(self: *ProgramIndex, ref: imports.RawDeclRef, source: ?[]const u8) imports.DeclId {
+    pub fn internRef(self: *ProgramIndex, ref: imports.RawDeclRef, environment: ?imports.EnvironmentId) imports.DeclId {
         const name = switch (ref) {
             inline else => |d| d.name,
         };
-        return self.declarations().internRef(source, name, ref, .{ .start = 0, .end = 0 }) catch @panic("out of memory");
+        return self.declarations().internRefInEnvironment(environment, name, ref, null) catch @panic("out of memory");
     }
 
-    pub fn internDecl(self: *ProgramIndex, decl: *const Node, source: ?[]const u8) imports.DeclId {
-        return self.declarations().intern(source, decl) catch @panic("out of memory");
+    pub fn internDecl(self: *ProgramIndex, decl: *const Node, environment: ?imports.EnvironmentId) imports.DeclId {
+        return self.declarations().internInEnvironment(environment, decl) catch @panic("out of memory");
     }
 
     /// A fresh identity for a name lowering mints with no authoring AST node.
-    pub fn synthetic(self: *ProgramIndex, name: []const u8, source: ?[]const u8) imports.DeclId {
-        return self.declarations().internSynthetic(source, name) catch @panic("out of memory");
+    pub fn synthetic(self: *ProgramIndex, name: []const u8, environment: ?imports.EnvironmentId) imports.DeclId {
+        return self.declarations().syntheticInEnvironment(environment, name) catch @panic("out of memory");
+    }
+
+    pub fn flatImports(self: *const ProgramIndex, environment: imports.EnvironmentId) ?std.StringHashMap(void) {
+        const table = self.decl_table orelse &self.owned_decl_table;
+        const graph = self.flat_import_graph orelse return null;
+        return table.directImports(graph, environment);
     }
 
     // ── Facts ──
@@ -1046,13 +1013,13 @@ pub const ProgramIndex = struct {
         return self.getPtr(fact, self.names[@intFromEnum(fact)].get(name) orelse return null);
     }
 
-    pub fn lookupInSource(self: *const ProgramIndex, comptime fact: Fact, source: []const u8, name: []const u8) ?FactValue(fact) {
-        const index = self.source_names.get(source) orelse return null;
+    pub fn lookupInEnvironment(self: *const ProgramIndex, comptime fact: Fact, environment: ?imports.EnvironmentId, name: []const u8) ?FactValue(fact) {
+        const index = self.environment_names.get(environment orelse return null) orelse return null;
         return self.get(fact, index.get(name) orelse return null);
     }
 
-    pub fn containsInSource(self: *const ProgramIndex, comptime fact: Fact, source: []const u8, name: []const u8) bool {
-        return self.lookupInSource(fact, source, name) != null;
+    pub fn containsInEnvironment(self: *const ProgramIndex, comptime fact: Fact, environment: ?imports.EnvironmentId, name: []const u8) bool {
+        return self.lookupInEnvironment(fact, environment, name) != null;
     }
 
     pub fn contains(self: *const ProgramIndex, comptime fact: Fact, name: []const u8) bool {
@@ -1070,17 +1037,10 @@ pub const ProgramIndex = struct {
     pub fn put(self: *ProgramIndex, comptime fact: Fact, id: imports.DeclId, name: []const u8, value: FactValue(fact)) void {
         self.set(fact, id, value);
         self.names[@intFromEnum(fact)].put(name, id) catch @panic("out of memory");
-    }
-
-    /// Store the fact and make `name` select it both program-wide and within
-    /// `source`, so a source-aware resolution reaches the author written there
-    /// rather than whichever same-name declaration the program-wide index holds.
-    pub fn putInSource(self: *ProgramIndex, comptime fact: Fact, id: imports.DeclId, source: ?[]const u8, name: []const u8, value: FactValue(fact)) void {
-        self.put(fact, id, name, value);
-        const src = source orelse return;
-        const gop = self.source_names.getOrPut(src) catch return;
+        const env = self.declaration(id).environment orelse return;
+        const gop = self.environment_names.getOrPut(env) catch @panic("out of memory");
         if (!gop.found_existing) gop.value_ptr.* = std.StringHashMap(imports.DeclId).init(self.alloc);
-        gop.value_ptr.put(name, id) catch {};
+        gop.value_ptr.put(name, id) catch @panic("out of memory");
     }
 
     /// Take `fact` away from this one declaration. Its names keep selecting
@@ -1101,8 +1061,8 @@ pub const ProgramIndex = struct {
 
     /// The function declaration `ref` authors — reading it out of the facts, or
     /// unwrapping the author itself the first time and recording it.
-    pub fn functionForAuthor(self: *ProgramIndex, ref: imports.RawDeclRef, source: ?[]const u8) ?*const ast.FnDecl {
-        const id = self.internRef(ref, source);
+    pub fn functionForAuthor(self: *ProgramIndex, ref: imports.RawDeclRef, environment: ?imports.EnvironmentId) ?*const ast.FnDecl {
+        const id = self.internRef(ref, environment);
         if (self.get(.function, id)) |fd| return fd;
         const authored = self.declaration(id).ref orelse return null;
         const fd = switch (authored) {
@@ -1114,8 +1074,8 @@ pub const ProgramIndex = struct {
         return fd;
     }
 
-    pub fn registerFunction(self: *ProgramIndex, name: []const u8, fd: *const ast.FnDecl, source: ?[]const u8) void {
-        const id = self.internRef(.{ .fn_decl = fd }, fd.body.source_file orelse source);
+    pub fn registerFunction(self: *ProgramIndex, name: []const u8, fd: *const ast.FnDecl, environment: ?imports.EnvironmentId) void {
+        const id = self.internRef(.{ .fn_decl = fd }, environment);
         self.put(.function, id, name, fd);
     }
 
@@ -1140,12 +1100,5 @@ pub const ProgramIndex = struct {
 
     pub fn iterator(self: *const ProgramIndex, comptime fact: Fact) Iterator(fact) {
         return .{ .index = self, .names = self.names[@intFromEnum(fact)].iterator() };
-    }
-
-    /// The file the declaration `name` selects is written in, or null when it
-    /// carries none.
-    pub fn functionSource(self: *const ProgramIndex, name: []const u8) ?[]const u8 {
-        const id = self.nameIndex(.function).get(name) orelse return null;
-        return self.declaration(id).source;
     }
 };

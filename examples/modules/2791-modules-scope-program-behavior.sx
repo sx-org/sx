@@ -1,0 +1,10 @@
+@import "modules/std.sx";
+@import "2791-modules-scope-program-behavior/types.sx";
+impls :: @import "2791-modules-scope-program-behavior/impl.sx";
+entry :: scope {
+    main :: () {
+        item := api.Item.make();
+        reader := item.(api.Read);
+        print("{} {} {}\n", reader.read(), impls.implementation.twice(5), @typeName(api.Item));
+    }
+}

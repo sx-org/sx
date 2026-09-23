@@ -268,7 +268,7 @@ usage := \\usage: sx <file>
 ```
 
 ### Keywords
-`if`, `else`, `then`, `while`, `for`, `break`, `continue`, `true`, `false`, `enum`, `struct`, `union`, `case`, `return`, `defer`, `push`, `ufcs`, `in`, `is`, `xx`, `and`, `or`, `raise`, `try`, `catch`, `error`, `private`
+`if`, `else`, `then`, `while`, `for`, `break`, `continue`, `true`, `false`, `enum`, `struct`, `union`, `case`, `return`, `defer`, `push`, `ufcs`, `in`, `is`, `xx`, `and`, `or`, `raise`, `try`, `catch`, `error`, `private`, `scope`
 
 > Note: `enum` is used for both payload-less and payload-bearing sum types (payload enums). `union` is reserved for C-style unions (memory overlays).
 
@@ -1080,7 +1080,8 @@ impl Series($T) for Buffer(T) {            // blanket: one impl, a family of con
 }
 ```
 
-- `impl` blocks are top-level declarations. Conformance is retroactive:
+- `impl` blocks are declarations at file top level or inside a scope (§9).
+  Conformance is retroactive:
   any module may implement any constraint or interface for any type with
   canonical identity. Conformer identity is canonical type identity;
   structural types canonicalize structurally.
@@ -1265,7 +1266,7 @@ carries no allocator and no ownership word, and copying a handle — `q :=
 p`, argument passing, returning, struct/array copying, storing into and
 reading out of containers — copies the three words and aliases the same
 referent. Nothing owns an interface value: no spelling allocates one,
-and `free` refuses one (§5.3).
+and `mem.free` refuses one (§5.3).
 
 Vtables are global constants, one per `(instantiation, concrete type,
 impl)` — a parameterized interface gets distinct vtables per
@@ -1311,7 +1312,7 @@ measure(w);                         // same coercion at the argument
 measure(*w);                        // a pointer borrows its pointee
 u : Sizable = s;                    // the handle, copied — one referent
 pretty(Widget{ value = 8 });        // $T/I is not an I-typed target
-p := a.make(Widget{ value = 9 });   // @Init argument, *T result
+p := mem.make(a, Widget{ value = 9 });   // @Init argument, *T result
 measure(p);                         // *T arm
 ```
 
@@ -1320,7 +1321,7 @@ measure(Widget{ value = 8 });               // error — a concrete rvalue at an
 ```
 ```
 error: cannot borrow a temporary into a 'Sizable' handle — bind the
-       value where it lives, or write it through 'Allocator.make' and
+       value where it lives, or write it through 'mem.make' and
        use the handle over that
 ```
 
@@ -1342,10 +1343,10 @@ pointer.
 handle). `parentAllocator: Allocator = ---` is the GPU dummy: `init`
 writes the field.
 
-##### 5.3 `free`
+##### 5.3 `mem.free`
 
-`free` handles closures and slices. An interface handle owns nothing, so
-`free` refuses one, as it refuses a constraint-typed anything (there are
+`mem.free` handles closures and slices. An interface handle owns nothing, so
+`mem.free` refuses one, as it refuses a constraint-typed anything (there are
 no values at all) and any other argument kind.
 
 ##### 5.4 Dangling borrows
@@ -1477,7 +1478,7 @@ thread when the ambient one does not.
 
 An interface-typed receiver dispatches its own members first and falls
 through to `ufcs` functions only for **non-members**
-(`context.allocator.create(Session)` — `create` takes the handle as its
+(`context.allocator.create(Session)` after `..mem;` — `create` takes the handle as its
 first parameter). Constraint-bound receivers resolve at
 monomorphization.
 
@@ -2900,7 +2901,7 @@ Combined :: struct($R: Type, ..$Ts: []Type) {
 
 map :: (mapper: Closure(..sources.T) -> $R, ..sources: ValueListenable)
        -> ValueListenable($R) {
-  c := context.allocator.alloc(Combined($R, ..sources.T));
+  c := mem.create(context.allocator, Combined($R, ..sources.T));
   c.ownAllocator = context.allocator;
   c.mapper        = mapper;
   c.sources       = .{..sources};           // pack-to-tuple materialization
@@ -3557,7 +3558,7 @@ carrying it as a **bound**:
 
 ```sx
 store :: (value: $I/@Init($T)) -> *T {
-    dest := context.allocator.create(T);
+    dest := mem.create(context.allocator, T);
     value.write(dest);
     dest
 }
@@ -3565,12 +3566,14 @@ store :: (value: $I/@Init($T)) -> *T {
 button := store(Button{ label = "Play" });
 ```
 
-`Allocator` ships that shape as `make`:
+`mem.make` supplies that shape over `Allocator`:
 
 ```sx
-make    :: ufcs (a: Allocator, value: $I/@Init($T)) -> *T;
-create  :: ufcs (a: Allocator, $T: Type) -> *T;      // storage, uninitialised
-destroy :: ufcs (a: Allocator, p: *$T);              // pairs with both
+mem :: scope {
+    make    :: ufcs (a: Allocator, value: $I/@Init($T)) -> *T;
+    create  :: ufcs (a: Allocator, $T: Type) -> *T;
+    destroy :: ufcs (a: Allocator, p: *$T);
+}
 ```
 
 `make` allocates and writes in one step, so it is the spelling that gives an
@@ -3578,7 +3581,7 @@ rvalue a lifetime past the frame that wrote it. `create` hands back
 uninitialised storage. Passing a type to `make` fails the `@Init` bound:
 
 ```sx
-p := a.make(Session);
+p := mem.make(a, Session);
 ```
 ```
 error: 'Session' is a type, and 'make' takes an initializer — use
@@ -3744,7 +3747,7 @@ observes what the first one changed. It is therefore valid only within the call
 that received it — binding it to a local, capturing it in an env, and returning
 it are all refused. Take a `$F/() -> void` parameter instead when the body must
 be stored or run later: its env is a copy of what the block named, and
-`closure(f)` gives it a home that outlives the frame.
+`mem.closure(f)` gives it a home that outlives the frame.
 
 **A block's names are asked of the file that wrote it.** A replay lowers in the
 receiving function's instruction stream, but the body is resolved where it was
@@ -3790,7 +3793,7 @@ interface arm splits on whether the published value already IS the slot type:
 inline match T {
     case interface: {
         inline if V == T { self.children.append(value); }
-        else             { self.children.append(context.allocator.make(value)); }
+        else             { self.children.append(mem.make(context.allocator, value)); }
     }
     else: { self.children.append(value); }
 }
@@ -4114,9 +4117,9 @@ wrong `xx` force from an `any` (`xx a : ?View` where the box holds something els
 which reinterprets whatever the box points at — the `xx` forms that could produce
 one out of a set value itself are refused.
 
-**`free` is not part of a set's story.** The active member lives **inline** in the
+**`mem.free` is not part of a set's story.** The active member lives **inline** in the
 slot: the payload IS the value, not a handle to an allocation, so there is nothing
-for `free` to release and it refuses a set value. What a member's fields point at —
+for `mem.free` to release and it refuses a set value. What a member's fields point at —
 a `List`'s backing, a string buffer — is ordinary field data with ordinary
 lifetimes; reclaim it by resetting the allocator or arena those allocations came
 from, not through the set value.
@@ -4930,7 +4933,7 @@ is a zero-sized value, and a two-field env is those two fields.
 
 `Closure(…) -> R` is the **erased** form of a callable — a fat pointer
 `{ fnPtr, env }` (16 bytes), against a bare function pointer's 8. A unique
-lambda becomes one through [`closure`](#persisting--closure), which is where the
+lambda becomes one through [`mem.closure`](#persisting--memclosure), which is where the
 env's storage is decided.
 
 #### Closure Type
@@ -5000,7 +5003,7 @@ h : Closure(i64) -> i64 = |x|_{ n } x + n;
 ```
 error: a capturing lambda does not erase to 'Closure(i64) -> i64' — its
        environment has no home here
-help: persist it with 'closure(f)', or 'closure(f, alloc)' to choose the
+help: persist it with 'mem.closure(f)', or 'mem.closure(f, alloc)' to choose the
       allocator; a pointer to it ('*f') erases by borrowing
 ```
 
@@ -5015,15 +5018,17 @@ keep :: (h: Closure()) -> Closure() => h;
 h := keep(*f);      // borrows f's env; valid while f is
 ```
 
-#### Persisting — `closure`
-`closure` is an ordinary `std/mem.sx` function over a callable-bound binder:
+#### Persisting — `mem.closure`
+`mem.closure` is an ordinary `std/mem.sx` function over a callable-bound binder:
 ```sx
-closure :: (f: $F/(..$A) -> $R, alloc: Allocator = context.allocator) -> Closure(..A) -> R {
-    inline match F {
-        case closure: return f;
-        else: {
-            p := alloc.make(@envOf(f));
-            return .{ fnPtr = @callPtr(F), env = p };
+mem :: scope {
+    closure :: (f: $F/(..$A) -> $R, alloc: Allocator = context.allocator) -> Closure(..A) -> R {
+        inline match F {
+            case closure: return f;
+            else: {
+                p := mem.make(alloc, @envOf(f));
+                return .{ fnPtr = @callPtr(F), env = p };
+            }
         }
     }
 }
@@ -5035,13 +5040,13 @@ closure :: (f: $F/(..$A) -> $R, alloc: Allocator = context.allocator) -> Closure
   its own state, a bare function its pointer word — so `@envType(F)` is `F` and
   a nominal and a bare function get a trampoline synthesized around it. All
   three refuse a `Closure`, which carries an env rather than being one.
-- A `Closure` argument is returned unchanged, so `closure` composes.
+- A `Closure` argument is returned unchanged, so `mem.closure` composes.
 - An empty env is zero-sized. `make`/`create` of a 0-sized T return null;
   `make` does not write a null dest; `allocBytes(0)` returns null and
   allocates nothing; `deallocBytes(null)` is a no-op.
-  `p := alloc.make(@envOf(f))` is null for a 0-sized env, so an erased empty
+  `p := mem.make(alloc, @envOf(f))` is null for a 0-sized env, so an erased empty
   lambda carries a null env word and funds nothing.
-- `free(cl)` / `free(cl, alloc)` releases the env the same allocator funded.
+- `mem.free(cl)` / `mem.free(cl, alloc)` releases the env the same allocator funded.
 
 #### Factory Functions
 A factory either returns the unique lambda or erases it, and the return type says
@@ -5052,7 +5057,7 @@ add5 := makeAdder(5);                  // the env itself — no heap
 print("{}\n", add5(100));              // 105
 
 makeHandler :: (n: i64) -> Closure(i64) -> i64 {
-    return closure(|x|_{ n } x + n);   // env on context.allocator
+    return mem.closure(|x: i64|_{ n } x + n);   // env on context.allocator
 }
 ```
 
@@ -5061,11 +5066,11 @@ makeHandler :: (n: i64) -> Closure(i64) -> i64 {
 paths is one type; two literals are two types and cannot both be the return. The
 caller binds the value (`add5 := makeAdder(5)`) and does not spell F; a later
 signature names the unique by introducing its own binder (`apply(add5, 1)`,
-`closure(add5)`).
+`mem.closure(add5)`).
 
 A slot written with no binder — a field, an array element, an interface method's
 parameter — is a `Closure`, so anything capturing that reaches it goes through
-`closure` first.
+`mem.closure` first.
 
 #### Optional Closures
 `?Closure` is supported for nullable callbacks. Uses `fnPtr == null` as the none sentinel (zero overhead — same layout as `Closure`).
@@ -5076,7 +5081,7 @@ Button :: struct {
 }
 btn := Button{label = "OK", onClick = null };
 btnId := 7;
-btn.onClick = closure(|x|_{ id = btnId } print("{} {}\n", id, x));
+btn.onClick = mem.closure(|x: i64|_{ id = btnId } print("{} {}\n", id, x));
 if handler := btn.onClick {
     handler(1);
 }
@@ -5084,16 +5089,16 @@ if handler := btn.onClick {
 
 #### Memory
 A `|…|` literal allocates nothing: its env is the value, living wherever the
-binding, parameter, or temporary lives. Heap enters at `closure(f, alloc)` and
+binding, parameter, or temporary lives. Heap enters at `mem.closure(f, alloc)` and
 only there, defaulting to `context.allocator` — the compiler initializes
-`context` with a default GPA (malloc/free wrapper) at the start of `main()`, and
+`context` with the default `mem.CAllocator` (malloc/free wrapper) at the start of `main()`, and
 `push Context` overrides it. An auto-promoted function pointer or empty lambda
 has a null env and funds nothing.
 ```sx
 base  := 10;
-arena := Arena.init(context.allocator, 4096);
+arena := mem.Arena.init(context.allocator, 4096);
 f  := |x: i64|_{ base } -> i64 x + base;   // env in f's storage
-cb := closure(f, arena);                   // env copied into the arena
+cb := mem.closure(f, arena);                   // env copied into the arena
 ```
 
 ### Function Call
@@ -5184,7 +5189,7 @@ scaffold() { chatList(); };                    // defaults skipped, block binds 
   **build block** bound, which gives the same source block a second meaning (see
   [`@BuildBlock(P)`](#buildblockp)). A `Closure` parameter takes no trailing
   block — erasing one is an allocation, and it is written where it is paid, as
-  `f(closure(|…| …))`. Otherwise a targeted error names the parameter ("'f'
+  `f(mem.closure(|…| …))`. Otherwise a targeted error names the parameter ("'f'
   cannot take a trailing block — its last parameter 'x' is neither
   `$F/(…) -> R` nor `@BuildBlock`", or "… its last parameter '..xs' is
   variadic").
@@ -5276,8 +5281,8 @@ field or method of `object`'s type, the compiler rewrites the call to
 `func(object, args)`. Fields and methods take priority over ufcs
 functions; an interface-typed receiver dispatches its own MEMBERS first and
 falls through to ufcs functions only for non-members
-(`context.allocator.create(Session)` — `create` is a ufcs fn taking the
-handle as its first param).
+(`context.allocator.create(Session)` after `..mem;` — `create` takes the
+handle as its first parameter).
 
 UFCS works with pointer receivers (auto-deref, and auto address-of when
 the first param is `*T` and the receiver is a value) and with **generic**
@@ -5295,7 +5300,7 @@ firstOf(xs);        // direct
 The alias form decouples the method name from the function name —
 useful when the bare name reads poorly in dot position:
 ```sx
-arenaAlloc :: (arena: *Arena, size: i64) -> *void { ... }
+arenaAlloc :: (arena: *mem.Arena, size: i64) -> *void { ... }
 alloc :: ufcs arenaAlloc;
 
 myArena.alloc(42);        // calls arenaAlloc(myArena, 42)
@@ -5351,8 +5356,10 @@ A `push .{ ... }` literal is spread+patch: fields the literal does NOT name are 
 **`Context` struct** — assembled PER PROGRAM, 100% from `@context.extend` declarations. The struct itself is declared EMPTY in `modules/std/core.sx` (the declaration doubles as the implicit-context mode marker); the stdlib's own capabilities are ordinary declarations in their owning modules:
 ```sx
 // std/mem.sx
-cAllocator : CAllocator = .{};
-@context.extend allocator: Allocator = cAllocator;
+mem :: scope {
+    cAllocator : CAllocator = .{};
+    @context.extend allocator: Allocator = cAllocator;
+}
 
 // std/io.sx
 cBlockingIo : CBlockingIo = .{};
@@ -5375,7 +5382,7 @@ Any module — stdlib or user — can declare a field the program's Context carr
 prove presence before use); the bare spelling keeps null as an unchecked
 sentinel, per the pointer contract.
 
-- **Grammar**: `@context.extend <name> : <type> = <default> ;` at top level only — which includes a top-level `inline if` branch or `inline for` body, whose statements ARE module scope after comptime flattening. A branch that is not selected declares no field; while such a driver is undecided the Context is not final, and comptime that reads it waits (§6.9 scheduling).
+- **Placement**: `@context.extend <name> : <type> = <default> ;` is a file-top-level or scope-body declaration (§9). A branch that is not selected declares no field; while such a driver is undecided the Context is not final, and comptime that reads it waits (§6.9 scheduling).
 - **Assembly**: the compiler assembles the program's `Context` from every declaration in the compilation — there is no builtin prefix — in a deterministic order (sorted by declaring module path, then field name). Field offsets are program-specific — never rely on them across programs.
 - **Access is global and unconditional**: after assembly, `context.field` works in ANY module of the program with no import requirement. Imports gate existence only (an uncompiled module contributes nothing); there is no per-source scoping of context fields.
 - **One flat namespace, loud collisions**: two declarations with the same field name (or colliding with a builtin field) are a hard compile error naming both declaration sites.
@@ -5793,25 +5800,82 @@ usual.
 
 ## 9. Modules / Imports
 
+### Scope Namespaces
+
+`ident :: scope { … }` declares a namespace. `scope` is a reserved keyword;
+`` `scope `` is a raw identifier, and `.scope` is legal after a dot.
+A scope is declared at file top level or inside another scope. An `inline if`
+branch or `inline for` body at either level has that level's placement rules.
+
+A scope body accepts any declaration or directive accepted at file top level.
+
+```sx
+geo :: scope {
+    Vec2 :: struct { x, y: f64; }
+    axes :: scope { X :: 0; }
+}
+```
+
+A scope is not a value: `x := geo` is an error. A binding such as
+`ui :: gfx.widgets.ui;` aliases a scope. `impl` heads accept qualified paths:
+`impl http.TlsAcceptor for MyServer` and `impl P for geo.Vec2`.
+
+Scope qualification does not enter link or runtime symbol names; those names
+are bare. Entry-point selection and export collisions follow the program's
+ordinary rules. `@typeName` and diagnostics use the bare declared name, and
+every registered type participates in the runtime type tables. An `impl` is
+visible by reachability of its declaring file. `@context.extend` contributes
+to the program-wide Context (§5).
+
+### Identity and Scope Views
+
+A declaration's identity is its source file, enclosing scope path, and name:
+`x` and `geo.x` in one file are different declarations. Externs are declarations,
+whether hand-written or generated by `@import c`; matching external symbol
+names do not make them one declaration.
+
+An alias is a `::` binding whose right side names an existing entity: a path,
+a type expression (`Cb :: (x: i64) -> i64`), or a generic instance
+(`IB :: Box(i64)`). Its identity is its final target, so aliases to the same
+target are not distinct candidates in lookup. `N :: 16` is a declaration.
+Alias targets resolve in the alias author's file and scope.
+
+A scope's identity is its path. All blocks with that path form one scope,
+within a file or across files. A scope block is carried like a declaration:
+one level to direct plain importers, plus explicit spreads. A named import
+(`n :: @import`) adds no blocks to the importing file's bare scopes.
+
+Each lookup uses its own file's view: its own blocks plus blocks carried to
+that file. An importing program does not change what code in an imported
+file means. `ns.geo` is the imported file's view of `geo`, separate from the
+current file's bare `geo`. A scope alias exposes its author file's view.
+
 ### `@import` Directive
 
-The `@import` directive brings declarations from another `.sx` file or directory into the current file.
+The `@import` directive brings names from another `.sx` file or directory
+into lookup.
 
-**Flat import** — splices all declarations from the imported file into the current scope:
+**Plain import** — makes the imported file's pass-on set available for lookup
+in this file. Inside a scope block, it applies only to lookups in that block
+and scopes nested in it:
 ```sx
 @import "modules/std/fs.sx";
 ```
 
-**Namespaced import** — wraps all declarations under a namespace name:
+**Named import** — declares a namespace handle whose members are the imported
+file's pass-on set:
 ```sx
 std :: @import "modules/std.sx";
 ```
 
-**Directory import** — when the path refers to a directory, all `.sx` files in that directory are aggregated into a single module:
+**Directory import** — performs one import per `.sx` file in the directory,
+for plain, named, and spread imports. Each file retains its identity:
 ```sx
-pkg :: @import "modules/math";   // namespaced — all .sx files merged under pkg
-@import "modules/math";          // flat — all declarations spliced into scope
+@import "modules/math";
 ```
+
+A named directory import declares its handle once per member file. With more
+than one `.sx` file, those declarations violate the duplicate-name rule.
 
 Directory imports scan only the top level of the specified directory (non-recursive). Files are processed in alphabetical order for deterministic builds. Files within the directory may `@import` each other or external files.
 
@@ -5822,54 +5886,77 @@ Namespaced declarations are accessed with dot notation:
 std.print("hello");
 ```
 
-### Namespace Alias Carry
+### Spreads and Pass-on Sets
 
-A namespaced import is an ordinary declaration of the alias name. There is no
-`pub` keyword: flat-importing a module carries the module's namespace aliases
-**one level** — a file's aliases are usable by its DIRECT flat importers, with
-declaration-like collision semantics.
+The pass-on set of a file or scope contains its own declarations (including
+aliases, named import handles, and scope blocks) plus its spreads. It is
+layered: own declarations hide spread contents. Plain imports contribute
+only to lookup, not to the pass-on set. Visibility is subject to `private`
+below.
+
+`..@import "x";` and `..@import c { … }` make the imported names available
+for lookup and pass them on. `..path;` spreads an existing scope or named
+import handle; given `n :: @import "x";`, `..n;` has the effect of
+`..@import "x";`. A spread declares nothing; it extends lookup. At file
+level it passes names to importers; inside a scope it contributes to the
+whole scope, across all blocks visible to the file doing the lookup.
+
+Qualification and spreading use the same layered surface: `n.x`, `geo.x`,
+and `..geo; x` select through the target's pass-on set. Names after `..`
+and alias targets resolve in written order; only earlier spreads in the
+same file contribute to that resolution. If an earlier spread and another
+route supply different declarations of a name, the use is ambiguous unless
+the name is declared locally.
+A spread cannot supply its own name. A scope may spread itself or a parent:
+with a parent spread inside `a.b`, `a.b.b.x` denotes the same `x` as `a.b.x`.
+
+A private handle gives a facade qualified access for a local alias while
+spreading the dependency's surface:
 
 ```sx
-// facade.sx
-r :: @import "rich.sx";        // an ordinary declaration of `r`
-
-// main.sx
-@import "facade.sx";           // flat import carries facade's aliases
-
-main :: () {
-    r.helper();                // plain fn through the carried alias
-    t := r.Thing.init();       // static method
-    x : r.Thing = t;           // type annotation
-    n := r.LIMIT;              // module const
-    c := r.Color.green;        // enum variant
-    b := r.Box(i64){ item = 3 };  // generic struct head
-}
+private source :: @import "widgets.sx";
+..source;
+Widget :: source.Control;
 ```
 
-Every qualified shape resolves through a carried alias exactly as through a
-directly-declared one: function calls, `alias.Type.method()`, type
-annotations, enum variants, module constants, generic struct heads, **open
-sets** (in an annotation, as a type argument, and as a bound head), and
-**bound heads** generally.
+`Widget` exposes `Control` under an additional name; spreading does not
+subtract `Control`. Collisions use the name rules below.
 
-Collision rules mirror ordinary declarations:
+Spreads in undecided `inline if` branches participate in finality like
+imports in branches (§2, Constraints and Interfaces, compile-time
+evaluation). A top-level `inline if` whose condition reads a name declared
+by its branch follows that scheduling discipline.
 
-- **Own wins** — a file's own declaration of a name (including its own
-  `ns :: @import`) shadows any same-named alias carried from a flat import.
-- **Ambiguity** — two direct flat imports each carrying a distinct alias of
-  the same name make a bare use of that alias an error; declare the alias
-  locally to disambiguate.
-- **One level only** — carry does not chain: a flat import of a flat import
-  does not surface the inner file's aliases. (The bare `alias.fn()` call path
-  does not enforce this gate.)
+### Lookup and Name Rules
 
-`@import c { ... }` aliases (`tc :: @import c { ... }`) carry the same way.
+For a bare name inside a block of scope `S`, the first step (or sub-step,
+where specified) with a hit wins:
+
+1. `S`'s own declarations, in two successive sub-steps: first this
+   file's blocks; only if those have no hit, other reachable files' blocks.
+2. `S`'s spreads from all reachable blocks.
+3. Plain imports written in this block.
+4. Enclosing scopes, repeating steps 1–3.
+5. The file's own top-level declarations.
+6. The file's imports and spreads.
+
+`geo.x` uses only steps 1–2 of `geo`. Inside a scope block, scope members
+take precedence over an enclosing `inline for` variable of the same name.
+UFCS dot-calls use bare lookup; a qualified call uses a self-trailing block,
+such as `m.{ self.* = fluent.withOpacity(self.*, 0.5); }`.
+
+The following name rules apply to every identifier:
+
+1. **Duplicate:** two declarations of one name in the same file and namespace
+   are an error at the second. Scope blocks merge by path as defined above.
+2. **Hiding:** an earlier lookup step or sub-step silently wins over a later one.
+3. **Ambiguity:** two or more distinct declarations found together in the
+   winning step (or its winning sub-step) are an error only when the name is
+   used. Candidate identity follows Identity and Scope Views.
 
 ### Visibility: `private`
 
-`private` restricts a name to its declaring **source file**. It is a prefix on
-identifier-headed top-level declarations and on a named struct declaration's
-fields:
+`private` is a prefix that restricts a name to its declaring **source file**:
 
 ```sx
 private Helper :: (x: i64) -> i64 { return x * 2; }
@@ -5888,26 +5975,13 @@ and `main`.
 
 Semantics:
 
-- **Same-file use is unrestricted.** A private name works throughout its
-  declaring file, forward references included, exactly like a public one.
-- **Flat imports do not carry private names.** A flat importer referring to a
-  private name gets a "private to its declaring module" (functions) or
-  undeclared/unknown diagnostic — never the declaration.
-- **Namespaces do not expose private members.** `ns.privMember` reports
-  "namespace 'ns' has no member 'privMember'". Deep traversal keeps the
-  ORIGINAL requester's authority: an intermediate private alias is not
-  traversable from another file either.
-- **A private named-import alias is not carried.** It binds only in its author
-  file; flat importers do not receive it (the carry rule skips it).
-- **No suppression, no ambiguity.** A private declaration never shadows or
-  ambiguates a public same-name declaration from another module — for every
-  other file it simply does not exist.
+- **Authority is the declaring source file.** Within that file, a private
+  name follows ordinary lookup rules. For another file it does not exist
+  in lookup, including hiding and ambiguity checks. Qualified traversal
+  retains the original requester's authority.
 - **A public same-file alias may expose a private declaration**
   (`Public :: PrivateImpl;`) — resolution follows the alias in its author
   file, where the private name is legal.
-- **Privacy authority is the exact declaring source file**, not a directory
-  import: two files aggregated by a directory import cannot use each other's
-  private names.
 - **A private field is a name.** `private fd: i64 = -1;` on a struct field is
   file-local. Another file cannot mention it (`x.fd`, `x.fd = …`,
   `File{ fd = 3 }`, `.{ fd = 3 }`, `.variant{ fd = 3 }`, `[File_const.fd]T`),
@@ -5925,20 +5999,17 @@ Semantics:
   variant is a named struct promotes that struct's members; a private one is
   nameable only from the file declaring the payload.
 
-Placement rules — `private` is allowed on identifier-headed module-scope
-declarations and on the fields of a NAMED struct declaration (a generic
-template included). It is rejected on: anonymous struct fields (a field's
+Placement rules — `private` is allowed on identifier-headed file-top-level
+and scope-body declarations and on the fields of a NAMED struct declaration
+(a generic template included). It is rejected on: anonymous struct fields (a field's
 inline `struct { … }`, a type function's returned `struct { … }`), locals,
 parameters, union and runtime-class fields, enum cases and error tags,
-struct / `constraint` / `interface` / `impl` methods and requirements, flat
-`@import`, `impl` blocks,
+struct / `constraint` / `interface` / `impl` methods and requirements, plain
+`@import`, scope blocks, `..@import`, `..path;`, `impl` blocks,
 `@context.extend`, struct spread members, standalone `@run`, global `asm`,
 and `@framework`.
-Top-level `inline if` branches and `inline for` bodies MAY declare private
-globals (their statements are module-scope after comptime flattening); function
-and method bodies may not.
 
-`` `private `` (backtick raw identifier) remains a legal name, and the
+`` `private `` (backtick raw identifier) is a legal name, and the
 `.private` member spelling remains legal after a dot.
 
 ### Import Resolution
@@ -5952,7 +6023,6 @@ and method bodies may not.
      `<repo>/library`; install: `<prefix>/library`), overridable with the
      `SX_STDLIB_PATH` environment variable. This is how
      `@import "modules/std.sx"` resolves from any project.
-- If the path resolves to a file, it is imported directly. If it resolves to a directory, all `.sx` files in that directory are aggregated.
 - Nested imports are supported (imported files may themselves contain `@import`).
 - Circular imports are detected and silently skipped (each file is imported at most once).
 - Generic functions in namespaced imports are supported (e.g., `std.mul(5, 2)` where `mul` is generic).
@@ -5967,10 +6037,6 @@ project/
   main.sx         ← contains: @import "modules/std.sx";
 ```
 When compiling from `project/`, both `main.sx` and `modules/math/vector3.sx` can use `@import "modules/std.sx"` — the root file resolves it relative to its own directory, and the nested file falls back to resolving relative to cwd.
-
-### Intra-module References
-
-Functions within a namespaced import can call each other without the namespace prefix. When generating code for a namespaced module, unresolved function names are automatically tried with the namespace prefix.
 
 ### Example
 
@@ -5994,9 +6060,8 @@ main :: () -> i32 {
 ```
 modules/std.sx        the prelude — print/format, string ops (concat,
                       pathJoin, ...), List(T), Context + push, the Allocator
-                      interface; plus the namespace tail: mem / xml / log /
-                      fs / process / socket / json / cli / hash / test ::
-                      @import "modules/std/<m>.sx"
+                      interface; spreads c / mem / process / encoding scopes
+                      and names the remaining module imports
 modules/std/          mem.sx (CAllocator, GPA, Arena, TrackingAllocator),
                       fs.sx, process.sx, socket.sx, json.sx, cli.sx, hash.sx,
                       xml.sx, log.sx, trace.sx, test.sx
@@ -6012,8 +6077,28 @@ modules/gpu/, modules/ui/   GPU layer + retained UI toolkit
 
 `@import "modules/std.sx"` gives every prelude name bare, plus `mem.GPA`,
 `json.parse`, `fs.exists`, `hash.sha256Hex`, `log.warn`, ... through the
-carried namespace tail (see Namespace Alias Carry). Direct file imports
-(`@import "modules/std/json.sx"`) remain available for bare access.
+carried namespace tail. A self-scoped file supplies its scope on direct
+import: `@import "modules/std/mem.sx";` exposes `mem.GPA`. Unscoped files
+provide bare access, such as `parse` from `modules/std/json.sx`.
+
+`modules/std/http.sx` is a scope facade:
+
+```sx
+http :: scope {
+    ..@import "modules/std/http/types.sx";
+    ..@import "modules/std/http/tls.sx";
+    ..@import "modules/std/http/fiber.sx";
+    ..@import "modules/std/http/router.sx";
+    ..@import "modules/std/http/server.sx";
+    ..@import "modules/std/http/client.sx";
+}
+```
+
+Part-files declare their surface at top level. Single-file helpers are
+`private`; shared helpers live in a plain-imported `http/wire.sx`. The
+facade has no part-file namespaces such as `http.tls`; direct part-file
+imports are legal. `std.sx` does not contain `http`: programs import
+`modules/std/http.sx` explicitly. `ui/fluent.sx` uses this scope-facade shape.
 
 ---
 
@@ -6161,13 +6246,13 @@ locally-unwrapped optionals).
 
 | Function | Purpose |
 |----------|---------|
-| `run(cmd: [:0]u8) -> ?ProcessResult` | `popen` shell command, capture stdout + exit |
-| `env(name: [:0]u8) -> ?string` | `getenv` (null if unset) |
-| `findExecutable(name) -> ?string` | `command -v <name>` via shell |
+| `process.run(cmd: [:0]u8) -> ?process.ProcessResult` | `popen` shell command, capture stdout + exit |
+| `process.env(name: [:0]u8) -> ?string` | `getenv` (null if unset) |
+| `process.findExecutable(name) -> ?string` | `command -v <name>` via shell |
 
-`ProcessResult` is `{ exitCode: i32, stdout: string }`. The post-link
+`process.ProcessResult` is `{ exitCode: i32, stdout: string }`. The post-link
 bundler invokes `codesign`, `plutil`, `security`, `aapt2`, `javac`,
-`d8`, `keytool`, `apksigner`, etc. through `run`.
+`d8`, `keytool`, `apksigner`, etc. through `process.run`.
 
 ### Apple `.app` flow (`bundle.sx::bundleMain`)
 

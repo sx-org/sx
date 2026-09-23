@@ -5,11 +5,11 @@
 @import "modules/std/mem.sx";
 
 main :: () -> i32 {
-    b : []u8 = "abc".clone();
+    b : []u8 = mem.clone("abc");
     s : string = b;
     t : ?string = b;
     print("{} {} {} {}\n", s, t ?? "none", b.len, @typeName([]u8));
     print("{} {}\n", []u8 is slice, string is slice);
-    b.free();
+    mem.free(b);
     0
 }

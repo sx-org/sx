@@ -29,7 +29,7 @@ socket  :: @import "modules/std/socket.sx";
 posix   :: @import "modules/std/posix.sx";
 fs      :: @import "modules/std/fs.sx";
 mbedtls :: @import "vendors/mbedtls/mbedtls.sx";
-http    :: @import "modules/std/http.sx";
+@import "modules/std/http.sx";
 tlsp    :: @import "modules/std/http/tls_mbedtls.sx";
 
 PORT :: 19018;
@@ -86,7 +86,7 @@ loadCrt :: (crt: *mbedtls.X509Crt, path: [:0]u8) -> bool {
     if data := fs.readFile(path) {
         n : i64 = data.len;
         p : [*]u8 = context.allocator.allocBytes(n + 1);
-        if n > 0 { clib.memcpy(p, data.ptr, n); }
+        if n > 0 { clib.c.memcpy(p, data.ptr, n); }
         p[n] = 0;
         ok = mbedtls.mbedtls_x509_crt_parse(crt, p, xx (n + 1)) == 0;
         context.allocator.deallocBytes(p);
@@ -100,7 +100,7 @@ loadKey :: (pk: *mbedtls.PkContext, path: [:0]u8, drbg: *mbedtls.CtrDrbg) -> boo
     if data := fs.readFile(path) {
         n : i64 = data.len;
         p : [*]u8 = context.allocator.allocBytes(n + 1);
-        if n > 0 { clib.memcpy(p, data.ptr, n); }
+        if n > 0 { clib.c.memcpy(p, data.ptr, n); }
         p[n] = 0;
         ok = mbedtls.mbedtls_pk_parse_key(pk, p, xx (n + 1), null, 0, mbedtls.mbedtls_ctr_drbg_random, drbg) == 0;
         context.allocator.deallocBytes(p);

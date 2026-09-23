@@ -2,7 +2,7 @@
 // Consumers never import this file directly — std.sx re-exports every name
 // here.
 @import "modules/std/core.sx";
-c :: @import "modules/std/c.sx";
+@import "modules/std/c.sx";
 
 // Text accumulated on the heap. `finish` hands the bytes to the caller and
 // leaves the builder empty, so the built string outlives the builder without

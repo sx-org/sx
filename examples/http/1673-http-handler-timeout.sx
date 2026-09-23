@@ -25,10 +25,7 @@
 // handler's *impact* (the connection is freed on time); it does not kill
 // the worker.
 @import "modules/std.sx";
-http :: @import "modules/std/http.sx";
-
-clib :: @library "c";
-usleep :: (usec: i64) -> i32 extern clib;
+@import "modules/std/http.sx";
 
 PORT :: 18990;
 HANDLER_TIMEOUT_MS :: 40;
@@ -38,7 +35,7 @@ SLOW_SLEEP_US :: 200000;   // 200 ms — well past the 40 ms handler deadline
 // The loop will already have 504'd + freed its connection by the time this
 // completes; its completion is then discarded.
 slowHandler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
-    usleep(SLOW_SLEEP_US);
+    c.usleep(SLOW_SLEEP_US);
     resp.body = "slow-late";   // never reaches the client (connection freed)
 }
 

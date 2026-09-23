@@ -11,6 +11,7 @@
 // start, so the same block observed by two sinks reports the same sites in the
 // same order.
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 @import "modules/fluent.sx";
 
 Drawable :: constraint {
@@ -28,14 +29,14 @@ Roster :: struct {
     // report (`value.site()`); the sink adds the occurrence count, which is what
     // distinguishes a loop's repeats from separate statements.
     expression :: (self: *Roster, value: $I/@Init($V/Drawable)) {
-        dest := context.allocator.create(V);
+        dest := mem.create(context.allocator, V);
         value.write(dest);
         s := value.site();
         if s != null {
             print("  line {} ordinal {} occurrence {} -> {}\n", s?!.line, s?!.ordinal, self.seen, dest.draw());
         }
         self.seen += 1;
-        context.allocator.destroy(dest);
+        mem.destroy(context.allocator, dest);
     }
 }
 

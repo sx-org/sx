@@ -1,0 +1,5 @@
+geo :: scope {
+    conflict :: 2;
+    value :: 20;
+    otherOnly :: 200;
+}

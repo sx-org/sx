@@ -1,0 +1,7 @@
+inline if true {
+    inline for T in .[i32] { geo :: scope { X :: T; } }
+} else {
+    fallback :: scope {}
+}
+inline for T in .[i32] => arrows :: scope {}
+main :: () -> i32 { 0 }

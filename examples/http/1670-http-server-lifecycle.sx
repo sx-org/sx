@@ -22,11 +22,8 @@
 // The atomic counter is what makes the pooled gate trustworthy: the loop
 // thread and worker threads bump it concurrently.
 @import "modules/std.sx";
-http :: @import "modules/std/http.sx";
+@import "modules/std/http.sx";
 cstd :: @import "modules/std/c.sx";
-
-clib :: @library "c";
-usleep :: (usec: i64) -> i32 extern clib;
 
 PORT :: 18970;
 
@@ -38,7 +35,7 @@ handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
 // Slow handler for the in-flight-close scenario: sleeps so the request
 // lingers in CONN_HANDLING on a worker thread while the loop ticks.
 slowHandler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
-    usleep(80000);   // 80 ms
+    cstd.c.usleep(80000);
     resp.body = "ok";
 }
 
@@ -140,7 +137,7 @@ serveOnce :: (port: i64, poolCount: i64, scratch: [*]u8, cap: i64) -> bool {
     hdr := "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 40000\r\n\r\n";
     reqLen : i64 = hdr.len + bigN;
     rbuf : [*]u8 = context.allocator.allocBytes(reqLen);
-    cstd.memcpy(rbuf, hdr.ptr, hdr.len);
+    cstd.c.memcpy(rbuf, hdr.ptr, hdr.len);
     f := 0;
     while f < bigN { rbuf[hdr.len + f] = 97.(u8) + (f % 26).(u8); f += 1; }
     r2 := roundtrip(*srv, c, string{ ptr = rbuf, len = reqLen }, scratch, cap);

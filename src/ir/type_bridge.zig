@@ -115,13 +115,6 @@ const StatelessInner = struct {
     pub fn evalConstFieldAccessInt(_: StatelessInner, _: *const Node) ?i64 {
         return null;
     }
-    // The registration-time path holds only the flat global const map — no
-    // namespace-import facts (`namespace_edges` / per-source cache) — so a
-    // qualified-member const `m.CAP` is not a compile-time leaf here.
-    // It resolves on the stateful body-lowering path (`Lowering`); a
-    // qualified-const dimension reached ONLY through this path (e.g. a type
-    // alias `Arr :: [m.CAP]T`) stays unresolved and surfaces the clean dim
-    // diagnostic rather than a fabricated length.
     pub fn lookupQualifiedConst(_: StatelessInner, _: []const u8, _: []const u8) ?i64 {
         return null;
     }
@@ -283,7 +276,7 @@ pub fn resolveAstType(node: ?*const Node, table: *TypeTable, facts: Facts) TypeI
 /// caller-threaded `facts`.
 /// `skip_builtin` carries the backtick raw escape.
 fn resolveTypeName(name: []const u8, table: *TypeTable, facts: Facts, skip_builtin: bool) TypeId {
-    return type_resolver.TypeResolver.resolveNamed(name, table, facts, skip_builtin);
+    return type_resolver.TypeResolver.resolveNamed(name, table, facts, null, skip_builtin);
 }
 
 /// Builtin primitive keyword → TypeId. The keyword table lives in

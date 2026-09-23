@@ -19,7 +19,7 @@ items : *List(u64) = null;
 
 rowHeight :: (id: u64) -> f32 => 20.0 + (id % 3).(f32) * 10.0;
 
-show :: (tag: string, st: *ListState, root: *UiRoot) {
+show :: (tag: string, st: *fluent.ListState, root: *fluent.UiRoot) {
     print("{}: anchor {} offset {} window {}..{} built {}\n", tag, st.anchor, st.offset.(i64), st.first, st.last, st.built);
     for n in root.snapshot.scene.nodes {
         if n.type == .rect {
@@ -28,19 +28,19 @@ show :: (tag: string, st: *ListState, root: *UiRoot) {
     }
 }
 
-firstKey :: (st: *ListState) -> u64 => items.items[st.first];
+firstKey :: (st: *fluent.ListState) -> u64 => items.items[st.first];
 
 main :: () -> i32 {
     ids := List(u64){};
     items = *ids;
     for i in 0..20 { items.append(i.(u64)); }
 
-    st := ListState.init(context.allocator);
-    root := UiRoot.init(Size{ width = 100.0, height = 100.0 }, context.allocator);
-    loop := FrameLoop.init(*root, closure(||_{ st = *st } -> View {
-        v : View = lazyList(st, items.len,
-            closure(|i: i64| -> u64 { items.items[i] }),
-            closure(|i: i64| -> View { r : View = Rect{ height = rowHeight(items.items[i]) }; r }));
+    st := fluent.ListState.init(context.allocator);
+    root := fluent.UiRoot.init(fluent.Size{ width = 100.0, height = 100.0 }, context.allocator);
+    loop := fluent.FrameLoop.init(*root, mem.closure(||_{ st = *st } -> fluent.View {
+        v : fluent.View = fluent.lazyList(st, items.len,
+            mem.closure(|i: i64| -> u64 { items.items[i] }),
+            mem.closure(|i: i64| -> fluent.View { r : fluent.View = fluent.Rect{ height = rowHeight(items.items[i]) }; r }));
         v
     }), context.allocator);
 
@@ -75,12 +75,12 @@ main :: () -> i32 {
     // Reversed: item 0 sits at the bottom edge.
     items.len = 0;
     for i in 0..20 { items.append(i.(u64)); }
-    rv := ListState.init(context.allocator, true);
-    rroot := UiRoot.init(Size{ width = 100.0, height = 100.0 }, context.allocator);
-    rloop := FrameLoop.init(*rroot, closure(||_{ rv = *rv } -> View {
-        v : View = lazyList(rv, items.len,
-            closure(|i: i64| -> u64 { items.items[i] }),
-            closure(|i: i64| -> View { r : View = Rect{ height = rowHeight(items.items[i]) }; r }));
+    rv := fluent.ListState.init(context.allocator, true);
+    rroot := fluent.UiRoot.init(fluent.Size{ width = 100.0, height = 100.0 }, context.allocator);
+    rloop := fluent.FrameLoop.init(*rroot, mem.closure(||_{ rv = *rv } -> fluent.View {
+        v : fluent.View = fluent.lazyList(rv, items.len,
+            mem.closure(|i: i64| -> u64 { items.items[i] }),
+            mem.closure(|i: i64| -> fluent.View { r : fluent.View = fluent.Rect{ height = rowHeight(items.items[i]) }; r }));
         v
     }), context.allocator);
     rloop.frame(0);
@@ -102,13 +102,13 @@ main :: () -> i32 {
 
     // A long list of labels, scrolled down and back: each frame builds its
     // window, and the way back lays nothing out again.
-    lv := ListState.init(context.allocator);
-    lroot := UiRoot.init(Size{ width = 100.0, height = 100.0 }, context.allocator);
-    lloop := FrameLoop.init(*lroot, closure(||_{ lv = *lv } -> View {
-        v : View = lazyList(lv, 10000,
-            closure(|i: i64| -> u64 { i.(u64) }),
-            closure(|i: i64| -> View {
-                r : View = Label{ text = concat("row ", intToString(i), " of many rows") };
+    lv := fluent.ListState.init(context.allocator);
+    lroot := fluent.UiRoot.init(fluent.Size{ width = 100.0, height = 100.0 }, context.allocator);
+    lloop := fluent.FrameLoop.init(*lroot, mem.closure(||_{ lv = *lv } -> fluent.View {
+        v : fluent.View = fluent.lazyList(lv, 10000,
+            mem.closure(|i: i64| -> u64 { i.(u64) }),
+            mem.closure(|i: i64| -> fluent.View {
+                r : fluent.View = fluent.Label{ text = concat("row ", intToString(i), " of many rows") };
                 r
             }));
         v

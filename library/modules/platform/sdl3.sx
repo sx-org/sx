@@ -10,8 +10,7 @@
 
 gSdlPlat : *SdlPlatform = null;
 
-chdir :: (path: [*]u8) -> i32 extern;
-SDL_GetBasePath :: () -> [*]u8 extern;
+SDL_GetBasePath :: () -> [*:0]u8 extern;
 
 // A macOS `.app` launched via Finder / `open` starts with CWD=`/`, so a
 // game's CWD-relative asset loads (`read_file_bytes("assets/...")`) miss and
@@ -34,7 +33,7 @@ sdlChdirToBundle :: () {
         }
         i = i + 1;
     }
-    if found { chdir(bp); }
+    if found { c.chdir(bp); }
 }
 
 SdlGpuMode :: enum {

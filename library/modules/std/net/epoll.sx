@@ -47,7 +47,7 @@
 // `@host` field read resolves against the compiler's target facts by name, so
 // the conditional needs no import. Skipping it keeps this module's IR
 // self-contained (libc only) — no std/compiler/bundle baggage.
-c     :: @import "modules/std/c.sx";
+@import "modules/std/c.sx";
 posix :: @import "modules/std/posix.sx";
 libc  :: c.libc;   // epoll_* are module-specific — bind through the shared handle
 

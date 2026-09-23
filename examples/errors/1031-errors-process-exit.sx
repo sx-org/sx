@@ -5,11 +5,11 @@
 // still appears despite `_exit` skipping the stdio flush.)
 
 @import "modules/std.sx";
-proc :: @import "modules/std/process.sx";
+@import "modules/std/process.sx";
 
 main :: () -> i32 {
     print("starting\n");
-    proc.exit(42);
+    process.exit(42);
     print("unreachable\n");
     return 0;
 }

@@ -81,7 +81,7 @@ const DestinationFirstUfcs = struct {
 fn destinationFirstUfcs(self: *Lowering, fa: *const ast.FieldAccess, call_args: []const *Node) ?DestinationFirstUfcs {
     const alias_target = self.ufcsAliasTarget(fa.field);
     const eff_field = alias_target orelse fa.field;
-    const fd0 = self.program_index.lookup(.function, eff_field) orelse return null;
+    const fd0 = self.ufcsFunction(eff_field) orelse return null;
     if (alias_target == null and !fd0.is_ufcs) return null;
 
     // A method the receiver's own type provides wins over a free function.
@@ -94,7 +94,7 @@ fn destinationFirstUfcs(self: *Lowering, fa: *const ast.FieldAccess, call_args: 
         eff_args.append(self.alloc, fa.object) catch return null;
         for (call_args) |a| eff_args.append(self.alloc, a) catch return null;
         var amb = false;
-        if (self.selectUfcsGenericByReceiver(eff_field, eff_args.items, &amb, fd0)) |sel| {
+        if (self.selectUfcsGenericByReceiver(eff_field, eff_args.items, &amb)) |sel| {
             fd = sel;
         } else if (amb) {
             // A tie between receivers is a fact only the dot-call has: the ordinary
@@ -290,85 +290,51 @@ fn rankUfcsCand(self: *Lowering, maybe_fd: ?*const ast.FnDecl, args_ast: []const
     }
 }
 
-/// A bare-ufcs name resolves through a single
-/// last-wins `fn_ast_map` winner (`fd0`), which may be a same-named generic ufcs
-/// whose receiver does NOT match the call's receiver (e.g. user `cancel :: ufcs
-/// (t: *Task($R))` shadowed by the stdlib `cancel :: ufcs (f: *Future($R))`).
-/// Pick the most receiver-specific BINDING author, in two tiers so visibility is
-/// respected (the non-transitive import model) without losing receiver-reachable
-/// namespaced methods:
-///
-///   Tier 1 — DIRECTLY-VISIBLE authors (own + one-hop flat, via
-///   `collectVisibleAuthors`). A genuine user-facing ambiguity (two distinct
-///   equally-specific VISIBLE binders) sets `ambiguous.*` here.
-///   Tier 2 (only if no visible author binds) — receiver-reachable methods that
-///   aren't flat-visible (a `*Task($R)` method reached through a `sched ::
-///   @import` namespace). Scan all module authors for the unique most-specific
-///   binder; on a tie among non-visible binders DON'T cry ambiguous — defer to
-///   `fd0` (the global last-wins) so a transitively-hidden collision never
-///   surfaces as a false error.
-///
-/// MUST be called identically from call planning (`calls.zig`) and lowering so
-/// the planned result type and the dispatched function never disagree (which
-/// would misbox the result). Returns null when nothing binds (the caller falls
-/// back to `fd0` if it binds, else diagnoses — never monomorphizes `.unresolved`).
-pub fn selectUfcsGenericByReceiver(self: *Lowering, name: []const u8, args_ast: []const *const Node, ambiguous: *bool, fd0: ?*const ast.FnDecl) ?*const ast.FnDecl {
-    ambiguous.* = false;
-    // Tier 1: directly-visible authors. Ambiguity is a user-facing error only here.
-    if (self.current_source_file) |caller_file| {
-        var res = self.resolver();
-        const set = res.collectVisibleAuthors(name, caller_file, .user_bare_flat);
-        defer if (set.flat.len > 0) self.alloc.free(set.flat);
-        var best: ?*const ast.FnDecl = null;
-        var best_concrete = false;
-        var tie = false;
-        if (set.own) |own| rankUfcsCand(self, Lowering.fnDeclOfRaw(own.raw), args_ast, &best, &best_concrete, &tie);
-        for (set.flat) |fa| rankUfcsCand(self, Lowering.fnDeclOfRaw(fa.raw), args_ast, &best, &best_concrete, &tie);
-        if (best) |b| {
-            if (tie) {
-                ambiguous.* = true;
-                return null;
-            }
-            return b;
-        }
+pub fn ufcsFunction(self: *Lowering, name: []const u8) ?*const ast.FnDecl {
+    const environment = self.current_environment orelse self.environmentForSource(self.current_source_file) orelse return null;
+    var resolver = self.resolver();
+    const candidates = resolver.collectInContext(name, self.lookupContext(environment));
+    defer self.alloc.free(candidates.flat);
+    if (candidates.own) |author| {
+        return if (self.callableAuthorFn(author)) |selected| selected.decl else null;
     }
-    // Tier 2: receiver-reachable but not flat-visible (namespaced methods defined
-    // alongside the receiver type). Pick the unique most-specific binder; on a
-    // hidden tie defer to `fd0` rather than reporting a false ambiguity.
-    const decls = self.program_index.module_decls orelse return null;
+    for (candidates.flat) |author| {
+        if (self.callableAuthorFn(author)) |selected| return selected.decl;
+    }
+    return null;
+}
+
+pub fn selectUfcsGenericByReceiver(self: *Lowering, name: []const u8, args_ast: []const *const Node, ambiguous: *bool) ?*const ast.FnDecl {
+    ambiguous.* = false;
+    const environment = self.current_environment orelse self.environmentForSource(self.current_source_file) orelse return null;
+    var resolver = self.resolver();
+    const candidates = resolver.collectInContext(name, self.lookupContext(environment));
+    defer self.alloc.free(candidates.flat);
     var best: ?*const ast.FnDecl = null;
     var best_concrete = false;
     var tie = false;
-    var it = decls.iterator();
-    while (it.next()) |entry| {
-        const ref = entry.value_ptr.names.get(name) orelse continue;
-        // A private method is receiver-reachable only from its own file.
-        if (entry.value_ptr.private_names.contains(name)) {
-            const requester = self.current_source_file orelse self.main_file orelse entry.value_ptr.source;
-            if (!std.mem.eql(u8, requester, entry.value_ptr.source)) continue;
-        }
-        rankUfcsCand(self, Lowering.fnDeclOfRaw(ref), args_ast, &best, &best_concrete, &tie);
+    if (candidates.own) |author| {
+        if (self.callableAuthorFn(author)) |selected|
+            rankUfcsCand(self, selected.decl, args_ast, &best, &best_concrete, &tie);
     }
-    if (best == null) return null;
-    if (tie) {
-        if (fd0) |w| {
-            if (self.ufcsGenericBindsAll(w, args_ast)) return w;
-        }
-        return null;
+    for (candidates.flat) |author| {
+        if (self.callableAuthorFn(author)) |selected|
+            rankUfcsCand(self, selected.decl, args_ast, &best, &best_concrete, &tie);
     }
-    return best;
+    ambiguous.* = tie;
+    return if (tie) null else best;
 }
 
 /// True when every module authoring `name` declares it `private` (and at
 /// least one does). Steers the visibility-gate diagnostic: "@import the
 /// module that declares it" is useless advice for a private name.
 fn nameAuthoredOnlyPrivately(self: *Lowering, name: []const u8) bool {
-    const decls = self.program_index.module_decls orelse return false;
+    const decls = self.program_index.decl_table orelse return false;
     var any = false;
-    var it = decls.valueIterator();
-    while (it.next()) |m| {
-        if (!m.names.contains(name)) continue;
-        if (!m.private_names.contains(name)) return false;
+    for (decls.environments.items) |env| {
+        const info = decls.get(env.names.get(name) orelse continue);
+        if (info.ref == null) continue;
+        if (info.visibility != .private) return false;
         any = true;
     }
     return any;
@@ -718,7 +684,7 @@ fn calleeMayHaveVariadicParam(self: *Lowering, c: *const ast.Call, sel_author: ?
                 // Namespaced / UFCS free fn by bare member name; anything we
                 // can't resolve stays conservative.
                 const eff = self.ufcsAliasTarget(fa.field) orelse fa.field;
-                if (self.program_index.lookup(.function, eff)) |fd| break :blk fd;
+                if (self.ufcsFunction(eff)) |fd| break :blk fd;
                 return true;
             },
             else => return true,
@@ -867,7 +833,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         },
         .ambiguous => |amb| {
             if (self.diagnostics) |d|
-                d.addFmt(.err, amb.span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{amb.alias});
+                amb.alias.diagnose(d, amb.span);
             return Ref.none;
         },
         .non_callable => |nc| {
@@ -1404,7 +1370,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             }
         }
         // Concrete lvalue → interface param: erase NODE-AWARE so the lvalue
-        // BORROWS (`free(t, gpa)` aliases gpa) — the node-less coerceCallArgs
+        // BORROWS (`mem.free(t, gpa)` aliases gpa) — the node-less coerceCallArgs
         // layer would misread the lvalue as an rvalue and refuse.
         if (pt) |ptv| {
             if (protocolArgErasure(self, arg, ptv)) |r| {
@@ -1817,10 +1783,10 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     if (self.checkCallArity(fd, fd.name, args.items.len, false, c.callee.span)) return Ref.none;
                     const fid: FuncId = if (fd.extern_export == .extern_ or fd.body.data == .intrinsic_expr)
                         self.declFuncId(fd) orelse declared: {
-                            const saved_source = self.current_source_file;
-                            self.setCurrentSourceFile(sf.source);
+                            const saved_source = self.lexicalContext();
+                            self.setFunctionContext(fd);
                             self.declareFunction(fd, fd.name);
-                            self.setCurrentSourceFile(saved_source);
+                            self.restoreLexicalContext(saved_source);
                             break :declared self.declFuncId(fd) orelse return self.emitError(fd.name, c.callee.span);
                         }
                     else
@@ -2021,6 +1987,27 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 return self.emitError(func_name, c.callee.span);
             }
 
+            const field_ty = self.inferExprType(c.callee);
+            if (self.callableShapeOf(field_ty)) |shape| {
+                const addr: ?Ref = switch (shape) {
+                    .unique, .nominal => if (self.isLvalueExpr(c.callee)) self.lowerExprAsPtr(c.callee) else blk: {
+                        const value = self.lowerExpr(c.callee);
+                        const slot = self.builder.alloca(field_ty);
+                        self.builder.store(slot, value);
+                        break :blk slot;
+                    },
+                    .closure, .fn_ptr => null,
+                };
+                if (callValue(self, .{
+                    .ty = field_ty,
+                    .ref = if (addr == null) self.lowerExpr(c.callee) else Ref.none,
+                    .addr = addr,
+                    .node = c.callee,
+                    .name = fa.field,
+                    .origin = .value,
+                }, c, args.items, c.callee.span)) |r| return r;
+            }
+
             // Method call: obj.method(args) → prepend obj (or &obj for *Self receivers)
             // For ptr.*.method(): pass the pointer directly instead of loading + re-addressing.
             // This ensures mutations through self: *T are visible after the call.
@@ -2045,48 +2032,6 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     obj_ty = oinfo_nrw.optional.child;
                     obj = self.builder.emit(.{ .optional_unwrap = .{ .operand = obj } }, obj_ty);
                 }
-            }
-
-            // A CALLABLE field is called as a value, not dispatched as a method.
-            switch (self.lookupField(obj_ty, fa.field)) {
-                .hit, .private => |h| if (self.callableShapeOf(h.ty)) |shape| {
-                    if (self.mentionField(obj_ty, fa.field, c.callee.span) == .private) return Ref.none;
-                    var cv: CalleeValue = .{ .ty = h.ty, .ref = Ref.none, .node = c.callee, .name = fa.field, .origin = .value };
-                    switch (shape) {
-                        // The field IS the receiver storage: GEP its slot from a
-                        // base lowered ONCE, so the call writes the field and a
-                        // side-effecting receiver is evaluated a single time.
-                        .unique, .nominal => cv.addr = blk: {
-                            const slot_ty = self.module.types.ptrTo(h.ty);
-                            if (!obj_ty.isBuiltin()) {
-                                const oi = self.module.types.get(obj_ty);
-                                if (oi == .pointer)
-                                    break :blk self.builder.structGepTyped(obj, h.index, slot_ty, oi.pointer.pointee);
-                            }
-                            const base = if (self.isLvalueExpr(c.callee))
-                                self.lowerExprAsPtr(effective_obj_node)
-                            else b2: {
-                                const b = self.builder.alloca(obj_ty);
-                                self.builder.store(b, obj);
-                                break :b2 b;
-                            };
-                            break :blk self.builder.structGepTyped(base, h.index, slot_ty, obj_ty);
-                        },
-                        // A `Closure` / fn-pointer field is a plain value read.
-                        // `structGet` requires an aggregate, so a `*T` receiver
-                        // loads through the pointer first.
-                        .closure, .fn_ptr => {
-                            var agg = obj;
-                            if (!obj_ty.isBuiltin()) {
-                                const oi = self.module.types.get(obj_ty);
-                                if (oi == .pointer) agg = self.builder.load(obj, oi.pointer.pointee);
-                            }
-                            cv.ref = self.builder.structGet(agg, h.index, h.ty);
-                        },
-                    }
-                    if (callValue(self, cv, c, args.items, c.callee.span)) |r| return r;
-                },
-                .missing => {},
             }
 
             // Receiver is an OPEN SET (or a pointer to one) and the field names a
@@ -2216,10 +2161,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         defer gbindings.deinit();
                         const base = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ gm.inst_name, self.accessorEffName(gm.fd) }) catch fa.field;
                         const gmangled = self.genericResolver().mangleGenericName(base, gm.fd, &gbindings);
-                        if (!self.lowered_functions.contains(gmangled)) {
-                            self.monomorphizeFunction(gm.fd, gmangled, &gbindings);
-                        }
-                        if (self.resolveFuncByName(gmangled)) |fid| {
+                        if (self.monomorphizeFunction(gm.fd, gmangled, &gbindings)) |fid| {
                             const func = &self.module.functions.items[@intFromEnum(fid)];
                             self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty, null);
                             self.appendDefaultArgs(gm.fd, &method_args, c.callee);
@@ -2262,10 +2204,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
 
                         const generic_base = if (nominal_method) |m| self.plainStructMethodName(m) else qualified;
                         const gmangled = self.genericResolver().mangleGenericName(generic_base, gen_fd, &gbindings);
-                        if (!self.lowered_functions.contains(gmangled)) {
-                            self.monomorphizeFunction(gen_fd, gmangled, &gbindings);
-                        }
-                        if (self.resolveFuncByName(gmangled)) |gfid| {
+                        if (self.monomorphizeFunction(gen_fd, gmangled, &gbindings)) |gfid| {
                             const gfunc = &self.module.functions.items[@intFromEnum(gfid)];
                             const gret_ty = gfunc.ret;
                             const gparams = gfunc.params;
@@ -2375,7 +2314,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             // diagnostic; otherwise the existing first-wins lazy path.
             const alias_target = self.ufcsAliasTarget(fa.field);
             const eff_field = alias_target orelse fa.field;
-            const ufcs_fd = self.program_index.lookup(.function, eff_field);
+            const ufcs_fd = self.ufcsFunction(eff_field);
             const ufcs_opted_in = alias_target != null or (ufcs_fd != null and ufcs_fd.?.is_ufcs);
 
             if (ufcs_opted_in) {
@@ -2411,26 +2350,9 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         defer eff_args.deinit(self.alloc);
                         eff_args.append(self.alloc, effective_obj_node) catch unreachable;
                         for (c.args) |arg| eff_args.append(self.alloc, arg) catch unreachable;
-                        // The last-wins `fn_ast_map` winner may be a
-                        // same-named generic ufcs from another module whose
-                        // receiver doesn't match. Only when it fails to bind all
-                        // its type-params for THIS receiver do we re-select the
-                        // receiver-matching author — so a working call is never
-                        // perturbed, and the mismatching path either finds the
-                        // right candidate or emits a clean diagnostic (never an
-                        // `.unresolved` reaching codegen).
-                        // Always resolve the receiver-specific author (not just
-                        // on bind-failure): a fully-generic `(x: $T)` last-wins
-                        // winner BINDS for any receiver, so a failure-gated
-                        // re-select would silently keep it over a more specific
-                        // `*Task($R)` — order-dependent dispatch. `selectUfcsGenericByReceiver`
-                        // picks the most specific binder (or flags a genuine
-                        // tie). Fall back to `fd0` only when it isn't enumerable
-                        // in `module_decls` but still binds; diagnose otherwise
-                        // (never monomorphize an `.unresolved` into LLVM).
                         var fd = fd0;
                         var amb = false;
-                        if (self.selectUfcsGenericByReceiver(eff_field, eff_args.items, &amb, fd0)) |sel| {
+                        if (self.selectUfcsGenericByReceiver(eff_field, eff_args.items, &amb)) |sel| {
                             fd = sel;
                         } else if (amb) {
                             if (self.diagnostics) |d|
@@ -2447,10 +2369,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         var gbindings = callBindings(self, fd, eff_args.items, method_args.items);
                         defer gbindings.deinit();
                         const gmangled = self.genericResolver().mangleGenericName(eff_field, fd, &gbindings);
-                        if (!self.lowered_functions.contains(gmangled)) {
-                            self.monomorphizeFunction(fd, gmangled, &gbindings);
-                        }
-                        if (self.resolveFuncByName(gmangled)) |gfid| {
+                        if (self.monomorphizeFunction(fd, gmangled, &gbindings)) |gfid| {
                             const gfunc = &self.module.functions.items[@intFromEnum(gfid)];
                             const gret_ty = gfunc.ret;
                             const gparams = gfunc.params;
@@ -2519,7 +2438,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             }
 
             // A fn by this name exists but is not dot-callable: tailored help.
-            if (ufcs_fd != null or self.resolveFuncByName(fa.field) != null) {
+            if (ufcs_fd != null) {
                 if (self.diagnostics) |d| {
                     const id = d.addFmtId(.err, c.callee.span, "'{s}' is not a ufcs function — a plain function does not dispatch via dot-call", .{fa.field});
                     d.addHelpFmt(id, c.callee.span, null, "call it directly (`{s}(receiver, ...)`) or declare it `{s} :: ufcs (...) {{ ... }}`", .{ fa.field, fa.field });
@@ -2719,7 +2638,7 @@ pub fn prependCtxIfNeeded(self: *Lowering, callee: *const Function, args: []Ref)
 
 /// Concrete arg at an INTERFACE param target: erase NODE-AWARE so
 /// `buildProtocolErasure` classifies from the AST and BORROWS lvalues
-/// (`free(t, gpa)` aliases `gpa`). A literal-with-init-block materializes
+/// (`mem.free(t, gpa)` aliases `gpa`). A literal-with-init-block materializes
 /// through a temp slot, which the node-LESS refStorageAddress heuristic
 /// would misread as an lvalue. Returns null when the shape doesn't apply
 /// (caller falls through to its normal path).
@@ -2874,20 +2793,16 @@ pub fn lowerGenericCall(self: *Lowering, fd: *const ast.FnDecl, base_name: []con
     const types_passed_explicitly = self.genericResolver().typesPassedExplicitly(fd, call_node.args);
     const mangled_name = self.genericResolver().mangleGenericName(base_name, fd, &bindings);
 
-    if (!self.lowered_functions.contains(mangled_name)) {
-        // Record this call as the instantiation site for the mono's body:
-        // a surviving `@error` inside it anchors HERE (outermost frame of
-        // the chain), not at the library-internal directive line.
+    const instance = blk: {
         self.mono_sites.append(self.alloc, .{
             .source = call_node.callee.source_file orelse self.current_source_file,
             .span = call_node.callee.span,
             .caller_func = self.builder.func,
         }) catch {};
         defer self.mono_sites.items.len -= 1;
-        self.monomorphizeFunction(fd, mangled_name, &bindings);
-    }
-
-    if (self.resolveFuncByName(mangled_name)) |fid| {
+        break :blk self.monomorphizeFunction(fd, mangled_name, &bindings);
+    };
+    if (instance) |fid| {
         const func = &self.module.functions.items[@intFromEnum(fid)];
         const ret_ty = func.ret;
         const params = func.params;
@@ -3705,7 +3620,7 @@ fn reflectionArgTypeForCursorCheck(self: *Lowering, a: *const Node) ?TypeId {
     };
     if (self.scope) |s| if (s.lookup(named) != null) return null;
     const from = self.current_source_file orelse self.main_file orelse return null;
-    return switch (self.selectNominalLeaf(named, from, false)) {
+    return switch (self.selectNominalLeaf(named, self.environmentForSource(from).?, false)) {
         .resolved => |t| t,
         else => null,
     };
@@ -4849,7 +4764,7 @@ pub fn reflectionErrorSentinel(self: *Lowering, name: []const u8) Ref {
 fn defaultArgAtCall(
     self: *Lowering,
     dflt: *const Node,
-    author_source: ?[]const u8,
+    author_environment: ?@import("../../imports.zig").EnvironmentId,
     call_site: *const Node,
 ) ?*Node {
     const n = self.alloc.create(Node) catch return null;
@@ -4863,10 +4778,13 @@ fn defaultArgAtCall(
     if (dflt.data == .caller_site) {
         n.span = call_site.span;
         n.source_file = call_site.source_file orelse self.current_source_file;
-    } else if (author_source orelse self.current_source_file) |src| {
-        n.source_file = src;
+    } else if (author_environment) |env| {
+        n.source_file = self.program_index.declarations().environment(env).source;
     }
-    self.authored_call_defaults.put(n, caller_site) catch return null;
+    self.authored_call_defaults.put(n, .{
+        .site = caller_site,
+        .environment = if (dflt.data == .caller_site) self.current_environment else author_environment,
+    }) catch return null;
     return n;
 }
 
@@ -4900,7 +4818,7 @@ pub fn lowerDefaultArg(self: *Lowering, fd: *const ast.FnDecl, idx: usize, call_
     // `context.allocator` resolve through the implicit context channel.
     var dem = self.enterDemand(lower_bound.paramDemand(self, fd, idx));
     defer dem.restore();
-    const authored = defaultArgAtCall(self, dflt, fd.body.source_file, call_site) orelse return null;
+    const authored = defaultArgAtCall(self, dflt, self.functionEnvironment(fd), call_site) orelse return null;
     return self.lowerExpr(authored);
 }
 
@@ -5179,14 +5097,9 @@ fn namedCalleeDecl(
             if (self.plainStructMethod(obj_ty, fa.field)) |method| {
                 return .{ .fd = method.fd, .source = method.fd.body.source_file, .receiver_params = 1 };
             }
-            const eff = blk: {
-                if (self.ufcsAliasTarget(fa.field)) |target| {
-                    break :blk if (self.scope) |scope| scope.lookupFn(target) orelse target else target;
-                }
-                break :blk if (self.scope) |scope| scope.lookupFn(fa.field) orelse fa.field else fa.field;
-            };
-            if (self.program_index.lookup(.function, eff)) |fd| {
-                if (fd.is_ufcs or self.ufcsAliasTarget(fa.field) != null) {
+            const alias_target = self.ufcsAliasTarget(fa.field);
+            if (self.ufcsFunction(alias_target orelse fa.field)) |fd| {
+                if (fd.is_ufcs or alias_target != null) {
                     return .{ .fd = fd, .source = fd.body.source_file, .receiver_params = 1 };
                 }
             }
@@ -5447,7 +5360,7 @@ pub fn mapNamedArgs(
                     if (self.diagnostics) |d| {
                         const id = d.addFmtId(.err, a.span, "'{s}' cannot take a trailing block — its last parameter '{s}' is '{s}', which is neither `$F/(…) -> R` nor `@BuildBlock(P)`", .{ callee_name, p.name, self.formatTypeName(pty) });
                         if (isClosureSlot(self, pty))
-                            d.addHelpFmt(id, a.span, null, "erasing a block is an allocation, so it is written where it is paid: `{s}(closure(|…| …))`", .{callee_name})
+                            d.addHelpFmt(id, a.span, null, "erasing a block is an allocation, so it is written where it is paid: `{s}(mem.closure(|…| …))`", .{callee_name})
                         else
                             d.addHelpFmt(id, a.span, null, "declare '{s}' as `$F/(…) -> R` to receive the block as a closure, or as `@BuildBlock(P)` to receive it as a build block", .{p.name});
                     }
@@ -5546,7 +5459,7 @@ pub fn mapNamedArgs(
         if (slots[i] != null) continue;
         if (p.is_variadic or p.is_pack) continue; // an empty tail is legal
         if (p.default_expr) |def| {
-            slots[i] = defaultArgAtCall(self, def, callee.source, c.callee) orelse return stripNamedArgs(self, c);
+            slots[i] = defaultArgAtCall(self, def, self.functionEnvironment(fd), c.callee) orelse return stripNamedArgs(self, c);
         } else {
             missing.append(self.alloc, p.name) catch {};
             const undef = self.alloc.create(Node) catch unreachable;
@@ -5688,10 +5601,9 @@ pub fn expandCallDefaults(
     var new_args = self.alloc.alloc(*ast.Node, c.args.len + fill) catch return null;
     for (c.args, 0..) |arg, i| new_args[i] = arg;
     var i: usize = 0;
-    const default_source: ?[]const u8 = if (sel_author) |sf| sf.source else fd.body.source_file;
     while (i < fill) : (i += 1) {
         const def = fd.params[supplied + i].default_expr.?;
-        new_args[c.args.len + i] = defaultArgAtCall(self, def, default_source, c.callee) orelse return null;
+        new_args[c.args.len + i] = defaultArgAtCall(self, def, self.functionEnvironment(fd), c.callee) orelse return null;
     }
     const new_call = self.alloc.create(ast.Call) catch return null;
     new_call.* = .{ .callee = c.callee, .args = new_args };
@@ -5735,12 +5647,6 @@ pub fn userParamTypes(self: *Lowering, func: *const Function) []TypeId {
     return types_list.items;
 }
 
-/// Param types of a not-yet-lowered AST callee for arg target-typing,
-/// resolved in the callee's own module context (the source pin — see
-/// `resolveParamTypeInSource`). A generic callee's bare `T` leaves mean
-/// nothing as nominal names in that module: without this call's inferred
-/// `$T → concrete` bindings the pin would resolve `T` as an undeclared
-/// type in a non-main module and diagnose it unknown.
 /// Coerce already-lowered closure-call arguments to the closure's declared
 /// parameter types. The arg-lowering loop only sets `target_type`
 /// (which steers literal lowering) but does NOT itself coerce, so a concrete
@@ -5952,9 +5858,9 @@ pub fn resolveCallParamTypes(
         if (openSetReceiver(self, obj_ty)) |set_ty| {
             if (self.openSetOf(set_ty)) |set| {
                 if (lower_open_set.requiredMethod(set, fa.field)) |method| {
-                    const saved_source = self.current_source_file;
-                    self.setCurrentSourceFile(set.source_file);
-                    defer self.setCurrentSourceFile(saved_source);
+                    const saved_source = self.lexicalContext();
+                    self.setCurrentEnvironment(self.declarationEnvironment(.{ .open_set_decl = set.decl }, set.source_file));
+                    defer self.restoreLexicalContext(saved_source);
                     const demands = self.alloc.alloc(ParamDemand, method.params.len) catch return &.{};
                     for (method.params, 0..) |param, i|
                         demands[i] = .{ .coerce = self.resolveTypeWithBindings(param) };
@@ -6121,11 +6027,6 @@ pub fn resolveCallParamTypes(
                 }
             }
         }
-        // A ufcs target is keyed on the BARE field name, which no arm above
-        // consults — the same declaration named-argument binding resolves. The
-        // name is shared program-wide, so the author is picked by RECEIVER, the
-        // way dispatch picks it, and a declaration whose own receiver parameter
-        // does not take this one names a different call.
         if (namedCalleeDecl(self, c, sel_author, qualified_selected, null, false)) |callee| {
             if (callee.receiver_params == 1) {
                 var eff_args = std.ArrayList(*const Node).empty;
@@ -6134,7 +6035,7 @@ pub fn resolveCallParamTypes(
                 for (c.args) |a| eff_args.append(self.alloc, a) catch unreachable;
                 var amb = false;
                 const fd = if (callee.fd.type_params.len > 0 and callee.fd.is_ufcs)
-                    self.selectUfcsGenericByReceiver(fa.field, eff_args.items, &amb, callee.fd) orelse callee.fd
+                    self.selectUfcsGenericByReceiver(fa.field, eff_args.items, &amb) orelse callee.fd
                 else
                     callee.fd;
                 const all = astCalleeParamTypes(self, fd, eff_args.items);

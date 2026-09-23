@@ -6,6 +6,7 @@
 // exists — the caller's graceful skip, which is what keeps the wider test
 // suite host-agnostic.
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 @import "modules/ui/font.sx";
 @import "modules/ui/surface.sx";
 @import "modules/gpu/offscreen_gl.sx";
@@ -13,14 +14,14 @@
 
 openPixelSurface :: (w: i32, h: i32) -> ?PixelSurface {
     inline if @host.os == .macos {
-        g := context.allocator.make(MetalOffscreen{});
-        if !g.open(w, h) { context.allocator.destroy(g); return null; }
+        g := mem.make(context.allocator, MetalOffscreen{});
+        if !g.open(w, h) { mem.destroy(context.allocator, g); return null; }
         setGlobalFont(*g.font);
         return g.(PixelSurface);
     }
     inline if @host.os != .ios and @host.os != .macos {
-        g := context.allocator.make(GlOffscreen{});
-        if !g.open(w, h) { context.allocator.destroy(g); return null; }
+        g := mem.make(context.allocator, GlOffscreen{});
+        if !g.open(w, h) { mem.destroy(context.allocator, g); return null; }
         setGlobalFont(*g.font);
         return g.(PixelSurface);
     }

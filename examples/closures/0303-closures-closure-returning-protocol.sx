@@ -2,6 +2,7 @@
 // indirect-call path where the result is a handle over `make` storage.
 
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 MyProtocol :: interface {
     getValue :: (self: *Self) -> i64;
@@ -13,7 +14,7 @@ impl MyProtocol for MyImpl {
 }
 
 makeThing :: () -> MyProtocol {
-    context.allocator.make(MyImpl{ value = 42 }).(MyProtocol)
+    mem.make(context.allocator, MyImpl{ value = 42 }).(MyProtocol)
 }
 
 main :: () -> void {

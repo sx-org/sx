@@ -27,12 +27,12 @@ fn resolveBinding(self: *Lowering, b: runtime_bindings.Binding) ?FuncId {
         }
     }
     // The bare name is another module's; the owner's declaration gets its own slot.
-    const module_decls = self.program_index.module_decls orelse return null;
-    var it = module_decls.iterator();
-    while (it.next()) |entry| {
-        const path = entry.key_ptr.*;
+    const module_decls = self.program_index.decl_table orelse return null;
+    for (module_decls.environments.items) |env| {
+        const path = env.source;
         if (!ownerAuthored(self, b.module, path)) continue;
-        const raw = entry.value_ptr.names.get(b.name) orelse return null;
+        const id = env.names.get(b.name) orelse return null;
+        const raw = module_decls.get(id).ref orelse return null;
         const fd = lower_decl.fnDeclOfRaw(raw) orelse return null;
         return self.bareAuthorFuncId(fd, b.name, path);
     }

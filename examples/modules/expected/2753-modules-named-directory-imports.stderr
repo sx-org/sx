@@ -1,0 +1,5 @@
+error: duplicate top-level declaration 'pkg'
+  --> examples/modules/2753-modules-named-directory-imports.sx:1:1
+   |
+ 1 | pkg :: @import "2753-modules-named-directory-imports";
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

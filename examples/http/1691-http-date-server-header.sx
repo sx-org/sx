@@ -21,7 +21,7 @@
 // Date; a pooled server with serverName set stamps both Date and
 // `Server: sx-test/1` (worker serialization path); GPA net-zero.
 @import "modules/std.sx";
-http :: @import "modules/std/http.sx";
+@import "modules/std/http.sx";
 
 PORT_A :: 19004;
 PORT_B :: 19005;

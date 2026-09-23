@@ -6,6 +6,7 @@
 // them is a language contract. A hybrid accepter asks for the shape, reserves
 // from the plan, then runs.
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 @import "modules/fluent.sx";
 
 Drawable :: constraint {
@@ -50,11 +51,11 @@ impl Drawable for Dot {
 Hold :: struct {
     n: i32 = 0;
     expression :: (self: *Hold, value: $I/@Init($V/Drawable)) {
-        dest := context.allocator.create(V);
+        dest := mem.create(context.allocator, V);
         value.write(dest);
         print("  kept #{} {}\n", self.n, dest.draw());
         self.n += 1;
-        context.allocator.destroy(dest);
+        mem.destroy(context.allocator, dest);
     }
 }
 

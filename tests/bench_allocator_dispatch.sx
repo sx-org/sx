@@ -560,7 +560,7 @@ apDefault : Allocator = b00;
 
 // ── Lanes ────────────────────────────────────────────────────────────────
 
-directLane :: (arena: *Arena) -> i64 {
+directLane :: (arena: *mem.Arena) -> i64 {
     t0 := monoNs();
     sink := 0;
     i := 0;
@@ -576,7 +576,7 @@ directLane :: (arena: *Arena) -> i64 {
     el
 }
 
-borrowLane :: (arena: *Arena) -> i64 {
+borrowLane :: (arena: *mem.Arena) -> i64 {
     a : Allocator = arena;
     t0 := monoNs();
     sink := 0;
@@ -593,7 +593,7 @@ borrowLane :: (arena: *Arena) -> i64 {
     el
 }
 
-ctxLane :: (arena: *Arena) -> i64 {
+ctxLane :: (arena: *mem.Arena) -> i64 {
     push .{ allocator = arena } {
         t0 := monoNs();
         sink := 0;
@@ -671,7 +671,7 @@ rotateLane :: (h: []Allocator) -> i64 {
 
 // The pointer-field anchor: one conformer, reached as `context.ap`. Against
 // the CTX lane this is exactly the cost of the extra dependent load.
-ctxPtrLane :: (arena: *Arena) -> i64 {
+ctxPtrLane :: (arena: *mem.Arena) -> i64 {
     ah : Allocator = arena;
     push .{ ap = *ah } {
         t0 := monoNs();
@@ -733,7 +733,7 @@ rotatePtrLane :: (ps: []*Allocator) -> i64 {
 // `push` per allocation, overriding the handle field. A push copies the
 // whole Context, so the pair below differs only in the width of the one
 // field being written.
-pushH16Lane :: (arena: *Arena) -> i64 {
+pushH16Lane :: (arena: *mem.Arena) -> i64 {
     t0 := monoNs();
     sink := 0;
     i := 0;
@@ -751,7 +751,7 @@ pushH16Lane :: (arena: *Arena) -> i64 {
     el
 }
 
-pushPtrLane :: (arena: *Arena) -> i64 {
+pushPtrLane :: (arena: *mem.Arena) -> i64 {
     ah : Allocator = arena;
     t0 := monoNs();
     sink := 0;
@@ -771,34 +771,34 @@ pushPtrLane :: (arena: *Arena) -> i64 {
 }
 
 main :: () {
-    gpa := GPA.init();
-    direct := context.allocator.alloc(i64, TRIALS);
-    borrow := context.allocator.alloc(i64, TRIALS);
-    ctx := context.allocator.alloc(i64, TRIALS);
-    dflt := context.allocator.alloc(i64, TRIALS);
-    in20 := context.allocator.alloc(i64, TRIALS);
-    in2 := context.allocator.alloc(i64, TRIALS);
-    rot := context.allocator.alloc(i64, TRIALS);
-    ctxp := context.allocator.alloc(i64, TRIALS);
-    in20p := context.allocator.alloc(i64, TRIALS);
-    in2p := context.allocator.alloc(i64, TRIALS);
-    rotp := context.allocator.alloc(i64, TRIALS);
-    push16 := context.allocator.alloc(i64, TRIALS);
-    pushp := context.allocator.alloc(i64, TRIALS);
+    gpa := mem.GPA.init();
+    direct := mem.alloc(context.allocator, i64, TRIALS);
+    borrow := mem.alloc(context.allocator, i64, TRIALS);
+    ctx := mem.alloc(context.allocator, i64, TRIALS);
+    dflt := mem.alloc(context.allocator, i64, TRIALS);
+    in20 := mem.alloc(context.allocator, i64, TRIALS);
+    in2 := mem.alloc(context.allocator, i64, TRIALS);
+    rot := mem.alloc(context.allocator, i64, TRIALS);
+    ctxp := mem.alloc(context.allocator, i64, TRIALS);
+    in20p := mem.alloc(context.allocator, i64, TRIALS);
+    in2p := mem.alloc(context.allocator, i64, TRIALS);
+    rotp := mem.alloc(context.allocator, i64, TRIALS);
+    push16 := mem.alloc(context.allocator, i64, TRIALS);
+    pushp := mem.alloc(context.allocator, i64, TRIALS);
 
     // The 20 slabs, the 20 handles, and the two index streams. The streams
     // are filled here, at runtime, from the xorshift — the lane sees only a
     // heap array whose contents no pass can fold.
-    slabs := context.allocator.alloc(u8, NCONF * SLAB);
-    handles := context.allocator.alloc(Allocator, NCONF);
+    slabs := mem.alloc(context.allocator, u8, NCONF * SLAB);
+    handles := mem.alloc(context.allocator, Allocator, NCONF);
     fillHandles(handles, slabs.ptr);
-    pair := context.allocator.alloc(Allocator, 2);
+    pair := mem.alloc(context.allocator, Allocator, 2);
     pair[0] = *b00;
     pair[1] = *b01;
 
     // The same handles, reached one pointer further out.
-    hptr := context.allocator.alloc(*Allocator, NCONF);
-    pptr := context.allocator.alloc(*Allocator, 2);
+    hptr := mem.alloc(context.allocator, *Allocator, NCONF);
+    pptr := mem.alloc(context.allocator, *Allocator, 2);
     k := 0;
     while k < NCONF {
         hptr[k] = *handles[k];
@@ -808,8 +808,8 @@ main :: () {
     pptr[1] = *pair[1];
 
     rng : Rng = .{ s = SEED };
-    idx20 := context.allocator.alloc(i64, IDXN);
-    idx2 := context.allocator.alloc(i64, IDXN);
+    idx20 := mem.alloc(context.allocator, i64, IDXN);
+    idx2 := mem.alloc(context.allocator, i64, IDXN);
     j := 0;
     while j < IDXN {
         idx20[j] = rng.next() % NCONF;
@@ -819,7 +819,7 @@ main :: () {
 
     t := 0;
     while t < TRIALS {
-        arena := Arena.init(gpa, CHUNK);
+        arena := mem.Arena.init(gpa, CHUNK);
         direct[t] = directLane(*arena);
         arena.reset();
         borrow[t] = borrowLane(*arena);
@@ -831,7 +831,7 @@ main :: () {
         in2[t] = interleavedLane(pair, idx2);
         rot[t] = rotateLane(handles);
 
-        arena2 := Arena.init(gpa, CHUNK);
+        arena2 := mem.Arena.init(gpa, CHUNK);
         ctxp[t] = ctxPtrLane(*arena2);
         arena2.reset();
         push16[t] = pushH16Lane(*arena2);

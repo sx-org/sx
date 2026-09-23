@@ -1,0 +1,11 @@
+@import "modules/std.sx";
+
+c :: @import c {
+    @include "2768-cimport-repeated-prototype/repeated.h";
+};
+
+main :: () -> i32 {
+    n: i32 = -5;
+    print("{}\n", c.abs(n));
+    0
+}

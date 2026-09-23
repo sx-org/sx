@@ -26,10 +26,7 @@
 //    header + bytes — is freed in runHandlerJob; the discarded late
 //    completion's buffer is freed in drainCompletions).
 @import "modules/std.sx";
-http :: @import "modules/std/http.sx";
-
-clib :: @library "c";
-usleep :: (usec: i64) -> i32 extern clib;
+@import "modules/std/http.sx";
 
 PORT :: 18991;
 HANDLER_TIMEOUT_MS :: 40;
@@ -61,7 +58,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
         obs : *Observed = @reinterpret(*Observed, ctx);
         // Sleep PAST the handler deadline — the loop 504s + frees the slot,
         // and connection B reuses/rewrites/grows the read buffer meanwhile.
-        usleep(SLOW_SLEEP_US);
+        c.usleep(SLOW_SLEEP_US);
         // NOW read the request views — they are job-owned, not pointers into
         // the recycled (then freed) conn buffer.
         obs.sum = checksum(req.body);

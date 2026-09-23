@@ -1,0 +1,5 @@
+error: a scope block is only allowed at file top level or inside another scope
+  --> examples/modules/2773-modules-scope-local-inline-placement.sx:2:29
+   |
+ 2 |     inline if true { geo :: scope {} }
+   |                             ^^^^^

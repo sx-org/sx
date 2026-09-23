@@ -17,10 +17,13 @@ pub const no_source_start: u32 = std.math.maxInt(u32);
 /// on `StructDecl.field_visibilities`; every other node stays `.public`.
 pub const Visibility = enum { public, private };
 
+pub const LexicalBlockId = enum(u32) { _ };
+
 pub const Node = struct {
     span: Span,
     data: Data,
     source_file: ?[]const u8 = null,
+    lexical_block: ?LexicalBlockId = null,
     /// Declaration visibility (`private NAME :: …`). Defaults to `.public`;
     /// only the parser's module-scope declaration paths ever set `.private`.
     visibility: Visibility = .public,
@@ -65,6 +68,8 @@ pub const Node = struct {
         return_stmt: ReturnStmt,
         import_decl: ImportDecl,
         namespace_decl: NamespaceDecl,
+        scope_decl: ScopeDecl,
+        spread_decl: SpreadDecl,
         array_type_expr: ArrayTypeExpr,
         slice_type_expr: SliceTypeExpr,
         array_literal: ArrayLiteral,
@@ -131,6 +136,9 @@ pub const Node = struct {
                 .union_decl => |d| d.name,
                 .error_set_decl => |d| d.name,
                 .namespace_decl => |d| d.name,
+                .scope_decl => |d| d.name,
+                .library_decl => |d| d.name,
+                .framework_decl => |d| d.name,
                 .ufcs_alias => |d| d.name,
                 .c_import_decl => |d| d.name,
                 .protocol_decl => |d| d.name,
@@ -801,6 +809,19 @@ pub const ReturnStmt = struct {
     value: ?*Node,
 };
 
+pub const ScopeDecl = struct {
+    name: []const u8,
+    name_span: Span,
+    decls: []const *Node,
+    body_block: ?LexicalBlockId = null,
+    is_raw: bool = false,
+};
+
+pub const SpreadDecl = struct {
+    source: *Node,
+    c_decls: ?[]const *Node = null,
+};
+
 pub const ImportDecl = struct {
     path: []const u8,
     name: ?[]const u8,
@@ -1032,11 +1053,6 @@ pub const NamespaceDecl = struct {
     /// (`ns.fn`) so `pkg.fn(...)` resolves to a unique FuncId distinct from a
     /// same-named function in another module.
     own_decls: []const *Node = &.{},
-    /// The resolved path of the module this alias targets — the importing file's
-    /// own path for a `@import c` namespace (its members are synthesized there).
-    /// Captured at import-resolution time (the `resolved_path` that is otherwise
-    /// not retained on the node) so `buildImportFacts` can record the namespace
-    /// edge without re-walking the import graph.
     target_module_path: []const u8,
     /// True when the namespace NAME was a backtick raw identifier — exempt
     /// from the reserved-type-name decl check.
@@ -1262,8 +1278,33 @@ pub const ImplBlock = struct {
 
 // ── Expansion cloning ───────────────────────────────────────────────────
 
-/// Name → replacement node, as bound by a module-scope `inline for` cursor.
-pub const Substitution = std.StringHashMap(*const Node);
+pub const ScopeBinding = enum { member, cursor, pending };
+
+pub const Substitution = struct {
+    bindings: std.StringHashMap(*const Node),
+    author_source: ?[]const u8 = null,
+    scope_shadow: ?struct {
+        context: *anyopaque,
+        select: *const fn (*anyopaque, *const Node, []const u8) ScopeBinding,
+        defer_binding: *const fn (*anyopaque, *Node, []const u8, *const Node) void,
+    } = null,
+
+    pub fn init(allocator: std.mem.Allocator) Substitution {
+        return .{ .bindings = .init(allocator) };
+    }
+
+    pub fn deinit(self: *Substitution) void {
+        self.bindings.deinit();
+    }
+
+    pub fn put(self: *Substitution, name: []const u8, node: *const Node) !void {
+        try self.bindings.put(name, node);
+    }
+
+    pub fn get(self: *const Substitution, name: []const u8) ?*const Node {
+        return self.bindings.get(name);
+    }
+};
 
 /// The bare NAME a node denotes, when it denotes one. `inline for` cursors
 /// bind type names, so only the two bare-name spellings answer.
@@ -1296,23 +1337,89 @@ pub fn cloneWithSubst(
             return copy;
         }
     }
+    var scoped = Substitution.init(allocator);
+    defer scoped.deinit();
+    const active = if (node.data == .scope_decl and subst.scope_shadow != null) blk: {
+        const shadow = subst.scope_shadow.?;
+        scoped.scope_shadow = shadow;
+        var it = subst.bindings.iterator();
+        while (it.next()) |binding| {
+            if (shadow.select(shadow.context, node, binding.key_ptr.*) == .cursor)
+                try scoped.put(binding.key_ptr.*, binding.value_ptr.*);
+        }
+        break :blk &scoped;
+    } else subst;
     const out = try allocator.create(Node);
     out.* = .{
         .span = node.span,
-        .data = try cloneData(allocator, node.data, subst),
+        .data = try cloneData(allocator, node.data, active),
         .source_file = node.source_file,
+        .lexical_block = node.lexical_block,
         .visibility = node.visibility,
     };
     switch (out.data) {
+        .scope_decl => |*scope| {
+            scope.body_block = null;
+            if (subst.scope_shadow) |shadow| {
+                var it = subst.bindings.iterator();
+                while (it.next()) |binding| {
+                    if (shadow.select(shadow.context, node, binding.key_ptr.*) == .pending)
+                        shadow.defer_binding(shadow.context, out, binding.key_ptr.*, binding.value_ptr.*);
+                }
+            }
+        },
+        else => {},
+    }
+    substituteSpelling(out, subst);
+    return out;
+}
+
+pub fn substituteCursor(node: *Node, subst: *const Substitution) void {
+    if (subst.author_source) |source| {
+        if (node.source_file) |author| {
+            if (!std.mem.eql(u8, source, author)) return;
+        }
+    }
+    if (node.data == .scope_decl) {
+        var scoped = Substitution.init(subst.bindings.allocator);
+        defer scoped.deinit();
+        scoped.scope_shadow = subst.scope_shadow;
+        scoped.author_source = subst.author_source;
+        var it = subst.bindings.iterator();
+        while (it.next()) |binding| {
+            const selected = if (subst.scope_shadow) |shadow| shadow.select(shadow.context, node, binding.key_ptr.*) else .cursor;
+            switch (selected) {
+                .cursor => scoped.put(binding.key_ptr.*, binding.value_ptr.*) catch @panic("out of memory"),
+                .member => {},
+                .pending => {
+                    const shadow = subst.scope_shadow.?;
+                    shadow.defer_binding(shadow.context, node, binding.key_ptr.*, binding.value_ptr.*);
+                },
+            }
+        }
+        for (node.data.scope_decl.decls) |decl| substituteCursor(decl, &scoped);
+        return;
+    }
+    if (bareName(node)) |name| {
+        if (subst.get(name)) |replacement| node.data = replacement.data;
+    }
+    substituteSpelling(node, subst);
+    switch (node.data) {
+        inline else => |payload| substituteValue(@TypeOf(payload), payload, subst),
+    }
+}
+
+fn substituteSpelling(node: *Node, subst: *const Substitution) void {
+    switch (node.data) {
         .parameterized_type_expr => |*pt| {
             if (subst.get(pt.name)) |replacement| {
                 if (bareName(replacement)) |name| pt.name = name;
             }
         },
         .struct_literal => |*sl| {
-            if (sl.struct_name) |sn| {
-                if (subst.get(sn)) |replacement| {
-                    if (bareName(replacement)) |name| sl.struct_name = name;
+            if (sl.struct_name) |name| {
+                if (subst.get(name)) |replacement| {
+                    if (bareName(replacement)) |replacement_name| sl.struct_name = replacement_name;
                 }
             }
         },
@@ -1323,7 +1430,50 @@ pub fn cloneWithSubst(
         },
         else => {},
     }
-    return out;
+}
+
+fn substituteValue(comptime T: type, value: T, subst: *const Substitution) void {
+    if (comptime !holdsNode(T)) return;
+    switch (@typeInfo(T)) {
+        .pointer => |p| switch (p.size) {
+            .one => substituteCursor(value, subst),
+            .slice => for (value) |elem| substituteValue(p.child, elem, subst),
+            else => {},
+        },
+        .optional => |o| if (value) |inner| substituteValue(o.child, inner, subst),
+        .@"struct" => |s| inline for (s.fields) |f| substituteValue(f.type, @field(value, f.name), subst),
+        .@"union" => switch (value) {
+            inline else => |payload| substituteValue(@TypeOf(payload), payload, subst),
+        },
+        else => {},
+    }
+}
+
+pub fn stampLexicalBlock(node: *Node, block: LexicalBlockId) void {
+    node.lexical_block = block;
+    switch (node.data) {
+        .scope_decl, .namespace_decl => {},
+        inline else => |payload| stampBlockValue(@TypeOf(payload), payload, block),
+    }
+}
+
+fn stampBlockValue(comptime T: type, value: T, block: LexicalBlockId) void {
+    if (comptime !holdsNode(T)) return;
+    switch (@typeInfo(T)) {
+        .pointer => |p| switch (p.size) {
+            .one => stampLexicalBlock(value, block),
+            .slice => for (value) |elem| stampBlockValue(p.child, elem, block),
+            else => {},
+        },
+        .optional => |o| if (value) |inner| stampBlockValue(o.child, inner, block),
+        .@"struct" => |s| inline for (s.fields) |f| {
+            stampBlockValue(f.type, @field(value, f.name), block);
+        },
+        .@"union" => switch (value) {
+            inline else => |payload| stampBlockValue(@TypeOf(payload), payload, block),
+        },
+        else => {},
+    }
 }
 
 fn cloneData(
@@ -1374,8 +1524,6 @@ fn cloneValue(
     }
 }
 
-/// True when `T` reaches a `*Node` — the comptime gate that keeps the cloner
-/// off the payload types it must copy verbatim (names, spans, flags).
 fn holdsNode(comptime T: type) bool {
     return switch (@typeInfo(T)) {
         .pointer => |p| switch (p.size) {
@@ -1398,4 +1546,22 @@ fn holdsNode(comptime T: type) bool {
         },
         else => false,
     };
+}
+
+pub fn scopeDeclarations(alloc: std.mem.Allocator, decls: []const *const Node) std.mem.Allocator.Error![]const *const Node {
+    var out: std.ArrayList(*const Node) = .empty;
+    errdefer out.deinit(alloc);
+    try appendScopeDeclarations(alloc, decls, &out);
+    return out.toOwnedSlice(alloc);
+}
+
+fn appendScopeDeclarations(alloc: std.mem.Allocator, decls: []const *const Node, out: *std.ArrayList(*const Node)) std.mem.Allocator.Error!void {
+    for (decls) |decl| {
+        if (decl.data == .scope_decl) {
+            try appendScopeDeclarations(alloc, decl.data.scope_decl.decls, out);
+        } else {
+            try out.append(alloc, decl);
+            if (decl.data == .spread_decl) if (decl.data.spread_decl.c_decls) |generated| try out.appendSlice(alloc, generated);
+        }
+    }
 }

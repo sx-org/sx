@@ -12,7 +12,7 @@
 @import "modules/std/mem.sx";
 @import "examples/ui/compose/identity.sx";
 
-c :: @import "modules/std/c.sx";
+@import "modules/std/c.sx";
 
 State :: struct ($T: Type) {
     ptr: *T;
@@ -111,12 +111,12 @@ useState :: ($T: Type, default: T, site: SiteId = siteOf(@caller)) -> State(T) {
         return State(T){ ptr = @reinterpret(*T, e.data) };
     }
 
-    e : *StateEntry = store.gpa.create(StateEntry);
+    e : *StateEntry = mem.create(store.gpa, StateEntry);
     e.* = StateEntry{
         key = key,
         ty = T,
         size = @sizeOf(T),
-        data = @reinterpret([*]u8, store.gpa.create(T)),
+        data = @reinterpret([*]u8, mem.create(store.gpa, T)),
         claimed = true,
     };
     seed := default;

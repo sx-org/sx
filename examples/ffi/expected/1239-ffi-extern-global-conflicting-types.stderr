@@ -1,0 +1,5 @@
+error: extern symbol '__stdinp' is already bound with a different type
+  --> examples/ffi/1239-ffi-extern-global-conflicting-types/b.sx:1:12
+   |
+ 1 | __stdinp : i64 extern;
+   |            ^^^

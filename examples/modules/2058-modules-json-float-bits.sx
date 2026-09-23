@@ -79,8 +79,8 @@ survives :: (f: f64, alloc: Allocator) -> bool {
 }
 
 main :: () -> ! {
-    gpa := GPA.init();
-    arena := Arena.init(gpa, 65536);
+    gpa := mem.GPA.init();
+    arena := mem.Arena.init(gpa, 65536);
     defer arena.deinit();
 
     seen : [5]i64 = .[0, 0, 0, 0, 0];

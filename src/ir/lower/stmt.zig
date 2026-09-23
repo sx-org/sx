@@ -95,7 +95,7 @@ pub fn lowerDemandedBody(self: *Lowering, node: *const Node, demand: TailDemand)
     // A demanded VALUE needs nested if-else expressions to produce values.
     // Nothing else does, and clearing the flag stops an enclosing value context
     // from leaking in (e.g. a void closure body lowered inside `f :=
-    // closure((..) { if c {..} })` — the outer `:=` RHS left it set) and making
+    // mem.closure((..) { if c {..} })` — the outer `:=` RHS left it set) and making
     // a no-`else` guard-`if` look like a value use.
     // Value-producing sub-lowerings (var-decl / assignment RHS, etc.) re-enable
     // it locally.
@@ -158,7 +158,7 @@ fn unreachedTail(self: *Lowering, blk: ast.Block, tail_len: usize) BodyTail {
 /// Whether an evaluated expression left this position live, closing the block
 /// where it stands if it did not. Divergence is normalized the INSTANT the
 /// value exists, so nothing downstream — a coercion, a defer, a store, a branch
-/// or a `ret` — can be emitted after a `proc.exit(0)` that stands in its place.
+/// or a `ret` — can be emitted after a `process.exit(0)` that stands in its place.
 pub fn expressionDiverged(self: *Lowering, v: Ref) bool {
     if (self.currentBlockHasTerminator()) return true;
     if (self.builder.getRefType(v) != .noreturn) return false;
@@ -708,7 +708,7 @@ pub fn lowerStmt(self: *Lowering, node: *const Node) void {
             self.registerErrorSetDecl(node);
         },
         .ufcs_alias => |ua| {
-            self.program_index.put(.ufcs_alias, self.program_index.internDecl(node, node.source_file), ua.name, .{ .target = ua.target });
+            self.program_index.put(.ufcs_alias, self.program_index.internDecl(node, self.environmentForSource(node.source_file)), ua.name, .{ .target = ua.target });
         },
         // Expression statement
         else => {
@@ -720,7 +720,7 @@ pub fn lowerStmt(self: *Lowering, node: *const Node) void {
             // `return` are never intercepted — their value belongs to them.
             if (self.interceptBuildExpression(node)) return;
             // A statement-position expression that DIVERGES — a call to a
-            // `-> noreturn` fn such as `proc.exit` — ends the basic block. A
+            // `-> noreturn` fn such as `process.exit` — ends the basic block. A
             // bare `.call` op is NOT a terminator (see currentBlockHasTerminator),
             // so without closing the block here it stays "open": the statements
             // after it lower into a closed-in-spirit block, and a diverging
@@ -1066,7 +1066,7 @@ pub fn lowerLocalFnDecl(self: *Lowering, fd: *const ast.FnDecl) void {
         scope.fn_names.put(fd.name, mangled) catch {};
         break :blk mangled;
     } else fd.name;
-    self.program_index.registerFunction(name, fd, self.current_source_file);
+    self.program_index.registerFunction(name, fd, self.functionEnvironment(fd));
     self.lazyLowerFunction(name);
 }
 
@@ -1084,7 +1084,7 @@ pub fn lowerConstDecl(self: *Lowering, cd: *const ast.ConstDecl) void {
             }
             break :blk mangled;
         } else cd.name;
-        self.program_index.registerFunction(name, fd, self.current_source_file);
+        self.program_index.registerFunction(name, fd, self.functionEnvironment(fd));
         // Lower the function body (saves/restores builder state)
         self.lazyLowerFunction(name);
         return;
@@ -1372,7 +1372,7 @@ fn reportSecondCallableReturn(self: *Lowering, binder: *const Node, fixed: TypeI
     const id = d.addFmtId(.err, binder.span, "'${s}' is the callable this body hands back, and this body hands back two: '{s}' and '{s}'", .{
         name, self.module.types.formatTypeName(self.alloc, fixed, null), self.module.types.formatTypeName(self.alloc, got, null),
     });
-    d.addHelpFmt(id, binder.span, null, "one literal on two paths is one type; two literals are two types — erase both with 'closure(...)' to hand back one", .{});
+    d.addHelpFmt(id, binder.span, null, "one literal on two paths is one type; two literals are two types — erase both with 'mem.closure(...)' to hand back one", .{});
 }
 
 pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) void {
@@ -1443,7 +1443,7 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) v
     } else null;
     if (ret_demand) |d| d.restore();
     if (ret_val) |rv| {
-        // `return proc.exit(0);` never returns: the operand took control where
+        // `return process.exit(0);` never returns: the operand took control where
         // it stands, so no defer, coercion or exit follows it.
         if (expressionDiverged(self, rv)) {
             self.force_block_value = saved_fbv_ret;
@@ -1796,7 +1796,7 @@ const QualifiedGlobalStoreVerdict = union(enum) {
     not_applicable,
     target: QualifiedGlobalStoreTarget,
     missing: struct { namespace: []const u8, member: []const u8, span: ast.Span },
-    ambiguous: struct { alias: []const u8, span: ast.Span },
+    ambiguous: struct { alias: Lowering.AmbiguousQualified, span: ast.Span },
     immutable: struct { name: []const u8, span: ast.Span },
     non_lvalue: struct { name: []const u8, span: ast.Span, is_function: bool },
     private_field: struct { name: []const u8, span: ast.Span },
@@ -1818,28 +1818,7 @@ fn qualifiedStoreTerminalSpan(node: *const Node, member: []const u8) ast.Span {
 }
 
 fn selectedQualifiedGlobal(self: *Lowering, selected: Lowering.QualifiedMember) ?program_index_mod.GlobalInfo {
-    if (selected.author.raw == .var_decl) {
-        if (self.global_decl_infos.get(selected.author.raw.var_decl)) |global| return global;
-    }
-    if (self.program_index.lookupInSource(.global, selected.author.source, selected.member)) |global| return global;
-    if (self.program_index.lookupInSource(.global, selected.target.target_module_path, selected.member)) |global| return global;
-
-    // Some registrations are deliberately deduplicated (notably extern
-    // globals), so the per-source partition may have no row. Re-run only the
-    // source-aware author selector while pinned to the exact selected module;
-    // never consume the process-global winner directly.
-    const saved_source = self.current_source_file;
-    self.setCurrentSourceFile(selected.author.source);
-    const resolved: ?program_index_mod.GlobalInfo = if (self.program_index.lookup(.global, selected.member)) |fallback|
-        switch (self.selectGlobalAuthor(selected.member)) {
-            .resolved => |global| global,
-            .untracked => if (selected.author.raw == .var_decl) fallback else null,
-            .not_a_global, .ambiguous, .not_visible => null,
-        }
-    else
-        null;
-    self.setCurrentSourceFile(saved_source);
-    return resolved;
+    return self.program_index.get(.global, selected.author.id);
 }
 
 /// Diagnostic-free preselection for a namespace-qualified mutable global. It
@@ -1870,7 +1849,7 @@ fn selectQualifiedGlobalStoreTarget(self: *Lowering, node: *const Node) Qualifie
         } },
         .ambiguous => |alias| return .{ .ambiguous = .{
             .alias = alias,
-            .span = qualifiedStorePathSpan(node, full_path, alias),
+            .span = qualifiedStorePathSpan(node, full_path, alias.name),
         } },
         .not_qualified => {
             const object_path = self.qualifiedTypeName(fa.object) orelse return .not_applicable;
@@ -1891,7 +1870,7 @@ fn selectQualifiedGlobalStoreTarget(self: *Lowering, node: *const Node) Qualifie
                 } },
                 .ambiguous => |alias| return .{ .ambiguous = .{
                     .alias = alias,
-                    .span = qualifiedStorePathSpan(fa.object, object_path, alias),
+                    .span = qualifiedStorePathSpan(fa.object, object_path, alias.name),
                 } },
             }
         },
@@ -1920,7 +1899,7 @@ fn selectQualifiedGlobalStoreTarget(self: *Lowering, node: *const Node) Qualifie
     // `a.RECORD.b` uses a's nominal layout end to end.
     if (selected.author.raw == .var_decl) {
         if (selected.author.raw.var_decl.type_annotation) |annotation| {
-            const exact_ty = self.resolveTypeInSource(selected.author.source, annotation);
+            const exact_ty = self.resolveTypeInEnvironment(self.program_index.declaration(selected.author.id).environment, annotation);
             if (exact_ty != .unresolved) gi.ty = exact_ty;
         }
     }
@@ -1972,7 +1951,7 @@ fn diagnoseQualifiedStoreVerdict(self: *Lowering, verdict: QualifiedGlobalStoreV
         .missing => |m| if (self.diagnostics) |d|
             d.addFmt(.err, m.span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member }),
         .ambiguous => |amb| if (self.diagnostics) |d|
-            d.addFmt(.err, amb.span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{amb.alias}),
+            amb.alias.diagnose(d, amb.span),
         .immutable => |bad| if (self.diagnostics) |d|
             d.addFmt(.err, bad.span, "cannot assign to '{s}' — it is a constant, not a mutable global", .{bad.name}),
         .non_lvalue => |bad| if (self.diagnostics) |d| {
@@ -2072,7 +2051,7 @@ fn tryLowerQualifiedGlobalStore(
         },
         .ambiguous => |alias| {
             if (self.diagnostics) |d|
-                d.addFmt(.err, span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{alias});
+                alias.diagnose(d, span);
             return .handled;
         },
         .not_qualified => blk: {
@@ -2088,7 +2067,7 @@ fn tryLowerQualifiedGlobalStore(
                 },
                 .ambiguous => |alias| {
                     if (self.diagnostics) |d|
-                        d.addFmt(.err, span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{alias});
+                        alias.diagnose(d, span);
                     return .handled;
                 },
                 .not_qualified => return .not_applicable,
@@ -2097,7 +2076,6 @@ fn tryLowerQualifiedGlobalStore(
             break :blk sel;
         },
     };
-    const target = selected.target;
     const member = selected.member;
     const qualified_name = object_path orelse full_path;
 
@@ -2112,9 +2090,9 @@ fn tryLowerQualifiedGlobalStore(
     // not-visible outcomes INSIDE the switch): classify with
     // `selectGlobalAuthor` — which emits nothing — then restore, then
     // diagnose/store with correct attribution.
-    const saved_src = self.current_source_file;
-    self.setCurrentSourceFile(target.target_module_path);
-    const is_fn = self.namespaceFnMember(&target, member) != null;
+    const saved_src = self.lexicalContext();
+    self.setAuthorContext(selected.author.id);
+    const is_fn = self.selectedFunction(selected) != null;
     const is_const = !is_fn and rootIsConstant(self, member);
     var resolved: ?program_index_mod.GlobalInfo = null;
     var member_ambiguous = false;
@@ -2131,7 +2109,7 @@ fn tryLowerQualifiedGlobalStore(
             }
         }
     }
-    self.setCurrentSourceFile(saved_src);
+    self.restoreLexicalContext(saved_src);
 
     // A qualified FUNCTION member (`lib.some_fn = 3`) is not an lvalue.
     if (is_fn) {

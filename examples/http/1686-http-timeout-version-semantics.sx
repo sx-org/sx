@@ -18,7 +18,7 @@
 // beyond the first response; (c) HTTP/2.0 → 505; (d) FOO/1.1 → 400;
 // (e) stats().timeouts counts both evictions; (f) GPA net-zero.
 @import "modules/std.sx";
-http :: @import "modules/std/http.sx";
+@import "modules/std/http.sx";
 
 PORT :: 18997;
 TIMEOUT_MS :: 120;

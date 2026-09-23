@@ -4,8 +4,6 @@
 // writes the published expression into a slot it owns and appends that. Nothing
 // is allocated and nothing borrows the block's frame, which is why the
 // initializer's target is the fixed `@Init(View)` rather than an open binder.
-//
-// Package-local by design.
 @import "modules/std.sx";
 @import "modules/fluent.sx";
 @import "modules/ui/fluent/view.sx";

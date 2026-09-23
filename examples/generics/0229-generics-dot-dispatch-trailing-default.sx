@@ -15,6 +15,7 @@
 
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
+..mem;
 
 Tracker :: struct {
     allocs: i64;
@@ -23,11 +24,11 @@ Tracker :: struct {
 impl Allocator for Tracker {
     allocBytes :: (self: *Tracker, size: i64) -> *void {
         self.allocs += 1;
-        c.libcMalloc(size)
+        c.malloc(size)
     }
     deallocBytes :: (self: *Tracker, ptr: *void) {
         self.deallocs += 1;
-        c.libcFree(ptr);
+        c.free(ptr);
     }
 }
 

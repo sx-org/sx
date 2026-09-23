@@ -1,0 +1,3 @@
+geo :: scope { value :: 1; }
+..geo.value;
+main :: () -> i32 { 0 }

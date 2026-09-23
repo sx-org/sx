@@ -4,12 +4,9 @@
 
 @import "modules/std.sx";
 @import "modules/std/atomic.sx";
-http :: @import "modules/std/http.sx";
+@import "modules/std/http.sx";
 fiberSched :: @import "modules/std/http/fiber_sched.sx";
-mem :: @import "modules/std/mem.sx";
-
-libc :: @library "c";
-usleep :: (usec: i64) -> i32 extern libc;
+@import "modules/std/mem.sx";
 
 PORT_INLINE :: 19121;
 PORT_POOL :: 19122;
@@ -290,7 +287,7 @@ fairnessCase :: (app: *App, port: i64, storage: [*]u8, cap: i64) -> bool {
 
     waits : i64 = 0;
     while app.hugeCalls.load(.relaxed) == 0 and waits < 20000 {
-        usleep(100);
+        c.usleep(100);
         waits += 1;
     }
     if app.hugeCalls.load(.relaxed) == 0 { http.Client.closeConn(*streamConn); return false; }

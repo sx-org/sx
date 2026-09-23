@@ -44,7 +44,7 @@ fn staticHeadInSource(self: *Lowering, name: []const u8, source: ?[]const u8) St
         const sid = self.module.types.internString(name);
         return if (self.module.types.findByName(sid)) |ty| .{ .resolved = ty } else .none;
     };
-    return switch (self.selectNominalLeaf(name, from, false)) {
+    return switch (self.selectNominalLeaf(name, self.environmentForSource(from).?, false)) {
         .resolved => |ty| .{ .resolved = ty },
         .ambiguous => .ambiguous,
         // A privately-authored-elsewhere head is exactly as unreachable as a
@@ -52,6 +52,13 @@ fn staticHeadInSource(self: *Lowering, name: []const u8, source: ?[]const u8) St
         .not_visible, .private_elsewhere => .not_visible,
         .pending, .forward, .undeclared => .none,
     };
+}
+
+fn staticSelectedHead(self: *Lowering, member: Lowering.QualifiedMember) StaticStructHead {
+    const saved = self.lexicalContext();
+    defer self.restoreLexicalContext(saved);
+    self.setAuthorContext(member.author.id);
+    return staticHeadInSource(self, member.member, member.author.source);
 }
 
 /// Resolve the nominal TypeId named by a static-call head without emitting a
@@ -70,7 +77,7 @@ pub fn staticStructHead(self: *Lowering, node: *const Node) StaticStructHead {
         .type_expr => |te| blk: {
             if (std.mem.indexOfScalar(u8, te.name, '.') != null) {
                 switch (self.qualifiedMemberVerdict(te.name)) {
-                    .selected => |sel| break :blk staticHeadInSource(self, sel.member, sel.target.target_module_path),
+                    .selected => |sel| break :blk staticSelectedHead(self, sel),
                     .ambiguous => break :blk .ambiguous,
                     .missing => break :blk .none,
                     .not_qualified => {},
@@ -82,7 +89,7 @@ pub fn staticStructHead(self: *Lowering, node: *const Node) StaticStructHead {
             const path = self.qualifiedTypeName(node) orelse break :blk .none;
             defer self.alloc.free(path);
             break :blk switch (self.qualifiedMemberVerdict(path)) {
-                .selected => |sel| staticHeadInSource(self, sel.member, sel.target.target_module_path),
+                .selected => |sel| staticSelectedHead(self, sel),
                 .ambiguous => .ambiguous,
                 .not_qualified, .missing => .none,
             };
@@ -520,13 +527,6 @@ pub fn shadowNominalId(self: *Lowering, name_id: types.StringId) u32 {
     return self.next_nominal_id;
 }
 
-/// The spelling `name` must be keyed under so it addresses `decl` and nothing
-/// else. The FIRST declaration to claim a spelling keeps it verbatim; every
-/// further declaration of the same spelling gets a distinct `__d<id>` suffix.
-/// Every name-keyed instantiation cache (generic-struct layouts, type-function
-/// results, generic/pack monomorphs, protocol registrations and instances)
-/// funnels its base name through here, so two same-display-name authors can
-/// never share a cache entry, symbol, impl entry, thunk set, or vtable.
 pub fn declIdentityName(self: *Lowering, name: []const u8, decl: *const anyopaque) []const u8 {
     if (self.decl_identity_first.get(name)) |first| {
         if (first == decl) return name;
@@ -543,32 +543,16 @@ pub fn declIdentityName(self: *Lowering, name: []const u8, decl: *const anyopaqu
     return std.fmt.allocPrint(self.alloc, "{s}__d{d}", .{ name, gop.value_ptr.* }) catch @panic("out of memory while keying declaration identity");
 }
 
-/// TRUE iff `name` is authored AS A NAMED TYPE (struct / enum / union /
-/// error-set / protocol / runtime class) by ≥2 DISTINCT modules in the import
-/// raw facts — the authoritative same-name-shadow signal (the only case where
-/// distinct `nominal_id`s are needed). Module distinctness is by LEXICALLY
-/// NORMALIZED path: one logical file reached through several spellings
-/// (`testpkg/../allocators.sx` vs `allocators.sx`) is cached — and so parsed —
-/// twice, landing two `module_decls` entries with two decl pointers for the
-/// SAME source; normalizing collapses them to one author, NOT a false shadow.
-/// False when the facts are unwired (comptime / registration host with no
-/// `module_decls`): the single-author path applies, correct there.
 pub fn nameHasMultipleTypeAuthors(self: *Lowering, name: []const u8) bool {
-    const decls = self.program_index.module_decls orelse return false;
-    var first_norm: ?[]const u8 = null;
-    defer if (first_norm) |f| self.alloc.free(f);
-    var it = decls.iterator();
-    while (it.next()) |entry| {
-        const m = entry.value_ptr;
-        const ref = m.names.get(name) orelse continue;
+    const table = self.program_index.decl_table orelse return false;
+    var first: ?@import("../../imports.zig").DeclId = null;
+    for (table.environments.items) |env| {
+        const id = env.names.get(name) orelse continue;
+        const ref = table.get(id).ref orelse continue;
         if (rawNamedTypePtr(ref) == null) continue;
-        const norm = std.fs.path.resolvePosix(self.alloc, &.{entry.key_ptr.*}) catch continue;
-        if (first_norm) |f| {
-            defer self.alloc.free(norm);
-            if (!std.mem.eql(u8, f, norm)) return true;
-        } else {
-            first_norm = norm;
-        }
+        if (first) |previous| {
+            if (previous != id) return true;
+        } else first = id;
     }
     return false;
 }
@@ -652,7 +636,8 @@ pub fn buildGenericStructTemplate(self: *Lowering, sd: *const ast.StructDecl, so
 /// bare lookup.
 pub fn qualifiedStructTemplate(self: *Lowering, alias: []const u8, member: []const u8) ?StructTemplate {
     const target = self.namespaceAliasTarget(alias, null) orelse return null;
-    for (target.own_decls) |decl| {
+    for (target.member_ids) |id| {
+        const decl = self.program_index.declaration(id).node.?;
         // A top-level struct is authored either as a bare `struct_decl` node
         // or a `const_decl` whose value is one (`Box :: struct($T){...}`).
         const sd: *const ast.StructDecl = switch (decl.data) {
@@ -678,7 +663,8 @@ pub fn qualifiedStructTemplate(self: *Lowering, alias: []const u8, member: []con
 /// kind → the type-fn / named-type arms handle it).
 pub fn qualifiedMemberMissing(self: *Lowering, alias: []const u8, member: []const u8) bool {
     const target = self.namespaceAliasTarget(alias, null) orelse return false;
-    for (target.own_decls) |decl| {
+    for (target.member_ids) |id| {
+        const decl = self.program_index.declaration(id).node.?;
         const dn = decl.data.declName() orelse continue;
         if (std.mem.eql(u8, dn, member)) return false;
     }
@@ -704,7 +690,7 @@ fn constAliasOfRaw(ref: resolver_mod.RawDeclRef) ?*const ast.ConstDecl {
 /// (the use site then diagnoses the unresolved head; no silent pick).
 fn singleVisibleAuthor(self: *Lowering, name: []const u8, from: []const u8) ?resolver_mod.RawAuthor {
     var res = self.resolver();
-    const set = res.collectVisibleAuthors(name, from, .user_bare_flat);
+    const set = res.collectVisibleAuthors(name, self.environmentForSource(from).?, .user_bare_flat);
     defer if (set.flat.len > 0) self.alloc.free(set.flat);
     if (set.own) |o| return o;
     if (set.flat.len == 1) return set.flat[0];
@@ -745,8 +731,11 @@ fn followToTemplate(self: *Lowering, author: resolver_mod.RawAuthor) ?StructTemp
 pub fn followAliasChain(self: *Lowering, author: resolver_mod.RawAuthor) ?resolver_mod.RawAuthor {
     var visited: std.ArrayList(*const ast.ConstDecl) = .empty;
     defer visited.deinit(self.alloc);
+    const saved_context = self.lexicalContext();
+    defer self.restoreLexicalContext(saved_context);
     var cur = author;
     while (true) {
+        self.setAuthorContext(cur.id);
         const cd = constAliasOfRaw(cur.raw) orelse return cur;
         for (visited.items, 0..) |seen, i| {
             if (seen == cd) {
@@ -832,7 +821,7 @@ fn diagnoseAliasCycle(self: *Lowering, cycle: []const *const ast.ConstDecl) void
 /// `cd` itself seeds the chain (it IS the first alias hop), `from` is its
 /// declaring source.
 pub fn aliasedFnDecl(self: *Lowering, cd: *const ast.ConstDecl, from: []const u8) ?*const ast.FnDecl {
-    const terminal = followAliasChain(self, .{ .raw = .{ .const_decl = cd }, .source = from }) orelse return null;
+    const terminal = followAliasChain(self, .{ .id = self.program_index.internRef(.{ .const_decl = cd }, self.environmentForSource(from)), .raw = .{ .const_decl = cd }, .source = from }) orelse return null;
     return Lowering.fnDeclOfRaw(terminal.raw);
 }
 
@@ -856,7 +845,7 @@ pub fn bareVisibleStructDecl(self: *Lowering, name: []const u8) ?VisibleStructAu
     const canon_src = canon.source_file orelse "";
 
     var res_walk = self.resolver();
-    const set = res_walk.collectVisibleAuthors(name, from, .user_bare_flat);
+    const set = res_walk.collectVisibleAuthors(name, self.environmentForSource(from).?, .user_bare_flat);
     defer if (set.flat.len > 0) self.alloc.free(set.flat);
 
     // Own author wins — must be a generic struct to count.
@@ -905,7 +894,7 @@ pub fn registerGenericStructAlias(self: *Lowering, cd: *const ast.ConstDecl, tmp
     if (self.module.types.get(inst_id) != .@"struct") return;
     // A generic-struct instantiation alias IS a type author: route it through
     // the unified writer so the bare-TYPE gate treats it like any other alias.
-    self.putTypeAlias(self.declId(.{ .const_decl = cd }, self.current_source_file), self.current_source_file, cd.name, inst_id);
+    self.putTypeAlias(self.declId(.{ .const_decl = cd }, self.current_source_file), cd.name, inst_id);
 }
 
 pub fn reserveStructLayout(self: *Lowering, sd: *const ast.StructDecl, source_file: ?[]const u8) TypeId {
@@ -945,15 +934,15 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
                 // clobbers a same-name `@get` (issue: get+set coexistence).
                 const eff = self.accessorEffName(method_fd);
                 const qualified = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ sd.name, eff }) catch continue;
-                self.program_index.registerFunction(qualified, method_fd, self.current_source_file);
+                self.program_index.registerFunction(qualified, method_fd, self.functionEnvironment(method_fd));
             }
         }
         return;
     }
 
-    const saved_source = self.current_source_file;
-    self.setCurrentSourceFile(source_file orelse saved_source);
-    defer self.setCurrentSourceFile(saved_source);
+    const saved_source = self.lexicalContext();
+    self.setCurrentEnvironment(self.declarationEnvironment(.{ .struct_decl = sd }, source_file));
+    defer self.restoreLexicalContext(saved_source);
     const struct_ty = self.reserveStructLayout(sd, self.current_source_file);
     self.pending_struct_layouts.put(struct_ty, .{
         .author = .{ .decl = sd, .source = self.current_source_file },
@@ -1001,7 +990,7 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
             // later same-name method remains reachable through its decl-
             // identity `fn_decl_fids` slot and nominal author dispatch.
             if (!self.program_index.contains(.function, qualified))
-                self.program_index.registerFunction(qualified, method_fd, self.current_source_file);
+                self.program_index.registerFunction(qualified, method_fd, self.functionEnvironment(method_fd));
             // Declare extern stub (body is lowered lazily on demand)
             self.declareFunction(method_fd, qualified);
         }

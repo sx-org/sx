@@ -1,0 +1,14 @@
+@import "modules/std.sx";
+generated_value :: 9;
+first :: scope {
+    @import c {
+        @include "2794-modules-scope-c-ownership/api.h";
+        @source "2794-modules-scope-c-ownership/api.c";
+    };
+}
+second :: scope {
+    api :: @import c { @include "2794-modules-scope-c-ownership/api.h"; };
+}
+main :: () {
+    print("{} {} {}\n", generated_value, first.generated_value(), second.api.generated_value());
+}

@@ -9,6 +9,7 @@
 // so every effect inside the initializer expression happens after the callee
 // has chosen its storage, exactly once, left to right.
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 Button :: struct {
     label: string = "";
@@ -32,7 +33,7 @@ tag :: (n: i32) -> i32 {
 
 store :: (n: i32, value: $I/@Init($T)) -> *T {
     print("entered store({})\n", n);
-    dest := context.allocator.create(T);
+    dest := mem.create(context.allocator, T);
     print("reserved destination\n");
     value.write(dest);
     print("wrote destination\n");
@@ -43,7 +44,7 @@ main :: () -> i32 {
     print("before call\n");
     b := store(tag(1), Button{ label = makeLabel(), alpha = computeAlpha() });
     print("after call: {} {}\n", b.label, b.alpha);
-    context.allocator.destroy(b);
+    mem.destroy(context.allocator, b);
     0
 }
 

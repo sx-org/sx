@@ -1,23 +1,6 @@
-// std.http — the fiber-handler seam.
-//
-// server.sx never imports sched.sx — the fiber runtime's context-switch is
-// aarch64-pinned naked asm, and importing it would break std/http on every
-// other arch (and drag the scheduler into non-fiber programs). Instead a
-// *provider* module (fiber_sched.sx, over std/sched.sx) IMPLEMENTS the
-// protocol below; ONLY a program that imports the provider and sets
-// `Config.fibers` compiles the fiber runtime — the exact TlsAcceptor
-// pattern. The runner's state must OUTLIVE the Server (Config.fibers
-// borrows it), and its teardown is the caller's (deinit after
-// Server.close).
-//
-// The model behind the seam: one FIBER per request, run cooperatively ON
-// the loop thread. The server spawns a fiber per dispatched request,
-// WAKES it when body bytes arrive (or the connection dies), and DRIVES
-// all ready fibers at tick boundaries. A handler inside a fiber may call
-// req.readBody, which SUSPENDS the fiber until the wake — this is what
-// lifts the pool-only streaming restriction. Handlers must not use the
-// scheduler's own sleep()/blockOnFd() (the server drives fibers with a
-// non-blocking poll that cannot serve them; the provider bails loudly).
+// Config.fibers borrows the runner until Server.close.
+// The server drives fibers on the loop thread; handlers must not call the
+// scheduler's sleep/blockOnFd because the server's poll cannot resume them.
 FiberRunner :: interface {
     // Spawn a fiber running `entry(arg)` (entry is an sx `(*void) -> void`
     // fn pointer, erased). The fiber is enqueued READY — it first runs at

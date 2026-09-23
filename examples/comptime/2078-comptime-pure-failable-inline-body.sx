@@ -10,9 +10,9 @@
 // A `-> noreturn` callee is the third shape reaching the same sink: nothing is
 // demanded of its tail, and its body closes the block it was inlined into, so
 // the call site has no live position left to hold a result and none is emitted.
-// The exit comes from the inlined `proc.exit(0)`, not from a return.
+// The exit comes from the inlined `process.exit(0)`, not from a return.
 @import "modules/std.sx";
-proc :: @import "modules/std/process.sx";
+@import "modules/std/process.sx";
 
 Failed :: error { Nope }
 
@@ -114,7 +114,7 @@ ctRetMixed :: ($label: string, b: bool) -> !Failed {
 
 ctStop :: ($label: string) -> noreturn {
     print("stop {}\n", label);
-    proc.exit(0);
+    process.exit(0);
 }
 
 main :: () -> i32 {

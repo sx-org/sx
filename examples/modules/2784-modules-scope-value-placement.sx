@@ -1,0 +1,2 @@
+value :: (scope {});
+main :: () -> i32 { 0 }

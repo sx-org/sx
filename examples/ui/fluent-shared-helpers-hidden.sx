@@ -1,0 +1,9 @@
+@import "modules/ui/fluent.sx";
+
+main :: () -> i32 {
+    tree := fluent.RenderTree{};
+    rc := fluent.RenderContext.init(*tree);
+    fluent.paintBox(*rc, fluent.Frame.make(0, 0, 10, 10), fluent.Color.rgb(1, 2, 3), 0.0, null);
+    fluent.siteHasher(fluent.SiteId{}, "probe", 0);
+    0
+}

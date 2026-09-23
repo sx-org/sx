@@ -5,6 +5,7 @@
 // method words resolved to their thunks. Allocating through the escaped handle
 // at runtime is allocating through the real allocator.
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 Holder :: struct { a: Allocator; k: i64; }
 
@@ -22,13 +23,13 @@ H :: @run capture();
 A :: @run fromContext();
 
 main :: () {
-    p := H.a.create(i64);
+    p := mem.create(H.a, i64);
     p.* = 41 + H.k;
     print("{}\n", p.*);
-    H.a.destroy(p);
+    mem.destroy(H.a, p);
 
-    xs := A.alloc(i64, 3);
+    xs := mem.alloc(A, i64, 3);
     for i in 0..3 { xs[i] = i * 2; }
     print("{} {} {}\n", xs[0], xs[1], xs[2]);
-    xs.free(A);
+    mem.free(xs, A);
 }

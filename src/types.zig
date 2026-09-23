@@ -24,6 +24,7 @@ pub const Type = union(enum) {
     cstring_type,
     enum_type: []const u8,
     struct_type: []const u8,
+    struct_instance: *const StructInstance,
     union_type: []const u8,
     array_type: ArrayTypeInfo,
     slice_type: SliceTypeInfo,
@@ -58,6 +59,7 @@ pub const Type = union(enum) {
     };
 
     pub const PointerTypeInfo = struct {
+        pointee: ?*const Type = null,
         pointee_name: []const u8,
         is_raw: bool,
     };
@@ -135,6 +137,13 @@ pub const Type = union(enum) {
     pub fn u(width: u8) Type {
         return .{ .unsigned = width };
     }
+
+    pub const StructInstance = struct {
+        name: []const u8,
+        key: @import("editor_index.zig").InstanceKey,
+        field_names: []const []const u8,
+        field_types: []const Type,
+    };
 
     pub fn fromName(name: []const u8) ?Type {
         if (name.len == 0) return null;
@@ -214,6 +223,7 @@ pub const Type = union(enum) {
             .usize_type => "usize",
             .isize_type => "isize",
             .struct_type => |n| n,
+            .struct_instance => |i| i.name,
             .enum_type => |n| n,
             .union_type => |n| n,
             else => null,
@@ -233,7 +243,7 @@ pub const Type = union(enum) {
 
     pub fn isStruct(self: Type) bool {
         return switch (self) {
-            .struct_type => true,
+            .struct_type, .struct_instance => true,
             else => false,
         };
     }
@@ -310,6 +320,7 @@ pub const Type = union(enum) {
             .error_type => |name| fmtAlloc(allocator, "!{s}", .{name}),
             .enum_type => |name| name,
             .struct_type => |name| name,
+            .struct_instance => |i| i.name,
             .union_type => |name| name,
             .slice_type => |info| {
                 if (info.sentinel) |x| return fmtAlloc(allocator, "[:{d}]{s}", .{ x, info.element_name });

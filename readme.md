@@ -66,7 +66,7 @@ sx lsp                   # start language server
 | `*T` / `[*]T` | Single / many pointer |
 | `?T` | Optional |
 | `struct` / `enum` / `union` | Aggregates |
-| `Closure(args) -> ret` | Erased callable — `closure(\|params\|_{ caps } body)` |
+| `Closure(args) -> ret` | Erased callable — `mem.closure(\|params\|_{ caps } body)` |
 
 `[N]T` coerces to `[]T`. A `[*]T` has no length — slice it with `ptr[0..len]`.
 
@@ -176,10 +176,10 @@ apply :: (f: $F/(i64) -> i64, x: i64) -> i64 { f(x) }
 makeAdder :: (n: i64) -> $F/(i64) -> i64 { return |x|_{ n } x + n; }
 add5 := makeAdder(5);
 
-boxed :: (n: i64) -> Closure(i64) -> i64 { return closure(|x|_{ n } x + n); }
+boxed :: (n: i64) -> Closure(i64) -> i64 { return mem.closure(|x: i64|_{ n } x + n); }
 ```
 
-A `|…|` literal IS its env struct. The body sees its parameters, its locals, and module-level names; enclosing locals only through `_{ … }`, by value. Copies fork; `*$F/(…) -> R` shares. `Closure` is the erased `{ fnPtr, env }`: function pointers and empty-env literals promote to it with a null env, and a capturing one gets there through `closure(f, alloc = context.allocator)`, which `free(cl)` / `free(cl, alloc)` releases. A nominal is callable through `impl (i64) -> i64 for T { call :: … }`.
+A `|…|` literal IS its env struct. The body sees its parameters, its locals, and module-level names; enclosing locals only through `_{ … }`, by value. Copies fork; `*$F/(…) -> R` shares. `Closure` is the erased `{ fnPtr, env }`: function pointers and empty-env literals promote to it with a null env, and a capturing one gets there through `mem.closure(f, alloc = context.allocator)`, which `mem.free(cl)` / `mem.free(cl, alloc)` releases. A nominal is callable through `impl (i64) -> i64 for T { call :: … }`.
 
 ### Constraints and interfaces
 
@@ -197,7 +197,7 @@ shape.draw(10, 20);
 - `constraint`: bounds only, no runtime value.
 - `interface`: an erased `{ctx, typeId, vtable}` handle, dynamic dispatch. `@typeOf(shape)` is the concrete type.
 - A handle borrows its referent: copies alias it, nothing owns it, and `free` refuses one.
-- An interface-typed target coerces an lvalue in place, a `*T` to its pointee, or copies an existing handle; a concrete rvalue is a compile error. `a.make(v)` writes the value into allocated storage.
+- An interface-typed target coerces an lvalue in place, a `*T` to its pointee, or copies an existing handle; a concrete rvalue is a compile error. `mem.make(a, v)` writes the value into allocated storage.
 - `Self` past the receiver belongs to a `constraint` — bind through `$T/Eq`.
 
 ### Open Sets
@@ -271,7 +271,7 @@ add :: (a: i64, b: i64) -> i64 {
 
 ```sx
 @import "modules/std.sx";              // flat — bare names
-math :: @import "modules/math";        // namespaced — math.name
+math :: @import "modules/math/vector3.sx";
 r :: @import "rich.sx";
 helper :: r.helper;                    // re-export
 private helper :: (x: i64) -> i64 { x * 2 }
@@ -356,7 +356,7 @@ printAny(pkt);   // walk with @field / anyElement — no copies
 
 ## Standard Library
 
-`modules/std.sx`: `print`, `List($T)`, string helpers, the `Allocator` interface / `GPA` / `Arena`, `sqrt` / `sin` / `cos`, `@typeOf` / `@sizeOf` / field reflection.
+`modules/std.sx`: `print`, `List($T)`, string helpers, the `Allocator` interface, `mem.GPA`, and `mem.Arena`.
 
 **Atomics** — `@import "modules/std/atomic.sx"`. `Atomic($T)` with `Ordering` (`.relaxed` … `.seqCst`). `compareExchange` returns `?T` (`null` = success).
 
@@ -368,6 +368,7 @@ printAny(pkt);   // walk with @field / anyElement — no copies
 
 ```sx
 @import "modules/std.sx";
+@import "modules/std/io.sx";
 sched :: @import "modules/std/sched.sx";
 
 main :: () {

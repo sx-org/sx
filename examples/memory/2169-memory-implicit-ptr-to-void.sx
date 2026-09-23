@@ -1,7 +1,8 @@
 // *T / [*]T / slice `.ptr` convert to `*void` without a glyph. Gaining a
 // pointee is explicit: `raw.(*T)`.
 @import "modules/std.sx";
-c :: @import "modules/std/c.sx";
+@import "modules/std/mem.sx";
+@import "modules/std/c.sx";
 
 take :: (p: *void) -> i64 {
     if p == null { return 0; }
@@ -28,8 +29,8 @@ main :: () {
     c.memcpy(*dst[0], *arr[0], 16);
     print("copy={}\n", dst[0]);
 
-    s := context.allocator.create(i64);
+    s := mem.create(context.allocator, i64);
     s.* = 9;
-    context.allocator.destroy(s);
+    mem.destroy(context.allocator, s);
     print("destroy=ok\n");
 }

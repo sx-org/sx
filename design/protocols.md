@@ -27,9 +27,9 @@ An **interface** is additionally a runtime value: a three-word handle
 `{ctx, typeId, vtable}` whose first two words are byte-identical to an `any` of
 the referent. The handle **borrows**. The referent lives outside it, the handle
 carries no allocator word, copying a handle aliases the same referent, no
-spelling allocates one, and `free` refuses one. A program's ownership of the
+spelling allocates one, and `mem.free` refuses one. A program's ownership of the
 referent is expressed where the referent lives — a local, a field, an allocation
-made by `Allocator.make` — never in the handle.
+made by `mem.make` — never in the handle.
 
 ## Coercion is positional
 
@@ -131,13 +131,13 @@ constraint matches no category, and there is no `constraint` category word.
   discipline lives in the programmer's head, aliasing turns every copy into a
   double-free candidate, and comptime escape needs a whole refusal class of its
   own. A borrow-only handle removes all three: allocation stays where allocation
-  is spelled (`Allocator.make`), `free` has one answer for handles, and the
+  is spelled (`mem.make`), `mem.free` has one answer for handles, and the
   escape rules follow the referent.
 
 - **Why there is no rvalue arm.** A handle names storage the operand already
   has. Inventing a temp at the target would give the handle a clock the type
   does not mention. `$T/I` is the pretty parameter for a concrete literal;
-  `Allocator.make` is the spelling that writes a value into storage the caller
+  `mem.make` is the spelling that writes a value into storage the caller
   owns. Named locals are the collect form (§5.4).
 
 - **Why `Self` beyond the receiver bars an interface.** Vtable slots must be

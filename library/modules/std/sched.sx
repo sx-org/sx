@@ -26,10 +26,11 @@
 // epoll on linux). Runs end-to-end on a matching aarch64 host, ir-only on an
 // arch mismatch.
 @import "modules/std/core.sx";
+@import "modules/std/io.sx";
 @import "modules/std/fmt.sx";
 @import "modules/std/list.sx";
 @import "modules/std/mem.sx";
-c :: @import "modules/std/c.sx";
+@import "modules/std/c.sx";
 // True cancellation: `suspendRaw` reads the spawned fiber's cancel
 // flag — a `*Atomic(bool)` back-ref to the `Future.canceled` — to decide whether
 // to raise `IoErr.Canceled` on resume. atomic.sx has no naked asm, so it is safe
@@ -194,17 +195,17 @@ Scheduler :: struct {
     // stack, bootstraps the saved context (x19 = *Fiber, fp = 0, lr =
     // trampoline, sp = stack top), enqueues it ready (FIFO), returns the
     // `*Fiber`.
-    // `body` is persisted once through `closure(body, alloc)` — an already-erased
+    // `body` is persisted once through `mem.closure(body, alloc)` — an already-erased
     // body passes through unchanged — and `reapFiber` releases that environment
     // through the same `alloc`. The `Fiber` struct itself stays on
     // `ownAllocator`: it outlives the spawn scope.
     spawn :: (self: *Scheduler, body: $F/() -> void, alloc: Allocator = context.allocator) -> *Fiber {
-        f := self.ownAllocator.create(Fiber);
+        f := mem.create(self.ownAllocator, Fiber);
         if f == null {
             print("sched: out of memory allocating a Fiber\n");
             c.abort();
         }
-        f.body = closure(body, alloc);
+        f.body = mem.closure(body, alloc);
         f.bodyAlloc = alloc;
         f.sched = self;
         f.id = self.nextId;

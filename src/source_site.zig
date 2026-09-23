@@ -419,6 +419,10 @@ fn walkDecl(b: *Builder, node: *const Node) anyerror!void {
             for (nd.decls) |d| try walkModuleDecl(b, d);
             for (nd.own_decls) |d| try walkModuleDecl(b, d);
         },
+        .scope_decl => |scope| {
+            var inner = try b.enter(scope.name);
+            for (scope.decls) |decl| try walkModuleDecl(&inner, decl);
+        },
         .root => |r| for (r.decls) |d| try walkModuleDecl(b, d),
         // Anything else at module scope carries no name of its own; its sites
         // belong to the enclosing declaration.
@@ -539,7 +543,7 @@ fn spellType(alloc: std.mem.Allocator, node: *const Node) anyerror![]const u8 {
 fn walk(b: *Builder, node: *const Node) anyerror!void {
     switch (node.data) {
         // A nested named declaration is a scope, not a site in this one.
-        .fn_decl, .struct_decl, .protocol_decl, .open_set_decl, .impl_block, .runtime_class_decl, .namespace_decl => return walkDecl(b, node),
+        .fn_decl, .struct_decl, .protocol_decl, .open_set_decl, .impl_block, .runtime_class_decl, .namespace_decl, .scope_decl => return walkDecl(b, node),
         else => try b.record(node),
     }
     switch (node.data) {
@@ -547,7 +551,7 @@ fn walk(b: *Builder, node: *const Node) anyerror!void {
             try walk(b, c.callee);
             for (c.args) |a| try walk(b, a);
         },
-        .fn_decl, .struct_decl, .protocol_decl, .open_set_decl, .impl_block, .runtime_class_decl, .namespace_decl => unreachable,
+        .fn_decl, .struct_decl, .protocol_decl, .open_set_decl, .impl_block, .runtime_class_decl, .namespace_decl, .scope_decl => unreachable,
         .const_decl => |cd| {
             if (cd.type_annotation) |t| try walk(b, t);
             try walk(b, cd.value);
@@ -722,6 +726,8 @@ fn walk(b: *Builder, node: *const Node) anyerror!void {
             try walk(b, c.type_expr);
             if (c.default_expr) |d| try walk(b, d);
         },
+
+        .spread_decl => {},
 
         // Leaves: indexed above, nothing below them.
         .int_literal,

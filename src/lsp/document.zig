@@ -10,6 +10,9 @@ const sx = struct {
 };
 
 pub const Import = struct {
+    block: sx.imports.LexicalBlockId,
+    exposure: enum { plain, spread } = .plain,
+    declaration: ?sx.sema.Declaration = null,
     /// Namespace name. null for flat imports.
     ns: ?[]const u8,
     /// Resolved absolute file path.
@@ -29,6 +32,7 @@ pub const Document = struct {
     version: i64,
     /// AST root for this file only (not merged).
     root: ?*sx.ast.Node,
+    declarations: ?sx.sema.DeclarationContext = null,
     /// Editor index for this file — symbols/references/types for navigation,
     /// completion, and hover (references are relative to this source). Not a
     /// diagnostic source; see `sema.zig` module doc.
@@ -186,6 +190,7 @@ pub const DocumentStore = struct {
             try self.setSource(doc, source, version);
             // Invalidate analysis
             doc.root = null;
+            doc.declarations = null;
             doc.sema = null;
             doc.imports = &.{};
             return doc;
@@ -233,35 +238,137 @@ pub const DocumentStore = struct {
     /// (`inline if` / comptime `match` / `inline for`). Every branch
     /// contributes, whichever one the driver would select: the editor answers
     /// for the whole file, including the arms this target does not compile.
-    fn collectImports(self: *DocumentStore, list: *std.ArrayList(Import), decls: []const *sx.ast.Node, base_dir: []const u8) anyerror!void {
+    fn collectImports(self: *DocumentStore, list: *std.ArrayList(Import), decls: []const *sx.ast.Node, base_dir: []const u8, file_path: []const u8) anyerror!void {
         for (decls) |decl| {
+            if (decl.data == .scope_decl) {
+                if (decl.data.scope_decl.body_block != null) try self.collectImports(list, decl.data.scope_decl.decls, base_dir, file_path);
+                continue;
+            }
             if (sx.imports.isModuleDriver(decl)) {
                 switch (decl.data) {
                     .if_expr => |ie| {
-                        try self.collectBranchImports(list, ie.then_branch, base_dir);
-                        if (ie.else_branch) |eb| try self.collectBranchImports(list, eb, base_dir);
+                        try self.collectBranchImports(list, ie.then_branch, base_dir, file_path);
+                        if (ie.else_branch) |eb| try self.collectBranchImports(list, eb, base_dir, file_path);
                     },
                     .match_expr => |me| {
-                        for (me.arms) |arm| try self.collectBranchImports(list, arm.body, base_dir);
+                        for (me.arms) |arm| try self.collectBranchImports(list, arm.body, base_dir, file_path);
                     },
-                    .for_expr => |fe| try self.collectBranchImports(list, fe.body, base_dir),
+                    .for_expr => |fe| try self.collectBranchImports(list, fe.body, base_dir, file_path),
                     else => {},
                 }
                 continue;
             }
-            if (decl.data != .import_decl) continue;
-            const imp = decl.data.import_decl;
+            const operand = if (decl.data == .spread_decl) decl.data.spread_decl.source else decl;
+            if (operand.data != .import_decl) continue;
+            const imp = operand.data.import_decl;
             const resolved_path = try sx.imports.resolveImportPath(self.allocator, self.io, base_dir, imp.path, self.rootPathOpt(), self.stdlib_paths);
             try list.append(self.allocator, .{
+                .block = decl.lexical_block.?,
+                .exposure = if (decl.data == .spread_decl) .spread else .plain,
                 .ns = imp.name,
                 .path = resolved_path,
             });
         }
     }
 
-    fn collectBranchImports(self: *DocumentStore, list: *std.ArrayList(Import), body: *sx.ast.Node, base_dir: []const u8) anyerror!void {
+    fn collectBranchImports(self: *DocumentStore, list: *std.ArrayList(Import), body: *sx.ast.Node, base_dir: []const u8, file_path: []const u8) anyerror!void {
         const stmts: []const *sx.ast.Node = if (body.data == .block) body.data.block.stmts else &[_]*sx.ast.Node{body};
-        try self.collectImports(list, stmts, base_dir);
+        try self.collectImports(list, stmts, base_dir, file_path);
+    }
+
+    fn expandBranchDeclarations(self: *DocumentStore, doc: *Document, body: *sx.ast.Node) anyerror!void {
+        if (body.data == .block) {
+            try self.expandDeclarations(doc, &body.data.block.stmts, .deferred);
+        } else {
+            const original = try self.allocator.create(sx.ast.Node);
+            original.* = body.*;
+            var nodes: []const *sx.ast.Node = &.{original};
+            try self.expandDeclarations(doc, &nodes, .deferred);
+            body.data = .{ .block = .{ .stmts = nodes } };
+        }
+    }
+
+    fn expandDeclarations(self: *DocumentStore, doc: *Document, nodes: *[]const *sx.ast.Node, publication: sx.imports.Publication) anyerror!void {
+        nodes.* = try sx.imports.expandDirectoryImports(self.allocator, self.io, nodes.*, sx.imports.dirName(doc.path), doc.path, self.rootPathOpt(), self.stdlib_paths, null);
+        var expanded = std.ArrayList(*sx.ast.Node).empty;
+        for (nodes.*) |decl| {
+            if (decl.data == .scope_decl) try self.expandDeclarations(doc, &decl.data.scope_decl.decls, publication);
+            if (sx.imports.isModuleDriver(decl)) switch (decl.data) {
+                .if_expr => |ie| {
+                    try self.expandBranchDeclarations(doc, ie.then_branch);
+                    if (ie.else_branch) |other| try self.expandBranchDeclarations(doc, other);
+                },
+                .match_expr => |me| for (me.arms) |arm| try self.expandBranchDeclarations(doc, arm.body),
+                .for_expr => |fe| try self.expandBranchDeclarations(doc, fe.body),
+                else => unreachable,
+            };
+            if (decl.data == .spread_decl and decl.data.spread_decl.source.data == .c_import_decl) {
+                const result = try sx.imports.processCImport(self.allocator, self.io, decl, sx.imports.dirName(doc.path), self.rootPathOpt(), self.stdlib_paths, null);
+                decl.data.spread_decl.c_decls = result.fn_decls;
+                if (publication == .published) for (result.fn_decls, result.locations) |generated, location| {
+                    if (generated.data == .fn_decl) try doc.c_source_locations.put(generated.data.fn_decl.name, location);
+                };
+            }
+            if (decl.data == .c_import_decl and publication == .published) {
+                if (sx.imports.processCImport(self.allocator, self.io, decl, sx.imports.dirName(doc.path), self.rootPathOpt(), self.stdlib_paths, null)) |result| {
+                    const ci = decl.data.c_import_decl;
+                    for (result.fn_decls, result.locations) |fd, loc| {
+                        if (ci.name == null) {
+                            fd.source_file = doc.path;
+                            try expanded.append(self.allocator, fd);
+                        }
+                        if (fd.data == .fn_decl) {
+                            try doc.c_source_locations.put(fd.data.fn_decl.name, loc);
+                        }
+                    }
+                    if (ci.name) |name| {
+                        const ns = try self.allocator.create(sx.ast.Node);
+                        ns.* = .{
+                            .span = decl.span,
+                            .source_file = doc.path,
+                            .visibility = decl.visibility,
+                            .data = .{ .namespace_decl = .{
+                                .name = name,
+                                .decls = result.fn_decls,
+                                .own_decls = result.fn_decls,
+                                .target_module_path = doc.path,
+                                .is_raw = ci.is_raw,
+                            } },
+                        };
+                        try expanded.append(self.allocator, ns);
+                        continue;
+                    }
+                } else |_| {}
+            }
+            try expanded.append(self.allocator, decl);
+        }
+        nodes.* = try expanded.toOwnedSlice(self.allocator);
+    }
+
+    fn indexBlock(self: *DocumentStore, table: *sx.imports.DeclTable, block: sx.imports.LexicalBlockId, nodes: []const *sx.ast.Node, duplicates: *std.ArrayList(sx.ast.Span)) anyerror!void {
+        const env = table.block(block).environment;
+        const source = table.environment(env).source;
+        for (nodes) |decl| {
+            sx.ast.stampLexicalBlock(decl, block);
+            decl.source_file = source;
+            sx.imports.stampFnBodySource(decl, source);
+            try table.recordWrittenTarget(block, decl);
+            const name = decl.data.declName() orelse (if (decl.data == .import_decl) decl.data.import_decl.name else null);
+            if (name) |n| {
+                if (!try table.claimNamed(env, n, decl)) {
+                    try duplicates.append(self.allocator, decl.span);
+                    continue;
+                }
+            }
+            if (decl.data == .scope_decl) {
+                const child = decl.data.scope_decl.body_block.?;
+                try self.indexBlock(table, child, decl.data.scope_decl.decls, duplicates);
+            } else if (decl.data == .import_decl) {
+                try table.recordImport(block, decl);
+            } else if (decl.data == .spread_decl) {
+                try table.recordSpread(block, decl, .published);
+            }
+        }
     }
 
     /// Analyze a document: parse, resolve imports, run sema with imported symbols pre-registered.
@@ -276,135 +383,53 @@ pub const DocumentStore = struct {
             doc.root = p.parse() catch return;
         }
 
-        // Expand root with synthetic fn_decls from @import c { ... } declarations.
-        // This makes C functions visible to sema, completions, and hover.
         doc.c_source_locations = std.StringHashMap(sx.c_import.CSourceLocation).init(self.allocator);
         if (doc.root) |parsed_root| {
-            if (parsed_root.data == .root) {
-                var expanded = std.ArrayList(*sx.ast.Node).empty;
-                for (parsed_root.data.root.decls) |decl| {
-                    if (decl.data == .c_import_decl) {
-                        const ci = decl.data.c_import_decl;
-                        if (sx.c_import.processCImport(
-                            self.allocator,
-                            ci.includes,
-                            ci.defines,
-                            ci.flags,
-                        )) |result| {
-                            for (result.fn_decls, result.locations) |fd, loc| {
-                                try expanded.append(self.allocator, fd);
-                                if (fd.data == .fn_decl) {
-                                    try doc.c_source_locations.put(fd.data.fn_decl.name, loc);
-                                }
-                            }
-                        } else |_| {}
-                    }
-                    try expanded.append(self.allocator, decl);
-                }
-                if (expanded.items.len != parsed_root.data.root.decls.len) {
-                    const new_root = try self.allocator.create(sx.ast.Node);
-                    new_root.* = .{
-                        .span = parsed_root.span,
-                        .data = .{ .root = .{ .decls = try expanded.toOwnedSlice(self.allocator) } },
-                    };
-                    doc.root = new_root;
-                }
-            }
+            if (parsed_root.data == .root) try self.expandDeclarations(doc, &parsed_root.data.root.decls, .published);
         }
 
         const root = doc.root orelse return;
+        const table = try self.allocator.create(sx.imports.DeclTable);
+        table.* = sx.imports.DeclTable.init(self.allocator);
+        const environment = try table.internEnvironment(doc.path, &.{});
+        const block = try table.addBlock(environment, null, root);
+        root.lexical_block = block;
+        var duplicates = std.ArrayList(sx.ast.Span).empty;
+        if (root.data == .root) {
+            for (root.data.root.decls) |decl| try table.prepareExpansion(decl, block);
+            try self.indexBlock(table, block, root.data.root.decls, &duplicates);
+        }
+        doc.declarations = .{ .table = table, .environment = environment, .block = block };
 
         // Extract imports from AST — uses shared resolution logic from imports.zig
         var import_list = std.ArrayList(Import).empty;
         const base_dir = sx.imports.dirName(doc.path);
         if (root.data == .root) {
-            try self.collectImports(&import_list, root.data.root.decls, base_dir);
+            try self.collectImports(&import_list, root.data.root.decls, base_dir, doc.path);
+        }
+        for (import_list.items) |*imp| {
+            if (imp.ns) |name| {
+                const env = table.block(imp.block).environment;
+                if (table.environment(env).names.get(name)) |id| imp.declaration = .{ .table = table, .id = id };
+            }
         }
         doc.imports = try import_list.toOwnedSlice(self.allocator);
         doc.last_good_imports = doc.imports;
 
         // Recursively analyze imported documents and pre-register their symbols
         var analyzer = sx.sema.Analyzer.init(self.allocator);
+        analyzer.declarations = doc.declarations;
+        analyzer.selection.context = doc.declarations;
+        for (duplicates.items) |span| {
+            try analyzer.diagnostics.append(self.allocator, .{ .span = span, .message = "duplicate declaration", .level = .err });
+        }
 
+        var symbol_candidates = std.ArrayList(sx.sema.Symbol).empty;
+        defer symbol_candidates.deinit(self.allocator);
+        var candidate_declarations = std.AutoHashMap(sx.sema.Declaration, void).init(self.allocator);
+        defer candidate_declarations.deinit();
         for (doc.imports) |imp| {
-            // Try as file first; if that fails, try as directory import
-            const imp_doc = self.getOrLoad(imp.path) catch {
-                // Directory import: load each .sx file and merge their symbols
-                const dir_files = self.listDirectoryFiles(imp.path) orelse continue;
-                for (dir_files) |file_path| {
-                    const file_doc = self.getOrLoad(file_path) catch continue;
-                    if (file_doc.sema == null) {
-                        self.analyzeDocument(file_doc) catch {};
-                    }
-                    const file_sema = file_doc.sema orelse continue;
-                    if (imp.ns) |ns_name| {
-                        // Only register namespace symbol once (first file)
-                        if (!analyzer.hasSymbol(ns_name)) {
-                            try analyzer.preRegisterSymbol(.{
-                                .name = ns_name,
-                                .kind = .namespace,
-                                .ty = null,
-                                .def_span = .{ .start = 0, .end = 0 },
-                                .scope_depth = 0,
-                                .origin = imp.path,
-                            });
-                        }
-                        var sig_it = file_sema.fn_signatures.iterator();
-                        while (sig_it.next()) |entry| {
-                            const prefixed = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ ns_name, entry.key_ptr.* });
-                            try analyzer.fn_signatures.put(prefixed, entry.value_ptr.*);
-                        }
-                        var struct_it = file_sema.struct_types.iterator();
-                        while (struct_it.next()) |entry| {
-                            const prefixed = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ ns_name, entry.key_ptr.* });
-                            try analyzer.struct_types.put(prefixed, entry.value_ptr.*);
-                        }
-                        var enum_it = file_sema.enum_types.iterator();
-                        while (enum_it.next()) |entry| {
-                            const prefixed = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ ns_name, entry.key_ptr.* });
-                            try analyzer.enum_types.put(prefixed, entry.value_ptr.*);
-                        }
-                        // Context members are program-wide, never namespaced.
-                        var ctx_it = file_sema.context_members.iterator();
-                        while (ctx_it.next()) |entry| {
-                            try analyzer.context_members.put(entry.key_ptr.*, entry.value_ptr.*);
-                        }
-                    } else {
-                        for (file_sema.symbols) |sym| {
-                            if (sym.scope_depth == 0) {
-                                // Private module-scope symbols never cross a
-                                // flat import into another file.
-                                if (sym.visibility == .private) continue;
-                                try analyzer.preRegisterSymbol(.{
-                                    .name = sym.name,
-                                    .kind = sym.kind,
-                                    .ty = sym.ty,
-                                    .def_span = sym.def_span,
-                                    .scope_depth = 0,
-                                    .origin = sym.origin orelse file_path,
-                                });
-                            }
-                        }
-                        var sig_it = file_sema.fn_signatures.iterator();
-                        while (sig_it.next()) |entry| {
-                            try analyzer.fn_signatures.put(entry.key_ptr.*, entry.value_ptr.*);
-                        }
-                        var struct_it = file_sema.struct_types.iterator();
-                        while (struct_it.next()) |entry| {
-                            try analyzer.struct_types.put(entry.key_ptr.*, entry.value_ptr.*);
-                        }
-                        var enum_it = file_sema.enum_types.iterator();
-                        while (enum_it.next()) |entry| {
-                            try analyzer.enum_types.put(entry.key_ptr.*, entry.value_ptr.*);
-                        }
-                        var ctx_it = file_sema.context_members.iterator();
-                        while (ctx_it.next()) |entry| {
-                            try analyzer.context_members.put(entry.key_ptr.*, entry.value_ptr.*);
-                        }
-                    }
-                }
-                continue;
-            };
+            const imp_doc = self.getOrLoad(imp.path) catch continue;
 
             // Ensure imported doc is analyzed
             if (imp_doc.sema == null) {
@@ -412,10 +437,14 @@ pub const DocumentStore = struct {
             }
 
             const imp_sema = imp_doc.sema orelse continue;
+            if (imp.exposure == .spread) {
+                try analyzer.selection.spread_modules.put(imp.path, imp_sema.selection);
+            } else try (try analyzer.selection.inBlock(imp.block)).addImport(imp.ns, imp_sema.selection);
+            try analyzer.mergeMetadata(imp_sema);
 
             if (imp.ns) |ns_name| {
-                // Namespaced import: register one namespace symbol
-                try analyzer.preRegisterSymbol(.{
+                try symbol_candidates.append(self.allocator, .{
+                    .declaration = imp.declaration,
                     .name = ns_name,
                     .kind = .namespace,
                     .ty = null,
@@ -423,67 +452,21 @@ pub const DocumentStore = struct {
                     .scope_depth = 0,
                     .origin = imp.path,
                 });
-                // Copy fn_signatures with namespace prefix
-                var sig_it = imp_sema.fn_signatures.iterator();
-                while (sig_it.next()) |entry| {
-                    const prefixed = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ ns_name, entry.key_ptr.* });
-                    try analyzer.fn_signatures.put(prefixed, entry.value_ptr.*);
-                }
-                // Copy struct_types with namespace prefix
-                var struct_it = imp_sema.struct_types.iterator();
-                while (struct_it.next()) |entry| {
-                    const prefixed = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ ns_name, entry.key_ptr.* });
-                    try analyzer.struct_types.put(prefixed, entry.value_ptr.*);
-                }
-                // Copy enum_types with namespace prefix
-                var enum_it = imp_sema.enum_types.iterator();
-                while (enum_it.next()) |entry| {
-                    const prefixed = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ ns_name, entry.key_ptr.* });
-                    try analyzer.enum_types.put(prefixed, entry.value_ptr.*);
-                }
-                // Context members are program-wide, never namespaced.
-                var ctx_it = imp_sema.context_members.iterator();
-                while (ctx_it.next()) |entry| {
-                    try analyzer.context_members.put(entry.key_ptr.*, entry.value_ptr.*);
-                }
-            } else {
-                // Flat import: pre-register all top-level symbols with origin set
-                for (imp_sema.symbols) |sym| {
-                    if (sym.scope_depth == 0) {
-                        // Private module-scope symbols never cross a flat
-                        // import into another file.
-                        if (sym.visibility == .private) continue;
-                        try analyzer.preRegisterSymbol(.{
-                            .name = sym.name,
-                            .kind = sym.kind,
-                            .ty = sym.ty,
-                            .def_span = sym.def_span,
-                            .scope_depth = 0,
-                            .origin = sym.origin orelse imp.path,
-                        });
-                    }
-                }
-                // Copy fn_signatures as-is
-                var sig_it = imp_sema.fn_signatures.iterator();
-                while (sig_it.next()) |entry| {
-                    try analyzer.fn_signatures.put(entry.key_ptr.*, entry.value_ptr.*);
-                }
-                // Copy struct_types
-                var struct_it = imp_sema.struct_types.iterator();
-                while (struct_it.next()) |entry| {
-                    try analyzer.struct_types.put(entry.key_ptr.*, entry.value_ptr.*);
-                }
-                // Copy enum_types
-                var enum_it = imp_sema.enum_types.iterator();
-                while (enum_it.next()) |entry| {
-                    try analyzer.enum_types.put(entry.key_ptr.*, entry.value_ptr.*);
-                }
-                var ctx_it = imp_sema.context_members.iterator();
-                while (ctx_it.next()) |entry| {
-                    try analyzer.context_members.put(entry.key_ptr.*, entry.value_ptr.*);
+            }
+            for ([_][]const sx.sema.Symbol{ imp_sema.symbols, imp_sema.imported_candidates }) |symbols| {
+                for (symbols) |sym| {
+                    const declaration = sym.declaration orelse continue;
+                    const entry = try candidate_declarations.getOrPut(declaration);
+                    if (entry.found_existing) continue;
+                    var candidate = sym;
+                    candidate.scope_depth = 0;
+                    candidate.origin = sym.origin orelse imp.path;
+                    try symbol_candidates.append(self.allocator, candidate);
                 }
             }
         }
+
+        analyzer.imported_candidates = try symbol_candidates.toOwnedSlice(self.allocator);
 
         // Run sema on this file's own AST
         analyzer.source = doc.source;

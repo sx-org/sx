@@ -1,0 +1,11 @@
+error: spread target is ambiguous
+  --> examples/modules/2799-modules-spread-written-order.sx:4:1
+   |
+ 4 | ..Choice;
+   | ^^^^^^^^^
+
+error: alias target is ambiguous
+  --> examples/modules/2799-modules-spread-written-order.sx:5:10
+   |
+ 5 | Alias :: Choice;
+   |          ^^^^^^

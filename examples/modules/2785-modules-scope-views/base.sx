@@ -1,0 +1,4 @@
+geo :: scope {
+    value :: 10;
+    baseOnly :: 100;
+}

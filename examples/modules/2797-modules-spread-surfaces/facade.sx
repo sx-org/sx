@@ -1,0 +1,5 @@
+private source :: @import "part.sx";
+..source;
+value :: 20;
+Widget :: source.Control;
+geo :: scope { ..source; }

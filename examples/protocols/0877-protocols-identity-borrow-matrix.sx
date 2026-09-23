@@ -47,13 +47,13 @@ main :: () {
     // Allocator adoption: identity borrows thread through Context exactly
     // as before (the field target erases `gpa` as a value-borrow), and
     // allocator-typed PARAMS keep working (borrows of the caller's value).
-    gpa := GPA.init();
+    gpa := mem.GPA.init();
     got : i64 = 0;
     push .{ allocator = gpa } {
-        xs := context.allocator.alloc(i64, 4);
+        xs := mem.alloc(context.allocator, i64, 4);
         xs[0] = 42;
         got = xs[0];
-        free(xs);                  // context form — routes back to gpa
+        mem.free(xs);                  // context form — routes back to gpa
     }
     // The pushed borrow aliased gpa: alloc +1, free -1 → 0 outstanding.
     // (Printing happens OUTSIDE the push — print's own format allocations

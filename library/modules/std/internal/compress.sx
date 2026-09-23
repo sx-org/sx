@@ -7,6 +7,7 @@
 // native SX.
 
 @import "modules/std/core.sx";
+@import "modules/std/c.sx";
 @import "modules/std/list.sx";
 @import "modules/std/compress.sx";
 deflateContracts :: @import "modules/std/codecs/deflate_contracts.sx";

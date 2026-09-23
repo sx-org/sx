@@ -674,3 +674,996 @@ test "analyzeDocument: reinterpretation exposes its destination to the editor" {
     }
     return error.TestUnexpectedResult;
 }
+
+test "document declarations follow the analyzed source snapshot" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const doc = try store.openOrUpdate("snapshot.sx", "old :: 1;", 1);
+    try store.analyzeDocument(doc);
+    const previous = doc.sema.?;
+    const old_symbol = previous.symbols[0].declaration.?;
+    try std.testing.expectEqualStrings("old", old_symbol.table.get(old_symbol.id).name);
+    try std.testing.expectEqual(previous.declarations.?.environment, old_symbol.table.get(old_symbol.id).environment.?);
+
+    _ = try store.openOrUpdate("snapshot.sx", "fresh :: 2;", 2);
+    try std.testing.expect(doc.declarations == null);
+    try store.analyzeDocument(doc);
+    const current = doc.sema.?;
+    const context = current.declarations.?;
+    try std.testing.expect(context.table != previous.declarations.?.table);
+    try std.testing.expect(!context.table.environment(context.environment).names.contains("old"));
+    const fresh = current.symbols[0].declaration.?;
+    try std.testing.expectEqualStrings("fresh", fresh.table.get(fresh.id).name);
+    try std.testing.expectEqualStrings("old", old_symbol.table.get(old_symbol.id).name);
+
+    _ = try store.openOrUpdate("snapshot.sx", "fresh :: (", 3);
+    try store.analyzeDocument(doc);
+    try std.testing.expect(doc.declarations == null);
+    try std.testing.expect(doc.last_good_sema.?.declarations.?.table == context.table);
+}
+
+test "editor alias candidates share their final target" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const doc = try store.getOrLoad("examples/modules/2750-modules-alias-final-target.sx");
+    try store.analyzeDocument(doc);
+    const index = doc.sema orelse return error.MissingAnalysis;
+    try std.testing.expect(index.selection.select("answer") != null);
+    try std.testing.expect(index.selection.select("N") != null);
+    try std.testing.expect(index.selection.select("Cb") != null);
+    try std.testing.expect(index.selection.select("IB") != null);
+    try std.testing.expect(index.fn_signatures.get("answer") != null);
+}
+
+test "editor directory imports preserve file candidates" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const doc = try store.getOrLoad("examples/modules/2752-modules-directory-distinct-authors.sx");
+    try store.analyzeDocument(doc);
+    try std.testing.expectEqual(@as(usize, 2), doc.imports.len);
+    try std.testing.expect(doc.sema.?.selection.select("answer") == null);
+    const named = try store.getOrLoad("examples/modules/2753-modules-named-directory-imports.sx");
+    try store.analyzeDocument(named);
+    var duplicate = false;
+    for (named.sema.?.diagnostics) |diag| {
+        if (std.mem.eql(u8, diag.message, "duplicate declaration")) duplicate = true;
+    }
+    try std.testing.expect(duplicate);
+}
+
+test "editor C imports retain file and namespace identity" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const doc = try store.getOrLoad("examples/modules/2751-modules-cimport-distinct-authors.sx");
+    try store.analyzeDocument(doc);
+    const index = doc.sema.?.selection;
+    try std.testing.expect(index.flat.items[0].select("abs") != null);
+    try std.testing.expect(index.flat.items[1].select("abs") != null);
+    try std.testing.expect(index.select("abs") == null);
+    const scoped = try store.openOrUpdate("c-namespaces.sx",
+        \\a :: @import c { @include "examples/modules/2751-modules-cimport-distinct-authors/abs.h"; };
+        \\b :: @import c { @include "examples/modules/2751-modules-cimport-distinct-authors/abs.h"; };
+    , 1);
+    try store.analyzeDocument(scoped);
+    const left = scoped.sema.?.selection.select("a.abs").?;
+    const right = scoped.sema.?.selection.select("b.abs").?;
+    try std.testing.expect(left.id != right.id);
+    try std.testing.expect(left.info().environment != right.info().environment);
+}
+
+test "editor structural alias cycles do not form an identity" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    _ = try store.openOrUpdate("cycle-a.sx", "Loop :: *Loop;", 1);
+    _ = try store.openOrUpdate("cycle-b.sx", "Loop :: *Loop;", 1);
+    const doc = try store.openOrUpdate("cycle-reader.sx",
+        \\@import "cycle-a.sx";
+        \\@import "cycle-b.sx";
+    , 1);
+    try store.analyzeDocument(doc);
+    try std.testing.expect(doc.sema.?.selection.select("Loop") == null);
+}
+
+const CompilerFacts = struct {
+    table: sx.imports.DeclTable,
+    root: *@import("../ast.zig").Node,
+    diagnostics: @import("../errors.zig").DiagnosticList,
+    flat_imports: std.StringHashMap(std.StringHashMap(void)),
+};
+
+fn compilerFacts(alloc: std.mem.Allocator, path: []const u8, source: [:0]const u8) !CompilerFacts {
+    var parser = try @import("../parser.zig").Parser.init(alloc, source);
+    const root = try parser.parse();
+    var cache = sx.imports.ModuleCache.init(alloc);
+    var chain = std.StringHashMap(void).init(alloc);
+    var flat = std.StringHashMap(std.StringHashMap(void)).init(alloc);
+    var diagnostics = @import("../errors.zig").DiagnosticList.init(alloc, source, path);
+    _ = try sx.imports.resolveImports(alloc, test_io(), root, sx.imports.dirName(path), path, &chain, &cache, null, &diagnostics, &.{}, null, &flat);
+    return .{ .table = cache.declarations, .root = root, .diagnostics = diagnostics, .flat_imports = flat };
+}
+
+fn expectSameFileFacts(compiler: *const sx.imports.DeclTable, editor: *const sx.imports.DeclTable, path: []const u8) !void {
+    const source = compiler.fileScope(path).?.source;
+    var count: usize = 0;
+    for (compiler.blocks.items) |block| {
+        const env = compiler.environment(block.environment);
+        if (!std.mem.eql(u8, source, env.source)) continue;
+        count += 1;
+        const other = for (editor.blocks.items) |candidate| {
+            if (std.meta.eql(block.node.span, candidate.node.span) and std.meta.activeTag(block.node.data) == std.meta.activeTag(candidate.node.data)) break candidate;
+        } else return error.MissingEditorBlock;
+        const other_env = editor.environment(other.environment);
+        try std.testing.expectEqualDeep(env.scope_path, other_env.scope_path);
+        try std.testing.expectEqual(env.scope == null, other_env.scope == null);
+        if (env.scope) |id| try std.testing.expectEqualDeep(compiler.scopeInfo(id).path, editor.scopeInfo(other_env.scope.?).path);
+        try std.testing.expectEqual(block.parent == null, other.parent == null);
+        if (block.parent) |parent| try std.testing.expectEqualDeep(compiler.block(parent).node.span, editor.block(other.parent.?).node.span);
+        try std.testing.expectEqual(block.imports.items.len, other.imports.items.len);
+        for (block.imports.items, other.imports.items) |left, right| {
+            try std.testing.expectEqualDeep(left.data.import_decl, right.data.import_decl);
+            try std.testing.expectEqualDeep(left.span, right.span);
+        }
+        try std.testing.expectEqual(env.names.count(), other_env.names.count());
+        var names = env.names.iterator();
+        while (names.next()) |entry| {
+            const left = compiler.get(entry.value_ptr.*);
+            const right = editor.get(other_env.names.get(entry.key_ptr.*).?);
+            try std.testing.expectEqual(left.kind, right.kind);
+            try std.testing.expectEqualDeep(left.span, right.span);
+            try std.testing.expectEqualDeep(compiler.block(left.lexical_block.?).node.span, editor.block(right.lexical_block.?).node.span);
+            try std.testing.expectEqual(left.scope == null, right.scope == null);
+            if (left.scope) |id| try std.testing.expectEqualDeep(compiler.scopeInfo(id).path, editor.scopeInfo(right.scope.?).path);
+        }
+    }
+    try std.testing.expectEqual(count, editor.blocks.items.len);
+}
+
+test "compiler and editor retain scope block imports without file-level leakage" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const io = test_io();
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.createDir(io, "parts", .default_dir);
+    try tmp.dir.writeFile(io, .{ .sub_path = "parts/left.sx", .data = "left :: 10;" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "right.sx", .data = "right :: 20;" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "local.h", .data = "long c_value(void);" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "other.sx", .data = "geo :: scope { x :: 30; }" });
+    const source: [:0]const u8 =
+        \\@import "other.sx";
+        \\geo :: scope {
+        \\    @import "parts";
+        \\    n :: @import "right.sx";
+        \\    x :: 1;
+        \\    detail :: scope { read :: () -> i64 { x } }
+        \\}
+        \\geo :: scope {
+        \\    @import "right.sx";
+        \\    y :: 2;
+        \\    c :: @import c { @include "local.h"; };
+        \\    detail :: scope { value :: 3; }
+        \\    ..@import "right.sx";
+        \\    ..geo;
+        \\}
+        \\x :: 4;
+    ;
+    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data = source });
+    var dirbuf: [4096]u8 = undefined;
+    const dirlen = try tmp.dir.realPath(io, &dirbuf);
+    const path = try std.fmt.allocPrint(alloc, "{s}/main.sx", .{dirbuf[0..dirlen]});
+    var compiler = try compilerFacts(alloc, path, source);
+    try std.testing.expectEqual(@as(usize, 0), compiler.diagnostics.items.items.len);
+    var store = doc_mod.DocumentStore.init(alloc, io, &.{}, alloc);
+    const doc = try store.openOrUpdate(path, source, 1);
+    try store.analyzeDocument(doc);
+    const editor = doc.declarations.?.table;
+    try expectSameFileFacts(&compiler.table, editor, path);
+    const first = compiler.root.data.root.decls[1].data.scope_decl.body_block.?;
+    const second = compiler.root.data.root.decls[2].data.scope_decl.body_block.?;
+    const geo = compiler.table.block(first).environment;
+    try std.testing.expect(first != second);
+    try std.testing.expectEqual(geo, compiler.table.block(second).environment);
+    try std.testing.expectEqual(@as(usize, 2), compiler.table.block(first).imports.items.len);
+    try std.testing.expectEqual(@as(usize, 1), compiler.table.block(second).imports.items.len);
+    const root_env = compiler.table.fileEnvironment(path).?;
+    try std.testing.expectEqual(@as(u32, 1), compiler.table.directImports(&compiler.flat_imports, root_env).?.count());
+    const other_doc = try store.getOrLoad(doc.imports[0].path);
+    try expectSameFileFacts(&compiler.table, other_doc.declarations.?.table, other_doc.path);
+    const other_scope = compiler.table.get(compiler.table.fileScope(other_doc.path).?.names.get("geo").?).scope.?;
+    try std.testing.expectEqual(compiler.table.environment(geo).scope.?, other_scope);
+    try std.testing.expect(doc.sema.?.selection.select("left") == null);
+    try std.testing.expect(doc.sema.?.selection.select("right") == null);
+    for (doc.sema.?.symbols) |symbol| {
+        try std.testing.expect(!std.mem.eql(u8, symbol.name, "left") and !std.mem.eql(u8, symbol.name, "right"));
+    }
+    const detail = compiler.table.findEnvironment(path, &.{ "geo", "detail" }).?;
+    const read = compiler.table.get(compiler.table.environment(detail).names.get("read").?).node.?;
+    try std.testing.expectEqual(read.lexical_block.?, read.data.fn_decl.body.lexical_block.?);
+    var subst = @import("../ast.zig").Substitution.init(alloc);
+    const cloned = try @import("../ast.zig").cloneWithSubst(alloc, read, &subst);
+    try std.testing.expectEqual(read.lexical_block.?, cloned.data.fn_decl.body.lexical_block.?);
+}
+
+test "scope merge duplicates and scope-name collisions diagnose the second declaration" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source: [:0]const u8 =
+        \\geo :: scope { x :: 1; }
+        \\geo :: scope { x :: 2; }
+        \\geo :: 3;
+        \\plain :: 4;
+        \\plain :: scope {}
+    ;
+    var compiler = try compilerFacts(alloc, "duplicate-scopes.sx", source);
+    var original_parser = try @import("../parser.zig").Parser.init(alloc, source);
+    const nodes = (try original_parser.parse()).data.root.decls;
+    const spans = [_]@import("../ast.zig").Span{ nodes[1].data.scope_decl.decls[0].span, nodes[2].span, nodes[4].span };
+    try std.testing.expectEqual(spans.len, compiler.diagnostics.items.items.len);
+    for (spans, compiler.diagnostics.items.items) |span, diagnostic| {
+        try std.testing.expectEqualDeep(span, diagnostic.span);
+        try std.testing.expect(std.mem.indexOf(u8, diagnostic.message, "duplicate top-level declaration") != null);
+    }
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const doc = try store.openOrUpdate("duplicate-scopes.sx", source, 1);
+    try store.analyzeDocument(doc);
+    var count: usize = 0;
+    for (doc.sema.?.diagnostics) |diagnostic| {
+        if (diagnostic.level != .err or !std.mem.eql(u8, diagnostic.message, "duplicate declaration")) continue;
+        try std.testing.expectEqualDeep(spans[count], diagnostic.span);
+        count += 1;
+    }
+    try std.testing.expectEqual(spans.len, count);
+    try expectSameFileFacts(&compiler.table, doc.declarations.?.table, doc.path);
+}
+
+const ScopeProbe = struct {
+    alloc: std.mem.Allocator,
+    directory: []const u8,
+    compiler: *CompilerFacts,
+    resolver: @import("../ir/resolver.zig").Resolver,
+    store: doc_mod.DocumentStore,
+
+    fn init(alloc: std.mem.Allocator, directory: []const u8) !ScopeProbe {
+        const path = try std.fmt.allocPrint(alloc, "{s}/main.sx", .{directory});
+        const bytes = try std.Io.Dir.readFileAlloc(.cwd(), test_io(), path, alloc, .limited(1 << 20));
+        const compiler = try alloc.create(CompilerFacts);
+        compiler.* = try compilerFacts(alloc, path, try alloc.dupeZ(u8, bytes));
+        try std.testing.expectEqual(@as(usize, 0), compiler.diagnostics.items.items.len);
+        const index = try alloc.create(@import("../ir/program_index.zig").ProgramIndex);
+        index.* = .init(alloc);
+        index.decl_table = &compiler.table;
+        index.flat_import_graph = &compiler.flat_imports;
+        var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+        try store.analyzeDocument(try store.getOrLoad(path));
+        return .{ .alloc = alloc, .directory = directory, .compiler = compiler, .resolver = .init(index, alloc), .store = store };
+    }
+
+    const Expected = union(enum) {
+        declaration: struct { file: []const u8, name: []const u8 },
+        missing,
+        ambiguous,
+    };
+
+    fn expect(self: *ScopeProbe, file: []const u8, block_owner: ?[]const u8, name: []const u8, expected: Expected) !void {
+        const path = try sx.imports.canonicalizePath(self.alloc, try std.fmt.allocPrint(self.alloc, "{s}/{s}", .{ self.directory, file }));
+        const table = &self.compiler.table;
+        var context = @import("../name_lookup.zig").Context{ .table = table, .environment = table.fileEnvironment(path).? };
+        const doc = try self.store.getOrLoad(path);
+        var selection = doc.sema.?.selection;
+        if (block_owner) |owner| {
+            const compiler_owner = self.resolver.selectPath(owner, context).selected.declaration;
+            const block = table.get(compiler_owner).lexical_block.?;
+            context.block = block;
+            context.environment = table.block(block).environment;
+            selection = try selection.inBlock(selection.select(owner).?.info().lexical_block.?);
+        }
+        const actual = self.resolver.selectPath(name, context);
+        const editor = selection.select(name);
+        switch (expected) {
+            .missing => {
+                try std.testing.expectEqual(.missing, std.meta.activeTag(actual));
+                try std.testing.expect(editor == null);
+            },
+            .ambiguous => {
+                try std.testing.expectEqual(.ambiguous, std.meta.activeTag(actual));
+                try std.testing.expect(editor == null);
+            },
+            .declaration => |decl| {
+                try std.testing.expectEqual(.selected, std.meta.activeTag(actual));
+                const info = table.get(actual.selected.declaration);
+                try std.testing.expectEqualStrings(decl.file, std.fs.path.basename(info.source.?));
+                try std.testing.expectEqualStrings(decl.name, info.name);
+                try std.testing.expectEqualStrings(info.source.?, editor.?.info().source.?);
+                try std.testing.expectEqualDeep(info.span, editor.?.info().span);
+            },
+        }
+    }
+};
+
+test "scope selection keeps importer namespace and alias viewpoints separate" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const io = test_io();
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(io, .{ .sub_path = "base.sx", .data = "geo :: scope { base :: 1; value :: 10; }" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "lib.sx", .data =
+        \\@import "base.sx";
+        \\geo :: scope { lib :: 2; }
+        \\G :: geo;
+    });
+    try tmp.dir.writeFile(io, .{ .sub_path = "extra.sx", .data = "geo :: scope { named_only :: 20; }" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data =
+        \\@import "lib.sx";
+        \\ns :: @import "lib.sx";
+        \\extra :: @import "extra.sx";
+        \\geo :: scope { value :: 30; }
+    });
+    var dirbuf: [4096]u8 = undefined;
+    var probe = try ScopeProbe.init(alloc, dirbuf[0..try tmp.dir.realPath(io, &dirbuf)]);
+    try probe.expect("main.sx", null, "geo.lib", .{ .declaration = .{ .file = "lib.sx", .name = "lib" } });
+    try probe.expect("main.sx", null, "geo.base", .missing);
+    try probe.expect("main.sx", null, "geo.named_only", .missing);
+    try probe.expect("main.sx", null, "geo.value", .{ .declaration = .{ .file = "main.sx", .name = "value" } });
+    try probe.expect("main.sx", null, "ns.geo.value", .{ .declaration = .{ .file = "base.sx", .name = "value" } });
+    try probe.expect("main.sx", null, "G.value", .{ .declaration = .{ .file = "base.sx", .name = "value" } });
+    try probe.expect("lib.sx", null, "geo.value", .{ .declaration = .{ .file = "base.sx", .name = "value" } });
+}
+
+test "scope lookup orders members block imports enclosing scopes and file lookup" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const io = test_io();
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(io, .{ .sub_path = "part.sx", .data = "geo :: scope { member :: 1; }" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "helpers.sx", .data = "member :: 2; helper :: 3; parent :: 4; top :: 5; geo :: scope { inner :: scope { carried :: 11; } }" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "fallback.sx", .data = "last :: 6;" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "inner.sx", .data = "near :: 12;" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data =
+        \\@import "part.sx";
+        \\@import "fallback.sx";
+        \\top :: 7;
+        \\geo :: scope {
+        \\    @import "helpers.sx";
+        \\    parent :: 8; near :: 13;
+        \\    inner :: scope { @import "inner.sx"; anchor :: 9; }
+        \\    Saved :: inner;
+        \\}
+        \\geo :: scope { sibling :: 10; }
+    });
+    var dirbuf: [4096]u8 = undefined;
+    var probe = try ScopeProbe.init(alloc, dirbuf[0..try tmp.dir.realPath(io, &dirbuf)]);
+    try probe.expect("main.sx", "geo.inner.anchor", "member", .{ .declaration = .{ .file = "part.sx", .name = "member" } });
+    try probe.expect("main.sx", "geo.inner.anchor", "helper", .{ .declaration = .{ .file = "helpers.sx", .name = "helper" } });
+    try probe.expect("main.sx", "geo.inner.anchor", "parent", .{ .declaration = .{ .file = "main.sx", .name = "parent" } });
+    try probe.expect("main.sx", "geo.inner.anchor", "top", .{ .declaration = .{ .file = "helpers.sx", .name = "top" } });
+    try probe.expect("main.sx", "geo.sibling", "top", .{ .declaration = .{ .file = "main.sx", .name = "top" } });
+    try probe.expect("main.sx", "geo.sibling", "helper", .missing);
+    try probe.expect("main.sx", "geo.inner.anchor", "last", .{ .declaration = .{ .file = "fallback.sx", .name = "last" } });
+    try probe.expect("main.sx", null, "geo.helper", .missing);
+    try probe.expect("main.sx", "geo.inner.anchor", "near", .{ .declaration = .{ .file = "inner.sx", .name = "near" } });
+    try probe.expect("main.sx", "geo.inner.anchor", "carried", .{ .declaration = .{ .file = "helpers.sx", .name = "carried" } });
+    try probe.expect("main.sx", null, "geo.inner.carried", .missing);
+    try probe.expect("main.sx", null, "geo.Saved.carried", .{ .declaration = .{ .file = "helpers.sx", .name = "carried" } });
+}
+
+test "scope member ambiguity is lazy and local declarations hide other files" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const io = test_io();
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(io, .{ .sub_path = "left.sx", .data = "geo :: scope { conflict :: 1; hidden :: 2; }" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "right.sx", .data = "geo :: scope { conflict :: 3; hidden :: struct { x: i64; } unique :: 5; }" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "foreign.h", .data = "long foreign(void);" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "c.sx", .data = "geo :: @import c { @include \"foreign.h\"; };" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data =
+        \\@import "left.sx";
+        \\@import "right.sx";
+        \\@import "c.sx";
+        \\geo :: scope { hidden :: 6; }
+    });
+    var dirbuf: [4096]u8 = undefined;
+    var probe = try ScopeProbe.init(alloc, dirbuf[0..try tmp.dir.realPath(io, &dirbuf)]);
+    try probe.expect("main.sx", null, "geo", .{ .declaration = .{ .file = "main.sx", .name = "geo" } });
+    try probe.expect("main.sx", null, "geo.unique", .{ .declaration = .{ .file = "right.sx", .name = "unique" } });
+    try probe.expect("main.sx", null, "geo.conflict", .ambiguous);
+    try probe.expect("main.sx", null, "geo.foreign", .missing);
+    try probe.expect("main.sx", null, "geo.hidden", .{ .declaration = .{ .file = "main.sx", .name = "hidden" } });
+    const scope = probe.compiler.root.data.root.decls[3].data.scope_decl.body_block.?;
+    const hidden_type = probe.resolver.resolveBare("hidden", probe.compiler.table.block(scope).environment, .bare_type);
+    try std.testing.expectEqual(.domain_filtered, hidden_type.verdict);
+}
+
+test "scope aliases preserve target identity and requester private authority" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const io = test_io();
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(io, .{ .sub_path = "target.sx", .data =
+        \\geo :: scope { private secret :: 1; public_value :: secret; }
+        \\G :: geo;
+        \\answer :: geo.public_value;
+    });
+    try tmp.dir.writeFile(io, .{ .sub_path = "alias.sx", .data =
+        \\ns :: @import "target.sx";
+        \\G :: ns.geo;
+        \\answer :: ns.geo.public_value;
+    });
+    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data =
+        \\@import "target.sx";
+        \\@import "alias.sx";
+    });
+    var dirbuf: [4096]u8 = undefined;
+    var probe = try ScopeProbe.init(alloc, dirbuf[0..try tmp.dir.realPath(io, &dirbuf)]);
+    try probe.expect("main.sx", null, "G.public_value", .{ .declaration = .{ .file = "target.sx", .name = "public_value" } });
+    try probe.expect("main.sx", null, "G.secret", .missing);
+    try probe.expect("target.sx", null, "G.secret", .{ .declaration = .{ .file = "target.sx", .name = "secret" } });
+    const root = @import("../name_lookup.zig").Context{ .table = &probe.compiler.table, .environment = probe.compiler.table.fileEnvironment(try std.fmt.allocPrint(alloc, "{s}/main.sx", .{probe.directory})).? };
+    const authors = probe.resolver.resolveBare("answer", root.environment, .value_const);
+    try std.testing.expectEqual(.single, authors.verdict);
+    const doc = probe.store.get(root.source()).?;
+    try std.testing.expect(doc.sema.?.selection.select("answer") != null);
+}
+
+test "scope bodies and alias paths navigate to their authored declarations" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const source =
+        \\N :: 9;
+        \\geo :: scope {
+        \\    N :: 3;
+        \\    read :: () -> i64 { N }
+        \\}
+        \\geo :: scope { more :: () -> i64 { N } }
+        \\Saved :: geo;
+        \\main :: () { x := Saved.read(); Saved := .{ read = 7 }; y := Saved.read; }
+    ;
+    const doc = try store.openOrUpdate("scope-navigation.sx", source, 1);
+    try store.analyzeDocument(doc);
+    const sema = doc.sema orelse return error.MissingAnalysis;
+    try std.testing.expectEqual(@as(usize, 0), sema.diagnostics.len);
+    const number = sema.selection.select("geo.N").?;
+    const read = sema.selection.select("geo.read").?;
+    const first_use = std.mem.indexOf(u8, source, "{ N }").? + 2;
+    const call_use = std.mem.indexOf(u8, source, "Saved.read").? + "Saved.".len;
+    const local_use = std.mem.lastIndexOf(u8, source, "Saved.read").? + "Saved.".len;
+    var found_number = false;
+    var found_call = false;
+    for (sema.references) |reference| {
+        const symbol = sema.symbols[reference.symbol_index];
+        try std.testing.expect(reference.span.start != local_use);
+        if (reference.span.start == first_use) {
+            try std.testing.expectEqualDeep(number, symbol.declaration.?);
+            found_number = true;
+        }
+        if (reference.span.start == call_use) {
+            try std.testing.expectEqualDeep(read, symbol.declaration.?);
+            found_call = true;
+        }
+    }
+    try std.testing.expect(found_number and found_call);
+    try std.testing.expectEqual(@as(u8, 64), sema.fn_signatures.get("Saved.read").?.return_type.signed);
+}
+
+test "scope aliases are designators and cannot initialize a value" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const source = "geo :: scope { N :: 3; } Saved :: geo; main :: () { value := Saved; }";
+    const doc = try store.openOrUpdate("scope-value.sx", source, 1);
+    try store.analyzeDocument(doc);
+    const diagnostics = doc.sema.?.diagnostics;
+    try std.testing.expectEqual(@as(usize, 1), diagnostics.len);
+    try std.testing.expectEqualStrings("a scope is not a value", diagnostics[0].message);
+    try std.testing.expectEqual(std.mem.lastIndexOf(u8, source, "Saved").?, diagnostics[0].span.?.start);
+}
+
+test "driver scope templates retain compiler and editor lexical parents without publishing names" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source: [:0]const u8 =
+        \\inline if true {
+        \\    generated :: scope { inner :: scope { value :: 1; } }
+        \\}
+    ;
+    var compiler = try compilerFacts(alloc, "driver-scopes.sx", source);
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const doc = try store.openOrUpdate("driver-scopes.sx", source, 1);
+    try store.analyzeDocument(doc);
+    try expectSameFileFacts(&compiler.table, doc.declarations.?.table, doc.path);
+    const driver = doc.root.?.data.root.decls[0];
+    const scope = driver.data.if_expr.then_branch.data.block.stmts[0];
+    const inner = scope.data.scope_decl.decls[0];
+    const table = doc.declarations.?.table;
+    try std.testing.expectEqual(scope.data.scope_decl.body_block.?, table.block(inner.data.scope_decl.body_block.?).parent.?);
+    try std.testing.expectEqual(inner.data.scope_decl.body_block.?, inner.data.scope_decl.decls[0].lexical_block.?);
+    try std.testing.expectEqual(@as(u32, 0), table.environment(table.block(inner.data.scope_decl.body_block.?).environment).names.count());
+}
+
+test "directory spread sources retain written order without import exposure" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const io = test_io();
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.createDir(io, "parts", .default_dir);
+    try tmp.dir.writeFile(io, .{ .sub_path = "plain.sx", .data = "Plain :: 1;" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "parts/a.sx", .data = "SpreadOnly :: 2;" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "parts/b.sx", .data = "Another :: 3;" });
+    const source: [:0]const u8 =
+        \\@import "plain.sx";
+        \\Before :: pkg;
+        \\..@import "parts";
+        \\After :: pkg;
+        \\box :: scope { ..pkg; }
+        \\private pkg :: @import "plain.sx";
+    ;
+    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data = source });
+    var dirbuf: [4096]u8 = undefined;
+    var probe = try ScopeProbe.init(alloc, dirbuf[0..try tmp.dir.realPath(io, &dirbuf)]);
+    const compiler = probe.compiler;
+    const doc = try probe.store.getOrLoad(compiler.table.environment(compiler.table.block(compiler.root.lexical_block.?).environment).source);
+    try expectSameFileFacts(&compiler.table, doc.declarations.?.table, doc.path);
+    for ([_]*const sx.imports.DeclTable{ &compiler.table, doc.declarations.?.table }, [_]*@import("../ast.zig").Node{ compiler.root, doc.root.? }) |table, root| {
+        const block = table.block(root.lexical_block.?);
+        try std.testing.expectEqual(@as(usize, 2), block.imports.items.len);
+        try std.testing.expectEqual(@as(usize, 2), block.spreads.items.len);
+        try std.testing.expectEqual(@as(u32, 4), table.environment(block.environment).names.count());
+        const before = table.written_targets.get(root.data.root.decls[1]).?;
+        const after = table.written_targets.get(root.data.root.decls[4]).?;
+        const first = table.written_targets.get(block.spreads.items[0]).?;
+        const second = table.written_targets.get(block.spreads.items[1]).?;
+        try std.testing.expect(before.position < first.position and first.position < after.position);
+        try std.testing.expectEqual(first.position, second.position);
+        try std.testing.expectEqual(root.lexical_block.?, first.block);
+        try std.testing.expectEqualStrings(doc.path, first.source);
+        try std.testing.expectEqualStrings(first.source, first.operand.source_file.?);
+        try std.testing.expectEqualStrings(first.source, before.operand.source_file.?);
+        try std.testing.expectEqualStrings("a.sx", std.fs.path.basename(table.spread_sources.get(block.spreads.items[0]).?.module));
+        try std.testing.expectEqualStrings("b.sx", std.fs.path.basename(table.spread_sources.get(block.spreads.items[1]).?.module));
+        const scope = root.data.root.decls[5].data.scope_decl;
+        const path_spread = table.block(scope.body_block.?).spreads.items[0];
+        const target = table.written_targets.get(path_spread).?;
+        try std.testing.expectEqual(scope.body_block.?, target.block);
+        try std.testing.expectEqualStrings("pkg", table.spread_sources.get(path_spread).?.path.data.identifier.name);
+        try std.testing.expect(table.by_node.get(@intFromPtr(path_spread)) == null);
+    }
+    for (compiler.table.block(compiler.root.lexical_block.?).spreads.items) |node| {
+        const path = compiler.table.spread_sources.get(node).?.module;
+        try std.testing.expect(compiler.table.fileEnvironment(path) != null);
+        try std.testing.expect(probe.store.get(path).?.sema != null);
+        try std.testing.expect(!compiler.flat_imports.get(doc.path).?.contains(path));
+    }
+    try probe.expect("main.sx", null, "Plain", .{ .declaration = .{ .file = "plain.sx", .name = "Plain" } });
+    try probe.expect("main.sx", null, "SpreadOnly", .{ .declaration = .{ .file = "a.sx", .name = "SpreadOnly" } });
+}
+
+test "deferred spread templates retain C declaration ownership without publication" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const io = test_io();
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.createDir(io, "parts", .default_dir);
+    try tmp.dir.writeFile(io, .{ .sub_path = "parts/a.sx", .data = "A :: 1;" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "parts/b.sx", .data = "B :: 2;" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "local.h", .data = "long c_value(void);" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "local.c", .data = "long c_value(void) { return 1; }" });
+    const source: [:0]const u8 =
+        \\..@import c { @include "local.h"; @source "local.c"; };
+        \\inline if true {
+        \\    box :: scope {
+        \\        ..@import "parts";
+        \\        Alias :: box;
+        \\        ..@import c { @include "local.h"; @source "local.c"; };
+        \\        ..Alias;
+        \\    }
+        \\}
+    ;
+    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data = source });
+    var dirbuf: [4096]u8 = undefined;
+    const path = try std.fmt.allocPrint(alloc, "{s}/main.sx", .{dirbuf[0..try tmp.dir.realPath(io, &dirbuf)]});
+    var compiler = try compilerFacts(alloc, path, source);
+    try std.testing.expectEqual(@as(usize, 0), compiler.diagnostics.items.items.len);
+    var store = doc_mod.DocumentStore.init(alloc, io, &.{}, alloc);
+    const doc = try store.openOrUpdate(path, source, 1);
+    try store.analyzeDocument(doc);
+    try expectSameFileFacts(&compiler.table, doc.declarations.?.table, path);
+    for ([_]*const sx.imports.DeclTable{ &compiler.table, doc.declarations.?.table }, [_]*@import("../ast.zig").Node{ compiler.root, doc.root.? }) |table, root| {
+        const top = root.lexical_block.?;
+        const scope_node = root.data.root.decls[1].data.if_expr.then_branch.data.block.stmts[0];
+        const scope = scope_node.data.scope_decl;
+        const block = scope.body_block.?;
+        try std.testing.expectEqual(@as(usize, 1), table.block(top).spreads.items.len);
+        try std.testing.expectEqual(@as(usize, 0), table.block(block).spreads.items.len);
+        try std.testing.expectEqual(@as(usize, 0), table.block(block).imports.items.len);
+        try std.testing.expectEqual(@as(u32, 0), table.environment(table.block(block).environment).names.count());
+        const first = table.written_targets.get(scope.decls[0]).?;
+        const second = table.written_targets.get(scope.decls[1]).?;
+        const alias = table.written_targets.get(scope.decls[2]).?;
+        const c_spread = table.written_targets.get(scope.decls[3]).?;
+        const path_spread = table.written_targets.get(scope.decls[4]).?;
+        try std.testing.expectEqual(first.position, second.position);
+        try std.testing.expect(first.position < alias.position and alias.position < c_spread.position and c_spread.position < path_spread.position);
+        try std.testing.expectEqual(block, alias.block);
+        try std.testing.expectEqualStrings(doc.path, alias.source);
+        const outer_id = table.spread_sources.get(root.data.root.decls[0]).?.c_import[0];
+        const inner_id = table.spread_sources.get(scope.decls[3]).?.c_import[0];
+        try std.testing.expect(outer_id != inner_id);
+        const outer = table.get(outer_id);
+        const inner = table.get(inner_id);
+        try std.testing.expectEqualStrings("c_value", inner.name);
+        try std.testing.expectEqualStrings(outer.source.?, inner.source.?);
+        try std.testing.expectEqual(top, outer.lexical_block.?);
+        try std.testing.expectEqual(block, inner.lexical_block.?);
+        try std.testing.expectEqualDeep(&[_][]const u8{"box"}, table.environment(inner.environment.?).scope_path);
+        try std.testing.expect(table.fileScope(doc.path).?.names.get("c_value") == null);
+        const ci = c_spread.operand.data.c_import_decl;
+        try std.testing.expect(std.mem.endsWith(u8, ci.includes[0], "/local.h"));
+        try std.testing.expect(std.mem.endsWith(u8, ci.sources[0], "/local.c"));
+        var subst = @import("../ast.zig").Substitution.init(alloc);
+        const clone = try @import("../ast.zig").cloneWithSubst(alloc, scope.decls[3], &subst);
+        try std.testing.expectEqualDeep(scope.decls[3].span, clone.span);
+        try std.testing.expectEqual(block, clone.lexical_block.?);
+        try std.testing.expectEqualStrings(doc.path, clone.data.spread_decl.c_decls.?[0].source_file.?);
+    }
+    try std.testing.expectEqual(@as(usize, 2), doc.imports.len);
+    for (doc.imports) |imp| {
+        try std.testing.expectEqual(.spread, imp.exposure);
+        try std.testing.expect(store.get(imp.path).?.sema != null);
+        try std.testing.expect(compiler.table.fileEnvironment(imp.path) != null);
+    }
+    try std.testing.expect(doc.sema.?.selection.select("c_value") != null);
+    try std.testing.expect(doc.c_source_locations.contains("c_value"));
+}
+
+test "spread surfaces layer declarations and carry blocks without plain-import leakage" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const io = test_io();
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(io, .{ .sub_path = "wire.sx", .data = "internal :: 1;" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "part.sx", .data = "value :: 2; extra :: 3; geo :: scope { part :: 4; }" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "lib.sx", .data =
+        \\@import "wire.sx";
+        \\private source :: @import "part.sx";
+        \\..source;
+        \\value :: 5;
+        \\Renamed :: source.extra;
+        \\geo :: scope { ..source; }
+    });
+    try tmp.dir.writeFile(io, .{ .sub_path = "other.sx", .data = "geo :: scope { local :: 6; }" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data =
+        \\@import "lib.sx";
+        \\@import "other.sx";
+        \\n :: @import "lib.sx";
+        \\geo :: scope { anchor :: 7; }
+        \\surface :: scope { ..n; }
+    });
+    var dirbuf: [4096]u8 = undefined;
+    var probe = try ScopeProbe.init(alloc, dirbuf[0..try tmp.dir.realPath(io, &dirbuf)]);
+    try probe.expect("main.sx", null, "value", .{ .declaration = .{ .file = "lib.sx", .name = "value" } });
+    try probe.expect("main.sx", null, "n.value", .{ .declaration = .{ .file = "lib.sx", .name = "value" } });
+    try probe.expect("main.sx", null, "surface.value", .{ .declaration = .{ .file = "lib.sx", .name = "value" } });
+    try probe.expect("main.sx", null, "geo.extra", .{ .declaration = .{ .file = "part.sx", .name = "extra" } });
+    try probe.expect("main.sx", "geo.anchor", "part", .{ .declaration = .{ .file = "part.sx", .name = "part" } });
+    try probe.expect("main.sx", null, "n.geo.local", .missing);
+    try probe.expect("main.sx", null, "n.internal", .missing);
+    try probe.expect("main.sx", null, "source", .missing);
+    try probe.expect("lib.sx", null, "internal", .{ .declaration = .{ .file = "wire.sx", .name = "internal" } });
+}
+
+test "written targets exclude later spreads and combine competing nonlocal routes" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    _ = try store.openOrUpdate("ordered-other.sx", "choice :: scope { other :: 1; }", 1);
+    const doc = try store.openOrUpdate("ordered.sx",
+        \\pool :: scope { choice :: scope { chosen :: 2; } }
+        \\Early :: choice;
+        \\..pool;
+        \\Late :: choice;
+        \\box :: scope {
+        \\    @import "ordered-other.sx";
+        \\    ..choice;
+        \\    Alias :: choice;
+        \\}
+        \\..absent;
+        \\value :: 3;
+        \\..value;
+    , 1);
+    try store.analyzeDocument(doc);
+    const selection = doc.sema.?.selection;
+    try std.testing.expect(selection.select("Early.chosen") == null);
+    try std.testing.expect(selection.select("Late.chosen") != null);
+    const diags = doc.sema.?.diagnostics;
+    var ambiguous = false;
+    var alias_ambiguous = false;
+    var missing = false;
+    var not_namespace = false;
+    for (diags) |diag| {
+        ambiguous = ambiguous or std.mem.eql(u8, diag.message, "spread target is ambiguous");
+        alias_ambiguous = alias_ambiguous or std.mem.eql(u8, diag.message, "alias target is ambiguous");
+        missing = missing or std.mem.eql(u8, diag.message, "spread target is not declared");
+        not_namespace = not_namespace or std.mem.eql(u8, diag.message, "spread target is not a scope or namespace");
+    }
+    try std.testing.expect(ambiguous and alias_ambiguous and missing and not_namespace);
+}
+
+test "alias target order excludes later local spreads and retains imported scope spreads" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    _ = try store.openOrUpdate("alias-part.sx", "Item :: struct { value: i64 = 7; }", 1);
+    _ = try store.openOrUpdate("alias-later.sx", "Item :: struct { value: i64 = 9; }", 1);
+    _ = try store.openOrUpdate("alias-facade.sx", "api :: scope { ..@import \"alias-part.sx\"; }", 1);
+    const doc = try store.openOrUpdate("alias-reader.sx",
+        \\@import "alias-facade.sx";
+        \\Alias :: api.Item;
+        \\api :: scope { ..@import "alias-later.sx"; }
+    , 1);
+    try store.analyzeDocument(doc);
+    const selection = doc.sema.?.selection;
+    const alias = selection.select("Alias").?;
+    const written = try selection.atWritten(alias.info().node.?);
+    const target = written.selectPath("api.Item");
+    try std.testing.expectEqual(.selected, std.meta.activeTag(target));
+    try std.testing.expectEqualStrings("alias-part.sx", std.fs.path.basename(target.selected.declaration.info().source.?));
+    try std.testing.expectEqual(.ambiguous, std.meta.activeTag(selection.selectPath("api.Item")));
+}
+
+test "scope declarations hide spread members in direct and alias target lookup" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    _ = try store.openOrUpdate("layered-part.sx", "Item :: struct { value: i64 = 7; }", 1);
+    _ = try store.openOrUpdate("layered-facade.sx",
+        \\api :: scope {
+        \\    ..@import "layered-part.sx";
+        \\    Item :: struct { value: i64 = 1; }
+        \\}
+    , 1);
+    const doc = try store.openOrUpdate("layered-reader.sx",
+        \\@import "layered-facade.sx";
+        \\Alias :: api.Item;
+    , 1);
+    try store.analyzeDocument(doc);
+    const selection = doc.sema.?.selection;
+    const direct = selection.selectPath("api.Item");
+    try std.testing.expectEqual(.selected, std.meta.activeTag(direct));
+    try std.testing.expectEqualStrings("layered-facade.sx", std.fs.path.basename(direct.selected.declaration.info().source.?));
+    const alias = selection.select("Alias").?;
+    const written = try selection.atWritten(alias.info().node.?);
+    const target = written.selectPath("api.Item");
+    try std.testing.expectEqual(.selected, std.meta.activeTag(target));
+    try std.testing.expectEqualDeep(direct.selected.declaration, target.selected.declaration);
+    try std.testing.expectEqual(@as(usize, 0), doc.sema.?.diagnostics.len);
+}
+
+test "self and parent spreads retain declaration identity and editor navigation" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const source =
+        \\a :: scope {
+        \\    ..a;
+        \\    b :: scope { ..a; x :: 8; }
+        \\}
+        \\..a.b;
+        \\main :: () { y := a.b.b.x; z := x; }
+    ;
+    const doc = try store.openOrUpdate("spread-navigation.sx", source, 1);
+    try store.analyzeDocument(doc);
+    const sema = doc.sema.?;
+    const x = sema.selection.select("a.b.x").?;
+    try std.testing.expectEqualDeep(x, sema.selection.select("a.b.b.x").?);
+    try std.testing.expectEqualDeep(x, sema.selection.select("x").?);
+    try std.testing.expect(sema.selection.select("a.b.absent") == null);
+    const qualified = std.mem.indexOf(u8, source, "a.b.b.x").? + "a.b.b.".len;
+    const bare = std.mem.lastIndexOf(u8, source, "x;").?;
+    var uses: usize = 0;
+    for (sema.references) |reference| {
+        if (reference.span.start != qualified and reference.span.start != bare) continue;
+        try std.testing.expectEqualDeep(x, sema.symbols[reference.symbol_index].declaration.?);
+        uses += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 2), uses);
+    try std.testing.expectEqual(@as(usize, 0), sema.diagnostics.len);
+}
+
+test "a scope spread uses the looking file's blocks while a scope alias keeps its author view" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const io = test_io();
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(io, .{ .sub_path = "lib.sx", .data =
+        \\parts :: scope { value :: 1; }
+        \\Saved :: parts;
+        \\geo :: scope { ..parts; }
+        \\frozen :: scope { ..Saved; }
+    });
+    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data =
+        \\@import "lib.sx";
+        \\n :: @import "lib.sx";
+        \\parts :: scope { value :: 2; }
+        \\qualified :: scope { ..n.parts; }
+    });
+    var dirbuf: [4096]u8 = undefined;
+    var probe = try ScopeProbe.init(alloc, dirbuf[0..try tmp.dir.realPath(io, &dirbuf)]);
+    try probe.expect("main.sx", null, "geo.value", .{ .declaration = .{ .file = "main.sx", .name = "value" } });
+    try probe.expect("main.sx", null, "frozen.value", .{ .declaration = .{ .file = "lib.sx", .name = "value" } });
+    try probe.expect("main.sx", null, "qualified.value", .{ .declaration = .{ .file = "lib.sx", .name = "value" } });
+    try probe.expect("lib.sx", null, "geo.value", .{ .declaration = .{ .file = "lib.sx", .name = "value" } });
+}
+
+test "spread-imported functions keep signatures and declaration navigation" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    _ = try store.openOrUpdate("spread-function.sx", "read :: () -> i64 { 9 }", 1);
+    _ = try store.openOrUpdate("spread-scope.sx", "geo :: scope { ..@import \"spread-function.sx\"; }", 1);
+    const source =
+        \\@import "spread-scope.sx";
+        \\..geo;
+        \\main :: () { x := read(); y := geo.read(); }
+    ;
+    const doc = try store.openOrUpdate("spread-reader.sx", source, 1);
+    try store.analyzeDocument(doc);
+    const sema = doc.sema.?;
+    const read = sema.selection.select("read").?;
+    var offered: usize = 0;
+    for (sema.symbols) |symbol| {
+        if (std.mem.eql(u8, symbol.name, "read")) {
+            try std.testing.expectEqualDeep(read, symbol.declaration.?);
+            offered += 1;
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 1), offered);
+    try std.testing.expectEqual(@as(u8, 64), sema.fn_signatures.get("geo.read").?.return_type.signed);
+    var uses: usize = 0;
+    for (sema.references) |reference| {
+        const symbol = sema.symbols[reference.symbol_index];
+        if (symbol.declaration) |declaration| if (std.meta.eql(declaration, read)) {
+            try std.testing.expectEqualStrings("spread-function.sx", std.fs.path.basename(symbol.origin.?));
+            uses += 1;
+        };
+    }
+    try std.testing.expectEqual(@as(usize, 2), uses);
+    try std.testing.expectEqual(@as(usize, 0), sema.diagnostics.len);
+}
+
+test "imported file symbols select bare declarations through hiding and ambiguity" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    _ = try store.openOrUpdate("completion-handle.sx", "handle_only :: 4;", 1);
+    _ = try store.openOrUpdate("completion-wire.sx", "transitive :: 5;", 1);
+    _ = try store.openOrUpdate("completion-plain.sx",
+        \\@import "completion-wire.sx";
+        \\value :: 1;
+        \\shared :: 1;
+        \\from_plain :: 2;
+        \\private hidden :: 3;
+    , 1);
+    _ = try store.openOrUpdate("completion-spread.sx", "shared :: 2; from_spread :: 3;", 1);
+    const doc = try store.openOrUpdate("completion-main.sx",
+        \\n :: @import "completion-handle.sx";
+        \\@import "completion-plain.sx";
+        \\..@import "completion-spread.sx";
+        \\value :: 9;
+    , 1);
+    try store.analyzeDocument(doc);
+    const sema = doc.sema.?;
+    var offered = std.StringHashMap(void).init(alloc);
+    for (sema.symbols) |symbol| {
+        const selected = sema.selection.select(symbol.name).?;
+        try std.testing.expectEqualDeep(selected, symbol.declaration.?);
+        try std.testing.expect(!(try offered.getOrPut(symbol.name)).found_existing);
+    }
+    try std.testing.expectEqual(@as(u32, 4), offered.count());
+    for ([_][]const u8{ "n", "from_plain", "from_spread", "value" }) |name| {
+        try std.testing.expect(offered.contains(name));
+    }
+    try std.testing.expectEqual(@as(usize, 0), sema.diagnostics.len);
+}
+
+test "a scope carried through scope spreads retains its members" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var probe = try ScopeProbe.init(alloc, "examples/modules/2801-modules-carried-scope-members");
+    for ([_][]const u8{ "main.sx", "spread-import.sx", "spread-handle.sx" }) |file| {
+        try probe.expect(file, null, "geo", .{ .declaration = .{ .file = "source.sx", .name = "geo" } });
+        try probe.expect(file, null, "geo.deep", .{ .declaration = .{ .file = "source.sx", .name = "deep" } });
+        const doc = try probe.store.getOrLoad(try std.fmt.allocPrint(alloc, "{s}/{s}", .{ probe.directory, file }));
+        const sema = doc.sema.?;
+        const geo = sema.selection.select("geo").?;
+        var offered: usize = 0;
+        for (sema.symbols) |symbol| {
+            if (!std.mem.eql(u8, symbol.name, "geo")) continue;
+            try std.testing.expectEqualDeep(geo, symbol.declaration.?);
+            offered += 1;
+        }
+        try std.testing.expectEqual(@as(usize, 1), offered);
+        try std.testing.expectEqual(@as(usize, 0), sema.diagnostics.len);
+    }
+}
+
+test "scope enumeration resolves spread conflicts privacy cycles and pinned aliases" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const part = try store.openOrUpdate("part.sx", "private secret :: 1; clash :: 2; value :: 3; carried :: 4;", 1);
+    try store.analyzeDocument(part);
+    const other = try store.openOrUpdate("other.sx", "clash :: 5;", 1);
+    try store.analyzeDocument(other);
+    const lib = try store.openOrUpdate("lib.sx",
+        \\geo :: scope { ..geo; ..@import "part.sx"; ..@import "other.sx"; value :: 6; }
+        \\Pinned :: geo;
+    , 1);
+    try store.analyzeDocument(lib);
+    const doc = try store.openOrUpdate("main.sx",
+        \\@import "lib.sx";
+        \\geo :: scope { value :: 7; }
+    , 1);
+    try store.analyzeDocument(doc);
+    const selected = doc.sema.?.selection;
+    const members = (try selected.members("geo")).?;
+    try std.testing.expectEqual(@as(usize, 2), members.len);
+    var found_value = false;
+    var found_carried = false;
+    for (members) |member| {
+        const info = member.declaration.info();
+        if (std.mem.eql(u8, info.name, "value")) {
+            found_value = true;
+            try std.testing.expectEqualStrings("main.sx", info.source.?);
+        }
+        if (std.mem.eql(u8, info.name, "carried")) {
+            found_carried = true;
+            try std.testing.expectEqualStrings("part.sx", info.source.?);
+        }
+    }
+    try std.testing.expect(found_value and found_carried);
+    const pinned = (try selected.members("Pinned")).?;
+    try std.testing.expectEqual(@as(usize, 2), pinned.len);
+    for (pinned) |member| {
+        if (std.mem.eql(u8, member.declaration.info().name, "value"))
+            try std.testing.expectEqualStrings("lib.sx", member.declaration.info().source.?);
+    }
+}

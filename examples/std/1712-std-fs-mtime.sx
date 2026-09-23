@@ -2,7 +2,7 @@
 @import "modules/std/target.sx";
 
 fs :: @import "modules/std/fs.sx";
-c :: @import "modules/std/c.sx";
+@import "modules/std/c.sx";
 
 inline if @host.os != .windows {
     posixAbi :: @import "modules/std/fs/posix_abi.sx";

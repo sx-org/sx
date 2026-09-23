@@ -14,7 +14,7 @@
 // out). Asserts the hook saw >= LOOP_FAULT_LIMIT consecutive-failure events
 // and the GPA gate stays net-zero after close.
 @import "modules/std.sx";
-http :: @import "modules/std/http.sx";
+@import "modules/std/http.sx";
 
 PORT :: 18996;
 

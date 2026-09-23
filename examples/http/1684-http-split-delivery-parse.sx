@@ -20,8 +20,8 @@
 //    (per-request parse state fully reset).
 // 4. GPA leak gate: net-zero.
 @import "modules/std.sx";
-mem  :: @import "modules/std/mem.sx";
-http :: @import "modules/std/http.sx";
+@import "modules/std/mem.sx";
+@import "modules/std/http.sx";
 
 PORT :: 18995;
 N_CHUNKS :: 32;

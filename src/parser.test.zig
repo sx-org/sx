@@ -1741,3 +1741,79 @@ test "parser: a juxtaposed spread retains its operand and source span" {
     try std.testing.expectEqualStrings("..make()", source[spread.span.start..spread.span.end]);
     try std.testing.expect(items[1].data == .assignment);
 }
+
+test "scope bodies retain declarations and qualified impl heads" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const source =
+        \\geo :: scope {
+        \\    axes :: scope { X :: 0; }
+        \\    @import "modules/std.sx";
+        \\    impl http.TlsAcceptor for MyServer {}
+        \\    impl P for geo.Vec2 {}
+        \\}
+    ;
+    var parser = try Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const scope = root.data.root.decls[0].data.scope_decl;
+    try std.testing.expectEqualStrings("geo", scope.name);
+    try std.testing.expectEqualStrings("geo", source[scope.name_span.start..scope.name_span.end]);
+    try std.testing.expectEqual(@as(usize, 4), scope.decls.len);
+    const nested = scope.decls[0].data.scope_decl;
+    try std.testing.expectEqualStrings("axes", nested.name);
+    try std.testing.expectEqualStrings("X", nested.decls[0].data.const_decl.name);
+    try std.testing.expect(scope.decls[1].data == .import_decl);
+    try std.testing.expectEqualStrings("http.TlsAcceptor", scope.decls[2].data.impl_block.protocol_name);
+    try std.testing.expectEqualStrings("MyServer", scope.decls[2].data.impl_block.target_type);
+    try std.testing.expectEqualStrings("P", scope.decls[3].data.impl_block.protocol_name);
+    try std.testing.expectEqualStrings("geo.Vec2", scope.decls[3].data.impl_block.target_type);
+}
+
+test "module inline branches and loop bodies retain scope placement" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(),
+        \\inline if true {
+        \\    inline for T in .[i32] { geo :: scope { X :: T; } }
+        \\} else { fallback :: scope {} }
+        \\inline for T in .[i32] => arrows :: scope {}
+    );
+    const root = try parser.parse();
+    const branch = root.data.root.decls[0].data.if_expr;
+    const loop = branch.then_branch.data.block.stmts[0].data.for_expr;
+    try std.testing.expect(loop.body.data.block.stmts[0].data == .scope_decl);
+    try std.testing.expect(branch.else_branch.?.data.block.stmts[0].data == .scope_decl);
+    try std.testing.expect(root.data.root.decls[1].data.for_expr.body.data == .scope_decl);
+}
+
+test "spreads retain import kinds and path segments" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(),
+        \\..@import "modules/std.sx";
+        \\..@import c { @include "stdint.h"; };
+        \\..geo.scope;
+        \\n :: @import "named.sx";
+    );
+    const root = try parser.parse();
+    const decls = root.data.root.decls;
+    const imported = decls[0].data.spread_decl.source.data.import_decl;
+    try std.testing.expectEqualStrings("modules/std.sx", imported.path);
+    try std.testing.expect(imported.name == null);
+    const c = decls[1].data.spread_decl.source.data.c_import_decl;
+    try std.testing.expectEqualStrings("stdint.h", c.includes[0]);
+    try std.testing.expect(c.name == null);
+    const path_node = decls[2].data.spread_decl.source;
+    const path = path_node.data.field_access;
+    try std.testing.expectEqualStrings("geo", path.object.data.identifier.name);
+    try std.testing.expectEqualStrings("scope", path.field);
+    try std.testing.expectEqual(@as(u32, "geo.scope".len), path_node.span.end - path_node.span.start);
+    try std.testing.expectEqualStrings("n", decls[3].data.import_decl.name.?);
+}
+
+test "a scope spread operand is a path rather than an expression" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), "..geo();");
+    try std.testing.expectError(error.ParseError, parser.parse());
+}

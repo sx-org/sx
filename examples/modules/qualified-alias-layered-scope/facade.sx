@@ -1,0 +1,4 @@
+api :: scope {
+    ..@import "part.sx";
+    Item :: struct { value: i64 = 1; }
+}
