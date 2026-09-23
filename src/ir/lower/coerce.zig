@@ -1333,6 +1333,22 @@ pub fn bareFnNameSignature(self: *Lowering, node: *const Node) ?TypeId {
     return functionSignatureType(self, fid);
 }
 
+/// `src_ty` reaching the terminated `dst_ty`, which no conversion fills. `local`
+/// is the literal-bound local the value was read from.
+pub fn refuseAddedTerminator(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: ast.Span, local: ?lower.LiteralLocal) void {
+    const d = self.diagnostics orelse return;
+    if (local) |l| {
+        const id = d.addFmtId(.err, span, "a value of type '{s}' does not coerce to '{s}': no conversion adds a terminator", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty) });
+        d.addHelpFmt(id, l.init.span, null, "declare '{s}' with '::': a constant keeps the literal's terminator", .{l.name});
+    } else {
+        const fix = if (src_ty == .string and !self.coercionResolver().classify(.cstring, dst_ty).refuses())
+            " — materialize one with toCstring(s)"
+        else
+            "";
+        d.addFmt(.err, span, "a value of type '{s}' does not coerce to '{s}': no conversion adds a terminator{s}", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty), fix });
+    }
+}
+
 fn diagnoseUnmodeledCoercion(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, mode: CoerceMode) void {
     {
         const cs = self.builder.current_span;
@@ -1600,20 +1616,8 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             return val;
         },
         .adds_terminator_reject => {
-            if (self.diagnostics) |d| {
-                const cs = self.builder.current_span;
-                const span = ast.Span{ .start = cs.start, .end = cs.end };
-                if (self.literal_local_refs.get(val)) |local| {
-                    const id = d.addFmtId(.err, span, "a value of type '{s}' does not coerce to '{s}': no conversion adds a terminator", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty) });
-                    d.addHelpFmt(id, local.init.span, null, "declare '{s}' with '::': a constant keeps the literal's terminator", .{local.name});
-                } else {
-                    const fix = if (src_ty == .string and !self.coercionResolver().classify(.cstring, dst_ty).refuses())
-                        " — materialize one with toCstring(s)"
-                    else
-                        "";
-                    d.addFmt(.err, span, "a value of type '{s}' does not coerce to '{s}': no conversion adds a terminator{s}", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty), fix });
-                }
-            }
+            const cs = self.builder.current_span;
+            self.refuseAddedTerminator(src_ty, dst_ty, .{ .start = cs.start, .end = cs.end }, self.literal_local_refs.get(val));
             return val;
         },
         // void → Optional: produce null (void is the type of null_literal)

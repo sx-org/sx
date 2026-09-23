@@ -1,0 +1,17 @@
+// A global takes a string literal at the shape its type names, as a local
+// does: `[3]u8` holds the three bytes, and escapes are resolved.
+
+@import "modules/std.sx";
+
+T :: "a\tb";
+
+A : [3]u8 = "lit";
+C : ?[3]u8 = "lit";
+D : [2][3]u8 = .["abc", "def"];
+E : [3]u8 = T;
+
+main :: () -> i32 {
+    c := C?!;
+    print("{} {} {} {} {}\n", A[2], c[0], D[1][0], E[1], E[2]);
+    0
+}

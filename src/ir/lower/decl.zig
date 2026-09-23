@@ -1719,6 +1719,10 @@ fn initializeTopLevelGlobal(self: *Lowering, vd: *const ast.VarDecl) void {
 pub fn globalInitValue(self: *Lowering, vd: *const ast.VarDecl, var_ty: TypeId) ?inst_mod.ConstantValue {
     if (vd.is_extern) return null;
     const v = vd.value.?;
+    if (self.untypedString(v)) |lit| {
+        const src = self.literalType(var_ty, self.stringLiteralBytes(lit).len);
+        if (!self.checkAssignable(src, var_ty, v.span, "initialize", vd.name)) return null;
+    }
 
     if (!var_ty.isBuiltin() and self.module.types.get(var_ty) == .optional) {
         // `.null_val` / `.zeroinit` emit as all-zero bytes of the optional's
@@ -1729,15 +1733,7 @@ pub fn globalInitValue(self: *Lowering, vd: *const ast.VarDecl, var_ty: TypeId) 
             else => {},
         }
         const child = self.module.types.get(var_ty).optional.child;
-        const payload = self.globalInitValuePayload(vd, v, child) orelse return null;
-        // A sentinel-shaped optional reuses the payload's own null
-        // representation, so the payload IS the whole initializer — there is no
-        // `{payload, has_value}` wrapper in LLVM.
-        if (self.module.types.optionalIsSentinel(child)) return payload;
-        const fields = self.alloc.alloc(inst_mod.ConstantValue, 2) catch return null;
-        fields[0] = payload;
-        fields[1] = .{ .boolean = true };
-        return .{ .aggregate = fields };
+        return self.someConstant(child, self.globalInitValuePayload(vd, v, child) orelse return null);
     }
 
     return self.globalInitValuePayload(vd, v, var_ty);
@@ -1765,6 +1761,7 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
         else => return anyGlobalInit(self, vd, v),
     };
     if (isFloat(var_ty) and self.isAdaptableFloat(v)) return self.constExprValue(v, var_ty);
+    if (self.untypedString(v)) |lit| return self.constStringLiteral(lit, var_ty, v.span);
     return switch (v.data) {
         .undef_literal => .zeroinit,
         .null_literal => .null_val,
@@ -1825,7 +1822,6 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
             }
             break :blk inst_mod.ConstantValue{ .float = self.adoptFloatValue(fl.value, var_ty, v.span) };
         },
-        .string_literal => |sl| .{ .string = self.module.types.internString(sl.raw) },
         .array_literal => |al| self.constArrayLiteral(al.elements, var_ty) orelse self.diagnoseNonConstGlobal(vd, v),
         .struct_literal => |sl| self.constStructLiteral(&sl, var_ty, vd.type_annotation != null) orelse self.diagnoseNonConstGlobal(vd, v),
         .identifier => |id| blk: {

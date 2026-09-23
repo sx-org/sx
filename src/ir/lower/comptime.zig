@@ -165,6 +165,41 @@ pub fn constExprValue(self: *Lowering, expr: *const Node, expected_ty: TypeId) ?
     return constExprValueInner(self, expr, expected_ty, null);
 }
 
+/// The present `?child` constant holding `payload`.
+pub fn someConstant(self: *Lowering, child: TypeId, payload: inst_mod.ConstantValue) inst_mod.ConstantValue {
+    // A sentinel-shaped optional reuses the payload's own null representation,
+    // so it has no `{payload, has_value}` wrapper in LLVM.
+    if (self.module.types.optionalIsSentinel(child)) return payload;
+    const fields = self.alloc.alloc(inst_mod.ConstantValue, 2) catch @panic("out of memory");
+    fields[0] = payload;
+    fields[1] = .{ .boolean = true };
+    return .{ .aggregate = fields };
+}
+
+/// A string literal's constant at `dst`: the literal takes the shape `dst`
+/// names and converts to `dst`. Null when no conversion reaches `dst`.
+pub fn constStringLiteral(self: *Lowering, lit: ast.StringLiteral, dst: TypeId, span: ast.Span) ?inst_mod.ConstantValue {
+    if (!dst.isBuiltin() and self.module.types.get(dst) == .optional) {
+        const child = self.module.types.get(dst).optional.child;
+        return someConstant(self, child, constStringLiteral(self, lit, child, span) orelse return null);
+    }
+    const bytes = self.stringLiteralBytes(lit);
+    const src = self.literalType(dst, bytes.len);
+    return switch (self.coercionResolver().classify(src, dst)) {
+        .no_op, .array_to_many_ptr => .{ .string = self.module.types.internString(bytes) },
+        .array_drop_terminator => blk: {
+            const vals = self.alloc.alloc(inst_mod.ConstantValue, bytes.len) catch @panic("out of memory");
+            for (bytes, vals) |b, *v| v.* = .{ .int = b };
+            break :blk .{ .aggregate = vals };
+        },
+        .adds_terminator_reject => blk: {
+            self.refuseAddedTerminator(src, dst, span, null);
+            break :blk null;
+        },
+        else => null,
+    };
+}
+
 fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, frame: ?*const ConstFoldFrame) ?inst_mod.ConstantValue {
     const author = Lowering.AuthorScope.enter(self, expr);
     defer author.leave();
@@ -177,7 +212,7 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
         if (program_index_mod.evalConstFloatInit(expr, self, expected_ty)) |value|
             return .{ .float = value };
     }
-    if (self.untypedString(expr)) |lit| return .{ .string = self.module.types.internString(lit.raw) };
+    if (self.untypedString(expr)) |lit| return constStringLiteral(self, lit, expected_ty, expr.span);
     return switch (expr.data) {
         // An int element in a FLOAT destination converts exactly (the
         // int+float promotion rule, element-wise — `[2]f64 : .[1, 2.5]`).

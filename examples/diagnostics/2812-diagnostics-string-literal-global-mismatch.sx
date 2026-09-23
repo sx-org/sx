@@ -1,0 +1,8 @@
+// A global refuses a string literal its type cannot hold, as a local does.
+
+A : [4]u8 = "lit";
+B : i64 = "lit";
+C : ?*u8 = "lit";
+D : [4:0]u8 = "lit";
+
+main :: () -> i32 { 0 }
