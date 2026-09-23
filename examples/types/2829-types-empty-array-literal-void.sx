@@ -8,6 +8,10 @@ main :: () -> i32 {
     e := .[];
     print("{} {}\n", @typeName(@typeOf(E)), @typeName(@typeOf(e)));
     print("{} {}\n", e.len, e);
+    n := 0;
+    for v in .[] { n += 1; }
+    for v in e { n += 1; }
+    print("{}\n", n);
     xs : []i64 = .[];
     print("{} {}\n", @typeName(@typeOf(xs)), xs.len);
     0

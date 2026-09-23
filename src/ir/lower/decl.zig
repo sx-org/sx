@@ -1236,7 +1236,14 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
     }
     // Pass 2: registrations that resolve a top-level type annotation run
     // after the alias fixpoint, so a forward identifier alias used as the
-    // annotation resolves to its target.
+    // annotation resolves to its target. Typed constants register first, so
+    // an array constant or a global that names one reads its declared type
+    // in either declaration order.
+    for (decls) |decl| {
+        if (decl.data != .const_decl) continue;
+        self.setDeclarationContext(decl);
+        self.registerTypedModuleConst(&decl.data.const_decl);
+    }
     for (decls) |decl| {
         self.setDeclarationContext(decl);
         switch (decl.data) {
@@ -1248,7 +1255,6 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                 if (!self.registerComptimeTypeList(&decl.data.const_decl)) self.registerConstArrayGlobal(&decl.data.const_decl);
             } else {
                 self.registerComptimeTypeListAlias(&decl.data.const_decl);
-                self.registerTypedModuleConst(&decl.data.const_decl);
                 self.maybeRegisterConstStructGlobal(&decl.data.const_decl);
             },
             else => {},

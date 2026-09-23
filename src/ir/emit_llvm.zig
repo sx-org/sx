@@ -2904,6 +2904,10 @@ pub const LLVMEmitter = struct {
         return self.typeLowering().toLLVMType(ty);
     }
 
+    pub fn fieldLLVMType(self: *LLVMEmitter, ty: TypeId) c.LLVMTypeRef {
+        return self.typeLowering().fieldLLVMType(ty);
+    }
+
     // ── C ABI coercion for extern functions ──────────────────────────
     // The coercion logic lives in `backend/llvm/abi.zig` (`AbiLowering`);
     // these stay the facade entry points (callers in signature/call emission +

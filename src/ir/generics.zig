@@ -35,6 +35,23 @@ fn contextualArgumentFits(l: *Lowering, node: *const Node, ty: TypeId) bool {
     };
 }
 
+/// Whether an untyped argument at a parameter written `type_expr` fits the
+/// binding its binder has: a bare `.[…]` descends each slice or array layer
+/// that wraps the binder.
+fn contextualParamFits(l: *Lowering, node: *const Node, type_expr: *const Node, binding: TypeId) bool {
+    if (node.data == .array_literal) {
+        const elem_expr = switch (type_expr.data) {
+            .slice_type_expr => |st| st.element_type,
+            .array_type_expr => |at| at.element_type,
+            else => return contextualArgumentFits(l, node, binding),
+        };
+        return for (node.data.array_literal.elements) |elem| {
+            if (!contextualParamFits(l, elem, elem_expr, binding)) break false;
+        } else true;
+    }
+    return contextualArgumentFits(l, node, binding);
+}
+
 /// The element type a bare `.[…]` of `length` elements takes at `ty`: an array
 /// or vector of that length, or a slice.
 fn literalElementType(l: *Lowering, ty: TypeId, length: usize) ?TypeId {
@@ -392,7 +409,7 @@ pub const GenericResolver = struct {
                         if (s2_arg_idx < args_ast.len) {
                             const arg_node = args_ast[s2_arg_idx];
                             if (isContextualArgument(self.l, arg_node) != literal_round) continue;
-                            if (literal_round and inferred_ty != null and contextualArgumentFits(self.l, arg_node, inferred_ty.?)) continue;
+                            if (literal_round and inferred_ty != null and contextualParamFits(self.l, arg_node, param.type_expr, inferred_ty.?)) continue;
                             // A written lambda literal IS its env struct; the
                             // binder takes that type before the literal lowers.
                             if (Lowering.boundOnBinder(param.type_expr, tp.name) and arg_node.data == .lambda and arg_node.data.lambda.has_env) {

@@ -5,11 +5,15 @@
 
 L :: .[1, A];
 A : i32 : 5;
+M :: .[1, B];
+B : Count : 6;
+Count :: i32;
 D :: .[1, 2];
 F :: .[1, 2.2];
 
 main :: () -> i32 {
     print("{} {}\n", @typeName(@typeOf(L)), L);
+    print("{} {}\n", @typeName(@typeOf(M)), M);
     print("{} {}\n", @typeName(@typeOf(D)), @typeName(@typeOf(F)));
     0
 }
