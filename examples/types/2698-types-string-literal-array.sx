@@ -1,8 +1,8 @@
 // A string literal takes the shape its destination names: the `[N:0]u8` array
 // (a copy of its bytes plus the terminator), the `[:0]u8` view, or a
 // `[*:0]u8` pointer. Where no shape is named it is `string`. A `::` constant
-// bound to a literal stays one: `@typeOf` reports `string`, and each use takes
-// the shape its own destination names.
+// bound to a literal stays untyped: `@typeOf` reports `string`, and each use
+// takes the shape its own destination names.
 
 @import "modules/std.sx";
 
