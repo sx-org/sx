@@ -1337,6 +1337,7 @@ pub fn bareFnNameSignature(self: *Lowering, node: *const Node) ?TypeId {
 /// is the literal-bound local the value was read from.
 pub fn refuseAddedTerminator(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: ast.Span, local: ?lower.LiteralLocal) void {
     const d = self.diagnostics orelse return;
+    self.assignability_error_count += 1;
     if (local) |l| {
         const id = d.addFmtId(.err, span, "a value of type '{s}' does not coerce to '{s}': no conversion adds a terminator", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty) });
         d.addHelpFmt(id, l.init.span, null, "declare '{s}' with '::': a constant keeps the literal's terminator", .{l.name});
