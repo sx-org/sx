@@ -1788,12 +1788,16 @@ a[0..3] == b[0..2] // false — lengths differ
 ```
 
 A `.[ … ]` literal takes its element type from the annotation or target
-(`x : [3]i16 = .[1, 2, 3]`), or infers it from the elements when bare
-(`.[1, 2, 3]` is `[3]i64`). A type prefix on the literal names the
-**aggregate** type — `@Vector(3, f32).[…]`, `([2]?i64).[…]`, or an alias
-of an array type — never the element type: a prefix that resolves to a
-non-array/vector/slice type (`i16.[…]`, `Point.[…]`) is a compile error
-pointing at the annotated form.
+(`x : [3]i16 = .[1, 2, 3]`). A bare literal's elements bind it as arguments
+bind one binder ([Generic Functions](#generic-functions-monomorphization)):
+`.[1, 2, 3]` is `[3]i64`, and with `x : i32`, `.[1, x]` and `.[x, 1]` are both
+`[2]i32`. A bare `.[]` with no target is `[0]void`. A bare literal with no
+target whose elements give no type (`.[null, null]`) is a compile error asking
+for the annotation. A type prefix on the literal names the **aggregate** type
+— `@Vector(3, f32).[…]`, `([2]?i64).[…]`, or an alias of an array type —
+never the element type: a prefix that resolves to a non-array/vector/slice
+type (`i16.[…]`, `Point.[…]`) is a compile error pointing at the annotated
+form.
 
 `@Array(N, T)` is the named form of the same type, written wherever `[N]T` is:
 ```sx
@@ -2405,10 +2409,11 @@ sum :: (a: $T, b: T) -> T {
   sum(40, 2)       // T = i64
   sum(1.5, 2.5)    // T = f64
   ```
-- An integer, float or string literal argument carries no type of its own: the
-  arguments that do bind the binder first, whichever order they are written in,
-  and the literal fits itself to what they bound. A binder only literals speak
-  for takes their defaults — `i64`, `f64`, `string`.
+- An untyped argument carries no type of its own: a literal, an unannotated
+  `::` constant, arithmetic over them, or a bare `.[…]` of them. The arguments
+  that do have a type bind the binder first, whichever order they are written
+  in, and the untyped argument fits itself to what they bound. A binder only
+  untyped arguments speak for takes their defaults — `i64`, `f64`, `string`.
   ```sx
   x : i32 = 7;
   sum(1, x)        // T = i32
@@ -2926,6 +2931,11 @@ isReady : ValueListenable(bool) = map(
 - `:=` bindings infer type from the right-hand side
 - Explicit annotation overrides inference: `NAME : f64 : 0.9;`
 - Integer literals default to `i64`
+- Untyped integer expressions — integer literals, unannotated integer
+  constants, unary negation and `+ - * / %` over them — fold at compile time
+  and take their destination's numeric type, as a literal does:
+  `d : i32 = 2 * 3` is `6` as `i32`, and `d : i8 = 100 + 100` is refused
+  because `200` does not fit `i8`. Without a destination the type is `i64`.
 - String literals, and `::` constants bound to them, take the shape their
   destination names and default to `string` (see [Literals](#literals))
 - Untyped float expressions comprise numeric literals, unannotated numeric
@@ -3230,16 +3240,12 @@ f(K);           // by-value param — copy at the call
 p := *K;        // *[4]i64 — address of the const storage (reads)
 ```
 
-Untyped inference unifies the element types: all ints → `i64`; any float
-present promotes the whole element type to `f64` (int elements convert
-exactly, mirroring "an integer fits any integer or float"); all floats →
-`f64`; `bool` / `string` elements must be homogeneous. Element shapes may
-nest (array-of-structs, array-of-arrays, struct-containing-array). The
-length comes from the element count.
+An untyped array constant has the type its literal has written inline
+([Array Types](#array-types)): with `A : i32 : 5`, `.[1, A]` is `[2]i32`.
+Element shapes may nest (array-of-structs, array-of-arrays,
+struct-containing-array). The length comes from the element count.
 
 Diagnostics (each rejects the declaration):
-- A non-numeric element mix (string + int, bool + int):
-  `constant 'X' mixes incompatible element types — annotate the array type`.
 - A runtime element (a call, a variable read):
   `constant 'X' must be initialized by compile-time constant elements`.
 - A typed declaration whose length disagrees with the initializer:

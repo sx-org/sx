@@ -2397,6 +2397,10 @@ pub const Ops = struct {
 
     // ── Array/Slice ops ───────────────────────────────────────
     pub fn emitIndexGet(self: Ops, instruction: *const Inst, bin: BinOp) void {
+        if (instruction.ty == .void) {
+            self.e.mapRef(c.LLVMGetUndef(self.e.cached_i64));
+            return;
+        }
         const base = self.e.resolveRef(bin.lhs);
         const idx = self.e.resolveRef(bin.rhs);
         const base_ty = c.LLVMTypeOf(base);
@@ -2451,8 +2455,8 @@ pub const Ops = struct {
                 // Resolve the pointee type for the GEP element size
                 const info = self.e.ir_mod.types.get(instruction.ty);
                 break :blk switch (info) {
-                    .pointer => |p| self.e.toLLVMType(p.pointee),
-                    .many_pointer => |p| self.e.toLLVMType(p.element),
+                    .pointer => |p| self.e.fieldLLVMType(p.pointee),
+                    .many_pointer => |p| self.e.fieldLLVMType(p.element),
                     else => self.e.cached_i8, // fallback
                 };
             };
@@ -2464,8 +2468,8 @@ pub const Ops = struct {
             const gep_elem = blk: {
                 const info = self.e.ir_mod.types.get(instruction.ty);
                 break :blk switch (info) {
-                    .pointer => |p| self.e.toLLVMType(p.pointee),
-                    .many_pointer => |p| self.e.toLLVMType(p.element),
+                    .pointer => |p| self.e.fieldLLVMType(p.pointee),
+                    .many_pointer => |p| self.e.fieldLLVMType(p.element),
                     else => self.e.cached_i8,
                 };
             };
@@ -2549,7 +2553,7 @@ pub const Ops = struct {
         const elem_ty = blk: {
             const info = self.e.ir_mod.types.get(instruction.ty);
             break :blk switch (info) {
-                .slice => |s| self.e.toLLVMType(s.element),
+                .slice => |s| self.e.fieldLLVMType(s.element),
                 else => self.e.cached_i8,
             };
         };

@@ -768,7 +768,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         const al = ast.ArrayLiteral{ .elements = elems.items };
         const saved_tt = self.target_type;
         self.target_type = ty;
-        const arr = self.lowerArrayLiteral(&al);
+        const arr = self.lowerArrayLiteral(&al, span);
         self.target_type = saved_tt;
         return self.coerceToType(arr, self.builder.getRefType(arr), ty);
     }
@@ -1869,7 +1869,7 @@ pub fn literalType(self: *Lowering, target: ?TypeId, len: usize) TypeId {
 pub fn literalNodeType(self: *Lowering, node: *const Node, target: ?TypeId) ?TypeId {
     if (self.untypedString(node)) |lit| return self.literalType(target, self.stringLiteralBytes(lit).len);
     return switch (node.data) {
-        .int_literal, .char_literal => if (target) |t| (if (Lowering.isFloat(t) or self.isIntEx(t)) t else .i64) else .i64,
+        .int_literal, .char_literal => integerLiteralType(self, target),
         .float_literal => if (target) |t| (if (Lowering.isFloat(t)) t else .f64) else .f64,
         .bool_literal => .bool,
         .unary_op => |u| if (u.op == .negate and (u.operand.data == .int_literal or u.operand.data == .float_literal))
@@ -1878,6 +1878,11 @@ pub fn literalNodeType(self: *Lowering, node: *const Node, target: ?TypeId) ?Typ
             null,
         else => null,
     };
+}
+
+fn integerLiteralType(self: *Lowering, target: ?TypeId) TypeId {
+    const t = target orelse return .i64;
+    return if (Lowering.isFloat(t) or self.isIntEx(t)) t else .i64;
 }
 
 pub const LiteralShape = enum { string, view, array };
@@ -2776,82 +2781,16 @@ pub fn resolveVariantIndex(self: *Lowering, ty: TypeId, variant_name: []const u8
     return 0;
 }
 
-pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
+pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral, span: ast.Span) Ref {
     var elems = std.ArrayList(Ref).empty;
     defer elems.deinit(self.alloc);
 
-    // Determine element type: explicit type_expr > target_type > inference
-    var elem_ty: TypeId = .unresolved;
-    var from_target = false;
-    var is_vector = false;
-    // The destination's terminator, written past the last element.
-    var sentinel: ?i64 = null;
-
-    // First, check explicit type annotation on the literal (e.g. `@Vector(3,f32).[1,2,3]`).
-    // The prefix slot names the AGGREGATE type; a prefix that resolves to
-    // anything else (scalar `i16.[…]`, struct `Point.[…]`) would read as an
-    // element-type prefix — a second meaning this spelling does not carry.
-    // Silently ignoring it lets elements fall back to the literal default, so
-    // `i32.[1]` builds a `[1]i64`; refuse it instead.
-    if (al.type_expr) |te| {
-        const resolved = self.resolveArrayLiteralType(te);
-        if (resolved != .unresolved) {
-            if (self.module.types.sliceInfoOf(resolved)) |s| {
-                elem_ty = s.element;
-                from_target = true;
-            } else if (!resolved.isBuiltin()) {
-                const info = self.module.types.get(resolved);
-                switch (info) {
-                    .array => |a| {
-                        elem_ty = a.element;
-                        sentinel = a.sentinel;
-                        from_target = true;
-                    },
-                    .vector => |v| {
-                        elem_ty = v.element;
-                        from_target = true;
-                        is_vector = true;
-                    },
-                    else => {},
-                }
-            }
-            if (!from_target) {
-                if (self.diagnostics) |d| {
-                    const name = self.module.types.formatTypeName(self.alloc, resolved, null);
-                    d.addFmt(.err, te.span, "a '.[ ]' literal's type prefix names the aggregate type, not the element type — '{s}' is not an array/vector/slice; annotate the binding instead: `x : [{d}]{s} = .[ … ]`", .{ name, al.elements.len, name });
-                }
-                return self.builder.constUndef(.unresolved);
-            }
-        }
-    }
-
-    if (!from_target) {
-        if (self.target_type) |tt| {
-            if (self.module.types.sliceInfoOf(tt)) |s| {
-                elem_ty = s.element;
-                from_target = true;
-            } else if (!tt.isBuiltin()) {
-                const info = self.module.types.get(tt);
-                switch (info) {
-                    .array => |a| {
-                        elem_ty = a.element;
-                        sentinel = a.sentinel;
-                        from_target = true;
-                    },
-                    .vector => |v| {
-                        elem_ty = v.element;
-                        from_target = true;
-                        is_vector = true;
-                    },
-                    else => {},
-                }
-            }
-        }
-    }
-    if (!from_target and al.elements.len > 0) {
-        const inferred = self.inferExprType(al.elements[0]);
-        if (inferred != .void) elem_ty = inferred;
-    }
+    const result_ty = self.builtArrayLiteralType(al, span) orelse return self.builder.constUndef(.unresolved);
+    const elem_ty: TypeId, const sentinel: ?i64 = switch (self.module.types.get(result_ty)) {
+        .array => |a| .{ a.element, a.sentinel },
+        .vector => |v| .{ v.element, null },
+        else => unreachable,
+    };
 
     for (al.elements) |elem| {
         const old_tt = self.target_type;
@@ -2882,11 +2821,52 @@ pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
 
     if (sentinel) |x| elems.append(self.alloc, self.sentinelValue(x, elem_ty)) catch unreachable;
 
-    const result_ty = if (is_vector)
-        self.module.types.vectorOf(elem_ty, @intCast(al.elements.len))
-    else
-        self.module.types.arrayOfSentinel(elem_ty, @intCast(al.elements.len), sentinel);
     return self.builder.structInit(elems.items, result_ty);
+}
+
+/// The array or vector a `.[…]` literal builds, shaped by its type prefix,
+/// else its target, else its elements. A prefix naming no array, vector or
+/// slice is diagnosed here. A literal nothing types is diagnosed only where it
+/// is built, because a caller asking its type may still give it a target.
+pub fn arrayLiteralType(self: *Lowering, al: *const ast.ArrayLiteral) error{ NotAggregatePrefix, NoElementType }!TypeId {
+    const length: u32 = @intCast(al.elements.len);
+    if (al.type_expr) |te| {
+        const resolved = self.resolveArrayLiteralType(te);
+        if (resolved != .unresolved) {
+            if (literalAggregate(self, resolved, length)) |ty| return ty;
+            if (self.diagnostics) |d| {
+                const name = self.module.types.formatTypeName(self.alloc, resolved, null);
+                d.addFmt(.err, te.span, "a '.[ ]' literal's type prefix names the aggregate type, not the element type — '{s}' is not an array/vector/slice; annotate the binding instead: `x : [{d}]{s} = .[ … ]`", .{ name, al.elements.len, name });
+            }
+            return error.NotAggregatePrefix;
+        }
+    }
+    if (self.target_type) |tt| if (literalAggregate(self, tt, length)) |ty| return ty;
+    if (length == 0) return self.module.types.arrayOf(.void, 0);
+    const elem_ty = self.genericResolver().elementBinding(al.elements) orelse return error.NoElementType;
+    return self.module.types.arrayOf(elem_ty, length);
+}
+
+/// The type of a `.[…]` literal built at `span`, where a literal nothing
+/// types is diagnosed.
+pub fn builtArrayLiteralType(self: *Lowering, al: *const ast.ArrayLiteral, span: ast.Span) ?TypeId {
+    return self.arrayLiteralType(al) catch |err| {
+        if (err == error.NoElementType) if (self.diagnostics) |d|
+            d.add(.err, "cannot infer the element type of this array literal — annotate it", span);
+        return null;
+    };
+}
+
+/// The array or vector a `.[…]` of `length` elements builds for the
+/// destination `ty`.
+fn literalAggregate(self: *Lowering, ty: TypeId, length: u32) ?TypeId {
+    if (self.module.types.sliceInfoOf(ty)) |s| return self.module.types.arrayOf(s.element, length);
+    if (ty.isBuiltin()) return null;
+    return switch (self.module.types.get(ty)) {
+        .array => |a| self.module.types.arrayOfSentinel(a.element, length, a.sentinel),
+        .vector => |v| self.module.types.vectorOf(v.element, length),
+        else => null,
+    };
 }
 
 /// Resolve the type annotation on an array literal (e.g. `@Vector(3,f32).[...]`).
@@ -3781,6 +3761,15 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
     return result;
 }
 
+/// A negated literal wraps, so `-9223372036854775808` is `i64`'s minimum.
+fn untypedIntegerValue(self: *Lowering, node: *const Node) ?i64 {
+    return switch (node.data) {
+        .unary_op => |u| if (u.operand.data == .int_literal) -%u.operand.data.int_literal.value else program_index_mod.evalConstIntExpr(node, self),
+        .binary_op => program_index_mod.evalConstIntExpr(node, self),
+        else => null,
+    };
+}
+
 fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
     if (program_index_mod.untypedConst(node, self)) |untyped| switch (untyped) {
         .float => {
@@ -3789,7 +3778,12 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                 return self.builder.constFloat(value, ty);
         },
         .string => |lit| return self.lowerStringLiteral(lit),
-        .integer => {},
+        .integer => if (untypedIntegerValue(self, node)) |value| {
+            const ty = integerLiteralType(self, self.target_type);
+            if (Lowering.isFloat(ty)) return self.builder.constFloat(@floatFromInt(value), ty);
+            self.checkIntLiteralFits(value, ty, node.span);
+            return self.builder.constInt(value, ty);
+        },
     };
     return switch (node.data) {
         // Bare `$<pack>` in expression position → an `[]Type` slice
@@ -4267,20 +4261,6 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                     break :blk self.emitPlaceholder("addr_of_const");
                 }
             }
-            // Fold a negated integer literal into one constant: `-128` must
-            // range-check as -128, not as an out-of-range +128 intermediate.
-            if (uop.op == .negate and uop.operand.data == .int_literal) {
-                const lit = uop.operand.data.int_literal;
-                const v = -%lit.value;
-                if (self.target_type) |tt| {
-                    if (tt == .f32 or tt == .f64) {
-                        break :blk self.builder.constFloat(@floatFromInt(v), tt);
-                    }
-                }
-                const nty = if (self.target_type) |tt| (if (self.isIntEx(tt)) tt else TypeId.i64) else TypeId.i64;
-                self.checkIntLiteralFits(v, nty, node.span);
-                break :blk self.builder.constInt(v, nty);
-            }
             // A dest-typed float literal is that dest width; the negated form
             // is the same constant with the sign flipped.
             if (uop.op == .negate and uop.operand.data == .float_literal) {
@@ -4375,7 +4355,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
             self.settleJuxtaposition(node);
             break :blk self.lowerExpr(node);
         },
-        .array_literal => |al| self.lowerArrayLiteral(&al),
+        .array_literal => |al| self.lowerArrayLiteral(&al, node.span),
         .index_expr => |ie| self.lowerIndexExpr(&ie),
         .slice_expr => |se| self.lowerSliceExpr(&se),
         // The literal's identity is its node: the env type memo keys on it.

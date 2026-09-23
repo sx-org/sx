@@ -522,6 +522,7 @@ pub const ExprTyper = struct {
                 }
                 return self.l.inferAnonStructType(&sl);
             },
+            .array_literal => |al| self.l.arrayLiteralType(&al) catch .unresolved,
             .tuple_literal => |tl| {
                 // Explicitly-typed construction with a type prefix: the literal's type is
                 // the carried tuple type (preserves field names for the named
