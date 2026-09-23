@@ -1,6 +1,6 @@
 // A CAPTURING literal does not erase to `Closure`. Its env is the value, and a
 // `Closure` slot says nothing about where that env would live — so the store is
-// refused and the message names `closure(f)`, which is where the storage is
+// refused and the message names `mem.closure(f)`, which is where the storage is
 // chosen. An EMPTY env erases freely: the pair is {fn, null} and funds
 // nothing.
 

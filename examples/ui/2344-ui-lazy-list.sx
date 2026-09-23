@@ -37,10 +37,10 @@ main :: () -> i32 {
 
     st := fluent.ListState.init(context.allocator);
     root := fluent.UiRoot.init(fluent.Size{ width = 100.0, height = 100.0 }, context.allocator);
-    loop := fluent.FrameLoop.init(*root, closure(||_{ st = *st } -> fluent.View {
+    loop := fluent.FrameLoop.init(*root, mem.closure(||_{ st = *st } -> fluent.View {
         v : fluent.View = fluent.lazyList(st, items.len,
-            closure(|i: i64| -> u64 { items.items[i] }),
-            closure(|i: i64| -> fluent.View { r : fluent.View = fluent.Rect{ height = rowHeight(items.items[i]) }; r }));
+            mem.closure(|i: i64| -> u64 { items.items[i] }),
+            mem.closure(|i: i64| -> fluent.View { r : fluent.View = fluent.Rect{ height = rowHeight(items.items[i]) }; r }));
         v
     }), context.allocator);
 
@@ -77,10 +77,10 @@ main :: () -> i32 {
     for i in 0..20 { items.append(i.(u64)); }
     rv := fluent.ListState.init(context.allocator, true);
     rroot := fluent.UiRoot.init(fluent.Size{ width = 100.0, height = 100.0 }, context.allocator);
-    rloop := fluent.FrameLoop.init(*rroot, closure(||_{ rv = *rv } -> fluent.View {
+    rloop := fluent.FrameLoop.init(*rroot, mem.closure(||_{ rv = *rv } -> fluent.View {
         v : fluent.View = fluent.lazyList(rv, items.len,
-            closure(|i: i64| -> u64 { items.items[i] }),
-            closure(|i: i64| -> fluent.View { r : fluent.View = fluent.Rect{ height = rowHeight(items.items[i]) }; r }));
+            mem.closure(|i: i64| -> u64 { items.items[i] }),
+            mem.closure(|i: i64| -> fluent.View { r : fluent.View = fluent.Rect{ height = rowHeight(items.items[i]) }; r }));
         v
     }), context.allocator);
     rloop.frame(0);
@@ -104,10 +104,10 @@ main :: () -> i32 {
     // window, and the way back lays nothing out again.
     lv := fluent.ListState.init(context.allocator);
     lroot := fluent.UiRoot.init(fluent.Size{ width = 100.0, height = 100.0 }, context.allocator);
-    lloop := fluent.FrameLoop.init(*lroot, closure(||_{ lv = *lv } -> fluent.View {
+    lloop := fluent.FrameLoop.init(*lroot, mem.closure(||_{ lv = *lv } -> fluent.View {
         v : fluent.View = fluent.lazyList(lv, 10000,
-            closure(|i: i64| -> u64 { i.(u64) }),
-            closure(|i: i64| -> fluent.View {
+            mem.closure(|i: i64| -> u64 { i.(u64) }),
+            mem.closure(|i: i64| -> fluent.View {
                 r : fluent.View = fluent.Label{ text = concat("row ", intToString(i), " of many rows") };
                 r
             }));

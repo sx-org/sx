@@ -4,7 +4,7 @@ error: '$F' is the callable this body hands back, and this body hands back two: 
  9 | pick :: (b: bool) -> $F/(i64) -> i64 {
    |                      ^^^^^^^^^^^^^^^
 
-help: one literal on two paths is one type; two literals are two types — erase both with 'closure(...)' to hand back one
+help: one literal on two paths is one type; two literals are two types — erase both with 'mem.closure(...)' to hand back one
    |
  9 | pick :: (b: bool) -> $F/(i64) -> i64 {
    |                      ^^^^^^^^^^^^^^^

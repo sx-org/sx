@@ -892,7 +892,7 @@ pub fn buildProtocolErasure(self: *Lowering, operand: Ref, operand_node: *const 
 /// storage of its own to borrow.
 pub fn refuseRvalueInterfaceErasure(self: *Lowering, proto_name: []const u8, span: ast.Span) void {
     if (self.diagnostics) |d| {
-        d.addFmt(.err, span, "cannot borrow a temporary into a '{s}' handle — bind the value where it lives, or write it through 'Allocator.make' and use the handle over that", .{proto_name});
+        d.addFmt(.err, span, "cannot borrow a temporary into a '{s}' handle — bind the value where it lives, or write it through 'mem.make' and use the handle over that", .{proto_name});
     }
 }
 
@@ -1540,7 +1540,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
                 const cs = self.builder.current_span;
                 const span = ast.Span{ .start = cs.start, .end = cs.end };
                 const id = d.addFmtId(.err, span, "a capturing lambda does not erase to '{s}' — its environment has no home here", .{self.module.types.formatTypeName(self.alloc, dst_ty, null)});
-                d.addHelpFmt(id, span, null, "persist it with 'closure(f)', or 'closure(f, alloc)' to choose the allocator; a pointer to it ('*f') erases by borrowing", .{});
+                d.addHelpFmt(id, span, null, "persist it with 'mem.closure(f)', or 'mem.closure(f, alloc)' to choose the allocator; a pointer to it ('*f') erases by borrowing", .{});
             }
             return val;
         },

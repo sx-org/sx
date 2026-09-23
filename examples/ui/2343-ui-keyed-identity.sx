@@ -51,7 +51,7 @@ main :: () -> i32 {
         k := mode == 0;
         keyed = k;
         root := fluent.UiRoot.init(fluent.Size{ width = 100.0, height = 100.0 }, context.allocator);
-        loop := fluent.FrameLoop.init(*root, closure(|| -> fluent.View { rows() }), context.allocator);
+        loop := fluent.FrameLoop.init(*root, mem.closure(|| -> fluent.View { rows() }), context.allocator);
         start = 0;
         loop.frame(0);
         before := ids[1];
@@ -65,7 +65,7 @@ main :: () -> i32 {
     }
 
     root := fluent.UiRoot.init(fluent.Size{ width = 100.0, height = 100.0 }, context.allocator);
-    ticks := fluent.FrameLoop.init(*root, closure(|| -> fluent.View { v : fluent.View = Ticker{}; v }), context.allocator);
+    ticks := fluent.FrameLoop.init(*root, mem.closure(|| -> fluent.View { v : fluent.View = Ticker{}; v }), context.allocator);
     ticks.frame(16_000_000);
     ticks.frame(32_000_000);
     root.deinit();

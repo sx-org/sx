@@ -1266,7 +1266,7 @@ carries no allocator and no ownership word, and copying a handle — `q :=
 p`, argument passing, returning, struct/array copying, storing into and
 reading out of containers — copies the three words and aliases the same
 referent. Nothing owns an interface value: no spelling allocates one,
-and `free` refuses one (§5.3).
+and `mem.free` refuses one (§5.3).
 
 Vtables are global constants, one per `(instantiation, concrete type,
 impl)` — a parameterized interface gets distinct vtables per
@@ -1312,7 +1312,7 @@ measure(w);                         // same coercion at the argument
 measure(*w);                        // a pointer borrows its pointee
 u : Sizable = s;                    // the handle, copied — one referent
 pretty(Widget{ value = 8 });        // $T/I is not an I-typed target
-p := a.make(Widget{ value = 9 });   // @Init argument, *T result
+p := mem.make(a, Widget{ value = 9 });   // @Init argument, *T result
 measure(p);                         // *T arm
 ```
 
@@ -1321,7 +1321,7 @@ measure(Widget{ value = 8 });               // error — a concrete rvalue at an
 ```
 ```
 error: cannot borrow a temporary into a 'Sizable' handle — bind the
-       value where it lives, or write it through 'Allocator.make' and
+       value where it lives, or write it through 'mem.make' and
        use the handle over that
 ```
 
@@ -1343,10 +1343,10 @@ pointer.
 handle). `parentAllocator: Allocator = ---` is the GPU dummy: `init`
 writes the field.
 
-##### 5.3 `free`
+##### 5.3 `mem.free`
 
-`free` handles closures and slices. An interface handle owns nothing, so
-`free` refuses one, as it refuses a constraint-typed anything (there are
+`mem.free` handles closures and slices. An interface handle owns nothing, so
+`mem.free` refuses one, as it refuses a constraint-typed anything (there are
 no values at all) and any other argument kind.
 
 ##### 5.4 Dangling borrows
@@ -1478,7 +1478,7 @@ thread when the ambient one does not.
 
 An interface-typed receiver dispatches its own members first and falls
 through to `ufcs` functions only for **non-members**
-(`context.allocator.create(Session)` — `create` takes the handle as its
+(`context.allocator.create(Session)` after `..mem;` — `create` takes the handle as its
 first parameter). Constraint-bound receivers resolve at
 monomorphization.
 
@@ -2901,7 +2901,7 @@ Combined :: struct($R: Type, ..$Ts: []Type) {
 
 map :: (mapper: Closure(..sources.T) -> $R, ..sources: ValueListenable)
        -> ValueListenable($R) {
-  c := context.allocator.alloc(Combined($R, ..sources.T));
+  c := mem.create(context.allocator, Combined($R, ..sources.T));
   c.ownAllocator = context.allocator;
   c.mapper        = mapper;
   c.sources       = .{..sources};           // pack-to-tuple materialization
@@ -3558,7 +3558,7 @@ carrying it as a **bound**:
 
 ```sx
 store :: (value: $I/@Init($T)) -> *T {
-    dest := context.allocator.create(T);
+    dest := mem.create(context.allocator, T);
     value.write(dest);
     dest
 }
@@ -3566,12 +3566,14 @@ store :: (value: $I/@Init($T)) -> *T {
 button := store(Button{ label = "Play" });
 ```
 
-`Allocator` ships that shape as `make`:
+`mem.make` supplies that shape over `Allocator`:
 
 ```sx
-make    :: ufcs (a: Allocator, value: $I/@Init($T)) -> *T;
-create  :: ufcs (a: Allocator, $T: Type) -> *T;      // storage, uninitialised
-destroy :: ufcs (a: Allocator, p: *$T);              // pairs with both
+mem :: scope {
+    make    :: ufcs (a: Allocator, value: $I/@Init($T)) -> *T;
+    create  :: ufcs (a: Allocator, $T: Type) -> *T;
+    destroy :: ufcs (a: Allocator, p: *$T);
+}
 ```
 
 `make` allocates and writes in one step, so it is the spelling that gives an
@@ -3579,7 +3581,7 @@ rvalue a lifetime past the frame that wrote it. `create` hands back
 uninitialised storage. Passing a type to `make` fails the `@Init` bound:
 
 ```sx
-p := a.make(Session);
+p := mem.make(a, Session);
 ```
 ```
 error: 'Session' is a type, and 'make' takes an initializer — use
@@ -3745,7 +3747,7 @@ observes what the first one changed. It is therefore valid only within the call
 that received it — binding it to a local, capturing it in an env, and returning
 it are all refused. Take a `$F/() -> void` parameter instead when the body must
 be stored or run later: its env is a copy of what the block named, and
-`closure(f)` gives it a home that outlives the frame.
+`mem.closure(f)` gives it a home that outlives the frame.
 
 **A block's names are asked of the file that wrote it.** A replay lowers in the
 receiving function's instruction stream, but the body is resolved where it was
@@ -3791,7 +3793,7 @@ interface arm splits on whether the published value already IS the slot type:
 inline match T {
     case interface: {
         inline if V == T { self.children.append(value); }
-        else             { self.children.append(context.allocator.make(value)); }
+        else             { self.children.append(mem.make(context.allocator, value)); }
     }
     else: { self.children.append(value); }
 }
@@ -4115,9 +4117,9 @@ wrong `xx` force from an `any` (`xx a : ?View` where the box holds something els
 which reinterprets whatever the box points at — the `xx` forms that could produce
 one out of a set value itself are refused.
 
-**`free` is not part of a set's story.** The active member lives **inline** in the
+**`mem.free` is not part of a set's story.** The active member lives **inline** in the
 slot: the payload IS the value, not a handle to an allocation, so there is nothing
-for `free` to release and it refuses a set value. What a member's fields point at —
+for `mem.free` to release and it refuses a set value. What a member's fields point at —
 a `List`'s backing, a string buffer — is ordinary field data with ordinary
 lifetimes; reclaim it by resetting the allocator or arena those allocations came
 from, not through the set value.
@@ -4931,7 +4933,7 @@ is a zero-sized value, and a two-field env is those two fields.
 
 `Closure(…) -> R` is the **erased** form of a callable — a fat pointer
 `{ fnPtr, env }` (16 bytes), against a bare function pointer's 8. A unique
-lambda becomes one through [`closure`](#persisting--closure), which is where the
+lambda becomes one through [`mem.closure`](#persisting--memclosure), which is where the
 env's storage is decided.
 
 #### Closure Type
@@ -5001,7 +5003,7 @@ h : Closure(i64) -> i64 = |x|_{ n } x + n;
 ```
 error: a capturing lambda does not erase to 'Closure(i64) -> i64' — its
        environment has no home here
-help: persist it with 'closure(f)', or 'closure(f, alloc)' to choose the
+help: persist it with 'mem.closure(f)', or 'mem.closure(f, alloc)' to choose the
       allocator; a pointer to it ('*f') erases by borrowing
 ```
 
@@ -5016,15 +5018,17 @@ keep :: (h: Closure()) -> Closure() => h;
 h := keep(*f);      // borrows f's env; valid while f is
 ```
 
-#### Persisting — `closure`
-`closure` is an ordinary `std/mem.sx` function over a callable-bound binder:
+#### Persisting — `mem.closure`
+`mem.closure` is an ordinary `std/mem.sx` function over a callable-bound binder:
 ```sx
-closure :: (f: $F/(..$A) -> $R, alloc: Allocator = context.allocator) -> Closure(..A) -> R {
-    inline match F {
-        case closure: return f;
-        else: {
-            p := alloc.make(@envOf(f));
-            return .{ fnPtr = @callPtr(F), env = p };
+mem :: scope {
+    closure :: (f: $F/(..$A) -> $R, alloc: Allocator = context.allocator) -> Closure(..A) -> R {
+        inline match F {
+            case closure: return f;
+            else: {
+                p := mem.make(alloc, @envOf(f));
+                return .{ fnPtr = @callPtr(F), env = p };
+            }
         }
     }
 }
@@ -5036,13 +5040,13 @@ closure :: (f: $F/(..$A) -> $R, alloc: Allocator = context.allocator) -> Closure
   its own state, a bare function its pointer word — so `@envType(F)` is `F` and
   a nominal and a bare function get a trampoline synthesized around it. All
   three refuse a `Closure`, which carries an env rather than being one.
-- A `Closure` argument is returned unchanged, so `closure` composes.
+- A `Closure` argument is returned unchanged, so `mem.closure` composes.
 - An empty env is zero-sized. `make`/`create` of a 0-sized T return null;
   `make` does not write a null dest; `allocBytes(0)` returns null and
   allocates nothing; `deallocBytes(null)` is a no-op.
-  `p := alloc.make(@envOf(f))` is null for a 0-sized env, so an erased empty
+  `p := mem.make(alloc, @envOf(f))` is null for a 0-sized env, so an erased empty
   lambda carries a null env word and funds nothing.
-- `free(cl)` / `free(cl, alloc)` releases the env the same allocator funded.
+- `mem.free(cl)` / `mem.free(cl, alloc)` releases the env the same allocator funded.
 
 #### Factory Functions
 A factory either returns the unique lambda or erases it, and the return type says
@@ -5053,7 +5057,7 @@ add5 := makeAdder(5);                  // the env itself — no heap
 print("{}\n", add5(100));              // 105
 
 makeHandler :: (n: i64) -> Closure(i64) -> i64 {
-    return closure(|x|_{ n } x + n);   // env on context.allocator
+    return mem.closure(|x: i64|_{ n } x + n);   // env on context.allocator
 }
 ```
 
@@ -5062,11 +5066,11 @@ makeHandler :: (n: i64) -> Closure(i64) -> i64 {
 paths is one type; two literals are two types and cannot both be the return. The
 caller binds the value (`add5 := makeAdder(5)`) and does not spell F; a later
 signature names the unique by introducing its own binder (`apply(add5, 1)`,
-`closure(add5)`).
+`mem.closure(add5)`).
 
 A slot written with no binder — a field, an array element, an interface method's
 parameter — is a `Closure`, so anything capturing that reaches it goes through
-`closure` first.
+`mem.closure` first.
 
 #### Optional Closures
 `?Closure` is supported for nullable callbacks. Uses `fnPtr == null` as the none sentinel (zero overhead — same layout as `Closure`).
@@ -5077,7 +5081,7 @@ Button :: struct {
 }
 btn := Button{label = "OK", onClick = null };
 btnId := 7;
-btn.onClick = closure(|x|_{ id = btnId } print("{} {}\n", id, x));
+btn.onClick = mem.closure(|x: i64|_{ id = btnId } print("{} {}\n", id, x));
 if handler := btn.onClick {
     handler(1);
 }
@@ -5085,16 +5089,16 @@ if handler := btn.onClick {
 
 #### Memory
 A `|…|` literal allocates nothing: its env is the value, living wherever the
-binding, parameter, or temporary lives. Heap enters at `closure(f, alloc)` and
+binding, parameter, or temporary lives. Heap enters at `mem.closure(f, alloc)` and
 only there, defaulting to `context.allocator` — the compiler initializes
-`context` with a default GPA (malloc/free wrapper) at the start of `main()`, and
+`context` with the default `mem.CAllocator` (malloc/free wrapper) at the start of `main()`, and
 `push Context` overrides it. An auto-promoted function pointer or empty lambda
 has a null env and funds nothing.
 ```sx
 base  := 10;
-arena := Arena.init(context.allocator, 4096);
+arena := mem.Arena.init(context.allocator, 4096);
 f  := |x: i64|_{ base } -> i64 x + base;   // env in f's storage
-cb := closure(f, arena);                   // env copied into the arena
+cb := mem.closure(f, arena);                   // env copied into the arena
 ```
 
 ### Function Call
@@ -5185,7 +5189,7 @@ scaffold() { chatList(); };                    // defaults skipped, block binds 
   **build block** bound, which gives the same source block a second meaning (see
   [`@BuildBlock(P)`](#buildblockp)). A `Closure` parameter takes no trailing
   block — erasing one is an allocation, and it is written where it is paid, as
-  `f(closure(|…| …))`. Otherwise a targeted error names the parameter ("'f'
+  `f(mem.closure(|…| …))`. Otherwise a targeted error names the parameter ("'f'
   cannot take a trailing block — its last parameter 'x' is neither
   `$F/(…) -> R` nor `@BuildBlock`", or "… its last parameter '..xs' is
   variadic").
@@ -5277,8 +5281,8 @@ field or method of `object`'s type, the compiler rewrites the call to
 `func(object, args)`. Fields and methods take priority over ufcs
 functions; an interface-typed receiver dispatches its own MEMBERS first and
 falls through to ufcs functions only for non-members
-(`context.allocator.create(Session)` — `create` is a ufcs fn taking the
-handle as its first param).
+(`context.allocator.create(Session)` after `..mem;` — `create` takes the
+handle as its first parameter).
 
 UFCS works with pointer receivers (auto-deref, and auto address-of when
 the first param is `*T` and the receiver is a value) and with **generic**
@@ -5296,7 +5300,7 @@ firstOf(xs);        // direct
 The alias form decouples the method name from the function name —
 useful when the bare name reads poorly in dot position:
 ```sx
-arenaAlloc :: (arena: *Arena, size: i64) -> *void { ... }
+arenaAlloc :: (arena: *mem.Arena, size: i64) -> *void { ... }
 alloc :: ufcs arenaAlloc;
 
 myArena.alloc(42);        // calls arenaAlloc(myArena, 42)
@@ -5352,8 +5356,10 @@ A `push .{ ... }` literal is spread+patch: fields the literal does NOT name are 
 **`Context` struct** — assembled PER PROGRAM, 100% from `@context.extend` declarations. The struct itself is declared EMPTY in `modules/std/core.sx` (the declaration doubles as the implicit-context mode marker); the stdlib's own capabilities are ordinary declarations in their owning modules:
 ```sx
 // std/mem.sx
-cAllocator : CAllocator = .{};
-@context.extend allocator: Allocator = cAllocator;
+mem :: scope {
+    cAllocator : CAllocator = .{};
+    @context.extend allocator: Allocator = cAllocator;
+}
 
 // std/io.sx
 cBlockingIo : CBlockingIo = .{};
@@ -6054,9 +6060,8 @@ main :: () -> i32 {
 ```
 modules/std.sx        the prelude — print/format, string ops (concat,
                       pathJoin, ...), List(T), Context + push, the Allocator
-                      interface; plus the namespace tail: mem / xml / log /
-                      fs / process / socket / json / cli / hash / test ::
-                      @import "modules/std/<m>.sx"
+                      interface; spreads c / mem / process / encoding scopes
+                      and names the remaining module imports
 modules/std/          mem.sx (CAllocator, GPA, Arena, TrackingAllocator),
                       fs.sx, process.sx, socket.sx, json.sx, cli.sx, hash.sx,
                       xml.sx, log.sx, trace.sx, test.sx
@@ -6072,8 +6077,9 @@ modules/gpu/, modules/ui/   GPU layer + retained UI toolkit
 
 `@import "modules/std.sx"` gives every prelude name bare, plus `mem.GPA`,
 `json.parse`, `fs.exists`, `hash.sha256Hex`, `log.warn`, ... through the
-carried namespace tail. Direct file imports
-(`@import "modules/std/json.sx"`) provide bare access.
+carried namespace tail. A self-scoped file supplies its scope on direct
+import: `@import "modules/std/mem.sx";` exposes `mem.GPA`. Unscoped files
+provide bare access, such as `parse` from `modules/std/json.sx`.
 
 `modules/std/http.sx` is a scope facade:
 
@@ -6240,13 +6246,13 @@ locally-unwrapped optionals).
 
 | Function | Purpose |
 |----------|---------|
-| `run(cmd: [:0]u8) -> ?ProcessResult` | `popen` shell command, capture stdout + exit |
-| `env(name: [:0]u8) -> ?string` | `getenv` (null if unset) |
-| `findExecutable(name) -> ?string` | `command -v <name>` via shell |
+| `process.run(cmd: [:0]u8) -> ?process.ProcessResult` | `popen` shell command, capture stdout + exit |
+| `process.env(name: [:0]u8) -> ?string` | `getenv` (null if unset) |
+| `process.findExecutable(name) -> ?string` | `command -v <name>` via shell |
 
-`ProcessResult` is `{ exitCode: i32, stdout: string }`. The post-link
+`process.ProcessResult` is `{ exitCode: i32, stdout: string }`. The post-link
 bundler invokes `codesign`, `plutil`, `security`, `aapt2`, `javac`,
-`d8`, `keytool`, `apksigner`, etc. through `run`.
+`d8`, `keytool`, `apksigner`, etc. through `process.run`.
 
 ### Apple `.app` flow (`bundle.sx::bundleMain`)
 

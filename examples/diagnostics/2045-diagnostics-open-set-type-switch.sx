@@ -88,6 +88,6 @@ main :: () -> i32 {
     print("{}\n", classify(View, v));
 
     // The payload IS the value; there is no allocation to release.
-    free(v);
+    mem.free(v);
     0
 }

@@ -41,12 +41,12 @@ main :: () {
 
     st := fluent.ListState.init(context.allocator);
     root := fluent.UiRoot.init(fluent.Size{ width = 200.0, height = 120.0 }, context.allocator);
-    loop := fluent.FrameLoop.init(*root, closure(||_{ st = *st } -> fluent.View {
+    loop := fluent.FrameLoop.init(*root, mem.closure(||_{ st = *st } -> fluent.View {
         v : fluent.View = fluent.zstack(fluent.ALIGN_TOP_LEADING) {
             fluent.Rect{ fill = BACKDROP };
             fluent.place(fluent.lazyList(st, 30,
-                closure(|i: i64| -> u64 { i.(u64) }),
-                closure(|i: i64| -> fluent.View {
+                mem.closure(|i: i64| -> u64 { i.(u64) }),
+                mem.closure(|i: i64| -> fluent.View {
                     r : fluent.View = fluent.place(fluent.Label{ text = concat("row ", intToString(i)) },
                         fluent.Mod{ bg = rowFill(i), padding = fluent.EdgeInsets.symmetric(8.0, ROW_PAD) });
                     r

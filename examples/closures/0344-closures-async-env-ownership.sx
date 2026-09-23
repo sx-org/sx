@@ -7,10 +7,10 @@
 @import "modules/std/mem.sx";
 
 main :: () {
-    gpa := GPA.init();
+    gpa := mem.GPA.init();
     base := gpa.(Allocator);
-    ctx := TrackingAllocator.init(base);
-    a := TrackingAllocator.init(base);
+    ctx := mem.TrackingAllocator.init(base);
+    a := mem.TrackingAllocator.init(base);
 
     answer := 0;
     ctxHeld := 0;
@@ -36,7 +36,7 @@ main :: () {
 
     // An arena is a valid task allocator: the task's allocations land in the
     // chunk it already holds, so the GPA behind it sees no growth.
-    arena := Arena.init(base, 4096);
+    arena := mem.Arena.init(base, 4096);
     before := gpa.allocCount;
     k := 6;
     h := context.io.async(||_{ k } -> (i64, !IoErr) k * 7, arena);

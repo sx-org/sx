@@ -21,7 +21,7 @@
 // `value.site()`.
 @import "modules/std/list.sx";
 @import "modules/std/core.sx";
-@import "modules/std/mem.sx";   // Allocator.make funds an interface element
+@import "modules/std/mem.sx";
 
 // What a sink promises. A compiler-maintained contract, and an ordinary
 // constraint: no vtable, no erasure — `expression` monomorphizes for each
@@ -84,7 +84,7 @@ impl @BuildSink($T) for Sink($T) {
                     value.write(*held);
                     self.children.append(held);
                 } else {
-                    self.children.append(context.allocator.make(value));
+                    self.children.append(mem.make(context.allocator, value));
                 }
             }
             else: {

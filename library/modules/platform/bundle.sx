@@ -72,7 +72,7 @@ bundleMain :: (opts: *@BuildOptions) -> bool {
     // `deleteDirAll`.
     rmCmd := concat("rm -rf \"", concat(bundle, "\""));
     rmZ := toCstring(rmCmd);
-    if r := run(rmZ) {
+    if r := process.run(rmZ) {
         if r.exitCode != 0 {
             @printf("error: bundle: failed to clean ");
             @printf("{}", bundle);
@@ -354,7 +354,7 @@ copyAssetDir :: (src: string, dest: string, bundle: string) -> bool {
     cmd = concat(cmd, destFull);
     cmd = concat(cmd, "\" 2>&1");
     cmdZ := toCstring(cmd);
-    if r := run(cmdZ) {
+    if r := process.run(cmdZ) {
         if r.exitCode != 0 {
             @printf("error: cp -R failed:\n");
             @printf("{}", r.stdout);
@@ -390,7 +390,7 @@ embedFramework :: (opts: *@BuildOptions, name: string, destDir: string) -> bool 
             cmd = concat(cmd, dest);
             cmd = concat(cmd, "\"");
             cmdZ := toCstring(cmd);
-            if r := run(cmdZ) {
+            if r := process.run(cmdZ) {
                 if r.exitCode != 0 {
                     @printf("error: cp -R ");
                     @printf("{}", candidate);
@@ -437,7 +437,7 @@ profileAcceptsBundleCertificate :: (profile: string, bundle: string) -> bool {
     cmd = concat(cmd, "/profile.plist\" | base64 -D | shasum -a 256 | cut -d ' ' -f 1); if [ \"$leaf\" = \"$cert\" ]; then ok=0; break; fi; i=$((i + 1)); done; rm -rf \"");
     cmd = concat(cmd, tmp);
     cmd = concat(cmd, "\"; exit $ok");
-    if r := run(toCstring(cmd)) {
+    if r := process.run(toCstring(cmd)) {
         return r.exitCode == 0;
     }
     false
@@ -462,7 +462,7 @@ extractEntitlements :: (profile: string, bundleId: string) -> ?string {
     cmd1 = concat(cmd1, profilePlist);
     cmd1 = concat(cmd1, "\" 2>&1");
     cmd1Z := toCstring(cmd1);
-    if r := run(cmd1Z) {
+    if r := process.run(cmd1Z) {
         if r.exitCode != 0 {
             @printf("error: failed to decode provisioning profile:\n");
             @printf("{}", r.stdout);
@@ -479,7 +479,7 @@ extractEntitlements :: (profile: string, bundleId: string) -> ?string {
     cmd2 = concat(cmd2, profilePlist);
     cmd2 = concat(cmd2, "\" 2>&1");
     cmd2Z := toCstring(cmd2);
-    if r := run(cmd2Z) {
+    if r := process.run(cmd2Z) {
         if r.exitCode != 0 {
             @printf("error: failed to extract entitlements:\n");
             @printf("{}", r.stdout);
@@ -498,7 +498,7 @@ extractEntitlements :: (profile: string, bundleId: string) -> ?string {
     cmd3 = concat(cmd3, "\"");
     cmd3Z := toCstring(cmd3);
     team : string = "";
-    if r := run(cmd3Z) {
+    if r := process.run(cmd3Z) {
         if r.exitCode != 0 {
             @printf("error: profile missing ApplicationIdentifierPrefix:\n");
             @printf("{}", r.stdout);
@@ -532,7 +532,7 @@ extractEntitlements :: (profile: string, bundleId: string) -> ?string {
     cmdProfileId := concat("plutil -extract Entitlements.application-identifier raw -o - \"", profilePlist);
     cmdProfileId = concat(cmdProfileId, "\"");
     profileAppId : string = "";
-    if r := run(toCstring(cmdProfileId)) {
+    if r := process.run(toCstring(cmdProfileId)) {
         if r.exitCode != 0 {
             @printf("error: profile missing application-identifier\n");
             return null;
@@ -566,7 +566,7 @@ extractEntitlements :: (profile: string, bundleId: string) -> ?string {
     cmd4 = concat(cmd4, entPath);
     cmd4 = concat(cmd4, "\" 2>&1");
     cmd4Z := toCstring(cmd4);
-    if r := run(cmd4Z) {
+    if r := process.run(cmd4Z) {
         if r.exitCode != 0 {
             @printf("error: failed to resolve application-identifier:\n");
             @printf("{}", r.stdout);
@@ -595,7 +595,7 @@ codesign :: (bundle: string, identity: string, entPath: string) -> bool {
     cmd = concat(cmd, bundle);
     cmd = concat(cmd, "\" 2>&1");
     cmdZ := toCstring(cmd);
-    if r := run(cmdZ) {
+    if r := process.run(cmdZ) {
         if r.exitCode != 0 {
             @printf("error: codesign failed:\n");
             @printf("{}", r.stdout);
@@ -634,7 +634,7 @@ codesign :: (bundle: string, identity: string, entPath: string) -> bool {
 absolutify :: (path: string) -> string {
     if path.len == 0 { return path; }
     if path[0] == '/' { return path; }
-    if r := run("pwd") {
+    if r := process.run("pwd") {
         if r.exitCode != 0 { return path; }
         cwd := r.stdout;
         // Strip trailing newline that `pwd` emits.
@@ -689,7 +689,7 @@ androidBundleMain :: (opts: *@BuildOptions, binary: string, apkPath: string, bun
     // `deleteDirAll`.
     rmCmd := concat("rm -rf \"", stage);
     rmCmd = concat(rmCmd, "\"");
-    if r := run(toCstring(rmCmd)) {
+    if r := process.run(toCstring(rmCmd)) {
         if r.exitCode != 0 {
             @printf("error: apk: failed to clean stage dir\n");
             return false;
@@ -744,7 +744,7 @@ androidBundleMain :: (opts: *@BuildOptions, binary: string, apkPath: string, bun
     aaptCmd = concat(aaptCmd, "\" -o \"");
     aaptCmd = concat(aaptCmd, unaligned);
     aaptCmd = concat(aaptCmd, "\" 2>&1");
-    if r := run(toCstring(aaptCmd)) {
+    if r := process.run(toCstring(aaptCmd)) {
         if r.exitCode != 0 {
             @printf("error: aapt2 link failed:\n");
             @printf("{}", r.stdout);
@@ -791,7 +791,7 @@ androidBundleMain :: (opts: *@BuildOptions, binary: string, apkPath: string, bun
     alignCmd = concat(alignCmd, "\" \"");
     alignCmd = concat(alignCmd, aligned);
     alignCmd = concat(alignCmd, "\" 2>&1");
-    if r := run(toCstring(alignCmd)) {
+    if r := process.run(toCstring(alignCmd)) {
         if r.exitCode != 0 {
             @printf("error: zipalign failed:\n");
             @printf("{}", r.stdout);
@@ -805,7 +805,7 @@ androidBundleMain :: (opts: *@BuildOptions, binary: string, apkPath: string, bun
     // Debug keystore (auto-generated on first use) + apksigner.
     keystore := opts.keystorePath;
     if keystore.len == 0 {
-        if home := env("HOME") {
+        if home := process.env("HOME") {
             keystore = pathJoin(home, ".android/debug.keystore");
         } else {
             @printf("error: apk: cannot locate $HOME for default keystore\n");
@@ -823,7 +823,7 @@ androidBundleMain :: (opts: *@BuildOptions, binary: string, apkPath: string, bun
     signCmd = concat(signCmd, "\" \"");
     signCmd = concat(signCmd, aligned);
     signCmd = concat(signCmd, "\" 2>&1");
-    if r := run(toCstring(signCmd)) {
+    if r := process.run(toCstring(signCmd)) {
         if r.exitCode != 0 {
             @printf("error: apksigner failed:\n");
             @printf("{}", r.stdout);
@@ -838,7 +838,7 @@ androidBundleMain :: (opts: *@BuildOptions, binary: string, apkPath: string, bun
     // inspect it).
     deleteFile(toCstring(unaligned));
     deleteFile(toCstring(aligned));
-    run(toCstring(concat("rm -rf \"", concat(stage, "\""))));
+    process.run(toCstring(concat("rm -rf \"", concat(stage, "\""))));
 
     @printf("apk: ");
     @printf("{}", apkPath);
@@ -856,7 +856,7 @@ runInDir :: (dir: string, cmd: string) -> bool {
     wrapped = concat(wrapped, "\" && ");
     wrapped = concat(wrapped, cmd);
     wrapped = concat(wrapped, " 2>&1");
-    if r := run(toCstring(wrapped)) {
+    if r := process.run(toCstring(wrapped)) {
         if r.exitCode != 0 {
             @printf("error: ");
             @printf("{}", cmd);
@@ -874,9 +874,9 @@ runInDir :: (dir: string, cmd: string) -> bool {
 // $ANDROID_SDK_ROOT, otherwise picks the default install location on
 // macOS ($HOME/Library/Android/sdk).
 discoverAndroidSdk :: () -> string {
-    if h := env("ANDROID_HOME") { return h; }
-    if h := env("ANDROID_SDK_ROOT") { return h; }
-    if home := env("HOME") {
+    if h := process.env("ANDROID_HOME") { return h; }
+    if h := process.env("ANDROID_SDK_ROOT") { return h; }
+    if home := process.env("HOME") {
         candidate := pathJoin(home, "Library/Android/sdk");
         if exists(toCstring(candidate)) { return candidate; }
     }
@@ -888,7 +888,7 @@ discoverAndroidSdk :: () -> string {
 findHighestSubdir :: (parent: string) -> string {
     cmd := concat("ls -1 \"", parent);
     cmd = concat(cmd, "\" 2>/dev/null | sort -V | tail -1");
-    if r := run(toCstring(cmd)) {
+    if r := process.run(toCstring(cmd)) {
         if r.exitCode != 0 { return ""; }
         name := r.stdout;
         // Strip trailing whitespace.
@@ -1097,7 +1097,7 @@ compileJniMainSources :: (opts: *@BuildOptions, stage: string, androidJar: strin
     javacCmd = concat(javacCmd, "\" --release 11 ");
     javacCmd = concat(javacCmd, javacFiles);
     javacCmd = concat(javacCmd, " 2>&1");
-    if r := run(toCstring(javacCmd)) {
+    if r := process.run(toCstring(javacCmd)) {
         if r.exitCode != 0 {
             @printf("error: javac failed:\n");
             @printf("{}", r.stdout);
@@ -1116,7 +1116,7 @@ compileJniMainSources :: (opts: *@BuildOptions, stage: string, androidJar: strin
     d8Cmd = concat(d8Cmd, "\" ");
     d8Cmd = concat(d8Cmd, d8Files);
     d8Cmd = concat(d8Cmd, " 2>&1");
-    if r := run(toCstring(d8Cmd)) {
+    if r := process.run(toCstring(d8Cmd)) {
         if r.exitCode != 0 {
             @printf("error: d8 failed:\n");
             @printf("{}", r.stdout);
@@ -1133,11 +1133,11 @@ compileJniMainSources :: (opts: *@BuildOptions, stage: string, androidJar: strin
 // Studio's bundled JDK sets this on macOS), then falls back to a PATH
 // lookup via `command -v`.
 discoverJavac :: () -> string {
-    if jh := env("JAVA_HOME") {
+    if jh := process.env("JAVA_HOME") {
         cand := pathJoin(jh, "bin/javac");
         if exists(toCstring(cand)) { return cand; }
     }
-    if path := findExecutable("javac") { return path; }
+    if path := process.findExecutable("javac") { return path; }
     ""
 }
 
@@ -1150,7 +1150,7 @@ zipAssetDir :: (src: string, dest: string, apk: string) -> bool {
     if !exists(toCstring(src)) { return true; }
     createDirAll(".sx-tmp/apk-assets");
     rmCmd := concat("rm -rf \".sx-tmp/apk-assets/", concat(dest, "\""));
-    run(toCstring(rmCmd));
+    process.run(toCstring(rmCmd));
     parent := if dirPart(dest).len > 0 then concat(".sx-tmp/apk-assets/", dirPart(dest)) else ".sx-tmp/apk-assets";
     if !createDirAll(toCstring(parent)) {
         @printf("error: apk: cannot create asset stage dir\n");
@@ -1160,7 +1160,7 @@ zipAssetDir :: (src: string, dest: string, apk: string) -> bool {
     cpCmd = concat(cpCmd, "\" \".sx-tmp/apk-assets/");
     cpCmd = concat(cpCmd, dest);
     cpCmd = concat(cpCmd, "\" 2>&1");
-    if r := run(toCstring(cpCmd)) {
+    if r := process.run(toCstring(cpCmd)) {
         if r.exitCode != 0 {
             @printf("error: cp -R asset dir failed:\n");
             @printf("{}", r.stdout);
@@ -1195,7 +1195,7 @@ ensureDebugKeystore :: (keystorePath: string) -> bool {
     }
     cmd := concat("keytool -genkeypair -keystore \"", keystorePath);
     cmd = concat(cmd, "\" -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname \"CN=Android Debug,O=Android,C=US\" 2>&1");
-    if r := run(toCstring(cmd)) {
+    if r := process.run(toCstring(cmd)) {
         if r.exitCode != 0 {
             @printf("error: keytool failed:\n");
             @printf("{}", r.stdout);

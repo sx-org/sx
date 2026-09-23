@@ -102,7 +102,7 @@ fsReadFile :: (path: [:0]u8) -> ?string {
     handle := fsOpenHandle(path, 0); if !fsFileIsValid(handle) { return null; }
     size := fsFileSeek(handle, 0, 2);
     if size < 0 or fsFileSeek(handle, 0, 0) < 0 { fsFileClose(handle); return null; }
-    result := allocString(size);
+    result := mem.allocString(size);
     at := 0;
     while at < size {
         made := fsFileRead(handle, result[at..]);
@@ -179,7 +179,7 @@ fsCreateDirAll :: (path: [:0]u8) -> bool {
     }
     // Do not recurse below a drive root such as C:\\.
     if last > 0 and !(last == 2 and path[1] == ':') {
-        parent := allocString(last);
+        parent := mem.allocString(last);
         fsWindowsC.c.memcpy(parent.ptr, path.ptr, last);
         parentOk := fsCreateDirAll(parent);
         context.allocator.deallocBytes(parent.ptr);

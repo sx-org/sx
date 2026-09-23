@@ -56,7 +56,7 @@ Capture :: struct {
     items: List(Drawable) = .{};
 
     expression :: (self: *Capture, value: $I/@Init($V/Drawable)) {
-        destination := context.allocator.create(V);
+        destination := mem.create(context.allocator, V);
         value.write(destination);
         handle : Drawable = destination;
         self.items.append(handle);
@@ -64,7 +64,7 @@ Capture :: struct {
 }
 impl @BuildSink(Drawable) for Capture {
     expression :: (self: *Capture, value: $I/@Init($V/Drawable)) {
-        destination := context.allocator.create(V);
+        destination := mem.create(context.allocator, V);
         value.write(destination);
         handle : Drawable = destination;
         self.items.append(handle);

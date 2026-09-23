@@ -284,7 +284,7 @@ LazyList :: @OpenVariant(View) {
     // win the points they cover; the rows draw under the list's clip.
     render :: (self: *LazyList, rc: *RenderContext, frame: Frame) {
         st := self.state;
-        rc.scrollRegion(self.id.value, frame, closure(|g: *ScrollGesture|_{ st } { st.gesture(g) }));
+        rc.scrollRegion(self.id.value, frame, mem.closure(|g: *ScrollGesture|_{ st } { st.gesture(g) }));
         rc.pushClip(frame);
         for *r in self.rows {
             if r.index >= st.first and r.index <= st.last {

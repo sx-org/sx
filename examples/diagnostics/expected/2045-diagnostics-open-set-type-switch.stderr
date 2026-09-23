@@ -84,11 +84,11 @@ help: name the members this code handles and let 'else:' answer for the rest —
 error: free expects a closure or a slice
   --> examples/diagnostics/2045-diagnostics-open-set-type-switch.sx:91:5
    |
-91 |     free(v);
-   |     ^^^^
+91 |     mem.free(v);
+   |     ^^^^^^^^
 
 note: raised by '@error' here
-  --> library/modules/std/mem.sx:113:24
-    |
-113 |         else:          @error("free expects a closure or a slice");
-    |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  --> library/modules/std/mem.sx:68:28
+   |
+68 |             else:          @error("free expects a closure or a slice");
+   |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -28,7 +28,7 @@ textAt :: (b: *List(PlatformEvent), i: i64) -> string {
 }
 
 main :: () -> i32 {
-    tracker := TrackingAllocator.init(context.allocator);
+    tracker := mem.TrackingAllocator.init(context.allocator);
     ime := InputQueue.init(tracker);
     live : List(PlatformEvent) = .{};
     batch : List(PlatformEvent) = .{};

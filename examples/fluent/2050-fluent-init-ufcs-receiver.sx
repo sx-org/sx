@@ -58,10 +58,10 @@ Seen :: struct { last: string = ""; }
 @context.extend seen: *Seen = null;
 
 show :: ufcs (value: $I/@Init($V/Drawable)) {
-    d := context.allocator.create(V);
+    d := mem.create(context.allocator, V);
     value.write(d);
     context.seen.last = d.draw();
-    context.allocator.destroy(d);
+    mem.destroy(context.allocator, d);
 }
 
 // --- An open target at a protocol: the sink funds the payload ---
@@ -73,7 +73,7 @@ Kept :: struct { last: string = ""; }
 @context.extend kept: *Kept = null;
 
 keep :: ufcs (value: $I/@Init($V/Shape)) {
-    payload := context.allocator.create(V);
+    payload := mem.create(context.allocator, V);
     value.write(payload);
     handle : *Shape = payload;
     context.kept.last = handle.name();

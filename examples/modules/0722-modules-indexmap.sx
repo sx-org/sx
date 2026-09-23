@@ -15,7 +15,7 @@ report :: (label: string, ok: bool) {
 }
 
 main :: () {
-    gpa := GPA.init();
+    gpa := mem.GPA.init();
 
     // ── insertion order is preserved (the core guarantee) ────────────────
     m : IndexMap(string, i64) = .{};

@@ -1370,7 +1370,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             }
         }
         // Concrete lvalue → interface param: erase NODE-AWARE so the lvalue
-        // BORROWS (`free(t, gpa)` aliases gpa) — the node-less coerceCallArgs
+        // BORROWS (`mem.free(t, gpa)` aliases gpa) — the node-less coerceCallArgs
         // layer would misread the lvalue as an rvalue and refuse.
         if (pt) |ptv| {
             if (protocolArgErasure(self, arg, ptv)) |r| {
@@ -2638,7 +2638,7 @@ pub fn prependCtxIfNeeded(self: *Lowering, callee: *const Function, args: []Ref)
 
 /// Concrete arg at an INTERFACE param target: erase NODE-AWARE so
 /// `buildProtocolErasure` classifies from the AST and BORROWS lvalues
-/// (`free(t, gpa)` aliases `gpa`). A literal-with-init-block materializes
+/// (`mem.free(t, gpa)` aliases `gpa`). A literal-with-init-block materializes
 /// through a temp slot, which the node-LESS refStorageAddress heuristic
 /// would misread as an lvalue. Returns null when the shape doesn't apply
 /// (caller falls through to its normal path).
@@ -5360,7 +5360,7 @@ pub fn mapNamedArgs(
                     if (self.diagnostics) |d| {
                         const id = d.addFmtId(.err, a.span, "'{s}' cannot take a trailing block — its last parameter '{s}' is '{s}', which is neither `$F/(…) -> R` nor `@BuildBlock(P)`", .{ callee_name, p.name, self.formatTypeName(pty) });
                         if (isClosureSlot(self, pty))
-                            d.addHelpFmt(id, a.span, null, "erasing a block is an allocation, so it is written where it is paid: `{s}(closure(|…| …))`", .{callee_name})
+                            d.addHelpFmt(id, a.span, null, "erasing a block is an allocation, so it is written where it is paid: `{s}(mem.closure(|…| …))`", .{callee_name})
                         else
                             d.addHelpFmt(id, a.span, null, "declare '{s}' as `$F/(…) -> R` to receive the block as a closure, or as `@BuildBlock(P)` to receive it as a build block", .{p.name});
                     }

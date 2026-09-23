@@ -1,10 +1,10 @@
-error: cannot borrow a temporary into a 'P' handle — bind the value where it lives, or write it through 'Allocator.make' and use the handle over that
+error: cannot borrow a temporary into a 'P' handle — bind the value where it lives, or write it through 'mem.make' and use the handle over that
   --> examples/diagnostics/2233-diagnostics-interface-trailing-spine-refusals.sx:11:27
    |
 11 | trailingCast :: () -> P { W{ v = 1 }.(P) }
    |                           ^^^^^^^^^^
 
-error: cannot borrow a temporary into a 'P' handle — bind the value where it lives, or write it through 'Allocator.make' and use the handle over that
+error: cannot borrow a temporary into a 'P' handle — bind the value where it lives, or write it through 'mem.make' and use the handle over that
   --> examples/diagnostics/2233-diagnostics-interface-trailing-spine-refusals.sx:12:43
    |
 12 | trailingInLiteral :: () -> S { S{ inner = W{ v = 2 } } }
@@ -16,18 +16,18 @@ error: '.{ }' is a struct literal, not a 'P' handle
 13 | trailingEmptyLiteral :: () -> P { .{} }
    |                                   ^^^
 
-help: bind a named value, or write it through 'Allocator.make'
+help: bind a named value, or write it through 'mem.make'
    |
 13 | trailingEmptyLiteral :: () -> P { .{} }
    |                                   ^^^
 
-error: cannot borrow a temporary into a 'P' handle — bind the value where it lives, or write it through 'Allocator.make' and use the handle over that
+error: cannot borrow a temporary into a 'P' handle — bind the value where it lives, or write it through 'mem.make' and use the handle over that
   --> examples/diagnostics/2233-diagnostics-interface-trailing-spine-refusals.sx:16:35
    |
 16 | throughArgument :: () -> P { take(W{ v = 3 }) }
    |                                   ^^^^^^^^^^
 
-error: cannot borrow a temporary into a 'P' handle — bind the value where it lives, or write it through 'Allocator.make' and use the handle over that
+error: cannot borrow a temporary into a 'P' handle — bind the value where it lives, or write it through 'mem.make' and use the handle over that
   --> examples/diagnostics/2233-diagnostics-interface-trailing-spine-refusals.sx:17:42
    |
 17 | throughBinding :: () -> P { r : P = ---; r = W{ v = 4 }; r }

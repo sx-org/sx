@@ -72,8 +72,8 @@ private normalizePath :: (buf: [*]u8, len: i64) -> ?i64 {
         c := buf[rp];
         if c == '%' {
             if rp + 2 >= len { return null; }
-            hi := hexValue(buf[rp + 1]);
-            lo := hexValue(buf[rp + 2]);
+            hi := encoding.hexValue(buf[rp + 1]);
+            lo := encoding.hexValue(buf[rp + 2]);
             if hi == null or lo == null { return null; }
             d : i64 = hi * 16 + lo;
             if d < ' ' or d == '\x7f' { return null; }
@@ -997,7 +997,7 @@ private bodyFiberRead :: (ctx: usize, dst: [*]u8, cap: i64) -> i64 {
 private runHandlerJob :: (arg: usize) {
     job : *HandlerJob = @reinterpret(*HandlerJob, arg);
     resp : Response = .{};
-    arena := Arena.init(job.alloc, 65536);
+    arena := mem.Arena.init(job.alloc, 65536);
     ob : OutBytes = .{};
     streamed := false;
     completed := false;   // a streamed response queues its completion mid-job
@@ -1151,7 +1151,7 @@ private runFiberJob :: (arg: usize) {
     job : *HandlerJob = @reinterpret(*HandlerJob, arg);
     srv := job.srv;
     resp : Response = .{};
-    arena := Arena.init(job.alloc, 65536);
+    arena := mem.Arena.init(job.alloc, 65536);
     keep := job.keep;
     push .{ allocator = arena } {
         h := job.handler;
@@ -1300,7 +1300,7 @@ Server :: struct {
     heapPush :: (self: *Server, dl: i64, slot: i64, gen: i64) {
         if self.dheapLen == self.dheapCap {
             ncap := self.dheapCap * 2;
-            nb : [*]DlEntry = self.ownAlloc.alloc(DlEntry, ncap).ptr;
+            nb : [*]DlEntry = mem.alloc(self.ownAlloc, DlEntry, ncap).ptr;
             i : i64 = 0;
             while i < self.dheapLen { nb[i] = self.dheap[i]; i += 1; }
             self.ownAlloc.deallocBytes(self.dheap);
@@ -1514,7 +1514,7 @@ Server :: struct {
         if swe { closeListener(lfd, cfg.unixPath); raise .Loop; }
 
         oa := context.allocator;
-        slots : [*]Conn = oa.alloc(Conn, cfg.maxConn).ptr;
+        slots : [*]Conn = mem.alloc(oa, Conn, cfg.maxConn).ptr;
         i : i64 = 0;
         while i < cfg.maxConn {
             slots[i] = Conn{};
@@ -1524,11 +1524,11 @@ Server :: struct {
             i += 1;
         }
         dcap : i64 = 64;
-        dh : [*]DlEntry = oa.alloc(DlEntry, dcap).ptr;
+        dh : [*]DlEntry = mem.alloc(oa, DlEntry, dcap).ptr;
 
         ps : *PoolState = null;
         if cfg.threadPoolCount > 0 {
-            ps = oa.create(PoolState);
+            ps = mem.create(oa, PoolState);
             ps.* = PoolState{};
             // Failure below this point must release what init already
             // allocated (slots, dheap, ps, ps.done) — these late paths used
@@ -1547,10 +1547,10 @@ Server :: struct {
             // alone under-counts that same-tick refill; queueCompletion
             // still handles a drop loudly as belt.
             ps.doneCap = cfg.maxConn + cfg.threadPoolBacklog + cfg.threadPoolCount;
-            ps.done = oa.alloc(Completion, ps.doneCap).ptr;
+            ps.done = mem.alloc(oa, Completion, ps.doneCap).ptr;
             ps.doneLen = 0;
             // one pumping stream channel per worker, at most.
-            ps.ochans = oa.alloc(*OutChan, cfg.threadPoolCount).ptr;
+            ps.ochans = mem.alloc(oa, *OutChan, cfg.threadPoolCount).ptr;
             ps.ochansLen = 0;
             // Capture the loop AFTER addWake (registered above): on epoll,
             // addWake lazily creates wakeFd, so a copy taken earlier would
@@ -2002,7 +2002,7 @@ Server :: struct {
                 resp : Response = .{ status = 504, body = reasonFor(504) };
                 c.readLen = 0;
                 c.resetParse();
-                toArena := Arena.init(self.ownAlloc, 4096);
+                toArena := mem.Arena.init(self.ownAlloc, 4096);
                 push .{ allocator = toArena } {
                     // keep=false → closeAfter. headOnly = the dispatched
                     // request's method, stamped on the slot at dispatch — a
@@ -2192,7 +2192,7 @@ Server :: struct {
             if c.readBuf == null {
                 initCap : i64 = READ_BUF_INITIAL;
                 if initCap > self.cfg.readBufCap { initCap = self.cfg.readBufCap; }
-                c.readBuf = self.ownAlloc.alloc(u8, initCap).ptr;
+                c.readBuf = mem.alloc(self.ownAlloc, u8, initCap).ptr;
                 c.readCap = initCap;
             }
             c.fd = fd;
@@ -2408,7 +2408,7 @@ Server :: struct {
                 p : i64 = 0;
                 bad := false;
                 while p < e {
-                    hv := hexValue(c.readBuf[p]);
+                    hv := encoding.hexValue(c.readBuf[p]);
                     if hv == null { break; }
                     if size > 0x07FFFFFFFFFFFFFF { bad = true; break; }   // would wrap i64
                     size = size * 16 + hv;
@@ -2606,7 +2606,7 @@ Server :: struct {
         if want <= c.readCap { return true; }
         if want > self.cfg.readBufCap { want = self.cfg.readBufCap; }
         if want <= c.readCap { return false; }   // already at the limit
-        nb : [*]u8 = self.ownAlloc.alloc(u8, want).ptr;
+        nb : [*]u8 = mem.alloc(self.ownAlloc, u8, want).ptr;
         if c.readLen > 0 { clib.c.memcpy(nb, c.readBuf, c.readLen); }
         self.ownAlloc.deallocBytes(c.readBuf);
         c.readBuf = nb;
@@ -3227,7 +3227,7 @@ Server :: struct {
             isHead := asciiIeq(req.method, "head");
             req.deadlineMs = self.cfg.handlerTimeoutMs;
 
-            ch : *BodyChan = self.ownAlloc.create(BodyChan);
+            ch : *BodyChan = mem.create(self.ownAlloc, BodyChan);
             ch.* = BodyChan{ alloc = self.ownAlloc };
             if !ch.mu.setup() {
                 self.ownAlloc.deallocBytes(ch);
@@ -3240,7 +3240,7 @@ Server :: struct {
                 self.respondErrorClose(slot, 500);
                 return false;
             }
-            ch.buf = self.ownAlloc.alloc(u8, BODY_CHAN_CAP).ptr;
+            ch.buf = mem.alloc(self.ownAlloc, u8, BODY_CHAN_CAP).ptr;
             ch.cap = BODY_CHAN_CAP;
             // Copy AFTER init's unconditional addWake — wakeFd is live.
             ch.lp = self.loop;
@@ -3518,7 +3518,7 @@ Server :: struct {
         // be parsed as a dot-call on a function named `handler`.)
         h := self.handler;
         resp : Response = .{};
-        reqArena := Arena.init(self.ownAlloc, 65536);
+        reqArena := mem.Arena.init(self.ownAlloc, 65536);
         push .{ allocator = reqArena } {
             h(*req, *resp, self.ctx);
             encoding := prepareContentEncoding(*req, *resp,
@@ -3558,7 +3558,7 @@ Server :: struct {
         if c.wbufCap >= need { return; }
         want := ((need + 4095) / 4096) * 4096;
         if c.wbuf != null { self.ownAlloc.deallocBytes(c.wbuf); }
-        c.wbuf = self.ownAlloc.alloc(u8, want).ptr;
+        c.wbuf = mem.alloc(self.ownAlloc, u8, want).ptr;
         c.wbufCap = want;
     }
 
@@ -4071,7 +4071,7 @@ Server :: struct {
         // error closes linger so the response above actually lands.
         self.conns[slot].lingerClose = true;
         self.setDeadline(slot, self.cfg.timeoutRequestMs);
-        errArena := Arena.init(self.ownAlloc, 4096);
+        errArena := mem.Arena.init(self.ownAlloc, 4096);
         push .{ allocator = errArena } {
             // headOnly=false: an error reply may not know the method (the
             // request line can be the malformed part) — the tiny reason body

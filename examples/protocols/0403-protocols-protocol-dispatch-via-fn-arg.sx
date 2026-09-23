@@ -1,7 +1,7 @@
 // Interface dispatch on `List(I)` items where the list pointer is passed into
 // another function — verifies the referent survives an extra call frame
 // between coercion and dispatch. A handle borrows, so the referent has to
-// outlive the frame that appended it: `Allocator.make` is where it lives.
+// outlive the frame that appended it: `mem.make` is where it lives.
 
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
@@ -16,7 +16,7 @@ impl Sizable for Leaf {
 }
 
 add :: (items: *List(Sizable), w: Leaf) {
-    items.append(context.allocator.make(w));
+    items.append(mem.make(context.allocator, w));
 }
 
 dispatchFn :: (items: *List(Sizable)) {

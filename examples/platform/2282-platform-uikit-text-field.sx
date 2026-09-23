@@ -141,35 +141,35 @@ frame :: () {
 main :: () -> i32 {
     inline if @host.os != .ios { return 0; }
 
-    plat := context.allocator.make(UIKitPlatform{ gpuMode = .metal });
+    plat := mem.make(context.allocator, UIKitPlatform{ gpuMode = .metal });
     if !plat.init("Sx Text Field", 0, 0) { return 1; }
     gPlat = plat;
 
     // Device and queue come up without a layer, so the UI pipeline and the
     // atlas are built here — and the font, whose path resolves against the
     // bundle the platform init already chdir'd into.
-    gGpu = context.allocator.make(MetalGPU{});
+    gGpu = mem.make(context.allocator, MetalGPU{});
     if !gGpu.init(null, 0, 0) { return 1; }
 
-    gRenderer = context.allocator.make(UIRenderer{});
+    gRenderer = mem.make(context.allocator, UIRenderer{});
     gRenderer.gpu = gGpu.(GPU);
     gRenderer.init();
 
-    gGlyphs = context.allocator.make(GlyphCache{});
+    gGlyphs = mem.make(context.allocator, GlyphCache{});
     gGlyphs.gpu = gGpu.(GPU);
     if !gGlyphs.init(BUNDLE_FACE, FONT_SIZE) { return 1; }
     fluent.setGlobalFont(gGlyphs);
 
-    gSession = context.allocator.make(fluent.TextInputSession.init(*plat.imeQueue));
-    gRoot = context.allocator.make(fluent.UiRoot.init(fluent.Size{ width = 0.0, height = 0.0 }, context.allocator));
+    gSession = mem.make(context.allocator, fluent.TextInputSession.init(*plat.imeQueue));
+    gRoot = mem.make(context.allocator, fluent.UiRoot.init(fluent.Size{ width = 0.0, height = 0.0 }, context.allocator));
 
     doc := gSession;
-    gLoop = context.allocator.make(fluent.FrameLoop.init(gRoot, closure(||_{ doc } -> fluent.View {
+    gLoop = mem.make(context.allocator, fluent.FrameLoop.init(gRoot, mem.closure(||_{ doc } -> fluent.View {
         // The background declares its region FIRST, so the field's own
         // region — declared later — wins the points it covers and only a
         // tap outside reaches this one.
         v : fluent.View = fluent.zstack(fluent.ALIGN_BOTTOM) {
-            fluent.tappable(fluent.Rect{ fill = fluent.Color.rgb(18, 23, 33) }, closure(|| {
+            fluent.tappable(fluent.Rect{ fill = fluent.Color.rgb(18, 23, 33) }, mem.closure(|| {
                 context.fluentFocus.clearFocus()
             }));
             fluent.place(fluent.textField(doc, FONT_SIZE), fluent.Mod{

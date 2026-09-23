@@ -25,7 +25,7 @@ respread :: (..xs: any) -> i64 {
 
 // pack captured into a closure that OUTLIVES the spawner's frame
 makeThunk :: (..args: any) -> Closure() -> i64 {
-    return closure(||_{ args = .{..args} } -> i64 add2(..args));
+    return mem.closure(||_{ args = .{..args} } -> i64 add2(..args));
 }
 
 // pack captured into a closure: spread AND comptime-indexed

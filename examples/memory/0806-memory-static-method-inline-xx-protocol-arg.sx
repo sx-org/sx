@@ -30,7 +30,7 @@ makeBox :: (parentAlloc: Allocator, size: i64) -> *Box {
 }
 
 main :: () -> i32 {
-    gGpa : GPA = .{ allocCount = 0 };
+    gGpa : mem.GPA = .{ allocCount = 0 };
 
     a : Allocator = xx *gGpa;
     b1 := Box.init(a, 64);

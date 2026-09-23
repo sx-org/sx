@@ -7,21 +7,21 @@
 
 main :: () {
     stackBuf : [64]u8 = ---;
-    buf := BufAlloc.init(*stackBuf[0], 64);
+    buf := mem.BufAlloc.init(*stackBuf[0], 64);
     a := buf.(Allocator);
 
     // memRealloc — bytes level, grown past the 64-byte buffer
     p := a.allocBytes(16);
     live : *i64 = p.(*i64);
     live.* = 1234;
-    q := memRealloc(a, p, 16, 4096, 8);
+    q := mem.memRealloc(a, p, 16, 4096, 8);
     print("q null={}\n", q == null);
     print("old live: {}\n", live.*);
 
     // resize — same contract at the typed-slice level
-    xs := a.alloc(i64, 4);
+    xs := mem.alloc(a, i64, 4);
     xs[0] = 7; xs[3] = 9;
-    ys := xs.resize(a, 4096);
+    ys := mem.resize(xs, a, 4096);
     print("ys null={}\n", ys == null);
     print("xs live: {} {} len={}\n", xs[0], xs[3], xs.len);
 

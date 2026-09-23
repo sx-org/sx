@@ -245,8 +245,8 @@ private urlDecodeInto :: (s: string, dst: [*]u8) -> i64 {
     while i < s.len {
         c := s[i];
         if c == '%' and i + 2 < s.len {   // '%' with two more chars
-            hi := hexValue(s[i + 1]);
-            lo := hexValue(s[i + 2]);
+            hi := encoding.hexValue(s[i + 1]);
+            lo := encoding.hexValue(s[i + 2]);
             if hi != null and lo != null {
                 dst[di] = (hi * 16 + lo).(u8);
                 di += 1;
@@ -277,7 +277,7 @@ private needsDecode :: (s: string) -> bool {
 // is decoded into the per-request arena (context.allocator).
 private decodeToken :: (s: string) -> string {
     if !needsDecode(s) { return s; }
-    buf : [*]u8 = context.allocator.alloc(u8, if s.len > 0 then s.len else 1).ptr;
+    buf : [*]u8 = mem.alloc(context.allocator, u8, if s.len > 0 then s.len else 1).ptr;
     n := urlDecodeInto(s, buf);
     return string{ ptr = buf, len = n };
 }

@@ -176,8 +176,8 @@ Sha256 :: struct {
             while j < 4 {
                 byteVal := (word >> ((3 - j) * 8)) & 0xFF;
                 pos := (i * 4 + j) * 2;
-                digest[pos]     = hexDigit((byteVal >> 4) & 0xF);
-                digest[pos + 1] = hexDigit(byteVal & 0xF);
+                digest[pos]     = encoding.hexDigit((byteVal >> 4) & 0xF);
+                digest[pos + 1] = encoding.hexDigit(byteVal & 0xF);
                 j += 1;
             }
             i += 1;

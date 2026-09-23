@@ -82,7 +82,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
         // this worker is still mid-handler — before the stream channel is
         // registered (the close-deadlock window).
         if req.path == "/slowbig" { c.usleep(300000); }
-        st := context.allocator.make(StreamState{
+        st := mem.make(context.allocator, StreamState{
             seed = checksum(req.body),
             total = if req.path == "/stream" then STREAM_TOTAL else BIG_TOTAL,
             obs = obs,
@@ -233,7 +233,7 @@ dechunkCheck :: (body: string, seed: i64, expectTotal: i64) -> bool {
 }
 
 main :: () -> i32 {
-    gpa := GPA.init();
+    gpa := mem.GPA.init();
     failed : i64 = 0;
     leaked : i64 = 0;
     obs : Obs = .{};

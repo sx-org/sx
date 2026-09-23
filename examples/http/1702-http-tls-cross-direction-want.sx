@@ -169,7 +169,7 @@ impl http.TlsConn for FakeConn {
 
     close :: (self: *FakeConn) {
         a := self.a;
-        a.destroy(self);
+        mem.destroy(a, self);
     }
 }
 
@@ -190,9 +190,9 @@ impl http.TlsAcceptor for FakeAcceptor {
         if self.nAccepts == 2 { mode = MODE_W; }
         if self.nAccepts == 3 { mode = MODE_B; }
         if self.nAccepts == 4 { mode = MODE_H; }
-        // create() memory is UNINITIALISED — literal-assign the whole struct
+        // mem.create() memory is UNINITIALISED — literal-assign the whole struct
         // so every flag/counter starts at its default, not heap garbage.
-        s := self.a.create(FakeConn);
+        s := mem.create(self.a, FakeConn);
         s.* = .{ fd = fd, mode = mode, acc = self, a = self.a };
         return xx s;
     }
@@ -265,7 +265,7 @@ readResponse :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64, needle: stri
 }
 
 main :: () -> i32 {
-    gpa := GPA.init();
+    gpa := mem.GPA.init();
     acc : FakeAcceptor = .{ a = gpa };
     rc : i32 = 1;
     push .{ allocator = gpa } {

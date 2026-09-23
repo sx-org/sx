@@ -24,7 +24,7 @@ give :: () -> ?Closure() -> void {
 main :: () {
   // With captures.
   n := 7;
-  a : ?Closure() -> void = closure(||_{ n } print("a n={}\n", n));
+  a : ?Closure() -> void = mem.closure(||_{ n } print("a n={}\n", n));
   if a { print("a-present\n"); } else { print("a-absent\n"); }
   a?!();
 

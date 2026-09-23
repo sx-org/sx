@@ -21,7 +21,7 @@ const Scope = lower.Scope;
 ///   `.literal` — a written `|…|`: its env is exactly the `_{ … }` it wrote and
 ///                its body is SEALED against the enclosing scope. The value IS
 ///                that env, living wherever the binding, parameter, or
-///                temporary does; `closure(f, alloc)` is the only thing that
+///                temporary does; `mem.closure(f, alloc)` is the only thing that
 ///                copies it anywhere else.
 ///   `.init_recipe` — the NONESCAPING recipe `@Init(T)` forms: the body is the
 ///                argument expression as written, so its free names are

@@ -524,7 +524,7 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.Ta
     if (is_value) {
         var v = self.lowerExpr(ie.then_branch);
         // A value-position arm that DIVERGES (its value is `noreturn`, e.g. a
-        // trailing `proc.exit(...)`) must terminate its block, NOT branch a
+        // trailing `process.exit(...)`) must terminate its block, NOT branch a
         // coerced-noreturn `<badref>` into the merge phi (LLVM verify failure).
         if (!self.currentBlockHasTerminator() and self.builder.getRefType(v) == .noreturn) {
             self.builder.emitUnreachable();

@@ -66,8 +66,8 @@ build :: (alloc: Allocator) -> Value {
 }
 
 main :: () -> ! {
-    gpa := GPA.init();
-    arena := Arena.init(gpa, 4096);
+    gpa := mem.GPA.init();
+    arena := mem.Arena.init(gpa, 4096);
     defer arena.deinit();
 
     root := build(arena);

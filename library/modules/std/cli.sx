@@ -32,7 +32,7 @@
 
 @import "modules/std/core.sx";
 @import "modules/build.sx";
-proc :: @import "modules/std/process.sx";
+@import "modules/std/process.sx";
 @import "modules/std/c.sx";
 
 // The argv externs below are OS-specific — not in the shared c.sx surface —
@@ -93,12 +93,12 @@ inline match @host.os {
                 // mmap signals failure with MAP_FAILED = (void*)-1, not null.
                 if @reinterpret(isize, region) == -1 {
                     @printf("std.cli: mmap failed while reading /proc/self/cmdline.\n");
-                    proc.exit(EX_UNAVAILABLE);
+                    process.exit(EX_UNAVAILABLE);
                 }
                 n := cmdlineRead(region, cap);
                 if n < 0 {
                     @printf("std.cli: cannot read /proc/self/cmdline.\n");
-                    proc.exit(EX_UNAVAILABLE);
+                    process.exit(EX_UNAVAILABLE);
                 }
                 if n < cap {
                     cmdline.ptr = region;
@@ -120,7 +120,6 @@ inline match @host.os {
     else: {}
 }
 
-// =====================================================================
 // EXIT-CODE & `--json` CONTRACT — the minimal surface `dist` (and
 // any sx CLI front-end) relies on. Two pieces:
 //
@@ -130,16 +129,14 @@ inline match @host.os {
 //      value), `EX_UNAVAILABLE` when the platform is unsupported.
 //   2. TERMINATORS. `exitOk()` / `exitUsage()` end the process with the
 //      matching code. They route through the canonical
-//      `process.exit(code: u8)` (modules/std/process.sx) — there is NO second
-//      hand-rolled `_exit` binding in this module; the unsupported-platform
-//      path below goes through `proc.exit(EX_UNAVAILABLE)` too.
+//      `process.exit(code: u8)` (modules/std/process.sx). The unsupported-platform
+//      path below goes through `process.exit(EX_UNAVAILABLE)` too.
 //
-// `--json` MODE needs no new code here: the parser already surfaces it as
+// The parser surfaces `--json` as
 // `parsed.json` (true iff `--json` appears in the argv — see `Parsed.json`).
 // The convention a front-end follows: in json mode stdout carries ONLY the
 // machine result, and human diagnostics go to stderr (e.g. via
 // `modules/std/log.sx`'s `log.err`). Detect json mode by reading `parsed.json`.
-// =====================================================================
 
 EX_OK          :u8: 0;    // success
 EX_USAGE       :u8: 64;   // command-line usage error (sysexits.h EX_USAGE)
@@ -147,12 +144,12 @@ EX_UNAVAILABLE :u8: 70;   // service / platform unavailable (sysexits.h)
 
 // End the process successfully (`EX_OK` = 0). Thin wrapper over the
 // canonical `process.exit` terminator — immediate `_exit(2)`, no unwinding.
-exitOk :: () -> noreturn { proc.exit(EX_OK); }
+exitOk :: () -> noreturn { process.exit(EX_OK); }
 
 // End the process with the usage-error code (`EX_USAGE` = 64). A CLI
 // front-end calls this after `parse` raises a `CliError` and the human
 // diagnostic has been written to stderr.
-exitUsage :: () -> noreturn { proc.exit(EX_USAGE); }
+exitUsage :: () -> noreturn { process.exit(EX_USAGE); }
 
 // Number of process arguments (argc). >= 1 for any normally-launched
 // process, since argv[0] is the executable path.
@@ -165,7 +162,7 @@ osArgc :: () -> i64 {
         }
         else: {
             @printf("std.cli: unsupported platform — only macOS and Linux are implemented.\n");
-            proc.exit(EX_UNAVAILABLE);
+            process.exit(EX_UNAVAILABLE);
         }
     }
 }
@@ -218,7 +215,7 @@ osArgs :: (buf: []string) -> []string {
         }
         else: {
             @printf("std.cli: unsupported platform — only macOS and Linux are implemented.\n");
-            proc.exit(EX_UNAVAILABLE);
+            process.exit(EX_UNAVAILABLE);
         }
     }
 }

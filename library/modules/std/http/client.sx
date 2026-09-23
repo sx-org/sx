@@ -288,7 +288,7 @@ private sendOn :: (c: *ClientConn, method: string, path: string, host: string, e
     if body.len > 0 { total += 16 + cln + 2; }         // "Content-Length: <n>\r\n"
     if advertise { total += HDR_ACCEPT_ENCODING.len; }
     total += extraHeaders.len + 2 + body.len;         // "<extra>\r\n<body>"
-    p : [*]u8 = context.allocator.alloc(u8, total).ptr;
+    p : [*]u8 = mem.alloc(context.allocator, u8, total).ptr;
     w : i64 = 0;
     w = put(p, w, method);
     p[w] = ' '; w += 1;
@@ -547,7 +547,7 @@ private fetch :: (method: string, url: string, body: string, opts: ClientOpts, b
         }
         // Build the next target BEFORE the buffer is reused: copy the
         // location out, then re-parse.
-        np : [*]u8 = context.allocator.alloc(u8, loc.len).ptr;
+        np : [*]u8 = mem.alloc(context.allocator, u8, loc.len).ptr;
         clib.c.memcpy(np, loc.ptr, loc.len);
         locv := string{ ptr = np, len = loc.len };
         closeConn(*c);
@@ -644,9 +644,9 @@ private normalizeDecodedHeaders :: (raw: [*]u8, len: i64) -> i64 {
 // arrived with the header read and is copied before output can overwrite it.
 private recvEncodedBody :: (c: *ClientConn, buf: [*]u8, cap: i64, headEnd: i64,
                       initial: string, contentLen: i64, chunked: bool,
-                      encoding: Encoding) -> (i64, !ClientErr) {
+                      contentEncoding: Encoding) -> (i64, !ClientErr) {
     outputCap := cap - headEnd;
-    decoder := Decoder.init(encoding, outputCap, context.allocator) catch |e| {
+    decoder := Decoder.init(contentEncoding, outputCap, context.allocator) catch |e| {
         if e == .AllocationFailed { raise .Allocation; }
         raise .Recv;
     };
@@ -747,7 +747,7 @@ private recvEncodedBody :: (c: *ClientConn, buf: [*]u8, cap: i64, headEnd: i64,
         b := wire[wireAt];
         wireAt += 1;
         if phase == .size {
-            if digit := hexValue(b) {
+            if digit := encoding.hexValue(b) {
                 if chunkSize > 0x07FFFFFFFFFFFFFF { raise .Recv; }
                 chunkSize = chunkSize * 16 + digit;
                 sizeDigits += 1;
@@ -1068,7 +1068,7 @@ ClientPool :: struct {
                 if freeing { context.allocator.deallocBytes(pathp); }
                 raise .Redirect;
             }
-            np : [*]u8 = context.allocator.alloc(u8, loc.len).ptr;
+            np : [*]u8 = mem.alloc(context.allocator, u8, loc.len).ptr;
             clib.c.memcpy(np, loc.ptr, loc.len);
             locv := string{ ptr = np, len = loc.len };
             if freeing { context.allocator.deallocBytes(pathp); }
@@ -1177,7 +1177,7 @@ ClientPool :: struct {
             if !self.entries.items[i].live { break; }
             i += 1;
         }
-        hp : [*]u8 = self.a.alloc(u8, u.host.len).ptr;
+        hp : [*]u8 = mem.alloc(self.a, u8, u.host.len).ptr;
         j : i64 = 0;
         while j < u.host.len { hp[j] = u.host[j]; j += 1; }
         ne : PoolEntry = .{ host = hp, hostLen = u.host.len, port = u.port,

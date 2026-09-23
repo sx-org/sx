@@ -55,9 +55,9 @@ report :: (label: string, buildNs: i64, walkNs: i64) {
 }
 
 main :: () {
-    sqs  := context.allocator.alloc(Sq, N);
-    rcs  := context.allocator.alloc(Rc, N);
-    tris := context.allocator.alloc(Tri, N);
+    sqs  := mem.alloc(context.allocator, Sq, N);
+    rcs  := mem.alloc(context.allocator, Rc, N);
+    tris := mem.alloc(context.allocator, Tri, N);
     i := 0;
     while i < N {
         sqs[i]  = .{ s = i % 17 };
@@ -66,11 +66,11 @@ main :: () {
         i = i + 1;
     }
 
-    hv := context.allocator.alloc(Shape, N);
+    hv := mem.alloc(context.allocator, Shape, N);
 
-    hb := context.allocator.alloc(i64, SAMPLES);
-    hw := context.allocator.alloc(i64, SAMPLES);
-    dw := context.allocator.alloc(i64, SAMPLES);
+    hb := mem.alloc(context.allocator, i64, SAMPLES);
+    hw := mem.alloc(context.allocator, i64, SAMPLES);
+    dw := mem.alloc(context.allocator, i64, SAMPLES);
 
     hsink := 0;
     dsink := 0;

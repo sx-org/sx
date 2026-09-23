@@ -1,10 +1,10 @@
-error: cannot borrow a temporary into a 'P' handle — bind the value where it lives, or write it through 'Allocator.make' and use the handle over that
+error: cannot borrow a temporary into a 'P' handle — bind the value where it lives, or write it through 'mem.make' and use the handle over that
   --> examples/diagnostics/2210-diagnostics-interface-return-spine-refusals.sx:11:27
    |
 11 | rvalueDirect :: () -> P { return W{ v = 1 }; }
    |                           ^^^^^^^^^^^^^^^^^^
 
-error: cannot borrow a temporary into a 'P' handle — bind the value where it lives, or write it through 'Allocator.make' and use the handle over that
+error: cannot borrow a temporary into a 'P' handle — bind the value where it lives, or write it through 'mem.make' and use the handle over that
   --> examples/diagnostics/2210-diagnostics-interface-return-spine-refusals.sx:12:48
    |
 12 | rvalueInLiteral :: () -> S { return S{ inner = W{ v = 2 } }; }
@@ -16,18 +16,18 @@ error: '.{ }' is a struct literal, not a 'P' handle
 13 | emptyLiteral :: () -> P { return .{}; }
    |                                  ^^^
 
-help: bind a named value, or write it through 'Allocator.make'
+help: bind a named value, or write it through 'mem.make'
    |
 13 | emptyLiteral :: () -> P { return .{}; }
    |                                  ^^^
 
-error: cannot borrow a temporary into a 'P' handle — bind the value where it lives, or write it through 'Allocator.make' and use the handle over that
+error: cannot borrow a temporary into a 'P' handle — bind the value where it lives, or write it through 'mem.make' and use the handle over that
   --> examples/diagnostics/2210-diagnostics-interface-return-spine-refusals.sx:16:42
    |
 16 | throughArgument :: () -> P { return take(W{ v = 3 }); }
    |                                          ^^^^^^^^^^
 
-error: cannot borrow a temporary into a 'P' handle — bind the value where it lives, or write it through 'Allocator.make' and use the handle over that
+error: cannot borrow a temporary into a 'P' handle — bind the value where it lives, or write it through 'mem.make' and use the handle over that
   --> examples/diagnostics/2210-diagnostics-interface-return-spine-refusals.sx:17:42
    |
 17 | throughBinding :: () -> P { r : P = ---; r = W{ v = 4 }; return r; }

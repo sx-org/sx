@@ -22,7 +22,7 @@
 // unchanged; "/a/.." → "/"; trailing "/a/." → "/a/"; pooled request
 // with a SHRINKING path (decode + pop) rebuilt byte-exact; GPA net-zero.
 @import "modules/std.sx";
-mem  :: @import "modules/std/mem.sx";
+@import "modules/std/mem.sx";
 @import "modules/std/http.sx";
 
 PORT_A :: 19008;

@@ -14,7 +14,7 @@ impl MyProtocol for MyImpl {
 }
 
 makeThing :: () -> MyProtocol {
-    context.allocator.make(MyImpl{ value = 42 }).(MyProtocol)
+    mem.make(context.allocator, MyImpl{ value = 42 }).(MyProtocol)
 }
 
 main :: () -> void {

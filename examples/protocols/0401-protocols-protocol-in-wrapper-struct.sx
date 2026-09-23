@@ -23,7 +23,7 @@ Container :: struct {
 
     add :: (self: *Container, w: Widget) {
         // The handle borrows, so the referent is funded here to outlive the frame.
-        self.items.append(Item{ view = context.allocator.make(w) });
+        self.items.append(Item{ view = mem.make(context.allocator, w) });
 
         @printf("inside add: ");
         print("{}\n", self.items.items[self.items.len - 1].view.size());

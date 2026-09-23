@@ -26,7 +26,7 @@ main :: () -> i32 {
     root := UiRoot.init(Size{ width = 100.0, height = 40.0 }, context.allocator, .{ value = 7 });
     app := *root;
 
-    loop := FrameLoop.init(*root, closure(||_{ app } -> View {
+    loop := FrameLoop.init(*root, mem.closure(||_{ app } -> View {
         // Three entries this root keeps. The handlers below write into two of
         // them long after the build that claimed them returned.
         frame := useState(i64, 0);
@@ -46,10 +46,10 @@ main :: () -> i32 {
             frame.get(), taps.get(), keys.get(), pressed, focused);
 
         v : View = vstack(0.0) {
-            tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, closure(||_{ taps } {
+            tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, mem.closure(||_{ taps } {
                 taps.set(taps.get() + 1)
             }));
-            focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 }, closure(|e: *KeyEvent|_{ keys } {
+            focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 }, mem.closure(|e: *KeyEvent|_{ keys } {
                 keys.set(keys.get() + 1)
             }))
         };
@@ -93,16 +93,16 @@ main :: () -> i32 {
     steady := 0;
     ran := 0;
     tapsSeen := 0;
-    tracker := TrackingAllocator.init(context.allocator);
+    tracker := mem.TrackingAllocator.init(context.allocator);
     push .{ allocator = tracker } {
         quiet := UiRoot.init(Size{ width = 100.0, height = 40.0 }, tracker);
         seen := 0;
         counter := *seen;
-        spin := FrameLoop.init(*quiet, closure(||_{ counter } -> View {
+        spin := FrameLoop.init(*quiet, mem.closure(||_{ counter } -> View {
             n := useState(i64, 0);
             n.set(n.get() + 1);
             v : View = vstack(0.0) {
-                tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, closure(||_{ counter } {
+                tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, mem.closure(||_{ counter } {
                     counter.* += 1;
                 }));
                 focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 })
@@ -136,12 +136,12 @@ main :: () -> i32 {
     // from, so the teardown lands there: the owner ends level and the allocator
     // ambient at `init` never sees the free.
     built := 0;
-    owner := TrackingAllocator.init(context.allocator);
-    elsewhere := TrackingAllocator.init(context.allocator);
+    owner := mem.TrackingAllocator.init(context.allocator);
+    elsewhere := mem.TrackingAllocator.init(context.allocator);
     push .{ allocator = owner } {
         far := UiRoot.init(Size{ width = 100.0, height = 40.0 }, owner);
         counted := *built;
-        build : Closure() -> View = closure(||_{ counted } -> View {
+        build : Closure() -> View = mem.closure(||_{ counted } -> View {
             counted.* += 1;
             v : View = vstack(0.0) {
                 tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {})
@@ -164,7 +164,7 @@ main :: () -> i32 {
     // deinit gives all three buffers back.
     settled := 0;
     returned := 0;
-    solo := TrackingAllocator.init(context.allocator);
+    solo := mem.TrackingAllocator.init(context.allocator);
     push .{ allocator = solo } {
         marks := Identity.init(solo);
         push .{ composeUi = *marks } {

@@ -149,7 +149,7 @@ sxRunBoxedClosure :: (arg: *void) {
 // `async(io, worker)` — submit a NULLARY worker callable at `() -> ($R, !)` and
 // get a `*Future($R)` handle. Inputs are captured at the CALL SITE in the
 // lambda (`context.io.async(|| -> (i64, !) compute(a, b))`). The worker is
-// persisted once through `closure(worker, alloc)`; one already erased passes
+// persisted once through `mem.closure(worker, alloc)`; one already erased passes
 // through unchanged.
 //
 // The Future (and the completion-closure `ThunkBox`) are HEAP-allocated (not
@@ -184,7 +184,7 @@ futRelease :: ufcs (f: *Future($R)) {
 }
 
 async :: ufcs (io: Io, worker: $F/() -> ($R, !), alloc: Allocator = context.allocator) -> *Future($R) {
-    w := closure(worker, alloc);
+    w := mem.closure(worker, alloc);
     raw := alloc.allocBytes(@sizeOf(Future($R)));
     f : *Future($R) = raw.(*Future($R));
     f.state = .pending;
@@ -216,7 +216,7 @@ async :: ufcs (io: Io, worker: $F/() -> ($R, !), alloc: Allocator = context.allo
     // a capture-free worker.
     b.workerEnv = w.env;
     b.alloc = alloc;
-    b.run = closure(||_{ f, w } {
+    b.run = mem.closure(||_{ f, w } {
         f.value = w() catch {
             if f.canceled.load(.acquire) { f.state = .canceled; }
             else { f.state = .failed; }

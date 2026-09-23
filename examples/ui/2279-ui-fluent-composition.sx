@@ -33,24 +33,24 @@ main :: () -> i32 {
 
     // Two rows; the second one asks for the soft keyboard and takes text,
     // composition and the delete intent as well as keys.
-    loop := fluent.FrameLoop.init(*root, closure(||_{ tally } -> fluent.View {
+    loop := fluent.FrameLoop.init(*root, mem.closure(||_{ tally } -> fluent.View {
         v : fluent.View = fluent.vstack(0.0) {
             fluent.focusable(fluent.Rect{ fill = ui.COLOR_BLUE, height = 20.0 });
             fluent.focusable(fluent.Rect{ fill = ui.COLOR_GREEN, height = 20.0 },
-                closure(|e: *fluent.KeyEvent|_{ tally } {
+                mem.closure(|e: *fluent.KeyEvent|_{ tally } {
                     tally.keys += 1;
                     tally.last = e.logical;
                 }),
-                closure(|s: string|_{ tally } {
+                mem.closure(|s: string|_{ tally } {
                     tally.texts += 1;
                     print("  text \"{}\"\n", s);
                 }),
                 true,
-                closure(|e: *fluent.CompositionEvent|_{ tally } {
+                mem.closure(|e: *fluent.CompositionEvent|_{ tally } {
                     tally.marks += 1;
                     print("  marked \"{}\" [{} {}]\n", e.marked, e.selectionStart, e.selectionEnd);
                 }),
-                closure(||_{ tally } {
+                mem.closure(||_{ tally } {
                     tally.deletes += 1;
                 }))
         };

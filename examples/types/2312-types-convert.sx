@@ -17,7 +17,7 @@ main :: () -> i32 {
     c := Celsius{ deg = 20.0 };
     k := @convert(Kelvin, c);
     l := @convert(Label, c);
-    arena := Arena.init(context.allocator, 4096);
+    arena := mem.Arena.init(context.allocator, 4096);
     a := arena.(Allocator);
     l2 := @convert(Label, Celsius{ deg = -1.5 }, a);
     print("{} {} {}\n", k.k, l.text, l2.text);

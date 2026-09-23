@@ -126,16 +126,16 @@ TextField :: @OpenVariant(View) {
 
     render :: (self: *TextField, rc: *RenderContext, frame: Frame) {
         doc := self.session;
-        rc.hitRegion(self.id.value, frame, null, closure(||_{ id = self.id } {
+        rc.hitRegion(self.id.value, frame, null, mem.closure(||_{ id = self.id } {
             context.fluentFocus.requestFocus(id)
         }));
         rc.focusRegion(self.id.value, frame, null,
-            closure(|s: string|_{ doc } { doc.insert(s) }),
+            mem.closure(|s: string|_{ doc } { doc.insert(s) }),
             true,
-            closure(|e: *CompositionEvent|_{ doc } {
+            mem.closure(|e: *CompositionEvent|_{ doc } {
                 doc.setMarked(e.marked, e.selectionStart, e.selectionEnd)
             }),
-            closure(||_{ doc } { doc.deleteBackward() }));
+            mem.closure(||_{ doc } { doc.deleteBackward() }));
 
         committed := doc.committedText();
         head := committed[..doc.caret];

@@ -96,8 +96,8 @@ build :: (alloc: Allocator) -> Value {
 }
 
 main :: () -> ! {
-    gpa := GPA.init();
-    arena := Arena.init(gpa, 16384);
+    gpa := mem.GPA.init();
+    arena := mem.Arena.init(gpa, 16384);
     defer arena.deinit();
     a : Allocator = arena;
 

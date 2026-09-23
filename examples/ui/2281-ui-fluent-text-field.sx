@@ -50,7 +50,7 @@ main :: () -> i32 {
     session := fluent.TextInputSession.init(*reports);
     doc := *session;
 
-    loop := fluent.FrameLoop.init(*root, closure(||_{ doc } -> fluent.View {
+    loop := fluent.FrameLoop.init(*root, mem.closure(||_{ doc } -> fluent.View {
         v : fluent.View = fluent.textField(doc);
         v
     }), context.allocator);

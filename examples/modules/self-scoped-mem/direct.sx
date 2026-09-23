@@ -1,0 +1,5 @@
+@import "modules/std/mem.sx";
+
+allocator :: () -> mem.GPA {
+    mem.GPA.init()
+}

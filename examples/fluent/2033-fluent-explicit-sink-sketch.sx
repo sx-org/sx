@@ -33,7 +33,7 @@ Roots :: struct {
     items: List(View) = .{};
 
     expression :: (self: *Roots, value: $I/@Init($V/View)) {
-        destination := self.storage.create(V);
+        destination := mem.create(self.storage, V);
         value.write(destination);
         handle : View = destination;
         self.items.append(handle);
@@ -55,7 +55,7 @@ count :: (into: *Tally, content: $B/@BuildBlock(View)) {
 }
 
 main :: () -> i32 {
-    arena := Arena.init(context.allocator, 512);
+    arena := mem.Arena.init(context.allocator, 512);
     roots := Roots{ storage = arena };
     rows := .["one", "two"];
 
