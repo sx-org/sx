@@ -2780,78 +2780,12 @@ pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
     var elems = std.ArrayList(Ref).empty;
     defer elems.deinit(self.alloc);
 
-    // Determine element type: explicit type_expr > target_type > inference
-    var elem_ty: TypeId = .unresolved;
-    var from_target = false;
-    var is_vector = false;
-    // The destination's terminator, written past the last element.
-    var sentinel: ?i64 = null;
-
-    // First, check explicit type annotation on the literal (e.g. `@Vector(3,f32).[1,2,3]`).
-    // The prefix slot names the AGGREGATE type; a prefix that resolves to
-    // anything else (scalar `i16.[…]`, struct `Point.[…]`) would read as an
-    // element-type prefix — a second meaning this spelling does not carry.
-    // Silently ignoring it lets elements fall back to the literal default, so
-    // `i32.[1]` builds a `[1]i64`; refuse it instead.
-    if (al.type_expr) |te| {
-        const resolved = self.resolveArrayLiteralType(te);
-        if (resolved != .unresolved) {
-            if (self.module.types.sliceInfoOf(resolved)) |s| {
-                elem_ty = s.element;
-                from_target = true;
-            } else if (!resolved.isBuiltin()) {
-                const info = self.module.types.get(resolved);
-                switch (info) {
-                    .array => |a| {
-                        elem_ty = a.element;
-                        sentinel = a.sentinel;
-                        from_target = true;
-                    },
-                    .vector => |v| {
-                        elem_ty = v.element;
-                        from_target = true;
-                        is_vector = true;
-                    },
-                    else => {},
-                }
-            }
-            if (!from_target) {
-                if (self.diagnostics) |d| {
-                    const name = self.module.types.formatTypeName(self.alloc, resolved, null);
-                    d.addFmt(.err, te.span, "a '.[ ]' literal's type prefix names the aggregate type, not the element type — '{s}' is not an array/vector/slice; annotate the binding instead: `x : [{d}]{s} = .[ … ]`", .{ name, al.elements.len, name });
-                }
-                return self.builder.constUndef(.unresolved);
-            }
-        }
-    }
-
-    if (!from_target) {
-        if (self.target_type) |tt| {
-            if (self.module.types.sliceInfoOf(tt)) |s| {
-                elem_ty = s.element;
-                from_target = true;
-            } else if (!tt.isBuiltin()) {
-                const info = self.module.types.get(tt);
-                switch (info) {
-                    .array => |a| {
-                        elem_ty = a.element;
-                        sentinel = a.sentinel;
-                        from_target = true;
-                    },
-                    .vector => |v| {
-                        elem_ty = v.element;
-                        from_target = true;
-                        is_vector = true;
-                    },
-                    else => {},
-                }
-            }
-        }
-    }
-    if (!from_target and al.elements.len > 0) {
-        const inferred = self.inferExprType(al.elements[0]);
-        if (inferred != .void) elem_ty = inferred;
-    }
+    const result_ty = self.arrayLiteralType(al) orelse return self.builder.constUndef(.unresolved);
+    const elem_ty: TypeId, const sentinel: ?i64 = switch (self.module.types.get(result_ty)) {
+        .array => |a| .{ a.element, a.sentinel },
+        .vector => |v| .{ v.element, null },
+        else => unreachable,
+    };
 
     for (al.elements) |elem| {
         const old_tt = self.target_type;
@@ -2882,11 +2816,40 @@ pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
 
     if (sentinel) |x| elems.append(self.alloc, self.sentinelValue(x, elem_ty)) catch unreachable;
 
-    const result_ty = if (is_vector)
-        self.module.types.vectorOf(elem_ty, @intCast(al.elements.len))
-    else
-        self.module.types.arrayOfSentinel(elem_ty, @intCast(al.elements.len), sentinel);
     return self.builder.structInit(elems.items, result_ty);
+}
+
+/// The array or vector a `.[…]` literal builds, shaped by its type prefix,
+/// else its target, else its elements; null when the prefix names no array,
+/// vector or slice.
+pub fn arrayLiteralType(self: *Lowering, al: *const ast.ArrayLiteral) ?TypeId {
+    const length: u32 = @intCast(al.elements.len);
+    if (al.type_expr) |te| {
+        const resolved = self.resolveArrayLiteralType(te);
+        if (resolved != .unresolved) {
+            if (literalAggregate(self, resolved, length)) |ty| return ty;
+            if (self.diagnostics) |d| {
+                const name = self.module.types.formatTypeName(self.alloc, resolved, null);
+                d.addFmt(.err, te.span, "a '.[ ]' literal's type prefix names the aggregate type, not the element type — '{s}' is not an array/vector/slice; annotate the binding instead: `x : [{d}]{s} = .[ … ]`", .{ name, al.elements.len, name });
+            }
+            return null;
+        }
+    }
+    if (self.target_type) |tt| if (literalAggregate(self, tt, length)) |ty| return ty;
+    const elem_ty = self.genericResolver().elementBinding(al.elements) orelse .unresolved;
+    return self.module.types.arrayOf(elem_ty, length);
+}
+
+/// The array or vector a `.[…]` of `length` elements builds for the
+/// destination `ty`.
+fn literalAggregate(self: *Lowering, ty: TypeId, length: u32) ?TypeId {
+    if (self.module.types.sliceInfoOf(ty)) |s| return self.module.types.arrayOf(s.element, length);
+    if (ty.isBuiltin()) return null;
+    return switch (self.module.types.get(ty)) {
+        .array => |a| self.module.types.arrayOfSentinel(a.element, length, a.sentinel),
+        .vector => |v| self.module.types.vectorOf(v.element, length),
+        else => null,
+    };
 }
 
 /// Resolve the type annotation on an array literal (e.g. `@Vector(3,f32).[...]`).

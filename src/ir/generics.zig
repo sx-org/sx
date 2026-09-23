@@ -31,6 +31,14 @@ fn contextualArgumentFits(l: *Lowering, node: *const Node, ty: TypeId) bool {
     };
 }
 
+/// A float outranks an earlier binding, `f64` outranking `f32`; otherwise the
+/// first binding stands.
+fn widerBinding(prev: ?TypeId, ty: TypeId) TypeId {
+    const bound = prev orelse return ty;
+    if (ty == .f64 or (ty == .f32 and bound != .f64)) return ty;
+    return bound;
+}
+
 pub const GenericResolver = struct {
     l: *Lowering,
 
@@ -387,17 +395,7 @@ pub const GenericResolver = struct {
                             // slots nothing has decided.
                             if (extracted != null and Lowering.boundOnBinder(param.type_expr, tp.name) and
                                 carriesUnresolved(self.l, extracted.?)) continue;
-                            if (extracted) |ety| {
-                                if (inferred_ty) |prev| {
-                                    if (ety == .f64 and prev != .f64) {
-                                        inferred_ty = ety;
-                                    } else if (ety == .f32 and prev != .f64 and prev != .f32) {
-                                        inferred_ty = ety;
-                                    }
-                                } else {
-                                    inferred_ty = ety;
-                                }
-                            }
+                            if (extracted) |ety| inferred_ty = widerBinding(inferred_ty, ety);
                         }
                     }
                 }
@@ -413,6 +411,23 @@ pub const GenericResolver = struct {
             }
         }
         return bindings;
+    }
+
+    /// The element type a bare `.[…]` binds from its elements, as arguments
+    /// bind one `$T`. An element inference cannot type (`null`, `.a`) binds
+    /// nothing.
+    pub fn elementBinding(self: GenericResolver, elements: []const *Node) ?TypeId {
+        var bound: ?TypeId = null;
+        for ([2]bool{ false, true }) |literal_round| {
+            for (elements) |elem| {
+                if (isContextualArgument(self.l, elem) != literal_round) continue;
+                if (literal_round and bound != null and contextualArgumentFits(self.l, elem, bound.?)) continue;
+                const ty = self.l.inferExprType(elem);
+                if (ty == .void or ty == .unresolved) continue;
+                bound = widerBinding(bound, ty);
+            }
+        }
+        return bound;
     }
 
     /// Infer the return type of a generic function call by resolving type bindings.

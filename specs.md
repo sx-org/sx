@@ -1788,8 +1788,10 @@ a[0..3] == b[0..2] // false — lengths differ
 ```
 
 A `.[ … ]` literal takes its element type from the annotation or target
-(`x : [3]i16 = .[1, 2, 3]`), or infers it from the elements when bare
-(`.[1, 2, 3]` is `[3]i64`). A type prefix on the literal names the
+(`x : [3]i16 = .[1, 2, 3]`). A bare literal's elements bind it as arguments
+bind one binder ([Generic Functions](#generic-functions-monomorphization)):
+`.[1, 2, 3]` is `[3]i64`, and with `x : i32`, `.[1, x]` and `.[x, 1]` are both
+`[2]i32`. A type prefix on the literal names the
 **aggregate** type — `@Vector(3, f32).[…]`, `([2]?i64).[…]`, or an alias
 of an array type — never the element type: a prefix that resolves to a
 non-array/vector/slice type (`i16.[…]`, `Point.[…]`) is a compile error

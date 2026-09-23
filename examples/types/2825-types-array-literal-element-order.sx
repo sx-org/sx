@@ -1,0 +1,20 @@
+@import "modules/std.sx";
+
+main :: () -> i32 {
+    x : i32 = 5;
+    y : f32 = 1.5;
+    name : string = concat("a", "b");
+    print("{} {}\n", @typeName(@typeOf(.[1, x])), @typeName(@typeOf(.[x, 1])));
+    print("{} {}\n", @typeName(@typeOf(.[2.0, y])), @typeName(@typeOf(.[y, 2.0])));
+    print("{} {}\n", @typeName(@typeOf(.["a", name])), @typeName(@typeOf(.[name, "a"])));
+    ints := .[1, x];
+    floats := .[2.0, y];
+    texts := .["a", name];
+    print("{} {} {}\n", ints, floats, texts);
+    p : ?*i32 = *x;
+    pointers := .[null, p];
+    nested := .[.[1, 2], .[3, 4]];
+    print("{} {}\n", @typeName(@typeOf(pointers)), pointers[0] == null);
+    print("{} {}\n", @typeName(@typeOf(nested)), nested);
+    0
+}

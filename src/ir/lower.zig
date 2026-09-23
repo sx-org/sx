@@ -4298,6 +4298,7 @@ pub const Lowering = struct {
     pub const resolveVariantIndex = lower_expr.resolveVariantIndex;
     pub const hasVariant = lower_expr.hasVariant;
     pub const lowerArrayLiteral = lower_expr.lowerArrayLiteral;
+    pub const arrayLiteralType = lower_expr.arrayLiteralType;
     pub const resolveArrayLiteralType = lower_expr.resolveArrayLiteralType;
     pub const lowerIndexExpr = lower_expr.lowerIndexExpr;
     pub const lowerIndexOperand = lower_expr.lowerIndexOperand;
