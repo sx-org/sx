@@ -246,9 +246,10 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
         .unary_op => |uo| switch (uo.op) {
             .negate => switch (uo.operand.data) {
                 .int_literal => |il| blk: {
-                    if (isFloat(expected_ty)) break :blk .{ .float = @floatFromInt(-il.value) };
-                    self.checkIntLiteralFits(-il.value, expected_ty, expr.span);
-                    break :blk .{ .int = -il.value };
+                    const v = -%il.value;
+                    if (isFloat(expected_ty)) break :blk .{ .float = @floatFromInt(v) };
+                    self.checkIntLiteralFits(v, expected_ty, expr.span);
+                    break :blk .{ .int = v };
                 },
                 .float_literal => |fl| constFloatLeaf(self, -fl.value, expected_ty, expr.span),
                 else => null,
@@ -315,6 +316,9 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
             const ctx = SourceConstCtx{ .lowering = self, .frame = frame };
             if (self.isIntEx(expected_ty)) {
                 if (program_index_mod.evalConstIntExpr(expr, ctx)) |v| {
+                    // An operation's result keeps its type; a named or builtin read adapts as a literal does.
+                    const typed = expr.data == .binary_op or expr.data == .index_expr;
+                    if (typed and !self.checkConstantWidens(self.inferExprType(expr), expected_ty, expr.span)) break :blk null;
                     self.checkIntLiteralFits(v, expected_ty, expr.span);
                     break :blk inst_mod.ConstantValue{ .int = v };
                 }

@@ -1,0 +1,8 @@
+// A folded operator expression at a global aggregate leaf keeps its operands'
+// type, so an 'i64' result is refused at an unsigned leaf.
+
+G : [1]u64 = .[0 - 1];
+
+main :: () -> i32 {
+    0
+}

@@ -1,0 +1,11 @@
+error: cannot implicitly convert 'f64' to 'i64'; use an explicit cast (`.(i64)`)
+  --> examples/diagnostics/2821-diagnostics-global-leaf-float-field-read.sx:7:16
+   |
+ 7 | G : [1]i64 = .[C.f];
+   |                ^^^
+
+error: cannot implicitly convert 'f64' to 'f32'; use an explicit cast (`.(f32)`)
+  --> examples/diagnostics/2821-diagnostics-global-leaf-float-field-read.sx:8:16
+   |
+ 8 | H : [1]f32 = .[C.f];
+   |                ^^^

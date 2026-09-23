@@ -1,0 +1,5 @@
+error: cannot implicitly convert 'i64' to 'u64'; use an explicit cast (`.(u64)`)
+  --> examples/diagnostics/2822-diagnostics-global-leaf-folded-expression-type.sx:4:16
+   |
+ 4 | G : [1]u64 = .[0 - 1];
+   |                ^^^^^
