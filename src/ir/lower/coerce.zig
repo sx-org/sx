@@ -1602,11 +1602,17 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         .adds_terminator_reject => {
             if (self.diagnostics) |d| {
                 const cs = self.builder.current_span;
-                const fix = if (src_ty == .string and !self.coercionResolver().classify(.cstring, dst_ty).refuses())
-                    " — materialize one with toCstring(s)"
-                else
-                    "";
-                d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "a value of type '{s}' does not coerce to '{s}': no conversion adds a terminator{s}", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty), fix });
+                const span = ast.Span{ .start = cs.start, .end = cs.end };
+                if (self.literal_local_refs.get(val)) |local| {
+                    const id = d.addFmtId(.err, span, "a value of type '{s}' does not coerce to '{s}': no conversion adds a terminator", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty) });
+                    d.addHelpFmt(id, local.init.span, null, "declare '{s}' with '::': a constant keeps the literal's terminator", .{local.name});
+                } else {
+                    const fix = if (src_ty == .string and !self.coercionResolver().classify(.cstring, dst_ty).refuses())
+                        " — materialize one with toCstring(s)"
+                    else
+                        "";
+                    d.addFmt(.err, span, "a value of type '{s}' does not coerce to '{s}': no conversion adds a terminator{s}", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty), fix });
+                }
             }
             return val;
         },

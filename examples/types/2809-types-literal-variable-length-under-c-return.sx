@@ -1,0 +1,18 @@
+// A variable bound to a literal is refused only where its own value reaches a
+// terminated destination, not wherever one is in scope.
+
+puts :: (s: [*:0]u8) -> i32 extern;
+
+pick :: () -> [*:0]u8 {
+    s := "x";
+    match s.len {
+        case 1: { return "one"; }
+        else: { return "many"; }
+    }
+    "none"
+}
+
+main :: () -> i32 {
+    _ = puts(pick());
+    0
+}

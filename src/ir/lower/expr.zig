@@ -1881,25 +1881,6 @@ pub fn stringLiteralFits(self: *Lowering, ty: TypeId) bool {
     return ty == .string or self.literalShape(ty) != .string;
 }
 
-/// A `:=` local bound to a literal holds a `string`, which no conversion
-/// terminates. Where the destination wants the terminator, refuse with the
-/// `::` constant that keeps it. The undefined destination value it returns
-/// keeps the coercion from reporting the refusal a second time.
-pub fn refuseLiteralLocal(self: *Lowering, name: []const u8, init: *const Node, span: ast.Span) ?Ref {
-    const target = self.target_type orelse return null;
-    if (self.coercionResolver().classify(.string, target) != .adds_terminator_reject) return null;
-    if (self.diagnostics) |d| {
-        const id = d.addFmtId(.err, span, "a value of type 'string' does not coerce to '{s}': no conversion adds a terminator", .{self.formatTypeName(target)});
-        const spelling = switch (init.data) {
-            .string_literal => |lit| if (lit.form == .quoted) std.fmt.allocPrint(self.alloc, "\"{s}\"", .{lit.raw}) catch "…" else "…",
-            .identifier => |ident| ident.name,
-            else => "…",
-        };
-        d.addHelpFmt(id, init.span, null, "a '::' constant keeps the literal's terminator: `{s} :: {s}`", .{ name, spelling });
-    }
-    return self.builder.constUndef(target);
-}
-
 /// Lower a struct-level constant value (e.g., Phys.GRAVITY).
 pub fn lowerStructConstant(self: *Lowering, info: StructConstInfo) Ref {
     var demand = self.enterDemand(if (info.ty) |ty| .{ .coerce = ty } else null);
@@ -3917,9 +3898,6 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                     // `inline for x in xs` element capture — lower the
                     // synthesized `xs[<i>]` it aliases.
                     if (binding.alias_node) |elem| break :blk self.lowerExpr(elem);
-                    if (binding.literal_init) |init| {
-                        if (self.refuseLiteralLocal(id.name, init, node.span)) |undef| break :blk undef;
-                    }
                     // Flow narrowing: a name proven present by a
                     // `!= null` guard tags its loaded value so the implicit
                     // `?T → concrete` unwrap in `coerceMode` is permitted (an
@@ -3933,6 +3911,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                     if (binding.is_alloca) {
                         const loaded = self.builder.load(binding.ref, binding.ty);
                         if (is_narrowed) self.narrowed_refs.put(loaded, {}) catch {};
+                        if (binding.literal_init) |init| self.literal_local_refs.put(loaded, .{ .name = id.name, .init = init }) catch {};
                         break :blk loaded;
                     }
                     if (is_narrowed) self.narrowed_refs.put(binding.ref, {}) catch {};
