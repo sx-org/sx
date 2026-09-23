@@ -1,0 +1,17 @@
+error: cannot initialize 'A' of type 'string' with a value of type 'i64'
+  --> examples/diagnostics/2815-diagnostics-global-literal-type-mismatch.sx:3:14
+   |
+ 3 | A : string = 3;
+   |              ^
+
+error: cannot initialize 'B' of type '[3]i64' with a value of type 'bool'
+  --> examples/diagnostics/2815-diagnostics-global-literal-type-mismatch.sx:4:14
+   |
+ 4 | B : [3]i64 = true;
+   |              ^^^^
+
+error: cannot initialize 'C' of type '*i64' with a value of type 'i64'
+  --> examples/diagnostics/2815-diagnostics-global-literal-type-mismatch.sx:5:12
+   |
+ 5 | C : *i64 = -3;
+   |            ^^

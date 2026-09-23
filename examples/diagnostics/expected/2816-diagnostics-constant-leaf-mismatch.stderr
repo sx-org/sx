@@ -1,0 +1,35 @@
+error: cannot coerce a value of type 'string' to 'i64': no implicit conversion applies
+  --> examples/diagnostics/2816-diagnostics-constant-leaf-mismatch.sx:10:19
+   |
+10 | K : [2]i64 : .[1, "a"];
+   |                   ^^^
+
+error: cannot coerce a value of type 'string' to 'i64': no implicit conversion applies
+  --> examples/diagnostics/2816-diagnostics-constant-leaf-mismatch.sx:11:18
+   |
+11 | L : Foo : .{ x = "ab" };
+   |                  ^^^^
+
+error: a value of type '[3:0]u8' does not coerce to '[4:0]u8': no conversion adds a terminator
+  --> examples/diagnostics/2816-diagnostics-constant-leaf-mismatch.sx:6:20
+   |
+ 6 | A : [2][4:0]u8 = .["abc", "def"];
+   |                    ^^^^^
+
+error: cannot coerce a value of type 'string' to 'i64': no implicit conversion applies
+  --> examples/diagnostics/2816-diagnostics-constant-leaf-mismatch.sx:7:18
+   |
+ 7 | B : Foo = .{ x = "ab" };
+   |                  ^^^^
+
+error: cannot coerce a value of type '[3:0]u8' to '[4]u8': no implicit conversion applies
+  --> examples/diagnostics/2816-diagnostics-constant-leaf-mismatch.sx:8:18
+   |
+ 8 | C : Foo = .{ n = "xyz" };
+   |                  ^^^^^
+
+error: cannot coerce a value of type 'i64' to '*i64': no implicit conversion applies
+  --> examples/diagnostics/2816-diagnostics-constant-leaf-mismatch.sx:9:17
+   |
+ 9 | D : [2]*i64 = .[1, 2];
+   |                 ^

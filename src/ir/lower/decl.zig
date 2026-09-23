@@ -1553,11 +1553,13 @@ pub fn registerConstArrayGlobal(self: *Lowering, cd: *const ast.ConstDecl) void 
         }
         break :blk self.inferConstArrayType(cd.name, al.elements, cd.value.span) orelse return;
     };
-    const init_val = self.constArrayLiteral(al.elements, arr_ty) orelse {
+    const errors_before = errorCount(self);
+    const init_val = self.constArrayLiteral(al.elements, arr_ty);
+    if (init_val == null and errorCount(self) == errors_before) {
         if (self.diagnostics) |d|
             d.addFmt(.err, cd.value.span, "constant '{s}' must be initialized by compile-time constant elements", .{cd.name});
         return;
-    };
+    }
     const name_id = self.module.types.internString(cd.name);
     const gid = self.module.addGlobal(.{
         .name = name_id,
@@ -1636,7 +1638,9 @@ pub fn maybeRegisterConstStructGlobal(self: *Lowering, cd: *const ast.ConstDecl)
     const src = self.current_source_file orelse self.main_file orelse return;
     const ci = self.sourceModuleConst(src, cd.name) orelse return;
     if (ci.ty.isBuiltin() or self.module.types.get(ci.ty) != .@"struct") return;
-    const init_val = self.constStructLiteral(&cd.value.data.struct_literal, ci.ty, ci.declared_type != null) orelse return;
+    const errors_before = errorCount(self);
+    const init_val = self.constStructLiteral(&cd.value.data.struct_literal, ci.ty, ci.declared_type != null);
+    if (init_val == null and errorCount(self) == errors_before) return;
     const name_id = self.module.types.internString(cd.name);
     const gid = self.module.addGlobal(.{
         .name = name_id,
@@ -1720,8 +1724,7 @@ fn initializeTopLevelGlobal(self: *Lowering, vd: *const ast.VarDecl) void {
 pub fn globalInitValue(self: *Lowering, vd: *const ast.VarDecl, var_ty: TypeId) ?inst_mod.ConstantValue {
     if (vd.is_extern) return null;
     const v = vd.value.?;
-    if (self.untypedString(v)) |lit| {
-        const src = self.literalType(var_ty, self.stringLiteralBytes(lit).len);
+    if (self.literalNodeType(v, var_ty)) |src| {
         if (!self.checkAssignable(src, var_ty, v.span, "initialize", vd.name)) return null;
     }
 
@@ -1745,6 +1748,7 @@ pub fn globalInitValue(self: *Lowering, vd: *const ast.VarDecl, var_ty: TypeId) 
 /// which handles the optional `{payload, has_value}` layout before calling
 /// here). This is the raw payload serializer.
 pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const Node, var_ty: TypeId) ?inst_mod.ConstantValue {
+    const errors_before = errorCount(self);
     // A borrow-kind protocol-typed global has exactly one static form — the
     // identity erasure of a named global — so its arm runs before the shape
     // dispatch below, which would otherwise serialize an rvalue initializer
@@ -1810,7 +1814,7 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
                 }
                 break :blk cv;
             }
-            break :blk self.diagnoseNonConstGlobal(vd, v);
+            break :blk self.diagnoseNonConstGlobal(vd, v, errors_before);
         },
         .bool_literal => |bl| .{ .boolean = bl.value },
         // A float initializer at an integer-typed global follows the
@@ -1823,8 +1827,8 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
             }
             break :blk inst_mod.ConstantValue{ .float = self.adoptFloatValue(fl.value, var_ty, v.span) };
         },
-        .array_literal => |al| self.constArrayLiteral(al.elements, var_ty) orelse self.diagnoseNonConstGlobal(vd, v),
-        .struct_literal => |sl| self.constStructLiteral(&sl, var_ty, vd.type_annotation != null) orelse self.diagnoseNonConstGlobal(vd, v),
+        .array_literal => |al| self.constArrayLiteral(al.elements, var_ty) orelse self.diagnoseNonConstGlobal(vd, v, errors_before),
+        .struct_literal => |sl| self.constStructLiteral(&sl, var_ty, vd.type_annotation != null) orelse self.diagnoseNonConstGlobal(vd, v, errors_before),
         .identifier => |id| blk: {
             // A bare identifier at a PROTOCOL-typed global is an
             // identity erasure of the named global — the declared type states
@@ -1860,7 +1864,7 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
         // An enum-literal global (`chosen : Color = .green;`) serializes to
         // the variant's tag value against the destination enum type.
         .enum_literal => |el| self.constEnumLiteral(&el, var_ty, v.span),
-        .call => self.constExprValue(v, var_ty) orelse self.diagnoseNonConstGlobal(vd, v),
+        .call => self.constExprValue(v, var_ty) orelse self.diagnoseNonConstGlobal(vd, v, errors_before),
         // Any other initializer shape (`.field_access` on a const, an
         // arithmetic expression, …) is not a static constant the compiler can
         // evaluate here. Diagnose loudly rather than emit a null payload that
@@ -1877,7 +1881,7 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
 /// builds, over a payload global synthesized beside it.
 fn anyGlobalInit(self: *Lowering, vd: *const ast.VarDecl, v: *const Node) ?inst_mod.ConstantValue {
     const src_ty = self.inferExprType(v);
-    if (src_ty == .unresolved or src_ty == .any) return self.diagnoseNonConstGlobal(vd, v);
+    if (src_ty == .unresolved or src_ty == .any) return self.diagnoseNonConstGlobal(vd, v, errorCount(self));
     const payload = self.globalInitValuePayload(vd, v, src_ty) orelse return null;
     const name = std.fmt.allocPrint(self.alloc, "{s}.any", .{vd.name}) catch @panic("out of memory");
     const gid = self.module.addGlobal(.{
@@ -1894,11 +1898,17 @@ fn anyGlobalInit(self: *Lowering, vd: *const ast.VarDecl, v: *const Node) ?inst_
 /// A global aggregate initializer (array/struct literal) that does not fully
 /// reduce to a compile-time constant is rejected loudly. Without this the
 /// `null` payload would fall through to a zero-initialized global, silently
-/// dropping the declared fields.
-pub fn diagnoseNonConstGlobal(self: *Lowering, vd: *const ast.VarDecl, v: *const Node) ?inst_mod.ConstantValue {
+/// dropping the declared fields. An error reported since `errors_before` already
+/// names why the initializer did not reduce.
+pub fn diagnoseNonConstGlobal(self: *Lowering, vd: *const ast.VarDecl, v: *const Node, errors_before: usize) ?inst_mod.ConstantValue {
+    if (errorCount(self) != errors_before) return null;
     if (self.diagnostics) |d|
         d.addFmt(.err, v.span, "global '{s}' must be initialized by a compile-time constant", .{vd.name});
     return null;
+}
+
+fn errorCount(self: *Lowering) usize {
+    return if (self.diagnostics) |d| d.errorCount() else 0;
 }
 
 fn reserveStructLayouts(self: *Lowering, authored: []const *const Node) void {

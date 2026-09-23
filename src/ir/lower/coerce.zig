@@ -1173,8 +1173,12 @@ pub const CheckedCoercion = struct {
 /// caller that must react to one reads a single answer rather than re-deriving
 /// the ladder's arms.
 pub fn coerceChecked(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId) CheckedCoercion {
+    return coerceModeChecked(self, val, src_ty, dst_ty, .implicit);
+}
+
+fn coerceModeChecked(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mode: CoerceMode) CheckedCoercion {
     const before: usize = if (self.diagnostics) |d| d.errorCount() else 0;
-    const converted = self.coerceToType(val, src_ty, dst_ty);
+    const converted = self.coerceMode(val, src_ty, dst_ty, mode);
     const after: usize = if (self.diagnostics) |d| d.errorCount() else 0;
     return .{ .ref = converted, .refused = after != before };
 }
@@ -1365,19 +1369,34 @@ pub fn emitLiteralLocalHelps(self: *Lowering) void {
 }
 
 fn diagnoseUnmodeledCoercion(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, mode: CoerceMode) void {
-    {
-        const cs = self.builder.current_span;
-        if (refuseSetWeld(self, src_ty, dst_ty, .{ .start = cs.start, .end = cs.end })) return;
-    }
+    const cs = self.builder.current_span;
+    const span: ast.Span = .{ .start = cs.start, .end = cs.end };
+    if (refuseSetWeld(self, src_ty, dst_ty, span)) return;
     if (recoveringConversion(self, src_ty, dst_ty)) return;
-    if (self.diagnostics) |d| {
-        const cs = self.builder.current_span;
-        switch (mode) {
-            .implicit => d.addFmt(.err, .{ .start = cs.start, .end = cs.end }, "cannot coerce a value of type '{s}' to '{s}': no implicit conversion applies", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty) }),
-            .explicit => d.addFmt(.err, .{ .start = cs.start, .end = cs.end }, "no conversion from '{s}' to '{s}'", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty) }),
-        }
-        self.assignability_error_count += 1;
+    refuseConversion(self, src_ty, dst_ty, mode, span);
+}
+
+fn refuseConversion(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, mode: CoerceMode, span: ast.Span) void {
+    const d = self.diagnostics orelse return;
+    switch (mode) {
+        .implicit => d.addFmt(.err, span, "cannot coerce a value of type '{s}' to '{s}': no implicit conversion applies", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty) }),
+        .explicit => d.addFmt(.err, span, "no conversion from '{s}' to '{s}'", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty) }),
     }
+    self.assignability_error_count += 1;
+}
+
+/// A literal of type `src_ty` at the constant leaf `dst_ty`: true when an implicit
+/// conversion reaches it, else refused at `span` as the lowered leaf's coercion is.
+pub fn checkConstantLeaf(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: ast.Span) bool {
+    if (src_ty == dst_ty or dst_ty == .unresolved) return true;
+    if (refuseSetWeld(self, src_ty, dst_ty, span)) return false;
+    if (self.conversionAvailable(src_ty, dst_ty, .implicit)) return true;
+    switch (self.coercionResolver().classify(src_ty, dst_ty)) {
+        .optional_wrap => return checkConstantLeaf(self, src_ty, self.module.types.get(dst_ty).optional.child, span),
+        .adds_terminator_reject => self.refuseAddedTerminator(src_ty, dst_ty, span, null),
+        else => refuseConversion(self, src_ty, dst_ty, .implicit, span),
+    }
+    return false;
 }
 
 /// Return-path variant of the guard, with a return-specific message and the
@@ -1673,7 +1692,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         // Concrete → Optional wrapping (coerce to the inner type first)
         .optional_wrap => {
             const child_ty = self.module.types.get(dst_ty).optional.child;
-            const coerced = self.coerceMode(val, src_ty, child_ty, mode);
+            const coerced = coerceModeChecked(self, val, src_ty, child_ty, mode);
             // The inner coercion may classify as `.none` (no built-in applies)
             // and pass `val` through UNCHANGED — e.g. wrapping a `?i64` value
             // into a `?(?i64)` whose payload is the 1-tuple `(?i64)`. Building
@@ -1682,18 +1701,20 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             // If the coerced operand's type does not match the optional's child
             // type, the wrap is invalid — diagnose loudly instead of emitting a
             // corrupt InsertValue. (`hasErrors()` then aborts the build.)
-            const coerced_ty = self.builder.getRefType(coerced);
+            const coerced_ty = self.builder.getRefType(coerced.ref);
             if (coerced_ty != child_ty) {
                 if (self.diagnostics) |d| {
-                    const cs = self.builder.current_span;
-                    // Only mention the `(T)`-is-a-1-tuple gotcha when the payload
-                    // actually IS a tuple (the `?(?T)` typo); for any other
-                    // mismatch the parens note would be misleading.
-                    d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "cannot wrap a value of type '{s}' into optional '{s}': its payload type is '{s}'", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty), self.formatTypeName(child_ty) });
+                    if (!coerced.refused) {
+                        const cs = self.builder.current_span;
+                        // Only mention the `(T)`-is-a-1-tuple gotcha when the payload
+                        // actually IS a tuple (the `?(?T)` typo); for any other
+                        // mismatch the parens note would be misleading.
+                        d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "cannot wrap a value of type '{s}' into optional '{s}': its payload type is '{s}'", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty), self.formatTypeName(child_ty) });
+                    }
                 }
                 return val;
             }
-            return self.builder.emit(.{ .optional_wrap = .{ .operand = coerced } }, dst_ty);
+            return self.builder.emit(.{ .optional_wrap = .{ .operand = coerced.ref } }, dst_ty);
         },
         // Concrete → Protocol (auto type erasure)
         .erase_protocol => {
