@@ -1995,7 +1995,7 @@ literal and any `*T` may hold it. The compiler does not police it: like
 writes, null-ness is unchecked — dereferencing a null pointer is a runtime
 crash, never a compile error. Nullability **checking is opt-in** via the
 optional spelling `?*T`: same bare-pointer representation (see Optional
-Types), but use-sites must prove presence (`!`, `??`, `if v := p`,
+Types), but use-sites must prove presence (`?!`, `??`, `if v := p`,
 flow-sensitive narrowing) before touching the payload. Pick `*T` when null is
 a normal, locally handled sentinel; pick `?*T` when the type should force
 every consumer to handle absence.
@@ -2228,7 +2228,7 @@ n := Node{value = 10 };    // n.next is null
 `print("{}", opt)` prints the payload value if present, or `"null"`.
 
 #### Comptime
-Optionals work in `@run` blocks — `??`, `!`, `if val :=`, null checks all supported.
+Optionals work in `@run` blocks — `??`, `?!`, `if val :=`, null checks all supported.
 
 ### C Interop
 

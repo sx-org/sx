@@ -1,0 +1,8 @@
+// A terminator refusal is one mismatch among the rest: the next one is
+// reported too.
+
+main :: () -> i32 {
+    b : [4:0]u8 = "lit";
+    c : i64 = "lit";
+    0
+}

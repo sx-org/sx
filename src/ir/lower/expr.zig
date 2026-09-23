@@ -1171,6 +1171,7 @@ pub fn fixupMethodReceiver(self: *Lowering, method_args: *std.ArrayList(Ref), fu
                 const oi = self.module.types.get(obj_ty);
                 if (oi == .pointer) return; // already a pointer
             }
+            self.noteStorageWrite(obj_node);
             if (place) |p| {
                 method_args.items[0] = receiverPointer(self, p, obj_ty);
                 return;
@@ -3915,7 +3916,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                     if (binding.is_alloca) {
                         const loaded = self.builder.load(binding.ref, binding.ty);
                         if (is_narrowed) self.narrowed_refs.put(loaded, {}) catch {};
-                        if (binding.literal_init) |init| self.literal_local_refs.put(loaded, .{ .name = id.name, .init = init }) catch {};
+                        if (binding.literal_init) |init| self.literal_local_refs.put(loaded, .{ .binding = binding.id.?, .name = id.name, .init = init }) catch {};
                         break :blk loaded;
                     }
                     if (is_narrowed) self.narrowed_refs.put(binding.ref, {}) catch {};
@@ -4194,6 +4195,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                 }
                 break :blk self.diagPackAsValue(pname, node.span, .generic);
             }
+            if (uop.op == .address_of) self.noteStorageWrite(uop.operand);
             // address_of(index_expr) → emit index_gep (pointer to element) instead of index_get + addr_of
             if (uop.op == .address_of and uop.operand.data == .index_expr) {
                 const ie = &uop.operand.data.index_expr;
@@ -4299,6 +4301,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
             // operand is lowered: lowering it as a value would evaluate the
             // place's subexpressions a second time (`--xs[idx()]`).
             if (uop.op == .pre_decrement) {
+                self.noteStorageWrite(uop.operand);
                 if (self.diagConstRootWrite(uop.operand)) break :blk self.emitPlaceholder("pre-decrement");
                 if (self.diagContextRootWrite(uop.operand)) break :blk self.emitPlaceholder("pre-decrement");
                 if (self.diagEnclosingRootWrite(uop.operand)) break :blk self.emitPlaceholder("pre-decrement");

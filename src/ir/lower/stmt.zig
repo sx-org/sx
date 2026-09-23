@@ -1634,12 +1634,7 @@ pub fn diagContextRootWrite(self: *Lowering, target: *const Node) bool {
     }
 }
 
-/// Storage-less root of a member/element chain. Null when the chain is not
-/// rooted at such a binding, or when a hop addresses pointee memory instead
-/// of the copy: an explicit deref, a pointer-typed identifier (the copy is
-/// the address), or indexing a pointer/slice/string. A pointer-typed field
-/// of the copy (`h.p` in `h.p.n`) is still the copy — GEP needs the root's
-/// address.
+/// Storage-less root of a member/element chain, as `storageRootName` names it.
 const NonstoreRoot = struct {
     name: []const u8,
     binding: Binding,
@@ -1647,6 +1642,20 @@ const NonstoreRoot = struct {
 
 fn nonstoreRootOf(self: *Lowering, target: *const Node) ?NonstoreRoot {
     const scope = self.scope orelse return null;
+    const name = storageRootName(self, target) orelse return null;
+    const scoped = scope.lookupBoundary(name);
+    if (scoped.crossed != .none) return null;
+    const b = scoped.binding orelse return null;
+    if (b.is_alloca or b.is_ref_capture) return null;
+    return .{ .name = name, .binding = b };
+}
+
+/// The root identifier of a member/element chain that addresses the root's own
+/// storage. Null when a hop addresses pointee memory instead: an explicit
+/// deref, a pointer-typed identifier (its value is the address), or indexing a
+/// pointer/slice/string. A pointer-typed field of the root (`h.p` in `h.p.n`)
+/// is still the root — GEP needs the root's address.
+fn storageRootName(self: *Lowering, target: *const Node) ?[]const u8 {
     var node = target;
     while (true) {
         const obj = switch (node.data) {
@@ -1662,16 +1671,18 @@ fn nonstoreRootOf(self: *Lowering, target: *const Node) ?NonstoreRoot {
             .string, .slice => if (node.data == .index_expr) return null,
             else => {},
         }
-        if (obj.data == .identifier) {
-            const name = obj.data.identifier.name;
-            const scoped = scope.lookupBoundary(name);
-            if (scoped.crossed != .none) return null;
-            const b = scoped.binding orelse return null;
-            if (b.is_alloca or b.is_ref_capture) return null;
-            return .{ .name = name, .binding = b };
-        }
+        if (obj.data == .identifier) return obj.data.identifier.name;
         node = obj;
     }
+}
+
+/// Records the local whose storage `target` writes or hands out by address:
+/// the identifier itself, or the root of a chain `storageRootName` names.
+pub fn noteStorageWrite(self: *Lowering, target: *const Node) void {
+    const name = if (target.data == .identifier) target.data.identifier.name else storageRootName(self, target) orelse return;
+    const scope = self.scope orelse return;
+    const id = scope.bindingId(name) orelse return;
+    self.written_bindings.put(self.alloc, id, {}) catch @panic("out of memory");
 }
 
 /// Nonstore-root write guard, shared by lowerAssignment, lowerMultiAssign and
@@ -2369,6 +2380,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
     if (asgn.target.data == .identifier) {
         self.killNarrowing(asgn.target.data.identifier.name);
     }
+    noteStorageWrite(self, asgn.target);
 
     // Writes through a constant are rejected at compile time:
     // the target chain's root naming a const global (array/struct consts,
@@ -3782,6 +3794,7 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
     // `if o != null` diagnoses the RHS use just like `o = o + 1;` does.
     for (ma.targets) |t| {
         if (t.data == .identifier) self.killNarrowing(t.data.identifier.name);
+        noteStorageWrite(self, t);
     }
 
     // Select every namespace-qualified destination before evaluating any RHS.
