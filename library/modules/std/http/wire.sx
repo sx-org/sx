@@ -309,7 +309,7 @@ private itemQuality :: (item: string) -> i64 {
         nameAt := at;
         while at < item.len and item[at] != '=' and item[at] != ';' { at += 1; }
         name := trimOws(item[nameAt..at]);
-        value : string = "";
+        value := "";
         if at < item.len and item[at] == '=' {
             at += 1;
             valueAt := at;

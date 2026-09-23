@@ -9,9 +9,9 @@ const TypeId = types.TypeId;
 const Lowering = lower.Lowering;
 
 fn isContextualArgument(l: *Lowering, node: *const Node) bool {
-    if (l.isAdaptableFloat(node)) return true;
+    if (l.isAdaptableFloat(node) or l.untypedString(node) != null) return true;
     return switch (node.data) {
-        .int_literal, .float_literal, .string_literal => true,
+        .int_literal, .float_literal => true,
         .unary_op => |uo| uo.op == .negate and switch (uo.operand.data) {
             .int_literal, .float_literal => true,
             else => false,
@@ -22,10 +22,10 @@ fn isContextualArgument(l: *Lowering, node: *const Node) bool {
 
 fn contextualArgumentFits(l: *Lowering, node: *const Node, ty: TypeId) bool {
     if (l.isAdaptableFloat(node)) return Lowering.isFloat(ty);
+    if (l.untypedString(node) != null) return l.stringLiteralFits(ty);
     return switch (node.data) {
         .int_literal => l.isIntEx(ty) or Lowering.isFloat(ty),
         .float_literal => Lowering.isFloat(ty),
-        .string_literal => ty == .string or ty == .cstring or l.literalKeepsArray(ty),
         .unary_op => |uo| contextualArgumentFits(l, uo.operand, ty),
         else => false,
     };

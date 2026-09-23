@@ -177,11 +177,11 @@ pub const SourceConstCtx = struct {
     pub fn typeLimitInt(self: SourceConstCtx, receiver: *const Node, field: []const u8) ?i64 {
         return self.lowering.typeLimitInt(receiver, field);
     }
-    pub fn untypedNumericLeaf(self: SourceConstCtx, node: *const Node) ?program_index_mod.UntypedNumericKind {
+    pub fn untypedLeaf(self: SourceConstCtx, node: *const Node) ?program_index_mod.Untyped {
         const saved = self.lowering.scope;
         self.lowering.scope = null;
         defer self.lowering.scope = saved;
-        return self.lowering.untypedNumericLeaf(node);
+        return self.lowering.untypedLeaf(node);
     }
     pub fn floatLeafType(self: SourceConstCtx, node: *const Node) ?TypeId {
         const saved = self.lowering.scope;
@@ -285,7 +285,11 @@ pub const Binding = struct {
     /// interface-only constraint check.
     alias_node: ?*ast.Node = null,
     origin: Origin = .other,
-    untyped_numeric: ?program_index_mod.UntypedNumericKind = null,
+    untyped: ?program_index_mod.Untyped = null,
+    /// A `:=` local initialized from an untyped string constant: that
+    /// initializer, which the `::` fix-it names where the local's `string`
+    /// cannot reach a terminated destination.
+    literal_init: ?*const ast.Node = null,
     /// The binding names a C `va_list` this frame BORROWS — an incoming
     /// boundary parameter. Its caller opened it and ends it, so `@vaStart` /
     /// `@vaEnd` here would act on another frame's list.
@@ -2915,7 +2919,11 @@ pub const Lowering = struct {
         return program_index_mod.isAdaptableFloat(node, self);
     }
 
-    pub const untypedNumericLeaf = lower_comptime.untypedNumericLeaf;
+    pub fn untypedString(self: *Lowering, node: *const Node) ?ast.StringLiteral {
+        return program_index_mod.untypedString(node, self);
+    }
+
+    pub const untypedLeaf = lower_comptime.untypedLeaf;
 
     pub fn floatLeafType(self: *Lowering, node: *const Node) ?TypeId {
         switch (node.data) {
@@ -4227,8 +4235,9 @@ pub const Lowering = struct {
     pub const lowerStructConstant = lower_expr.lowerStructConstant;
     pub const lowerStringLiteral = lower_expr.lowerStringLiteral;
     pub const stringLiteralBytes = lower_expr.stringLiteralBytes;
-    pub const stringLiteralType = lower_expr.stringLiteralType;
-    pub const literalKeepsArray = lower_expr.literalKeepsArray;
+    pub const literalShape = lower_expr.literalShape;
+    pub const stringLiteralFits = lower_expr.stringLiteralFits;
+    pub const refuseLiteralLocal = lower_expr.refuseLiteralLocal;
     pub const lowerOptionalChain = lower_expr.lowerOptionalChain;
     pub const lowerOptionalChainIndex = lower_expr.lowerOptionalChainIndex;
     pub const vectorLaneIndex = lower_expr.vectorLaneIndex;

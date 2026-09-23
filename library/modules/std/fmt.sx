@@ -312,7 +312,7 @@ emitSegment :: (code: string, sink: string, start: i64, end: i64) -> string {
 // literal run goes out as a view into `fmt`, a `{}` as its argument's
 // rendering, and `{{` / `}}` carry one brace through.
 buildFormat :: (fmt: string, sink: string) -> string {
-    code : string = "";
+    code := "";
     segStart := 0;
     i := 0;
     argIdx := 0;

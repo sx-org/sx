@@ -1008,7 +1008,7 @@ private runHandlerJob :: (arg: usize) {
     // the response's generation time, not its start time (RFC 9110: "as
     // close as practical to generating the message").
     db : [32]u8 = ---;
-    date : string = "";
+    date := "";
     // keep may be DOWNGRADED post-handler — a response over a body
     // the reader never drained cannot keep the connection (the wire still
     // carries request bytes), so the serialized header must say close.

@@ -927,7 +927,7 @@ impl Platform for UIKitPlatform {
     // the session indexes it in UTF-8 bytes. A nil `text` is the abandon.
     setMarkedText :: (self: *UIKitPlatform, text: ?*NSString, selectedRange: _NSRange) {
         if session := self.session {
-            run : string = "";
+            run := "";
             if t := text { run = fromCstring(t.UTF8String()); }
             selStart := utf16OffsetToBytes(run, selectedRange.location.(i64));
             selEnd := utf16OffsetToBytes(run, (selectedRange.location + selectedRange.length).(i64));

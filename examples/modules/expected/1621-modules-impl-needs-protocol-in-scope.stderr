@@ -1,4 +1,4 @@
-error: no conversion from 'cstring' to '*DeadBox'
+error: no conversion from 'string' to '*DeadBox'
   --> examples/modules/1621-modules-impl-needs-protocol-in-scope.sx:10:20
    |
 10 |     b : *DeadBox = xx "abc";

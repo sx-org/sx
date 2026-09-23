@@ -76,7 +76,7 @@ main :: () -> i32 {
     hold : Holder = Holder{ data = b };
     print("field={} size={}\n", hold.data[2], @sizeOf(Holder));
 
-    s : string = "ab";
+    s := "ab";
     print("string={} slice={}\n", s.len, @typeName(@typeOf(a[0..])));
     print("comptime={}\n", COMPTIME_SUM);
 

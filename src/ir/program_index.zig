@@ -252,7 +252,7 @@ const ModuleConstCtx = struct {
     pub fn qualifiedNodeIsFloatTyped(_: ModuleConstCtx, _: *const Node) bool {
         return false;
     }
-    pub fn untypedNumericLeaf(self: ModuleConstCtx, node: *const Node) ?UntypedNumericKind {
+    pub fn untypedLeaf(self: ModuleConstCtx, node: *const Node) ?Untyped {
         const name = switch (node.data) {
             .identifier => |id| id.name,
             .type_expr => |te| te.name,
@@ -262,7 +262,7 @@ const ModuleConstCtx = struct {
         const ci = self.index.lookup(.module_const, name) orelse return null;
         if (ci.declared_type != null) return null;
         const frame = ModuleConstFrame{ .name = name, .parent = self.frame };
-        return untypedNumericKind(ci.value, ModuleConstCtx{ .index = self.index, .table = self.table, .frame = &frame });
+        return untypedConst(ci.value, ModuleConstCtx{ .index = self.index, .table = self.table, .frame = &frame });
     }
     pub fn floatLeafType(self: ModuleConstCtx, node: *const Node) ?TypeId {
         return moduleFloatLeafType(self.index, node);
@@ -288,28 +288,48 @@ pub fn isFloatConstType(ty: TypeId) bool {
     return ty == .f32 or ty == .f64;
 }
 
-pub const UntypedNumericKind = enum { integer, float };
+/// An untyped constant — a literal, an unannotated `::` constant bound to one,
+/// or numeric arithmetic over them — takes its type from each use's
+/// destination. A string carries its literal, which each use lowers.
+pub const Untyped = union(enum) {
+    integer,
+    float,
+    string: ast.StringLiteral,
+};
 
-pub fn untypedNumericKind(node: *const Node, ctx: anytype) ?UntypedNumericKind {
+pub fn untypedConst(node: *const Node, ctx: anytype) ?Untyped {
     return switch (node.data) {
         .int_literal => .integer,
         .float_literal => .float,
-        .unary_op => |u| if (u.op == .negate) untypedNumericKind(u.operand, ctx) else null,
+        .string_literal => |lit| .{ .string = lit },
+        .unary_op => |u| if (u.op == .negate) untypedNumeric(u.operand, ctx) else null,
         .binary_op => |b| switch (b.op) {
             .add, .sub, .mul, .div, .mod => blk: {
-                const lhs = untypedNumericKind(b.lhs, ctx) orelse break :blk null;
-                const rhs = untypedNumericKind(b.rhs, ctx) orelse break :blk null;
+                const lhs = untypedNumeric(b.lhs, ctx) orelse break :blk null;
+                const rhs = untypedNumeric(b.rhs, ctx) orelse break :blk null;
                 break :blk if (lhs == .float or rhs == .float) .float else .integer;
             },
             else => null,
         },
-        .identifier, .type_expr, .field_access => ctx.untypedNumericLeaf(node),
+        .identifier, .type_expr, .field_access => ctx.untypedLeaf(node),
         else => null,
     };
 }
 
+fn untypedNumeric(node: *const Node, ctx: anytype) ?Untyped {
+    const u = untypedConst(node, ctx) orelse return null;
+    return if (u == .string) null else u;
+}
+
 pub fn isAdaptableFloat(node: *const Node, ctx: anytype) bool {
-    return untypedNumericKind(node, ctx) == .float;
+    const u = untypedConst(node, ctx) orelse return false;
+    return u == .float;
+}
+
+/// The literal an untyped string constant names.
+pub fn untypedString(node: *const Node, ctx: anytype) ?ast.StringLiteral {
+    const u = untypedConst(node, ctx) orelse return null;
+    return if (u == .string) u.string else null;
 }
 
 pub fn floatOperandTypes(b: ast.BinaryOp, lhs: ?TypeId, rhs: ?TypeId, ctx: anytype) struct { lhs: ?TypeId, rhs: ?TypeId } {
@@ -337,8 +357,8 @@ pub fn constFloatType(node: *const Node, ctx: anytype) ?TypeId {
     };
 }
 
-pub fn moduleUntypedNumericLeaf(index: *const ProgramIndex, table: *types.TypeTable, node: *const Node) ?UntypedNumericKind {
-    return (ModuleConstCtx{ .index = index, .table = table, .frame = null }).untypedNumericLeaf(node);
+pub fn moduleUntypedLeaf(index: *const ProgramIndex, table: *types.TypeTable, node: *const Node) ?Untyped {
+    return (ModuleConstCtx{ .index = index, .table = table, .frame = null }).untypedLeaf(node);
 }
 
 pub fn moduleFloatLeafType(index: *const ProgramIndex, node: *const Node) ?TypeId {

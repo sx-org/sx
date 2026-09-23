@@ -148,9 +148,9 @@ encodeInto :: (data: string, output: string, options: deflate.Options = .{}, hea
     inputAt := 0;
     outputAt := 0;
     while true {
-        input : string = "";
+        input := "";
         if inputAt < data.len { input = data[inputAt..]; }
-        destination : string = "";
+        destination := "";
         if outputAt < output.len { destination = output[outputAt..]; }
         progress := try encoder.state.step(input, destination, true);
         inputAt += progress.consumed;
@@ -172,9 +172,9 @@ decodeInto :: (data: string, output: string, alloc: Allocator = context.allocato
     inputAt := 0;
     outputAt := 0;
     while true {
-        input : string = "";
+        input := "";
         if inputAt < data.len { input = data[inputAt..]; }
-        destination : string = "";
+        destination := "";
         if outputAt < output.len { destination = output[outputAt..]; }
         progress := try decoder.state.step(input, destination, true);
         inputAt += progress.consumed;

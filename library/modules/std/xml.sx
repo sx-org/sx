@@ -5,7 +5,7 @@
 @import "modules/std/fmt.sx";
 
 escape :: (s: string) -> string {
-    result : string = "";
+    result := "";
     i := 0;
     segStart := 0;
     while i < s.len {

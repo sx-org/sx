@@ -135,7 +135,7 @@ main :: () -> i32 {
         // then keep ticking past the 40 ms handler deadline so the loop's
         // sweep fires the 504. The slow worker is STILL busy (sleeps 200 ms).
         saTotal : i64 = 0;
-        slowResp : string = "";
+        slowResp := "";
         t : i64 = 0;
         while t < 120 {   // ~120 ms of 1 ms ticks — past the 40 ms deadline
             srv.tick(1) catch {};
@@ -168,7 +168,7 @@ main :: () -> i32 {
         fastReq := "GET /fast HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n";
         socket.write(cb, fastReq.ptr, fastReq.len);
         fbTotal : i64 = 0;
-        fastResp : string = "";
+        fastResp := "";
         t = 0;
         while t < 200 {
             srv.tick(1) catch {};

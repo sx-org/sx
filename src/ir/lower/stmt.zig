@@ -990,7 +990,8 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
         const slot = self.builder.alloca(ty);
         self.builder.store(slot, ref);
         if (self.scope) |scope| {
-            scope.put(vd.name, .{ .ref = slot, .ty = ty, .is_alloca = true });
+            const literal_init: ?*const Node = if (self.untypedString(val) != null) val else null;
+            scope.put(vd.name, .{ .ref = slot, .ty = ty, .is_alloca = true, .literal_init = literal_init });
         }
     } else {
         const ty = TypeId.i64;
@@ -1117,16 +1118,7 @@ pub fn lowerConstDecl(self: *Lowering, cd: *const ast.ConstDecl) void {
     const errs_before: usize = if (self.diagnostics) |d| d.errorCount() else 0;
     const annotated: ?TypeId = if (cd.type_annotation) |ta| self.resolveType(ta) else null;
     const saved_target = self.target_type;
-    // The initializer resolves against the destination the declaration names:
-    // its annotation, or — unannotated — the value's own type, where a string
-    // literal keeps its `[N:0]u8`.
-    if (annotated) |at| {
-        self.target_type = at;
-    } else if (cd.value.data == .string_literal) {
-        self.target_type = self.stringLiteralType(cd.value.data.string_literal);
-    } else {
-        self.target_type = null;
-    }
+    self.target_type = annotated;
     var ref = self.lowerMarkedExpr(cd.value, true);
     self.target_type = saved_target;
     const ref_ty = self.builder.getRefType(ref);
@@ -1146,9 +1138,9 @@ pub fn lowerConstDecl(self: *Lowering, cd: *const ast.ConstDecl) void {
         }
     }
 
-    const untyped_numeric = if (annotated == null) program_index_mod.untypedNumericKind(cd.value, self) else null;
+    const untyped = if (annotated == null) program_index_mod.untypedConst(cd.value, self) else null;
     if (self.scope) |scope| {
-        scope.put(cd.name, .{ .ref = ref, .ty = ty, .is_alloca = false, .origin = .local_const, .untyped_numeric = untyped_numeric });
+        scope.put(cd.name, .{ .ref = ref, .ty = ty, .is_alloca = false, .origin = .local_const, .untyped = untyped });
     }
 }
 

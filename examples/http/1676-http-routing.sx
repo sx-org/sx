@@ -45,7 +45,7 @@ hEchojson :: (rc: *http.RouteCtx) {
     if !ok { rc.resp.status = 400; rc.resp.body = "bad json"; return; }
     if v != .object { rc.resp.status = 400; rc.resp.body = "not object"; return; }
     o := v.object;
-    name : string = "";
+    name := "";
     i := 0;
     while i < o.len {
         if o.items[i].key == "name" {

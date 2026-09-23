@@ -27,7 +27,7 @@ main :: () -> i32 {
     print("first_byte           = {}\n", ffi_first_byte(msg.ptr));
 
     // ── sx `string` → C `const char *` (the data pointer) ─
-    s : string = "sx string here";
+    s := "sx string here";
     print("strlen(sx string)    = {}\n", ffi_strlen(s.ptr));
 
     // ── [*]u8 raw buffer + length ──────────────────────────────────

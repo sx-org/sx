@@ -66,7 +66,7 @@ test "expr_typer: literal shapes" {
     try std.testing.expectEqual(TypeId.i64, l.inferExprType(&int_n));
     try std.testing.expectEqual(TypeId.f64, l.inferExprType(&float_n));
     try std.testing.expectEqual(TypeId.bool, l.inferExprType(&bool_n));
-    try std.testing.expectEqual(TypeId.cstring, l.inferExprType(&str_n));
+    try std.testing.expectEqual(TypeId.string, l.inferExprType(&str_n));
 }
 
 test "expr_typer: binary comparison is bool, int arithmetic stays int" {

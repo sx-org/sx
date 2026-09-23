@@ -26,7 +26,7 @@ process :: scope {
         f := popen(cmd, "r");
         if f == null { return null; }
 
-        out : string = "";
+        out := "";
         buf := mem.allocString(4096);
         loop := true;
         while loop {

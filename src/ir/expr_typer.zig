@@ -106,7 +106,7 @@ pub const ExprTyper = struct {
             // delegate through `Lowering.inferExprType` so a call node reaching
             // here is typed by that single owner, not mistyped as `.unresolved`.
             .call => self.l.inferExprType(node),
-            .string_literal => .cstring,
+            .string_literal => .string,
             .int_literal => .i64,
             .float_literal => .f64,
             .bool_literal => .bool,

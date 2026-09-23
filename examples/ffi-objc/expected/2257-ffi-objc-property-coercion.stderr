@@ -1,4 +1,4 @@
-error: cannot coerce a value of type 'cstring' to '*NSString': no implicit conversion applies
+error: cannot coerce a value of type 'string' to '*NSString': no implicit conversion applies
   --> examples/ffi-objc/2257-ffi-objc-property-coercion.sx:15:5
    |
 15 |     probe.name = "a string";

@@ -17,13 +17,13 @@ Point :: struct { x: i64; y: i64; }
 Color :: enum { red; green; blue; }
 
 describe :: (av: any) -> string {
-    r : string = "?";
+    r := "?";
     match av {
         case i64: |v| { r = format("int {}", v + 1); }
         case Point: |p| { r = format("point ({},{})", p.x, p.y); }   // concrete beats `struct` below
         case []i32: |b| { r = format("{} bytes", b.len); }
         case ?i64: |o| { r = format("maybe {}", o ?? 0); }
-        case cstring: |s| { r = format("str '{}'", s); }
+        case string: |s| { r = format("str '{}'", s); }
         case struct: { r = "some struct"; }
         case enum: { r = "some enum"; }
         case float: { r = format("float {}", @as(f64, av)); }

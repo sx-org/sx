@@ -1849,35 +1849,55 @@ pub fn stringLiteralBytes(self: *Lowering, lit: ast.StringLiteral) []const u8 {
     return unescape.unescapeString(self.alloc, lit.raw) catch lit.raw;
 }
 
-/// A string literal's own type: `[N:0]u8` over its bytes.
-pub fn stringLiteralType(self: *Lowering, lit: ast.StringLiteral) TypeId {
-    return self.module.types.arrayOfSentinel(.u8, @intCast(self.stringLiteralBytes(lit).len), 0);
-}
-
-/// A string literal is `[N:0]u8`. It keeps that array where the destination
-/// names a shape only a terminated value reaches, and decays to the `[:0]u8`
-/// view everywhere else.
 pub fn lowerStringLiteral(self: *Lowering, lit: ast.StringLiteral) Ref {
     const str = self.stringLiteralBytes(lit);
     const sid = self.module.types.internString(str);
-    const ty = if (self.literalKeepsArray(self.target_type))
-        self.module.types.arrayOfSentinel(.u8, @intCast(str.len), 0)
-    else
-        .cstring;
+    const ty: TypeId = switch (self.literalShape(self.target_type)) {
+        .string => .string,
+        .view => .cstring,
+        .array => self.module.types.arrayOfSentinel(.u8, @intCast(str.len), 0),
+    };
     return self.builder.emit(.{ .const_string = sid }, ty);
 }
 
-/// Whether the destination names a shape the decayed view cannot reach: the
-/// terminated array itself, or a byte pointer that wants the terminator.
-pub fn literalKeepsArray(self: *Lowering, target: ?TypeId) bool {
-    const t = target orelse return false;
-    if (t.isBuiltin()) return false;
+pub const LiteralShape = enum { string, view, array };
+
+/// The shape a string literal takes at `target`: the `[:0]u8` view where the
+/// destination names it, the `[N:0]u8` array where it names an array or a byte
+/// pointer, and `string` everywhere else.
+pub fn literalShape(self: *Lowering, target: ?TypeId) LiteralShape {
+    const t = target orelse return .string;
+    if (t == .cstring) return .view;
+    if (t.isBuiltin()) return .string;
     return switch (self.module.types.get(t)) {
-        .array => |a| a.element == .u8,
-        .many_pointer => |mp| mp.element == .u8 or mp.element == .i8,
-        .optional => |o| self.literalKeepsArray(o.child),
-        else => false,
+        .array => |a| if (a.element == .u8) .array else .string,
+        .many_pointer => |mp| if (mp.element == .u8 or mp.element == .i8) .array else .string,
+        .optional => |o| self.literalShape(o.child),
+        else => .string,
     };
+}
+
+pub fn stringLiteralFits(self: *Lowering, ty: TypeId) bool {
+    return ty == .string or self.literalShape(ty) != .string;
+}
+
+/// A `:=` local bound to a literal holds a `string`, which no conversion
+/// terminates. Where the destination wants the terminator, refuse with the
+/// `::` constant that keeps it. The undefined destination value it returns
+/// keeps the coercion from reporting the refusal a second time.
+pub fn refuseLiteralLocal(self: *Lowering, name: []const u8, init: *const Node, span: ast.Span) ?Ref {
+    const target = self.target_type orelse return null;
+    if (self.coercionResolver().classify(.string, target) != .adds_terminator_reject) return null;
+    if (self.diagnostics) |d| {
+        const id = d.addFmtId(.err, span, "a value of type 'string' does not coerce to '{s}': no conversion adds a terminator", .{self.formatTypeName(target)});
+        const spelling = switch (init.data) {
+            .string_literal => |lit| if (lit.form == .quoted) std.fmt.allocPrint(self.alloc, "\"{s}\"", .{lit.raw}) catch "…" else "…",
+            .identifier => |ident| ident.name,
+            else => "…",
+        };
+        d.addHelpFmt(id, init.span, null, "a '::' constant keeps the literal's terminator: `{s} :: {s}`", .{ name, spelling });
+    }
+    return self.builder.constUndef(target);
 }
 
 /// Lower a struct-level constant value (e.g., Phys.GRAVITY).
@@ -3761,11 +3781,15 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
 }
 
 fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
-    if (self.isAdaptableFloat(node)) {
-        const ty = self.floatContext(self.target_type) orelse .f64;
-        if (program_index_mod.evalConstFloatInit(node, self, ty)) |value|
-            return self.builder.constFloat(value, ty);
-    }
+    if (program_index_mod.untypedConst(node, self)) |untyped| switch (untyped) {
+        .float => {
+            const ty = self.floatContext(self.target_type) orelse .f64;
+            if (program_index_mod.evalConstFloatInit(node, self, ty)) |value|
+                return self.builder.constFloat(value, ty);
+        },
+        .string => |lit| return self.lowerStringLiteral(lit),
+        .integer => {},
+    };
     return switch (node.data) {
         // Bare `$<pack>` in expression position → an `[]Type` slice
         // value where each element is a `const_type(arg_types[i])`.
@@ -3893,6 +3917,9 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                     // `inline for x in xs` element capture — lower the
                     // synthesized `xs[<i>]` it aliases.
                     if (binding.alias_node) |elem| break :blk self.lowerExpr(elem);
+                    if (binding.literal_init) |init| {
+                        if (self.refuseLiteralLocal(id.name, init, node.span)) |undef| break :blk undef;
+                    }
                     // Flow narrowing: a name proven present by a
                     // `!= null` guard tags its loaded value so the implicit
                     // `?T → concrete` unwrap in `coerceMode` is permitted (an

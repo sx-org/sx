@@ -32,7 +32,7 @@ describe :: ($T: Type) -> string {
 // Pack-fn collecting per-position types (bare path).
 typeList :: (..$args) -> string {
     list := $args;
-    s : string = "[";
+    s := "[";
     i : i64 = 0;
     while i < list.len {
         if i > 0 { s = concat(s, ", "); }
@@ -58,7 +58,7 @@ main :: () -> i32 {
     print("=== 2. @typeOf(value) == T ===\n");
     a : i64 = 42;
     b : f64 = 3.14;
-    s : string = "hi";
+    s := "hi";
     print("@typeOf(a) == i64:    {}\n", @typeOf(a) == i64);
     print("@typeOf(b) == f64:    {}\n", @typeOf(b) == f64);
     print("@typeOf(s) == string: {}\n", @typeOf(s) == string);

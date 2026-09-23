@@ -22,7 +22,7 @@ show :: (..$args) -> string => @typeName($args[0]);
 
 describe :: (..$args) -> string {
     inline if @typeEq($args[0], i64) { return "got i64"; }
-    inline if @typeEq($args[0], cstring) { return "got cstring"; }
+    inline if @typeEq($args[0], string) { return "got string"; }
     inline if @typeEq($args[0], bool) { return "got bool"; }
     return "got other";
 }
@@ -30,12 +30,12 @@ describe :: (..$args) -> string {
 main :: () -> i32 {
     // @typeName picks up the per-mono first-arg type.
     print("{}\n", show(42));         // i64
-    print("{}\n", show("hi"));        // cstring
+    print("{}\n", show("hi"));        // string
     print("{}\n", show(3.14));        // f64
 
     // inline-if + @typeEq picks the right branch per mono.
     print("{}\n", describe(42));      // got i64
-    print("{}\n", describe("hello"));  // got cstring
+    print("{}\n", describe("hello"));  // got string
     print("{}\n", describe(true));     // got bool
     print("{}\n", describe(3.14));     // got other
 

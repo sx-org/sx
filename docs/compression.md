@@ -89,7 +89,7 @@ defer encoder.deinit();
 inputAt := 0;
 outputAt := 0;
 while true {
-    input : string = "";
+    input := "";
     if inputAt < source.len { input = source[inputAt..]; }
     output := destination[outputAt..];
     progress := try encoder.flush(input, output, .finish);

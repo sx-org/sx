@@ -61,7 +61,7 @@ inline match @host.os {
         CMDLINE_O_RDONLY :i32: 0;
         CMDLINE_FIRST_CAP :: 4096;
 
-        cmdline : string = "";         // the NUL-separated blob
+        cmdline := "";                // the NUL-separated blob
         cmdlineArgc : i64 = -1;       // -1 until `cmdlineLoad` has run
 
         // Read the whole file into `buf`, returning the byte count, or -1 when

@@ -7,7 +7,7 @@
 Point :: struct { x: i32; y: i32 }
 
 parts :: (v: any) -> string {
-    r : string = "";
+    r := "";
     i := 0;
     while i < @len(v) {
         if i > 0 { r = concat(r, " "); }
