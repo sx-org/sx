@@ -142,7 +142,7 @@ error: argument 2: '@int(48, .signed)' cannot cross a C-variadic tail; use a C A
 149 |     printf("%d\n", wide);        // a width no C variadic slot holds
     |     ^^^^^^^^^^^^^^^^^^^^
 
-error: argument 2: 'cstring' cannot cross a C-variadic tail; use a C ABI integer, 'f64', a pointer, or an 'abi(.c)' function value
+error: argument 2: 'string' cannot cross a C-variadic tail; use a C ABI integer, 'f64', a pointer, or an 'abi(.c)' function value
   --> examples/diagnostics/2105-diagnostics-cvariadic.sx:150:5
     |
 150 |     printf("%s\n", "sx string"); // two words: pointer and length

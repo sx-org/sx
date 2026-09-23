@@ -114,7 +114,7 @@ blockRelease :: (block: *Block) {
 // trampoline.
 buildBlockInvoke :: (args: []Type, $ret: Type) -> string {
     retName := @typeName(ret);
-    code : string = "invoke :: (blockSelf: *Block";
+    code := "invoke :: (blockSelf: *Block";
     i : i64 = 0;
     while i < args.len {
         code = concat(code, ", arg");

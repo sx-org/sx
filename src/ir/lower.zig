@@ -177,11 +177,11 @@ pub const SourceConstCtx = struct {
     pub fn typeLimitInt(self: SourceConstCtx, receiver: *const Node, field: []const u8) ?i64 {
         return self.lowering.typeLimitInt(receiver, field);
     }
-    pub fn untypedNumericLeaf(self: SourceConstCtx, node: *const Node) ?program_index_mod.UntypedNumericKind {
+    pub fn untypedLeaf(self: SourceConstCtx, node: *const Node) ?program_index_mod.Untyped {
         const saved = self.lowering.scope;
         self.lowering.scope = null;
         defer self.lowering.scope = saved;
-        return self.lowering.untypedNumericLeaf(node);
+        return self.lowering.untypedLeaf(node);
     }
     pub fn floatLeafType(self: SourceConstCtx, node: *const Node) ?TypeId {
         const saved = self.lowering.scope;
@@ -242,6 +242,11 @@ pub const SourceConstCtx = struct {
 /// proof of its own.
 pub const BindingId = enum(u64) { _ };
 
+pub const LiteralLocal = struct {
+    name: []const u8,
+    init: *const ast.Node,
+};
+
 pub const Binding = struct {
     /// Where a NON-ALLOCA binding came from. Drives the shape-specific
     /// "cannot assign" diagnostic: a for-loop
@@ -285,7 +290,9 @@ pub const Binding = struct {
     /// interface-only constraint check.
     alias_node: ?*ast.Node = null,
     origin: Origin = .other,
-    untyped_numeric: ?program_index_mod.UntypedNumericKind = null,
+    untyped: ?program_index_mod.Untyped = null,
+    /// A `:=` local initialized from an untyped string constant: that initializer.
+    literal_init: ?*const ast.Node = null,
     /// The binding names a C `va_list` this frame BORROWS — an incoming
     /// boundary parameter. Its caller opened it and ends it, so `@vaStart` /
     /// `@vaEnd` here would act on another frame's list.
@@ -766,6 +773,9 @@ pub const Lowering = struct {
     /// from name-keyed narrowing to the Ref-keyed `coerceMode` unwrap gate.
     /// Cleared per function body (the `Ref` space is per-function).
     narrowed_refs: std.AutoHashMap(Ref, void) = undefined,
+    /// The `Ref`s loaded from a `:=` local bound to a literal, for the `::`
+    /// fix-it where one reaches a terminated destination. Per function body.
+    literal_local_refs: std.AutoHashMap(Ref, LiteralLocal) = undefined,
     force_block_value: bool = false, // set by lowerDemandedBody for a demand that wants a value, to extract if-else values
     // Set while lowering a NAMED multi-return function body (`-> (x: A, y: B)`):
     // the slot names (1:1 with the return tuple's fields; a trailing "!" marks
@@ -1124,6 +1134,7 @@ pub const Lowering = struct {
         error_boundary: ?ErrorBoundary,
         narrowed: std.AutoHashMap(BindingId, void),
         narrowed_refs: std.AutoHashMap(Ref, void),
+        literal_local_refs: std.AutoHashMap(Ref, LiteralLocal),
         break_target: ?BlockId,
         continue_target: ?BlockId,
         loop_defer_base: usize,
@@ -1152,6 +1163,7 @@ pub const Lowering = struct {
                 // narrowing state and the outer state is restored after.
                 .narrowed = l.narrowed,
                 .narrowed_refs = l.narrowed_refs,
+                .literal_local_refs = l.literal_local_refs,
                 // Loop targets and build replays are lexical to one body for
                 // the same reasons `NestedBodyGuard` states.
                 .break_target = l.break_target,
@@ -1161,6 +1173,7 @@ pub const Lowering = struct {
             };
             l.narrowed = std.AutoHashMap(BindingId, void).init(l.alloc);
             l.narrowed_refs = std.AutoHashMap(Ref, void).init(l.alloc);
+            l.literal_local_refs = std.AutoHashMap(Ref, LiteralLocal).init(l.alloc);
             l.break_target = null;
             l.continue_target = null;
             l.loop_defer_base = 0;
@@ -1204,6 +1217,8 @@ pub const Lowering = struct {
             l.narrowed = g.narrowed;
             l.narrowed_refs.deinit();
             l.narrowed_refs = g.narrowed_refs;
+            l.literal_local_refs.deinit();
+            l.literal_local_refs = g.literal_local_refs;
             l.break_target = g.break_target;
             l.continue_target = g.continue_target;
             l.loop_defer_base = g.loop_defer_base;
@@ -1235,6 +1250,7 @@ pub const Lowering = struct {
         l: *Lowering,
         narrowed: std.AutoHashMap(BindingId, void),
         narrowed_refs: std.AutoHashMap(Ref, void),
+        literal_local_refs: std.AutoHashMap(Ref, LiteralLocal),
         break_target: ?BlockId,
         continue_target: ?BlockId,
         loop_defer_base: usize,
@@ -1256,6 +1272,7 @@ pub const Lowering = struct {
                 .module_const_frame = l.module_const_frame,
                 .narrowed = l.narrowed,
                 .narrowed_refs = l.narrowed_refs,
+                .literal_local_refs = l.literal_local_refs,
                 .break_target = l.break_target,
                 .continue_target = l.continue_target,
                 .loop_defer_base = l.loop_defer_base,
@@ -1266,6 +1283,7 @@ pub const Lowering = struct {
             };
             l.narrowed = std.AutoHashMap(BindingId, void).init(l.alloc);
             l.narrowed_refs = std.AutoHashMap(Ref, void).init(l.alloc);
+            l.literal_local_refs = std.AutoHashMap(Ref, LiteralLocal).init(l.alloc);
             l.break_target = null;
             l.continue_target = null;
             l.loop_defer_base = 0;
@@ -1290,6 +1308,8 @@ pub const Lowering = struct {
             g.l.narrowed = g.narrowed;
             g.l.narrowed_refs.deinit();
             g.l.narrowed_refs = g.narrowed_refs;
+            g.l.literal_local_refs.deinit();
+            g.l.literal_local_refs = g.literal_local_refs;
             g.l.break_target = g.break_target;
             g.l.continue_target = g.continue_target;
             g.l.loop_defer_base = g.loop_defer_base;
@@ -1436,6 +1456,7 @@ pub const Lowering = struct {
             .alias_cycle_diagnosed = std.AutoHashMap(usize, void).init(module.alloc),
             .resolving_type_aliases = std.AutoHashMap(imports_mod.DeclId, void).init(module.alloc),
             .narrowed_refs = std.AutoHashMap(Ref, void).init(module.alloc),
+            .literal_local_refs = std.AutoHashMap(Ref, LiteralLocal).init(module.alloc),
             .convert_reentrancy = std.AutoHashMap(u64, void).init(module.alloc),
             .inferred_error_sets = std.AutoHashMap(imports_mod.DeclId, []const u32).init(module.alloc),
             .impl_method_names = std.StringHashMap(void).init(module.alloc),
@@ -2915,7 +2936,11 @@ pub const Lowering = struct {
         return program_index_mod.isAdaptableFloat(node, self);
     }
 
-    pub const untypedNumericLeaf = lower_comptime.untypedNumericLeaf;
+    pub fn untypedString(self: *Lowering, node: *const Node) ?ast.StringLiteral {
+        return program_index_mod.untypedString(node, self);
+    }
+
+    pub const untypedLeaf = lower_comptime.untypedLeaf;
 
     pub fn floatLeafType(self: *Lowering, node: *const Node) ?TypeId {
         switch (node.data) {
@@ -4227,8 +4252,8 @@ pub const Lowering = struct {
     pub const lowerStructConstant = lower_expr.lowerStructConstant;
     pub const lowerStringLiteral = lower_expr.lowerStringLiteral;
     pub const stringLiteralBytes = lower_expr.stringLiteralBytes;
-    pub const stringLiteralType = lower_expr.stringLiteralType;
-    pub const literalKeepsArray = lower_expr.literalKeepsArray;
+    pub const literalShape = lower_expr.literalShape;
+    pub const stringLiteralFits = lower_expr.stringLiteralFits;
     pub const lowerOptionalChain = lower_expr.lowerOptionalChain;
     pub const lowerOptionalChainIndex = lower_expr.lowerOptionalChainIndex;
     pub const vectorLaneIndex = lower_expr.vectorLaneIndex;

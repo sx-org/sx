@@ -21,7 +21,7 @@ Holder :: @JniClass("com/example/Holder") extern {
 
 gShouldCall : bool = false;
 gHeld : *void = null;
-gName : string = "noop";
+gName := "noop";
 
 SxApp :: @JniClass("co/swipelab/sxjnichain/SxApp", main = true) {
     onCreate :: (self: *Self, b: *Bundle) {

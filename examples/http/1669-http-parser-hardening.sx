@@ -77,7 +77,7 @@ roundtrip :: (srv: *http.Server, reqtext: string, scratch: [*]u8) -> string {
     socket.write(fd, reqtext.ptr, reqtext.len);
     total : i64 = 0;
     tries := 0;
-    out : string = "";
+    out := "";
     while tries < 400 {
         srv.tick(5) catch {};
         n, re := socket.readNb(fd, *scratch[total], (4096 - total));
@@ -188,7 +188,7 @@ main :: () -> i32 {
     print("over-long header line -> 431\n");
 
     // ── too many header lines → 431 (maxHeaders = 20) ────────────────
-    many : string = "GET /ok HTTP/1.1\r\n";
+    many := "GET /ok HTTP/1.1\r\n";
     g := 0;
     while g < 40 { many = concat(many, "X-H: v\r\n"); g += 1; }
     many = concat(many, "\r\n");

@@ -276,7 +276,7 @@ main :: () -> i32 {
 
     leaked : i64 = 0;
     failed := false;
-    detail : string = "";
+    detail := "";
     crashIter : i64 = -1;
 
     // Everything that allocates runs under the GPA so the leak gate sees

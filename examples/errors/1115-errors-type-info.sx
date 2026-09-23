@@ -15,7 +15,7 @@ BooError :: error { Z }
 Both :: FooError | BooError;
 
 members :: ($E: Type) -> string {
-    out : string = "";
+    out := "";
     match @typeInfo(E) {
         case .error: |ei| {
             for m in ei.members {

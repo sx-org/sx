@@ -1,4 +1,4 @@
-error: no conversion from 'cstring' to '@Slice'
+error: no conversion from 'string' to '@Slice'
   --> examples/diagnostics/raw-layout-conversion.sx:3:12
    |
  3 |     raw := s.(@Slice);

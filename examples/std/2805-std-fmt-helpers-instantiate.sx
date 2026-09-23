@@ -1,0 +1,19 @@
+// Each formatting helper accumulates its text in a variable bound to a
+// literal, and instantiates for any value of its kind.
+
+@import "modules/std.sx";
+
+Pt :: struct { x: i64; y: i64; }
+Perm :: enum flags { read; write; exec; }
+
+main :: () -> i32 {
+    xs := [3]i64.[1, 2, 3];
+    v : @Vector(3, f32) = .[1.0, 2.0, 3.0];
+    p : Perm = .read | .exec;
+    print("{}\n", structToString(Pt{ x = 1, y = 2 }));
+    print("{}\n", arrayToString(xs));
+    print("{}\n", sliceToString(xs[0..2]));
+    print("{}\n", vectorToString(v));
+    print("{}\n", flagsToString(p));
+    0
+}

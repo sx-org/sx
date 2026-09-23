@@ -60,7 +60,7 @@ main :: () {
 
     // sha256File (streaming) must equal the in-memory digest.
     if !createDirAll(".sx-tmp") { print("mkdir: FAIL\n"); return; }
-    path := ".sx-tmp/sx_0712_stream.bin";
+    path :: ".sx-tmp/sx_0712_stream.bin";
     if !writeFile(path, MSG) { print("file-write: FAIL\n"); return; }
 
     maybe := sha256File(path);

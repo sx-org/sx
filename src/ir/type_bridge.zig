@@ -136,8 +136,8 @@ const StatelessInner = struct {
         return false;
     }
 
-    pub fn untypedNumericLeaf(self: StatelessInner, node: *const Node) ?program_index_mod.UntypedNumericKind {
-        return program_index_mod.moduleUntypedNumericLeaf(self.facts orelse return null, self.table, node);
+    pub fn untypedLeaf(self: StatelessInner, node: *const Node) ?program_index_mod.Untyped {
+        return program_index_mod.moduleUntypedLeaf(self.facts orelse return null, self.table, node);
     }
     pub fn floatLeafType(self: StatelessInner, node: *const Node) ?TypeId {
         return program_index_mod.moduleFloatLeafType(self.facts orelse return null, node);

@@ -183,7 +183,7 @@ bundleMain :: (opts: *@BuildOptions) -> bool {
     // entitlements; sim/macOS default to ad-hoc ("-").
     identity := opts.codesignIdentity;
     if identity.len == 0 { identity = "-"; }
-    entPath : string = "";
+    entPath := "";
     if opts.isIosDevice() {
         if profile.len > 0 {
             if e := extractEntitlements(profile, bid) {
@@ -497,7 +497,7 @@ extractEntitlements :: (profile: string, bundleId: string) -> ?string {
     cmd3 := concat("plutil -extract ApplicationIdentifierPrefix.0 raw -o - \"", profilePlist);
     cmd3 = concat(cmd3, "\"");
     cmd3Z := toCstring(cmd3);
-    team : string = "";
+    team := "";
     if r := process.run(cmd3Z) {
         if r.exitCode != 0 {
             @printf("error: profile missing ApplicationIdentifierPrefix:\n");
@@ -531,7 +531,7 @@ extractEntitlements :: (profile: string, bundleId: string) -> ?string {
     wildcardAppId := concat(team, ".*");
     cmdProfileId := concat("plutil -extract Entitlements.application-identifier raw -o - \"", profilePlist);
     cmdProfileId = concat(cmdProfileId, "\"");
-    profileAppId : string = "";
+    profileAppId := "";
     if r := process.run(toCstring(cmdProfileId)) {
         if r.exitCode != 0 {
             @printf("error: profile missing application-identifier\n");
@@ -712,7 +712,7 @@ androidBundleMain :: (opts: *@BuildOptions, binary: string, apkPath: string, bun
 
     // Manifest: user-supplied or auto-generated.
     manifest := opts.manifestPath;
-    manifestUsed : string = "";
+    manifestUsed := "";
     libName := libNameFromSoBasename(soBasename);
     if manifest.len > 0 {
         manifestUsed = manifest;
@@ -1057,8 +1057,8 @@ compileJniMainSources :: (opts: *@BuildOptions, stage: string, androidJar: strin
     // Compose javac + d8 arg lists by walking jniMainDecls. Each
     // decl: write `<javaRoot>/<pkg>/<Cls>.java`, append java path to
     // javac argv + class path to d8 argv.
-    javacFiles : string = "";
-    d8Files : string = "";
+    javacFiles := "";
+    d8Files := "";
     count := opts.jniMainRuntimePaths.len;
     i : i64 = 0;
     while i < count {

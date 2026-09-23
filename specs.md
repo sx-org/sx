@@ -200,26 +200,30 @@ hand-written sx code.
 |-----------|---------------------|---------|
 | Integer   | `0`, `42`, `0xFF`, `0o755`, `0b1010` | `i64`   |
 | Float     | `0.3`, `1e10`, `1.5e-3` | inferred; defaults to `f64` |
-| String    | `"Hello"`, `"z: {z}"` | `[N:0]u8` (may span multiple lines) |
-| Heredoc String | `@string END`...`END` | `[N:0]u8` |
-| Line String | `\\raw line` | `[N:0]u8` |
+| String    | `"Hello"`, `"z: {z}"` | inferred; defaults to `string` (may span multiple lines) |
+| Heredoc String | `@string END`...`END` | inferred; defaults to `string` |
+| Line String | `\\raw line` | inferred; defaults to `string` |
 | Boolean   | `true`, `false`     | `bool`  |
 | Enum      | `.variant1`         | inferred from context |
 | Undefined | `---`               | context-dependent |
 
-**String literals.** A string literal is `[N:0]u8` — its bytes plus the
-terminator, by value. It keeps that array where the destination names a shape
-only a terminated value reaches, and decays to the `[:0]u8` view everywhere
-else:
+**String literals.** A string literal is an untyped constant. It takes the
+shape its destination names — `string`, the `[:0]u8` view, a `[*:0]u8`
+pointer, or the `[N:0]u8` / `[N]u8` array, through `?` as well — and is
+`string` wherever no shape is named: a `:=` variable, a `$T` only literals
+bind, an `any`. A `::` constant bound to a literal stays untyped: `@typeOf`
+reports `string`, and each use takes the shape of its own destination.
 ```sx
 b : [3:0]u8 = "abc";   // a writable 4-byte copy; b.len is 3, b[3] is 0
-s := "abc";            // cstring — a view of the constant bytes
-X :: "abc";            // [3:0]u8
-y := X;                // a copy of the array
-f(X);                  // decays where `f` takes a string
+s := "abc";            // string — a view of the constant bytes
+X :: "abc";            // untyped; @typeOf(X) is string
+puts(X);               // the terminated bytes reach a C [*:0]u8
+t := X[1..];           // string "bc", a view
 ```
-A literal view owns nothing: writing through it is undefined behavior. Copies
-are explicit (`b : [3:0]u8 = "abc"`, `clone`).
+A `:=` variable is a `string`, which no conversion terminates, so
+`s := "abc"; puts(s)` is refused; `s :: "abc"` keeps the literal. A literal
+view owns nothing: writing through it is undefined behavior. Copies are
+explicit (`b : [3:0]u8 = "abc"`, `clone`).
 
 **Integer bases.** Integers are written in four bases: decimal (`1000`), hex
 `0x`/`0X` (`0xFF`), octal `0o`/`0O` (`0o755` == 493), and binary `0b`/`0B`
@@ -2055,8 +2059,8 @@ the type for `getenv`-style returns and optional `char *` parameters.
 Conversion discipline:
 
 - The terminator is the TYPE's, so a terminated value reaches `cstring`
-  and `[*:0]u8` on its own — a string literal is `[N:0]u8` and passes
-  straight through.
+  and `[*:0]u8` on its own — a string literal, and a `::` constant bound
+  to one, takes either shape.
 - A value whose type carries no terminator does NOT coerce to either,
   whatever its bytes hold — a `string` window, a plain `[N]T`, a `[*]T`.
   Materialize an owned, terminated copy with `toCstring(s)`.
@@ -2404,7 +2408,7 @@ sum :: (a: $T, b: T) -> T {
 - An integer, float or string literal argument carries no type of its own: the
   arguments that do bind the binder first, whichever order they are written in,
   and the literal fits itself to what they bound. A binder only literals speak
-  for takes their defaults — `i64`, `f64`, `[:0]u8`.
+  for takes their defaults — `i64`, `f64`, `string`.
   ```sx
   x : i32 = 7;
   sum(1, x)        // T = i32
@@ -2922,6 +2926,8 @@ isReady : ValueListenable(bool) = map(
 - `:=` bindings infer type from the right-hand side
 - Explicit annotation overrides inference: `NAME : f64 : 0.9;`
 - Integer literals default to `i64`
+- String literals, and `::` constants bound to them, take the shape their
+  destination names and default to `string` (see [Literals](#literals))
 - Untyped float expressions comprise numeric literals, unannotated numeric
   constants and their aliases, unary negation, and `+ - * / %`, with at least
   one float-producing component. They evaluate in `f64`, preserving integer
@@ -3198,10 +3204,10 @@ diagnoses at the use site.
 With an explicit annotation, the initializer must be compatible with the
 annotated type, or the declaration is a compile-time `type mismatch` error: an
 integer fits any integer or float type (`W : f32 : 800`), a float a float type, a
-boolean `bool`, a string literal `string`, `cstring` or a terminated byte
-array, `null` a pointer or optional, and `---` any type. The check is
-type-based: `N : string : M + 2` (with `M :: 2`) is rejected at the
-declaration and registers no usable constant. A constant expression's
+boolean `bool`, a string literal or a constant bound to one any shape the
+literal takes (`T : [:0]u8 : X`), `null` a pointer or optional, and `---` any
+type. The check is type-based: `N : string : M + 2` (with `M :: 2`) is
+rejected at the declaration and registers no usable constant. A constant expression's
 type is its promoted result type (see [Arithmetic](#arithmetic)): `C : i64 : M +
 0.5` is rejected and `F : f64 : M + 0.5` folds to `2.5`.
 

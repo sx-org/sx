@@ -78,7 +78,7 @@ pub fn defaultConstant(self: *Lowering, ty: TypeId) ?inst_mod.ConstantValue {
     }
 }
 
-pub fn untypedNumericLeaf(self: *Lowering, node: *const Node) ?program_index_mod.UntypedNumericKind {
+pub fn untypedLeaf(self: *Lowering, node: *const Node) ?program_index_mod.Untyped {
     const name = switch (node.data) {
         .identifier => |id| id.name,
         .type_expr => |te| te.name,
@@ -88,38 +88,38 @@ pub fn untypedNumericLeaf(self: *Lowering, node: *const Node) ?program_index_mod
         if (self.scope) |scope| {
             const scoped = scope.lookupBoundary(n);
             if (scoped.crossed != .none) return null;
-            if (scoped.binding) |binding| return binding.untyped_numeric;
+            if (scoped.binding) |binding| return binding.untyped;
         }
     }
-    return untypedSelectedNumeric(self, numericConstLeaf(self, node) orelse return null);
+    return untypedSelected(self, constLeaf(self, node) orelse return null);
 }
 
-const NumericConstLeaf = struct {
+const ConstLeaf = struct {
     value: *const Node,
     declared_type: ?TypeId,
     source: ?[]const u8,
     environment: ?@import("../../imports.zig").EnvironmentId,
 
-    fn fromSelected(sel: SelectedConst) NumericConstLeaf {
+    fn fromSelected(sel: SelectedConst) ConstLeaf {
         return .{ .value = sel.info.value, .declared_type = sel.info.declared_type, .source = sel.source, .environment = sel.environment };
     }
 };
 
-fn numericConstLeaf(self: *Lowering, node: *const Node) ?NumericConstLeaf {
+fn constLeaf(self: *Lowering, node: *const Node) ?ConstLeaf {
     const name = switch (node.data) {
         .identifier => |id| id.name,
         .type_expr => |te| te.name,
         else => null,
     };
     if (name) |n| switch (self.selectModuleConst(n)) {
-        .resolved => |sel| return NumericConstLeaf.fromSelected(sel),
+        .resolved => |sel| return ConstLeaf.fromSelected(sel),
         else => {},
     };
     if (self.qualifiedTypeName(node)) |path| {
         defer self.alloc.free(path);
         if (std.mem.lastIndexOfScalar(u8, path, '.')) |dot| {
             if (self.selectQualifiedConst(path[0..dot], path[dot + 1 ..])) |sel|
-                return NumericConstLeaf.fromSelected(sel);
+                return ConstLeaf.fromSelected(sel);
         }
     }
     if (node.data == .field_access) {
@@ -139,7 +139,7 @@ fn numericConstLeaf(self: *Lowering, node: *const Node) ?NumericConstLeaf {
     return null;
 }
 
-fn untypedSelectedNumeric(self: *Lowering, sel: NumericConstLeaf) ?program_index_mod.UntypedNumericKind {
+fn untypedSelected(self: *Lowering, sel: ConstLeaf) ?program_index_mod.Untyped {
     if (sel.declared_type != null) return null;
     var frame = self.untyped_const_frame;
     while (frame) |f| : (frame = f.parent) {
@@ -153,7 +153,7 @@ fn untypedSelectedNumeric(self: *Lowering, sel: NumericConstLeaf) ?program_index
     const saved_scope = self.scope;
     self.scope = null;
     defer self.scope = saved_scope;
-    return program_index_mod.untypedNumericKind(sel.value, self);
+    return program_index_mod.untypedConst(sel.value, self);
 }
 
 /// Try to convert a single AST expression into a compile-time ConstantValue.
@@ -177,6 +177,7 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
         if (program_index_mod.evalConstFloatInit(expr, self, expected_ty)) |value|
             return .{ .float = value };
     }
+    if (self.untypedString(expr)) |lit| return .{ .string = self.module.types.internString(lit.raw) };
     return switch (expr.data) {
         // An int element in a FLOAT destination converts exactly (the
         // int+float promotion rule, element-wise — `[2]f64 : .[1, 2.5]`).
@@ -200,7 +201,6 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
             }
             break :blk inst_mod.ConstantValue{ .float = self.adoptFloatValue(fl.value, expected_ty, expr.span) };
         },
-        .string_literal => |sl| .{ .string = self.module.types.internString(sl.raw) },
         .undef_literal => .zeroinit,
         // A `null` in a pointer (or optional-pointer) field is a
         // compile-time constant: the zero pointer. Without this arm the
@@ -2347,7 +2347,7 @@ pub fn foldQualifiedConstNodeInt(self: *Lowering, node: *const Node, frame: ?*co
 }
 
 pub fn foldQualifiedConstNodeFloat(self: *Lowering, node: *const Node, frame: ?*const ConstFoldFrame) ?f64 {
-    const sel = numericConstLeaf(self, node) orelse return null;
+    const sel = constLeaf(self, node) orelse return null;
     const path = self.qualifiedTypeName(node) orelse return null;
     defer self.alloc.free(path);
     if (constFoldFrameContains(frame, path, sel.environment)) return null;
@@ -2358,7 +2358,7 @@ pub fn foldQualifiedConstNodeFloat(self: *Lowering, node: *const Node, frame: ?*
 }
 
 pub fn qualifiedConstNodeIsFloatTyped(self: *Lowering, node: *const Node, frame: ?*const ConstFoldFrame) bool {
-    const sel = numericConstLeaf(self, node) orelse return false;
+    const sel = constLeaf(self, node) orelse return false;
     if (sel.declared_type) |ty| return isFloat(ty);
     const path = self.qualifiedTypeName(node) orelse return false;
     defer self.alloc.free(path);

@@ -152,7 +152,7 @@ const DimCtx = struct {
         if (std.mem.eql(u8, name, "K")) return 4.0;
         return null;
     }
-    pub fn untypedNumericLeaf(_: DimCtx, _: *const Node) ?pi.UntypedNumericKind {
+    pub fn untypedLeaf(_: DimCtx, _: *const Node) ?pi.Untyped {
         return null;
     }
     pub fn floatLeafType(_: DimCtx, _: *const Node) ?types.TypeId {

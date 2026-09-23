@@ -11,7 +11,7 @@ strlen :: (s: [*:0]u8) -> usize extern "strlen";
 main :: () -> i32 {
     print("{} {} {}\n", @typeName([:0]u8), @sizeOf(cstring), @sizeOf(?cstring));
 
-    s := "hi";
+    s :: "hi";
     print("{} {}\n", @typeName(@typeOf(s)), strlen(s));
 
     c : cstring = toCstring("hi");

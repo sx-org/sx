@@ -784,8 +784,8 @@ pub fn registerLiteralModuleConsts(self: *Lowering, decls: []const *const Node) 
                 const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = .bool };
                 self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, info);
             },
-            .string_literal => |lit| if (cd.type_annotation == null) {
-                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = self.stringLiteralType(lit) };
+            .string_literal => if (cd.type_annotation == null) {
+                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = .string };
                 self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, info);
             },
             else => {},
@@ -1134,7 +1134,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                     // An aggregate-valued one registers in pass 1c' instead —
                     // its value node is final only once the brace front runs.
                     const lit_ty: ?TypeId = switch (cd.value.data) {
-                        .string_literal => |lit| self.stringLiteralType(lit),
+                        .string_literal => .string,
                         .int_literal => .i64,
                         .float_literal => .f64,
                         .bool_literal => .bool,
@@ -1472,6 +1472,7 @@ pub fn typedConstInitFits(self: *Lowering, value: *const Node, dst_ty: TypeId) b
     // rejecting checks below, where `registerTypedModuleConst` emits the
     // unified narrowing diagnostic.
     if (isFloat(dst_ty) and self.isAdaptableFloat(value)) return true;
+    if (self.untypedString(value) != null) return self.stringLiteralFits(dst_ty);
     if (self.isIntEx(dst_ty)) {
         switch (value.data) {
             .float_literal, .binary_op, .unary_op => {
@@ -1493,7 +1494,6 @@ pub fn typedConstInitFits(self: *Lowering, value: *const Node, dst_ty: TypeId) b
         // Float literal → a float type only (the float arm emits `constFloat`).
         .float_literal => isFloat(dst_ty),
         .bool_literal => dst_ty == .bool,
-        .string_literal => dst_ty == .string or dst_ty == .cstring or self.literalKeepsArray(dst_ty),
         // `null` → a pointer or optional.
         .null_literal => !dst_ty.isBuiltin() and switch (self.module.types.get(dst_ty)) {
             .pointer, .many_pointer, .optional => true,

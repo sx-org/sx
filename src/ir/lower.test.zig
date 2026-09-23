@@ -2280,7 +2280,7 @@ test "lower: match arms with incompatible result types are diagnosed, not a mixe
 
     var found = false;
     for (diags.items.items) |d| {
-        if (d.level == .err and std.mem.indexOf(u8, d.message, "match arms have incompatible types: 'i64' vs 'cstring'") != null) found = true;
+        if (d.level == .err and std.mem.indexOf(u8, d.message, "match arms have incompatible types: 'i64' vs 'string'") != null) found = true;
     }
     try std.testing.expect(found);
 }

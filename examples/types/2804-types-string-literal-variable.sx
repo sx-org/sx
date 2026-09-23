@@ -1,0 +1,26 @@
+// A string literal names no shape of its own, so a variable bound to one is a
+// `string`: it takes any other `string`, including the result of `concat`. A
+// `$T` that only literals bind is `string` too.
+
+@import "modules/std.sx";
+
+G := "global";
+H :: "constant";
+
+pick :: (a: $T, b: T) -> T { a }
+
+main :: () -> i32 {
+    name := concat("b", "ob");
+    s := "x";
+    s = name;
+    out := "";
+    out = concat(out, "a");
+    out = concat(out, s);
+    G = H;
+    print("{} {} {}\n", s, out, G);
+    G = name;
+    x := pick("a", "b");
+    x = s;
+    print("{} {} {}\n", G, x, @typeName(@typeOf(x)));
+    0
+}

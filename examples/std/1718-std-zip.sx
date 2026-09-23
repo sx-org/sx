@@ -600,9 +600,9 @@ testPrefixAndDuplicates :: (alloc: Allocator) -> bool {
 }
 
 testFiles :: (alloc: Allocator) -> bool {
-    archivePath := "/tmp/sx_std_zip_public.zip";
-    inputPath := "/tmp/sx_std_zip_input.txt";
-    extractedPath := "/tmp/sx_std_zip_extracted.txt";
+    archivePath :: "/tmp/sx_std_zip_public.zip";
+    inputPath :: "/tmp/sx_std_zip_input.txt";
+    extractedPath :: "/tmp/sx_std_zip_extracted.txt";
     fs.deleteFile(archivePath); fs.deleteFile(inputPath); fs.deleteFile(extractedPath);
     if !fs.writeFile(inputPath, "file payload") or !fs.setModifiedSeconds(inputPath, 1700000000) { return false; }
 
@@ -840,8 +840,8 @@ testAddFromFailures :: (alloc: Allocator) -> bool {
     // File backend: the same post-emission failure must truly roll back on
     // disk (ftruncate behind std.fs) — the file writer stays reusable and
     // the finished archive matches a control file that never saw the failure.
-    filePath := "/tmp/sx_zip_addfrom_rollback";
-    controlPath := "/tmp/sx_zip_addfrom_control";
+    filePath :: "/tmp/sx_zip_addfrom_rollback";
+    controlPath :: "/tmp/sx_zip_addfrom_control";
     fs.deleteFile(filePath); fs.deleteFile(controlPath);
     fw := zip.Writer.initFile(filePath, .{}, alloc) catch { reader.deinit(); alloc.deallocBytes(archive.ptr); return false; };
     fw.add("front", "front-data", .{ method = .store }) catch { ok = false; };
@@ -911,7 +911,7 @@ testAddFromFailures :: (alloc: Allocator) -> bool {
     // The createFile convenience: writes a whole archive to a path in one
     // call; read it back through openFile (create() itself is exercised by
     // the failure tests above).
-    conveniencePath := "/tmp/sx_zip_create_file_convenience";
+    conveniencePath :: "/tmp/sx_zip_create_file_convenience";
     fs.deleteFile(conveniencePath);
     convInputs : [1]zip.Input = .[ .{ name = "conv.txt", data = "convenience payload", options = .{ method = .store } } ];
     zip.createFile(conveniencePath, convInputs[..], .{}, "", alloc) catch { ok = false; };

@@ -1849,35 +1849,36 @@ pub fn stringLiteralBytes(self: *Lowering, lit: ast.StringLiteral) []const u8 {
     return unescape.unescapeString(self.alloc, lit.raw) catch lit.raw;
 }
 
-/// A string literal's own type: `[N:0]u8` over its bytes.
-pub fn stringLiteralType(self: *Lowering, lit: ast.StringLiteral) TypeId {
-    return self.module.types.arrayOfSentinel(.u8, @intCast(self.stringLiteralBytes(lit).len), 0);
-}
-
-/// A string literal is `[N:0]u8`. It keeps that array where the destination
-/// names a shape only a terminated value reaches, and decays to the `[:0]u8`
-/// view everywhere else.
 pub fn lowerStringLiteral(self: *Lowering, lit: ast.StringLiteral) Ref {
     const str = self.stringLiteralBytes(lit);
     const sid = self.module.types.internString(str);
-    const ty = if (self.literalKeepsArray(self.target_type))
-        self.module.types.arrayOfSentinel(.u8, @intCast(str.len), 0)
-    else
-        .cstring;
+    const ty: TypeId = switch (self.literalShape(self.target_type)) {
+        .string => .string,
+        .view => .cstring,
+        .array => self.module.types.arrayOfSentinel(.u8, @intCast(str.len), 0),
+    };
     return self.builder.emit(.{ .const_string = sid }, ty);
 }
 
-/// Whether the destination names a shape the decayed view cannot reach: the
-/// terminated array itself, or a byte pointer that wants the terminator.
-pub fn literalKeepsArray(self: *Lowering, target: ?TypeId) bool {
-    const t = target orelse return false;
-    if (t.isBuiltin()) return false;
+pub const LiteralShape = enum { string, view, array };
+
+/// The shape a string literal takes at `target`: the `[:0]u8` view where the
+/// destination names it, the `[N:0]u8` array where it names an array or a byte
+/// pointer, and `string` everywhere else.
+pub fn literalShape(self: *Lowering, target: ?TypeId) LiteralShape {
+    const t = target orelse return .string;
+    if (t == .cstring) return .view;
+    if (t.isBuiltin()) return .string;
     return switch (self.module.types.get(t)) {
-        .array => |a| a.element == .u8,
-        .many_pointer => |mp| mp.element == .u8 or mp.element == .i8,
-        .optional => |o| self.literalKeepsArray(o.child),
-        else => false,
+        .array => |a| if (a.element == .u8) .array else .string,
+        .many_pointer => |mp| if (mp.element == .u8 or mp.element == .i8) .array else .string,
+        .optional => |o| self.literalShape(o.child),
+        else => .string,
     };
+}
+
+pub fn stringLiteralFits(self: *Lowering, ty: TypeId) bool {
+    return ty == .string or self.literalShape(ty) != .string;
 }
 
 /// Lower a struct-level constant value (e.g., Phys.GRAVITY).
@@ -3761,11 +3762,15 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
 }
 
 fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
-    if (self.isAdaptableFloat(node)) {
-        const ty = self.floatContext(self.target_type) orelse .f64;
-        if (program_index_mod.evalConstFloatInit(node, self, ty)) |value|
-            return self.builder.constFloat(value, ty);
-    }
+    if (program_index_mod.untypedConst(node, self)) |untyped| switch (untyped) {
+        .float => {
+            const ty = self.floatContext(self.target_type) orelse .f64;
+            if (program_index_mod.evalConstFloatInit(node, self, ty)) |value|
+                return self.builder.constFloat(value, ty);
+        },
+        .string => |lit| return self.lowerStringLiteral(lit),
+        .integer => {},
+    };
     return switch (node.data) {
         // Bare `$<pack>` in expression position → an `[]Type` slice
         // value where each element is a `const_type(arg_types[i])`.
@@ -3906,6 +3911,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                     if (binding.is_alloca) {
                         const loaded = self.builder.load(binding.ref, binding.ty);
                         if (is_narrowed) self.narrowed_refs.put(loaded, {}) catch {};
+                        if (binding.literal_init) |init| self.literal_local_refs.put(loaded, .{ .name = id.name, .init = init }) catch {};
                         break :blk loaded;
                     }
                     if (is_narrowed) self.narrowed_refs.put(binding.ref, {}) catch {};

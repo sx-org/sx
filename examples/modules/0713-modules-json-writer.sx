@@ -91,7 +91,7 @@ main :: () -> ! {
     //    repo-local, gitignored scratch dir and unlink afterwards so nothing
     //    leaks and concurrent runs don't fight over a shared /tmp name.
     if !createDirAll(".sx-tmp") { print("mkdir: FAIL\n"); return; }
-    path := ".sx-tmp/sx_0713_json.json";
+    path :: ".sx-tmp/sx_0713_json.json";
     fsb := StringBuilder.init(arena);
     fjw := JsonWriter.init(fsb);
     try fjw.write(root);

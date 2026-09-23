@@ -5,7 +5,7 @@
 @import "modules/std.sx";
 
 main :: () {
-    s : string = "hi";
+    s := "hi";
     r := match s { case "hi": { 1 } case "bye": { 2 } else: { 0 } };
     print("{}\n", r);
 
