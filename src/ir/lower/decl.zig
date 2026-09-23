@@ -745,34 +745,34 @@ pub fn registerLiteralModuleConsts(self: *Lowering, decls: []const *const Node) 
         if (decl.data != .const_decl) continue;
         self.setDeclarationContext(decl);
         const cd = decl.data.const_decl;
-        const float_annotation: ?TypeId = if (cd.type_annotation) |ta| blk: {
+        const numeric_annotation: ?TypeId = if (cd.type_annotation) |ta| blk: {
             const name = switch (ta.data) {
                 .type_expr => |te| if (te.is_raw) break :blk null else te.name,
                 .identifier => |id| if (id.is_raw) break :blk null else id.name,
                 else => break :blk null,
             };
             const ty = TypeResolver.resolvePrimitive(name) orelse break :blk null;
-            break :blk if (isFloat(ty)) ty else null;
+            break :blk if (isFloat(ty) or self.isIntEx(ty)) ty else null;
         } else null;
         switch (cd.value.data) {
             .int_literal => {
-                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = float_annotation orelse .i64, .declared_type = float_annotation };
+                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = numeric_annotation orelse .i64, .declared_type = numeric_annotation };
                 self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, info);
             },
             .char_literal => {
-                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = float_annotation orelse .i64, .declared_type = float_annotation };
+                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = numeric_annotation orelse .i64, .declared_type = numeric_annotation };
                 self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, info);
             },
             .float_literal => {
-                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = float_annotation orelse .f64, .declared_type = float_annotation };
+                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = numeric_annotation orelse .f64, .declared_type = numeric_annotation };
                 self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, info);
             },
             .binary_op, .unary_op => {
-                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = float_annotation orelse .i64, .declared_type = float_annotation };
+                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = numeric_annotation orelse .i64, .declared_type = numeric_annotation };
                 self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, info);
             },
             .call => if (Lowering.layoutQuery(cd.value) != null) {
-                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = float_annotation orelse .i64, .declared_type = float_annotation };
+                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = numeric_annotation orelse .i64, .declared_type = numeric_annotation };
                 self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, info);
             },
             // Bool/string literal consts carry their real type — registering
@@ -1534,25 +1534,19 @@ pub fn constExprInitFits(self: *Lowering, init_ty: TypeId, dst_ty: TypeId) bool 
 /// `selectGlobalAuthor` (the per-source partition is written here).
 pub fn registerConstArrayGlobal(self: *Lowering, cd: *const ast.ConstDecl) void {
     const al = &cd.value.data.array_literal;
-    const arr_ty: TypeId = blk: {
-        if (cd.type_annotation) |ta| {
-            const t = self.resolveType(ta);
-            if (t == .unresolved) return; // annotation already diagnosed
-            if (t.isBuiltin() or self.module.types.get(t) != .array) {
-                if (self.diagnostics) |d|
-                    d.addFmt(.err, cd.value.span, "constant '{s}' has an array-literal initializer but its annotation is not an array type", .{cd.name});
-                return;
-            }
-            const dim = self.module.types.get(t).array.length;
-            if (dim != al.elements.len) {
-                if (self.diagnostics) |d|
-                    d.addFmt(.err, cd.value.span, "constant '{s}' declares [{d}] elements but its initializer has {d}", .{ cd.name, dim, al.elements.len });
-                return;
-            }
-            break :blk t;
-        }
-        break :blk self.inferConstArrayType(cd.name, al.elements, cd.value.span) orelse return;
-    };
+    const arr_ty = if (cd.type_annotation) |ta| self.resolveType(ta) else self.builtArrayLiteralType(al, cd.value.span) orelse return;
+    if (arr_ty == .unresolved) return; // annotation already diagnosed
+    if (arr_ty.isBuiltin() or self.module.types.get(arr_ty) != .array) {
+        if (self.diagnostics) |d|
+            d.addFmt(.err, cd.value.span, "constant '{s}' has an array-literal initializer but its type is not an array type", .{cd.name});
+        return;
+    }
+    const dim = self.module.types.get(arr_ty).array.length;
+    if (dim != al.elements.len) {
+        if (self.diagnostics) |d|
+            d.addFmt(.err, cd.value.span, "constant '{s}' declares [{d}] elements but its initializer has {d}", .{ cd.name, dim, al.elements.len });
+        return;
+    }
     const errors_before = errorCount(self);
     const init_val = self.constArrayLiteral(al.elements, arr_ty);
     if (init_val == null and errorCount(self) == errors_before) {
@@ -1573,56 +1567,6 @@ pub fn registerConstArrayGlobal(self: *Lowering, cd: *const ast.ConstDecl) void 
     // Bare value reads still hit the GLOBAL arm first (identifier arm
     // order), so this never double-emits.
     self.putModuleConst(self.declId(.{ .const_decl = cd }, self.current_source_file), cd.name, .{ .value = cd.value, .ty = arr_ty });
-}
-
-/// Infer `[N]T` for an untyped array-literal constant. Element types unify:
-/// all ints → i64; ANY float promotes the element type to f64 (ints convert
-/// exactly — the int+float promotion rule for consts, element-wise); bool /
-/// string homogeneous only. A non-numeric mix or a non-inferable element
-/// shape (nested aggregate, enum literal, named const) asks for an
-/// annotation rather than guessing.
-pub fn inferConstArrayType(self: *Lowering, name: []const u8, elements: []const *const Node, span: ast.Span) ?TypeId {
-    if (elements.len == 0) {
-        if (self.diagnostics) |d|
-            d.addFmt(.err, span, "constant '{s}' is an empty array literal — annotate the type (e.g. `{s} : [0]i64 : .[]`)", .{ name, name });
-        return null;
-    }
-    var elem_ty: ?TypeId = null;
-    for (elements) |e| {
-        const leaf: ?TypeId = switch (e.data) {
-            .int_literal => .i64,
-            .float_literal => .f64,
-            .bool_literal => .bool,
-            .string_literal => .string,
-            .char_literal => .i64,
-            .unary_op => |uo| if (uo.op == .negate) switch (uo.operand.data) {
-                .int_literal => .i64,
-                .float_literal => .f64,
-                .char_literal => .i64,
-                else => null,
-            } else null,
-            else => null,
-        };
-        const lt = leaf orelse {
-            if (self.diagnostics) |d|
-                d.addFmt(.err, e.span, "cannot infer the element type of constant '{s}' from this element — annotate the array type", .{name});
-            return null;
-        };
-        if (elem_ty) |prev| {
-            if (prev == lt) continue;
-            // Numeric mix promotes to the float element type.
-            const numeric_pair = (prev == .i64 and lt == .f64) or (prev == .f64 and lt == .i64);
-            if (numeric_pair) {
-                elem_ty = .f64;
-                continue;
-            }
-            if (self.diagnostics) |d|
-                d.addFmt(.err, e.span, "constant '{s}' mixes incompatible element types — annotate the array type", .{name});
-            return null;
-        }
-        elem_ty = lt;
-    }
-    return self.module.types.arrayOf(elem_ty.?, @intCast(elements.len));
 }
 
 /// Migrate a struct-literal constant to an IMMUTABLE GLOBAL when every

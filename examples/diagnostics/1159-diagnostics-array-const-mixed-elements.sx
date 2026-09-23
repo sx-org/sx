@@ -1,7 +1,6 @@
-// An untyped array-literal constant infers its element type from the
-// elements (ints -> i64; a numeric int/float mix promotes to f64). A
-// NON-NUMERIC mix has no unified element type — diagnosed, with the
-// annotation as the fix.
+// An untyped array-literal constant types its elements as a bare `.[…]`
+// does. A string and an integer share no element type: the element that
+// does not convert is diagnosed.
 
 @import "modules/std.sx";
 

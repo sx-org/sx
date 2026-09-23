@@ -768,7 +768,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         const al = ast.ArrayLiteral{ .elements = elems.items };
         const saved_tt = self.target_type;
         self.target_type = ty;
-        const arr = self.lowerArrayLiteral(&al);
+        const arr = self.lowerArrayLiteral(&al, span);
         self.target_type = saved_tt;
         return self.coerceToType(arr, self.builder.getRefType(arr), ty);
     }
@@ -2776,11 +2776,11 @@ pub fn resolveVariantIndex(self: *Lowering, ty: TypeId, variant_name: []const u8
     return 0;
 }
 
-pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
+pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral, span: ast.Span) Ref {
     var elems = std.ArrayList(Ref).empty;
     defer elems.deinit(self.alloc);
 
-    const result_ty = self.arrayLiteralType(al) orelse return self.builder.constUndef(.unresolved);
+    const result_ty = self.builtArrayLiteralType(al, span) orelse return self.builder.constUndef(.unresolved);
     const elem_ty: TypeId, const sentinel: ?i64 = switch (self.module.types.get(result_ty)) {
         .array => |a| .{ a.element, a.sentinel },
         .vector => |v| .{ v.element, null },
@@ -2820,9 +2820,10 @@ pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
 }
 
 /// The array or vector a `.[…]` literal builds, shaped by its type prefix,
-/// else its target, else its elements; null when the prefix names no array,
-/// vector or slice.
-pub fn arrayLiteralType(self: *Lowering, al: *const ast.ArrayLiteral) ?TypeId {
+/// else its target, else its elements. A prefix naming no array, vector or
+/// slice is diagnosed here. A literal nothing types is diagnosed only where it
+/// is built, because a caller asking its type may still give it a target.
+pub fn arrayLiteralType(self: *Lowering, al: *const ast.ArrayLiteral) error{ NotAggregatePrefix, NoElementType }!TypeId {
     const length: u32 = @intCast(al.elements.len);
     if (al.type_expr) |te| {
         const resolved = self.resolveArrayLiteralType(te);
@@ -2832,12 +2833,22 @@ pub fn arrayLiteralType(self: *Lowering, al: *const ast.ArrayLiteral) ?TypeId {
                 const name = self.module.types.formatTypeName(self.alloc, resolved, null);
                 d.addFmt(.err, te.span, "a '.[ ]' literal's type prefix names the aggregate type, not the element type — '{s}' is not an array/vector/slice; annotate the binding instead: `x : [{d}]{s} = .[ … ]`", .{ name, al.elements.len, name });
             }
-            return null;
+            return error.NotAggregatePrefix;
         }
     }
     if (self.target_type) |tt| if (literalAggregate(self, tt, length)) |ty| return ty;
-    const elem_ty = self.genericResolver().elementBinding(al.elements) orelse .unresolved;
+    const elem_ty = self.genericResolver().elementBinding(al.elements) orelse return error.NoElementType;
     return self.module.types.arrayOf(elem_ty, length);
+}
+
+/// The type of a `.[…]` literal built at `span`, where a literal nothing
+/// types is diagnosed.
+pub fn builtArrayLiteralType(self: *Lowering, al: *const ast.ArrayLiteral, span: ast.Span) ?TypeId {
+    return self.arrayLiteralType(al) catch |err| {
+        if (err == error.NoElementType) if (self.diagnostics) |d|
+            d.add(.err, "cannot infer the element type of this array literal — annotate it", span);
+        return null;
+    };
 }
 
 /// The array or vector a `.[…]` of `length` elements builds for the
@@ -4338,7 +4349,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
             self.settleJuxtaposition(node);
             break :blk self.lowerExpr(node);
         },
-        .array_literal => |al| self.lowerArrayLiteral(&al),
+        .array_literal => |al| self.lowerArrayLiteral(&al, node.span),
         .index_expr => |ie| self.lowerIndexExpr(&ie),
         .slice_expr => |se| self.lowerSliceExpr(&se),
         // The literal's identity is its node: the env type memo keys on it.

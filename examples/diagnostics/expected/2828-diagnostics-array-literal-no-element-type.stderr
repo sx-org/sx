@@ -1,0 +1,17 @@
+error: cannot infer the element type of this array literal — annotate it
+  --> examples/diagnostics/2828-diagnostics-array-literal-no-element-type.sx:4:6
+   |
+ 4 | E :: .[];
+   |      ^^^
+
+error: cannot infer the element type of this array literal — annotate it
+  --> examples/diagnostics/2828-diagnostics-array-literal-no-element-type.sx:7:10
+   |
+ 7 |     e := .[];
+   |          ^^^
+
+error: cannot infer the element type of this array literal — annotate it
+  --> examples/diagnostics/2828-diagnostics-array-literal-no-element-type.sx:8:10
+   |
+ 8 |     a := .[null, null];
+   |          ^^^^^^^^^^^^^

@@ -12,7 +12,7 @@ HOME   :: START;            // chained
 AHEAD  :: BEHIND;           // forward alias, declared before its target
 BEHIND :: ORIGIN;
 
-DIMS   :: i64.[7, 8, 9];
+DIMS   :: .[7, 8, 9];
 SIZES  :: DIMS;             // alias of an array-literal const
 
 main :: () {

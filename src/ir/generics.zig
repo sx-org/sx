@@ -3,40 +3,72 @@ const ast = @import("../ast.zig");
 const types = @import("types.zig");
 const type_bridge = @import("type_bridge.zig");
 const lower = @import("lower.zig");
+const program_index = @import("program_index.zig");
 
 const Node = ast.Node;
 const TypeId = types.TypeId;
 const Lowering = lower.Lowering;
 
+/// A value with no type of its own: an untyped constant, or a bare `.[…]`
+/// whose elements are all such values.
 fn isContextualArgument(l: *Lowering, node: *const Node) bool {
-    if (l.isAdaptableFloat(node) or l.untypedString(node) != null) return true;
     return switch (node.data) {
-        .int_literal, .float_literal => true,
-        .unary_op => |uo| uo.op == .negate and switch (uo.operand.data) {
-            .int_literal, .float_literal => true,
-            else => false,
-        },
-        else => false,
+        .array_literal => |al| al.type_expr == null and for (al.elements) |elem| {
+            if (!isContextualArgument(l, elem)) break false;
+        } else true,
+        else => program_index.untypedConst(node, l) != null,
     };
 }
 
 fn contextualArgumentFits(l: *Lowering, node: *const Node, ty: TypeId) bool {
-    if (l.isAdaptableFloat(node)) return Lowering.isFloat(ty);
-    if (l.untypedString(node) != null) return l.stringLiteralFits(ty);
-    return switch (node.data) {
-        .int_literal => l.isIntEx(ty) or Lowering.isFloat(ty),
-        .float_literal => Lowering.isFloat(ty),
-        .unary_op => |uo| contextualArgumentFits(l, uo.operand, ty),
-        else => false,
+    if (node.data == .array_literal) {
+        const elements = node.data.array_literal.elements;
+        const elem_ty = literalElementType(l, ty, elements.len) orelse return false;
+        return for (elements) |elem| {
+            if (!contextualArgumentFits(l, elem, elem_ty)) break false;
+        } else true;
+    }
+    return switch (program_index.untypedConst(node, l).?) {
+        .integer => l.isIntEx(ty) or Lowering.isFloat(ty),
+        .float => Lowering.isFloat(ty),
+        .string => l.stringLiteralFits(ty),
     };
 }
 
-/// A float outranks an earlier binding, `f64` outranking `f32`; otherwise the
-/// first binding stands.
-fn widerBinding(prev: ?TypeId, ty: TypeId) TypeId {
+/// The element type a bare `.[…]` of `length` elements takes at `ty`: an array
+/// or vector of that length, or a slice.
+fn literalElementType(l: *Lowering, ty: TypeId, length: usize) ?TypeId {
+    if (l.module.types.sliceInfoOf(ty)) |s| return s.element;
+    if (ty.isBuiltin()) return null;
+    return switch (l.module.types.get(ty)) {
+        .array => |a| if (a.length == length) a.element else null,
+        .vector => |v| if (v.length == length) v.element else null,
+        else => null,
+    };
+}
+
+/// A float outranks an earlier binding, `f64` outranking `f32`, and arrays or
+/// vectors of one shape join their elements; otherwise the first binding
+/// stands.
+fn widerBinding(l: *Lowering, prev: ?TypeId, ty: TypeId) TypeId {
     const bound = prev orelse return ty;
     if (ty == .f64 or (ty == .f32 and bound != .f64)) return ty;
-    return bound;
+    if (bound.isBuiltin() or ty.isBuiltin()) return bound;
+    const table = &l.module.types;
+    return switch (table.get(bound)) {
+        .array => |a| switch (table.get(ty)) {
+            .array => |b| if (a.length == b.length and a.sentinel == b.sentinel)
+                table.arrayOfSentinel(widerBinding(l, a.element, b.element), a.length, a.sentinel)
+            else
+                bound,
+            else => bound,
+        },
+        .vector => |a| switch (table.get(ty)) {
+            .vector => |b| if (a.length == b.length) table.vectorOf(widerBinding(l, a.element, b.element), a.length) else bound,
+            else => bound,
+        },
+        else => bound,
+    };
 }
 
 pub const GenericResolver = struct {
@@ -341,9 +373,9 @@ pub const GenericResolver = struct {
             // (e.g. a: $T, b: T, items: []$T). Pick widest type across matches.
             var inferred_ty: ?TypeId = null;
             // Two rounds over the value parameters: the arguments that carry a
-            // type of their own bind `$T` first; a literal then takes what they
-            // bound whenever it converts to it, and contributes its own default
-            // only when nothing bound `$T`.
+            // type of their own bind `$T` first; an untyped argument then takes
+            // what they bound whenever it converts to it, and otherwise
+            // contributes its own default.
             for ([2]bool{ false, true }) |literal_round| {
                 var s2_arg_idx: usize = 0;
                 for (fd.params) |param| {
@@ -395,7 +427,7 @@ pub const GenericResolver = struct {
                             // slots nothing has decided.
                             if (extracted != null and Lowering.boundOnBinder(param.type_expr, tp.name) and
                                 carriesUnresolved(self.l, extracted.?)) continue;
-                            if (extracted) |ety| inferred_ty = widerBinding(inferred_ty, ety);
+                            if (extracted) |ety| inferred_ty = widerBinding(self.l, inferred_ty, ety);
                         }
                     }
                 }
@@ -424,7 +456,7 @@ pub const GenericResolver = struct {
                 if (literal_round and bound != null and contextualArgumentFits(self.l, elem, bound.?)) continue;
                 const ty = self.l.inferExprType(elem);
                 if (ty == .void or ty == .unresolved) continue;
-                bound = widerBinding(bound, ty);
+                bound = widerBinding(self.l, bound, ty);
             }
         }
         return bound;

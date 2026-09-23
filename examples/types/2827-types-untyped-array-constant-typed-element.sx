@@ -1,0 +1,15 @@
+// An untyped array constant has the type its literal has written inline,
+// whichever order the constants it names are declared in.
+
+@import "modules/std.sx";
+
+L :: .[1, A];
+A : i32 : 5;
+D :: .[1, 2];
+F :: .[1, 2.2];
+
+main :: () -> i32 {
+    print("{} {}\n", @typeName(@typeOf(L)), L);
+    print("{} {}\n", @typeName(@typeOf(D)), @typeName(@typeOf(F)));
+    0
+}

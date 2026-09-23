@@ -1,0 +1,10 @@
+// A bare `.[…]` with no target whose elements give no type is diagnosed at
+// the literal.
+
+E :: .[];
+
+main :: () -> i32 {
+    e := .[];
+    a := .[null, null];
+    0
+}
