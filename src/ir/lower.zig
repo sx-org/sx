@@ -3691,6 +3691,7 @@ pub const Lowering = struct {
     pub const createComptimeFunctionWithPrelude = lower_comptime.createComptimeFunctionWithPrelude;
     pub const constExprValue = lower_comptime.constExprValue;
     pub const constStringLiteral = lower_comptime.constStringLiteral;
+    pub const someConstant = lower_comptime.someConstant;
     pub const constArrayLiteral = lower_comptime.constArrayLiteral;
     pub const defaultConstant = lower_comptime.defaultConstant;
     pub const constStructLiteral = lower_comptime.constStructLiteral;

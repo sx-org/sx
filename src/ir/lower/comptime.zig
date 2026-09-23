@@ -165,9 +165,24 @@ pub fn constExprValue(self: *Lowering, expr: *const Node, expected_ty: TypeId) ?
     return constExprValueInner(self, expr, expected_ty, null);
 }
 
+/// The present `?child` constant holding `payload`.
+pub fn someConstant(self: *Lowering, child: TypeId, payload: inst_mod.ConstantValue) inst_mod.ConstantValue {
+    // A sentinel-shaped optional reuses the payload's own null representation,
+    // so it has no `{payload, has_value}` wrapper in LLVM.
+    if (self.module.types.optionalIsSentinel(child)) return payload;
+    const fields = self.alloc.alloc(inst_mod.ConstantValue, 2) catch @panic("out of memory");
+    fields[0] = payload;
+    fields[1] = .{ .boolean = true };
+    return .{ .aggregate = fields };
+}
+
 /// A string literal's constant at `dst`: the literal takes the shape `dst`
 /// names and converts to `dst`. Null when no conversion reaches `dst`.
 pub fn constStringLiteral(self: *Lowering, lit: ast.StringLiteral, dst: TypeId, span: ast.Span) ?inst_mod.ConstantValue {
+    if (!dst.isBuiltin() and self.module.types.get(dst) == .optional) {
+        const child = self.module.types.get(dst).optional.child;
+        return someConstant(self, child, constStringLiteral(self, lit, child, span) orelse return null);
+    }
     const bytes = self.stringLiteralBytes(lit);
     const src = self.literalType(dst, bytes.len);
     return switch (self.coercionResolver().classify(src, dst)) {

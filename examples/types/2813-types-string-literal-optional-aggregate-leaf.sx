@@ -1,0 +1,15 @@
+// A string literal at an optional leaf of a global aggregate is the present
+// optional of the literal at the child's shape.
+
+@import "modules/std.sx";
+
+Foo :: struct { s: ?string; n: ?[3]u8; }
+
+F : Foo = .{ s = "ab", n = "xyz" };
+A : [2]?string = .["p", "qr"];
+
+main :: () -> i32 {
+    n := F.n?!;
+    print("{} {} {}\n", F.s?!.len, n[2], A[1]?!.len);
+    0
+}

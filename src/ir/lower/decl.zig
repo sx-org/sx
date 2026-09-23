@@ -1733,15 +1733,7 @@ pub fn globalInitValue(self: *Lowering, vd: *const ast.VarDecl, var_ty: TypeId) 
             else => {},
         }
         const child = self.module.types.get(var_ty).optional.child;
-        const payload = self.globalInitValuePayload(vd, v, child) orelse return null;
-        // A sentinel-shaped optional reuses the payload's own null
-        // representation, so the payload IS the whole initializer — there is no
-        // `{payload, has_value}` wrapper in LLVM.
-        if (self.module.types.optionalIsSentinel(child)) return payload;
-        const fields = self.alloc.alloc(inst_mod.ConstantValue, 2) catch return null;
-        fields[0] = payload;
-        fields[1] = .{ .boolean = true };
-        return .{ .aggregate = fields };
+        return self.someConstant(child, self.globalInitValuePayload(vd, v, child) orelse return null);
     }
 
     return self.globalInitValuePayload(vd, v, var_ty);
