@@ -1,0 +1,14 @@
+// A bare `.[]` with no destination is `[0]void`; a destination types it.
+
+@import "modules/std.sx";
+
+E :: .[];
+
+main :: () -> i32 {
+    e := .[];
+    print("{} {}\n", @typeName(@typeOf(E)), @typeName(@typeOf(e)));
+    print("{} {}\n", e.len, e);
+    xs : []i64 = .[];
+    print("{} {}\n", @typeName(@typeOf(xs)), xs.len);
+    0
+}

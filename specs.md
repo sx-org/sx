@@ -1791,12 +1791,13 @@ A `.[ … ]` literal takes its element type from the annotation or target
 (`x : [3]i16 = .[1, 2, 3]`). A bare literal's elements bind it as arguments
 bind one binder ([Generic Functions](#generic-functions-monomorphization)):
 `.[1, 2, 3]` is `[3]i64`, and with `x : i32`, `.[1, x]` and `.[x, 1]` are both
-`[2]i32`. A bare literal with no target whose elements give no type (`.[]`,
-`.[null, null]`) is a compile error asking for the annotation. A type prefix
-on the literal names the **aggregate** type — `@Vector(3, f32).[…]`,
-`([2]?i64).[…]`, or an alias of an array type — never the element type: a
-prefix that resolves to a non-array/vector/slice type (`i16.[…]`,
-`Point.[…]`) is a compile error pointing at the annotated form.
+`[2]i32`. A bare `.[]` with no target is `[0]void`. A bare literal with no
+target whose elements give no type (`.[null, null]`) is a compile error asking
+for the annotation. A type prefix on the literal names the **aggregate** type
+— `@Vector(3, f32).[…]`, `([2]?i64).[…]`, or an alias of an array type —
+never the element type: a prefix that resolves to a non-array/vector/slice
+type (`i16.[…]`, `Point.[…]`) is a compile error pointing at the annotated
+form.
 
 `@Array(N, T)` is the named form of the same type, written wherever `[N]T` is:
 ```sx

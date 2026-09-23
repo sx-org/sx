@@ -40,7 +40,7 @@ pub const TypeLowering = struct {
         };
     }
 
-    /// Lower a *field* (struct/tuple element, or the payload of `?T`). Identical
+    /// Lower a *field* (struct/tuple/array element, or the payload of `?T`). Identical
     /// to `toLLVMType` except that a field which lowers to LLVM's unsized
     /// `void` type (a `void`/`noreturn`/zero-sized field — legitimate, e.g.
     /// `Future(void)`) is substituted with a SIZED zero-byte `[0 x i8]`. LLVM's
@@ -103,10 +103,7 @@ pub const TypeLowering = struct {
                 };
                 return c.LLVMStructTypeInContext(self.e.context, &field_types, 2, 0);
             },
-            .array => |arr| {
-                const elem = self.toLLVMType(arr.element);
-                return c.LLVMArrayType2(elem, arr.storageLen());
-            },
+            .array => |arr| c.LLVMArrayType2(self.fieldLLVMType(arr.element), arr.storageLen()),
             .vector => |vec| {
                 const elem = self.toLLVMType(vec.element);
                 return c.LLVMVectorType(elem, vec.length);

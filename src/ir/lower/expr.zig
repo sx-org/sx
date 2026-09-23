@@ -2837,6 +2837,7 @@ pub fn arrayLiteralType(self: *Lowering, al: *const ast.ArrayLiteral) error{ Not
         }
     }
     if (self.target_type) |tt| if (literalAggregate(self, tt, length)) |ty| return ty;
+    if (length == 0) return self.module.types.arrayOf(.void, 0);
     const elem_ty = self.genericResolver().elementBinding(al.elements) orelse return error.NoElementType;
     return self.module.types.arrayOf(elem_ty, length);
 }
