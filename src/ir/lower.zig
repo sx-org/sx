@@ -2964,9 +2964,38 @@ pub const Lowering = struct {
         return adopted;
     }
 
-    pub fn arithResultType(self: *Lowering, lhs_ty: TypeId, rhs_ty: TypeId) TypeId {
-        if (self.isIntEx(lhs_ty) and isFloat(rhs_ty)) return rhs_ty;
-        return lhs_ty;
+    /// The type of `lhs op rhs` for an arithmetic, bitwise or shift `op`: two
+    /// numeric scalars meet at their common type, a scalar meets a vector at
+    /// the vector, and a shift keeps its left operand's type. Null when two
+    /// integers of opposite signedness have no common type.
+    pub fn arithResultType(self: *Lowering, op: ast.BinaryOp.Op, lhs_ty: TypeId, rhs_ty: TypeId) ?TypeId {
+        if (op == .shl or op == .shr) return lhs_ty;
+        const coercions = self.coercionResolver();
+        if (!coercions.isNumericScalar(lhs_ty)) return lhs_ty;
+        if (!coercions.isNumericScalar(rhs_ty)) return if (self.isVectorType(rhs_ty)) rhs_ty else lhs_ty;
+        return switch (coercions.numericMeet(lhs_ty, rhs_ty)) {
+            .type => |ty| ty,
+            .signedness => null,
+        };
+    }
+
+    /// The type an untyped integer operand of an arithmetic or bitwise `op`
+    /// takes from its typed peer: the peer's numeric type, or a vector peer's
+    /// element type.
+    pub fn untypedIntegerOperandType(self: *Lowering, op: ast.BinaryOp.Op, operand: *const Node, peer: *const Node) ?TypeId {
+        switch (op) {
+            .add, .sub, .mul, .div, .mod, .bit_and, .bit_or, .bit_xor => {},
+            else => return null,
+        }
+        const kind = program_index_mod.untypedConst(operand, self) orelse return null;
+        if (kind != .integer or program_index_mod.untypedConst(peer, self) != null) return null;
+        const peer_ty = self.operandType(self.inferExprType(peer));
+        const scalar = if (self.isVectorType(peer_ty)) self.module.types.get(peer_ty).vector.element else peer_ty;
+        return if (self.coercionResolver().isNumericScalar(scalar)) scalar else null;
+    }
+
+    pub fn isVectorType(self: *Lowering, ty: TypeId) bool {
+        return !ty.isBuiltin() and self.module.types.get(ty) == .vector;
     }
 
     /// Carry-rule resolution outcome for a namespace alias, diagnostic-free.

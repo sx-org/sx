@@ -126,7 +126,9 @@ pub const ExprTyper = struct {
                 .and_op, .or_op, .in_op, .is_op => .bool,
                 else => blk: {
                     const operands = program_index_mod.floatOperandTypes(bop, self.l.operandType(self.l.inferExprType(bop.lhs)), self.l.operandType(self.l.inferExprType(bop.rhs)), self.l);
-                    break :blk self.l.arithResultType(operands.lhs.?, operands.rhs.?);
+                    const lhs_ty = self.l.untypedIntegerOperandType(bop.op, bop.lhs, bop.rhs) orelse operands.lhs.?;
+                    const rhs_ty = self.l.untypedIntegerOperandType(bop.op, bop.rhs, bop.lhs) orelse operands.rhs.?;
+                    break :blk self.l.arithResultType(bop.op, lhs_ty, rhs_ty) orelse .unresolved;
                 },
             },
             .unary_op => |uop| switch (uop.op) {

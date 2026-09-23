@@ -117,8 +117,8 @@ test "arithResultType promotes scalar integers with a float rhs" {
     var l = Lowering.init(&module);
     const signed24 = module.types.internInteger(24, true);
     const vector = module.types.vectorOf(signed24, 2);
-    try std.testing.expectEqual(TypeId.f64, l.arithResultType(signed24, .f64));
-    try std.testing.expectEqual(vector, l.arithResultType(vector, .f64));
+    try std.testing.expectEqual(@as(?TypeId, .f64), l.arithResultType(.add, signed24, .f64));
+    try std.testing.expectEqual(@as(?TypeId, vector), l.arithResultType(.add, vector, .f64));
 }
 
 test "expr_typer: unary not is bool, negate preserves operand type" {

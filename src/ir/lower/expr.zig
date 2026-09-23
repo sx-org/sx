@@ -5492,8 +5492,11 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         if (isCompareNumericPeer(self, peer_ty)) self.target_type = peer_ty;
     }
     const float_operands = program_index_mod.floatOperandTypes(bop.*, self.operandType(self.inferExprType(bop.lhs)), self.operandType(self.inferExprType(bop.rhs)), self);
+    const lhs_adopted = self.untypedIntegerOperandType(bop.op, bop.lhs, bop.rhs);
+    const rhs_adopted = self.untypedIntegerOperandType(bop.op, bop.rhs, bop.lhs);
     const operand_tt = self.target_type;
     if (self.isAdaptableFloat(bop.lhs)) self.target_type = float_operands.lhs;
+    if (lhs_adopted) |ty| self.target_type = ty;
     var lhs = self.lowerExpr(bop.lhs);
     self.target_type = operand_tt;
     if (comparison) self.target_type = null;
@@ -5506,6 +5509,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     // the lowered operand's concrete type rather than a guess.
     const lhs_ty = blk: {
         if (lhs_ref_pointee) |p| break :blk p;
+        if (lhs_adopted) |ty| break :blk ty;
         if (self.isAdaptableFloat(bop.lhs)) break :blk self.builder.getRefType(lhs);
         const it = self.inferExprType(bop.lhs);
         break :blk if (it == .unresolved) self.builder.getRefType(lhs) else it;
@@ -5549,6 +5553,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         };
     }
     if (self.isAdaptableFloat(bop.rhs)) self.target_type = float_operands.rhs;
+    if (rhs_adopted) |ty| self.target_type = ty;
     var rhs = self.lowerExpr(bop.rhs);
     const rhs_ref_pointee = self.refCapturePointee(bop.rhs);
     if (rhs_ref_pointee) |p| rhs = self.builder.load(rhs, p);
@@ -5598,17 +5603,14 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         }
     }
 
-    // Result type follows the shared promotion rule: an int LHS with a
-    // float RHS promotes to the float (`i64 * f32` → `f32`); vectors /
-    // structs keep the LHS type. `inferExprType` reuses the same helper
-    // so static typing agrees with the value produced here.
     const rhs_ty = blk: {
         if (rhs_ref_pointee) |p| break :blk p;
+        if (rhs_adopted) |ty| break :blk ty;
         if (self.isAdaptableFloat(bop.rhs)) break :blk self.builder.getRefType(rhs);
         const it = self.inferExprType(bop.rhs);
         break :blk if (it == .unresolved) self.builder.getRefType(rhs) else it;
     };
-    var ty = self.arithResultType(lhs_ty, rhs_ty);
+    var ty = lhs_ty;
 
     if (self.unwrapOptionalOperand(lhs, ty, bop.lhs.span)) |payload| {
         lhs = payload;
@@ -5695,7 +5697,17 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
                 return self.emitPlaceholder("compare-meet");
             }
         },
-        else => {},
+        else => {
+            const rhs_operand_ty = self.operandType(rhs_ty);
+            ty = self.arithResultType(bop.op, ty, rhs_operand_ty) orelse {
+                if (self.diagnostics) |d| d.addFmt(.err, .{ .start = bop.lhs.span.start, .end = bop.rhs.span.end }, "cannot apply '{s}' to signed and unsigned values of type '{s}' and '{s}'; write an explicit cast on one side", .{
+                    binOpSymbol(bop.op), self.formatTypeName(ty), self.formatTypeName(rhs_operand_ty),
+                });
+                return self.emitPlaceholder("arith-signedness");
+            };
+            lhs = convertArithOperand(self, lhs, ty);
+            if (bop.op != .shl and bop.op != .shr) rhs = convertArithOperand(self, rhs, ty);
+        },
     }
 
     // LLVM's shifts are poison at or past the operand's width, and that poison
@@ -6113,6 +6125,15 @@ fn meetCompareOperands(
             return .{ .lhs = lhs, .rhs = rhs };
         },
     }
+}
+
+/// A numeric scalar operand converts to its operation's type; a scalar beside
+/// a vector is splatted at emission.
+fn convertArithOperand(self: *Lowering, val: Ref, ty: TypeId) Ref {
+    const src_ty = self.builder.getRefType(val);
+    const coercions = self.coercionResolver();
+    if (src_ty == ty or !coercions.isNumericScalar(src_ty) or !coercions.isNumericScalar(ty)) return val;
+    return self.coerceToType(val, src_ty, ty);
 }
 
 fn coerceCompareOperand(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId) Ref {

@@ -299,7 +299,7 @@ pub const Untyped = union(enum) {
 
 pub fn untypedConst(node: *const Node, ctx: anytype) ?Untyped {
     return switch (node.data) {
-        .int_literal => .integer,
+        .int_literal, .char_literal => .integer,
         .float_literal => .float,
         .string_literal => |lit| .{ .string = lit },
         .unary_op => |u| if (u.op == .negate) untypedNumeric(u.operand, ctx) else null,

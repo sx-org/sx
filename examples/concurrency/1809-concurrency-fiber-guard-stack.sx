@@ -84,7 +84,7 @@ guardedStack :: (f: *Fiber, size: i64) -> u64 {
     f.guardOk = 0;
     if mprotect(region, GUARD, PROT_NONE) == 0 { f.guardOk = 1; }
     usable : u64 = (@reinterpret(usize, region).(u64)) + GUARD;
-    top : u64 = usable + size;
+    top : u64 = usable + size.(u64);
     return top - (top % 16);
 }
 

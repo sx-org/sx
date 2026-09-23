@@ -4398,6 +4398,15 @@ typed binding `x : f64 = n + 0.5` is exact (not truncated). A mixed-numeric
 expression therefore does not satisfy an integer annotation — `C : i64 : n + 0.5`
 is a `type mismatch` in either operand order.
 
+**Common type.** The operands of an arithmetic or bitwise operator meet at a
+common type. Two integers of one signedness meet at the wider, and an unsigned
+integer meets a strictly wider signed one at the signed type: with `x : i32`
+and `w : i64`, `x + w` and `w + x` are both `i64`. Integers of opposite
+signedness with no common type (`i32` and `u32`) are refused; an explicit cast
+on one side chooses. An untyped operand takes its typed peer's type, so
+`1 + x` is `i32`. A scalar meets a vector at the vector. A shift keeps its left
+operand's type.
+
 ### Chained Comparisons
 Comparison operators can be chained. Each operand is evaluated exactly once.
 ```sx

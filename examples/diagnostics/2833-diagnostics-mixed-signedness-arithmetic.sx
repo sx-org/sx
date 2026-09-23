@@ -1,0 +1,8 @@
+// Integer operands of opposite signedness with no common type are refused.
+
+main :: () -> i32 {
+    x : i32 = 4;
+    n : u32 = 5;
+    t := x + n;
+    0
+}

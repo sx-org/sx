@@ -881,7 +881,7 @@ bootStack :: (f: *Fiber, size: i64) -> u64 {
         c.abort();
     }
     usable : u64 = @reinterpret(usize, region).(u64) + GUARD;
-    top : u64 = usable + size;
+    top : u64 = usable + size.(u64);
     return top - (top % 16);   // 16-byte aligned stack top (AAPCS)
 }
 

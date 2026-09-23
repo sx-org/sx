@@ -508,12 +508,27 @@ pub const CoercionResolver = struct {
         }
         if ((l_addr and self.l.isIntEx(rhs_ty)) or (r_addr and self.l.isIntEx(lhs_ty))) return .incompatible;
 
+        if (!self.isNumericScalar(lhs_ty) or !self.isNumericScalar(rhs_ty)) return .none;
+        return switch (self.numericMeet(lhs_ty, rhs_ty)) {
+            .type => |ty| .{ .type = ty },
+            .signedness => .signedness,
+        };
+    }
+
+    pub fn isNumericScalar(self: CoercionResolver, ty: TypeId) bool {
+        return self.l.isIntEx(ty) or Lowering.isFloat(ty);
+    }
+
+    /// The arithmetic common type of two numeric scalars.
+    pub const NumericMeet = union(enum) {
+        type: TypeId,
+        /// Signed vs unsigned integers that do not widen into each other.
+        signedness,
+    };
+
+    pub fn numericMeet(self: CoercionResolver, lhs_ty: TypeId, rhs_ty: TypeId) NumericMeet {
         const l_float = Lowering.isFloat(lhs_ty);
         const r_float = Lowering.isFloat(rhs_ty);
-        const l_int = self.l.isIntEx(lhs_ty);
-        const r_int = self.l.isIntEx(rhs_ty);
-        if (!(l_int or l_float) or !(r_int or r_float)) return .none;
-
         if (l_float or r_float) {
             if (l_float and r_float) {
                 const lb = self.l.typeBitsEx(lhs_ty);
