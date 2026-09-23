@@ -1352,13 +1352,13 @@ pub fn refuseAddedTerminator(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, sp
     if (local) |l| self.literal_local_helps.append(self.alloc, .{ .primary = id, .source_file = d.current_source_file, .local = l }) catch @panic("out of memory");
 }
 
-/// The `::` fix-it holds only for a local no assignment writes.
+/// The `::` fix-it holds only for a local nothing writes.
 pub fn emitLiteralLocalHelps(self: *Lowering) void {
     const d = self.diagnostics orelse return;
     const saved = d.current_source_file;
     defer d.current_source_file = saved;
     for (self.literal_local_helps.items) |h| {
-        if (self.reassigned_bindings.contains(h.local.binding)) continue;
+        if (self.written_bindings.contains(h.local.binding)) continue;
         d.current_source_file = h.source_file;
         d.addHelpFmt(h.primary, h.local.init.span, null, "declare '{s}' with '::': a constant keeps the literal's terminator", .{h.local.name});
     }

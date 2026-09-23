@@ -1,6 +1,6 @@
 // A variable bound to a literal is a `string`, and no conversion adds a
 // terminator, so it does not reach a C `[*:0]u8`. A `::` constant keeps the
-// literal, and the help names it for a variable no assignment writes.
+// literal, and the help names it for a variable nothing writes.
 @import "modules/std.sx";
 
 puts :: (s: [*:0]u8) -> i32 extern;
@@ -11,5 +11,8 @@ main :: () -> i32 {
     t := "x";
     _ = puts(t);
     t = concat(t, "y");
+    u := "x";
+    _ = puts(u);
+    u.len = 0;
     0
 }

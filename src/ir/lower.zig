@@ -778,9 +778,9 @@ pub const Lowering = struct {
     /// fix-it where one reaches a terminated destination. Per function body.
     literal_local_refs: std.AutoHashMap(Ref, LiteralLocal) = undefined,
     /// Terminator refusals whose `::` fix-it waits for the end of lowering,
-    /// when every reassignment of the local has been seen.
+    /// when every write of the local has been seen.
     literal_local_helps: std.ArrayList(lower_coerce.LiteralLocalHelp) = .empty,
-    reassigned_bindings: std.AutoHashMapUnmanaged(BindingId, void) = .empty,
+    written_bindings: std.AutoHashMapUnmanaged(BindingId, void) = .empty,
     force_block_value: bool = false, // set by lowerDemandedBody for a demand that wants a value, to extract if-else values
     // Set while lowering a NAMED multi-return function body (`-> (x: A, y: B)`):
     // the slot names (1:1 with the return tuple's fields; a trailing "!" marks
@@ -2862,11 +2862,10 @@ pub const Lowering = struct {
         return self.narrowed.contains(id);
     }
 
-    pub fn noteReassignment(self: *Lowering, name: []const u8) void {
+    pub fn killNarrowing(self: *Lowering, name: []const u8) void {
         const scope = self.scope orelse return;
         const id = scope.bindingId(name) orelse return;
         _ = self.narrowed.remove(id);
-        self.reassigned_bindings.put(self.alloc, id, {}) catch @panic("out of memory");
     }
 
     /// The payload type a container use site (index, slice, generic binding)
@@ -3775,6 +3774,7 @@ pub const Lowering = struct {
     pub const diagConstRootWrite = lower_stmt.diagConstRootWrite;
     pub const diagContextRootWrite = lower_stmt.diagContextRootWrite;
     pub const diagNonstoreRootWrite = lower_stmt.diagNonstoreRootWrite;
+    pub const noteStorageWrite = lower_stmt.noteStorageWrite;
     pub const diagDecrementTarget = lower_stmt.diagDecrementTarget;
     pub const diagDecrementNonInteger = lower_stmt.diagDecrementNonInteger;
     pub const lowerMultiAssign = lower_stmt.lowerMultiAssign;

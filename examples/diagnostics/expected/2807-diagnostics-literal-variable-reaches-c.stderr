@@ -14,3 +14,9 @@ error: a value of type 'string' does not coerce to '[*:0]u8': no conversion adds
    |
 12 |     _ = puts(t);
    |         ^^^^^^^
+
+error: a value of type 'string' does not coerce to '[*:0]u8': no conversion adds a terminator — materialize one with toCstring(s)
+  --> examples/diagnostics/2807-diagnostics-literal-variable-reaches-c.sx:15:9
+   |
+15 |     _ = puts(u);
+   |         ^^^^^^^
