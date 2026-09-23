@@ -179,10 +179,6 @@ pub fn someConstant(self: *Lowering, child: TypeId, payload: inst_mod.ConstantVa
 /// A string literal's constant at `dst`: the literal takes the shape `dst`
 /// names and converts to `dst`. Null when no conversion reaches `dst`.
 pub fn constStringLiteral(self: *Lowering, lit: ast.StringLiteral, dst: TypeId, span: ast.Span) ?inst_mod.ConstantValue {
-    if (!dst.isBuiltin() and self.module.types.get(dst) == .optional) {
-        const child = self.module.types.get(dst).optional.child;
-        return someConstant(self, child, constStringLiteral(self, lit, child, span) orelse return null);
-    }
     const bytes = self.stringLiteralBytes(lit);
     const src = self.literalType(dst, bytes.len);
     return switch (self.coercionResolver().classify(src, dst)) {
@@ -208,6 +204,17 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
     // the image can hold. Serializing anything else here would lay the operand's
     // own bytes into the handle's three words.
     if (self.isErasedProtocolType(expected_ty)) return staticInterfaceLeaf(self, expr, expected_ty);
+    if (isOptional(self, expected_ty)) {
+        switch (expr.data) {
+            .null_literal => return .null_val,
+            .undef_literal => return .zeroinit,
+            else => {},
+        }
+        if (!isOptional(self, self.inferExprType(expr))) {
+            const child = self.module.types.get(expected_ty).optional.child;
+            return someConstant(self, child, constExprValueInner(self, expr, child, frame) orelse return null);
+        }
+    }
     if (self.literalNodeType(expr, expected_ty)) |src| {
         if (!self.checkConstantLeaf(src, expected_ty, expr.span)) return null;
     }
@@ -219,26 +226,18 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
     return switch (expr.data) {
         // An int element in a FLOAT destination converts exactly (the
         // int+float promotion rule, element-wise — `[2]f64 : .[1, 2.5]`).
-        .int_literal => |il| if (isFloat(expected_ty))
-            .{ .float = @floatFromInt(il.value) }
-        else
-            .{ .int = il.value },
-        .char_literal => |cl| if (isFloat(expected_ty))
-            .{ .float = @floatFromInt(cl.value) }
-        else
-            .{ .int = cl.value },
-        .bool_literal => |bl| .{ .boolean = bl.value },
-        // A float into an INTEGER destination follows the implicit
-        // narrowing rule: an integral float folds to its int, a
-        // non-integral one is a compile error (not a silent bit-coerce).
-        .float_literal => |fl| blk: {
-            if (self.isIntEx(expected_ty)) {
-                if (program_index_mod.floatToIntExact(fl.value)) |iv| break :blk inst_mod.ConstantValue{ .int = iv };
-                self.diagNonIntegralNarrow(expr.span, fl.value, expected_ty);
-                break :blk null;
-            }
-            break :blk inst_mod.ConstantValue{ .float = self.adoptFloatValue(fl.value, expected_ty, expr.span) };
+        .int_literal => |il| blk: {
+            if (isFloat(expected_ty)) break :blk .{ .float = @floatFromInt(il.value) };
+            self.checkIntLiteralMagnitudeFits(il.value, expected_ty, expr.span);
+            break :blk .{ .int = il.value };
         },
+        .char_literal => |cl| blk: {
+            if (isFloat(expected_ty)) break :blk .{ .float = @floatFromInt(cl.value) };
+            self.checkCharLiteralFits(cl, expected_ty, expr.span);
+            break :blk .{ .int = cl.value };
+        },
+        .bool_literal => |bl| .{ .boolean = bl.value },
+        .float_literal => |fl| constFloatLeaf(self, fl.value, expected_ty, expr.span),
         .undef_literal => .zeroinit,
         // A `null` in a pointer (or optional-pointer) field is a
         // compile-time constant: the zero pointer. Without this arm the
@@ -246,11 +245,13 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
         .null_literal => .null_val,
         .unary_op => |uo| switch (uo.op) {
             .negate => switch (uo.operand.data) {
-                .int_literal => |il| if (isFloat(expected_ty))
-                    .{ .float = @floatFromInt(-il.value) }
-                else
-                    .{ .int = -il.value },
-                .float_literal => |fl| .{ .float = -self.adoptFloatValue(fl.value, expected_ty, expr.span) },
+                .int_literal => |il| blk: {
+                    const v = -%il.value;
+                    if (isFloat(expected_ty)) break :blk .{ .float = @floatFromInt(v) };
+                    self.checkIntLiteralFits(v, expected_ty, expr.span);
+                    break :blk .{ .int = v };
+                },
+                .float_literal => |fl| constFloatLeaf(self, -fl.value, expected_ty, expr.span),
                 else => null,
             },
             else => null,
@@ -295,6 +296,7 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
                         if (constNaturalValue(self, fa.object, object_ty, frame)) |value| {
                             if (value == .aggregate) {
                                 const field_ty = self.getStructFields(object_ty)[i].ty;
+                                if (!self.checkConstantWidens(field_ty, expected_ty, expr.span)) break :blk null;
                                 if (self.coerceConstant(value.aggregate[i], field_ty, expected_ty)) |converted| break :blk converted;
                             }
                         }
@@ -305,6 +307,7 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
                 if (self.fieldProjection(c)) |field| {
                     if (constNaturalValue(self, field.object, field.object_ty, frame)) |value| {
                         if (value == .aggregate) {
+                            if (!self.checkConstantWidens(field.ty, expected_ty, expr.span)) break :blk null;
                             if (self.coerceConstant(value.aggregate[field.index], field.ty, expected_ty)) |converted| break :blk converted;
                         }
                     }
@@ -312,7 +315,13 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
             }
             const ctx = SourceConstCtx{ .lowering = self, .frame = frame };
             if (self.isIntEx(expected_ty)) {
-                if (program_index_mod.evalConstIntExpr(expr, ctx)) |v| break :blk inst_mod.ConstantValue{ .int = v };
+                if (program_index_mod.evalConstIntExpr(expr, ctx)) |v| {
+                    // An operation's result keeps its type; a named or builtin read adapts as a literal does.
+                    const typed = expr.data == .binary_op or expr.data == .index_expr;
+                    if (typed and !self.checkConstantWidens(self.inferExprType(expr), expected_ty, expr.span)) break :blk null;
+                    self.checkIntLiteralFits(v, expected_ty, expr.span);
+                    break :blk inst_mod.ConstantValue{ .int = v };
+                }
             }
             if (isFloat(expected_ty)) {
                 const source_ty = self.inferExprType(expr);
@@ -325,6 +334,21 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
             break :blk null;
         },
     };
+}
+
+/// A float literal's constant at `expected_ty`. An integer destination takes
+/// the float only when it is integral.
+fn constFloatLeaf(self: *Lowering, value: f64, expected_ty: TypeId, span: ast.Span) ?inst_mod.ConstantValue {
+    if (self.isIntEx(expected_ty)) {
+        if (program_index_mod.floatToIntExact(value)) |iv| return .{ .int = iv };
+        self.diagNonIntegralNarrow(span, value, expected_ty);
+        return null;
+    }
+    return .{ .float = self.adoptFloatValue(value, expected_ty, span) };
+}
+
+fn isOptional(self: *Lowering, ty: TypeId) bool {
+    return !ty.isBuiltin() and self.module.types.get(ty) == .optional;
 }
 
 pub fn foldFieldInt(self: *Lowering, node: *const Node, frame: ?*const ConstFoldFrame) ?i64 {
@@ -343,7 +367,8 @@ fn constSelectedValue(self: *Lowering, name: []const u8, sel: SelectedConst, exp
     const pin = self.pinConstValue(sel.info.value, sel.environment);
     defer pin.unpin();
     const value = if (sel.info.declared_type != null)
-        constExprValueInner(self, sel.info.value, sel.info.ty, &f) orelse return null
+        self.numericConstValue(sel.info, .{ .lowering = self, .frame = &f }) orelse
+            constExprValueInner(self, sel.info.value, sel.info.ty, &f) orelse return null
     else
         constNaturalValue(self, sel.info.value, sel.info.ty, &f) orelse return null;
     return self.coerceConstant(value, sel.info.ty, expected_ty);

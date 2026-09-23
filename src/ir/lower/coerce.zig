@@ -1454,13 +1454,33 @@ pub fn isPointerValueKind(self: *Lowering, ty: TypeId) bool {
 
 fn refuseImplicitNumericConversion(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) Ref {
     if (!self.externalErrorsExist()) {
-        if (self.diagnostics) |d| {
-            const cs = self.builder.current_span;
-            d.addFmt(.err, .{ .start = cs.start, .end = cs.end }, "cannot implicitly convert '{s}' to '{s}'; use an explicit cast (`.({s})`)", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty), self.formatTypeName(dst_ty) });
-            self.assignability_error_count += 1;
-        }
+        const cs = self.builder.current_span;
+        diagImplicitNumericConversion(self, src_ty, dst_ty, .{ .start = cs.start, .end = cs.end });
     }
     return self.builder.constUndef(dst_ty);
+}
+
+fn diagImplicitNumericConversion(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: ast.Span) void {
+    const d = self.diagnostics orelse return;
+    d.addFmt(.err, span, "cannot implicitly convert '{s}' to '{s}'; use an explicit cast (`.({s})`)", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty), self.formatTypeName(dst_ty) });
+    self.assignability_error_count += 1;
+}
+
+/// A typed numeric read of `src_ty` at the constant leaf `dst_ty`: true when
+/// `src_ty` widens to `dst_ty`, else refused at `span` as a local's read is.
+pub fn checkConstantWidens(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: ast.Span) bool {
+    if (implicitNumericConversion(self, src_ty, dst_ty) orelse true) return true;
+    diagImplicitNumericConversion(self, src_ty, dst_ty, span);
+    return false;
+}
+
+fn implicitNumericConversion(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) ?bool {
+    if (implicitIntegerConversion(self, src_ty, dst_ty)) |widens| return widens;
+    return switch (self.coercionResolver().classify(src_ty, dst_ty)) {
+        .float_to_int => false,
+        .narrow => if (Lowering.isFloat(src_ty) and Lowering.isFloat(dst_ty)) false else null,
+        else => null,
+    };
 }
 
 pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mode: CoerceMode) Ref {

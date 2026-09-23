@@ -3897,6 +3897,7 @@ pub const Lowering = struct {
     pub const declIdOf = lower_decl.declIdOf;
     pub const declFuncId = lower_decl.declFuncId;
     pub const bindDeclFuncId = lower_decl.bindDeclFuncId;
+    pub const numericConstValue = lower_decl.numericConstValue;
     pub const emitModuleConst = lower_decl.emitModuleConst;
     pub const emitPlaceholder = lower_decl.emitPlaceholder;
 
@@ -4030,6 +4031,7 @@ pub const Lowering = struct {
     pub const coerceChecked = lower_coerce.coerceChecked;
     pub const checkAssignable = lower_coerce.checkAssignable;
     pub const checkConstantLeaf = lower_coerce.checkConstantLeaf;
+    pub const checkConstantWidens = lower_coerce.checkConstantWidens;
     pub const refuseAddedTerminator = lower_coerce.refuseAddedTerminator;
     pub const emitLiteralLocalHelps = lower_coerce.emitLiteralLocalHelps;
     pub const checkFormationWritable = lower_coerce.checkFormationWritable;

@@ -1770,20 +1770,7 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
     return switch (v.data) {
         .undef_literal => .zeroinit,
         .null_literal => .null_val,
-        .int_literal => |il| blk: {
-            self.checkIntLiteralMagnitudeFits(il.value, var_ty, v.span);
-            break :blk .{ .int = il.value };
-        },
-        // Char literal — same as int, but a char-aware fit check so the
-        // diagnostic names it as a char literal and suggests wider storage.
-        .char_literal => |cl| blk: {
-            self.checkCharLiteralFits(cl, var_ty, v.span);
-            break :blk .{ .int = cl.value };
-        },
-        // A negated literal (`g : i64 = -1;`) folds through the shared
-        // const-expr serializer. The folded value follows the same rules as
-        // the direct literal arms: int fits-check; a float at an integer
-        // global narrows only when integral.
+        .int_literal, .char_literal, .float_literal => self.constExprValue(v, var_ty),
         .unary_op => blk: {
             const u = v.data.unary_op;
             // `xx <global>` at a protocol-typed global folds to the protocol
@@ -1802,31 +1789,9 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
                     else => {},
                 }
             }
-            if (self.constExprValue(v, var_ty)) |cv| {
-                switch (cv) {
-                    .int => |iv| self.checkIntLiteralFits(iv, var_ty, v.span),
-                    .float => |fv| if (self.isIntEx(var_ty)) {
-                        if (program_index_mod.floatToIntExact(fv)) |iv| break :blk inst_mod.ConstantValue{ .int = iv };
-                        self.diagNonIntegralNarrow(v.span, fv, var_ty);
-                        break :blk null;
-                    },
-                    else => {},
-                }
-                break :blk cv;
-            }
-            break :blk self.diagnoseNonConstGlobal(vd, v, errors_before);
+            break :blk self.constExprValue(v, var_ty) orelse self.diagnoseNonConstGlobal(vd, v, errors_before);
         },
         .bool_literal => |bl| .{ .boolean = bl.value },
-        // A float initializer at an integer-typed global follows the
-        // implicit narrowing rule (integral folds, non-integral errors).
-        .float_literal => |fl| blk: {
-            if (self.isIntEx(var_ty)) {
-                if (program_index_mod.floatToIntExact(fl.value)) |iv| break :blk inst_mod.ConstantValue{ .int = iv };
-                self.diagNonIntegralNarrow(v.span, fl.value, var_ty);
-                break :blk null;
-            }
-            break :blk inst_mod.ConstantValue{ .float = self.adoptFloatValue(fl.value, var_ty, v.span) };
-        },
         .array_literal => |al| self.constArrayLiteral(al.elements, var_ty) orelse self.diagnoseNonConstGlobal(vd, v, errors_before),
         .struct_literal => |sl| self.constStructLiteral(&sl, var_ty, vd.type_annotation != null) orelse self.diagnoseNonConstGlobal(vd, v, errors_before),
         .identifier => |id| blk: {
@@ -4048,6 +4013,28 @@ pub fn callableReturnBinder(fd: *const ast.FnDecl, ret_ty: TypeId) ?*const Node 
 
 // ── Module-const emission ───────────────────────────────────────
 
+/// A numeric constant's value at its type: an integer type takes an integral
+/// float, and the folded integer must fit. Null when the type is not numeric
+/// or the initializer does not fold.
+pub fn numericConstValue(self: *Lowering, ci: ModuleConstInfo, ctx: lower.SourceConstCtx) ?inst_mod.ConstantValue {
+    if (self.isIntEx(ci.ty)) {
+        switch (program_index_mod.foldCountI64(ci.value, ctx)) {
+            .int => |iv| {
+                switch (ci.value.data) {
+                    .char_literal => |cl| self.checkCharLiteralFits(cl, ci.ty, ci.value.span),
+                    else => self.checkIntLiteralFits(iv, ci.ty, ci.value.span),
+                }
+                return .{ .int = iv };
+            },
+            .non_integral, .not_const => {},
+        }
+    }
+    if (isFloat(ci.ty)) {
+        if (program_index_mod.evalConstFloatInit(ci.value, ctx, ci.ty)) |value| return .{ .float = value };
+    }
+    return null;
+}
+
 pub fn emitModuleConst(self: *Lowering, name: []const u8, ci: ModuleConstInfo, environment: ?imports.EnvironmentId) Ref {
     const author_pin = self.pinConstValue(ci.value, environment);
     defer author_pin.unpin();
@@ -4062,37 +4049,11 @@ pub fn emitModuleConst(self: *Lowering, name: []const u8, ci: ModuleConstInfo, e
     const frame = lower.ConstFoldFrame{ .name = name, .environment = environment, .parent = self.module_const_frame };
     self.module_const_frame = &frame;
     defer self.module_const_frame = frame.parent;
-    // An integer-typed const whose initializer is a compile-time integer —
-    // an int literal/expression, OR an INTEGRAL float that `typedConstInitFits`
-    // accepted under the unified narrowing rule — materializes as its folded
-    // int through the SAME `program_index.foldCountI64` the count / array-dim
-    // path uses, so the const's emitted VALUE and its use as a COUNT come from
-    // one fold (`K : i64 : 4.0` → 4; `K : i64 : M + 2.0` → 4; and a float-const-
-    // leaf `KF : i64 : F + 1.5` → 4, which the int-only folder could not reach).
-    // A non-integral float never arrives (it was rejected at registration); any
-    // other non-foldable shape falls through to the per-kind emitters below.
-    if (self.isIntEx(ci.ty)) {
-        switch (program_index_mod.foldCountI64(ci.value, self)) {
-            .int => |iv| {
-                // Range-check the folded value against the declared width — a
-                // typed module const (`C : u8 : '🦀'` / `C : u8 : 129408`) must
-                // report an out-of-range initializer here, not silently
-                // truncate. A char-literal initializer gets the char-specific
-                // "use a wider type" message; everything else the int message.
-                switch (ci.value.data) {
-                    .char_literal => |cl| self.checkCharLiteralFits(cl, ci.ty, ci.value.span),
-                    else => self.checkIntLiteralFits(iv, ci.ty, ci.value.span),
-                }
-                return self.builder.constInt(iv, ci.ty);
-            },
-            .non_integral, .not_const => {},
-        }
-    }
-    if (isFloat(ci.ty)) {
-        if (program_index_mod.evalConstFloatInit(ci.value, lower.SourceConstCtx{ .lowering = self, .frame = &frame }, ci.ty)) |value| {
-            return self.builder.constFloat(value, ci.ty);
-        }
-    }
+    if (self.numericConstValue(ci, .{ .lowering = self, .frame = &frame })) |value| return switch (value) {
+        .int => |iv| self.builder.constInt(iv, ci.ty),
+        .float => |fv| self.builder.constFloat(fv, ci.ty),
+        else => unreachable,
+    };
     switch (ci.value.data) {
         .int_literal => |lit| {
             // If declared type is float, convert integer value to float constant

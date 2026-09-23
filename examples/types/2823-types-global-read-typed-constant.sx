@@ -1,0 +1,13 @@
+// A global reads a typed constant at the value its declaration folds to, as a
+// local's read does.
+
+@import "modules/std.sx";
+
+K :: 3;
+KU : u8 : K + 1;
+G : [1]u8 = .[KU];
+
+main :: () -> i32 {
+    print("{}\n", G[0]);
+    0
+}

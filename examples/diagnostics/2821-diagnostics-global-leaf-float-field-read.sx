@@ -1,0 +1,12 @@
+// A typed float field read at a global aggregate leaf is refused where it
+// does not widen, as a local's leaf is.
+
+S :: struct { f: f64; }
+
+C : S : .{ f = 2.0 };
+G : [1]i64 = .[C.f];
+H : [1]f32 = .[C.f];
+
+main :: () -> i32 {
+    0
+}
