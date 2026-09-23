@@ -1,0 +1,11 @@
+// A `[*:0]u8` global initialized from a literal holds the address of the
+// literal's terminated bytes.
+
+puts :: (s: [*:0]u8) -> i32 extern;
+
+G : [*:0]u8 = "lit";
+
+main :: () -> i32 {
+    _ = puts(G);
+    0
+}
