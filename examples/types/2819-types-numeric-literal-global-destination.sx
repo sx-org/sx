@@ -1,0 +1,13 @@
+// A numeric literal initializing a global converts to the global's numeric
+// type as a local's does.
+
+@import "modules/std.sx";
+
+X : f32 = 3;
+Y : f64 = 'a';
+Z : [1]i64 = .[-2.0];
+
+main :: () -> i32 {
+    print("{} {} {}\n", X, Y, Z[0]);
+    0
+}

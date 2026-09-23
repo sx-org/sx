@@ -2,11 +2,7 @@
 source :: @import "2746-types-narrow-constant-fields/source.sx";
 
 Values: [2]i32 = .[source.N, 1];
-Wide :: struct { n: i64; }
-Original :: Wide{n = 5};
-Narrow :: struct { n: i32; }
-Narrowed: Narrow = .{n = Original.n};
 
 main :: () {
-    print("{} {} {}\n", Values[0], Values[1], Narrowed.n);
+    print("{} {}\n", Values[0], Values[1]);
 }

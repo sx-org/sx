@@ -4030,6 +4030,7 @@ pub const Lowering = struct {
     pub const coerceChecked = lower_coerce.coerceChecked;
     pub const checkAssignable = lower_coerce.checkAssignable;
     pub const checkConstantLeaf = lower_coerce.checkConstantLeaf;
+    pub const checkConstantWidens = lower_coerce.checkConstantWidens;
     pub const refuseAddedTerminator = lower_coerce.refuseAddedTerminator;
     pub const emitLiteralLocalHelps = lower_coerce.emitLiteralLocalHelps;
     pub const checkFormationWritable = lower_coerce.checkFormationWritable;

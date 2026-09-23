@@ -1770,20 +1770,7 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
     return switch (v.data) {
         .undef_literal => .zeroinit,
         .null_literal => .null_val,
-        .int_literal => |il| blk: {
-            self.checkIntLiteralMagnitudeFits(il.value, var_ty, v.span);
-            break :blk .{ .int = il.value };
-        },
-        // Char literal — same as int, but a char-aware fit check so the
-        // diagnostic names it as a char literal and suggests wider storage.
-        .char_literal => |cl| blk: {
-            self.checkCharLiteralFits(cl, var_ty, v.span);
-            break :blk .{ .int = cl.value };
-        },
-        // A negated literal (`g : i64 = -1;`) folds through the shared
-        // const-expr serializer. The folded value follows the same rules as
-        // the direct literal arms: int fits-check; a float at an integer
-        // global narrows only when integral.
+        .int_literal, .char_literal, .float_literal => self.constExprValue(v, var_ty),
         .unary_op => blk: {
             const u = v.data.unary_op;
             // `xx <global>` at a protocol-typed global folds to the protocol
@@ -1802,31 +1789,9 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
                     else => {},
                 }
             }
-            if (self.constExprValue(v, var_ty)) |cv| {
-                switch (cv) {
-                    .int => |iv| self.checkIntLiteralFits(iv, var_ty, v.span),
-                    .float => |fv| if (self.isIntEx(var_ty)) {
-                        if (program_index_mod.floatToIntExact(fv)) |iv| break :blk inst_mod.ConstantValue{ .int = iv };
-                        self.diagNonIntegralNarrow(v.span, fv, var_ty);
-                        break :blk null;
-                    },
-                    else => {},
-                }
-                break :blk cv;
-            }
-            break :blk self.diagnoseNonConstGlobal(vd, v, errors_before);
+            break :blk self.constExprValue(v, var_ty) orelse self.diagnoseNonConstGlobal(vd, v, errors_before);
         },
         .bool_literal => |bl| .{ .boolean = bl.value },
-        // A float initializer at an integer-typed global follows the
-        // implicit narrowing rule (integral folds, non-integral errors).
-        .float_literal => |fl| blk: {
-            if (self.isIntEx(var_ty)) {
-                if (program_index_mod.floatToIntExact(fl.value)) |iv| break :blk inst_mod.ConstantValue{ .int = iv };
-                self.diagNonIntegralNarrow(v.span, fl.value, var_ty);
-                break :blk null;
-            }
-            break :blk inst_mod.ConstantValue{ .float = self.adoptFloatValue(fl.value, var_ty, v.span) };
-        },
         .array_literal => |al| self.constArrayLiteral(al.elements, var_ty) orelse self.diagnoseNonConstGlobal(vd, v, errors_before),
         .struct_literal => |sl| self.constStructLiteral(&sl, var_ty, vd.type_annotation != null) orelse self.diagnoseNonConstGlobal(vd, v, errors_before),
         .identifier => |id| blk: {
