@@ -4013,6 +4013,28 @@ pub fn callableReturnBinder(fd: *const ast.FnDecl, ret_ty: TypeId) ?*const Node 
 
 // ── Module-const emission ───────────────────────────────────────
 
+/// A numeric constant's value at its type: an integer type takes an integral
+/// float, and the folded integer must fit. Null when the type is not numeric
+/// or the initializer does not fold.
+pub fn numericConstValue(self: *Lowering, ci: ModuleConstInfo, ctx: lower.SourceConstCtx) ?inst_mod.ConstantValue {
+    if (self.isIntEx(ci.ty)) {
+        switch (program_index_mod.foldCountI64(ci.value, ctx)) {
+            .int => |iv| {
+                switch (ci.value.data) {
+                    .char_literal => |cl| self.checkCharLiteralFits(cl, ci.ty, ci.value.span),
+                    else => self.checkIntLiteralFits(iv, ci.ty, ci.value.span),
+                }
+                return .{ .int = iv };
+            },
+            .non_integral, .not_const => {},
+        }
+    }
+    if (isFloat(ci.ty)) {
+        if (program_index_mod.evalConstFloatInit(ci.value, ctx, ci.ty)) |value| return .{ .float = value };
+    }
+    return null;
+}
+
 pub fn emitModuleConst(self: *Lowering, name: []const u8, ci: ModuleConstInfo, environment: ?imports.EnvironmentId) Ref {
     const author_pin = self.pinConstValue(ci.value, environment);
     defer author_pin.unpin();
@@ -4027,37 +4049,11 @@ pub fn emitModuleConst(self: *Lowering, name: []const u8, ci: ModuleConstInfo, e
     const frame = lower.ConstFoldFrame{ .name = name, .environment = environment, .parent = self.module_const_frame };
     self.module_const_frame = &frame;
     defer self.module_const_frame = frame.parent;
-    // An integer-typed const whose initializer is a compile-time integer —
-    // an int literal/expression, OR an INTEGRAL float that `typedConstInitFits`
-    // accepted under the unified narrowing rule — materializes as its folded
-    // int through the SAME `program_index.foldCountI64` the count / array-dim
-    // path uses, so the const's emitted VALUE and its use as a COUNT come from
-    // one fold (`K : i64 : 4.0` → 4; `K : i64 : M + 2.0` → 4; and a float-const-
-    // leaf `KF : i64 : F + 1.5` → 4, which the int-only folder could not reach).
-    // A non-integral float never arrives (it was rejected at registration); any
-    // other non-foldable shape falls through to the per-kind emitters below.
-    if (self.isIntEx(ci.ty)) {
-        switch (program_index_mod.foldCountI64(ci.value, self)) {
-            .int => |iv| {
-                // Range-check the folded value against the declared width — a
-                // typed module const (`C : u8 : '🦀'` / `C : u8 : 129408`) must
-                // report an out-of-range initializer here, not silently
-                // truncate. A char-literal initializer gets the char-specific
-                // "use a wider type" message; everything else the int message.
-                switch (ci.value.data) {
-                    .char_literal => |cl| self.checkCharLiteralFits(cl, ci.ty, ci.value.span),
-                    else => self.checkIntLiteralFits(iv, ci.ty, ci.value.span),
-                }
-                return self.builder.constInt(iv, ci.ty);
-            },
-            .non_integral, .not_const => {},
-        }
-    }
-    if (isFloat(ci.ty)) {
-        if (program_index_mod.evalConstFloatInit(ci.value, lower.SourceConstCtx{ .lowering = self, .frame = &frame }, ci.ty)) |value| {
-            return self.builder.constFloat(value, ci.ty);
-        }
-    }
+    if (self.numericConstValue(ci, .{ .lowering = self, .frame = &frame })) |value| return switch (value) {
+        .int => |iv| self.builder.constInt(iv, ci.ty),
+        .float => |fv| self.builder.constFloat(fv, ci.ty),
+        else => unreachable,
+    };
     switch (ci.value.data) {
         .int_literal => |lit| {
             // If declared type is float, convert integer value to float constant

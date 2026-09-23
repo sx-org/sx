@@ -367,7 +367,8 @@ fn constSelectedValue(self: *Lowering, name: []const u8, sel: SelectedConst, exp
     const pin = self.pinConstValue(sel.info.value, sel.environment);
     defer pin.unpin();
     const value = if (sel.info.declared_type != null)
-        constExprValueInner(self, sel.info.value, sel.info.ty, &f) orelse return null
+        self.numericConstValue(sel.info, .{ .lowering = self, .frame = &f }) orelse
+            constExprValueInner(self, sel.info.value, sel.info.ty, &f) orelse return null
     else
         constNaturalValue(self, sel.info.value, sel.info.ty, &f) orelse return null;
     return self.coerceConstant(value, sel.info.ty, expected_ty);

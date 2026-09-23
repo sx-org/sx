@@ -3897,6 +3897,7 @@ pub const Lowering = struct {
     pub const declIdOf = lower_decl.declIdOf;
     pub const declFuncId = lower_decl.declFuncId;
     pub const bindDeclFuncId = lower_decl.bindDeclFuncId;
+    pub const numericConstValue = lower_decl.numericConstValue;
     pub const emitModuleConst = lower_decl.emitModuleConst;
     pub const emitPlaceholder = lower_decl.emitPlaceholder;
 
