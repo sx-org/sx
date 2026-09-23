@@ -343,7 +343,7 @@ JsonWriter :: struct {
 // keeps `src` alive for as long as the tree is used.
 //
 //     gpa   := GPA.init();
-//     arena := Arena.init(gpa, 4096);
+//     arena := mem.Arena.init(gpa, 4096);
 //     defer arena.deinit();
 //     root  := try parse(src, arena);   // composites + decoded strings in arena
 

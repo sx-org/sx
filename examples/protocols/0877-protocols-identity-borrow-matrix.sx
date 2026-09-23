@@ -53,7 +53,7 @@ main :: () {
         xs := mem.alloc(context.allocator, i64, 4);
         xs[0] = 42;
         got = xs[0];
-        mem.free(xs);
+        mem.free(xs);                  // context form — routes back to gpa
     }
     // The pushed borrow aliased gpa: alloc +1, free -1 → 0 outstanding.
     // (Printing happens OUTSIDE the push — print's own format allocations

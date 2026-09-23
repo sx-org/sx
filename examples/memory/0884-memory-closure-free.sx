@@ -1,4 +1,10 @@
-// An explicit allocator pairs closure release across a context change.
+// The closure free arm: `mem.free` (std/mem.sx, ONE kind-dispatched function)
+// releases a closure's heap `env` — the environment `mem.closure(f)` copied out
+// through the then-current `context.allocator`. A capture-free
+// closure carries a null env, so freeing it is a no-op (nothing was
+// allocated, nothing crashes). Both pairing forms work: `mem.free(cl)` uses
+// the context allocator current AT THE FREE, `mem.free(cl, a)` pairs the
+// allocator explicitly and is immune to context drift.
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
 
@@ -6,6 +12,8 @@ main :: () {
     gpa := mem.GPA.init();
     ta := mem.TrackingAllocator.init(gpa);
 
+    // Capturing closure, context form: `mem.closure` funds the env from the
+    // pushed tracker; mem.free(cl) releases it through the same context.
     r := 0;
     push .{ allocator = ta } {
         n := 40;
@@ -16,6 +24,9 @@ main :: () {
     print("call: {}\n", r);
     print("context form: allocs {} outstanding {}\n", ta.allocCount, ta.leakCount());
 
+    // Explicit form: env allocated under the tracker, freed AFTER the
+    // push scope ended — mem.free(cl2, ta) pairs the allocator explicitly,
+    // immune to whatever context.allocator is current at the free.
     cl2 := |x: i64| -> i64 { x };
     push .{ allocator = ta } {
         m := 7;
@@ -26,6 +37,8 @@ main :: () {
     print("call: {}\n", r2);
     print("explicit form: allocs {} outstanding {}\n", ta.allocCount, ta.leakCount());
 
+    // Capture-free closure: env is null — free is a no-op, no dealloc
+    // reaches the allocator, nothing crashes.
     before := ta.deallocCount;
     k := |x: i64| -> i64 { x * 2 };
     mem.free(k, ta);

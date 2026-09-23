@@ -1,3 +1,6 @@
+// Legal I-typed forms: `$T/I` plus a concrete literal; `mem.make` then
+// `*T` / append / return; `?I = null`; a named local then append;
+// `Allocator = ---` on a runtime-constructed struct.
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
 

@@ -902,7 +902,7 @@ main :: () {
         nM8 : i32 = 10;
         fnsM8 : [3]Closure(i32) -> i32 = ---;
         fnsM8[0] = doubleM8;                                // auto-promoted
-        fnsM8[1] = mem.closure(|x: i32|_{ nM8 } -> i32 x + nM8);
+        fnsM8[1] = mem.closure(|x: i32|_{ nM8 } -> i32 x + nM8);  // captured
         fnsM8[2] = |x: i32| -> i32 x * x;       // no capture
         tmpM8 := fnsM8[0]; print("closure-mixed: {}\n", tmpM8(5));
         tmpM8 = fnsM8[1]; print("closure-mixed: {}\n", tmpM8(5));

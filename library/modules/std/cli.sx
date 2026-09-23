@@ -120,6 +120,24 @@ inline match @host.os {
     else: {}
 }
 
+// EXIT-CODE & `--json` CONTRACT — the minimal surface `dist` (and
+// any sx CLI front-end) relies on. Two pieces:
+//
+//   1. NAMED EXIT CODES (sysexits.h subset). A front-end ends with the
+//      code that matches the outcome: `EX_OK` on success, `EX_USAGE`
+//      after a `parse` failure (a `CliError` — bad command / flag /
+//      value), `EX_UNAVAILABLE` when the platform is unsupported.
+//   2. TERMINATORS. `exitOk()` / `exitUsage()` end the process with the
+//      matching code. They route through the canonical
+//      `process.exit(code: u8)` (modules/std/process.sx). The unsupported-platform
+//      path below goes through `process.exit(EX_UNAVAILABLE)` too.
+//
+// The parser surfaces `--json` as
+// `parsed.json` (true iff `--json` appears in the argv — see `Parsed.json`).
+// The convention a front-end follows: in json mode stdout carries ONLY the
+// machine result, and human diagnostics go to stderr (e.g. via
+// `modules/std/log.sx`'s `log.err`). Detect json mode by reading `parsed.json`.
+
 EX_OK          :u8: 0;    // success
 EX_USAGE       :u8: 64;   // command-line usage error (sysexits.h EX_USAGE)
 EX_UNAVAILABLE :u8: 70;   // service / platform unavailable (sysexits.h)

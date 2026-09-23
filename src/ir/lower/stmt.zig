@@ -92,8 +92,13 @@ fn isNoElseValuelessIf(node: *const Node) bool {
 /// body and every value block goes through it, so no caller decides for itself
 /// what a tail means.
 pub fn lowerDemandedBody(self: *Lowering, node: *const Node, demand: TailDemand) BodyTail {
-    // A void body must not inherit its enclosing expression's value demand.
-    // Value-producing subexpressions establish their own demand.
+    // A demanded VALUE needs nested if-else expressions to produce values.
+    // Nothing else does, and clearing the flag stops an enclosing value context
+    // from leaking in (e.g. a void closure body lowered inside `f :=
+    // mem.closure((..) { if c {..} })` — the outer `:=` RHS left it set) and making
+    // a no-`else` guard-`if` look like a value use.
+    // Value-producing sub-lowerings (var-decl / assignment RHS, etc.) re-enable
+    // it locally.
     const saved_fbv = self.force_block_value;
     self.force_block_value = switch (demand) {
         .value, .return_value => true,
@@ -153,7 +158,7 @@ fn unreachedTail(self: *Lowering, blk: ast.Block, tail_len: usize) BodyTail {
 /// Whether an evaluated expression left this position live, closing the block
 /// where it stands if it did not. Divergence is normalized the INSTANT the
 /// value exists, so nothing downstream — a coercion, a defer, a store, a branch
-/// or a `ret` — can be emitted after a `proc.exit(0)` that stands in its place.
+/// or a `ret` — can be emitted after a `process.exit(0)` that stands in its place.
 pub fn expressionDiverged(self: *Lowering, v: Ref) bool {
     if (self.currentBlockHasTerminator()) return true;
     if (self.builder.getRefType(v) != .noreturn) return false;
@@ -715,7 +720,7 @@ pub fn lowerStmt(self: *Lowering, node: *const Node) void {
             // `return` are never intercepted — their value belongs to them.
             if (self.interceptBuildExpression(node)) return;
             // A statement-position expression that DIVERGES — a call to a
-            // `-> noreturn` fn such as `proc.exit` — ends the basic block. A
+            // `-> noreturn` fn such as `process.exit` — ends the basic block. A
             // bare `.call` op is NOT a terminator (see currentBlockHasTerminator),
             // so without closing the block here it stays "open": the statements
             // after it lower into a closed-in-spirit block, and a diverging
@@ -1438,7 +1443,7 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) v
     } else null;
     if (ret_demand) |d| d.restore();
     if (ret_val) |rv| {
-        // `return proc.exit(0);` never returns: the operand took control where
+        // `return process.exit(0);` never returns: the operand took control where
         // it stands, so no defer, coercion or exit follows it.
         if (expressionDiverged(self, rv)) {
             self.force_block_value = saved_fbv_ret;

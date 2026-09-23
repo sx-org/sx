@@ -6246,13 +6246,13 @@ locally-unwrapped optionals).
 
 | Function | Purpose |
 |----------|---------|
-| `run(cmd: [:0]u8) -> ?ProcessResult` | `popen` shell command, capture stdout + exit |
-| `env(name: [:0]u8) -> ?string` | `getenv` (null if unset) |
-| `findExecutable(name) -> ?string` | `command -v <name>` via shell |
+| `process.run(cmd: [:0]u8) -> ?process.ProcessResult` | `popen` shell command, capture stdout + exit |
+| `process.env(name: [:0]u8) -> ?string` | `getenv` (null if unset) |
+| `process.findExecutable(name) -> ?string` | `command -v <name>` via shell |
 
-`ProcessResult` is `{ exitCode: i32, stdout: string }`. The post-link
+`process.ProcessResult` is `{ exitCode: i32, stdout: string }`. The post-link
 bundler invokes `codesign`, `plutil`, `security`, `aapt2`, `javac`,
-`d8`, `keytool`, `apksigner`, etc. through `run`.
+`d8`, `keytool`, `apksigner`, etc. through `process.run`.
 
 ### Apple `.app` flow (`bundle.sx::bundleMain`)
 

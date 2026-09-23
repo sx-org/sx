@@ -1,4 +1,9 @@
-// Persisting an erased closure preserves its allocation and target.
+// `mem.closure(f, alloc)` gives a callable's environment a home that outlives the
+// forming frame, and erases the value to the `{fnPtr, env}` pair a `Closure`
+// slot takes. Every callable shape persists: a unique lambda, a bare function,
+// an `impl (sig) for T` nominal. A `Closure` is returned unchanged — same
+// `fnPtr`, same `env` — so `mem.closure` composes. A capture-free environment is
+// zero-sized, so it funds nothing and carries a null env.
 
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
@@ -42,7 +47,7 @@ main :: () {
     print("arena {}\n", onArena(6));                          // 42
     arena.deinit();
 
-    // A capturing lambda reaches a `Closure` field through `closure`.
+    // A capturing lambda reaches a `Closure` field through `mem.closure`.
     id := 3;
     tap := mem.closure(|x: i64|_{ id } print("tap {} {}\n", id, x));
     w := Widget{ onTap = tap };

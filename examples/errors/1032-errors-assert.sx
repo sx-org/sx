@@ -7,9 +7,9 @@
 @import "modules/std/process.sx";
 
 main :: () -> i32 {
-    process.assert(2 + 2 == 4, "arithmetic");
+    process.assert(2 + 2 == 4, "arithmetic");                 // passes → no-op
     print("first assert passed\n");
-    process.assert(2 + 2 == 5, "two plus two is not five");
+    process.assert(2 + 2 == 5, "two plus two is not five");   // fails → abort
     print("unreachable\n");
     return 0;
 }
