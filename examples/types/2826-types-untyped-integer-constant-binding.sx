@@ -12,6 +12,6 @@ main :: () -> i32 {
     print("{} {}\n", @typeName(@typeOf(pair(N, x))), @typeName(@typeOf(pair(x, N))));
     print("{} {}\n", @typeName(@typeOf(pair(1 + 1, x))), @typeName(@typeOf(pair(x, 1 + 1))));
     print("{} {}\n", @typeName(@typeOf(.[N, x])), @typeName(@typeOf(.[x, N])));
-    print("{} {}\n", pair(N, x), .[N, x]);
+    print("{} {} {} {}\n", pair(N, x), pair(1 + 1, x), pair(x, 1 + 1), .[N, x]);
     0
 }

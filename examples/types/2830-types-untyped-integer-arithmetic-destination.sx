@@ -1,0 +1,12 @@
+// Untyped integer arithmetic takes its destination's type, as an integer
+// literal does.
+
+@import "modules/std.sx";
+
+narrow :: (a: u8) -> u8 { a }
+
+main :: () -> i32 {
+    d : i32 = 2 * 3;
+    print("{} {} {}\n", d, @typeName(@typeOf(d)), narrow(1 + 1));
+    0
+}

@@ -1869,7 +1869,7 @@ pub fn literalType(self: *Lowering, target: ?TypeId, len: usize) TypeId {
 pub fn literalNodeType(self: *Lowering, node: *const Node, target: ?TypeId) ?TypeId {
     if (self.untypedString(node)) |lit| return self.literalType(target, self.stringLiteralBytes(lit).len);
     return switch (node.data) {
-        .int_literal, .char_literal => if (target) |t| (if (Lowering.isFloat(t) or self.isIntEx(t)) t else .i64) else .i64,
+        .int_literal, .char_literal => integerLiteralType(self, target),
         .float_literal => if (target) |t| (if (Lowering.isFloat(t)) t else .f64) else .f64,
         .bool_literal => .bool,
         .unary_op => |u| if (u.op == .negate and (u.operand.data == .int_literal or u.operand.data == .float_literal))
@@ -1878,6 +1878,11 @@ pub fn literalNodeType(self: *Lowering, node: *const Node, target: ?TypeId) ?Typ
             null,
         else => null,
     };
+}
+
+fn integerLiteralType(self: *Lowering, target: ?TypeId) TypeId {
+    const t = target orelse return .i64;
+    return if (Lowering.isFloat(t) or self.isIntEx(t)) t else .i64;
 }
 
 pub const LiteralShape = enum { string, view, array };
@@ -3756,6 +3761,15 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
     return result;
 }
 
+/// A negated literal wraps, so `-9223372036854775808` is `i64`'s minimum.
+fn untypedIntegerValue(self: *Lowering, node: *const Node) ?i64 {
+    return switch (node.data) {
+        .unary_op => |u| if (u.operand.data == .int_literal) -%u.operand.data.int_literal.value else program_index_mod.evalConstIntExpr(node, self),
+        .binary_op => program_index_mod.evalConstIntExpr(node, self),
+        else => null,
+    };
+}
+
 fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
     if (program_index_mod.untypedConst(node, self)) |untyped| switch (untyped) {
         .float => {
@@ -3764,7 +3778,12 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                 return self.builder.constFloat(value, ty);
         },
         .string => |lit| return self.lowerStringLiteral(lit),
-        .integer => {},
+        .integer => if (untypedIntegerValue(self, node)) |value| {
+            const ty = integerLiteralType(self, self.target_type);
+            if (Lowering.isFloat(ty)) return self.builder.constFloat(@floatFromInt(value), ty);
+            self.checkIntLiteralFits(value, ty, node.span);
+            return self.builder.constInt(value, ty);
+        },
     };
     return switch (node.data) {
         // Bare `$<pack>` in expression position → an `[]Type` slice
@@ -4241,20 +4260,6 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                         d.addFmt(.err, node.span, "cannot take the address of constant '{s}' — a scalar '::' constant has no storage (use a '=' variable or a local copy for mutable data)", .{id_name});
                     break :blk self.emitPlaceholder("addr_of_const");
                 }
-            }
-            // Fold a negated integer literal into one constant: `-128` must
-            // range-check as -128, not as an out-of-range +128 intermediate.
-            if (uop.op == .negate and uop.operand.data == .int_literal) {
-                const lit = uop.operand.data.int_literal;
-                const v = -%lit.value;
-                if (self.target_type) |tt| {
-                    if (tt == .f32 or tt == .f64) {
-                        break :blk self.builder.constFloat(@floatFromInt(v), tt);
-                    }
-                }
-                const nty = if (self.target_type) |tt| (if (self.isIntEx(tt)) tt else TypeId.i64) else TypeId.i64;
-                self.checkIntLiteralFits(v, nty, node.span);
-                break :blk self.builder.constInt(v, nty);
             }
             // A dest-typed float literal is that dest width; the negated form
             // is the same constant with the sign flipped.
