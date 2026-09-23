@@ -2367,7 +2367,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
     // Narrowing): a fresh value may be null, so the name is not proven
     // present. Drop it from the narrowed set before lowering the store.
     if (asgn.target.data == .identifier) {
-        self.killNarrowing(asgn.target.data.identifier.name);
+        self.noteReassignment(asgn.target.data.identifier.name);
     }
 
     // Writes through a constant are rejected at compile time:
@@ -3781,7 +3781,7 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
     // removed BEFORE any RHS lowers, so `o, a = o + 1, 2;` inside an
     // `if o != null` diagnoses the RHS use just like `o = o + 1;` does.
     for (ma.targets) |t| {
-        if (t.data == .identifier) self.killNarrowing(t.data.identifier.name);
+        if (t.data == .identifier) self.noteReassignment(t.data.identifier.name);
     }
 
     // Select every namespace-qualified destination before evaluating any RHS.

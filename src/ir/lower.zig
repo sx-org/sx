@@ -243,6 +243,7 @@ pub const SourceConstCtx = struct {
 pub const BindingId = enum(u64) { _ };
 
 pub const LiteralLocal = struct {
+    binding: BindingId,
     name: []const u8,
     init: *const ast.Node,
 };
@@ -776,6 +777,10 @@ pub const Lowering = struct {
     /// The `Ref`s loaded from a `:=` local bound to a literal, for the `::`
     /// fix-it where one reaches a terminated destination. Per function body.
     literal_local_refs: std.AutoHashMap(Ref, LiteralLocal) = undefined,
+    /// Terminator refusals whose `::` fix-it waits for the end of lowering,
+    /// when every reassignment of the local has been seen.
+    literal_local_helps: std.ArrayList(lower_coerce.LiteralLocalHelp) = .empty,
+    reassigned_bindings: std.AutoHashMapUnmanaged(BindingId, void) = .empty,
     force_block_value: bool = false, // set by lowerDemandedBody for a demand that wants a value, to extract if-else values
     // Set while lowering a NAMED multi-return function body (`-> (x: A, y: B)`):
     // the slot names (1:1 with the return tuple's fields; a trailing "!" marks
@@ -2857,10 +2862,11 @@ pub const Lowering = struct {
         return self.narrowed.contains(id);
     }
 
-    pub fn killNarrowing(self: *Lowering, name: []const u8) void {
+    pub fn noteReassignment(self: *Lowering, name: []const u8) void {
         const scope = self.scope orelse return;
         const id = scope.bindingId(name) orelse return;
         _ = self.narrowed.remove(id);
+        self.reassigned_bindings.put(self.alloc, id, {}) catch @panic("out of memory");
     }
 
     /// The payload type a container use site (index, slice, generic binding)
@@ -4024,6 +4030,7 @@ pub const Lowering = struct {
     pub const coerceChecked = lower_coerce.coerceChecked;
     pub const checkAssignable = lower_coerce.checkAssignable;
     pub const refuseAddedTerminator = lower_coerce.refuseAddedTerminator;
+    pub const emitLiteralLocalHelps = lower_coerce.emitLiteralLocalHelps;
     pub const checkFormationWritable = lower_coerce.checkFormationWritable;
     pub const checkReturnable = lower_coerce.checkReturnable;
     pub const conversionAvailable = lower_coerce.conversionAvailable;

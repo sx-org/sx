@@ -366,6 +366,7 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
     // CP coverage lock: every generic instance carries both a template and an
     // author stamp (body-author ≡ layout-author by construction).
     self.assertInstanceMapsCoincide();
+    self.emitLiteralLocalHelps();
 }
 
 /// The entry-point signature gate. `main` takes no parameters and returns

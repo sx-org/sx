@@ -1333,20 +1333,34 @@ pub fn bareFnNameSignature(self: *Lowering, node: *const Node) ?TypeId {
     return functionSignatureType(self, fid);
 }
 
+pub const LiteralLocalHelp = struct {
+    primary: usize,
+    source_file: ?[]const u8,
+    local: lower.LiteralLocal,
+};
+
 /// `src_ty` reaching the terminated `dst_ty`, which no conversion fills. `local`
 /// is the literal-bound local the value was read from.
 pub fn refuseAddedTerminator(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: ast.Span, local: ?lower.LiteralLocal) void {
     const d = self.diagnostics orelse return;
+    const fix = if (src_ty == .string and !self.coercionResolver().classify(.cstring, dst_ty).refuses())
+        " — materialize one with toCstring(s)"
+    else
+        "";
+    const id = d.addFmtId(.err, span, "a value of type '{s}' does not coerce to '{s}': no conversion adds a terminator{s}", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty), fix });
     self.assignability_error_count += 1;
-    if (local) |l| {
-        const id = d.addFmtId(.err, span, "a value of type '{s}' does not coerce to '{s}': no conversion adds a terminator", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty) });
-        d.addHelpFmt(id, l.init.span, null, "declare '{s}' with '::': a constant keeps the literal's terminator", .{l.name});
-    } else {
-        const fix = if (src_ty == .string and !self.coercionResolver().classify(.cstring, dst_ty).refuses())
-            " — materialize one with toCstring(s)"
-        else
-            "";
-        d.addFmt(.err, span, "a value of type '{s}' does not coerce to '{s}': no conversion adds a terminator{s}", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty), fix });
+    if (local) |l| self.literal_local_helps.append(self.alloc, .{ .primary = id, .source_file = d.current_source_file, .local = l }) catch @panic("out of memory");
+}
+
+/// The `::` fix-it holds only for a local no assignment writes.
+pub fn emitLiteralLocalHelps(self: *Lowering) void {
+    const d = self.diagnostics orelse return;
+    const saved = d.current_source_file;
+    defer d.current_source_file = saved;
+    for (self.literal_local_helps.items) |h| {
+        if (self.reassigned_bindings.contains(h.local.binding)) continue;
+        d.current_source_file = h.source_file;
+        d.addHelpFmt(h.primary, h.local.init.span, null, "declare '{s}' with '::': a constant keeps the literal's terminator", .{h.local.name});
     }
 }
 

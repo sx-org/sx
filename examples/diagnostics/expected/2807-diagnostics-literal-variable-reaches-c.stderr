@@ -1,10 +1,16 @@
-error: a value of type 'string' does not coerce to '[*:0]u8': no conversion adds a terminator
-  --> examples/diagnostics/2807-diagnostics-literal-variable-reaches-c.sx:9:9
+error: a value of type 'string' does not coerce to '[*:0]u8': no conversion adds a terminator — materialize one with toCstring(s)
+  --> examples/diagnostics/2807-diagnostics-literal-variable-reaches-c.sx:10:9
    |
- 9 |     _ = puts(s);
+10 |     _ = puts(s);
    |         ^^^^^^^
 
 help: declare 's' with '::': a constant keeps the literal's terminator
    |
- 8 |     s := "x";
+ 9 |     s := "x";
    |          ^^^
+
+error: a value of type 'string' does not coerce to '[*:0]u8': no conversion adds a terminator — materialize one with toCstring(s)
+  --> examples/diagnostics/2807-diagnostics-literal-variable-reaches-c.sx:12:9
+   |
+12 |     _ = puts(t);
+   |         ^^^^^^^

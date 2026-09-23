@@ -3915,7 +3915,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                     if (binding.is_alloca) {
                         const loaded = self.builder.load(binding.ref, binding.ty);
                         if (is_narrowed) self.narrowed_refs.put(loaded, {}) catch {};
-                        if (binding.literal_init) |init| self.literal_local_refs.put(loaded, .{ .name = id.name, .init = init }) catch {};
+                        if (binding.literal_init) |init| self.literal_local_refs.put(loaded, .{ .binding = binding.id.?, .name = id.name, .init = init }) catch {};
                         break :blk loaded;
                     }
                     if (is_narrowed) self.narrowed_refs.put(binding.ref, {}) catch {};
