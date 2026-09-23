@@ -644,15 +644,25 @@ pub fn evalConstIntExpr(node: *const Node, ctx: anytype) ?i64 {
             const l = evalConstIntExpr(b.lhs, ctx) orelse return null;
             const r = evalConstIntExpr(b.rhs, ctx) orelse return null;
             return switch (b.op) {
-                .add => std.math.add(i64, l, r) catch null,
-                .sub => std.math.sub(i64, l, r) catch null,
-                .mul => std.math.mul(i64, l, r) catch null,
-                .div => std.math.divTrunc(i64, l, r) catch null,
-                .mod => if (r == 0) null else @rem(l, r),
+                .add, .sub, .mul, .div, .mod => foldIntArithmetic(b.op, l, r) catch null,
                 else => null,
             };
         },
         else => null,
+    };
+}
+
+pub const IntArithmeticFault = error{ Overflow, DivisionByZero };
+
+/// `l op r` over `i64` for `op` in `+ - * / %`.
+pub fn foldIntArithmetic(op: ast.BinaryOp.Op, l: i64, r: i64) IntArithmeticFault!i64 {
+    return switch (op) {
+        .add => std.math.add(i64, l, r),
+        .sub => std.math.sub(i64, l, r),
+        .mul => std.math.mul(i64, l, r),
+        .div => std.math.divTrunc(i64, l, r),
+        .mod => if (r == 0) error.DivisionByZero else @rem(l, r),
+        else => unreachable,
     };
 }
 

@@ -1,0 +1,8 @@
+// Untyped integer constant arithmetic that overflows `i64` or divides by
+// zero is refused where it folds.
+
+main :: () -> i32 {
+    d := 9223372036854775807 + 1;
+    e := 7 / 0;
+    0
+}

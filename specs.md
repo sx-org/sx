@@ -2936,6 +2936,8 @@ isReady : ValueListenable(bool) = map(
   and take their destination's numeric type, as a literal does:
   `d : i32 = 2 * 3` is `6` as `i32`, and `d : i8 = 100 + 100` is refused
   because `200` does not fit `i8`. Without a destination the type is `i64`.
+  They fold in `i64`; overflow and division by zero are located compile
+  errors.
 - String literals, and `::` constants bound to them, take the shape their
   destination names and default to `string` (see [Literals](#literals))
 - Untyped float expressions comprise numeric literals, unannotated numeric

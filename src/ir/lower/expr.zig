@@ -3762,12 +3762,21 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
 }
 
 /// A negated literal wraps, so `-9223372036854775808` is `i64`'s minimum.
-fn untypedIntegerValue(self: *Lowering, node: *const Node) ?i64 {
-    return switch (node.data) {
-        .unary_op => |u| if (u.operand.data == .int_literal) -%u.operand.data.int_literal.value else program_index_mod.evalConstIntExpr(node, self),
-        .binary_op => program_index_mod.evalConstIntExpr(node, self),
-        else => null,
-    };
+/// Null when an operand does not fold; lowering that operand diagnoses it.
+fn untypedIntegerValue(self: *Lowering, node: *const Node) program_index_mod.IntArithmeticFault!?i64 {
+    switch (node.data) {
+        .unary_op => |u| {
+            if (u.operand.data == .int_literal) return -%u.operand.data.int_literal.value;
+            const v = program_index_mod.evalConstIntExpr(u.operand, self) orelse return null;
+            return try std.math.negate(v);
+        },
+        .binary_op => |b| {
+            const l = program_index_mod.evalConstIntExpr(b.lhs, self) orelse return null;
+            const r = program_index_mod.evalConstIntExpr(b.rhs, self) orelse return null;
+            return try program_index_mod.foldIntArithmetic(b.op, l, r);
+        },
+        else => return null,
+    }
 }
 
 fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
@@ -3778,11 +3787,20 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                 return self.builder.constFloat(value, ty);
         },
         .string => |lit| return self.lowerStringLiteral(lit),
-        .integer => if (untypedIntegerValue(self, node)) |value| {
-            const ty = integerLiteralType(self, self.target_type);
-            if (Lowering.isFloat(ty)) return self.builder.constFloat(@floatFromInt(value), ty);
-            self.checkIntLiteralFits(value, ty, node.span);
-            return self.builder.constInt(value, ty);
+        .integer => {
+            const folded = untypedIntegerValue(self, node) catch |fault| {
+                if (self.diagnostics) |d| d.add(.err, switch (fault) {
+                    error.Overflow => "integer constant overflows 'i64'",
+                    error.DivisionByZero => "integer constant divides by zero",
+                }, node.span);
+                return self.emitPlaceholder("integer-constant-fault");
+            };
+            if (folded) |value| {
+                const ty = integerLiteralType(self, self.target_type);
+                if (Lowering.isFloat(ty)) return self.builder.constFloat(@floatFromInt(value), ty);
+                self.checkIntLiteralFits(value, ty, node.span);
+                return self.builder.constInt(value, ty);
+            }
         },
     };
     return switch (node.data) {
