@@ -261,7 +261,7 @@ TlsServer :: struct {
         if !self.ok { return false; }
         if name.len == 0 { return false; }
         e := mem.create(self.a, SniEntry);
-        // create() memory is uninitialised — set every field before use.
+        // mem.create() memory is uninitialised — set every field before use.
         mbedtls.mbedtls_x509_crt_init(*e.cert);
         mbedtls.mbedtls_pk_init(*e.pkey);
         e.name = null;

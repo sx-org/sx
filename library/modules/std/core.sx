@@ -527,7 +527,7 @@ IoErr :: error { Failed; Canceled }
 // asm, `abi(.naked)`, atomics) + fiber-safe codegen. The protocol is the
 // minimum the fiber scheduler needs; everything ergonomic
 // (`async` / `await` / `cancel` / `timeout`) is a generic free-fn on top
-// (std/io.sx), the same way `alloc(T,n)` sits over `allocBytes`.
+// (std/io.sx), the same way `mem.alloc(a, T, n)` sits over `allocBytes`.
 //
 //   spawnRaw   — submit a task; opaque handle (fiber bootstrap).
 //   suspendRaw — suspend current fiber; raises `IoErr.Canceled` on a cancel.

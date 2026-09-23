@@ -190,7 +190,7 @@ impl http.TlsAcceptor for FakeAcceptor {
         if self.nAccepts == 2 { mode = MODE_W; }
         if self.nAccepts == 3 { mode = MODE_B; }
         if self.nAccepts == 4 { mode = MODE_H; }
-        // create() memory is UNINITIALISED — literal-assign the whole struct
+        // mem.create() memory is UNINITIALISED — literal-assign the whole struct
         // so every flag/counter starts at its default, not heap garbage.
         s := mem.create(self.a, FakeConn);
         s.* = .{ fd = fd, mode = mode, acc = self, a = self.a };

@@ -1370,7 +1370,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             }
         }
         // Concrete lvalue → interface param: erase NODE-AWARE so the lvalue
-        // BORROWS (`free(t, gpa)` aliases gpa) — the node-less coerceCallArgs
+        // BORROWS (`mem.free(t, gpa)` aliases gpa) — the node-less coerceCallArgs
         // layer would misread the lvalue as an rvalue and refuse.
         if (pt) |ptv| {
             if (protocolArgErasure(self, arg, ptv)) |r| {
@@ -2638,7 +2638,7 @@ pub fn prependCtxIfNeeded(self: *Lowering, callee: *const Function, args: []Ref)
 
 /// Concrete arg at an INTERFACE param target: erase NODE-AWARE so
 /// `buildProtocolErasure` classifies from the AST and BORROWS lvalues
-/// (`free(t, gpa)` aliases `gpa`). A literal-with-init-block materializes
+/// (`mem.free(t, gpa)` aliases `gpa`). A literal-with-init-block materializes
 /// through a temp slot, which the node-LESS refStorageAddress heuristic
 /// would misread as an lvalue. Returns null when the shape doesn't apply
 /// (caller falls through to its normal path).
