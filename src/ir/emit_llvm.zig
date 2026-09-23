@@ -3016,11 +3016,14 @@ pub const LLVMEmitter = struct {
         return tmp;
     }
 
-    /// A string constant at the shape its slot names: the `[N:0]u8` bytes, or
-    /// the `{ptr, len}` view.
+    /// A string constant at the shape its slot names: the `[N:0]u8` bytes, the
+    /// `[*:0]u8` address of those bytes, or the `{ptr, len}` view.
     fn constStringAt(self: *LLVMEmitter, llvm_ty: c.LLVMTypeRef, str: []const u8) c.LLVMValueRef {
-        if (c.LLVMGetTypeKind(llvm_ty) == c.LLVMArrayTypeKind) return self.emitTerminatedBytes(str);
-        return self.emitConstStringGlobal(str);
+        return switch (c.LLVMGetTypeKind(llvm_ty)) {
+            c.LLVMArrayTypeKind => self.emitTerminatedBytes(str),
+            c.LLVMPointerTypeKind => self.emitConstBytesGlobal(str),
+            else => self.emitConstStringGlobal(str),
+        };
     }
 
     /// Build a constant string { ptr, i64 } value without using the builder
