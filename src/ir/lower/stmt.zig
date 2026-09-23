@@ -817,6 +817,7 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
                     // payload and corrupt `.len`/`.ptr`.
                     const child = ty_info.optional.child;
                     const rt = self.builder.getRefType(ref);
+                    const payload_errors_before: usize = if (self.diagnostics) |d| d.errorCount() else 0;
                     if (rt != child and rt != .void and child != .void) {
                         // A protocol child erases NODE-AWARE (borrow-mode for
                         // an lvalue initializer, exactly like the plain
@@ -841,14 +842,17 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
                     // flowing into `?(?i64)`, whose payload is the 1-tuple
                     // `(?i64)`), wrapping anyway inserts a `{i64,i1}` into a
                     // `{{i64,i1}}` slot and builds malformed IR that aborts the
-                    // LLVM verifier. Diagnose loudly instead.
+                    // LLVM verifier. Diagnose loudly instead, unless the
+                    // payload coercion already reported its refusal.
                     const post_rt = self.builder.getRefType(ref);
                     if (post_rt != child and post_rt != .void and child != .void) {
                         if (self.diagnostics) |d| {
-                            const cs = self.builder.current_span;
-                            // Only mention the `(T)`-is-a-1-tuple gotcha when the
-                            // payload actually IS a tuple (the `?(?T)` typo).
-                            d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "cannot assign a value of type '{s}' to optional '{s}': its payload type is '{s}'", .{ self.formatTypeName(post_rt), self.formatTypeName(ty), self.formatTypeName(child) });
+                            if (d.errorCount() == payload_errors_before) {
+                                const cs = self.builder.current_span;
+                                // Only mention the `(T)`-is-a-1-tuple gotcha when the
+                                // payload actually IS a tuple (the `?(?T)` typo).
+                                d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "cannot assign a value of type '{s}' to optional '{s}': its payload type is '{s}'", .{ self.formatTypeName(post_rt), self.formatTypeName(ty), self.formatTypeName(child) });
+                            }
                         }
                         // Already diagnosed — store the value as-is and bail. The
                         // trailing coerce below would re-diagnose the same mismatch

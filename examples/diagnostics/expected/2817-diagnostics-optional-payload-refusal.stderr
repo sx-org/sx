@@ -1,0 +1,11 @@
+error: cannot coerce a value of type '[3:0]u8' to '[4]u8': no implicit conversion applies
+  --> examples/diagnostics/2817-diagnostics-optional-payload-refusal.sx:7:5
+   |
+ 7 |     x : ?[4]u8 = "xyz";
+   |     ^^^^^^^^^^^^^^^^^^^
+
+error: cannot coerce a value of type '[3:0]u8' to '[4]u8': no implicit conversion applies
+  --> examples/diagnostics/2817-diagnostics-optional-payload-refusal.sx:8:15
+   |
+ 8 |     f : Foo = .{ n = "xyz" };
+   |               ^^^^^^^^^^^^^^

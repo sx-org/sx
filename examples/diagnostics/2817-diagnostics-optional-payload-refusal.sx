@@ -1,0 +1,10 @@
+// A value the payload of its optional destination refuses is one error: the
+// payload's.
+
+Foo :: struct { n: ?[4]u8; }
+
+main :: () -> i32 {
+    x : ?[4]u8 = "xyz";
+    f : Foo = .{ n = "xyz" };
+    0
+}

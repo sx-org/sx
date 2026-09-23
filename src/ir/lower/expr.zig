@@ -1865,6 +1865,21 @@ pub fn literalType(self: *Lowering, target: ?TypeId, len: usize) TypeId {
     };
 }
 
+/// The type the literal `node` takes at `target`; null when `node` is not a literal.
+pub fn literalNodeType(self: *Lowering, node: *const Node, target: ?TypeId) ?TypeId {
+    if (self.untypedString(node)) |lit| return self.literalType(target, self.stringLiteralBytes(lit).len);
+    return switch (node.data) {
+        .int_literal, .char_literal => if (target) |t| (if (Lowering.isFloat(t) or self.isIntEx(t)) t else .i64) else .i64,
+        .float_literal => if (target) |t| (if (Lowering.isFloat(t)) t else .f64) else .f64,
+        .bool_literal => .bool,
+        .unary_op => |u| if (u.op == .negate and (u.operand.data == .int_literal or u.operand.data == .float_literal))
+            self.literalNodeType(u.operand, target)
+        else
+            null,
+        else => null,
+    };
+}
+
 pub const LiteralShape = enum { string, view, array };
 
 /// The shape a string literal takes at `target`: the `[:0]u8` view where the
@@ -3847,32 +3862,19 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
             break :blk self.builder.constType(.void);
         },
         .int_literal => |lit| {
-            // If target is a float type, emit as float literal
-            if (self.target_type) |tt| {
-                if (tt == .f32 or tt == .f64) {
-                    return self.builder.constFloat(@floatFromInt(lit.value), tt);
-                }
-            }
-            const ty = if (self.target_type) |tt| blk: {
-                break :blk if (self.isIntEx(tt)) tt else .i64;
-            } else .i64;
+            const ty = self.literalNodeType(node, self.target_type).?;
+            if (Lowering.isFloat(ty)) return self.builder.constFloat(@floatFromInt(lit.value), ty);
             self.checkIntLiteralMagnitudeFits(lit.value, ty, node.span);
             return self.builder.constInt(lit.value, ty);
         },
         .char_literal => |lit| {
-            if (self.target_type) |tt| {
-                if (tt == .f32 or tt == .f64) {
-                    return self.builder.constFloat(@floatFromInt(lit.value), tt);
-                }
-            }
-            const ty = if (self.target_type) |tt| blk: {
-                break :blk if (self.isIntEx(tt)) tt else .i64;
-            } else .i64;
+            const ty = self.literalNodeType(node, self.target_type).?;
+            if (Lowering.isFloat(ty)) return self.builder.constFloat(@floatFromInt(lit.value), ty);
             self.checkCharLiteralFits(lit, ty, node.span);
             return self.builder.constInt(lit.value, ty);
         },
         .float_literal => |lit| {
-            const fty: TypeId = if (self.target_type) |tt| (if (tt == .f32 or tt == .f64) tt else .f64) else .f64;
+            const fty = self.literalNodeType(node, self.target_type).?;
             return self.builder.constFloat(self.adoptFloatValue(lit.value, fty, node.span), fty);
         },
         .bool_literal => |lit| self.builder.constBool(lit.value),

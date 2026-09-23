@@ -105,9 +105,3 @@ error: cannot coerce a value of type 'View' to 'Label': no implicit conversion a
    |
 72 |     needOptLabel(v);
    |     ^^^^^^^^^^^^^^^
-
-error: cannot wrap a value of type 'View' into optional '?Label': its payload type is 'Label'
-  --> examples/fluent/2110-fluent-init-from-set-nonmember-refused.sx:72:5
-   |
-72 |     needOptLabel(v);
-   |     ^^^^^^^^^^^^^^^

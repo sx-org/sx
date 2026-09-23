@@ -208,6 +208,9 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
     // the image can hold. Serializing anything else here would lay the operand's
     // own bytes into the handle's three words.
     if (self.isErasedProtocolType(expected_ty)) return staticInterfaceLeaf(self, expr, expected_ty);
+    if (self.literalNodeType(expr, expected_ty)) |src| {
+        if (!self.checkConstantLeaf(src, expected_ty, expr.span)) return null;
+    }
     if (isFloat(expected_ty) and self.isAdaptableFloat(expr)) {
         if (program_index_mod.evalConstFloatInit(expr, self, expected_ty)) |value|
             return .{ .float = value };

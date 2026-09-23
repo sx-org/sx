@@ -1,0 +1,17 @@
+// A literal leaf of a global or constant aggregate that its type cannot hold
+// is refused as a local's leaf is, once.
+
+Foo :: struct { x: i64; n: ?[4]u8; }
+
+A : [2][4:0]u8 = .["abc", "def"];
+B : Foo = .{ x = "ab" };
+C : Foo = .{ n = "xyz" };
+D : [2]*i64 = .[1, 2];
+K : [2]i64 : .[1, "a"];
+L : Foo : .{ x = "ab" };
+
+main :: () -> i32 {
+    k := K;
+    l := L;
+    0
+}
