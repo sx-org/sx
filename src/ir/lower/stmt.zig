@@ -92,13 +92,8 @@ fn isNoElseValuelessIf(node: *const Node) bool {
 /// body and every value block goes through it, so no caller decides for itself
 /// what a tail means.
 pub fn lowerDemandedBody(self: *Lowering, node: *const Node, demand: TailDemand) BodyTail {
-    // A demanded VALUE needs nested if-else expressions to produce values.
-    // Nothing else does, and clearing the flag stops an enclosing value context
-    // from leaking in (e.g. a void closure body lowered inside `f :=
-    // closure((..) { if c {..} })` — the outer `:=` RHS left it set) and making
-    // a no-`else` guard-`if` look like a value use.
-    // Value-producing sub-lowerings (var-decl / assignment RHS, etc.) re-enable
-    // it locally.
+    // A void body must not inherit its enclosing expression's value demand.
+    // Value-producing subexpressions establish their own demand.
     const saved_fbv = self.force_block_value;
     self.force_block_value = switch (demand) {
         .value, .return_value => true,
@@ -1372,7 +1367,7 @@ fn reportSecondCallableReturn(self: *Lowering, binder: *const Node, fixed: TypeI
     const id = d.addFmtId(.err, binder.span, "'${s}' is the callable this body hands back, and this body hands back two: '{s}' and '{s}'", .{
         name, self.module.types.formatTypeName(self.alloc, fixed, null), self.module.types.formatTypeName(self.alloc, got, null),
     });
-    d.addHelpFmt(id, binder.span, null, "one literal on two paths is one type; two literals are two types — erase both with 'closure(...)' to hand back one", .{});
+    d.addHelpFmt(id, binder.span, null, "one literal on two paths is one type; two literals are two types — erase both with 'mem.closure(...)' to hand back one", .{});
 }
 
 pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) void {

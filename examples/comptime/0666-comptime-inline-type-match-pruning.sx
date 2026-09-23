@@ -39,7 +39,7 @@ main :: () {
     s := w.(Sizable);
     xs : []i64 = .[1, 2, 3];
     o : ?i64 = 5;
-    ga := GPA.init();
+    ga := mem.GPA.init();
     a : Allocator = ga;    // an interface handle classifies as `interface`
     print("{} {} {} {}\n", describe(s), describe(xs), describe(5), describe(w));
     print("{} {} {} {}\n", describe(Pt{ x = 1 }), describe(o), describe(a), describe(1.5));

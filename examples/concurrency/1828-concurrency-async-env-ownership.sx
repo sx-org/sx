@@ -25,11 +25,11 @@ main :: () -> i64 {
     out : Out = ---;
     po := *out;
 
-    gpa := GPA.init();
+    gpa := mem.GPA.init();
     base := gpa.(Allocator);
-    ctx := TrackingAllocator.init(base);
-    a := TrackingAllocator.init(base);
-    arena := Arena.init(base, 4096);
+    ctx := mem.TrackingAllocator.init(base);
+    a := mem.TrackingAllocator.init(base);
+    arena := mem.Arena.init(base, 4096);
     pgpa := *gpa; pctx := *ctx; pa := *a;
     ctxH : Allocator = ctx;
     aH : Allocator = a;

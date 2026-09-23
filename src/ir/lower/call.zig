@@ -5360,7 +5360,7 @@ pub fn mapNamedArgs(
                     if (self.diagnostics) |d| {
                         const id = d.addFmtId(.err, a.span, "'{s}' cannot take a trailing block — its last parameter '{s}' is '{s}', which is neither `$F/(…) -> R` nor `@BuildBlock(P)`", .{ callee_name, p.name, self.formatTypeName(pty) });
                         if (isClosureSlot(self, pty))
-                            d.addHelpFmt(id, a.span, null, "erasing a block is an allocation, so it is written where it is paid: `{s}(closure(|…| …))`", .{callee_name})
+                            d.addHelpFmt(id, a.span, null, "erasing a block is an allocation, so it is written where it is paid: `{s}(mem.closure(|…| …))`", .{callee_name})
                         else
                             d.addHelpFmt(id, a.span, null, "declare '{s}' as `$F/(…) -> R` to receive the block as a closure, or as `@BuildBlock(P)` to receive it as a build block", .{p.name});
                     }

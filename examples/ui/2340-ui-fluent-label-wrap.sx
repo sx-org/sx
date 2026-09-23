@@ -23,7 +23,7 @@ show :: (tag: string, root: *fluent.UiRoot) {
 
 main :: () -> i32 {
     root := fluent.UiRoot.init(fluent.Size{ width = 64.0, height = 80.0 }, context.allocator);
-    loop := fluent.FrameLoop.init(*root, closure(|| -> fluent.View {
+    loop := fluent.FrameLoop.init(*root, mem.closure(|| -> fluent.View {
         v : fluent.View = fluent.vstack(4.0) {
             fluent.Label{ text = "wrap me please" };
             fluent.hstack(0.0) {

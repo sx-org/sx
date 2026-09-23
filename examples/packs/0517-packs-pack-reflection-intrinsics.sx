@@ -46,7 +46,7 @@ main :: () -> i32 {
     }
 
     // `is` — plain head (Allocator is unary).
-    print("Allocator/CAllocator: {}\n", CAllocator is Allocator);
+    print("Allocator/CAllocator: {}\n", mem.CAllocator is Allocator);
     print("Allocator/i64: {}\n", i64 is Allocator);
 
     // `is` — parameterised head (Wrap takes a Target type arg).

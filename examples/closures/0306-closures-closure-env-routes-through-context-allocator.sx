@@ -1,6 +1,4 @@
-// `closure(f)` funds the env copy through `context.allocator`. So when a
-// `push .{ allocator = tracer }` block is active, persisting a capturing
-// literal inside it allocates through the tracker.
+// Capturing closure environments use the active context allocator.
 
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
@@ -31,7 +29,7 @@ main :: () -> i32 {
         // The literal IS its env; `closure` copies that env into storage the
         // installed tracer's `alloc` hands out.
         captured : i64 = 100;
-        addCapture : Closure(i64) -> i64 = closure(|y: i64|_{ captured } -> i64 y + captured);
+        addCapture : Closure(i64) -> i64 = mem.closure(|y: i64|_{ captured } -> i64 y + captured);
         _ = addCapture(1);
     }
     print("Tracer.count = {}\n", tracer.count);

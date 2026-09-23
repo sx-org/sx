@@ -9,25 +9,25 @@
 // POSIX host this targets.
 
 main :: () {
-    if r := run("echo hello world") {
+    if r := process.run("echo hello world") {
         print("exit={}, stdout={}", r.exitCode, r.stdout);
     } else {
         print("FAIL run echo\n");
         return;
     }
 
-    if r := run("false") {
+    if r := process.run("false") {
         if r.exitCode == 0 { print("FAIL: false should not exit 0\n"); return; }
         print("false exit={}\n", r.exitCode);
     }
 
-    if n := env("SX_DEFINITELY_UNSET_VAR") {
+    if n := process.env("SX_DEFINITELY_UNSET_VAR") {
         print("FAIL: unset var returned: {}\n", n);
         return;
     }
     print("unset var: null (ok)\n");
 
-    if w := findExecutable("ls") {
+    if w := process.findExecutable("ls") {
         // /bin/ls on macOS, /usr/bin/ls on Linux. Either is fine —
         // we only assert the result is non-empty and absolute.
         if w.len < 2 { print("FAIL: ls path too short\n"); return; }
@@ -37,7 +37,7 @@ main :: () {
         print("FAIL find ls\n"); return;
     }
 
-    if w := findExecutable("sx_definitely_no_such_command_12345") {
+    if w := process.findExecutable("sx_definitely_no_such_command_12345") {
         print("FAIL: bogus exec returned: {}\n", w);
         return;
     }

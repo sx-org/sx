@@ -8,8 +8,8 @@
 @import "modules/std/mem.sx";
 
 main :: () -> i32 {
-    gpa := GPA.init();
-    tracker := TrackingAllocator.init(gpa);
+    gpa := mem.GPA.init();
+    tracker := mem.TrackingAllocator.init(gpa);
 
     push .{ allocator = tracker } {
         p := context.allocator.allocBytes(128);

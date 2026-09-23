@@ -12,29 +12,29 @@ Empty :: struct {}
 Cell :: struct { v: i64; }
 
 main :: () {
-    gpa := GPA.init();
+    gpa := mem.GPA.init();
     a := gpa.(Allocator);
 
     raw := a.allocBytes(0);
     a.deallocBytes(null);
-    one := create(a, Empty);
-    two := make(a, Empty{});
-    many := alloc(a, Empty, 4);
+    one := mem.create(a, Empty);
+    two := mem.make(a, Empty{});
+    many := mem.alloc(a, Empty, 4);
     print("bytes {} create {} make {} alloc {}\n", raw == null, one == null, two == null, many.ptr == null);
     print("outstanding {}\n", gpa.allocCount);
 
     // A refused allocation is the same shape: no write into a null destination.
     buf : [8]u8 = ---;
-    small := BufAlloc.init(*buf[0], 8);
-    first := make(small, Cell{ v = 1 });
+    small := mem.BufAlloc.init(*buf[0], 8);
+    first := mem.make(small, Cell{ v = 1 });
     print("granted {}\n", first != null and first.v == 1);
-    print("refused {}\n", make(small, Cell{ v = 2 }) == null);
+    print("refused {}\n", mem.make(small, Cell{ v = 2 }) == null);
 
-    arena := Arena.init(a, 256);
+    arena := mem.Arena.init(a, 256);
     print("arena {}\n", arena.allocBytes(0) == null);
     arena.deinit();
 
-    tracker := TrackingAllocator.init(a);
+    tracker := mem.TrackingAllocator.init(a);
     tracker.deallocBytes(null);
     print("tracked {} {}\n", tracker.allocCount, tracker.deallocCount);
 }

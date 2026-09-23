@@ -88,7 +88,7 @@ impl http.TlsConn for TlsSession {
         _ := mbedtls.mbedtls_ssl_close_notify(*self.ssl);
         mbedtls.mbedtls_ssl_free(*self.ssl);
         a := self.a;
-        a.destroy(self);
+        mem.destroy(a, self);
     }
 }
 
@@ -228,7 +228,7 @@ TlsServer :: struct {
         if !self.ok { return false; }
         if protos.len == 0 { return false; }
         n := protos.len;
-        vec : [*][*]u8 = self.a.alloc([*]u8, n + 1).ptr;
+        vec : [*][*]u8 = mem.alloc(self.a, [*]u8, n + 1).ptr;
         i : i64 = 0;
         while i < n {
             s := protos[i];
@@ -260,7 +260,7 @@ TlsServer :: struct {
     addSniCert :: (self: *TlsServer, name: string, certPem: []u8, keyPem: []u8) -> bool {
         if !self.ok { return false; }
         if name.len == 0 { return false; }
-        e := self.a.create(SniEntry);
+        e := mem.create(self.a, SniEntry);
         // create() memory is uninitialised — set every field before use.
         mbedtls.mbedtls_x509_crt_init(*e.cert);
         mbedtls.mbedtls_pk_init(*e.pkey);
@@ -280,12 +280,12 @@ TlsServer :: struct {
         if !ok {
             mbedtls.mbedtls_x509_crt_free(*e.cert);
             mbedtls.mbedtls_pk_free(*e.pkey);
-            self.a.destroy(e);
+            mem.destroy(self.a, e);
             return false;
         }
 
         // Store the name lowercased — the lookup lowercases the wire bytes.
-        nm : [*]u8 = self.a.alloc(u8, name.len).ptr;
+        nm : [*]u8 = mem.alloc(self.a, u8, name.len).ptr;
         i : i64 = 0;
         while i < name.len {
             ch := name[i];
@@ -384,7 +384,7 @@ TlsServer :: struct {
             mbedtls.mbedtls_x509_crt_free(*e.cert);
             mbedtls.mbedtls_pk_free(*e.pkey);
             self.a.deallocBytes(e.name);
-            self.a.destroy(e);
+            mem.destroy(self.a, e);
             i += 1;
         }
         self.sni.deinit(self.a);
@@ -444,7 +444,7 @@ private tlsSniSelect :: (ctx: *void, ssl: *mbedtls.SslContext, name: [*]u8, name
 // won't have it, so we always re-buffer.
 private nulDup :: (a: Allocator, src: []u8) -> ([*]u8, usize) {
     n := src.len;
-    p : [*]u8 = a.alloc(u8, n + 1).ptr;
+    p : [*]u8 = mem.alloc(a, u8, n + 1).ptr;
     if n > 0 { clib.c.memcpy(p, src.ptr, n); }
     p[n] = 0;
     return p, (n + 1).(usize);
@@ -455,11 +455,11 @@ impl http.TlsAcceptor for TlsServer {
     // a per-session ssl_setup failure → the caller drops the connection.
     accept :: (self: *TlsServer, fd: i32) -> ?http.TlsConn {
         if !self.ok { return null; }
-        s := self.a.create(TlsSession);
+        s := mem.create(self.a, TlsSession);
         mbedtls.mbedtls_ssl_init(*s.ssl);
         if mbedtls.mbedtls_ssl_setup(*s.ssl, *self.conf) != 0 {
             mbedtls.mbedtls_ssl_free(*s.ssl);
-            self.a.destroy(s);
+            mem.destroy(self.a, s);
             return null;
         }
         s.fd = fd;
@@ -565,16 +565,16 @@ impl http.TlsDialer for TlsClientConfig {
             i += 1;
         }
         hb[host.len] = 0;
-        s := self.a.create(TlsSession);
+        s := mem.create(self.a, TlsSession);
         mbedtls.mbedtls_ssl_init(*s.ssl);
         if mbedtls.mbedtls_ssl_setup(*s.ssl, *self.conf) != 0 {
             mbedtls.mbedtls_ssl_free(*s.ssl);
-            self.a.destroy(s);
+            mem.destroy(self.a, s);
             return null;
         }
         if mbedtls.mbedtls_ssl_set_hostname(*s.ssl, *hb[0]) != 0 {
             mbedtls.mbedtls_ssl_free(*s.ssl);
-            self.a.destroy(s);
+            mem.destroy(self.a, s);
             return null;
         }
         s.fd = fd;
@@ -586,7 +586,7 @@ impl http.TlsDialer for TlsClientConfig {
         // the dial (timeout, refusal, verification).
         if mbedtls.mbedtls_ssl_handshake(*s.ssl) != 0 {
             mbedtls.mbedtls_ssl_free(*s.ssl);
-            self.a.destroy(s);
+            mem.destroy(self.a, s);
             return null;
         }
         return s;

@@ -57,7 +57,7 @@ private decodeChunkedPass :: (src: [*]u8, avail: i64, maxBody: i64, commit: bool
 
         if rp >= avail { return ChunkResult{ status = ChunkStatus.NEED_MORE, resumeRp = cpRp, resumeDecoded = cpDecoded }; }
         while rp < avail {
-            hv := hexValue(src[rp]);
+            hv := encoding.hexValue(src[rp]);
             if hv == null { break; }
 
             // Largest size for which size * 16 + 15 fits in i64.
@@ -687,7 +687,7 @@ EncodedProducer :: struct {
 }
 
 createEncodedProducer :: (encoding: Encoding, level: i64, source: StreamProducer, sourceCtx: usize, alloc: Allocator) -> *EncodedProducer {
-    result := alloc.create(EncodedProducer);
+    result := mem.create(alloc, EncodedProducer);
     if result == null { return null; }
     state := EncodedProducer.init(encoding, level, source, sourceCtx, alloc) catch {
         alloc.deallocBytes(result);
@@ -818,7 +818,7 @@ OutChan :: struct {
 }
 
 createOutChan :: (alloc: Allocator, lp: event.Loop) -> *OutChan {
-    result := alloc.create(OutChan);
+    result := mem.create(alloc, OutChan);
     if result == null { return null; }
     result.* = OutChan{ alloc = alloc, lp = lp };
     if !result.mu.setup() { alloc.deallocBytes(result); return null; }
@@ -827,7 +827,7 @@ createOutChan :: (alloc: Allocator, lp: event.Loop) -> *OutChan {
         alloc.deallocBytes(result);
         return null;
     }
-    bytes := alloc.alloc(u8, OUT_CHAN_CAP);
+    bytes := mem.alloc(alloc, u8, OUT_CHAN_CAP);
     if bytes.ptr == null {
         result.cv.destroy();
         result.mu.destroy();

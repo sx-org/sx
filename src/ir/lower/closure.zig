@@ -16,18 +16,8 @@ const lower_build_block = @import("build_block.zig");
 const Lowering = lower.Lowering;
 const Scope = lower.Scope;
 
-/// What a lowered lambda IS — which decides both where its environment lives
-/// and where the environment's fields come from.
-///   `.literal` — a written `|…|`: its env is exactly the `_{ … }` it wrote and
-///                its body is SEALED against the enclosing scope. The value IS
-///                that env, living wherever the binding, parameter, or
-///                temporary does; `closure(f, alloc)` is the only thing that
-///                copies it anywhere else.
-///   `.init_recipe` — the NONESCAPING recipe `@Init(T)` forms: the body is the
-///                argument expression as written, so its free names are
-///                collected where they are still live, and the value is an
-///                erased pair whose env stays in the forming frame's alloca
-///                (spec §12.1 forbids choosing heap storage for it).
+/// A literal owns its explicit captures; mem.closure can persist that environment.
+/// An init recipe borrows free names from its forming frame and cannot escape it.
 pub const LambdaKind = enum { literal, init_recipe };
 
 /// A `|…|_{ … }` literal's own type: the env struct the literal IS, together

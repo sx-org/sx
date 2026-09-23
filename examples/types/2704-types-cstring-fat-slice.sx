@@ -18,7 +18,7 @@ main :: () -> i32 {
     print("{} {} {}\n", c.len, c == "hi", c == s);
 
     view : string = c;
-    print("{} {}\n", view.len, c.clone().len);
+    print("{} {}\n", view.len, mem.clone(c).len);
 
     absent : ?cstring = null;
     present : ?cstring = c;

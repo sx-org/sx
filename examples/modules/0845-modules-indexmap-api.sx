@@ -16,7 +16,7 @@ report :: (label: string, ok: bool) {
 }
 
 main :: () {
-    gpa := GPA.init();
+    gpa := mem.GPA.init();
 
     // ── basic usage: fetchPut / getOrPut(+index) / fetch{ Swap,}Remove ─────
     m : IndexMap(i64, i64) = .{};

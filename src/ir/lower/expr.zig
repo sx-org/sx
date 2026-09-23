@@ -426,7 +426,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
                     if (optional_iface or (!t.isBuiltin() and self.module.types.get(t) == .optional)) {
                         d.addHelpFmt(id, span, null, "absence of '?{s}' is spelled 'null'", .{shown});
                     } else {
-                        d.addHelpFmt(id, span, null, "bind a named value, or write it through 'Allocator.make'", .{});
+                        d.addHelpFmt(id, span, null, "bind a named value, or write it through 'mem.make'", .{});
                     }
                 }
                 return self.builder.constUndef(t);

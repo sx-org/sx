@@ -7,7 +7,7 @@
 
 main :: () {
     stackBuf : [128]u8 = ---;
-    buf := BufAlloc.init(*stackBuf[0], 128);
+    buf := mem.BufAlloc.init(*stackBuf[0], 128);
     a : Allocator = buf;
 
     b1 := a.allocBytes(64);

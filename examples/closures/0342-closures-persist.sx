@@ -1,9 +1,4 @@
-// `closure(f, alloc)` gives a callable's environment a home that outlives the
-// forming frame, and erases the value to the `{fnPtr, env}` pair a `Closure`
-// slot takes. Every callable shape persists: a unique lambda, a bare function,
-// an `impl (sig) for T` nominal. A `Closure` is returned unchanged — same
-// `fnPtr`, same `env` — so `closure` composes. A capture-free environment is
-// zero-sized, so it funds nothing and carries a null env.
+// Persisting an erased closure preserves its allocation and target.
 
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
@@ -22,40 +17,40 @@ main :: () {
     unique := |x: i64|_{ n } -> i64 x + n;
     print("env-type {} {}\n", @sizeOf(@envType(@typeOf(unique))), @sizeOf(i64));
 
-    lam := closure(unique);
+    lam := mem.closure(unique);
     print("lambda {}\n", lam(1));                              // 6
 
-    fp := closure(triple);
+    fp := mem.closure(triple);
     print("fn-ptr {}\n", fp(4));                               // 12
 
     acc := Accum{ total = 100 };
-    nom := closure(acc);
+    nom := mem.closure(acc);
     print("nominal {}\n", nom(7));                             // 107
 
     // Already erased: returned unchanged, environment shared not copied.
-    again := closure(lam);
+    again := mem.closure(lam);
     print("identity {} {}\n", again(2), @reinterpret(@Closure, again).env == @reinterpret(@Closure, lam).env);
 
     // A zero-sized environment funds nothing.
-    empty := closure(|x: i64|_{ } -> i64 x * 2);
+    empty := mem.closure(|x: i64|_{ } -> i64 x * 2);
     print("empty {} {}\n", empty(21), @reinterpret(@Closure, empty).env == null);
 
     // The allocator is chosen, or taken from the context.
-    arena := Arena.init(context.allocator, 4096);
+    arena := mem.Arena.init(context.allocator, 4096);
     m := 7;
-    onArena := closure(|x: i64|_{ m } -> i64 x * m, arena);
+    onArena := mem.closure(|x: i64|_{ m } -> i64 x * m, arena);
     print("arena {}\n", onArena(6));                          // 42
     arena.deinit();
 
     // A capturing lambda reaches a `Closure` field through `closure`.
     id := 3;
-    tap := closure(|x: i64|_{ id } print("tap {} {}\n", id, x));
+    tap := mem.closure(|x: i64|_{ id } print("tap {} {}\n", id, x));
     w := Widget{ onTap = tap };
     if h := w.onTap { h(9); }
 
-    free(tap);
-    free(lam);
-    free(fp);
-    free(nom);
-    free(empty);
+    mem.free(tap);
+    mem.free(lam);
+    mem.free(fp);
+    mem.free(nom);
+    mem.free(empty);
 }

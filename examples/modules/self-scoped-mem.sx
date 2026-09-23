@@ -1,0 +1,12 @@
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+direct :: @import "self-scoped-mem/direct.sx";
+
+main :: () {
+    gpa: mem.GPA = direct.allocator();
+    values := mem.alloc(gpa, i64, 1);
+    values[0] = 42;
+    print("value={}\n", values[0]);
+    mem.free(values, gpa);
+    print("allocations={}\n", gpa.allocCount);
+}

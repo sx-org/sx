@@ -28,7 +28,7 @@ impl Drawable for Label {
 // A helper whose RETURN type is the interception type: its result is a `Drawable`
 // value, and publishing it does not build a second one.
 header :: (text: string) -> Drawable {
-    payload := context.allocator.create(Label);
+    payload := mem.create(context.allocator, Label);
     payload.text = text;
     handle : Drawable = payload;
     handle
@@ -58,7 +58,7 @@ collect :: (content: $B/@BuildBlock(Drawable)) -> ?Drawable {
 }
 
 main :: () -> i32 {
-    owned := context.allocator.create(Label);
+    owned := mem.create(context.allocator, Label);
     owned.text = "start";
 
     kept := collect() {

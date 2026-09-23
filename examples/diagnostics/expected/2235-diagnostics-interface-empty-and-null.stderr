@@ -4,7 +4,7 @@ error: '.{ }' is a struct literal, not a 'P' handle
  8 |     x : P = .{};
    |             ^^^
 
-help: bind a named value, or write it through 'Allocator.make'
+help: bind a named value, or write it through 'mem.make'
    |
  8 |     x : P = .{};
    |             ^^^

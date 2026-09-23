@@ -35,28 +35,28 @@ main :: () {
 
     // A borrowing handle: create storage, store one in it, dispatch through it.
     b := Box{ w = 4, h = 5 };
-    sp := a.create(Shape);
+    sp := mem.create(a, Shape);
     sp.* = b;
     print("{}\n", sp.area());
-    a.destroy(sp);
+    mem.destroy(a, sp);
 
     // A handle over a local: the storage holding the handle is what is freed;
     // the referent outlives it on the frame.
     c := Counter{ total = 10 };
-    kp := a.create(Tally);
+    kp := mem.create(a, Tally);
     kp.* = c.(Tally);
     print("{}\n", kp.push(7));
-    a.destroy(kp);
+    mem.destroy(a, kp);
 
     // The slice path stays working, and a handle copied out of a slice element
     // into created storage dispatches identically from there.
     d := Disc{ r = 3 };
-    xs := a.alloc(Shape, 2);
+    xs := mem.alloc(a, Shape, 2);
     xs[0] = b;
     xs[1] = d;
-    sp2 := a.create(Shape);
+    sp2 := mem.create(a, Shape);
     sp2.* = xs[1];
     print("{} {} {}\n", xs[0].area(), xs[1].area(), sp2.area());
-    a.destroy(sp2);
-    xs.free(a);
+    mem.destroy(a, sp2);
+    mem.free(xs, a);
 }

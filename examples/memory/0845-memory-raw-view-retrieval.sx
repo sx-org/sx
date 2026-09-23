@@ -9,7 +9,7 @@ takeRaw :: (r: @Protocol) -> *void { r.ctx }
 
 main :: () {
     n := 10;
-    cl : Closure(i64) -> i64 = closure(|x: i64|_{ n } -> i64 { x + n });
+    cl : Closure(i64) -> i64 = mem.closure(|x: i64|_{ n } -> i64 { x + n });
     r1 : @Closure = @reinterpret(@Closure, cl);
     roundTrip := @reinterpret(@typeOf(cl), r1);
     print("closure: {} {}\n", roundTrip(2) == cl(2), r1.env != null);
@@ -29,7 +29,7 @@ main :: () {
     print("default typeId: {}\n", sz.(@Protocol).typeId == @typeOf(sz));
 
     // protocol (`inline` layout, Allocator) — correct ctx, no layout lie
-    ga := GPA.init();
+    ga := mem.GPA.init();
     a : Allocator = ga;
     print("inline: {}\n", a.(@Protocol).ctx == *ga);
     print("inline typeId: {}\n", a.(@Protocol).typeId == @typeOf(a));

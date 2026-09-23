@@ -1,21 +1,21 @@
 error: a capturing lambda does not erase to 'Closure(i64) -> i64' — its environment has no home here
-  --> examples/errors/1083-errors-capturing-lambda-closure-slot.sx:13:5
+  --> examples/errors/1083-errors-capturing-lambda-closure-slot.sx:9:5
    |
-13 |     h : Closure(i64) -> i64 = |x: i64|_{ n = n } x + n;   // reject: annotated slot
+ 9 |     h : Closure(i64) -> i64 = |x: i64|_{ n = n } x + n;
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-help: persist it with 'closure(f)', or 'closure(f, alloc)' to choose the allocator; a pointer to it ('*f') erases by borrowing
+help: persist it with 'mem.closure(f)', or 'mem.closure(f, alloc)' to choose the allocator; a pointer to it ('*f') erases by borrowing
    |
-13 |     h : Closure(i64) -> i64 = |x: i64|_{ n = n } x + n;   // reject: annotated slot
+ 9 |     h : Closure(i64) -> i64 = |x: i64|_{ n = n } x + n;
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: a capturing lambda does not erase to 'Closure(i64) -> i64' — its environment has no home here
-  --> examples/errors/1083-errors-capturing-lambda-closure-slot.sx:15:10
+  --> examples/errors/1083-errors-capturing-lambda-closure-slot.sx:11:10
    |
-15 |     _ := apply(g, 1);                                     // reject: parameter slot
+11 |     _ := apply(g, 1);
    |          ^^^^^^^^^^^
 
-help: persist it with 'closure(f)', or 'closure(f, alloc)' to choose the allocator; a pointer to it ('*f') erases by borrowing
+help: persist it with 'mem.closure(f)', or 'mem.closure(f, alloc)' to choose the allocator; a pointer to it ('*f') erases by borrowing
    |
-15 |     _ := apply(g, 1);                                     // reject: parameter slot
+11 |     _ := apply(g, 1);
    |          ^^^^^^^^^^^

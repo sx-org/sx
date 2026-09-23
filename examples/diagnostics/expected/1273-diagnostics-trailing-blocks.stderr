@@ -21,7 +21,7 @@ error: 'erased' cannot take a trailing block — its last parameter 'row' is 'Cl
 21 |     erased() { |a| print("x\n"); };
    |              ^^^^^^^^^^^^^^^^^^^^^
 
-help: erasing a block is an allocation, so it is written where it is paid: `erased(closure(|…| …))`
+help: erasing a block is an allocation, so it is written where it is paid: `erased(mem.closure(|…| …))`
    |
 21 |     erased() { |a| print("x\n"); };
    |              ^^^^^^^^^^^^^^^^^^^^^

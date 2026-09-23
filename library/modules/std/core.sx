@@ -310,7 +310,7 @@ writeHex :: ufcs (w: Writer, n: u64) {
     v := n;
     while true {
         i -= 1;
-        buf[i] = hexDigit((v & 0xF).(i64));
+        buf[i] = encoding.hexDigit((v & 0xF).(i64));
         v = v >> 4;
         if v == 0 { break; }
     }
@@ -501,8 +501,6 @@ TypeInfo :: enum {
 }
 // --- Allocator protocol (impls live in std/mem.sx) ---
 
-// Bytes-level primitives carry the `_bytes` suffix so the typed
-// helpers in std/mem.sx own the bare names (`alloc(T, n)`, `free(s)`).
 // An allocator IS its state object, so a handle only ever borrows a named
 // allocator (`gpa`, `gpa.(Allocator)`); `free` of a handle refuses at compile
 // time, and a handle over a temporary cannot be returned.

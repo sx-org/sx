@@ -22,17 +22,17 @@ step :: (loop: *fluent.FrameLoop, ev: fluent.InputEvent) {
 
 main :: () -> i32 {
     root := fluent.UiRoot.init(fluent.Size{ width = 100.0, height = 200.0 }, context.allocator);
-    loop := fluent.FrameLoop.init(*root, closure(|| -> fluent.View {
+    loop := fluent.FrameLoop.init(*root, mem.closure(|| -> fluent.View {
         v : fluent.View = fluent.zstack(fluent.ALIGN_TOP_LEADING) {
-            fluent.scrollable(fluent.Rect{ fill = fluent.Color.rgb(20, 20, 20) }, closure(|g: *fluent.ScrollGesture| {
+            fluent.scrollable(fluent.Rect{ fill = fluent.Color.rgb(20, 20, 20) }, mem.closure(|g: *fluent.ScrollGesture| {
                 print("  {} {},{}\n", g.phase, g.delta.x.(i64), g.delta.y.(i64))
             }));
-            fluent.tappable(fluent.Rect{}, closure(|| { print("  tap\n") }));
+            fluent.tappable(fluent.Rect{}, mem.closure(|| { print("  tap\n") }));
             // Two 40-tall rows under a 60-tall clip: the second row shows
             // its top half only.
             fluent.place(fluent.vstack(0.0) {
-                fluent.tappable(fluent.Rect{ height = 40.0 }, closure(|| { print("  tap row 1\n") }));
-                fluent.tappable(fluent.Rect{ height = 40.0 }, closure(|| { print("  tap row 2\n") }));
+                fluent.tappable(fluent.Rect{ height = 40.0 }, mem.closure(|| { print("  tap row 1\n") }));
+                fluent.tappable(fluent.Rect{ height = 40.0 }, mem.closure(|| { print("  tap row 2\n") }));
             }, fluent.Mod{ margin = fluent.EdgeInsets{ top = 100.0, left = 0.0, bottom = 0.0, right = 0.0 },
                 height = 60.0, clip = true });
         };

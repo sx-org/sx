@@ -22,16 +22,16 @@ Pair :: struct { a: View; b: View; }
 
 // ONE object, two handles.
 shared :: () -> Pair {
-    c := context.allocator.create(Cell);
+    c := mem.create(context.allocator, Cell);
     c.n = 5;
     return Pair{ a = c, b = c };
 }
 
 // Two objects, two handles.
 split :: () -> Pair {
-    x := context.allocator.create(Cell);
+    x := mem.create(context.allocator, Cell);
     x.n = 1;
-    y := context.allocator.create(Cell);
+    y := mem.create(context.allocator, Cell);
     y.n = 4;
     return Pair{ a = x, b = y };
 }

@@ -1,6 +1,6 @@
 // `List(Sizable)` appended from inside a helper function, dispatched
 // repeatedly from `main` after the helper returns: the helper funds its
-// referent with `Allocator.make`, so the appended handle outlives that frame.
+// referent with `mem.make`, so the appended handle outlives that frame.
 
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
@@ -16,7 +16,7 @@ impl Sizable for Leaf {
 
 add :: (items: *List(Sizable), w: Leaf) {
     // The handle borrows, so the referent is funded here to outlive the frame.
-    items.append(context.allocator.make(w));
+    items.append(mem.make(context.allocator, w));
 }
 
 main :: () -> void {

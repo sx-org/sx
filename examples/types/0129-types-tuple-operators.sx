@@ -1,5 +1,5 @@
 @import "modules/std.sx";
-@import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
+@import "modules/std/mem.sx";
 @import "modules/math";
 @import "modules/build.sx";
 @import "modules/std/test.sx";
@@ -63,7 +63,7 @@ main :: () {
 
     // ── allocSlice ──────────────────────────────────────────
     {
-        items := allocSlice(i64, 5);
+        items := mem.allocSlice(i64, 5);
         items[0] = 10;
         items[1] = 20;
         items[2] = 30;
@@ -74,7 +74,7 @@ main :: () {
         print("alloc[4]: {}\n", items[4]);            // alloc[4]: 50
 
         // allocSlice with u8
-        bytes := allocSlice(u8, 3);
+        bytes := mem.allocSlice(u8, 3);
         bytes[0] = 65;
         bytes[1] = 66;
         bytes[2] = 67;
@@ -88,7 +88,7 @@ main :: () {
 
     // ── GPA ─────────────────────────────────────────────────
     {
-        gpa := GPA.init();
+        gpa := mem.GPA.init();
         a : Allocator = gpa;
         p1 := a.allocBytes(64);
         p2 := a.allocBytes(128);
@@ -100,8 +100,8 @@ main :: () {
 
     // ── Arena backed by GPA (multi-chunk) ───────────────────
     {
-        gpa3 := GPA.init();
-        arena := Arena.init(gpa3, 32);
+        gpa3 := mem.GPA.init();
+        arena := mem.Arena.init(gpa3, 32);
         a : Allocator = arena;
         // First chunk fits 80 usable bytes
         a1 := a.allocBytes(40);
@@ -133,7 +133,7 @@ main :: () {
     // ── BufAlloc from stack array ───────────────────────────
     {
         stackBuf : [128]u8 = ---;
-        buf := BufAlloc.init(*stackBuf[0], 128);
+        buf := mem.BufAlloc.init(*stackBuf[0], 128);
         a : Allocator = buf;
         b1 := a.allocBytes(24);
         b2 := a.allocBytes(24);
@@ -577,7 +577,7 @@ main :: () {
         }
 
         optN := 10;
-        fSome : ?Closure(i64) -> i64 = closure(|x: i64|_{ optN } -> i64 x + optN);
+        fSome : ?Closure(i64) -> i64 = mem.closure(|x: i64|_{ optN } -> i64 x + optN);
         if h := fSome {
             print("opt-closure: {}\n", h(5));
         } else {
@@ -587,7 +587,7 @@ main :: () {
         // Struct with optional closure callback
         Btn :: struct { label: string; onClick: ?Closure(i64) -> void; }
         btnX := 99;
-        btnCl : ?Closure(i64) -> void = closure(|id: i64|_{ btnX } {
+        btnCl : ?Closure(i64) -> void = mem.closure(|id: i64|_{ btnX } {
             print("opt-closure-btn: {} {}\n", id, btnX);
         });
         btn1 := Btn{ label = "OK", onClick = btnCl };
@@ -638,8 +638,8 @@ main :: () {
         }
         oneH2 : i32 = 1;
         twoH2 : i32 = 2;
-        add1H2 : Closure(i32) -> i32 = closure(|x: i32|_{ oneH2 } -> i32 x + oneH2);
-        mul2H2 : Closure(i32) -> i32 = closure(|x: i32|_{ twoH2 } -> i32 x * twoH2);
+        add1H2 : Closure(i32) -> i32 = mem.closure(|x: i32|_{ oneH2 } -> i32 x + oneH2);
+        mul2H2 : Closure(i32) -> i32 = mem.closure(|x: i32|_{ twoH2 } -> i32 x * twoH2);
         composed := compose(mul2H2, add1H2);
         print("closure-compose2: {}\n", composed(5));
 
@@ -742,7 +742,7 @@ main :: () {
             onPress: Closure(i32) -> void;
         }
         btnX2 := 99;
-        btnCb : Closure(i32) -> void = closure(|id: i32|_{ btnX2 } {
+        btnCb : Closure(i32) -> void = mem.closure(|id: i32|_{ btnX2 } {
             print("closure-btn: {} {}\n", id, btnX2);
         });
         btn3 := Button{ label = "OK", onPress = btnCb };
@@ -772,10 +772,10 @@ main :: () {
         print("closure-loop: {}\n", sumFn(*k2Arr, 5));
 
         nM3 : i32 = 1;
-        fM3 : Closure(i32) -> i32 = closure(|x: i32|_{ nM3 } -> i32 x + nM3);
+        fM3 : Closure(i32) -> i32 = mem.closure(|x: i32|_{ nM3 } -> i32 x + nM3);
         print("closure-reassign: {}\n", fM3(10));
         mM3 : i32 = 2;
-        fM3 = closure(|x: i32|_{ mM3 } -> i32 x * mM3);
+        fM3 = mem.closure(|x: i32|_{ mM3 } -> i32 x * mM3);
         print("closure-reassign: {}\n", fM3(10));
 
         // the capture is a copy: reassigning ptM6 leaves fM6 on the old values
@@ -816,7 +816,7 @@ main :: () {
         step3 :: (a: Allocator) -> *void { a.allocBytes(8) }
         step2 :: (a: Allocator) -> *void { step3(a) }
         step1 :: (a: Allocator) -> *void { step2(a) }
-        gpaE6 := GPA.init();
+        gpaE6 := mem.GPA.init();
         aE6 : Allocator = gpaE6;
         ptrE6 := step1(aE6);
         print("closure-chain-call: {}\n", ptrE6 != null);
@@ -837,8 +837,8 @@ main :: () {
         useFast := true;
         kFast: i32 = 2;
         kSlow: i32 = 10;
-        fFast: Closure(i32) -> i32 = closure(|x: i32|_{ kFast } -> i32 x * kFast);
-        fSlow: Closure(i32) -> i32 = closure(|x: i32|_{ kSlow } -> i32 x + kSlow);
+        fFast: Closure(i32) -> i32 = mem.closure(|x: i32|_{ kFast } -> i32 x * kFast);
+        fSlow: Closure(i32) -> i32 = mem.closure(|x: i32|_{ kSlow } -> i32 x + kSlow);
         fCond: Closure(i32) -> i32 = if useFast then fFast else fSlow;
         print("closure-cond: {}\n", fCond(5));
 
@@ -847,7 +847,7 @@ main :: () {
             onCancel: ?Closure() -> void;
         }
         msgF4 := "submitted";
-        subCb : ?Closure() -> void = closure(||_{ msgF4 } { print("closure-form: {}\n", msgF4); });
+        subCb : ?Closure() -> void = mem.closure(||_{ msgF4 } { print("closure-form: {}\n", msgF4); });
         formF4 := Form{ onSubmit = subCb, onCancel = null };
         if h := formF4.onSubmit { h(); }
         if h := formF4.onCancel { h(); } else { print("closure-form: no cancel\n"); }
@@ -861,8 +861,8 @@ main :: () {
         fA7 := |i: i64|_{ ptrA7 = ptrA7 } -> i32 ptrA7[i];
         print("closure-slice: {} {} {}\n", fA7(0), fA7(1), fA7(2));
 
-        gpaL1 := GPA.init();
-        arenaL1 := Arena.init(gpaL1, 4096);
+        gpaL1 := mem.GPA.init();
+        arenaL1 := mem.Arena.init(gpaL1, 4096);
         push .{ allocator = arenaL1 } {
             nL1 : i32 = 5;
             fL1 := |x: i32|_{ nL1 = nL1 } -> i32 x + nL1;
@@ -870,12 +870,12 @@ main :: () {
         }
         arenaL1.deinit();
 
-        gpaL2 := GPA.init();
+        gpaL2 := mem.GPA.init();
         aL2 : Allocator = gpaL2;
         nL2 : i32 = 7;
         resultL2 : i32 = 0;
         push .{ allocator = aL2 } {
-            fL2 : Closure(i32) -> i32 = closure(|x: i32|_{ nL2 } -> i32 x + nL2);
+            fL2 : Closure(i32) -> i32 = mem.closure(|x: i32|_{ nL2 } -> i32 x + nL2);
             resultL2 = fL2(10);
             aL2.deallocBytes(fL2.env);
         }
@@ -902,7 +902,7 @@ main :: () {
         nM8 : i32 = 10;
         fnsM8 : [3]Closure(i32) -> i32 = ---;
         fnsM8[0] = doubleM8;                                // auto-promoted
-        fnsM8[1] = closure(|x: i32|_{ nM8 } -> i32 x + nM8);  // captured
+        fnsM8[1] = mem.closure(|x: i32|_{ nM8 } -> i32 x + nM8);
         fnsM8[2] = |x: i32| -> i32 x * x;       // no capture
         tmpM8 := fnsM8[0]; print("closure-mixed: {}\n", tmpM8(5));
         tmpM8 = fnsM8[1]; print("closure-mixed: {}\n", tmpM8(5));
@@ -965,7 +965,7 @@ main :: () {
         iE11 := 0;
         while iE11 < 3 {
             multiplier : i32 = xx (iE11 + 1);
-            fnsE11[iE11] = closure(|x: i32|_{ multiplier } -> i32 x * multiplier);
+            fnsE11[iE11] = mem.closure(|x: i32|_{ multiplier } -> i32 x * multiplier);
             iE11 += 1;
         }
         tE11 := fnsE11[0]; print("closure-multi-factory: {}\n", tE11(10));
@@ -983,7 +983,7 @@ main :: () {
 
         applyFn := |fApp: Closure(i32) -> i32, val: i32| -> i32 fApp(val);
         kE13 : i32 = 100;
-        innerFn : Closure(i32) -> i32 = closure(|x: i32|_{ kE13 } -> i32 x + kE13);
+        innerFn : Closure(i32) -> i32 = mem.closure(|x: i32|_{ kE13 } -> i32 x + kE13);
         print("closure-as-arg: {}\n", applyFn(innerFn, 42));
 
         prefixE14 := "hello";
@@ -1002,7 +1002,7 @@ main :: () {
         valE16 : i32 = 30;
         print("closure-neg: {}\n", negFn(valE16));
 
-        gpaE17 := GPA.init();
+        gpaE17 := mem.GPA.init();
         aE17 : Allocator = gpaE17;
         allocFn := |size: i64|_{ aE17 = aE17 } -> *void aE17.allocBytes(size);
         ptrE17 := allocFn(32);

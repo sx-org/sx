@@ -82,7 +82,7 @@ fsReadFile :: (path: [:0]u8) -> ?string {
     size := fsPosixC.c.lseek(fd, 0, FS_POSIX_SEEK_END);
     if size < 0 { fsPosixC.c.close(fd); return null; }
     if fsPosixC.c.lseek(fd, 0, FS_POSIX_SEEK_SET) < 0 { fsPosixC.c.close(fd); return null; }
-    buf := allocString(size);
+    buf := mem.allocString(size);
     at := 0;
     ok := true;
     while at < size {
@@ -183,7 +183,7 @@ fsCopyFile :: (src: [:0]u8, dst: [:0]u8) -> bool {
         return false;
     }
     ok := true;
-    buf := allocString(65536);
+    buf := mem.allocString(65536);
     loop := true;
     while loop {
         n := fsPosixC.c.read(srcFd, buf.ptr, 65536);

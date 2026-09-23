@@ -110,7 +110,7 @@ cancel      :: ioMod.cancel;
 // --- The stdlib namespace tail: flat-importing std.sx carries these ---
 
 posix   :: @import "modules/std/posix.sx";
-mem     :: @import "modules/std/mem.sx";
+..@import "modules/std/mem.sx";
 allocString :: mem.allocString;
 allocSlice  :: mem.allocSlice;
 // Intentional allocator-prelude re-export. Static method heads obey the same
@@ -119,7 +119,7 @@ allocSlice  :: mem.allocSlice;
 // reach-through into `std/mem.sx`.
 GPA     :: mem.GPA;
 fs      :: @import "modules/std/fs.sx";
-process :: @import "modules/std/process.sx";
+..@import "modules/std/process.sx";
 socket  :: @import "modules/std/socket.sx";
 json    :: @import "modules/std/json.sx";
 xml     :: @import "modules/std/xml.sx";
@@ -131,7 +131,7 @@ time    :: @import "modules/std/time.sx";
 event   :: @import "modules/std/event.sx";
 thread  :: @import "modules/std/thread.sx";
 compress :: @import "modules/std/compress.sx";
-encoding :: @import "modules/std/encoding.sx";
+..@import "modules/std/encoding.sx";
 deflate  :: @import "modules/std/codecs/deflate.sx";
 zlib     :: @import "modules/std/codecs/zlib.sx";
 gzip     :: @import "modules/std/codecs/gzip.sx";

@@ -1,6 +1,3 @@
-// Legal I-typed forms: `$T/I` plus a concrete literal; `Allocator.make` then
-// `*T` / append / return; `?I = null`; a named local then append;
-// `Allocator = ---` on a runtime-constructed struct.
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
 
@@ -11,7 +8,7 @@ impl Sizable for Widget { size :: (self: *Widget) -> i64 { self.value } }
 pretty :: (v: $T/Sizable) -> i64 { v.size() }
 
 made :: () -> Sizable {
-    p := context.allocator.make(Widget{ value = 9 });
+    p := mem.make(context.allocator, Widget{ value = 9 });
     return p.(Sizable);
 }
 
@@ -21,7 +18,7 @@ main :: () {
     print("{}\n", pretty(Widget{ value = 7 }));
 
     list : List(Sizable) = .{};
-    p := context.allocator.make(Widget{ value = 8 });
+    p := mem.make(context.allocator, Widget{ value = 8 });
     list.append(p);
     print("{}\n", list.items[0].size());
 

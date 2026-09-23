@@ -1,407 +1,280 @@
-@import "modules/std/core.sx";   // Allocator, @sizeOf
-@import "modules/std/fmt.sx";    // print (TrackingAllocator.report)
-// GPA is the documented thread-safe allocator, so its alloc counter must
-// be updated atomically (pooled HTTP runs alloc/dealloc concurrently across
-// the loop thread and worker threads). atomic.sx has no naked asm — safe to
-// import here.
-@import "modules/std/atomic.sx";
-@import "modules/std/c.sx";
+mem :: scope {
+    @import "modules/std/core.sx";
+    @import "modules/std/fmt.sx";
+    @import "modules/std/atomic.sx";
+    @import "modules/std/c.sx";
 
-// --- Typed allocation helpers ---
-//
-// The user-facing allocation surface over the Allocator protocol's
-// bytes-level primitives (`allocBytes` / `deallocBytes`). Free
-// functions declared `ufcs` — dot-call, pipe, or call directly:
-//
-//   s := context.allocator.create(Session);
-//   s.* = Session{};                  // no zero-init (Zig-aligned)
-//   defer context.allocator.destroy(s);
-//
-//   moves := context.allocator.alloc(Move, 64);
-//   defer free(moves);
-//
-//   copied := bytes.clone(context.allocator);
-//
-// Bodies are complete for the 2-method protocol era: `memRealloc` is
-// alloc+copy+dealloc (the only shape without resize/remap primitives),
-// and `align` is accepted for signature stability — alignment-aware
-// allocation lands with the protocol expansion.
+    // The allocated storage is uninitialised.
+    create :: ufcs (a: Allocator, $T: Type) -> *T {
+        a.allocBytes(@sizeOf(T)).(*T)
+    }
 
-// Allocate one T. Contents are UNINITIALISED — assign before reading.
-create :: ufcs (a: Allocator, $T: Type) -> *T {
-    a.allocBytes(@sizeOf(T)).(*T)
-}
+    // The initializer writes into the allocation; a null destination stays unwritten.
+    make :: ufcs (a: Allocator, value: $I/@Init($T)) -> *T {
+        p := a.allocBytes(@sizeOf(T)).(*T);
+        if p != null { value.write(p); }
+        p
+    }
 
-// Allocate one T and write `value` straight into it. The argument is an
-// initializer, so the expression runs against the fresh storage rather than
-// into a frame temporary — this is the spelling that gives an rvalue a
-// lifetime past the frame that wrote it. A null destination — a zero-sized T,
-// or an allocator that refused — is returned unwritten.
-make :: ufcs (a: Allocator, value: $I/@Init($T)) -> *T {
-    p := a.allocBytes(@sizeOf(T)).(*T);
-    if p != null { value.write(p); }
-    p
-}
+    destroy :: ufcs (a: Allocator, ptr: *$T) {
+        a.deallocBytes(ptr);
+    }
 
-// Free a *T obtained from `create` or `make`.
-destroy :: ufcs (a: Allocator, ptr: *$T) {
-    a.deallocBytes(ptr);
-}
+    alloc :: ufcs (a: Allocator, $T: Type, count: i64) -> []T {
+        raw := a.allocBytes(count * @sizeOf(T));
+        .{ ptr = raw.([*]T), len = count }
+    }
 
-// Allocate a []T of `count` elements. Contents are UNINITIALISED.
-alloc :: ufcs (a: Allocator, $T: Type, count: i64) -> []T {
-    raw := a.allocBytes(count * @sizeOf(T));
-    .{ ptr = raw.([*]T), len = count }
-}
+    // The zeroed buffer includes a NUL byte beyond its reported length.
+    allocString :: (size: i64) -> string {
+        raw := context.allocator.allocBytes(size + 1);
+        c.memset(raw, 0, size + 1);
+        s : string = ---;
+        s.ptr = raw.([*]u8);
+        s.len = size;
+        s
+    }
 
-// A zeroed `size`-byte string, NUL-terminated one byte past `len`.
-allocString :: (size: i64) -> string {
-    raw := context.allocator.allocBytes(size + 1);
-    c.memset(raw, 0, size + 1);
-    s : string = ---;
-    s.ptr = raw.([*]u8);
-    s.len = size;
-    s
-}
+    allocSlice :: ($T: Type, count: i64) -> []T {
+        raw := context.allocator.allocBytes(count * @sizeOf(T));
+        c.memset(raw, 0, count * @sizeOf(T));
+        s : []T = ---;
+        s.ptr = raw.([*]T);
+        s.len = count;
+        s
+    }
 
-// A zeroed []T of `count` elements.
-allocSlice :: ($T: Type, count: i64) -> []T {
-    raw := context.allocator.allocBytes(count * @sizeOf(T));
-    c.memset(raw, 0, count * @sizeOf(T));
-    s : []T = ---;
-    s.ptr = raw.([*]T);
-    s.len = count;
-    s
-}
-
-// Persist a callable: give its environment a home in `alloc` and erase the
-// value to the `{fnPtr, env}` pair a `Closure` slot takes. This is the ONLY
-// place a capturing lambda reaches the heap — a `|…|` literal allocates
-// nothing, and no slot erases one implicitly.
-//
-// A `Closure` argument is returned unchanged, so `closure` composes and a
-// worker that is already erased costs nothing. A capture-free environment is
-// zero-sized, so it funds nothing and the erased value carries a null env.
-// `free(cl)` / `free(cl, alloc)` releases what this funded.
-closure :: (f: $F/(..$A) -> $R, alloc: Allocator = context.allocator) -> Closure(..A) -> R {
-    inline match F {
-        case closure: return f;
-        else: {
-            p := alloc.make(@envOf(f));
-            return .{ fnPtr = @callPtr(F), env = p };
+    // Captured environments live in the allocation; an existing Closure passes through.
+    closure :: (f: $F/(..$A) -> $R, alloc: Allocator = context.allocator) -> Closure(..A) -> R {
+        inline match F {
+            case closure: return f;
+            else: {
+                p := alloc.make(@envOf(f));
+                return .{ fnPtr = @callPtr(F), env = p };
+            }
         }
     }
-}
 
-// THE free: releases what `x` owns, kind-dispatched at compile time.
-//   - a SLICE from `alloc` / `clone` / `resize` → frees the backing;
-//   - a CLOSURE → frees the `env` that `closure` funded (a capture-free
-//     environment is zero-sized, so the env is null and free is a no-op).
-// `free(x)` pairs with `context.allocator` — the allocator current AT THE
-// FREE, so a context pushed since the allocation redirects it (the drift
-// hazard); `free(x, a)` pairs the allocator explicitly and is immune.
-// Anything else is a compile error.
-free :: ufcs (x: $T, a: Allocator = context.allocator) {
-    inline match T {
-        case interface:
-            @error("free on an interface handle — a handle borrows its referent and owns nothing; free the referent where it lives ('Allocator.destroy' for one made by 'Allocator.make')");
-        case closure: {
-            env := @reinterpret(@Closure, x).env;
-            if env != null { a.deallocBytes(env); }
+    // The default allocator is the one current at the free, which may differ from the allocator that funded x.
+    free :: ufcs (x: $T, a: Allocator = context.allocator) {
+        inline match T {
+            case interface:
+                @error("free on an interface handle — a handle borrows its referent and owns nothing; free the referent where it lives ('mem.destroy' for one made by 'mem.make')");
+            case closure: {
+                env := @reinterpret(@Closure, x).env;
+                if env != null { a.deallocBytes(env); }
+            }
+            case slice:    a.deallocBytes(x.ptr);
+            else:          @error("free expects a closure or a slice");
         }
-        case slice:    a.deallocBytes(x.ptr);
-        else:          @error("free expects a closure or a slice");
-    }
-}
-
-// Copy a slice into fresh storage owned by `a`.
-clone :: ufcs (src: []$T, a: Allocator = context.allocator) -> []T {
-    raw := a.allocBytes(src.len * @sizeOf(T));
-    c.memcpy(raw, src.ptr, src.len * @sizeOf(T));
-    .{ ptr = raw.([*]T), len = src.len }
-}
-
-// Reallocate a slice to `newCount` elements: fresh storage, contents
-// copied up to min(len, newCount), old backing freed. The returned
-// slice replaces the operand — the old slice is dangling after this.
-// null when the allocation fails: nothing is copied or freed and the
-// operand stays live and owned by the caller.
-resize :: ufcs (slice: []$T, a: Allocator, newCount: i64) -> ?[]T {
-    raw := a.allocBytes(newCount * @sizeOf(T));
-    if raw == null { return null; }
-    n := if slice.len < newCount then slice.len else newCount;
-    c.memcpy(raw, slice.ptr, n * @sizeOf(T));
-    a.deallocBytes(slice.ptr);
-    .{ ptr = raw.([*]T), len = newCount }
-}
-
-// Bytes-level realloc. 2-method era: alloc + copy(min(old,new)) +
-// dealloc — there is no in-place grow primitive to try yet, and
-// `align` beyond the heap's natural 8 is not honored until the
-// protocol carries alignment. null when the allocation fails: nothing
-// is copied or freed and `ptr` stays live and owned by the caller.
-memRealloc :: ufcs (a: Allocator, ptr: *void, old: i64, new: i64, align: i64) -> *void {
-    raw := a.allocBytes(new);
-    if raw == null { return null; }
-    n := if old < new then old else new;
-    c.memcpy(raw, ptr, n);
-    a.deallocBytes(ptr);
-    raw
-}
-
-// --- CAllocator: stateless allocator that delegates directly to libc ---
-//
-// Zero-sized struct. Used as the default `context.allocator` at program
-// start (see `kDefaultContext` in the codegen). The thunks never
-// dereference `self`, so the protocol value's ctx field is `null`.
-//
-// Unlike GPA, no `init()` is needed — there's nothing to allocate.
-
-CAllocator :: struct {}
-
-impl Allocator for CAllocator {
-    allocBytes :: (self: *CAllocator, size: i64) -> *void {
-        if size == 0 { return null; }
-        return c.malloc(size);
-    }
-    deallocBytes :: (self: *CAllocator, ptr: *void) {
-        c.free(ptr);
-    }
-}
-
-// The process-wide default allocator instance, and the context field it
-// backs. The erasure of this global folds to a static constant borrowing
-// the global's storage (identity semantics — the receiver is a real
-// address, never null: null ctx is the `?Protocol` absent sentinel) —
-// `kDefaultContext` is fully built before `main` runs.
-cAllocator : CAllocator = .{};
-
-@context.extend allocator: Allocator = cAllocator;
-
-// --- GPA: general purpose allocator (malloc/free wrapper) ---
-//
-// `init` returns the GPA by value. Caller binds it to a local; the
-// local IS the allocator state, no heap-side allocation for the
-// struct itself. A named `gpa` at an `Allocator` slot borrows the local.
-//
-// Usage:
-//   gpa := GPA.init();                                    // GPA
-//   push .{ allocator = gpa } { ... }
-//   print("alloc count: {}\n", gpa.allocCount);
-
-GPA :: struct {
-    allocCount: i64;
-
-    init :: () -> GPA {
-        GPA{ allocCount = 0 }
-    }
-}
-
-impl Allocator for GPA {
-    // Atomic counter bumps: GPA is thread-safe, so pooled callers race
-    // these from multiple threads. Relaxed is fine for a pure counter —
-    // readers only observe it after all threads have joined.
-    allocBytes :: (self: *GPA, size: i64) -> *void {
-        if size == 0 { return null; }
-        @atomicFetchAdd(i64, *self.allocCount, 1, .relaxed);
-        return c.malloc(size);
-    }
-    deallocBytes :: (self: *GPA, ptr: *void) {
-        if ptr == null { return; }
-        @atomicFetchSub(i64, *self.allocCount, 1, .relaxed);
-        c.free(ptr);
-    }
-}
-
-// --- Arena: multi-chunk bump allocator ---
-//
-// `init` returns the Arena by value; the caller's local holds the
-// state, no heap-side allocation for the struct itself. The arena's
-// chunks ARE heap-allocated through the parent allocator, but those
-// are owned by `deinit` (or `reset` for the non-first ones).
-//
-// Usage:
-//   gpa   := GPA.init();
-//   arena := Arena.init(gpa, 4096);                    // Arena
-//   push .{ allocator = arena } { ... }
-//   arena.reset();   // free all chunks except the first
-//   arena.deinit();  // free every chunk
-
-ArenaChunk :: struct {
-    next: *ArenaChunk;
-    cap: i64;
-}
-
-Arena :: struct {
-    first: *ArenaChunk;
-    endIndex: i64;
-    parent: Allocator;
-
-    addChunk :: (a: *Arena, minSize: i64) {
-        prevCap := if a.first != null then a.first.cap else 0;
-        needed := minSize + 16 + 16;
-        len := (prevCap + needed) * 3 / 2;
-        raw := a.parent.allocBytes(len);
-        chunk : *ArenaChunk = raw.(*ArenaChunk);
-        chunk.next = a.first;
-        chunk.cap = len;
-        a.first = chunk;
-        a.endIndex = 0;
     }
 
-    init :: (parentAlloc: Allocator, size: i64) -> Arena {
-        self : Arena = .{ first = null, endIndex = 0, parent = parentAlloc };
-        self.addChunk(size);
-        self
+    clone :: ufcs (src: []$T, a: Allocator = context.allocator) -> []T {
+        raw := a.allocBytes(src.len * @sizeOf(T));
+        c.memcpy(raw, src.ptr, src.len * @sizeOf(T));
+        .{ ptr = raw.([*]T), len = src.len }
     }
 
-    reset :: (a: *Arena) {
-        if a.first != null {
-            it := a.first.next;
+    // Failure leaves the original slice live and owned by the caller.
+    resize :: ufcs (slice: []$T, a: Allocator, newCount: i64) -> ?[]T {
+        raw := a.allocBytes(newCount * @sizeOf(T));
+        if raw == null { return null; }
+        n := if slice.len < newCount then slice.len else newCount;
+        c.memcpy(raw, slice.ptr, n * @sizeOf(T));
+        a.deallocBytes(slice.ptr);
+        .{ ptr = raw.([*]T), len = newCount }
+    }
+
+    // Failure preserves ptr. Alignment beyond the heap's natural alignment is not supported.
+    memRealloc :: ufcs (a: Allocator, ptr: *void, old: i64, new: i64, align: i64) -> *void {
+        raw := a.allocBytes(new);
+        if raw == null { return null; }
+        n := if old < new then old else new;
+        c.memcpy(raw, ptr, n);
+        a.deallocBytes(ptr);
+        raw
+    }
+
+    CAllocator :: struct {}
+
+    impl Allocator for CAllocator {
+        allocBytes :: (self: *CAllocator, size: i64) -> *void {
+            if size == 0 { return null; }
+            return c.malloc(size);
+        }
+        deallocBytes :: (self: *CAllocator, ptr: *void) {
+            c.free(ptr);
+        }
+    }
+
+    // The default context borrows this global's storage.
+    cAllocator : CAllocator = .{};
+
+    @context.extend allocator: Allocator = cAllocator;
+
+    GPA :: struct {
+        allocCount: i64;
+
+        init :: () -> GPA {
+            GPA{ allocCount = 0 }
+        }
+    }
+
+    impl Allocator for GPA {
+        allocBytes :: (self: *GPA, size: i64) -> *void {
+            if size == 0 { return null; }
+            // Pool workers share this counter; readers observe it after joining.
+            @atomicFetchAdd(i64, *self.allocCount, 1, .relaxed);
+            return c.malloc(size);
+        }
+        deallocBytes :: (self: *GPA, ptr: *void) {
+            if ptr == null { return; }
+            @atomicFetchSub(i64, *self.allocCount, 1, .relaxed);
+            c.free(ptr);
+        }
+    }
+
+    ArenaChunk :: struct {
+        next: *ArenaChunk;
+        cap: i64;
+    }
+
+    Arena :: struct {
+        first: *ArenaChunk;
+        endIndex: i64;
+        parent: Allocator;
+
+        addChunk :: (a: *Arena, minSize: i64) {
+            prevCap := if a.first != null then a.first.cap else 0;
+            needed := minSize + 16 + 16;
+            len := (prevCap + needed) * 3 / 2;
+            raw := a.parent.allocBytes(len);
+            chunk : *ArenaChunk = raw.(*ArenaChunk);
+            chunk.next = a.first;
+            chunk.cap = len;
+            a.first = chunk;
+            a.endIndex = 0;
+        }
+
+        init :: (parentAlloc: Allocator, size: i64) -> Arena {
+            self : Arena = .{ first = null, endIndex = 0, parent = parentAlloc };
+            self.addChunk(size);
+            self
+        }
+
+        reset :: (a: *Arena) {
+            if a.first != null {
+                it := a.first.next;
+                while it != null {
+                    next := it.next;
+                    a.parent.deallocBytes(it);
+                    it = next;
+                }
+                a.first.next = null;
+            }
+            a.endIndex = 0;
+        }
+
+        deinit :: (a: *Arena) {
+            it := a.first;
             while it != null {
                 next := it.next;
                 a.parent.deallocBytes(it);
                 it = next;
             }
-            a.first.next = null;
+            a.first = null;
+            a.endIndex = 0;
         }
-        a.endIndex = 0;
     }
 
-    deinit :: (a: *Arena) {
-        it := a.first;
-        while it != null {
-            next := it.next;
-            a.parent.deallocBytes(it);
-            it = next;
+    impl Allocator for Arena {
+        allocBytes :: (self: *Arena, size: i64) -> *void {
+            if size == 0 { return null; }
+            aligned := (size + 7) & (0 - 8);
+            if self.first != null {
+                usable := self.first.cap - 16;
+                if self.endIndex + aligned <= usable {
+                    buf : [*]u8 = @reinterpret([*]u8, self.first);
+                    ptr := *buf[16 + self.endIndex];
+                    self.endIndex = self.endIndex + aligned;
+                    return ptr;
+                }
+            }
+            self.addChunk(aligned);
+            buf : [*]u8 = @reinterpret([*]u8, self.first);
+            ptr := *buf[16 + self.endIndex];
+            self.endIndex = self.endIndex + aligned;
+            ptr
         }
-        a.first = null;
-        a.endIndex = 0;
+        deallocBytes :: (self: *Arena, ptr: *void) {}
     }
-}
 
-impl Allocator for Arena {
-    allocBytes :: (self: *Arena, size: i64) -> *void {
-        if size == 0 { return null; }
-        aligned := (size + 7) & (0 - 8);
-        if self.first != null {
-            usable := self.first.cap - 16;
-            if self.endIndex + aligned <= usable {
-                buf : [*]u8 = @reinterpret([*]u8, self.first);
-                ptr := *buf[16 + self.endIndex];
-                self.endIndex = self.endIndex + aligned;
-                return ptr;
+    BufAlloc :: struct {
+        buf: [*]u8;
+        len: i64;
+        pos: i64;
+
+        init :: (buf: [*]u8, len: i64) -> BufAlloc {
+            BufAlloc{ buf = buf, len = len, pos = 0 }
+        }
+
+        reset :: (b: *BufAlloc) {
+            b.pos = 0;
+        }
+    }
+
+    impl Allocator for BufAlloc {
+        allocBytes :: (self: *BufAlloc, size: i64) -> *void {
+            if size == 0 { return null; }
+            aligned := (size + 7) & (0 - 8);
+            if self.pos + aligned > self.len {
+                return null;
+            }
+            ptr := *self.buf[self.pos];
+            self.pos = self.pos + aligned;
+            ptr
+        }
+        deallocBytes :: (self: *BufAlloc, ptr: *void) {}
+    }
+
+    TrackingAllocator :: struct {
+        parent: Allocator;
+        allocCount: i64;
+        deallocCount: i64;
+        totalAllocBytes: i64;
+
+        init :: (parentAlloc: Allocator) -> TrackingAllocator {
+            TrackingAllocator{
+                parent = parentAlloc,
+                allocCount = 0,
+                deallocCount = 0,
+                totalAllocBytes = 0,
             }
         }
-        self.addChunk(aligned);
-        buf : [*]u8 = @reinterpret([*]u8, self.first);
-        ptr := *buf[16 + self.endIndex];
-        self.endIndex = self.endIndex + aligned;
-        ptr
-    }
-    deallocBytes :: (self: *Arena, ptr: *void) {}
-}
 
-// --- BufAlloc: bump allocator backed by a user-provided slice ---
-//
-// `init` returns the BufAlloc by value (the caller's local IS the
-// state, like every allocator); the FULL buffer is usable — no bytes
-// are carved off its head for the state struct.
-//
-// Usage:
-//   stackBuf : [128]u8 = ---;
-//   buf := BufAlloc.init(@stackBuf[0], 128);             // BufAlloc
-//   push .{ allocator = buf } { ... }
-//   buf.reset();
-
-BufAlloc :: struct {
-    buf: [*]u8;
-    len: i64;
-    pos: i64;
-
-    init :: (buf: [*]u8, len: i64) -> BufAlloc {
-        BufAlloc{ buf = buf, len = len, pos = 0 }
-    }
-
-    reset :: (b: *BufAlloc) {
-        b.pos = 0;
-    }
-}
-
-impl Allocator for BufAlloc {
-    allocBytes :: (self: *BufAlloc, size: i64) -> *void {
-        if size == 0 { return null; }
-        aligned := (size + 7) & (0 - 8);
-        if self.pos + aligned > self.len {
-            return null;
+        leakCount :: (t: *TrackingAllocator) -> i64 {
+            t.allocCount - t.deallocCount
         }
-        ptr := *self.buf[self.pos];
-        self.pos = self.pos + aligned;
-        ptr
-    }
-    deallocBytes :: (self: *BufAlloc, ptr: *void) {}
-}
 
-// --- TrackingAllocator: wraps any Allocator, counts allocs/deallocs ---
-//
-// Useful for catching leaks during development. Wraps a parent
-// Allocator; every call delegates to the parent while updating
-// counters. `report()` prints a summary; `leakCount()` returns
-// (allocCount - deallocCount).
-//
-// Manual opt-in pattern:
-//
-//   tracker := TrackingAllocator.init(context.allocator);   // TrackingAllocator
-//   push .{ allocator = tracker } {
-//       // ... user code allocates via tracker → delegates to the
-//       //     original context.allocator (libc-backed by default) ...
-//   }
-//   tracker.report();
-//   if tracker.leakCount() != 0 { return 1; }
-//
-// Limitations under the current 2-method Allocator protocol:
-// dealloc(ptr) provides no size info, so bytesOutstanding /
-// peakBytes cannot be tracked accurately. Only alloc count and
-// total bytes allocated are recorded. A size-aware
-// dealloc(ptr, size, align) unlocks full byte tracking.
-
-TrackingAllocator :: struct {
-    parent: Allocator;
-    allocCount: i64;
-    deallocCount: i64;
-    totalAllocBytes: i64;
-
-    init :: (parentAlloc: Allocator) -> TrackingAllocator {
-        TrackingAllocator{
-            parent = parentAlloc,
-            allocCount = 0,
-            deallocCount = 0,
-            totalAllocBytes = 0,
+        report :: (t: *TrackingAllocator) {
+            print("TrackingAllocator: allocs={} deallocs={} outstanding={} totalAllocBytes={}\n",
+                  t.allocCount, t.deallocCount, t.leakCount(), t.totalAllocBytes);
         }
     }
 
-    leakCount :: (t: *TrackingAllocator) -> i64 {
-        t.allocCount - t.deallocCount
-    }
-
-    report :: (t: *TrackingAllocator) {
-        print("TrackingAllocator: allocs={} deallocs={} outstanding={} totalAllocBytes={}\n",
-              t.allocCount, t.deallocCount, t.leakCount(), t.totalAllocBytes);
-    }
-}
-
-impl Allocator for TrackingAllocator {
-    allocBytes :: (self: *TrackingAllocator, size: i64) -> *void {
-        ptr := self.parent.allocBytes(size);
-        if ptr != null {
-            self.allocCount += 1;
-            self.totalAllocBytes += size;
+    impl Allocator for TrackingAllocator {
+        allocBytes :: (self: *TrackingAllocator, size: i64) -> *void {
+            ptr := self.parent.allocBytes(size);
+            if ptr != null {
+                self.allocCount += 1;
+                self.totalAllocBytes += size;
+            }
+            ptr
         }
-        ptr
-    }
-    deallocBytes :: (self: *TrackingAllocator, ptr: *void) {
-        if ptr == null { return; }
-        self.parent.deallocBytes(ptr);
-        self.deallocCount += 1;
+        deallocBytes :: (self: *TrackingAllocator, ptr: *void) {
+            if ptr == null { return; }
+            self.parent.deallocBytes(ptr);
+            self.deallocCount += 1;
+        }
     }
 }

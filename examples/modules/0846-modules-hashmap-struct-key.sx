@@ -31,7 +31,7 @@ report :: (label: string, ok: bool) {
 }
 
 main :: () {
-    gpa := GPA.init();
+    gpa := mem.GPA.init();
 
     // HashMap: padded struct key, separate construction with stack churn between.
     m : HashMap(K, i64) = .{};

@@ -15,6 +15,7 @@
 
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
+..mem;
 
 Tracker :: struct {
     allocs: i64;

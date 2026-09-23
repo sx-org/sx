@@ -30,12 +30,12 @@ pickFn :: () -> (i64, i64) -> i64 { return add; }
 Tree :: struct { top: View; cell: *i64; seen: *Show; }
 
 build :: () -> Tree {
-    leaf := context.allocator.create(Leaf);
+    leaf := mem.create(context.allocator, Leaf);
     leaf.n = 6;
-    node := context.allocator.create(Scaled);
+    node := mem.create(context.allocator, Scaled);
     node.child = leaf;
     node.by = 7;
-    cell := context.allocator.create(i64);
+    cell := mem.create(context.allocator, i64);
     cell.* = 100;
     view : *Show = *gMarker;
     return Tree{ top = node, cell = cell, seen = view };

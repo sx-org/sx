@@ -9,7 +9,7 @@
 @import "modules/std/mem.sx";
 
 main :: () -> i32 {
-    gpa := GPA.init();
+    gpa := mem.GPA.init();
     alloc : Allocator = gpa;
 
     pDirect := gpa.allocBytes(64);

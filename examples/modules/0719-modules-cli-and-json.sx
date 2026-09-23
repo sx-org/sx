@@ -27,8 +27,8 @@ report :: (label: string, ok: bool) {
 }
 
 main :: () -> ! {
-    gpa := GPA.init();
-    arena := Arena.init(gpa, 8192);
+    gpa := mem.GPA.init();
+    arena := mem.Arena.init(gpa, 8192);
     defer arena.deinit();
 
     // ── cli.parse: dispatch <group> <command> + a value flag ─────────

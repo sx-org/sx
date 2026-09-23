@@ -29,8 +29,8 @@ SxWeakHolder :: @ObjcClass("SxWeakHolder", extends = NSObject) {
 
 main :: () -> i32 {
     inline if @host.os == .macos {
-        gpa := GPA.init();
-        tracker := TrackingAllocator.init(gpa);
+        gpa := mem.GPA.init();
+        tracker := mem.TrackingAllocator.init(gpa);
 
         push .{ allocator = tracker } {
             holder := SxWeakHolder.alloc();

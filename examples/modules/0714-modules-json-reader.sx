@@ -53,8 +53,8 @@ ctrlRaises :: (b: u8, alloc: Allocator) -> bool {
 }
 
 main :: () -> ! {
-    gpa := GPA.init();
-    arena := Arena.init(gpa, 8192);
+    gpa := mem.GPA.init();
+    arena := mem.Arena.init(gpa, 8192);
     defer arena.deinit();
 
     // ── 1. Structure ─────────────────────────────────────────────────

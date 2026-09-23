@@ -31,16 +31,16 @@ help: a member joins a set declared 'Plain :: @OpenSet(.{ max = … }) { … }'
 28 | Wrong :: @OpenVariant(Plain) {
    |                       ^^^^^
 
-error: 'lib.View' is not an open set
+error: 'lib.mem.View' is not an open set
   --> examples/diagnostics/2046-diagnostics-open-set-head.sx:36:24
    |
-36 | Absent :: @OpenVariant(lib.View) {
-   |                        ^^^^^^^^
+36 | Absent :: @OpenVariant(lib.mem.View) {
+   |                        ^^^^^^^^^^^^
 
-help: 'lib' publishes no open set 'View' — a member joins a set the module that declares it publishes
+help: 'lib.mem' publishes no open set 'View' — a member joins a set the module that declares it publishes
    |
-36 | Absent :: @OpenVariant(lib.View) {
-   |                        ^^^^^^^^
+36 | Absent :: @OpenVariant(lib.mem.View) {
+   |                        ^^^^^^^^^^^^
 
 error: 'Stray' cannot be converted to 'View': it is not a member of it
   --> examples/diagnostics/2046-diagnostics-open-set-head.sx:49:5

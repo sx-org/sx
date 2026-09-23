@@ -61,10 +61,10 @@ main :: () {
     print("view: {}\n", @typeName(@typeOf(av)));
 
     // `inline` layout: same story through an Allocator value
-    ga := GPA.init();
+    ga := mem.GPA.init();
     a : Allocator = ga;
     print("inline: {}\n", @typeName(@typeOf(a)));
-    g := a.(GPA);
+    g := a.(mem.GPA);
     _ = g;
 
     // the downcast binds a COPY (assertion parity) — the original is untouched

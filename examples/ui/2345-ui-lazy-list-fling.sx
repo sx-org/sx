@@ -32,10 +32,10 @@ settle :: (tag: string, st: *fluent.ListState, loop: *fluent.FrameLoop, fromMs: 
 main :: () -> i32 {
     st := fluent.ListState.init(context.allocator);
     root := fluent.UiRoot.init(fluent.Size{ width = 100.0, height = 100.0 }, context.allocator);
-    loop := fluent.FrameLoop.init(*root, closure(||_{ st = *st } -> fluent.View {
+    loop := fluent.FrameLoop.init(*root, mem.closure(||_{ st = *st } -> fluent.View {
         v : fluent.View = fluent.lazyList(st, 100,
-            closure(|i: i64| -> u64 { i.(u64) }),
-            closure(|i: i64| -> fluent.View { r : fluent.View = fluent.Rect{ height = 30.0 }; r }));
+            mem.closure(|i: i64| -> u64 { i.(u64) }),
+            mem.closure(|i: i64| -> fluent.View { r : fluent.View = fluent.Rect{ height = 30.0 }; r }));
         v
     }), context.allocator);
     loop.frame(0);

@@ -11,7 +11,7 @@ Button :: struct {
 }
 
 store :: (value: $I/@Init($T)) -> *T {
-    dest := context.allocator.create(T);
+    dest := mem.create(context.allocator, T);
     value.write(dest);
     dest
 }
@@ -32,7 +32,7 @@ main :: () -> i32 {
     copy.label = "written through";
     print("source unaffected: {}\n", a.label);
 
-    context.allocator.destroy(copy);
+    mem.destroy(context.allocator, copy);
     0
 }
 

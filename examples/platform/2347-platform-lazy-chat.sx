@@ -95,7 +95,7 @@ row :: (i: i64) -> fluent.View {
     v : fluent.View = fluent.place(fluent.tappable(
         fluent.place(fluent.Label{ text = m.text, fontSize = FONT_SIZE },
             fluent.Mod{ bg = fill, corner = 12.0, padding = fluent.EdgeInsets.symmetric(12.0, 8.0) }),
-        closure(||_{ marked } { marked.set(!marked.get()) })),
+        mem.closure(||_{ marked } { marked.set(!marked.get()) })),
         fluent.Mod{ margin = fluent.EdgeInsets{ top = 3.0, left = if mine then 60.0 else 12.0, bottom = 3.0, right = if mine then 12.0 else 60.0 } });
     v
 }
@@ -145,35 +145,35 @@ frame :: () {
 main :: () -> i32 {
     inline if @host.os != .ios { return 0; }
 
-    plat := context.allocator.make(UIKitPlatform{ gpuMode = .metal });
+    plat := mem.make(context.allocator, UIKitPlatform{ gpuMode = .metal });
     if !plat.init("Sx Lazy Chat", 0, 0) { return 1; }
     gPlat = plat;
 
-    gGpu = context.allocator.make(MetalGPU{});
+    gGpu = mem.make(context.allocator, MetalGPU{});
     if !gGpu.init(null, 0, 0) { return 1; }
 
-    gRenderer = context.allocator.make(UIRenderer{});
+    gRenderer = mem.make(context.allocator, UIRenderer{});
     gRenderer.gpu = gGpu.(GPU);
     gRenderer.init();
 
-    gGlyphs = context.allocator.make(GlyphCache{});
+    gGlyphs = mem.make(context.allocator, GlyphCache{});
     gGlyphs.gpu = gGpu.(GPU);
     if !gGlyphs.init(BUNDLE_FACE, FONT_SIZE) { return 1; }
     fluent.setGlobalFont(gGlyphs);
 
-    gMessages = context.allocator.make(List(Message){});
-    gState = context.allocator.make(fluent.ListState.init(context.allocator, true));
+    gMessages = mem.make(context.allocator, List(Message){});
+    gState = mem.make(context.allocator, fluent.ListState.init(context.allocator, true));
     for 0..300 { arrive(); }
     gLastArrivalNs = time.monoNs();
 
-    gRoot = context.allocator.make(fluent.UiRoot.init(fluent.Size{ width = 0.0, height = 0.0 }, context.allocator));
-    gLoop = context.allocator.make(fluent.FrameLoop.init(gRoot, closure(|| -> fluent.View {
+    gRoot = mem.make(context.allocator, fluent.UiRoot.init(fluent.Size{ width = 0.0, height = 0.0 }, context.allocator));
+    gLoop = mem.make(context.allocator, fluent.FrameLoop.init(gRoot, mem.closure(|| -> fluent.View {
         insets := gPlat.safeInsets();
         v : fluent.View = fluent.zstack(fluent.ALIGN_TOP_LEADING) {
             fluent.Rect{ fill = fluent.Color.rgb(18, 23, 33) };
             fluent.place(fluent.lazyList(gState, gMessages.len,
-                closure(|i: i64| -> u64 { gMessages.items[i].id }),
-                closure(|i: i64| -> fluent.View { row(i) })),
+                mem.closure(|i: i64| -> u64 { gMessages.items[i].id }),
+                mem.closure(|i: i64| -> fluent.View { row(i) })),
                 fluent.Mod{ margin = fluent.EdgeInsets{ top = insets.top, left = 0.0, bottom = insets.bottom, right = 0.0 } });
         };
         v

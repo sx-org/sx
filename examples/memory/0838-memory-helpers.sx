@@ -8,19 +8,20 @@
 
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
+..mem;
 
 Session :: struct { id: i64; score: i64; }
 
 main :: () {
-    gpa := GPA.init();
-    tracker := TrackingAllocator.init(gpa);
+    gpa := mem.GPA.init();
+    tracker := mem.TrackingAllocator.init(gpa);
     a : Allocator = tracker;
 
     // create / destroy — direct spelling
-    s := create(a, Session);
+    s := mem.create(a, Session);
     s.id = 7; s.score = 42;
     print("create: {} {}\n", s.id, s.score);
-    destroy(a, s);
+    mem.destroy(a, s);
 
     // create — dot spelling on a local Allocator
     p := a.create(Session);
@@ -62,7 +63,7 @@ main :: () {
     raw := a.allocBytes(8);
     q : *i64 = raw;
     q.* = 1234;
-    raw2 := memRealloc(a, raw, 8, 16, 8);
+    raw2 := mem.memRealloc(a, raw, 8, 16, 8);
     q2 : *i64 = raw2;
     print("realloc: {}\n", q2.*);
     a.deallocBytes(raw2);
