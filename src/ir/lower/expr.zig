@@ -1852,12 +1852,16 @@ pub fn stringLiteralBytes(self: *Lowering, lit: ast.StringLiteral) []const u8 {
 pub fn lowerStringLiteral(self: *Lowering, lit: ast.StringLiteral) Ref {
     const str = self.stringLiteralBytes(lit);
     const sid = self.module.types.internString(str);
-    const ty: TypeId = switch (self.literalShape(self.target_type)) {
+    return self.builder.emit(.{ .const_string = sid }, self.literalType(self.target_type, str.len));
+}
+
+/// The type a literal of `len` bytes takes at `target`.
+pub fn literalType(self: *Lowering, target: ?TypeId, len: usize) TypeId {
+    return switch (self.literalShape(target)) {
         .string => .string,
         .view => .cstring,
-        .array => self.module.types.arrayOfSentinel(.u8, @intCast(str.len), 0),
+        .array => self.module.types.arrayOfSentinel(.u8, @intCast(len), 0),
     };
-    return self.builder.emit(.{ .const_string = sid }, ty);
 }
 
 pub const LiteralShape = enum { string, view, array };
