@@ -1268,6 +1268,10 @@ fn checkAssignableWith(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: as
     // Lowering owns the specific refusal diagnostics for these pairs.
     const plan = self.coercionResolver().classify(src_ty, dst_ty);
     if (plan.refuses() or plan == .unbox_any) return true;
+    if (plan == .bool_to_number or plan == .number_to_bool) {
+        diagImplicitNumericConversion(self, src_ty, dst_ty, span);
+        return false;
+    }
     if (!src_ty.isBuiltin() and !dst_ty.isBuiltin() and
         self.module.types.get(src_ty) == .@"error" and self.module.types.get(dst_ty) == .@"error") return true;
     if (self.diagnostics) |d| {
@@ -1430,7 +1434,7 @@ pub fn conversionAvailable(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, mode
     const plan = self.coercionResolver().classify(src_ty, dst_ty);
     if (plan == .none or plan.refuses()) return false;
     return switch (plan) {
-        .error_to_int, .single_to_many, .void_to_c_function, .unbox_any => mode == .explicit,
+        .error_to_int, .single_to_many, .void_to_c_function, .unbox_any, .bool_to_number, .number_to_bool => mode == .explicit,
         .optional_wrap => self.conversionAvailable(src_ty, self.module.types.get(dst_ty).optional.child, mode),
         .optional_to_optional => self.conversionAvailable(self.module.types.get(src_ty).optional.child, self.module.types.get(dst_ty).optional.child, mode),
         else => true,
@@ -1477,7 +1481,7 @@ pub fn checkConstantWidens(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span
 fn implicitNumericConversion(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) ?bool {
     if (implicitIntegerConversion(self, src_ty, dst_ty)) |widens| return widens;
     return switch (self.coercionResolver().classify(src_ty, dst_ty)) {
-        .float_to_int => false,
+        .float_to_int, .bool_to_number, .number_to_bool => false,
         .narrow => if (Lowering.isFloat(src_ty) and Lowering.isFloat(dst_ty)) false else null,
         else => null,
     };
@@ -1769,6 +1773,16 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
                 return refuseImplicitNumericConversion(self, src_ty, dst_ty);
             }
             return self.builder.emit(.{ .float_to_int = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty);
+        },
+        .bool_to_number => {
+            if (mode == .implicit) return refuseImplicitNumericConversion(self, src_ty, dst_ty);
+            const bit = self.builder.emit(.{ .widen = .{ .operand = val, .from = .bool, .to = .u8 } }, .u8);
+            return self.coerceMode(bit, .u8, dst_ty, mode);
+        },
+        .number_to_bool => {
+            if (mode == .implicit) return refuseImplicitNumericConversion(self, src_ty, dst_ty);
+            const zero = if (Lowering.isFloat(src_ty)) self.builder.constFloat(0, src_ty) else self.builder.constInt(0, src_ty);
+            return self.builder.emit(.{ .cmp_ne = .{ .lhs = val, .rhs = zero } }, .bool);
         },
         // Int ↔ payload-less enum: run the integer ladder to/from the enum's
         // backing type, then retype the word to the other side. The retype is

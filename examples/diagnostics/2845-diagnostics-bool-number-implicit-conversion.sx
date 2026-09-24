@@ -1,0 +1,9 @@
+G : f64 = true;
+
+count :: (n: i64) -> i64 { n }
+
+main :: () {
+    n := 2;
+    flag : bool = n;
+    count(flag);
+}
