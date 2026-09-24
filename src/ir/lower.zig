@@ -4083,6 +4083,7 @@ pub const Lowering = struct {
     pub const externalErrorsExist = lower_coerce.externalErrorsExist;
     pub const coerceMode = lower_coerce.coerceMode;
     pub const diagNonIntegralNarrow = lower_coerce.diagNonIntegralNarrow;
+    pub const foldIntegralFloat = lower_coerce.foldIntegralFloat;
     pub const promoteCVariadicArgs = lower_coerce.promoteCVariadicArgs;
     pub const promotedTailType = lower_coerce.promotedTailType;
     pub const tailAdmissible = lower_coerce.tailAdmissible;

@@ -1153,6 +1153,18 @@ pub fn diagNonIntegralNarrow(self: *Lowering, span: ast.Span, value: f64, dst_ty
         d.addFmt(.err, span, "cannot implicitly narrow non-integral float '{d}' to '{s}'; use an explicit cast (`.({s})`)", .{ value, self.formatTypeName(dst_ty), self.formatTypeName(dst_ty) });
 }
 
+/// The integer an implicit compile-time float `value` folds to at the integer
+/// type `dst_ty`, checked as that integer's literal is, or null once a
+/// non-integral float is refused at `span`.
+pub fn foldIntegralFloat(self: *Lowering, value: f64, dst_ty: TypeId, span: ast.Span) ?i64 {
+    const iv = program_index_mod.floatToIntExact(value) orelse {
+        diagNonIntegralNarrow(self, span, value, dst_ty);
+        return null;
+    };
+    self.checkIntLiteralFits(iv, dst_ty, span);
+    return iv;
+}
+
 /// The integer word the compile-time float `value` truncates to at `dst_ty`,
 /// or null once a NaN or a truncation outside `dst_ty` is refused at `span`.
 fn constFloatToInt(self: *Lowering, value: f64, dst_ty: TypeId, span: ast.Span) ?u64 {
@@ -1831,11 +1843,8 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         .float_to_int => {
             if (mode == .implicit) {
                 if (self.builder.constFloatInfo(val)) |info| {
-                    if (program_index_mod.floatToIntExact(info.value)) |iv| {
-                        return self.builder.constInt(iv, dst_ty);
-                    }
-                    self.diagNonIntegralNarrow(.{ .start = info.span.start, .end = info.span.end }, info.value, dst_ty);
-                    return self.builder.constUndef(dst_ty);
+                    const iv = foldIntegralFloat(self, info.value, dst_ty, .{ .start = info.span.start, .end = info.span.end }) orelse return self.builder.constUndef(dst_ty);
+                    return self.builder.constInt(iv, dst_ty);
                 }
                 return refuseImplicitNumericConversion(self, src_ty, dst_ty);
             }

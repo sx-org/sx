@@ -348,11 +348,7 @@ fn constCastValue(self: *Lowering, pc: *const ast.PostfixCast, expected_ty: Type
 /// A float literal's constant at `expected_ty`. An integer destination takes
 /// the float only when it is integral.
 fn constFloatLeaf(self: *Lowering, value: f64, expected_ty: TypeId, span: ast.Span) ?inst_mod.ConstantValue {
-    if (self.isIntEx(expected_ty)) {
-        if (program_index_mod.floatToIntExact(value)) |iv| return .{ .int = iv };
-        self.diagNonIntegralNarrow(span, value, expected_ty);
-        return null;
-    }
+    if (self.isIntEx(expected_ty)) return .{ .int = self.foldIntegralFloat(value, expected_ty, span) orelse return null };
     return .{ .float = self.adoptFloatValue(value, expected_ty, span) };
 }
 
@@ -2797,10 +2793,5 @@ pub fn foldComptimeFloatInit(self: *Lowering, node: *const Node, dst: TypeId) ?R
     // `ME / 2` would look like integer division; `isFloatValuedExpr` (judging
     // by VALUE) catches that case so it narrows under the unified rule too.
     if (!isFloat(self.inferExprType(node)) and !program_index_mod.isFloatValuedExpr(node, self)) return null;
-    // Integral comptime float folds to its int (`floatToIntExact`, the same
-    // facility the array-dim / `$K: Count` paths use); a non-integral one is
-    // the narrowing error.
-    if (program_index_mod.floatToIntExact(fv)) |iv| return self.builder.constInt(iv, dst);
-    self.diagNonIntegralNarrow(node.span, fv, dst);
-    return self.builder.constInt(0, dst);
+    return self.builder.constInt(self.foldIntegralFloat(fv, dst, node.span) orelse 0, dst);
 }
