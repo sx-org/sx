@@ -1511,7 +1511,7 @@ pub fn resolveValueParamArg(self: *Lowering, arg_node: *const Node, param_name: 
     // so an integral float arg (`Box(4.0)`, `Make(F + 1.5, ...)`) binds the
     // integer it equals, exactly as the `u32` gate above does; a non-integral
     // float / non-const arg is not a valid count.
-    const v = switch (program_index_mod.foldCountI64(arg_node, self)) {
+    const v = switch (program_index_mod.foldCount(arg_node, self)) {
         .int => |iv| iv,
         .non_integral, .not_const => {
             self.diagValueParamNotConst(arg_node, param_name);
@@ -1526,7 +1526,10 @@ pub fn resolveValueParamArg(self: *Lowering, arg_node: *const Node, param_name: 
             }
         }
     }
-    return v;
+    return std.math.cast(i64, v) orelse {
+        self.diagValueParamRange(arg_node, param_name, "i64", v);
+        return null;
+    };
 }
 
 /// Resolve a generic value-param constraint type NAME to its canonical builtin
@@ -1551,7 +1554,7 @@ pub fn diagValueParamNotConst(self: *Lowering, arg_node: *const Node, param_name
         d.addFmt(.err, arg_node.span, "generic value parameter '{s}' must be a compile-time integer constant", .{param_name});
 }
 
-pub fn diagValueParamRange(self: *Lowering, arg_node: *const Node, param_name: []const u8, type_name: []const u8, value: i64) void {
+pub fn diagValueParamRange(self: *Lowering, arg_node: *const Node, param_name: []const u8, type_name: []const u8, value: i128) void {
     if (self.diagnostics) |d|
         d.addFmt(.err, arg_node.span, "value {} does not fit in {s} parameter {s}", .{ value, type_name, param_name });
 }

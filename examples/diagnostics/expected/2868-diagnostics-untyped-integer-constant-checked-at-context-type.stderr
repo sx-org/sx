@@ -1,0 +1,23 @@
+error: integer literal -18446744073709551615 does not fit in u64 (range 0..18446744073709551615) — use an explicit `.(u64)` to truncate
+  --> examples/diagnostics/2868-diagnostics-untyped-integer-constant-checked-at-context-type.sx:5:11
+   |
+ 5 | K : u64 : -M;
+   |           ^^
+
+error: integer literal 9223372036854775808 does not fit in i64 (range -9223372036854775808..9223372036854775807) — use an explicit `.(i64)` to truncate
+  --> examples/diagnostics/2868-diagnostics-untyped-integer-constant-checked-at-context-type.sx:9:10
+   |
+ 9 |     d := 9223372036854775807 + 1;
+   |          ^^^^^^^^^^^^^^^^^^^^^^^
+
+error: integer literal 164 does not fit in i8 (range -128..127) — use an explicit `.(i8)` to truncate
+  --> examples/diagnostics/2868-diagnostics-untyped-integer-constant-checked-at-context-type.sx:10:16
+   |
+10 |     d8 : i8 = (1 << 6) + 100;
+   |                ^^^^^^^^^^^^^
+
+error: integer literal -1 does not fit in u8 (range 0..255) — use an explicit `.(u8)` to truncate
+  --> examples/diagnostics/2868-diagnostics-untyped-integer-constant-checked-at-context-type.sx:11:14
+   |
+11 |     m : u8 = ~0;
+   |              ^^

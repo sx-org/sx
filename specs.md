@@ -564,10 +564,8 @@ n      := u64.max;                // 18446744073709551615 (all-ones)
 - **Value.** Pure `(width, signedness)` arithmetic — never a per-name table:
   signed `N` has `min = -(2^(N-1))`, `max = 2^(N-1) - 1`; unsigned `N` has
   `min = 0`, `max = 2^N - 1`.
-- **`u64.max`** exceeds the signed `i64` range of integer constants: it is
-  stored as the exact all-ones bit pattern carrying the `u64` type and cannot be
-  written as a decimal literal. The default integer formatter is
-  signedness-aware, so `print("{}", u64.max)` renders `18446744073709551615`.
+- The default integer formatter is signedness-aware, so
+  `print("{}", u64.max)` renders `18446744073709551615`.
 - `.min` / `.max` on a non-numeric type (`bool`, `string`, a pointer, a
   `struct`, `void`, an `enum`) is a compile error.
 
@@ -2952,12 +2950,17 @@ isReady : ValueListenable(bool) = map(
 - Explicit annotation overrides inference: `NAME : f64 : 0.9;`
 - Integer literals default to `i64`
 - Untyped integer expressions — integer literals, unannotated integer
-  constants, unary negation and `+ - * / %` over them — fold at compile time
-  and take their destination's numeric type, as a literal does:
-  `d : i32 = 2 * 3` is `6` as `i32`, and `d : i8 = 100 + 100` is refused
-  because `200` does not fit `i8`. Without a destination the type is `i64`.
-  They fold in `i64`; overflow and division by zero are located compile
-  errors.
+  constants, and every integer operator over them (`+ - * / %`, unary `-`,
+  `& | ^ ~`, and `<< >>` with an untyped left operand) — fold exactly at
+  compile time, in 128-bit arithmetic. Only the folded value takes a type, and
+  it must fit it: its destination's or typed peer's type, and `i64` without
+  either. An explicit cast (`.(T)`, `xx`) converts it, truncating.
+  `f : u64 = 0xFFFF_FFFF_FFFF_FFFF / 2` is `9223372036854775807`,
+  `d : i8 = 100 + 100` is refused because `200` does not fit `i8`, and
+  `m : u8 = ~0` is refused because `-1` does not fit `u8`. A value outside 128
+  bits and a division by zero are located compile errors. An untyped shift by
+  a runtime amount does not fold and computes in the type it takes (see
+  [Arithmetic](#arithmetic)).
 - String literals, and `::` constants bound to them, take the shape their
   destination names and default to `string` (see [Literals](#literals))
 - Untyped float expressions comprise numeric literals, unannotated numeric

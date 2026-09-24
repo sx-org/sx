@@ -99,6 +99,12 @@ pub const IntLayout = struct {
         return @bitCast((~@as(u64, 0)) >> lead); // 2^width - 1
     }
 
+    /// The layout's `.min`/`.max` as an exact integer.
+    pub fn bound(self: IntLayout, want_max: bool) i128 {
+        const raw = self.limit(want_max);
+        return if (self.signed) raw else @as(u64, @bitCast(raw));
+    }
+
     /// The `@int(N, .signed)` constructor spelling.
     pub fn format(self: IntLayout, writer: *std.Io.Writer) std.Io.Writer.Error!void {
         try writer.print("@int({d}, .{s})", .{ self.width, if (self.signed) "signed" else "unsigned" });
@@ -1459,6 +1465,13 @@ pub const TypeTable = struct {
     pub fn integerLimit(self: *const TypeTable, ty: TypeId, want_max: bool) ?i64 {
         const layout = self.integerLayout(ty) orelse return null;
         return layout.limit(want_max);
+    }
+
+    /// `<IntType>.min` / `.max` as an exact integer, or null when `ty` is not
+    /// an integer.
+    pub fn integerBound(self: *const TypeTable, ty: TypeId, want_max: bool) ?i128 {
+        const layout = self.integerLayout(ty) orelse return null;
+        return layout.bound(want_max);
     }
 
     /// The largest count a length word of type `len_ty` can carry. Signed

@@ -1841,13 +1841,13 @@ pub fn lowerNumericLimit(self: *Lowering, fa: *const ast.FieldAccess, span: ast.
 }
 
 /// `<IntType>.min` / `.max` for the shared comptime-integer folder — the
-/// queried type's limit through the SAME receiver classifier and
-/// `TypeTable.integerLimit` the value path folds, so an array dimension
-/// (`[@int(2, .unsigned).max]i64`) and the expression agree.
-pub fn typeLimitInt(self: *Lowering, receiver: *const Node, field: []const u8) ?i64 {
+/// queried type's exact limit through the SAME receiver classifier the value
+/// path folds, so an array dimension (`[@int(2, .unsigned).max]i64`) and the
+/// expression agree.
+pub fn typeLimitInt(self: *Lowering, receiver: *const Node, field: []const u8) ?i128 {
     if (!TypeResolver.isIntLimitField(field)) return null;
     const ty = self.limitReceiverType(receiver) orelse return null;
-    return self.module.types.integerLimit(ty, std.mem.eql(u8, field, "max"));
+    return self.module.types.integerBound(ty, std.mem.eql(u8, field, "max"));
 }
 
 /// The bytes a string literal denotes, escapes resolved.
@@ -3781,32 +3781,6 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
     return result;
 }
 
-/// The exact value of an untyped integer expression. Arithmetic folds in
-/// `i64`, so an operand outside it overflows, and a negated literal is exact,
-/// so `-9223372036854775808` is `i64`'s minimum. Null when an operand does not
-/// fold, and for a shift, which computes in the type it takes; lowering the
-/// expression at that type computes or diagnoses it.
-fn untypedIntegerValue(self: *Lowering, node: *const Node) program_index_mod.IntArithmeticFault!?i128 {
-    switch (node.data) {
-        .unary_op => |u| return -(try untypedOperandValue(self, u.operand) orelse return null),
-        .binary_op => |b| {
-            if (b.op == .shl or b.op == .shr) return null;
-            const l = try untypedOperandValue(self, b.lhs) orelse return null;
-            const r = try untypedOperandValue(self, b.rhs) orelse return null;
-            return try program_index_mod.foldIntArithmetic(b.op, std.math.cast(i64, l) orelse return error.Overflow, std.math.cast(i64, r) orelse return error.Overflow);
-        },
-        .identifier, .type_expr, .field_access => return try untypedOperandValue(self, node),
-        else => return null,
-    }
-}
-
-fn untypedOperandValue(self: *Lowering, node: *const Node) program_index_mod.IntArithmeticFault!?i128 {
-    return switch (node.data) {
-        .unary_op, .binary_op => untypedIntegerValue(self, node),
-        else => self.foldedIntValue(node, program_index_mod.evalConstIntExpr(node, self) orelse return null),
-    };
-}
-
 fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
     if (program_index_mod.untypedConst(node, self)) |untyped| switch (untyped) {
         .float => {
@@ -3815,10 +3789,13 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                 return self.builder.constFloat(value, ty);
         },
         .string => |lit| return self.lowerStringLiteral(lit),
-        .integer => {
-            const folded = untypedIntegerValue(self, node) catch |fault| {
+        // A char literal keeps its code-point diagnostic.
+        .integer => if (node.data != .char_literal) {
+            // A shift by a runtime or negative amount does not fold; lowering
+            // computes or diagnoses it at its type.
+            const folded = program_index_mod.foldConstInt(node, self) catch |fault| {
                 if (self.diagnostics) |d| d.add(.err, switch (fault) {
-                    error.Overflow => "integer constant overflows 'i64'",
+                    error.Overflow => "integer constant overflows 128 bits",
                     error.DivisionByZero => "integer constant divides by zero",
                 }, node.span);
                 return self.emitPlaceholder("integer-constant-fault");
@@ -4373,7 +4350,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                     }
                     break :blk2 self.builder.constBool(false);
                 },
-                .bit_not => self.builder.emit(.{ .bit_not = .{ .operand = operand } }, self.inferExprType(uop.operand)),
+                .bit_not => self.builder.emit(.{ .bit_not = .{ .operand = operand } }, self.builder.getRefType(operand)),
                 .xx => self.lowerXX(operand, uop.operand),
                 .address_of => blk2: {
                     const inner_ty = self.inferExprType(uop.operand);

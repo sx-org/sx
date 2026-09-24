@@ -343,7 +343,7 @@ test "sema: terminated array, slice and many-pointer types display their termina
     }
 }
 
-test "sema: an untyped shift takes its typed peer's type and is i64 alone" {
+test "sema: an untyped shift or bitwise operation takes its typed peer's type and is i64 alone" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -353,6 +353,7 @@ test "sema: an untyped shift takes its typed peer's type and is i64 alone" {
         \\    e: u32 = 1;
         \\    peer := (1 << n) + e;
         \\    alone := (1 << n) >> 2;
+        \\    bits := ~(1 | 2) & e;
         \\}
     ;
     var parser = try Parser.init(alloc, source);
@@ -362,6 +363,7 @@ test "sema: an untyped shift takes its typed peer's type and is i64 alone" {
     const expected = [_]struct { name: []const u8, display: []const u8 }{
         .{ .name = "peer", .display = "u32" },
         .{ .name = "alone", .display = "i64" },
+        .{ .name = "bits", .display = "u32" },
     };
     for (expected) |want| {
         var found = false;

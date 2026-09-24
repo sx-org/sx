@@ -168,13 +168,13 @@ pub fn constFoldFrameContains(frame: ?*const ConstFoldFrame, name: []const u8, e
 pub const SourceConstCtx = struct {
     lowering: *Lowering,
     frame: ?*const ConstFoldFrame,
-    pub fn lookupDimName(self: SourceConstCtx, name: []const u8) ?i64 {
+    pub fn lookupDimName(self: SourceConstCtx, name: []const u8) ?i128 {
         return self.lowering.foldSourceConstInt(name, self.frame);
     }
     pub fn lookupPackLen(self: SourceConstCtx, name: []const u8) ?i64 {
         return self.lowering.lookupPackLen(name);
     }
-    pub fn typeLimitInt(self: SourceConstCtx, receiver: *const Node, field: []const u8) ?i64 {
+    pub fn typeLimitInt(self: SourceConstCtx, receiver: *const Node, field: []const u8) ?i128 {
         return self.lowering.typeLimitInt(receiver, field);
     }
     pub fn untypedLeaf(self: SourceConstCtx, node: *const Node) ?program_index_mod.Untyped {
@@ -201,12 +201,12 @@ pub const SourceConstCtx = struct {
     pub fn lookupConstAggLen(self: SourceConstCtx, name: []const u8) ?i64 {
         return self.lowering.foldConstAggLen(name);
     }
-    pub fn lookupConstArrayElem(self: SourceConstCtx, name: []const u8, idx: i64, span: ?ast.Span) ?i64 {
+    pub fn lookupConstArrayElem(self: SourceConstCtx, name: []const u8, idx: i64, span: ?ast.Span) ?i128 {
         return self.lowering.foldConstArrayElem(name, idx, span, self.frame);
     }
-    pub fn lookupConstStructField(self: SourceConstCtx, name: []const u8, field: []const u8, span: ?ast.Span) ?i64 {
-        return self.lowering.foldComptimeStructField(name, field) orelse
-            self.lowering.foldConstStructField(name, field, span, self.frame);
+    pub fn lookupConstStructField(self: SourceConstCtx, name: []const u8, field: []const u8, span: ?ast.Span) ?i128 {
+        if (self.lowering.foldComptimeStructField(name, field)) |v| return v;
+        return self.lowering.foldConstStructField(name, field, span, self.frame);
     }
     pub fn evalConstCallInt(self: SourceConstCtx, node: *const Node) ?i64 {
         if (self.lowering.fieldCall(node) != null) return self.lowering.foldFieldInt(node, self.frame);
@@ -215,7 +215,7 @@ pub const SourceConstCtx = struct {
     pub fn evalConstFieldAccessInt(self: SourceConstCtx, node: *const Node) ?i64 {
         return self.lowering.evalConstFieldAccessInt(node);
     }
-    pub fn lookupQualifiedConst(self: SourceConstCtx, ns: []const u8, field: []const u8) ?i64 {
+    pub fn lookupQualifiedConst(self: SourceConstCtx, ns: []const u8, field: []const u8) ?i128 {
         return self.lowering.foldQualifiedConstInt(ns, field, self.frame);
     }
     pub fn lookupQualifiedConstFloat(self: SourceConstCtx, ns: []const u8, field: []const u8) ?f64 {
@@ -224,7 +224,7 @@ pub const SourceConstCtx = struct {
     pub fn qualifiedNameIsFloatTyped(self: SourceConstCtx, ns: []const u8, field: []const u8) bool {
         return self.lowering.qualifiedConstIsFloatTyped(ns, field, self.frame);
     }
-    pub fn lookupQualifiedConstNode(self: SourceConstCtx, node: *const Node) ?i64 {
+    pub fn lookupQualifiedConstNode(self: SourceConstCtx, node: *const Node) ?i128 {
         return self.lowering.foldQualifiedConstNodeInt(node, self.frame);
     }
     pub fn lookupQualifiedConstNodeFloat(self: SourceConstCtx, node: *const Node) ?f64 {
@@ -292,6 +292,9 @@ pub const Binding = struct {
     alias_node: ?*ast.Node = null,
     origin: Origin = .other,
     untyped: ?program_index_mod.Untyped = null,
+    /// An untyped integer local constant's exact value, which each read folds
+    /// at its own type; `ref` holds its low 64 bits as an `i64`.
+    untyped_integer: ?i128 = null,
     /// A `:=` local initialized from an untyped string constant: that initializer.
     literal_init: ?*const ast.Node = null,
     /// The binding names a C `va_list` this frame BORROWS — an incoming
@@ -1824,7 +1827,7 @@ pub const Lowering = struct {
     /// is a hard error and yields null; the caller poisons rather than
     /// fabricating a width.
     pub fn resolveIntWidth(self: *Lowering, width_node: *const Node) ?u8 {
-        const out_of_range: i64 = switch (program_index_mod.foldDimU32(width_node, self, 1)) {
+        const out_of_range: i128 = switch (program_index_mod.foldDimU32(width_node, self, 1)) {
             .ok => |n| if (n <= types.max_int_width) return @intCast(n) else n,
             .below_min, .too_large => |v| v,
             .non_integral_float => |v| {
@@ -1861,7 +1864,7 @@ pub const Lowering = struct {
 
     /// Leaf-name lookup for the shared dimension evaluator: a name bound to a
     /// compile-time integer across the three const tables.
-    pub fn lookupDimName(self: *Lowering, name: []const u8) ?i64 {
+    pub fn lookupDimName(self: *Lowering, name: []const u8) ?i128 {
         return self.comptimeIntNamed(name);
     }
 
@@ -1984,6 +1987,7 @@ pub const Lowering = struct {
             if (scoped.crossed != .none) return null;
             if (scoped.binding) |binding| {
                 if (binding.origin != .local_const) return null;
+                if (binding.untyped_integer) |v| return @floatFromInt(v);
                 if (self.builder.constFloatInfo(binding.ref)) |info| return info.value;
                 if (self.foldedInt(binding.ref)) |v| return @floatFromInt(v);
                 return null;
@@ -2004,17 +2008,17 @@ pub const Lowering = struct {
     pub fn lookupConstAggLen(self: *Lowering, name: []const u8) ?i64 {
         return self.foldConstAggLen(name);
     }
-    pub fn lookupConstArrayElem(self: *Lowering, name: []const u8, idx: i64, span: ?ast.Span) ?i64 {
+    pub fn lookupConstArrayElem(self: *Lowering, name: []const u8, idx: i64, span: ?ast.Span) ?i128 {
         return self.foldConstArrayElem(name, idx, span, null);
     }
-    pub fn lookupConstStructField(self: *Lowering, name: []const u8, field: []const u8, span: ?ast.Span) ?i64 {
-        return self.foldComptimeStructField(name, field) orelse
-            self.foldConstStructField(name, field, span, null);
+    pub fn lookupConstStructField(self: *Lowering, name: []const u8, field: []const u8, span: ?ast.Span) ?i128 {
+        if (self.foldComptimeStructField(name, field)) |v| return v;
+        return self.foldConstStructField(name, field, span, null);
     }
     /// Qualified-import-member const leaf (`m.CAP`) for the shared
     /// dimension evaluator — resolves the namespace alias `ns` to its target
     /// module and folds its `field` const there.
-    pub fn lookupQualifiedConst(self: *Lowering, ns: []const u8, field: []const u8) ?i64 {
+    pub fn lookupQualifiedConst(self: *Lowering, ns: []const u8, field: []const u8) ?i128 {
         return self.foldQualifiedConstInt(ns, field, null);
     }
     pub fn lookupQualifiedConstFloat(self: *Lowering, ns: []const u8, field: []const u8) ?f64 {
@@ -2023,7 +2027,7 @@ pub const Lowering = struct {
     pub fn qualifiedNameIsFloatTyped(self: *Lowering, ns: []const u8, field: []const u8) bool {
         return self.qualifiedConstIsFloatTyped(ns, field, null);
     }
-    pub fn lookupQualifiedConstNode(self: *Lowering, node: *const Node) ?i64 {
+    pub fn lookupQualifiedConstNode(self: *Lowering, node: *const Node) ?i128 {
         return self.foldQualifiedConstNodeInt(node, null);
     }
     pub fn lookupQualifiedConstNodeFloat(self: *Lowering, node: *const Node) ?f64 {
@@ -2955,7 +2959,6 @@ pub const Lowering = struct {
     }
 
     pub const untypedLeaf = lower_comptime.untypedLeaf;
-    pub const untypedIntLiteral = lower_comptime.untypedIntLiteral;
 
     pub fn floatLeafType(self: *Lowering, node: *const Node) ?TypeId {
         switch (node.data) {
@@ -3436,8 +3439,7 @@ pub const Lowering = struct {
     /// non-integers.
     pub fn intLiteralRange(self: *Lowering, ty: TypeId) ?struct { min: i128, max: i128 } {
         const layout = self.module.types.integerLayout(ty) orelse return null;
-        const max = layout.limit(true);
-        return .{ .min = layout.limit(false), .max = if (layout.signed) max else @as(u64, @bitCast(max)) };
+        return .{ .min = layout.bound(false), .max = layout.bound(true) };
     }
 
     /// The integer an `i64` constant of type `ty` holds: an unsigned
@@ -3445,14 +3447,6 @@ pub const Lowering = struct {
     pub fn intConstantValue(self: *Lowering, value: i64, ty: TypeId) i128 {
         const layout = self.module.types.integerLayout(ty) orelse return value;
         return if (layout.signed) value else @as(u64, @bitCast(value));
-    }
-
-    /// The integer `node` denotes, given its `i64` fold `value`. An integer
-    /// literal, directly or through unannotated constants, folds to its
-    /// magnitude's bit pattern, and a typed value to its type's.
-    pub fn foldedIntValue(self: *Lowering, node: *const Node, value: i64) i128 {
-        if (program_index_mod.untypedConst(node, self) == null) return self.intConstantValue(value, self.inferExprType(node));
-        return if (self.untypedIntLiteral(node)) @as(u64, @bitCast(value)) else value;
     }
 
     /// Fits-check for a BARE integer literal, whose `value` is the magnitude's

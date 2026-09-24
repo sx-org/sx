@@ -16,7 +16,8 @@ main :: () -> i32 {
     n = 7;
     a := ((3 << n) >> 2).(u8);
     b := (3 << n) >> 2;
-    c : u8 = xx (((3 << n) | 1) >> 2);
+    w : i64 = 1;
+    c : u8 = xx (((3 << n) | w) >> 2);
     print("{} {} {} {} {} {} {} {}\n", m, z, h, o?!, k, a, b, c);
     print("{} {} {}\n", @typeName(@typeOf(z)), @typeName(@typeOf(h)), @typeName(@typeOf(b)));
     0

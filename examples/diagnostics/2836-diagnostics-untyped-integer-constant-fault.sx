@@ -1,9 +1,8 @@
-// Untyped integer constant arithmetic folds in `i64`: an operand or result
-// outside it, or a division by zero, is refused where it folds.
+// Untyped integer constant arithmetic folds exactly in 128 bits: a division by
+// zero, or a value outside 128 bits along the way, is refused where it folds.
 
 main :: () -> i32 {
-    d := 9223372036854775807 + 1;
     e := 7 / 0;
-    f : u64 = 0xFFFF_FFFF_FFFF_FFFF / 2;
+    g := (1 << 100) * (1 << 100) >> 190;
     0
 }

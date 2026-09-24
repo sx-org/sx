@@ -1,12 +1,16 @@
-// A constant above `i64.max` keeps its value at a `u64` destination.
+// A constant bound to a literal above `i64.max` is that literal wherever it is
+// read, so it keeps its value at a `u64` destination.
 
 @import "modules/std.sx";
 
 M :: 0xFFFF_FFFF_FFFF_FFFF;
 K : u64 : u64.max - 1;
+GA : [1]u64 = .[M];
 
 main :: () -> i32 {
     b : u64 = M;
-    print("{} {}\n", b, K);
+    L :: 0xFFFF_FFFF_FFFF_FFFF;
+    x : u64 = L;
+    print("{} {} {} {}\n", b, K, GA[0], x);
     0
 }

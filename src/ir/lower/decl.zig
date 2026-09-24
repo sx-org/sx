@@ -1471,7 +1471,7 @@ pub fn typedConstInitFits(self: *Lowering, value: *const Node, dst_ty: TypeId) b
     // (`F : f64 : 2.5; K : i64 : F + 1.5` → 4). Integrality is judged on the
     // FLOAT fold (`evalConstFloatExpr` + `floatToIntExact`) — the SAME facility
     // the typed-local path (`foldComptimeFloatInit`) uses — not the int-only
-    // folder, which folds leaf-by-leaf in `i64` and so misses an integral SUM
+    // folder, which folds leaf-by-leaf as integers and so misses an integral SUM
     // built from a non-integral float leaf. A non-integral fold (`1.5`,
     // `M + 0.5`, `F + 0.25`) yields null here and falls through to the
     // rejecting checks below, where `registerTypedModuleConst` emits the
@@ -3969,13 +3969,13 @@ pub fn callableReturnBinder(fd: *const ast.FnDecl, ret_ty: TypeId) ?*const Node 
 /// or the initializer does not fold.
 pub fn numericConstValue(self: *Lowering, ci: ModuleConstInfo, ctx: lower.SourceConstCtx) ?inst_mod.ConstantValue {
     if (self.isIntEx(ci.ty)) {
-        switch (program_index_mod.foldCountI64(ci.value, ctx)) {
+        switch (program_index_mod.foldCount(ci.value, ctx)) {
             .int => |iv| {
                 switch (ci.value.data) {
                     .char_literal => |cl| self.checkCharLiteralFits(cl, ci.ty, ci.value.span),
-                    else => self.checkIntLiteralFits(self.foldedIntValue(ci.value, iv), ci.ty, ci.value.span),
+                    else => self.checkIntLiteralFits(iv, ci.ty, ci.value.span),
                 }
-                return .{ .int = iv };
+                return .{ .int = @truncate(iv) };
             },
             .non_integral, .not_const => {},
         }

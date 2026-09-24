@@ -28,14 +28,14 @@ fn baseName(name: []const u8) []const u8 {
     return if (std.mem.lastIndexOfScalar(u8, name, '.')) |idx| name[idx + 1 ..] else name;
 }
 
-/// An integer written without a type: a literal, its negation, arithmetic over
-/// such integers, or a shift of one.
+/// An integer written without a type: a literal, its negation or complement,
+/// arithmetic or a bitwise operation over such integers, or a shift of one.
 fn isUntypedInteger(node: *const Node) bool {
     return switch (node.data) {
         .int_literal, .char_literal => true,
-        .unary_op => |u| u.op == .negate and isUntypedInteger(u.operand),
+        .unary_op => |u| (u.op == .negate or u.op == .bit_not) and isUntypedInteger(u.operand),
         .binary_op => |b| switch (b.op) {
-            .add, .sub, .mul, .div, .mod => isUntypedInteger(b.lhs) and isUntypedInteger(b.rhs),
+            .add, .sub, .mul, .div, .mod, .bit_and, .bit_or, .bit_xor => isUntypedInteger(b.lhs) and isUntypedInteger(b.rhs),
             .shl, .shr => isUntypedInteger(b.lhs),
             else => false,
         },

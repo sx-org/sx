@@ -138,7 +138,7 @@ pub const ExprTyper = struct {
             },
             .unary_op => |uop| switch (uop.op) {
                 .not => .bool,
-                .negate => self.l.operandType(self.l.inferExprType(uop.operand)),
+                .negate, .bit_not => self.l.operandType(self.l.inferExprType(uop.operand)),
                 .xx => self.l.target_type orelse .unresolved,
                 .address_of => blk: {
                     const inner = self.l.inferExprType(uop.operand);
@@ -146,7 +146,6 @@ pub const ExprTyper = struct {
                     break :blk self.l.module.types.ptrTo(inner);
                 },
                 .pre_decrement => self.l.inferExprType(uop.operand),
-                else => .unresolved,
             },
             // `try X` evaluates to X's success type (the value part). A
             // pure-failable operand (`-> !` / `-> !Named`, whose type IS the

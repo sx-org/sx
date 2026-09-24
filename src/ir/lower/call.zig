@@ -2898,7 +2898,7 @@ fn bindCallableBinders(
 /// `Ordering` enum (library/modules/std/atomic.sx) and the IR `AtomicOrdering`
 /// enum (inst.zig) declare these variants in the SAME order, so a comptime-bound
 /// ordering's tag indexes this list. Keep all three in sync.
-fn atomicOrderingFromTag(tag: i64) ?inst_mod.AtomicOrdering {
+fn atomicOrderingFromTag(tag: i128) ?inst_mod.AtomicOrdering {
     return switch (tag) {
         0 => .relaxed,
         1 => .acquire,

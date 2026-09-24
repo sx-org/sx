@@ -1121,6 +1121,14 @@ pub fn lowerConstDecl(self: *Lowering, cd: *const ast.ConstDecl) void {
 
     const errs_before: usize = if (self.diagnostics) |d| d.errorCount() else 0;
     const annotated: ?TypeId = if (cd.type_annotation) |ta| self.resolveType(ta) else null;
+    if (annotated == null) {
+        if (untypedIntegerValue(self, cd.value)) |v| {
+            if (self.scope) |scope| {
+                scope.put(cd.name, .{ .ref = self.builder.constInt(@truncate(v), .i64), .ty = .i64, .is_alloca = false, .origin = .local_const, .untyped = .integer, .untyped_integer = v });
+            }
+            return;
+        }
+    }
     const saved_target = self.target_type;
     self.target_type = annotated;
     var ref = self.lowerMarkedExpr(cd.value, true);
@@ -1146,6 +1154,11 @@ pub fn lowerConstDecl(self: *Lowering, cd: *const ast.ConstDecl) void {
     if (self.scope) |scope| {
         scope.put(cd.name, .{ .ref = ref, .ty = ty, .is_alloca = false, .origin = .local_const, .untyped = untyped });
     }
+}
+
+fn untypedIntegerValue(self: *Lowering, value: *const Node) ?i128 {
+    if (program_index_mod.untypedInteger(value, self) == null) return null;
+    return program_index_mod.evalConstIntExpr(value, self);
 }
 
 /// A local constant stays untyped while its value is known here; a runtime

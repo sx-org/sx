@@ -94,27 +94,6 @@ pub fn untypedLeaf(self: *Lowering, node: *const Node) ?program_index_mod.Untype
     return untypedSelected(self, constLeaf(self, node) orelse return null);
 }
 
-/// Whether the untyped integer `node` is an integer literal, directly or
-/// through unannotated module constants. A local constant holds an `i64`.
-pub fn untypedIntLiteral(self: *Lowering, node: *const Node) bool {
-    const name: ?[]const u8 = switch (node.data) {
-        .int_literal => return true,
-        .identifier => |id| id.name,
-        .type_expr => |te| te.name,
-        .field_access => null,
-        else => return false,
-    };
-    if (name) |n| if (self.scope) |scope| if (scope.lookup(n) != null) return false;
-    const leaf = constLeaf(self, node) orelse return false;
-    if (leaf.declared_type != null) return false;
-    const pin = self.pinConstValue(leaf.value, leaf.environment);
-    defer pin.unpin();
-    const saved_scope = self.scope;
-    self.scope = null;
-    defer self.scope = saved_scope;
-    return untypedIntLiteral(self, leaf.value);
-}
-
 const ConstLeaf = struct {
     value: *const Node,
     declared_type: ?TypeId,
@@ -244,14 +223,16 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
             return .{ .float = value };
     }
     if (self.untypedString(expr)) |lit| return constStringLiteral(self, lit, expected_ty, expr.span);
-    return switch (expr.data) {
+    const ctx = SourceConstCtx{ .lowering = self, .frame = frame };
+    if (expr.data != .char_literal and program_index_mod.untypedInteger(expr, ctx) != null) {
+        const v = program_index_mod.evalConstIntExpr(expr, ctx) orelse return null;
         // An int element in a FLOAT destination converts exactly (the
         // int+float promotion rule, element-wise — `[2]f64 : .[1, 2.5]`).
-        .int_literal => |il| blk: {
-            if (isFloat(expected_ty)) break :blk .{ .float = @floatFromInt(il.value) };
-            self.checkIntLiteralMagnitudeFits(il.value, expected_ty, expr.span);
-            break :blk .{ .int = il.value };
-        },
+        if (isFloat(expected_ty)) return .{ .float = @floatFromInt(v) };
+        self.checkIntLiteralFits(v, expected_ty, expr.span);
+        return .{ .int = @truncate(v) };
+    }
+    return switch (expr.data) {
         .char_literal => |cl| blk: {
             if (isFloat(expected_ty)) break :blk .{ .float = @floatFromInt(cl.value) };
             self.checkCharLiteralFits(cl, expected_ty, expr.span);
@@ -266,12 +247,6 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
         .null_literal => .null_val,
         .unary_op => |uo| switch (uo.op) {
             .negate => switch (uo.operand.data) {
-                .int_literal => |il| blk: {
-                    const v = -@as(i128, @as(u64, @bitCast(il.value)));
-                    if (isFloat(expected_ty)) break :blk .{ .float = @floatFromInt(v) };
-                    self.checkIntLiteralFits(v, expected_ty, expr.span);
-                    break :blk .{ .int = @truncate(v) };
-                },
                 .float_literal => |fl| constFloatLeaf(self, -fl.value, expected_ty, expr.span),
                 else => null,
             },
@@ -335,14 +310,13 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
                     }
                 }
             }
-            const ctx = SourceConstCtx{ .lowering = self, .frame = frame };
             if (self.isIntEx(expected_ty)) {
                 if (program_index_mod.evalConstIntExpr(expr, ctx)) |v| {
                     // An operation's result keeps its type; a named or builtin read adapts as a literal does.
                     const typed = expr.data == .binary_op or expr.data == .index_expr;
                     if (typed and !self.checkConstantWidens(self.inferExprType(expr), expected_ty, expr.span)) break :blk null;
-                    self.checkIntLiteralFits(self.foldedIntValue(expr, v), expected_ty, expr.span);
-                    break :blk inst_mod.ConstantValue{ .int = v };
+                    self.checkIntLiteralFits(v, expected_ty, expr.span);
+                    break :blk inst_mod.ConstantValue{ .int = @truncate(v) };
                 }
             }
             if (isFloat(expected_ty)) {
@@ -860,11 +834,11 @@ pub fn evalComptimeMatch(self: *Lowering, me: *const ast.MatchExpr) ?*const Node
 /// (`0..-2.0` → -2), and any constant-foldable expression over those
 /// (`inline for 0..(M + 1)`) all resolve identically. A range bound is an
 /// ENDPOINT, not a count (specs.md §2), so it deliberately does NOT take the
-/// `foldCountI64` float-const-leaf fallback the count sites add: it accepts a
+/// `foldCount` float-const-leaf fallback the count sites add: it accepts a
 /// direct integral float but leaves a float-const-leaf expression to the int
 /// folder (negatives are valid here, unlike a count).
 pub fn evalComptimeInt(self: *Lowering, node: *const Node) ?i64 {
-    return program_index_mod.evalConstIntExpr(node, self);
+    return std.math.cast(i64, program_index_mod.evalConstIntExpr(node, self) orelse return null);
 }
 
 /// Lower a `@run expr` that appears as a top-level constant binding:
@@ -2306,7 +2280,7 @@ pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, ph
 /// A comptime binding (generic value param / inline-for cursor) wins first;
 /// otherwise the name is a SOURCE-AWARE module const, folded with nested
 /// leaves resolved own-wins.
-pub fn comptimeIntNamed(self: *Lowering, name: []const u8) ?i64 {
+pub fn comptimeIntNamed(self: *Lowering, name: []const u8) ?i128 {
     if (self.comptime_constants.get(name)) |cv| switch (cv) {
         .int_val => |iv| return iv,
         else => {},
@@ -2318,7 +2292,9 @@ pub fn comptimeIntNamed(self: *Lowering, name: []const u8) ?i64 {
         const scoped = scope.lookupBoundary(name);
         if (scoped.crossed != .none) return null;
         if (scoped.binding) |binding| {
-            return if (binding.origin == .local_const and self.isIntEx(binding.ty)) self.foldedInt(binding.ref) else null;
+            if (binding.untyped_integer) |v| return v;
+            if (binding.origin != .local_const or !self.isIntEx(binding.ty)) return null;
+            return self.intConstantValue(self.foldedInt(binding.ref) orelse return null, binding.ty);
         }
     }
     return self.foldSourceConstInt(name, null);
@@ -2347,7 +2323,7 @@ pub fn comptimeValueRefNamed(self: *Lowering, name: []const u8) ?Ref {
 /// (`[K]u8`). `frame` (keyed by name + author-source) cycle-guards a const
 /// whose value references another const. With a single author the selected `ci`
 /// IS the global one and every nested leaf has exactly one author.
-pub fn foldSourceConstInt(self: *Lowering, name: []const u8, frame: ?*const ConstFoldFrame) ?i64 {
+pub fn foldSourceConstInt(self: *Lowering, name: []const u8, frame: ?*const ConstFoldFrame) ?i128 {
     return switch (self.selectModuleConst(name)) {
         .resolved => |sel| {
             if (constFoldFrameContains(frame, name, sel.environment)) return null;
@@ -2356,7 +2332,7 @@ pub fn foldSourceConstInt(self: *Lowering, name: []const u8, frame: ?*const Cons
             const restore = self.pinConstValue(sel.info.value, sel.environment);
             defer restore.unpin();
             const ctx = SourceConstCtx{ .lowering = self, .frame = &f };
-            if (sel.info.ty == .f32) return program_index_mod.floatToIntExact(program_index_mod.evalConstFloatInit(sel.info.value, ctx, sel.info.ty) orelse return null);
+            if (sel.info.ty == .f32) return if (program_index_mod.floatToIntExact(program_index_mod.evalConstFloatInit(sel.info.value, ctx, sel.info.ty) orelse return null)) |v| v else null;
             return program_index_mod.evalConstIntExpr(sel.info.value, ctx);
         },
         .own_opaque, .ambiguous, .none => null,
@@ -2394,7 +2370,7 @@ pub fn selectQualifiedConst(self: *Lowering, ns: []const u8, field: []const u8) 
 /// leaves (`CAP :: BASE + 1`, `BASE` authored in the target module) re-select
 /// against the target module, not the use site. `frame` (keyed by name +
 /// author-source) cycle-guards a const whose value references another const.
-pub fn foldQualifiedConstInt(self: *Lowering, ns: []const u8, field: []const u8, frame: ?*const ConstFoldFrame) ?i64 {
+pub fn foldQualifiedConstInt(self: *Lowering, ns: []const u8, field: []const u8, frame: ?*const ConstFoldFrame) ?i128 {
     const sel = self.selectQualifiedConst(ns, field) orelse return null;
     if (constFoldFrameContains(frame, field, sel.environment)) return null;
     if (!program_index_mod.isCountableConstType(&self.module.types, sel.info.ty)) return null;
@@ -2402,7 +2378,7 @@ pub fn foldQualifiedConstInt(self: *Lowering, ns: []const u8, field: []const u8,
     const restore = self.pinConstValue(sel.info.value, sel.environment);
     defer restore.unpin();
     const ctx = SourceConstCtx{ .lowering = self, .frame = &f };
-    if (sel.info.ty == .f32) return program_index_mod.floatToIntExact(program_index_mod.evalConstFloatInit(sel.info.value, ctx, sel.info.ty) orelse return null);
+    if (sel.info.ty == .f32) return if (program_index_mod.floatToIntExact(program_index_mod.evalConstFloatInit(sel.info.value, ctx, sel.info.ty) orelse return null)) |v| v else null;
     return program_index_mod.evalConstIntExpr(sel.info.value, ctx);
 }
 
@@ -2437,7 +2413,7 @@ pub fn qualifiedConstIsFloatTyped(self: *Lowering, ns: []const u8, field: []cons
 /// generic constant evaluator cannot flatten `facade.engine_alias.N` itself;
 /// the stateful lowering context owns the allocator and the namespace graph,
 /// so reconstruct and route it through the same full-path selector here.
-pub fn foldQualifiedConstNodeInt(self: *Lowering, node: *const Node, frame: ?*const ConstFoldFrame) ?i64 {
+pub fn foldQualifiedConstNodeInt(self: *Lowering, node: *const Node, frame: ?*const ConstFoldFrame) ?i128 {
     const path = self.qualifiedTypeName(node) orelse return null;
     defer self.alloc.free(path);
     const dot = std.mem.lastIndexOfScalar(u8, path, '.') orelse return null;
@@ -2605,7 +2581,7 @@ pub fn foldConstAggLen(self: *Lowering, name: []const u8) ?i64 {
 /// `K[<const idx>]` over an ARRAY const: the element's compile-time integer
 /// value, folded in the AUTHOR's context. Out-of-range diagnoses loudly —
 /// never a wrap or a silent null-into-runtime.
-pub fn foldConstArrayElem(self: *Lowering, name: []const u8, idx: i64, span: ?ast.Span, frame: ?*const ConstFoldFrame) ?i64 {
+pub fn foldConstArrayElem(self: *Lowering, name: []const u8, idx: i64, span: ?ast.Span, frame: ?*const ConstFoldFrame) ?i128 {
     const sel = selectShapedConst(self, name) orelse return null;
     if (sel.info.value.data != .array_literal) return null;
     const elems = sel.info.value.data.array_literal.elements;
@@ -2636,7 +2612,7 @@ pub fn foldComptimeStructField(self: *Lowering, name: []const u8, field: []const
 
 /// `<struct const>.field` as a compile-time integer — the field's value in
 /// the selected author's literal, folded in the author's context.
-pub fn foldConstStructField(self: *Lowering, name: []const u8, field: []const u8, span: ?ast.Span, frame: ?*const ConstFoldFrame) ?i64 {
+pub fn foldConstStructField(self: *Lowering, name: []const u8, field: []const u8, span: ?ast.Span, frame: ?*const ConstFoldFrame) ?i128 {
     const sel = selectShapedConst(self, name) orelse return null;
     if (sel.info.value.data != .struct_literal) return null;
     const sl = &sel.info.value.data.struct_literal;
@@ -2660,8 +2636,8 @@ pub fn foldConstStructField(self: *Lowering, name: []const u8, field: []const u8
     defer restore.unpin();
     const value = constStructLiteralInner(self, sl, sel.info.ty, &f, index, sel.info.declared_type != null) orelse return null;
     return switch (value) {
-        .int => |v| v,
-        .float => |v| program_index_mod.floatToIntExact(v),
+        .int => |v| self.intConstantValue(v, field_ty),
+        .float => |v| if (program_index_mod.floatToIntExact(v)) |i| i else null,
         .zeroinit => 0,
         else => null,
     };
