@@ -1871,18 +1871,14 @@ pub fn literalType(self: *Lowering, target: ?TypeId, len: usize) TypeId {
     };
 }
 
-/// The type the literal `node` takes at `target`; null when `node` is not a literal.
+/// The type the literal or untyped constant `node` takes at `target`; null
+/// when `node` is typed.
 pub fn literalNodeType(self: *Lowering, node: *const Node, target: ?TypeId) ?TypeId {
-    if (self.untypedString(node)) |lit| return self.literalType(target, self.stringLiteralBytes(lit).len);
-    return switch (node.data) {
-        .int_literal, .char_literal => integerLiteralType(self, target),
-        .float_literal => if (target) |t| (if (Lowering.isFloat(t)) t else .f64) else .f64,
-        .bool_literal => .bool,
-        .unary_op => |u| if (u.op == .negate and (u.operand.data == .int_literal or u.operand.data == .float_literal))
-            self.literalNodeType(u.operand, target)
-        else
-            null,
-        else => null,
+    if (node.data == .bool_literal) return .bool;
+    return switch (program_index_mod.untypedConst(node, self) orelse return null) {
+        .integer => integerLiteralType(self, target),
+        .float => if (target) |t| (if (Lowering.isFloat(t)) t else .f64) else .f64,
+        .string => |lit| self.literalType(target, self.stringLiteralBytes(lit).len),
     };
 }
 
