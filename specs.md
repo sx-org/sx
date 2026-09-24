@@ -4434,7 +4434,9 @@ on one side chooses. An untyped operand takes its typed peer's type, so
 `1 + x` is `i32`. A scalar meets a vector at the vector when it converts
 implicitly to the lane type, and is refused otherwise: `x` enters `i64` lanes,
 `w` does not enter `i32` lanes. An untyped operand beside a vector takes the
-lane type. A shift keeps its left operand's type.
+lane type. A shift keeps its left operand's type, and an untyped left operand
+takes an integer destination's type: with `n : u8`, `m : u32 = 1 << n` shifts
+in `u32`.
 
 ### Chained Comparisons
 Comparison operators can be chained. Each operand is evaluated exactly once.

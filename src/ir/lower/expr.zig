@@ -5517,7 +5517,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         if (isCompareNumericPeer(self, peer_ty)) self.target_type = peer_ty;
     }
     const float_operands = program_index_mod.floatOperandTypes(bop.*, self.operandType(self.inferExprType(bop.lhs)), self.operandType(self.inferExprType(bop.rhs)), self);
-    const lhs_adopted = self.untypedOperandType(bop.op, bop.lhs, bop.rhs);
+    const lhs_adopted = self.untypedOperandType(bop.op, bop.lhs, bop.rhs) orelse untypedShiftOperandType(self, bop);
     const rhs_adopted = self.untypedOperandType(bop.op, bop.rhs, bop.lhs);
     const operand_tt = self.target_type;
     if (self.isAdaptableFloat(bop.lhs)) self.target_type = float_operands.lhs;
@@ -6160,6 +6160,14 @@ fn meetCompareOperands(
             return .{ .lhs = lhs, .rhs = rhs };
         },
     }
+}
+
+/// A shift's untyped integer left operand takes an integer destination's type.
+fn untypedShiftOperandType(self: *Lowering, bop: *const ast.BinaryOp) ?TypeId {
+    if (bop.op != .shl and bop.op != .shr) return null;
+    const kind = program_index_mod.untypedConst(bop.lhs, self) orelse return null;
+    const target = self.target_type orelse return null;
+    return if (kind == .integer and self.isIntEx(target)) target else null;
 }
 
 /// A numeric scalar operand converts to its operation's type, or beside a

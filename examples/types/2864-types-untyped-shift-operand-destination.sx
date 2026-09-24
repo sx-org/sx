@@ -1,0 +1,10 @@
+// An untyped left operand of a shift takes its integer destination's type.
+
+@import "modules/std.sx";
+
+main :: () -> i32 {
+    n : u8 = 3;
+    m : u32 = 1 << n;
+    print("{}\n", m);
+    0
+}
