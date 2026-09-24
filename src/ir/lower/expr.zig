@@ -3234,18 +3234,15 @@ pub fn lowerSliceExpr(self: *Lowering, se: *const ast.SliceExpr) Ref {
     const len_ty = blk: {
         if (self.target_type) |tgt| {
             if (self.module.types.sliceInfoOf(tgt)) |ts| {
-                const same_elem = self.module.types.sameType(ts.element, elem_ty) or (elem_ty == .void and ts.element == .u8);
-                if (same_elem) break :blk ts.len_type;
+                if (self.module.types.sameType(ts.element, elem_ty)) break :blk ts.len_type;
             }
         }
         break :blk base_len_ty;
     };
     const slice_ty = if (sentinel != null and len_ty == base_len_ty)
         self.module.types.sliceOfSentinel(elem_ty, sentinel)
-    else if (elem_ty != .void)
-        self.module.types.sliceOfLen(elem_ty, len_ty)
     else
-        self.module.types.sliceOfLen(.u8, len_ty);
+        self.module.types.sliceOfLen(elem_ty, len_ty);
     if (self.foldedInt(lo)) |lo_v| {
         if (self.foldedInt(hi)) |hi_v| {
             const n: u64 = if (hi_v >= lo_v) @intCast(hi_v - lo_v) else 0;

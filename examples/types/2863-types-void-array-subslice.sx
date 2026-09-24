@@ -1,0 +1,10 @@
+// A subslice of a `void` array is a `[]void`.
+
+@import "modules/std.sx";
+
+main :: () -> i32 {
+    arr : [3]void = ---;
+    xs : []void = arr[1..];
+    print("{}\n", xs.len);
+    0
+}
