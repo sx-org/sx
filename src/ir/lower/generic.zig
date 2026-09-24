@@ -934,13 +934,17 @@ pub fn extractTypeParam(self: *Lowering, type_node: *const Node, arg_ty: TypeId,
                 else => null,
             };
         },
+        // A value binds the payload it wraps into; `null`, typed `void`, binds
+        // nothing.
         .optional_type_expr => |ot| blk: {
-            if (arg_ty.isBuiltin()) break :blk null;
-            const info = self.module.types.get(arg_ty);
-            break :blk switch (info) {
-                .optional => |o| self.extractTypeParam(ot.inner_type, o.child, tp_name),
-                else => null,
+            const payload = switch (arg_ty) {
+                .void, .unresolved => break :blk null,
+                else => if (!arg_ty.isBuiltin() and self.module.types.get(arg_ty) == .optional)
+                    self.module.types.get(arg_ty).optional.child
+                else
+                    arg_ty,
             };
+            break :blk self.extractTypeParam(ot.inner_type, payload, tp_name);
         },
         .array_type_expr => |at| blk: {
             if (arg_ty.isBuiltin()) break :blk null;

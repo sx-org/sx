@@ -1,0 +1,14 @@
+// A value at a `?T` parameter binds `T` to its own type, so an untyped
+// argument adopts it in either order.
+
+@import "modules/std.sx";
+
+opt :: (a: $T, b: ?T) -> T { a }
+
+main :: () -> i32 {
+    y : f32 = 1.5;
+    p := opt(y, 2.5);
+    q := opt(2.5, y);
+    print("{} {} {}\n", @typeName(@typeOf(p)), @typeName(@typeOf(q)), q);
+    0
+}

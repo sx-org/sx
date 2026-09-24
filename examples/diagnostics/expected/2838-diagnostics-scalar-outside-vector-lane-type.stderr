@@ -1,0 +1,11 @@
+error: cannot apply '+' to 'i64' and '@Vector(2,i32)': the scalar does not convert implicitly to the vector's lane type; write an explicit cast
+  --> examples/diagnostics/2838-diagnostics-scalar-outside-vector-lane-type.sx:7:10
+   |
+ 7 |     a := w + v;
+   |          ^^^^^
+
+error: cannot apply '+' to '@Vector(2,i32)' and 'i64': the scalar does not convert implicitly to the vector's lane type; write an explicit cast
+  --> examples/diagnostics/2838-diagnostics-scalar-outside-vector-lane-type.sx:8:10
+   |
+ 8 |     b := v + w;
+   |          ^^^^^

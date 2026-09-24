@@ -2936,6 +2936,8 @@ isReady : ValueListenable(bool) = map(
   and take their destination's numeric type, as a literal does:
   `d : i32 = 2 * 3` is `6` as `i32`, and `d : i8 = 100 + 100` is refused
   because `200` does not fit `i8`. Without a destination the type is `i64`.
+  They fold in `i64`; overflow and division by zero are located compile
+  errors.
 - String literals, and `::` constants bound to them, take the shape their
   destination names and default to `string` (see [Literals](#literals))
 - Untyped float expressions comprise numeric literals, unannotated numeric
@@ -4395,6 +4397,17 @@ static type as well as its value, so `print("{}", n + 0.5)` formats a float and 
 typed binding `x : f64 = n + 0.5` is exact (not truncated). A mixed-numeric
 expression therefore does not satisfy an integer annotation — `C : i64 : n + 0.5`
 is a `type mismatch` in either operand order.
+
+**Common type.** The operands of an arithmetic or bitwise operator meet at a
+common type. Two integers of one signedness meet at the wider, and an unsigned
+integer meets a strictly wider signed one at the signed type: with `x : i32`
+and `w : i64`, `x + w` and `w + x` are both `i64`. Integers of opposite
+signedness with no common type (`i32` and `u32`) are refused; an explicit cast
+on one side chooses. An untyped operand takes its typed peer's type, so
+`1 + x` is `i32`. A scalar meets a vector at the vector when it converts
+implicitly to the lane type, and is refused otherwise: `x` enters `i64` lanes,
+`w` does not enter `i32` lanes. An untyped operand beside a vector takes the
+lane type. A shift keeps its left operand's type.
 
 ### Chained Comparisons
 Comparison operators can be chained. Each operand is evaluated exactly once.

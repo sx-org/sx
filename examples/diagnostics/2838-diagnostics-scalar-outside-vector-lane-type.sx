@@ -1,0 +1,10 @@
+// A scalar that does not convert implicitly to a vector's lane type is refused
+// on either side.
+
+main :: () -> i32 {
+    v : @Vector(2, i32) = .[1, 2];
+    w : i64 = 5000000000;
+    a := w + v;
+    b := v + w;
+    0
+}

@@ -183,7 +183,7 @@ private AcceptEncoding :: struct {
 }
 
 asciiLower :: (c: u8) -> u8 {
-    c + if 'A' <= c <= 'Z' then ' ' else 0
+    if 'A' <= c <= 'Z' then c + ' ' else c
 }
 
 ceAsciiIeq :: (a: string, b: string) -> bool {
