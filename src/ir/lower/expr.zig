@@ -5560,7 +5560,13 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         const it = self.inferExprType(bop.rhs);
         break :blk if (it == .unresolved) self.builder.getRefType(rhs) else it;
     };
+    return lowerBinaryValues(self, bop.op, lhs, lhs_ty, bop.lhs.span, rhs, rhs_ty, bop.rhs.span);
+}
 
+/// `lhs op rhs` over operands already lowered.
+fn lowerBinaryValues(self: *Lowering, op: ast.BinaryOp.Op, lhs_value: Ref, lhs_ty: TypeId, lhs_span: ast.Span, rhs_value: Ref, rhs_ty: TypeId, rhs_span: ast.Span) Ref {
+    var lhs = lhs_value;
+    var rhs = rhs_value;
     // Optional value-equality: `?T == ?T` — equal iff both
     // null or both present with equal payloads — and the mixed `?T == T`,
     // where a null optional is simply unequal. Equality never reads a
@@ -5569,7 +5575,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     // optionals still reject below. Presence tests (`x == null`) returned
     // earlier. A guard-narrowed optional operand takes this path too — the
     // presence branch just folds to the payload compare.
-    if (bop.op == .eq or bop.op == .neq) {
+    if (op == .eq or op == .neq) {
         const l_actual = if (lhs_ty == .unresolved) self.builder.getRefType(lhs) else lhs_ty;
         const l_opt: ?TypeId = if (!l_actual.isBuiltin() and self.module.types.get(l_actual) == .optional)
             self.module.types.get(l_actual).optional.child
@@ -5581,13 +5587,13 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
             null;
         if (l_opt != null and r_opt != null) {
             if (l_actual != rhs_ty) {
-                if (self.diagnostics) |d| d.addFmt(.err, bop.rhs.span, "cannot compare values of distinct types '{s}' and '{s}'", .{
+                if (self.diagnostics) |d| d.addFmt(.err, rhs_span, "cannot compare values of distinct types '{s}' and '{s}'", .{
                     self.formatTypeName(l_actual), self.formatTypeName(rhs_ty),
                 });
                 return self.emitPlaceholder("distinct-optional-equality");
             }
-            const eq = self.lowerOptionalEquality(lhs, rhs, l_opt.?, bop.lhs.span);
-            return if (bop.op == .neq) self.builder.emit(.{ .bool_not = .{ .operand = eq } }, .bool) else eq;
+            const eq = self.lowerOptionalEquality(lhs, rhs, l_opt.?, lhs_span);
+            return if (op == .neq) self.builder.emit(.{ .bool_not = .{ .operand = eq } }, .bool) else eq;
         }
         if (l_opt != null or r_opt != null) {
             const inner = l_opt orelse r_opt.?;
@@ -5595,33 +5601,33 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
             var conc = if (l_opt != null) rhs else lhs;
             const conc_ty = if (l_opt != null) rhs_ty else l_actual;
             if (conc_ty != inner) conc = self.coerceToType(conc, conc_ty, inner);
-            const eq = self.lowerOptionalMixedEquality(opt_ref, conc, inner, bop.lhs.span);
-            return if (bop.op == .neq) self.builder.emit(.{ .bool_not = .{ .operand = eq } }, .bool) else eq;
+            const eq = self.lowerOptionalMixedEquality(opt_ref, conc, inner, lhs_span);
+            return if (op == .neq) self.builder.emit(.{ .bool_not = .{ .operand = eq } }, .bool) else eq;
         }
     }
 
     var ty = lhs_ty;
 
-    if (self.unwrapOptionalOperand(lhs, ty, bop.lhs.span)) |payload| {
+    if (self.unwrapOptionalOperand(lhs, ty, lhs_span)) |payload| {
         lhs = payload;
         ty = self.builder.getRefType(payload);
     }
-    if (self.unwrapOptionalOperand(rhs, rhs_ty, bop.rhs.span)) |payload| rhs = payload;
+    if (self.unwrapOptionalOperand(rhs, rhs_ty, rhs_span)) |payload| rhs = payload;
 
     // Sequence value equality: `[N]T`, `[N:X]T`, `[]T`, `[:X]T` and `string`
     // compare CONTENT. The operands need one element type; an array meets the
     // slice, and the lengths answer at run time. A sequence has no comparison
     // with a non-sequence peer.
-    if (bop.op == .eq or bop.op == .neq) {
+    if (op == .eq or op == .neq) {
         const l_ty = refTypeOr(self, lhs, ty);
         const r_ty = refTypeOr(self, rhs, rhs_ty);
         const l_elem = sequenceElement(self, l_ty);
         const r_elem = sequenceElement(self, r_ty);
         if (l_elem != null and r_elem != null and self.module.types.sameType(l_elem.?, r_elem.?)) {
-            return lowerSequenceEquality(self, lhs, rhs, l_elem.?, bop.op == .eq, bop.lhs.span);
+            return lowerSequenceEquality(self, lhs, rhs, l_elem.?, op == .eq, lhs_span);
         }
         if (l_elem != null or r_elem != null) {
-            if (self.diagnostics) |d| d.addFmt(.err, bop.rhs.span, "cannot compare values of distinct types '{s}' and '{s}'", .{
+            if (self.diagnostics) |d| d.addFmt(.err, rhs_span, "cannot compare values of distinct types '{s}' and '{s}'", .{
                 self.formatTypeName(l_ty), self.formatTypeName(r_ty),
             });
             return self.emitPlaceholder("distinct-sequence-equality");
@@ -5632,13 +5638,13 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     // no value-equality: a byte-wise `icmp` over its `[N x i8]` storage is both
     // wrong and rejected by the LLVM verifier. Reject at lower time, where the
     // span and the named type are available.
-    if ((bop.op == .eq or bop.op == .neq) and !ty.isBuiltin()) {
+    if ((op == .eq or op == .neq) and !ty.isBuiltin()) {
         if (self.module.types.get(ty) == .@"union") {
             if (self.diagnostics) |d| {
-                const pid = d.addFmtId(.err, bop.lhs.span, "cannot compare '{s}' values with '{s}'", .{
-                    self.formatTypeName(ty), binOpSymbol(bop.op),
+                const pid = d.addFmtId(.err, lhs_span, "cannot compare '{s}' values with '{s}'", .{
+                    self.formatTypeName(ty), binOpSymbol(op),
                 });
-                d.addNote(pid, bop.lhs.span, "compare a specific variant field (e.g. `a.field == b.field`)");
+                d.addNote(pid, lhs_span, "compare a specific variant field (e.g. `a.field == b.field`)");
             }
             return self.emitPlaceholder("uncomparable-aggregate-eq");
         }
@@ -5659,25 +5665,25 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     // `{tag,payload}` reductions it is written for.
     // Non-comparable sub-fields (union, fixed array) are rejected with
     // a located diagnostic, consistent with rejecting those shapes bare.
-    if ((bop.op == .eq or bop.op == .neq) and !ty.isBuiltin()) {
+    if ((op == .eq or op == .neq) and !ty.isBuiltin()) {
         const eq_info = self.module.types.get(ty);
         if (eq_info == .@"struct" and !eq_info.@"struct".is_protocol) {
             const other_ty = if (rhs_ty == .unresolved) self.builder.getRefType(rhs) else rhs_ty;
             if (!self.module.types.sameType(other_ty, ty)) {
-                if (self.diagnostics) |d| d.addFmt(.err, bop.rhs.span, "cannot compare values of distinct types '{s}' and '{s}'", .{
+                if (self.diagnostics) |d| d.addFmt(.err, rhs_span, "cannot compare values of distinct types '{s}' and '{s}'", .{
                     self.formatTypeName(ty), self.formatTypeName(other_ty),
                 });
                 return self.emitPlaceholder("distinct-struct-equality");
             }
-            return self.lowerStructEquality(bop, lhs, rhs, ty);
+            return self.lowerStructEquality(op, lhs, rhs, ty, lhs_span);
         }
     }
 
-    if (self.diagOperandTypes(bop.op, ty, self.operandType(rhs_ty), bop.lhs.span)) return self.emitPlaceholder("operand-type-mismatch");
+    if (self.diagOperandTypes(op, ty, self.operandType(rhs_ty), lhs_span)) return self.emitPlaceholder("operand-type-mismatch");
 
-    switch (bop.op) {
+    switch (op) {
         .eq, .neq, .lt, .lte, .gt, .gte => {
-            const span = ast.Span{ .start = bop.lhs.span.start, .end = bop.rhs.span.end };
+            const span = ast.Span{ .start = lhs_span.start, .end = rhs_span.end };
             const lhs_ir = self.builder.getRefType(lhs);
             const rhs_ir = self.builder.getRefType(rhs);
             if (meetCompareOperands(self, lhs, rhs, lhs_ir, rhs_ir, span)) |met| {
@@ -5688,8 +5694,8 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
             }
         },
         else => {
-            const span: ast.Span = .{ .start = bop.lhs.span.start, .end = bop.rhs.span.end };
-            const met = meetArithOperands(self, bop.op, lhs, ty, rhs, self.operandType(rhs_ty), span) orelse return self.emitPlaceholder("arith-meet");
+            const span: ast.Span = .{ .start = lhs_span.start, .end = rhs_span.end };
+            const met = meetArithOperands(self, op, lhs, ty, rhs, self.operandType(rhs_ty), span) orelse return self.emitPlaceholder("arith-meet");
             lhs = met.lhs;
             rhs = met.rhs;
             ty = met.ty;
@@ -5698,20 +5704,20 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
 
     // LLVM's shifts are poison at or past the operand's width, and that poison
     // folds to a different constant in each context that reaches it.
-    switch (bop.op) {
+    switch (op) {
         .shl, .shr => {
             if (self.module.types.integerLayout(ty)) |layout| {
                 if (constIntOf(self, rhs)) |amount| {
                     const width: i64 = @intCast(layout.width);
                     if (amount < 0 or amount >= width) {
                         if (self.diagnostics) |diags| {
-                            const id = diags.addFmtId(.err, bop.rhs.span, "shift amount {d} is out of range for '{s}': valid amounts are 0 to {d}", .{
+                            const id = diags.addFmtId(.err, rhs_span, "shift amount {d} is out of range for '{s}': valid amounts are 0 to {d}", .{
                                 amount, self.formatTypeName(ty), width - 1,
                             });
                             if (amount < 0) {
-                                diags.addHelp(id, bop.rhs.span, "a shift amount is never negative", null);
+                                diags.addHelp(id, rhs_span, "a shift amount is never negative", null);
                             } else {
-                                diags.addHelpFmt(id, bop.rhs.span, null, "widen the operand to at least {d} bits before shifting", .{amount + 1});
+                                diags.addHelpFmt(id, rhs_span, null, "widen the operand to at least {d} bits before shifting", .{amount + 1});
                             }
                         }
                         return self.emitPlaceholder("shift-amount-out-of-range");
@@ -5722,7 +5728,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         else => {},
     }
 
-    return switch (bop.op) {
+    return switch (op) {
         .add => self.builder.add(lhs, rhs, ty),
         .sub => self.builder.sub(lhs, rhs, ty),
         .mul => self.builder.mul(lhs, rhs, ty),
@@ -5741,7 +5747,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         .bit_xor => self.builder.emit(.{ .bit_xor = .{ .lhs = lhs, .rhs = rhs } }, ty),
         .shl => self.builder.emit(.{ .shl = .{ .lhs = lhs, .rhs = rhs } }, ty),
         .shr => self.builder.emit(.{ .shr = .{ .lhs = lhs, .rhs = rhs } }, ty),
-        .in_op => self.emitError("in_op", bop.lhs.span),
+        .in_op => self.emitError("in_op", lhs_span),
         .is_op => unreachable, // intercepted at the head of lowerBinaryOp
     };
 }
@@ -5757,20 +5763,20 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
 /// located diagnostic, mirroring how that shape is rejected as a bare `==`
 /// operand. Every field comparison that DOES get built has its own valid
 /// lowering, so `emit_llvm`'s narrow struct arm never sees a user struct.
-pub fn lowerStructEquality(self: *Lowering, bop: *const ast.BinaryOp, lhs: Ref, rhs: Ref, ty: TypeId) Ref {
+pub fn lowerStructEquality(self: *Lowering, op: ast.BinaryOp.Op, lhs: Ref, rhs: Ref, ty: TypeId, span: ast.Span) Ref {
     const info = self.module.types.get(ty);
     const fields = info.@"struct".fields;
 
     // A zero-field struct compares equal to itself (vacuously — no fields to
     // differ). `==` → true, `!=` → false.
-    if (fields.len == 0) return self.builder.constBool(bop.op == .eq);
+    if (fields.len == 0) return self.builder.constBool(op == .eq);
 
     var result: ?Ref = null;
     var rejected = false;
     for (fields, 0..) |f, i| {
         const lf = self.builder.structGet(lhs, @intCast(i), f.ty);
         const rf = self.builder.structGet(rhs, @intCast(i), f.ty);
-        const field_eq = self.lowerFieldEquality(lf, rf, f.ty, bop.lhs.span) orelse {
+        const field_eq = self.lowerFieldEquality(lf, rf, f.ty, span) orelse {
             rejected = true;
             continue; // keep scanning so every bad field is reported at once
         };
@@ -5784,7 +5790,7 @@ pub fn lowerStructEquality(self: *Lowering, bop: *const ast.BinaryOp, lhs: Ref, 
     if (rejected) return self.emitPlaceholder("uncomparable-struct-field-eq");
 
     const eq_all = result.?; // fields.len > 0 and no rejection ⇒ result is set
-    return if (bop.op == .neq)
+    return if (op == .neq)
         self.builder.emit(.{ .bool_not = .{ .operand = eq_all } }, .bool)
     else
         eq_all;
@@ -6010,21 +6016,20 @@ pub fn lowerChainedComparison(self: *Lowering, cc: *const ast.ChainedComparison)
             }
             if (peer) |p| self.target_type = p;
         }
-        refs.append(self.alloc, self.lowerExpr(op)) catch unreachable;
+        var ref = self.lowerExpr(op);
+        if (self.refCapturePointee(op)) |p| ref = self.builder.load(ref, p);
+        refs.append(self.alloc, ref) catch unreachable;
         self.target_type = null;
     }
 
-    const first_span = ast.Span{ .start = cc.operands[0].span.start, .end = cc.operands[1].span.end };
-    var result = self.emitCmp(refs.items[0], refs.items[1], cc.ops[0], first_span);
-
-    var i: usize = 1;
-    while (i < cc.ops.len) : (i += 1) {
-        const pair_span = ast.Span{ .start = cc.operands[i].span.start, .end = cc.operands[i + 1].span.end };
-        const next_cmp = self.emitCmp(refs.items[i], refs.items[i + 1], cc.ops[i], pair_span);
-        result = self.builder.emit(.{ .bool_and = .{ .lhs = result, .rhs = next_cmp } }, .bool);
+    var result: ?Ref = null;
+    for (cc.ops, 0..) |cmp_op, i| {
+        const lhs = refs.items[i];
+        const rhs = refs.items[i + 1];
+        const cmp = lowerBinaryValues(self, cmp_op, lhs, self.builder.getRefType(lhs), cc.operands[i].span, rhs, self.builder.getRefType(rhs), cc.operands[i + 1].span);
+        result = if (result) |acc| self.builder.emit(.{ .bool_and = .{ .lhs = acc, .rhs = cmp } }, .bool) else cmp;
     }
-
-    return result;
+    return result.?;
 }
 
 fn isUntypedInteger(self: *Lowering, node: *const Node) bool {
@@ -6185,19 +6190,4 @@ fn convertArithOperand(self: *Lowering, val: Ref, ty: TypeId) Ref {
 fn coerceCompareOperand(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId) Ref {
     if (src_ty == dst_ty) return val;
     return self.coerceToType(val, src_ty, dst_ty);
-}
-
-pub fn emitCmp(self: *Lowering, lhs: Ref, rhs: Ref, op: ast.BinaryOp.Op, span: ast.Span) Ref {
-    const met = meetCompareOperands(self, lhs, rhs, self.builder.getRefType(lhs), self.builder.getRefType(rhs), span) orelse {
-        return self.emitPlaceholder("compare-meet");
-    };
-    return switch (op) {
-        .eq => self.builder.cmpEq(met.lhs, met.rhs),
-        .neq => self.builder.emit(.{ .cmp_ne = .{ .lhs = met.lhs, .rhs = met.rhs } }, .bool),
-        .lt => self.builder.cmpLt(met.lhs, met.rhs),
-        .lte => self.builder.emit(.{ .cmp_le = .{ .lhs = met.lhs, .rhs = met.rhs } }, .bool),
-        .gt => self.builder.cmpGt(met.lhs, met.rhs),
-        .gte => self.builder.emit(.{ .cmp_ge = .{ .lhs = met.lhs, .rhs = met.rhs } }, .bool),
-        else => self.builder.constBool(false),
-    };
 }

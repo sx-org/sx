@@ -4373,7 +4373,6 @@ pub const Lowering = struct {
     pub const lowerOptionalEquality = lower_expr.lowerOptionalEquality;
     pub const lowerOptionalMixedEquality = lower_expr.lowerOptionalMixedEquality;
     pub const lowerChainedComparison = lower_expr.lowerChainedComparison;
-    pub const emitCmp = lower_expr.emitCmp;
 
     // --- lower/closure.zig (lower_closure) ---
     pub const lowerLambda = lower_closure.lowerLambda;
