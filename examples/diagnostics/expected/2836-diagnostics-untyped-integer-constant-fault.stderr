@@ -9,3 +9,9 @@ error: integer constant divides by zero
    |
  6 |     e := 7 / 0;
    |          ^^^^^
+
+error: integer constant overflows 'i64'
+  --> examples/diagnostics/2836-diagnostics-untyped-integer-constant-fault.sx:7:15
+   |
+ 7 |     f : u64 = 0xFFFF_FFFF_FFFF_FFFF / 2;
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^

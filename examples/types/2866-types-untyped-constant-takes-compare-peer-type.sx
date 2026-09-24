@@ -1,0 +1,12 @@
+// An untyped integer beside a typed comparison operand takes that operand's
+// type, so a constant above `i64.max` compares with a `u64`.
+
+@import "modules/std.sx";
+
+M :: 0xFFFF_FFFF_FFFF_FFFF;
+
+main :: () -> i32 {
+    u : u64 = 3;
+    print("{} {} {}\n", u == M, M > u, 0 <= u <= M);
+    0
+}

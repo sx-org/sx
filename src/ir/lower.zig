@@ -2926,14 +2926,24 @@ pub const Lowering = struct {
         return ty == .f32 or ty == .f64;
     }
 
-    pub fn floatContext(self: *Lowering, target: ?TypeId) ?TypeId {
+    fn underOptionals(self: *Lowering, target: ?TypeId) ?TypeId {
         var ty = target orelse return null;
         while (!ty.isBuiltin()) {
             const info = self.module.types.get(ty);
-            if (info != .optional) return null;
+            if (info != .optional) return ty;
             ty = info.optional.child;
         }
+        return ty;
+    }
+
+    pub fn floatContext(self: *Lowering, target: ?TypeId) ?TypeId {
+        const ty = self.underOptionals(target) orelse return null;
         return if (isFloat(ty)) ty else null;
+    }
+
+    pub fn integerContext(self: *Lowering, target: ?TypeId) ?TypeId {
+        const ty = self.underOptionals(target) orelse return null;
+        return if (self.isIntEx(ty)) ty else null;
     }
 
     pub fn isAdaptableFloat(self: *Lowering, node: *const Node) bool {

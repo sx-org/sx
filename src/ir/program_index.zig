@@ -289,8 +289,9 @@ pub fn isFloatConstType(ty: TypeId) bool {
 }
 
 /// An untyped constant — a literal, an unannotated `::` constant bound to one,
-/// or numeric arithmetic over them — takes its type from each use's
-/// destination. A string carries its literal, which each use lowers.
+/// numeric arithmetic over them, or a shift of an untyped integer — takes its
+/// type from each use's destination. A shift's amount may be a runtime value.
+/// A string carries its literal, which each use lowers.
 pub const Untyped = union(enum) {
     integer,
     float,
@@ -303,15 +304,23 @@ pub fn untypedConst(node: *const Node, ctx: anytype) ?Untyped {
         .float_literal => .float,
         .string_literal => |lit| .{ .string = lit },
         .unary_op => |u| if (u.op == .negate) untypedNumeric(u.operand, ctx) else null,
-        .binary_op => |b| switch (b.op) {
-            .add, .sub, .mul, .div, .mod => blk: {
-                const lhs = untypedNumeric(b.lhs, ctx) orelse break :blk null;
-                const rhs = untypedNumeric(b.rhs, ctx) orelse break :blk null;
-                break :blk if (lhs == .float or rhs == .float) .float else .integer;
-            },
-            else => null,
-        },
+        .binary_op => |b| untypedBinary(b, ctx),
         .identifier, .type_expr, .field_access => ctx.untypedLeaf(node),
+        else => null,
+    };
+}
+
+pub fn untypedBinary(b: ast.BinaryOp, ctx: anytype) ?Untyped {
+    return switch (b.op) {
+        .add, .sub, .mul, .div, .mod => blk: {
+            const lhs = untypedNumeric(b.lhs, ctx) orelse break :blk null;
+            const rhs = untypedNumeric(b.rhs, ctx) orelse break :blk null;
+            break :blk if (lhs == .float or rhs == .float) .float else .integer;
+        },
+        .shl, .shr => blk: {
+            const lhs = untypedNumeric(b.lhs, ctx) orelse break :blk null;
+            break :blk if (lhs == .integer) .integer else null;
+        },
         else => null,
     };
 }

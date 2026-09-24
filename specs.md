@@ -4434,9 +4434,11 @@ on one side chooses. An untyped operand takes its typed peer's type, so
 `1 + x` is `i32`. A scalar meets a vector at the vector when it converts
 implicitly to the lane type, and is refused otherwise: `x` enters `i64` lanes,
 `w` does not enter `i32` lanes. An untyped operand beside a vector takes the
-lane type. A shift keeps its left operand's type, and an untyped left operand
-takes an integer destination's type: with `n : u8`, `m : u32 = 1 << n` shifts
-in `u32`.
+lane type. A shift keeps its left operand's type. A shift whose left operand is
+untyped is itself untyped: it takes a typed peer's type, an integer
+destination's type or an explicit cast's type (`.(T)`, `xx`), and is `i64`
+otherwise. With `n : u8`, `z : u16 = (1 << n) + 1` shifts in `u16`, and
+`((1 << n) >> 2).(u8)` in `u8`.
 
 ### Chained Comparisons
 Comparison operators can be chained. Each operand is evaluated exactly once.
@@ -5386,7 +5388,7 @@ at its `}` instead, and the last expression or declaration before a `}` may drop
 its terminator.
 
 - **Declaration**: `name :: value;` / `name := value;`
-- **Assignment**: `name = value;` / `name += value;` (and other compound assignments). Also supports field targets: `obj.field = value;`
+- **Assignment**: `name = value;` / `name += value;` (and other compound assignments). Also supports field targets: `obj.field = value;`. A compound assignment `x op= v` converts `v` to `x`'s type as `x = v` does, a scalar `v` to a vector `x`'s lane type, then applies `op`: with `x : i64`, `x += 2.0` adds `2` and `x += 2.5` is refused.
 - **Multi-target assignment**: `a, b = b, a;` — all RHS values are evaluated before any stores, enabling swaps without temporaries. Target count must equal value count. Only plain `=` is supported (no compound operators). Each target must be a valid lvalue (variable, field, index, dereference).
 - **Expression statement**: `expr;` — evaluates the expression (last in a block = return value)
 - **Return**: `return expr;` — returns from the enclosing function with the given value. `return;` returns void.

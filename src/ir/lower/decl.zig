@@ -4033,7 +4033,9 @@ pub fn emitModuleConst(self: *Lowering, name: []const u8, ci: ModuleConstInfo, e
             return self.builder.constNull(ci.ty);
         },
         else => {
-            var demand = self.enterDemand(if (ci.declared_type) |ty| .{ .coerce = ty } else .{ .inferred = ci.ty });
+            // An untyped value takes the use's destination.
+            const untyped = ci.declared_type == null and program_index_mod.untypedConst(ci.value, self) != null;
+            var demand = self.enterDemand(if (ci.declared_type) |ty| .{ .coerce = ty } else if (untyped) null else .{ .inferred = ci.ty });
             defer demand.restore();
             return self.lowerExpr(ci.value);
         },

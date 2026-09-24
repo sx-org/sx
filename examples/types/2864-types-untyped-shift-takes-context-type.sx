@@ -1,0 +1,23 @@
+// A shift whose left operand is untyped is untyped: it takes its type from a
+// typed peer, a destination or an explicit cast, and is `i64` otherwise.
+
+@import "modules/std.sx";
+
+K :: 1 << 4;
+
+main :: () -> i32 {
+    n : u8 = 3;
+    e : u32 = 1;
+    m : u32 = 1 << n;
+    z : u16 = (1 << n) + 1;
+    h := (1 << n) + e;
+    o : ?u16 = 1 << n;
+    k : u8 = K;
+    n = 7;
+    a := ((3 << n) >> 2).(u8);
+    b := (3 << n) >> 2;
+    c : u8 = xx (((3 << n) | 1) >> 2);
+    print("{} {} {} {} {} {} {} {}\n", m, z, h, o?!, k, a, b, c);
+    print("{} {} {}\n", @typeName(@typeOf(z)), @typeName(@typeOf(h)), @typeName(@typeOf(b)));
+    0
+}

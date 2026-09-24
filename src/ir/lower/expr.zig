@@ -3781,27 +3781,30 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
     return result;
 }
 
-/// The exact value of an untyped integer expression. A negated literal is
-/// exact, so `-9223372036854775808` is `i64`'s minimum. Null when an operand
-/// does not fold; lowering that operand diagnoses it.
+/// The exact value of an untyped integer expression. Arithmetic folds in
+/// `i64`, so an operand outside it overflows, and a negated literal is exact,
+/// so `-9223372036854775808` is `i64`'s minimum. Null when an operand does not
+/// fold, and for a shift, which computes in the type it takes; lowering the
+/// expression at that type computes or diagnoses it.
 fn untypedIntegerValue(self: *Lowering, node: *const Node) program_index_mod.IntArithmeticFault!?i128 {
     switch (node.data) {
-        .unary_op => |u| {
-            const v = program_index_mod.evalConstIntExpr(u.operand, self) orelse return null;
-            if (self.untypedIntLiteral(u.operand)) return -@as(i128, @as(u64, @bitCast(v)));
-            return try std.math.negate(v);
-        },
+        .unary_op => |u| return -(try untypedOperandValue(self, u.operand) orelse return null),
         .binary_op => |b| {
-            const l = program_index_mod.evalConstIntExpr(b.lhs, self) orelse return null;
-            const r = program_index_mod.evalConstIntExpr(b.rhs, self) orelse return null;
-            return try program_index_mod.foldIntArithmetic(b.op, l, r);
+            if (b.op == .shl or b.op == .shr) return null;
+            const l = try untypedOperandValue(self, b.lhs) orelse return null;
+            const r = try untypedOperandValue(self, b.rhs) orelse return null;
+            return try program_index_mod.foldIntArithmetic(b.op, std.math.cast(i64, l) orelse return error.Overflow, std.math.cast(i64, r) orelse return error.Overflow);
         },
-        .identifier, .type_expr, .field_access => {
-            const v = program_index_mod.evalConstIntExpr(node, self) orelse return null;
-            return self.foldedIntValue(node, v);
-        },
+        .identifier, .type_expr, .field_access => return try untypedOperandValue(self, node),
         else => return null,
     }
+}
+
+fn untypedOperandValue(self: *Lowering, node: *const Node) program_index_mod.IntArithmeticFault!?i128 {
+    return switch (node.data) {
+        .unary_op, .binary_op => untypedIntegerValue(self, node),
+        else => self.foldedIntValue(node, program_index_mod.evalConstIntExpr(node, self) orelse return null),
+    };
 }
 
 fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
@@ -5510,15 +5513,20 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         const peer_ty = self.inferExprType(bop.rhs);
         if (peer_ty != .unresolved and peer_ty != .void) self.target_type = peer_ty;
     }
-    // An integer literal takes the other operand's type — `n == 0` with
+    // An untyped integer takes the other operand's type — `n == 0` with
     // `n: usize` is a usize compare, not signed-vs-unsigned.
-    if (comparison and isComptimeIntExpr(bop.lhs)) {
+    if (comparison and isUntypedInteger(self, bop.lhs)) {
         const peer_ty = self.inferExprType(bop.rhs);
         if (isCompareNumericPeer(self, peer_ty)) self.target_type = peer_ty;
     }
     const float_operands = program_index_mod.floatOperandTypes(bop.*, self.operandType(self.inferExprType(bop.lhs)), self.operandType(self.inferExprType(bop.rhs)), self);
-    const lhs_adopted = self.untypedOperandType(bop.op, bop.lhs, bop.rhs) orelse untypedShiftOperandType(self, bop);
-    const rhs_adopted = self.untypedOperandType(bop.op, bop.rhs, bop.lhs);
+    // An untyped operand of an untyped operation computes in its type; of a
+    // typed one, with no typed peer, in `i64`.
+    const untyped_ty = untypedOperationType(self, bop);
+    const shift = bop.op == .shl or bop.op == .shr;
+    const typed_default: ?TypeId = if (comparison) null else .i64;
+    const lhs_adopted = self.untypedOperandType(bop.op, bop.lhs, bop.rhs) orelse untyped_ty orelse if (isUntypedInteger(self, bop.lhs)) typed_default else null;
+    const rhs_adopted = self.untypedOperandType(bop.op, bop.rhs, bop.lhs) orelse (if (shift) null else untyped_ty) orelse if (isUntypedInteger(self, bop.rhs)) typed_default else null;
     const operand_tt = self.target_type;
     if (self.isAdaptableFloat(bop.lhs)) self.target_type = float_operands.lhs;
     if (lhs_adopted) |ty| self.target_type = ty;
@@ -5558,7 +5566,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
             self.target_type = lhs_ty;
         }
     }
-    if (comparison and isComptimeIntExpr(bop.rhs) and isCompareNumericPeer(self, lhs_ty)) {
+    if (comparison and isUntypedInteger(self, bop.rhs) and isCompareNumericPeer(self, lhs_ty)) {
         self.target_type = lhs_ty;
     }
     // In a comparison, an anonymous positional literal on the RHS is typed
@@ -6022,7 +6030,9 @@ pub fn lowerChainedComparison(self: *Lowering, cc: *const ast.ChainedComparison)
     var refs = std.ArrayList(Ref).empty;
     defer refs.deinit(self.alloc);
     for (cc.operands, 0..) |op, i| {
-        if (self.inferExprType(op) == .unresolved) {
+        if (isUntypedInteger(self, op)) {
+            if (untypedChainPeer(self, cc.operands, i)) |p| self.target_type = p;
+        } else if (self.inferExprType(op) == .unresolved) {
             var peer: ?TypeId = null;
             if (i > 0) {
                 const prev = self.inferExprType(cc.operands[i - 1]);
@@ -6060,12 +6070,25 @@ pub fn lowerChainedComparison(self: *Lowering, cc: *const ast.ChainedComparison)
     return result;
 }
 
-fn isComptimeIntExpr(node: *const Node) bool {
-    return switch (node.data) {
-        .int_literal, .char_literal => true,
-        .unary_op => |u| u.op == .negate and isComptimeIntExpr(u.operand),
-        else => false,
+fn isUntypedInteger(self: *Lowering, node: *const Node) bool {
+    const kind = program_index_mod.untypedConst(node, self) orelse return false;
+    return kind == .integer;
+}
+
+/// The type an untyped integer operand of a chain takes: a typed neighbor's,
+/// the left one first.
+fn untypedChainPeer(self: *Lowering, operands: []const *Node, i: usize) ?TypeId {
+    const neighbors = [_]?*const Node{
+        if (i > 0) operands[i - 1] else null,
+        if (i + 1 < operands.len) operands[i + 1] else null,
     };
+    for (neighbors) |neighbor| {
+        const n = neighbor orelse continue;
+        if (isUntypedInteger(self, n)) continue;
+        const ty = self.inferExprType(n);
+        if (isCompareNumericPeer(self, ty)) return ty;
+    }
+    return null;
 }
 
 fn isCompareNumericPeer(self: *Lowering, ty: TypeId) bool {
@@ -6116,13 +6139,13 @@ fn meetCompareOperands(
         .signedness => {
             if (constIntOf(self, lhs)) |n| {
                 if (self.isIntEx(rhs_ty)) {
-                    self.checkIntLiteralMagnitudeFits(n, rhs_ty, span);
+                    self.checkIntLiteralFits(self.intConstantValue(n, lhs_ty), rhs_ty, span);
                     return .{ .lhs = self.builder.constInt(n, rhs_ty), .rhs = rhs };
                 }
             }
             if (constIntOf(self, rhs)) |n| {
                 if (self.isIntEx(lhs_ty)) {
-                    self.checkIntLiteralMagnitudeFits(n, lhs_ty, span);
+                    self.checkIntLiteralFits(self.intConstantValue(n, rhs_ty), lhs_ty, span);
                     return .{ .lhs = lhs, .rhs = self.builder.constInt(n, lhs_ty) };
                 }
             }
@@ -6172,12 +6195,12 @@ pub fn meetArithOperands(self: *Lowering, op: ast.BinaryOp.Op, lhs: Ref, lhs_ty:
     return .{ .lhs = convertArithOperand(self, lhs, ty), .rhs = if (shift) rhs else convertArithOperand(self, rhs, ty), .ty = ty };
 }
 
-/// A shift's untyped integer left operand takes an integer destination's type.
-fn untypedShiftOperandType(self: *Lowering, bop: *const ast.BinaryOp) ?TypeId {
-    if (bop.op != .shl and bop.op != .shr) return null;
-    const kind = program_index_mod.untypedConst(bop.lhs, self) orelse return null;
-    const target = self.target_type orelse return null;
-    return if (kind == .integer and self.isIntEx(target)) target else null;
+/// The type an untyped integer operation computes in: an integer destination's
+/// type, else `i64`.
+fn untypedOperationType(self: *Lowering, bop: *const ast.BinaryOp) ?TypeId {
+    const kind = program_index_mod.untypedBinary(bop.*, self) orelse return null;
+    if (kind != .integer) return null;
+    return self.integerContext(self.target_type) orelse .i64;
 }
 
 /// A numeric scalar operand converts to its operation's type, or beside a

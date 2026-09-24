@@ -28,6 +28,21 @@ fn baseName(name: []const u8) []const u8 {
     return if (std.mem.lastIndexOfScalar(u8, name, '.')) |idx| name[idx + 1 ..] else name;
 }
 
+/// An integer written without a type: a literal, its negation, arithmetic over
+/// such integers, or a shift of one.
+fn isUntypedInteger(node: *const Node) bool {
+    return switch (node.data) {
+        .int_literal, .char_literal => true,
+        .unary_op => |u| u.op == .negate and isUntypedInteger(u.operand),
+        .binary_op => |b| switch (b.op) {
+            .add, .sub, .mul, .div, .mod => isUntypedInteger(b.lhs) and isUntypedInteger(b.rhs),
+            .shl, .shr => isUntypedInteger(b.lhs),
+            else => false,
+        },
+        else => false,
+    };
+}
+
 pub const SymbolKind = enum {
     variable,
     constant,
@@ -834,11 +849,16 @@ pub const Analyzer = struct {
                     .eq, .neq, .lt, .lte, .gt, .gte, .and_op, .or_op, .in_op => return .boolean,
                     else => {
                         // Editor display only: approximate an arithmetic result as
-                        // its left operand's type (or the right when the left is
-                        // unresolved). Numeric promotion is a compiler decision on
-                        // `TypeId`, never recomputed here.
+                        // its left operand's type, or the right's when the left is
+                        // unresolved or, outside a shift, an untyped integer.
+                        // Numeric promotion is a compiler decision on `TypeId`,
+                        // never recomputed here.
                         const lhs_ty = self.inferExprType(binop.lhs);
-                        if (lhs_ty == .unresolved) return self.inferExprType(binop.rhs);
+                        const shift = binop.op == .shl or binop.op == .shr;
+                        if (lhs_ty == .unresolved or (!shift and isUntypedInteger(binop.lhs))) {
+                            const rhs_ty = self.inferExprType(binop.rhs);
+                            if (rhs_ty != .unresolved) return rhs_ty;
+                        }
                         return lhs_ty;
                     },
                 }

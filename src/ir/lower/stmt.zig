@@ -1142,10 +1142,22 @@ pub fn lowerConstDecl(self: *Lowering, cd: *const ast.ConstDecl) void {
         }
     }
 
-    const untyped = if (annotated == null) program_index_mod.untypedConst(cd.value, self) else null;
+    const untyped = if (annotated == null) localConstUntyped(self, cd.value, ref) else null;
     if (self.scope) |scope| {
         scope.put(cd.name, .{ .ref = ref, .ty = ty, .is_alloca = false, .origin = .local_const, .untyped = untyped });
     }
+}
+
+/// A local constant stays untyped while its value is known here; a runtime
+/// value takes its type at the binding.
+fn localConstUntyped(self: *Lowering, value: *const Node, ref: Ref) ?program_index_mod.Untyped {
+    const kind = program_index_mod.untypedConst(value, self) orelse return null;
+    const known = switch (kind) {
+        .integer => self.foldedInt(ref) != null,
+        .float => self.builder.constFloatInfo(ref) != null,
+        .string => true,
+    };
+    return if (known) kind else null;
 }
 
 /// Validate an explicit `return` value against a multi-VALUE return type (≥2
