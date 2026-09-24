@@ -456,15 +456,31 @@ pub fn runBuildCallback(gpa: std.mem.Allocator, module: *const Module, func_id: 
 // Walks the SSA IR over comptime frames: each SSA result is a `Reg` word
 // (immediate scalar bits, or an `Addr`). Integer math is 64-bit wrapping (`+%`,
 // truncating `/` and `%` keyed on the result type's signedness, signed compares
-// — a scalar `.int` is i64 regardless of the declared width), float math is
-// f64. Alloca/load/store, aggregate init and projection, and calls execute over
-// comptime memory; an op with no arm bails loudly (`error.Unsupported` +
-// `detail`), never silently.
+// — a scalar `.int` is i64 regardless of the declared width). A float register
+// holds f64 bits, and an `f32` result is rounded to `f32`. Alloca/load/store,
+// aggregate init and projection, and calls execute over comptime memory; an op
+// with no arm bails loudly (`error.Unsupported` + `detail`), never silently.
 
 pub const Error = error{ DivisionByZero, TypeError, Unsupported, OutOfBounds };
 
 fn isFloat(ty: TypeId) bool {
     return ty == .f32 or ty == .f64;
+}
+
+/// The register word of `value` rounded to the float type `ty`.
+fn floatWord(ty: TypeId, value: f64) Reg {
+    return @bitCast(if (ty == .f32) @as(f64, @as(f32, @floatCast(value))) else value);
+}
+
+fn floatArith(comptime F: type, tag: OpTag, l: F, r: F) F {
+    return switch (tag) {
+        .add => l + r,
+        .sub => l - r,
+        .mul => l * r,
+        .div => l / r,
+        .mod => @rem(l, r),
+        else => unreachable,
+    };
 }
 
 /// The nominal identity (`name` + stable `nominal_id`) of a `declare_type`'d slot —
@@ -939,6 +955,7 @@ pub const Vm = struct {
             .widen, .narrow, .bitcast => |c| {
                 const table = try self.requireTable();
                 const raw = frame.get(c.operand.index());
+                if (isFloat(c.from) and isFloat(c.to)) return .{ .value = floatWord(c.to, @bitCast(raw)) };
                 if (table.integerLayout(c.from)) |from| {
                     if (table.integerLayout(c.to)) |to| return .{ .value = to.normalize(from.normalize(raw)) };
                 }
@@ -946,15 +963,15 @@ pub const Vm = struct {
             },
             .int_to_float => |c| {
                 const from = try self.intLayout(c.from);
-                const raw = from.normalize(frame.get(c.operand.index()));
-                const value: f64 = if (from.signed) @floatFromInt(@as(i64, @bitCast(raw))) else @floatFromInt(raw);
+                const value = types.floatFromInt(from.int(from.normalize(frame.get(c.operand.index()))), c.to);
                 return .{ .value = @bitCast(value) };
             },
             .float_to_int => |c| {
                 const to = try self.intLayout(c.to);
                 const value: f64 = @bitCast(frame.get(c.operand.index()));
-                const raw: Reg = if (to.signed) @bitCast(@as(i64, @intFromFloat(value))) else @intFromFloat(value);
-                return .{ .value = to.normalize(raw) };
+                const raw = to.truncFloat(value) orelse
+                    return self.failFmt("{f} is out of range for '{s}'", .{ types.FloatText{ .value = value }, (try self.requireTable()).typeName(c.to) });
+                return .{ .value = raw };
             },
 
             // ── Memory + structs (flat layout, target-aware) ────
@@ -1626,14 +1643,7 @@ pub const Vm = struct {
         if (isFloat(ty)) {
             const lf: f64 = @bitCast(l);
             const rf: f64 = @bitCast(r);
-            const res: f64 = switch (tag) {
-                .add => lf + rf,
-                .sub => lf - rf,
-                .mul => lf * rf,
-                .div => lf / rf,
-                .mod => @rem(lf, rf),
-                else => unreachable,
-            };
+            const res: f64 = if (ty == .f32) floatArith(f32, tag, @floatCast(lf), @floatCast(rf)) else floatArith(f64, tag, lf, rf);
             return @bitCast(res);
         }
         const layout = try self.intLayout(ty);
@@ -1805,7 +1815,24 @@ pub const Vm = struct {
         }
         self.call_stack.append(self.gpa, fid) catch @panic("comptime VM: out of memory (call stack)");
         defer _ = self.call_stack.pop();
-        return self.run(callee, argbuf);
+        const result = try self.run(callee, argbuf);
+        if (callee.comptime_role == .run_wrapper) try self.checkRunEscape(module, callee, result);
+        return result;
+    }
+
+    /// Fail the evaluation when a failable `@run` wrapper called from a body the
+    /// VM runs returns an error, which no `@run` lets escape.
+    fn checkRunEscape(self: *Vm, module: *const Module, wrapper: *const Function, result: Reg) Error!void {
+        if (wrapper.ret.isBuiltin()) return;
+        const table = try self.requireTable();
+        const tag = switch (table.get(wrapper.ret)) {
+            .@"error" => result,
+            .failable => |f| try self.readField(table, result + fieldOffset(table, wrapper.ret, @intCast(table.failableValueSlotCount(f))), f.err),
+            else => return,
+        };
+        if (tag == 0) return;
+        const name = module.types.getString(wrapper.comptime_display_name orelse wrapper.name);
+        return self.failFmt("`@run` ({s}) raised an unhandled error: {s}", .{ name, module.types.tags.getName(@intCast(tag)) });
     }
 
     /// The measurement of a type an open set's layout decides, or null while it
@@ -2440,7 +2467,7 @@ pub const Vm = struct {
                     .floor => @floor(x),
                     else => unreachable,
                 };
-                return @bitCast(y);
+                return floatWord(ins_ty, y);
             },
             else => return null, // not modeled on the VM yet → caller bails
         }

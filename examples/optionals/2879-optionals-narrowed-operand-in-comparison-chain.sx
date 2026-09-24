@@ -1,0 +1,7 @@
+@import "modules/std.sx";
+
+main :: () {
+    u : u64 = 3;
+    m : ?u64 = u;
+    if m != null { if 0 <= m <= 5 { print("chain\n"); } }
+}

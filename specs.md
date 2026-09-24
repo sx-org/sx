@@ -3019,7 +3019,10 @@ without `xx` / `.(T)`:
 - Signed to unsigned (`i32` → `u32`)
 - Float to narrower float (`f64` → `f32`)
 - Float to any integer (`f64` → `u16`) — always **truncates**, integral or not
-  (`y : i64 = xx 1.5` → 1); this is the escape hatch from the implicit rule above
+  (`y : i64 = xx 1.5` → 1); this is the escape hatch from the implicit rule above.
+  A NaN, or a value whose truncation is outside the integer type, is a compile
+  error where the conversion is evaluated at compile time (`1e30.(i32)`, or
+  inside a `@run`); at run time the language does not define its result
 - Unsigned to signed of same or narrower width (`u8` → `i8`)
 
 `bool` is not numeric: it converts to and from integers and floats only

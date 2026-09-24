@@ -485,6 +485,8 @@ pub const CoercionResolver = struct {
         type: TypeId,
         /// Signed vs unsigned integers that do not widen into each other.
         signedness,
+        /// `bool` against a number: the conversion between them is explicit only.
+        bool_number,
         incompatible,
         /// No comparison-specific meeting; the existing operand rules apply.
         none,
@@ -502,6 +504,7 @@ pub const CoercionResolver = struct {
             return .{ .type = self.l.module.types.ptrTo(.void) };
         }
         if ((l_addr and self.l.isIntEx(rhs_ty)) or (r_addr and self.l.isIntEx(lhs_ty))) return .incompatible;
+        if ((lhs_ty == .bool and self.isNumericScalar(rhs_ty)) or (rhs_ty == .bool and self.isNumericScalar(lhs_ty))) return .bool_number;
 
         if (!self.isNumericScalar(lhs_ty) or !self.isNumericScalar(rhs_ty)) return .none;
         return switch (self.numericMeet(lhs_ty, rhs_ty)) {

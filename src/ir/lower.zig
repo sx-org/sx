@@ -2809,7 +2809,7 @@ pub const Lowering = struct {
 
     /// A `[N:X]T` terminator as a value of the element type.
     pub fn sentinelValue(self: *Lowering, sentinel: i64, elem_ty: TypeId) Ref {
-        if (isFloat(elem_ty)) return self.builder.constFloat(@floatFromInt(sentinel), elem_ty);
+        if (isFloat(elem_ty)) return self.builder.constFloat(types.floatFromInt(sentinel, elem_ty), elem_ty);
         return self.builder.constInt(sentinel, elem_ty);
     }
 
@@ -4083,6 +4083,7 @@ pub const Lowering = struct {
     pub const externalErrorsExist = lower_coerce.externalErrorsExist;
     pub const coerceMode = lower_coerce.coerceMode;
     pub const diagNonIntegralNarrow = lower_coerce.diagNonIntegralNarrow;
+    pub const foldIntegralFloat = lower_coerce.foldIntegralFloat;
     pub const promoteCVariadicArgs = lower_coerce.promoteCVariadicArgs;
     pub const promotedTailType = lower_coerce.promotedTailType;
     pub const tailAdmissible = lower_coerce.tailAdmissible;
@@ -4373,7 +4374,6 @@ pub const Lowering = struct {
     pub const lowerOptionalEquality = lower_expr.lowerOptionalEquality;
     pub const lowerOptionalMixedEquality = lower_expr.lowerOptionalMixedEquality;
     pub const lowerChainedComparison = lower_expr.lowerChainedComparison;
-    pub const emitCmp = lower_expr.emitCmp;
 
     // --- lower/closure.zig (lower_closure) ---
     pub const lowerLambda = lower_closure.lowerLambda;

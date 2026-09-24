@@ -53,7 +53,7 @@ fn constArrayLiteralInner(self: *Lowering, elements: []const *const Node, array_
 
 /// A `[N:X]T` terminator as a constant of the element type.
 fn sentinelConstant(sentinel: i64, elem_ty: TypeId) inst_mod.ConstantValue {
-    if (isFloat(elem_ty)) return .{ .float = @floatFromInt(sentinel) };
+    if (isFloat(elem_ty)) return .{ .float = types.floatFromInt(sentinel, elem_ty) };
     return .{ .int = sentinel };
 }
 
@@ -228,7 +228,7 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
         const v = program_index_mod.evalConstIntExpr(expr, ctx) orelse return null;
         // An int element in a FLOAT destination converts exactly (the
         // int+float promotion rule, element-wise — `[2]f64 : .[1, 2.5]`).
-        if (isFloat(expected_ty)) return .{ .float = @floatFromInt(v) };
+        if (isFloat(expected_ty)) return .{ .float = types.floatFromInt(v, expected_ty) };
         self.checkIntLiteralFits(v, expected_ty, expr.span);
         return .{ .int = @truncate(v) };
     }
@@ -325,7 +325,7 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
                     const v = program_index_mod.evalConstFloatExpr(expr, ctx) orelse break :blk null;
                     break :blk self.coerceConstant(.{ .float = v }, source_ty, expected_ty);
                 }
-                if (program_index_mod.evalConstIntExpr(expr, ctx)) |v| break :blk inst_mod.ConstantValue{ .float = @floatFromInt(v) };
+                if (program_index_mod.evalConstIntExpr(expr, ctx)) |v| break :blk inst_mod.ConstantValue{ .float = types.floatFromInt(v, expected_ty) };
             }
             break :blk null;
         },
@@ -340,7 +340,7 @@ fn constCastValue(self: *Lowering, pc: *const ast.PostfixCast, expected_ty: Type
     const src = self.inferExprType(pc.operand);
     if (dst == .unresolved or src == .unresolved) return null;
     const value = constNaturalValue(self, pc.operand, src, frame) orelse return null;
-    const cast = self.castConstant(value, src, dst) orelse return null;
+    const cast = self.castConstant(value, src, dst, span) orelse return null;
     if (!self.checkConstantWidens(dst, expected_ty, span)) return null;
     return self.coerceConstant(cast, dst, expected_ty);
 }
@@ -348,11 +348,7 @@ fn constCastValue(self: *Lowering, pc: *const ast.PostfixCast, expected_ty: Type
 /// A float literal's constant at `expected_ty`. An integer destination takes
 /// the float only when it is integral.
 fn constFloatLeaf(self: *Lowering, value: f64, expected_ty: TypeId, span: ast.Span) ?inst_mod.ConstantValue {
-    if (self.isIntEx(expected_ty)) {
-        if (program_index_mod.floatToIntExact(value)) |iv| return .{ .int = iv };
-        self.diagNonIntegralNarrow(span, value, expected_ty);
-        return null;
-    }
+    if (self.isIntEx(expected_ty)) return .{ .int = self.foldIntegralFloat(value, expected_ty, span) orelse return null };
     return .{ .float = self.adoptFloatValue(value, expected_ty, span) };
 }
 
@@ -852,18 +848,17 @@ pub fn lowerComptimeGlobal(self: *Lowering, declaration: @import("../../imports.
     // helpers, silently wrong for anything else.
     const expr_ty = self.inferExprType(expr);
     // A failable `@run` (bare, no `catch`/`??`): the comptime function
-    // returns the full failable tuple so the @run site can inspect the
-    // error slot, but the GLOBAL is typed as the success value. On a
-    // comptime error the global never materializes — emit halts with a
-    // diagnostic + trace. A handled `@run … catch/?? …` already
-    // strips the error channel, so it lands here as non-failable.
-    const is_failable = self.errorChannelOf(expr_ty) != null;
-    const func_ret: TypeId = if (is_failable)
-        expr_ty
-    else if (type_ann) |n|
-        self.resolveTypeWithBindings(n)
-    else
-        expr_ty;
+    // returns a failable tuple so the @run site can inspect the error
+    // slot, and the GLOBAL is typed as its success value — the annotation
+    // when one is written. On a comptime error the global never
+    // materializes — emit halts with a diagnostic + trace. A handled
+    // `@run … catch/?? …` already strips the error channel, so it lands
+    // here as non-failable.
+    const channel = self.errorChannelOf(expr_ty);
+    const func_ret: TypeId = if (type_ann) |n| ret: {
+        const annotated = self.resolveTypeWithBindings(n);
+        break :ret if (channel) |ch| self.module.types.internFailable(annotated, ch) else annotated;
+    } else expr_ty;
     // The result crosses into the runtime image, which is what makes this an
     // escape site (specs.md §6.9).
     const func_id = self.createComptimeFunction(name, .ordinary, expr, func_ret);
@@ -904,7 +899,8 @@ pub fn lowerComptimeSideEffect(self: *Lowering, expr: *const Node) void {
 /// Creates a comptime function and emits a `call` to it, so the
 /// interpreter can evaluate it and replace with the constant result.
 pub fn lowerInlineComptime(self: *Lowering, expr: *const Node) Ref {
-    const ret_ty: TypeId = self.target_type orelse self.inferExprType(expr);
+    const own_ty = self.inferExprType(expr);
+    const ret_ty: TypeId = if (program_index_mod.untypedConst(expr, self) != null) self.target_type orelse own_ty else own_ty;
     const func_id = self.createComptimeFunction("__ct", .ordinary, expr, ret_ty);
     // Carry the binding const's name (when this `@run` initializes one) onto the
     // wrapper so a comptime-init failure names the user const, not `__ct_N`.
@@ -918,7 +914,12 @@ pub fn lowerInlineComptime(self: *Lowering, expr: *const Node) Ref {
         self.alloc.dupe(Ref, &.{self.current_ctx_ref}) catch &.{}
     else
         &.{};
-    return self.builder.call(func_id, final_args, func.ret);
+    const result = self.builder.call(func_id, final_args, func.ret);
+    // A failable wrapper's escaping error halts the build where the call folds,
+    // so the `@run` is its success value.
+    const channel = self.errorChannelOf(func.ret) orelse return result;
+    if (channel == func.ret) return self.builder.constInt(0, .void);
+    return self.extractSuccessValue(result, func.ret, self.failableSuccessType(func.ret));
 }
 
 /// Lower a `@insert expr` statement. Evaluates `expr` at compile time to get
@@ -2252,12 +2253,19 @@ pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, ph
     // result's own type settles the wrapper's return.
     const result = if (ret_ty == .unresolved or self.errorChannelOf(ret_ty) != null)
         self.lowerMarkedExpr(expr, false)
+    else if (ret_ty == .void)
+        self.lowerExpr(expr)
     else
-        self.lowerExpr(expr);
+        lowerComptimeResult(self, expr, ret_ty);
     const settled_ret: TypeId = if (ret_ty == .unresolved) self.builder.getRefType(result) else ret_ty;
     self.module.getFunctionMut(func_id).ret = settled_ret;
     if (settled_ret == .void) {
         self.builder.retVoid();
+    } else if (!settled_ret.isBuiltin() and self.module.types.get(settled_ret) == .failable) {
+        const saved_span = self.builder.current_span;
+        defer self.builder.current_span = saved_span;
+        self.builder.current_span = .{ .start = expr.span.start, .end = expr.span.end };
+        self.lowerFailableSuccessReturn(result, settled_ret, expr.span);
     } else {
         self.builder.ret(result, settled_ret);
     }
@@ -2272,6 +2280,19 @@ pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, ph
     self.builder.inst_counter = saved_counter;
 
     return func_id;
+}
+
+/// `expr` lowered at `ret_ty` and converted to it as an initializer converts.
+fn lowerComptimeResult(self: *Lowering, expr: *const Node, ret_ty: TypeId) Ref {
+    self.target_type = ret_ty;
+    const value = self.lowerExpr(expr);
+    self.target_type = null;
+    const value_ty = self.builder.getRefType(value);
+    if (value_ty == ret_ty or value_ty == .void) return value;
+    const saved_span = self.builder.current_span;
+    defer self.builder.current_span = saved_span;
+    self.builder.current_span = .{ .start = expr.span.start, .end = expr.span.end };
+    return self.coerceToType(value, value_ty, ret_ty);
 }
 
 // ── Source-const folding ────────────────────────────────────────
@@ -2777,10 +2798,5 @@ pub fn foldComptimeFloatInit(self: *Lowering, node: *const Node, dst: TypeId) ?R
     // `ME / 2` would look like integer division; `isFloatValuedExpr` (judging
     // by VALUE) catches that case so it narrows under the unified rule too.
     if (!isFloat(self.inferExprType(node)) and !program_index_mod.isFloatValuedExpr(node, self)) return null;
-    // Integral comptime float folds to its int (`floatToIntExact`, the same
-    // facility the array-dim / `$K: Count` paths use); a non-integral one is
-    // the narrowing error.
-    if (program_index_mod.floatToIntExact(fv)) |iv| return self.builder.constInt(iv, dst);
-    self.diagNonIntegralNarrow(node.span, fv, dst);
-    return self.builder.constInt(0, dst);
+    return self.builder.constInt(self.foldIntegralFloat(fv, dst, node.span) orelse 0, dst);
 }

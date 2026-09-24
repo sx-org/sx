@@ -1524,6 +1524,10 @@ pub const Ops = struct {
             const evaluation = comptime_vm.tryEval(self.e.alloc, self.e.ir_mod, call_op.callee, &self.e.build_config, self.e.import_sources, null);
             defer evaluation.destroy();
             if (evaluation.completed()) |result| {
+                if (self.e.checkComptimeFailable(result, callee_func.ret, fname) == null) {
+                    self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
+                    return;
+                }
                 self.e.mapRef(self.e.valueToLLVMConst(result, instruction.ty, fname));
                 return;
             }

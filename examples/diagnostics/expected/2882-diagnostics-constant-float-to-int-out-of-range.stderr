@@ -1,0 +1,11 @@
+error: 1e10 is out of range for 'i32'
+  --> examples/diagnostics/2882-diagnostics-constant-float-to-int-out-of-range.sx:1:11
+   |
+ 1 | G : i32 = 1e10.(i32);
+   |           ^^^^^^^^^^
+
+error: 1e30 is out of range for 'i32'
+  --> examples/diagnostics/2882-diagnostics-constant-float-to-int-out-of-range.sx:4:10
+   |
+ 4 |     c := 1e30.(i32);
+   |          ^^^^^^^^^^

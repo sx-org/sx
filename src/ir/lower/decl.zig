@@ -4011,7 +4011,7 @@ pub fn emitModuleConst(self: *Lowering, name: []const u8, ci: ModuleConstInfo, e
         .int_literal => |lit| {
             // If declared type is float, convert integer value to float constant
             if (ci.ty == .f32 or ci.ty == .f64) {
-                return self.builder.constFloat(@floatFromInt(lit.value), ci.ty);
+                return self.builder.constFloat(types.floatFromInt(lit.value, ci.ty), ci.ty);
             }
             return self.builder.constInt(lit.value, ci.ty);
         },

@@ -1,0 +1,11 @@
+@import "modules/std.sx";
+
+E :: error { Bad };
+
+neg :: () -> (i64, !E) { -1 }
+
+K : u64 : @run neg();
+
+main :: () {
+    print("{}\n", K);
+}

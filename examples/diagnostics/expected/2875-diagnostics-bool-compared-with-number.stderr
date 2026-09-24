@@ -1,0 +1,11 @@
+error: cannot compare values of type 'bool' and 'f64'; use an explicit cast (`.(f64)`)
+  --> examples/diagnostics/2875-diagnostics-bool-compared-with-number.sx:5:8
+   |
+ 5 |     if t == f { return 1; }
+   |        ^^^^^^
+
+error: cannot compare values of type 'i64' and 'bool'; use an explicit cast (`.(i64)`)
+  --> examples/diagnostics/2875-diagnostics-bool-compared-with-number.sx:6:8
+   |
+ 6 |     if n < t { return 2; }
+   |        ^^^^^

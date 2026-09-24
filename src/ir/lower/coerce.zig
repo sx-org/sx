@@ -223,10 +223,7 @@ pub fn coerceConstant(self: *Lowering, value: inst_mod.ConstantValue, src: TypeI
         else
             value,
         .int_to_float => if (value == .int)
-            .{ .float = if (self.module.types.integerLayout(src).?.signed)
-                @floatFromInt(value.int)
-            else
-                @floatFromInt(@as(u64, @bitCast(value.int))) }
+            .{ .float = types.floatFromInt(self.module.types.integerLayout(src).?.int(@bitCast(value.int)), dst) }
         else if (value == .zeroinit)
             .{ .float = 0 }
         else
@@ -235,11 +232,11 @@ pub fn coerceConstant(self: *Lowering, value: inst_mod.ConstantValue, src: TypeI
     };
 }
 
-/// `value`, a constant of type `src`, converted to `dst` as the explicit cast
-/// converts it at run time. Null when the conversion has no constant result.
-pub fn castConstant(self: *Lowering, value: inst_mod.ConstantValue, src: TypeId, dst: TypeId) ?inst_mod.ConstantValue {
+/// `value`, a constant of type `src`, converted to `dst` by the explicit cast.
+/// Null when the conversion has no constant result or is refused at `span`.
+pub fn castConstant(self: *Lowering, value: inst_mod.ConstantValue, src: TypeId, dst: TypeId, span: ast.Span) ?inst_mod.ConstantValue {
     const tt = &self.module.types;
-    if (value == .zeroinit) if (scalarZero(self, src)) |zero| return castConstant(self, zero, src, dst);
+    if (value == .zeroinit) if (scalarZero(self, src)) |zero| return castConstant(self, zero, src, dst, span);
     switch (self.coercionResolver().classify(src, dst)) {
         .no_op => return value,
         .integer_retype, .widen, .narrow => {
@@ -253,44 +250,29 @@ pub fn castConstant(self: *Lowering, value: inst_mod.ConstantValue, src: TypeId,
         .int_to_float => {
             if (value != .int) return null;
             const from = tt.integerLayout(src).?;
-            const raw = from.normalize(@bitCast(value.int));
-            return .{ .float = if (dst == .f32) intToFloat(f32, raw, from.signed) else intToFloat(f64, raw, from.signed) };
+            return .{ .float = types.floatFromInt(from.int(from.normalize(@bitCast(value.int))), dst) };
         },
         .float_to_int => {
-            if (value != .float or !std.math.isFinite(value.float)) return null;
-            const to = tt.integerLayout(dst).?;
-            const t = @trunc(value.float);
-            const raw: u64 = if (to.signed) signed: {
-                if (t < -9223372036854775808.0 or t >= 9223372036854775808.0) return null;
-                break :signed @bitCast(@as(i64, @intFromFloat(t)));
-            } else unsigned: {
-                if (t < 0 or t >= 18446744073709551616.0) return null;
-                break :unsigned @intFromFloat(t);
-            };
-            return .{ .int = @bitCast(to.normalize(raw)) };
+            if (value != .float) return null;
+            return .{ .int = @bitCast(constFloatToInt(self, value.float, dst, span) orelse return null) };
         },
         .bool_to_number => {
             if (value != .boolean) return null;
-            return castConstant(self, .{ .int = @intFromBool(value.boolean) }, .u8, dst);
+            return castConstant(self, .{ .int = @intFromBool(value.boolean) }, .u8, dst, span);
         },
         .number_to_bool => return switch (value) {
             .int => |n| .{ .boolean = n != 0 },
             .float => |f| .{ .boolean = f != 0 },
             else => null,
         },
-        .int_to_enum => return castConstant(self, value, src, self.enumBackingType(dst).?),
-        .enum_to_int => return castConstant(self, value, self.enumBackingType(src).?, dst),
+        .int_to_enum => return castConstant(self, value, src, self.enumBackingType(dst).?, span),
+        .enum_to_int => return castConstant(self, value, self.enumBackingType(src).?, dst, span),
         .optional_wrap => {
             const child = tt.get(dst).optional.child;
-            return self.someConstant(child, castConstant(self, value, src, child) orelse return null);
+            return self.someConstant(child, castConstant(self, value, src, child, span) orelse return null);
         },
         else => return null,
     }
-}
-
-/// `raw` rounded once to `F`, as the run-time conversion rounds it.
-fn intToFloat(comptime F: type, raw: u64, signed: bool) F {
-    return if (signed) @floatFromInt(@as(i64, @bitCast(raw))) else @floatFromInt(raw);
 }
 
 /// The zero of the scalar `ty` in the constant form its other values take.
@@ -1171,6 +1153,27 @@ pub fn diagNonIntegralNarrow(self: *Lowering, span: ast.Span, value: f64, dst_ty
         d.addFmt(.err, span, "cannot implicitly narrow non-integral float '{d}' to '{s}'; use an explicit cast (`.({s})`)", .{ value, self.formatTypeName(dst_ty), self.formatTypeName(dst_ty) });
 }
 
+/// The integer an implicit compile-time float `value` folds to at the integer
+/// type `dst_ty`, checked as that integer's literal is, or null once a
+/// non-integral float is refused at `span`.
+pub fn foldIntegralFloat(self: *Lowering, value: f64, dst_ty: TypeId, span: ast.Span) ?i64 {
+    const iv = program_index_mod.floatToIntExact(value) orelse {
+        diagNonIntegralNarrow(self, span, value, dst_ty);
+        return null;
+    };
+    self.checkIntLiteralFits(iv, dst_ty, span);
+    return iv;
+}
+
+/// The integer word the compile-time float `value` truncates to at `dst_ty`,
+/// or null once a NaN or a truncation outside `dst_ty` is refused at `span`.
+fn constFloatToInt(self: *Lowering, value: f64, dst_ty: TypeId, span: ast.Span) ?u64 {
+    return self.module.types.integerLayout(dst_ty).?.truncFloat(value) orelse {
+        if (self.diagnostics) |d| d.addFmt(.err, span, "{f} is out of range for '{s}'", .{ types.FloatText{ .value = value }, self.formatTypeName(dst_ty) });
+        return null;
+    };
+}
+
 /// Lower a struct field default `default_expr`, coerced to the field type
 /// `field_ty`. A compile-time float default narrowing into an integer field
 /// follows the unified rule via `foldComptimeFloatInit`; everything else
@@ -1840,13 +1843,15 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         .float_to_int => {
             if (mode == .implicit) {
                 if (self.builder.constFloatInfo(val)) |info| {
-                    if (program_index_mod.floatToIntExact(info.value)) |iv| {
-                        return self.builder.constInt(iv, dst_ty);
-                    }
-                    self.diagNonIntegralNarrow(.{ .start = info.span.start, .end = info.span.end }, info.value, dst_ty);
-                    return self.builder.constUndef(dst_ty);
+                    const iv = foldIntegralFloat(self, info.value, dst_ty, .{ .start = info.span.start, .end = info.span.end }) orelse return self.builder.constUndef(dst_ty);
+                    return self.builder.constInt(iv, dst_ty);
                 }
                 return refuseImplicitNumericConversion(self, src_ty, dst_ty);
+            }
+            if (self.builder.constFloatInfo(val)) |info| {
+                const cs = self.builder.current_span;
+                const word = constFloatToInt(self, info.value, dst_ty, .{ .start = cs.start, .end = cs.end }) orelse return self.builder.constUndef(dst_ty);
+                return self.builder.constInt(@bitCast(word), dst_ty);
             }
             return self.builder.emit(.{ .float_to_int = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty);
         },
