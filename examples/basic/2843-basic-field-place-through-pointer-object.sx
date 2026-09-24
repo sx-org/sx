@@ -1,0 +1,22 @@
+// A field of a pointer object is a place in its pointee. A pointer held in a
+// field or reached by a deref is loaded out of its slot; a call's pointer
+// result is the address itself.
+
+@import "modules/std.sx";
+
+V :: struct { n: i64; }
+H :: struct { p: *V; }
+at :: (p: *V) -> *V { p }
+
+main :: () -> i32 {
+    v := V{ n = 1 };
+    h := H{ p = *v };
+    pv := *v;
+    pp := *pv;
+    k := 0;
+    h.p.n, k = 5, 1;
+    pp.*.n += 1;
+    --at(*v).n;
+    print("{} {}\n", v.n, k);
+    0
+}

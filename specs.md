@@ -1857,6 +1857,9 @@ items.len          // length (i64)
 items.ptr          // raw pointer
 ```
 
+`.len` and `.ptr` name the fat pointer's own slots, and are places like struct
+fields.
+
 A `.{ … }` literal against a slice target reads its field names: `ptr` and
 `len` write the fat pointer's own slots, and any other field list is a list of
 ELEMENTS, coerced to `T` over a backing array exactly as `.[ … ]` is.
@@ -5310,9 +5313,10 @@ falls through to ufcs functions only for non-members
 handle as its first parameter).
 
 UFCS works with pointer receivers (auto-deref, and auto address-of when
-the first param is `*T` and the receiver is a value) and with **generic**
-functions — the receiver participates in `$T` binding and the call
-monomorphizes exactly like the direct spelling:
+the first param is `*T` and the receiver is a value; a receiver rooted at a
+`::` constant is refused there) and with **generic** functions — the receiver
+participates in `$T` binding and the call monomorphizes exactly like the
+direct spelling:
 
 ```sx
 firstOf :: ufcs (xs: []$T) -> T { xs[0] }

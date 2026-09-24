@@ -33,4 +33,7 @@ main :: () -> i32 {
 
     plain : []u8 = big[0..];
     tiny : Tiny = plain;
+
+    n := 0;
+    plain.len, n = -1, 0;
 }
