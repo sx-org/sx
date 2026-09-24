@@ -456,15 +456,31 @@ pub fn runBuildCallback(gpa: std.mem.Allocator, module: *const Module, func_id: 
 // Walks the SSA IR over comptime frames: each SSA result is a `Reg` word
 // (immediate scalar bits, or an `Addr`). Integer math is 64-bit wrapping (`+%`,
 // truncating `/` and `%` keyed on the result type's signedness, signed compares
-// — a scalar `.int` is i64 regardless of the declared width), float math is
-// f64. Alloca/load/store, aggregate init and projection, and calls execute over
-// comptime memory; an op with no arm bails loudly (`error.Unsupported` +
-// `detail`), never silently.
+// — a scalar `.int` is i64 regardless of the declared width). A float register
+// holds f64 bits, and an `f32` result is rounded to `f32`. Alloca/load/store,
+// aggregate init and projection, and calls execute over comptime memory; an op
+// with no arm bails loudly (`error.Unsupported` + `detail`), never silently.
 
 pub const Error = error{ DivisionByZero, TypeError, Unsupported, OutOfBounds };
 
 fn isFloat(ty: TypeId) bool {
     return ty == .f32 or ty == .f64;
+}
+
+/// The register word of `value` rounded to the float type `ty`.
+fn floatWord(ty: TypeId, value: f64) Reg {
+    return @bitCast(if (ty == .f32) @as(f64, @as(f32, @floatCast(value))) else value);
+}
+
+fn floatArith(comptime F: type, tag: OpTag, l: F, r: F) F {
+    return switch (tag) {
+        .add => l + r,
+        .sub => l - r,
+        .mul => l * r,
+        .div => l / r,
+        .mod => @rem(l, r),
+        else => unreachable,
+    };
 }
 
 /// The nominal identity (`name` + stable `nominal_id`) of a `declare_type`'d slot —
@@ -939,6 +955,7 @@ pub const Vm = struct {
             .widen, .narrow, .bitcast => |c| {
                 const table = try self.requireTable();
                 const raw = frame.get(c.operand.index());
+                if (isFloat(c.from) and isFloat(c.to)) return .{ .value = floatWord(c.to, @bitCast(raw)) };
                 if (table.integerLayout(c.from)) |from| {
                     if (table.integerLayout(c.to)) |to| return .{ .value = to.normalize(from.normalize(raw)) };
                 }
@@ -1625,14 +1642,7 @@ pub const Vm = struct {
         if (isFloat(ty)) {
             const lf: f64 = @bitCast(l);
             const rf: f64 = @bitCast(r);
-            const res: f64 = switch (tag) {
-                .add => lf + rf,
-                .sub => lf - rf,
-                .mul => lf * rf,
-                .div => lf / rf,
-                .mod => @rem(lf, rf),
-                else => unreachable,
-            };
+            const res: f64 = if (ty == .f32) floatArith(f32, tag, @floatCast(lf), @floatCast(rf)) else floatArith(f64, tag, lf, rf);
             return @bitCast(res);
         }
         const layout = try self.intLayout(ty);
@@ -2439,7 +2449,7 @@ pub const Vm = struct {
                     .floor => @floor(x),
                     else => unreachable,
                 };
-                return @bitCast(y);
+                return floatWord(ins_ty, y);
             },
             else => return null, // not modeled on the VM yet → caller bails
         }
