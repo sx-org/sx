@@ -1465,19 +1465,12 @@ pub fn registerTypedModuleConst(self: *Lowering, cd: *const ast.ConstDecl) void 
 /// literal's natural type is `.void`, so `classify(.void, *T)` yields `.none`
 /// and would reject the valid `P : *void : null`.
 pub fn typedConstInitFits(self: *Lowering, value: *const Node, dst_ty: TypeId) bool {
-    // An INTEGER-annotated constant accepts a compile-time INTEGRAL float —
-    // a literal (`K : i64 : 4.0`), an int-leaf expression (`K : i64 : M + 2.0`
-    // → 4), or a float-const-leaf expression whose SUM is integral
-    // (`F : f64 : 2.5; K : i64 : F + 1.5` → 4). Integrality is judged on the
-    // FLOAT fold (`evalConstFloatExpr` + `floatToIntExact`) — the SAME facility
-    // the typed-local path (`foldComptimeFloatInit`) uses — not the int-only
-    // folder, which folds leaf-by-leaf as integers and so misses an integral SUM
-    // built from a non-integral float leaf. A non-integral fold (`1.5`,
-    // `M + 0.5`, `F + 0.25`) yields null here and falls through to the
-    // rejecting checks below, where `registerTypedModuleConst` emits the
-    // unified narrowing diagnostic.
     if (isFloat(dst_ty) and self.isAdaptableFloat(value)) return true;
     if (self.untypedString(value) != null) return self.stringLiteralFits(dst_ty);
+    // An integer-annotated constant accepts a compile-time integral float
+    // (`K : i64 : 4.0`, `F : f64 : 2.5; K : i64 : F + 1.5`); `numericConstValue`
+    // checks its range. A non-integral one (`F + 0.25`) falls through to the
+    // rejecting checks below.
     if (self.isIntEx(dst_ty)) {
         switch (value.data) {
             .float_literal, .binary_op, .unary_op => {
@@ -3975,6 +3968,11 @@ pub fn numericConstValue(self: *Lowering, ci: ModuleConstInfo, ctx: lower.Source
         return self.constCastValue(&ci.value.data.postfix_cast, ci.ty, ci.value.span, ctx.frame);
     }
     if (self.isIntEx(ci.ty)) {
+        if (program_index_mod.isFloatValuedExpr(ci.value, ctx)) {
+            const fv = program_index_mod.evalConstFloatExpr(ci.value, ctx) orelse return null;
+            // A refused float still yields a value, so a static reader does not refold the constant as an integer.
+            return .{ .int = self.foldIntegralFloat(fv, ci.ty, ci.value.span) orelse 0 };
+        }
         switch (program_index_mod.foldCount(ci.value, ctx)) {
             .int => |iv| {
                 switch (ci.value.data) {
