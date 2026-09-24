@@ -5485,20 +5485,12 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         const peer_ty = self.inferExprType(bop.rhs);
         if (peer_ty != .unresolved and peer_ty != .void) self.target_type = peer_ty;
     }
-    // An untyped integer takes the other operand's type — `n == 0` with
-    // `n: usize` is a usize compare, not signed-vs-unsigned.
-    if (comparison and isUntypedInteger(self, bop.lhs)) {
-        const peer_ty = self.inferExprType(bop.rhs);
-        if (isCompareNumericPeer(self, peer_ty)) self.target_type = peer_ty;
-    }
     const float_operands = program_index_mod.floatOperandTypes(bop.*, self.operandType(self.inferExprType(bop.lhs)), self.operandType(self.inferExprType(bop.rhs)), self);
     // An untyped operand of an untyped operation computes in its type; of a
     // typed one, with no typed peer, in `i64`.
     const untyped_ty = untypedOperationType(self, bop);
     const shift = bop.op == .shl or bop.op == .shr;
-    const typed_default: ?TypeId = if (comparison) null else .i64;
-    const lhs_adopted = self.untypedOperandType(bop.op, bop.lhs, bop.rhs) orelse untyped_ty orelse if (isUntypedInteger(self, bop.lhs)) typed_default else null;
-    const rhs_adopted = self.untypedOperandType(bop.op, bop.rhs, bop.lhs) orelse (if (shift) null else untyped_ty) orelse if (isUntypedInteger(self, bop.rhs)) typed_default else null;
+    const lhs_adopted = self.untypedOperandType(bop.op, bop.lhs, bop.rhs) orelse untyped_ty orelse untypedBesideTyped(self, comparison, bop.lhs, self.inferExprType(bop.rhs));
     const operand_tt = self.target_type;
     if (self.isAdaptableFloat(bop.lhs)) self.target_type = float_operands.lhs;
     if (lhs_adopted) |ty| self.target_type = ty;
@@ -5538,9 +5530,6 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
             self.target_type = lhs_ty;
         }
     }
-    if (comparison and isUntypedInteger(self, bop.rhs) and isCompareNumericPeer(self, lhs_ty)) {
-        self.target_type = lhs_ty;
-    }
     // In a comparison, an anonymous positional literal on the RHS is typed
     // from the LHS just like an enum shorthand. This also keeps the following
     // `{` available as the if body.
@@ -5558,11 +5547,19 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         };
     }
     if (self.isAdaptableFloat(bop.rhs)) self.target_type = float_operands.rhs;
+    const rhs_adopted = self.untypedOperandType(bop.op, bop.rhs, bop.lhs) orelse (if (shift) null else untyped_ty) orelse untypedBesideTyped(self, comparison, bop.rhs, lhs_ty);
     if (rhs_adopted) |ty| self.target_type = ty;
     var rhs = self.lowerExpr(bop.rhs);
     const rhs_ref_pointee = self.refCapturePointee(bop.rhs);
     if (rhs_ref_pointee) |p| rhs = self.builder.load(rhs, p);
     self.target_type = saved_tt;
+    const rhs_ty = blk: {
+        if (rhs_ref_pointee) |p| break :blk p;
+        if (rhs_adopted) |ty| break :blk ty;
+        if (self.isAdaptableFloat(bop.rhs)) break :blk self.builder.getRefType(rhs);
+        const it = self.inferExprType(bop.rhs);
+        break :blk if (it == .unresolved) self.builder.getRefType(rhs) else it;
+    };
 
     // Optional value-equality: `?T == ?T` — equal iff both
     // null or both present with equal payloads — and the mixed `?T == T`,
@@ -5574,23 +5571,18 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     // presence branch just folds to the payload compare.
     if (bop.op == .eq or bop.op == .neq) {
         const l_actual = if (lhs_ty == .unresolved) self.builder.getRefType(lhs) else lhs_ty;
-        const r_actual = blk: {
-            if (self.isAdaptableFloat(bop.rhs)) break :blk self.builder.getRefType(rhs);
-            const it = rhs_ref_pointee orelse self.inferExprType(bop.rhs);
-            break :blk if (it == .unresolved) self.builder.getRefType(rhs) else it;
-        };
         const l_opt: ?TypeId = if (!l_actual.isBuiltin() and self.module.types.get(l_actual) == .optional)
             self.module.types.get(l_actual).optional.child
         else
             null;
-        const r_opt: ?TypeId = if (!r_actual.isBuiltin() and self.module.types.get(r_actual) == .optional)
-            self.module.types.get(r_actual).optional.child
+        const r_opt: ?TypeId = if (!rhs_ty.isBuiltin() and self.module.types.get(rhs_ty) == .optional)
+            self.module.types.get(rhs_ty).optional.child
         else
             null;
         if (l_opt != null and r_opt != null) {
-            if (l_actual != r_actual) {
+            if (l_actual != rhs_ty) {
                 if (self.diagnostics) |d| d.addFmt(.err, bop.rhs.span, "cannot compare values of distinct types '{s}' and '{s}'", .{
-                    self.formatTypeName(l_actual), self.formatTypeName(r_actual),
+                    self.formatTypeName(l_actual), self.formatTypeName(rhs_ty),
                 });
                 return self.emitPlaceholder("distinct-optional-equality");
             }
@@ -5601,20 +5593,13 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
             const inner = l_opt orelse r_opt.?;
             const opt_ref = if (l_opt != null) lhs else rhs;
             var conc = if (l_opt != null) rhs else lhs;
-            const conc_ty = if (l_opt != null) r_actual else l_actual;
+            const conc_ty = if (l_opt != null) rhs_ty else l_actual;
             if (conc_ty != inner) conc = self.coerceToType(conc, conc_ty, inner);
             const eq = self.lowerOptionalMixedEquality(opt_ref, conc, inner, bop.lhs.span);
             return if (bop.op == .neq) self.builder.emit(.{ .bool_not = .{ .operand = eq } }, .bool) else eq;
         }
     }
 
-    const rhs_ty = blk: {
-        if (rhs_ref_pointee) |p| break :blk p;
-        if (rhs_adopted) |ty| break :blk ty;
-        if (self.isAdaptableFloat(bop.rhs)) break :blk self.builder.getRefType(rhs);
-        const it = self.inferExprType(bop.rhs);
-        break :blk if (it == .unresolved) self.builder.getRefType(rhs) else it;
-    };
     var ty = lhs_ty;
 
     if (self.unwrapOptionalOperand(lhs, ty, bop.lhs.span)) |payload| {
@@ -6057,19 +6042,23 @@ fn untypedChainPeer(self: *Lowering, operands: []const *Node, i: usize) ?TypeId 
     for (neighbors) |neighbor| {
         const n = neighbor orelse continue;
         if (isUntypedInteger(self, n)) continue;
-        const ty = self.inferExprType(n);
-        if (isCompareNumericPeer(self, ty)) return ty;
+        if (comparePeerType(self, self.inferExprType(n))) |ty| return ty;
     }
     return null;
 }
 
-fn isCompareNumericPeer(self: *Lowering, ty: TypeId) bool {
-    if (self.isIntEx(ty) or Lowering.isFloat(ty)) return true;
-    if (ty.isBuiltin()) return false;
-    return switch (self.module.types.get(ty)) {
-        .pointer, .many_pointer, .function => true,
-        else => false,
-    };
+/// The type an untyped integer compared with a peer of `peer_ty` takes: the
+/// peer's numeric type, seen through `?` — `n == 0` with `n: ?usize` is a
+/// usize compare, not signed-vs-unsigned.
+fn comparePeerType(self: *Lowering, peer_ty: TypeId) ?TypeId {
+    return self.integerContext(peer_ty) orelse self.floatContext(peer_ty);
+}
+
+/// The type an untyped integer `operand` takes beside a typed peer of
+/// `peer_ty` that does not adopt it: compared, the peer's; otherwise `i64`.
+fn untypedBesideTyped(self: *Lowering, comparison: bool, operand: *const Node, peer_ty: TypeId) ?TypeId {
+    if (!isUntypedInteger(self, operand)) return null;
+    return if (comparison) comparePeerType(self, peer_ty) else .i64;
 }
 
 fn constIntOf(self: *Lowering, val: Ref) ?i64 {
