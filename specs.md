@@ -2953,8 +2953,9 @@ isReady : ValueListenable(bool) = map(
   constants, and every integer operator over them (`+ - * / %`, unary `-`,
   `& | ^ ~`, and `<< >>` with an untyped left operand) — fold exactly at
   compile time, in 128-bit arithmetic. Only the folded value takes a type, and
-  it must fit it: its destination's or typed peer's type, and `i64` without
-  either. An explicit cast (`.(T)`, `xx`) converts it, truncating.
+  it must fit it: its destination's type, through `?` as well, or its typed
+  peer's type, and `i64` without either. An explicit cast (`.(T)`, `xx`)
+  converts it, truncating.
   `f : u64 = 0xFFFF_FFFF_FFFF_FFFF / 2` is `9223372036854775807`,
   `d : i8 = 100 + 100` is refused because `200` does not fit `i8`, and
   `m : u8 = ~0` is refused because `-1` does not fit `u8`. A value outside 128

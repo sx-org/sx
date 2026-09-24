@@ -1,0 +1,13 @@
+// An untyped integer constant at an optional destination takes the payload
+// type as its context.
+
+@import "modules/std.sx";
+
+M :: 0xFFFF_FFFF_FFFF_FFFF;
+
+main :: () -> i32 {
+    o : ?u64 = 0xFFFF_FFFF_FFFF_FFFF;
+    p : ?u64 = M - 1;
+    print("{} {}\n", o?!, p?!);
+    0
+}

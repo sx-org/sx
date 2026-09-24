@@ -1887,8 +1887,7 @@ pub fn literalNodeType(self: *Lowering, node: *const Node, target: ?TypeId) ?Typ
 }
 
 fn integerLiteralType(self: *Lowering, target: ?TypeId) TypeId {
-    const t = target orelse return .i64;
-    return if (Lowering.isFloat(t) or self.isIntEx(t)) t else .i64;
+    return self.integerContext(target) orelse self.floatContext(target) orelse .i64;
 }
 
 pub const LiteralShape = enum { string, view, array };
