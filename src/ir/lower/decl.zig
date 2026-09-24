@@ -1463,9 +1463,7 @@ pub fn registerTypedModuleConst(self: *Lowering, cd: *const ast.ConstDecl) void 
 /// (conversions.zig): that planner judges RUNTIME value coercions and is
 /// unsound as a compile-time literal-representability oracle here — a `null`
 /// literal's natural type is `.void`, so `classify(.void, *T)` yields `.none`
-/// and would reject the valid `P : *void : null`; `bool` is 1 bit wide, so
-/// `classify(.bool, i64)` yields `.widen` and would accept the bogus
-/// `B : i64 : true`.
+/// and would reject the valid `P : *void : null`.
 pub fn typedConstInitFits(self: *Lowering, value: *const Node, dst_ty: TypeId) bool {
     // An INTEGER-annotated constant accepts a compile-time INTEGRAL float —
     // a literal (`K : i64 : 4.0`), an int-leaf expression (`K : i64 : M + 2.0`

@@ -1,9 +1,12 @@
 G : f64 = true;
+H : [1]i64 = .[true];
 
 count :: (n: i64) -> i64 { n }
+nonzero :: (n: i64) -> bool { n }
 
 main :: () {
     n := 2;
     flag : bool = n;
     count(flag);
+    nonzero(n);
 }
