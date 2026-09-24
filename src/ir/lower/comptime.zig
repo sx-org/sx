@@ -53,7 +53,7 @@ fn constArrayLiteralInner(self: *Lowering, elements: []const *const Node, array_
 
 /// A `[N:X]T` terminator as a constant of the element type.
 fn sentinelConstant(sentinel: i64, elem_ty: TypeId) inst_mod.ConstantValue {
-    if (isFloat(elem_ty)) return .{ .float = @floatFromInt(sentinel) };
+    if (isFloat(elem_ty)) return .{ .float = types.floatFromInt(sentinel, elem_ty) };
     return .{ .int = sentinel };
 }
 
@@ -228,7 +228,7 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
         const v = program_index_mod.evalConstIntExpr(expr, ctx) orelse return null;
         // An int element in a FLOAT destination converts exactly (the
         // int+float promotion rule, element-wise — `[2]f64 : .[1, 2.5]`).
-        if (isFloat(expected_ty)) return .{ .float = @floatFromInt(v) };
+        if (isFloat(expected_ty)) return .{ .float = types.floatFromInt(v, expected_ty) };
         self.checkIntLiteralFits(v, expected_ty, expr.span);
         return .{ .int = @truncate(v) };
     }
@@ -325,7 +325,7 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
                     const v = program_index_mod.evalConstFloatExpr(expr, ctx) orelse break :blk null;
                     break :blk self.coerceConstant(.{ .float = v }, source_ty, expected_ty);
                 }
-                if (program_index_mod.evalConstIntExpr(expr, ctx)) |v| break :blk inst_mod.ConstantValue{ .float = @floatFromInt(v) };
+                if (program_index_mod.evalConstIntExpr(expr, ctx)) |v| break :blk inst_mod.ConstantValue{ .float = types.floatFromInt(v, expected_ty) };
             }
             break :blk null;
         },

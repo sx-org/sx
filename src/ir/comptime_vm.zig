@@ -946,8 +946,7 @@ pub const Vm = struct {
             },
             .int_to_float => |c| {
                 const from = try self.intLayout(c.from);
-                const raw = from.normalize(frame.get(c.operand.index()));
-                const value: f64 = if (from.signed) @floatFromInt(@as(i64, @bitCast(raw))) else @floatFromInt(raw);
+                const value = types.floatFromInt(from.int(from.normalize(frame.get(c.operand.index()))), c.to);
                 return .{ .value = @bitCast(value) };
             },
             .float_to_int => |c| {

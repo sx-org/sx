@@ -2809,7 +2809,7 @@ pub const Lowering = struct {
 
     /// A `[N:X]T` terminator as a value of the element type.
     pub fn sentinelValue(self: *Lowering, sentinel: i64, elem_ty: TypeId) Ref {
-        if (isFloat(elem_ty)) return self.builder.constFloat(@floatFromInt(sentinel), elem_ty);
+        if (isFloat(elem_ty)) return self.builder.constFloat(types.floatFromInt(sentinel, elem_ty), elem_ty);
         return self.builder.constInt(sentinel, elem_ty);
     }
 

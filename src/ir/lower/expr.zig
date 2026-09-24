@@ -3797,7 +3797,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
             };
             if (folded) |value| {
                 const ty = integerLiteralType(self, self.target_type);
-                if (Lowering.isFloat(ty)) return self.builder.constFloat(@floatFromInt(value), ty);
+                if (Lowering.isFloat(ty)) return self.builder.constFloat(types.floatFromInt(value, ty), ty);
                 self.checkIntLiteralFits(value, ty, node.span);
                 return self.builder.constInt(@truncate(value), ty);
             }
@@ -3875,7 +3875,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
         },
         .int_literal => |lit| {
             const ty = self.literalNodeType(node, self.target_type).?;
-            if (Lowering.isFloat(ty)) return self.builder.constFloat(@floatFromInt(lit.value), ty);
+            if (Lowering.isFloat(ty)) return self.builder.constFloat(types.floatFromInt(lit.value, ty), ty);
             self.checkIntLiteralMagnitudeFits(lit.value, ty, node.span);
             return self.builder.constInt(lit.value, ty);
         },

@@ -99,10 +99,14 @@ pub const IntLayout = struct {
         return @bitCast((~@as(u64, 0)) >> lead); // 2^width - 1
     }
 
+    /// The integer the normalized word `raw` holds.
+    pub fn int(self: IntLayout, raw: u64) i128 {
+        return if (self.signed) @as(i64, @bitCast(raw)) else raw;
+    }
+
     /// The layout's `.min`/`.max` as an exact integer.
     pub fn bound(self: IntLayout, want_max: bool) i128 {
-        const raw = self.limit(want_max);
-        return if (self.signed) raw else @as(u64, @bitCast(raw));
+        return self.int(@bitCast(self.limit(want_max)));
     }
 
     /// The `@int(N, .signed)` constructor spelling.
@@ -139,6 +143,11 @@ pub fn canonicalInt(width: u8, signed: bool) ?TypeId {
         64 => if (signed) .i64 else .u64,
         else => null,
     };
+}
+
+/// `value` as a value of the float type `ty`, rounded once to `ty`.
+pub fn floatFromInt(value: i128, ty: TypeId) f64 {
+    return if (ty == .f32) @as(f32, @floatFromInt(value)) else @floatFromInt(value);
 }
 
 // ── TypeInfo ────────────────────────────────────────────────────────────

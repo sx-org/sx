@@ -398,6 +398,9 @@ pub fn moduleFloatLeafType(index: *const ProgramIndex, node: *const Node) ?TypeI
 }
 
 pub fn evalConstFloatInit(node: *const Node, ctx: anytype, ty: TypeId) ?f64 {
+    if (!isFloatValuedExpr(node, ctx)) {
+        if (evalConstIntExpr(node, ctx)) |iv| return types.floatFromInt(iv, ty);
+    }
     const value = evalConstFloatExpr(node, ctx) orelse return null;
     if (isAdaptableFloat(node, ctx)) return ctx.adoptFloatValue(value, ty, node.span);
     return if (ty == .f32) @as(f32, @floatCast(value)) else value;

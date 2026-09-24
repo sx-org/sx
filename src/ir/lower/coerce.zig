@@ -223,10 +223,7 @@ pub fn coerceConstant(self: *Lowering, value: inst_mod.ConstantValue, src: TypeI
         else
             value,
         .int_to_float => if (value == .int)
-            .{ .float = if (self.module.types.integerLayout(src).?.signed)
-                @floatFromInt(value.int)
-            else
-                @floatFromInt(@as(u64, @bitCast(value.int))) }
+            .{ .float = types.floatFromInt(self.module.types.integerLayout(src).?.int(@bitCast(value.int)), dst) }
         else if (value == .zeroinit)
             .{ .float = 0 }
         else
@@ -253,8 +250,7 @@ pub fn castConstant(self: *Lowering, value: inst_mod.ConstantValue, src: TypeId,
         .int_to_float => {
             if (value != .int) return null;
             const from = tt.integerLayout(src).?;
-            const raw = from.normalize(@bitCast(value.int));
-            return .{ .float = if (dst == .f32) intToFloat(f32, raw, from.signed) else intToFloat(f64, raw, from.signed) };
+            return .{ .float = types.floatFromInt(from.int(from.normalize(@bitCast(value.int))), dst) };
         },
         .float_to_int => {
             if (value != .float or !std.math.isFinite(value.float)) return null;
@@ -286,11 +282,6 @@ pub fn castConstant(self: *Lowering, value: inst_mod.ConstantValue, src: TypeId,
         },
         else => return null,
     }
-}
-
-/// `raw` rounded once to `F`, as the run-time conversion rounds it.
-fn intToFloat(comptime F: type, raw: u64, signed: bool) F {
-    return if (signed) @floatFromInt(@as(i64, @bitCast(raw))) else @floatFromInt(raw);
 }
 
 /// The zero of the scalar `ty` in the constant form its other values take.
