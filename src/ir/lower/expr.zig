@@ -5723,25 +5723,11 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
             }
         },
         else => {
-            const rhs_operand_ty = self.operandType(rhs_ty);
             const span: ast.Span = .{ .start = bop.lhs.span.start, .end = bop.rhs.span.end };
-            ty = switch (self.arithResultType(bop.op, ty, rhs_operand_ty)) {
-                .type => |result_ty| result_ty,
-                .signedness => {
-                    if (self.diagnostics) |d| d.addFmt(.err, span, "cannot apply '{s}' to signed and unsigned values of type '{s}' and '{s}'; write an explicit cast on one side", .{
-                        binOpSymbol(bop.op), self.formatTypeName(ty), self.formatTypeName(rhs_operand_ty),
-                    });
-                    return self.emitPlaceholder("arith-signedness");
-                },
-                .lane => {
-                    if (self.diagnostics) |d| d.addFmt(.err, span, "cannot apply '{s}' to '{s}' and '{s}': the scalar does not convert implicitly to the vector's lane type; write an explicit cast", .{
-                        binOpSymbol(bop.op), self.formatTypeName(ty), self.formatTypeName(rhs_operand_ty),
-                    });
-                    return self.emitPlaceholder("arith-lane");
-                },
-            };
-            lhs = convertArithOperand(self, lhs, ty);
-            if (bop.op != .shl and bop.op != .shr) rhs = convertArithOperand(self, rhs, ty);
+            const met = meetArithOperands(self, bop.op, lhs, ty, rhs, self.operandType(rhs_ty), span) orelse return self.emitPlaceholder("arith-meet");
+            lhs = met.lhs;
+            rhs = met.rhs;
+            ty = met.ty;
         },
     }
 
@@ -6160,6 +6146,30 @@ fn meetCompareOperands(
             return .{ .lhs = lhs, .rhs = rhs };
         },
     }
+}
+
+pub const ArithOperands = struct { lhs: Ref, rhs: Ref, ty: TypeId };
+
+/// The operands of `lhs op rhs` converted to their common type, or null once
+/// refused at `span`. A shift converts only its left operand.
+pub fn meetArithOperands(self: *Lowering, op: ast.BinaryOp.Op, lhs: Ref, lhs_ty: TypeId, rhs: Ref, rhs_ty: TypeId, span: ast.Span) ?ArithOperands {
+    const ty = switch (self.arithResultType(op, lhs_ty, rhs_ty)) {
+        .type => |result_ty| result_ty,
+        .signedness => {
+            if (self.diagnostics) |d| d.addFmt(.err, span, "cannot apply '{s}' to signed and unsigned values of type '{s}' and '{s}'; write an explicit cast on one side", .{
+                binOpSymbol(op), self.formatTypeName(lhs_ty), self.formatTypeName(rhs_ty),
+            });
+            return null;
+        },
+        .lane => {
+            if (self.diagnostics) |d| d.addFmt(.err, span, "cannot apply '{s}' to '{s}' and '{s}': the scalar does not convert implicitly to the vector's lane type; write an explicit cast", .{
+                binOpSymbol(op), self.formatTypeName(lhs_ty), self.formatTypeName(rhs_ty),
+            });
+            return null;
+        },
+    };
+    const shift = op == .shl or op == .shr;
+    return .{ .lhs = convertArithOperand(self, lhs, ty), .rhs = if (shift) rhs else convertArithOperand(self, rhs, ty), .ty = ty };
 }
 
 /// A shift's untyped integer left operand takes an integer destination's type.

@@ -3002,16 +3002,22 @@ pub const Lowering = struct {
     }
 
     /// The type an untyped operand of an arithmetic or bitwise `op` takes from
-    /// its typed peer: an integer takes a numeric peer's type or a vector
-    /// peer's lane type, and a float takes a vector peer's float lane type.
+    /// its typed peer.
     pub fn untypedOperandType(self: *Lowering, op: ast.BinaryOp.Op, operand: *const Node, peer: *const Node) ?TypeId {
+        if (program_index_mod.untypedConst(peer, self) != null) return null;
+        return self.untypedOperandTypeAt(op, operand, self.operandType(self.inferExprType(peer)));
+    }
+
+    /// The type an untyped operand of an arithmetic or bitwise `op` takes from
+    /// a peer of `peer_ty`: an integer takes a numeric peer's type or a vector
+    /// peer's lane type, and a float takes a vector peer's float lane type.
+    pub fn untypedOperandTypeAt(self: *Lowering, op: ast.BinaryOp.Op, operand: *const Node, peer_ty: TypeId) ?TypeId {
         switch (op) {
             .add, .sub, .mul, .div, .mod, .bit_and, .bit_or, .bit_xor => {},
             else => return null,
         }
         const kind = program_index_mod.untypedConst(operand, self) orelse return null;
-        if (kind == .string or program_index_mod.untypedConst(peer, self) != null) return null;
-        const peer_ty = self.operandType(self.inferExprType(peer));
+        if (kind == .string) return null;
         const coercions = self.coercionResolver();
         if (self.isVectorType(peer_ty)) {
             const lane = self.module.types.get(peer_ty).vector.element;
@@ -4353,6 +4359,7 @@ pub const Lowering = struct {
     pub const asmResultType = lower_expr.asmResultType;
     pub const refCapturePointee = lower_expr.refCapturePointee;
     pub const lowerBinaryOp = lower_expr.lowerBinaryOp;
+    pub const meetArithOperands = lower_expr.meetArithOperands;
     pub const lowerIs = lower_expr.lowerIs;
     pub const conformanceAsk = lower_expr.conformanceAsk;
     pub const lowerBoolCondition = lower_expr.lowerBoolCondition;

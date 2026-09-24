@@ -1,0 +1,13 @@
+// A compound assignment of an untyped scalar onto a vector behaves as its
+// spelled-out form: the scalar takes the lane type.
+
+@import "modules/std.sx";
+
+main :: () -> i32 {
+    v : @Vector(2, i32) = .[1, 2];
+    vf : @Vector(2, f32) = .[1.5, 2.5];
+    vf *= 2.0;
+    v += 1;
+    print("{} {}\n", vf, v);
+    0
+}
