@@ -11,15 +11,15 @@ error: cannot implicitly convert 'bool' to 'i64'; use an explicit cast (`.(i64)`
    |                ^^^^
 
 error: cannot implicitly convert 'i64' to 'bool'; use an explicit cast (`.(bool)`)
-  --> examples/diagnostics/2845-diagnostics-bool-number-implicit-conversion.sx:9:19
+  --> examples/diagnostics/2845-diagnostics-bool-number-implicit-conversion.sx:10:19
    |
- 9 |     flag : bool = n;
+10 |     flag : bool = n;
    |                   ^
 
 error: cannot implicitly convert 'bool' to 'i64'; use an explicit cast (`.(i64)`)
-  --> examples/diagnostics/2845-diagnostics-bool-number-implicit-conversion.sx:10:5
+  --> examples/diagnostics/2845-diagnostics-bool-number-implicit-conversion.sx:11:5
    |
-10 |     count(flag);
+11 |     count(flag);
    |     ^^^^^^^^^^^
 
 error: cannot implicitly convert 'i64' to 'bool'; use an explicit cast (`.(bool)`)
@@ -27,3 +27,9 @@ error: cannot implicitly convert 'i64' to 'bool'; use an explicit cast (`.(bool)
    |
  5 | nonzero :: (n: i64) -> bool { n }
    |                               ^
+
+error: cannot implicitly convert 'i64' to 'bool'; use an explicit cast (`.(bool)`)
+  --> examples/diagnostics/2845-diagnostics-bool-number-implicit-conversion.sx:6:30
+   |
+ 6 | maybe :: (n: i64) -> ?bool { n }
+   |                              ^

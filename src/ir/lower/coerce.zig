@@ -1471,6 +1471,7 @@ pub fn checkConstantLeaf(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: 
 fn refuseBoolNumber(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: ast.Span) bool {
     switch (self.coercionResolver().classify(src_ty, dst_ty)) {
         .bool_to_number, .number_to_bool => {},
+        .optional_wrap => return refuseBoolNumber(self, src_ty, self.module.types.get(dst_ty).optional.child, span),
         else => return false,
     }
     diagImplicitNumericConversion(self, src_ty, dst_ty, span);
