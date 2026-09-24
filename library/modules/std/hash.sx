@@ -261,7 +261,7 @@ fnv1a :: (data: string) -> u64 {
 // fixed 64KB chunks, so peak memory is O(chunk) even for multi-hundred-
 // MB artifacts. Returns null if the file can't be opened. No heap
 // allocation: the chunk buffer is a stack array.
-sha256File :: (path: [:0]u8) -> ?[64]u8 {
+sha256File :: (path: string) -> ?[64]u8 {
     handle := openFile(path, .read);
     if handle == null { return null; }
     defer handle.close();

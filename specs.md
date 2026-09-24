@@ -2085,7 +2085,9 @@ Conversion discipline:
   to one, takes either shape.
 - A value whose type carries no terminator does NOT coerce to either,
   whatever its bytes hold — a `string` window, a plain `[N]T`, a `[*]T`.
-  Materialize an owned, terminated copy with `toCstring(s)`.
+  `mem.cloneZ(s, a = context.allocator)` makes an owned `[:0]T` copy,
+  which `mem.free` releases. Library APIs take `string` and terminate at
+  their own C calls: `z := mem.cloneZ(s); defer mem.free(z);`.
 - Dropping the guarantee is implicit: `cstring` → `string` is the
   `[:X]T` → `[]T` arm, so `string` methods take a `cstring` receiver.
 - `[*:0]u8` does not coerce to `cstring` implicitly — the length is an
@@ -6310,9 +6312,12 @@ locally-unwrapped optionals).
 
 | Function | Purpose |
 |----------|---------|
-| `process.run(cmd: [:0]u8) -> ?process.ProcessResult` | `popen` shell command, capture stdout + exit |
-| `process.env(name: [:0]u8) -> ?string` | `getenv` (null if unset) |
+| `process.run(cmd: string) -> ?process.ProcessResult` | `popen` shell command, capture stdout + exit |
+| `process.env(name: string) -> ?string` | `getenv` (null if unset) |
 | `process.findExecutable(name) -> ?string` | `command -v <name>` via shell |
+
+Every path, command and name is a `string`, and only a returned `string`
+(`readFile`, `stdout`) is the caller's to free.
 
 `process.ProcessResult` is `{ exitCode: i32, stdout: string }`. The post-link
 bundler invokes `codesign`, `plutil`, `security`, `aapt2`, `javac`,

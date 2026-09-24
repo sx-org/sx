@@ -197,7 +197,7 @@ TlsServer :: struct {
     // false if EITHER file can't be read or `setup` fails (loud: leaves
     // `ok = false`, so the server accepts no TLS). `a` is the allocator the
     // parsed state + every minted session uses; it must outlive the TlsServer.
-    setupFiles :: (self: *TlsServer, certPath: [:0]u8, keyPath: [:0]u8, a: Allocator) -> bool {
+    setupFiles :: (self: *TlsServer, certPath: string, keyPath: string, a: Allocator) -> bool {
         ok := false;
         if cert := fs.readFile(certPath) {
             if key := fs.readFile(keyPath) {
@@ -306,7 +306,7 @@ TlsServer :: struct {
 
     // File-path convenience over addSniCert (reads via context.allocator,
     // frees the read buffers — mirrors setupFiles).
-    addSniCertFiles :: (self: *TlsServer, name: string, certPath: [:0]u8, keyPath: [:0]u8) -> bool {
+    addSniCertFiles :: (self: *TlsServer, name: string, certPath: string, keyPath: string) -> bool {
         ok := false;
         if cert := fs.readFile(certPath) {
             if key := fs.readFile(keyPath) {
@@ -346,7 +346,7 @@ TlsServer :: struct {
         return true;
     }
 
-    requireClientCertFiles :: (self: *TlsServer, caPath: [:0]u8) -> bool {
+    requireClientCertFiles :: (self: *TlsServer, caPath: string) -> bool {
         ok := false;
         if data := fs.readFile(caPath) {
             b : []u8 = .{ ptr = data.ptr, len = data.len };
@@ -522,7 +522,7 @@ TlsClientConfig :: struct {
         return true;
     }
 
-    setupFiles :: (self: *TlsClientConfig, caPath: [:0]u8, a: Allocator) -> bool {
+    setupFiles :: (self: *TlsClientConfig, caPath: string, a: Allocator) -> bool {
         ok := false;
         if data := fs.readFile(caPath) {
             b : []u8 = .{ ptr = data.ptr, len = data.len };

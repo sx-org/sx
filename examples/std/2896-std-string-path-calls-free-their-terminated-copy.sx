@@ -1,0 +1,24 @@
+// A library call that takes a `string` hands C a terminated copy made with
+// `mem.cloneZ` and frees it: `fs.exists` and `process.run` leave no
+// allocation live beyond the stdout `run` returns. Each argument is a
+// window whose next byte is not a terminator.
+@import "modules/std.sx";
+
+main :: () -> i32 {
+    counter := mem.TrackingAllocator.init(context.allocator);
+    push .{ allocator = counter } {
+        file := "library/modules/std/fs.sx!";
+        path := file[0 .. file.len - 1];
+        print("exists: {}\n", fs.exists(path));
+        print("live after exists: {}\n", counter.leakCount());
+
+        line := "echo hi; exit 3!";
+        cmd := line[0 .. line.len - 1];
+        if r := process.run(cmd) {
+            print("run: {} {}", r.exitCode, r.stdout);
+            mem.free(r.stdout);
+        }
+        print("live after run: {}\n", counter.leakCount());
+    }
+    0
+}

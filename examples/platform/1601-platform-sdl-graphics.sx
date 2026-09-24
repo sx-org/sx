@@ -238,7 +238,7 @@ main :: () {
     SDL_Quit();
 }
 
-VERT_SHADER_SRC : cstring = @string GLSL
+VERT_SHADER_SRC :: @string GLSL
 #version 330 core
 layout (location = 0) in vec3 aPos;
 layout (location = 1) in vec3 aNormal;
@@ -253,7 +253,7 @@ void main() {
 }
 GLSL;
 
-FRAG_SHADER_SRC : cstring = @string GLSL
+FRAG_SHADER_SRC :: @string GLSL
 #version 330 core
 in vec3 vNormal;
 in vec3 vPos;

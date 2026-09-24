@@ -1,5 +1,5 @@
 // Typed allocation helpers over the Allocator protocol (std/mem.sx):
-// create/destroy (one T), alloc/free (slices), clone, resize, and the
+// create/destroy (one T), alloc/free (slices), clone, cloneZ, resize, and the
 // bytes-level memRealloc. Declared `ufcs` — the dot spelling
 // (`context.allocator.create(Session)`) and the direct call both hit the
 // same generic machinery. Contents are UNINITIALISED by design
@@ -45,6 +45,11 @@ main :: () {
     xs[0] = 99;
     print("clone: {} (orig {})\n", ys[0], xs[0]);
     ys.free(a);
+
+    // cloneZ — the copy's terminator lies one past its length
+    zt := xs.cloneZ(a);
+    print("cloneZ: {} {} len={} end={}\n", @typeName(@typeOf(zt)), zt[0], zt.len, zt.ptr[zt.len]);
+    zt.free(a);
 
     // resize — grow (copies, old backing freed); null when the allocation fails
     grown := xs.resize(a, 6);

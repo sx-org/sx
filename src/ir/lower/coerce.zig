@@ -1417,7 +1417,7 @@ pub const LiteralLocalHelp = struct {
 pub fn refuseAddedTerminator(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: ast.Span, local: ?lower.LiteralLocal) void {
     const d = self.diagnostics orelse return;
     const fix = if (src_ty == .string and !self.coercionResolver().classify(.cstring, dst_ty).refuses())
-        " — materialize one with toCstring(s)"
+        " — materialize one with mem.cloneZ(s)"
     else
         "";
     const id = d.addFmtId(.err, span, "a value of type '{s}' does not coerce to '{s}': no conversion adds a terminator{s}", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty), fix });

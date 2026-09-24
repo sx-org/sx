@@ -342,7 +342,7 @@ KeyboardSpring :: struct {
 }
 
 impl Platform for UIKitPlatform {
-    init :: (self: *UIKitPlatform, title: [:0]u8, w: i32, h: i32) -> bool {
+    init :: (self: *UIKitPlatform, title: string, w: i32, h: i32) -> bool {
         self.dpiScale = 1.0;
         self.deltaTime = 0.016;
         self.hasFrameClosure = false;

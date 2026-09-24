@@ -14,7 +14,7 @@ monoNs :: () -> i64 {
     ts.sec * 1000000000 + ts.nsec
 }
 
-artifactPath :: (label: string, level: i64) -> [:0]u8 {
+artifactPath :: (label: string, level: i64) -> string {
     if label[0] == 'r' {
         if level == 1 { return ".sx-tmp/bench-compress/sx-repeat-1.zlib"; }
         if level == 6 { return ".sx-tmp/bench-compress/sx-repeat-6.zlib"; }

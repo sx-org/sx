@@ -14,7 +14,7 @@ main :: () -> i32 {
     s :: "hi";
     print("{} {}\n", @typeName(@typeOf(s)), strlen(s));
 
-    c : cstring = toCstring("hi");
+    c : cstring = mem.cloneZ("hi");
     print("{} {} {}\n", c.len, c == "hi", c == s);
 
     view : string = c;

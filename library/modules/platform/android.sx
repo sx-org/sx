@@ -150,7 +150,7 @@ TouchEvent :: struct {
 // scale before delivery so layout-side hit-testing matches.
 
 AndroidPlatform :: struct {
-    title:  [:0]u8 = "";
+    title:  string = "";
     width:  i32 = 0;
     height: i32 = 0;
 
@@ -410,7 +410,7 @@ sxAndroidEnsureTouchMutex :: (plat: *AndroidPlatform) {
 // ── Platform impl ───────────────────────────────────────────────────────
 
 impl Platform for AndroidPlatform {
-    init :: (self: *AndroidPlatform, title: [:0]u8, w: i32, h: i32) -> bool {
+    init :: (self: *AndroidPlatform, title: string, w: i32, h: i32) -> bool {
         self.title = title;
         self.width = w;
         self.height = h;
