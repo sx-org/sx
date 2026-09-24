@@ -109,6 +109,17 @@ pub const IntLayout = struct {
         return self.int(@bitCast(self.limit(want_max)));
     }
 
+    /// The normalized word of `value` truncated toward zero, or null when
+    /// `value` is NaN or its truncation is outside the layout.
+    pub fn truncFloat(self: IntLayout, value: f64) ?u64 {
+        const t = @trunc(value);
+        const min: f64 = @floatFromInt(self.bound(false));
+        const past_max: f64 = @floatFromInt(self.bound(true) + 1);
+        if (!(t >= min and t < past_max)) return null;
+        const n: i128 = @intFromFloat(t);
+        return @truncate(@as(u128, @bitCast(n)));
+    }
+
     /// The `@int(N, .signed)` constructor spelling.
     pub fn format(self: IntLayout, writer: *std.Io.Writer) std.Io.Writer.Error!void {
         try writer.print("@int({d}, .{s})", .{ self.width, if (self.signed) "signed" else "unsigned" });
@@ -149,6 +160,19 @@ pub fn canonicalInt(width: u8, signed: bool) ?TypeId {
 pub fn floatFromInt(value: i128, ty: TypeId) f64 {
     return if (ty == .f32) @as(f32, @floatFromInt(value)) else @floatFromInt(value);
 }
+
+/// A float spelled in the shorter of its decimal and scientific forms.
+pub const FloatText = struct {
+    value: f64,
+
+    pub fn format(self: FloatText, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+        var decimal_buf: [std.fmt.float.bufferSize(.decimal, f64)]u8 = undefined;
+        var scientific_buf: [std.fmt.float.bufferSize(.scientific, f64)]u8 = undefined;
+        const decimal = std.fmt.float.render(&decimal_buf, self.value, .{ .mode = .decimal }) catch unreachable;
+        const scientific = std.fmt.float.render(&scientific_buf, self.value, .{ .mode = .scientific }) catch unreachable;
+        try writer.writeAll(if (scientific.len < decimal.len) scientific else decimal);
+    }
+};
 
 // ── TypeInfo ────────────────────────────────────────────────────────────
 // Resolved type information stored in the TypeTable.

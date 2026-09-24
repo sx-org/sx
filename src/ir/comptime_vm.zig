@@ -969,8 +969,9 @@ pub const Vm = struct {
             .float_to_int => |c| {
                 const to = try self.intLayout(c.to);
                 const value: f64 = @bitCast(frame.get(c.operand.index()));
-                const raw: Reg = if (to.signed) @bitCast(@as(i64, @intFromFloat(value))) else @intFromFloat(value);
-                return .{ .value = to.normalize(raw) };
+                const raw = to.truncFloat(value) orelse
+                    return self.failFmt("{f} is out of range for '{s}'", .{ types.FloatText{ .value = value }, (try self.requireTable()).typeName(c.to) });
+                return .{ .value = raw };
             },
 
             // ── Memory + structs (flat layout, target-aware) ────

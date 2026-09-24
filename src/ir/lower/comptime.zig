@@ -340,7 +340,7 @@ fn constCastValue(self: *Lowering, pc: *const ast.PostfixCast, expected_ty: Type
     const src = self.inferExprType(pc.operand);
     if (dst == .unresolved or src == .unresolved) return null;
     const value = constNaturalValue(self, pc.operand, src, frame) orelse return null;
-    const cast = self.castConstant(value, src, dst) orelse return null;
+    const cast = self.castConstant(value, src, dst, span) orelse return null;
     if (!self.checkConstantWidens(dst, expected_ty, span)) return null;
     return self.coerceConstant(cast, dst, expected_ty);
 }

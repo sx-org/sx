@@ -937,6 +937,19 @@ test "canonicalInt: a builtin slot only where a reserved spelling exists" {
     try std.testing.expect(types.canonicalInt(24, true) == null);
 }
 
+test "IntLayout.truncFloat: a truncation inside the layout converts, NaN and one outside it do not" {
+    const i8_layout = types.IntLayout{ .width = 8, .signed = true };
+    const u64_layout = types.IntLayout{ .width = 64, .signed = false };
+    try std.testing.expectEqual(@as(?u64, 127), i8_layout.truncFloat(127.9));
+    try std.testing.expectEqual(@as(?u64, @bitCast(@as(i64, -128))), i8_layout.truncFloat(-128.9));
+    try std.testing.expectEqual(@as(?u64, null), i8_layout.truncFloat(128));
+    try std.testing.expectEqual(@as(?u64, null), i8_layout.truncFloat(-129));
+    try std.testing.expectEqual(@as(?u64, 0), u64_layout.truncFloat(-0.9));
+    try std.testing.expectEqual(@as(?u64, 18446744073709549568), u64_layout.truncFloat(18446744073709549568.0));
+    try std.testing.expectEqual(@as(?u64, null), u64_layout.truncFloat(18446744073709551616.0));
+    try std.testing.expectEqual(@as(?u64, null), u64_layout.truncFloat(std.math.nan(f64)));
+}
+
 test "integerLayout: usize/isize carry the target pointer width" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
