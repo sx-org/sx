@@ -1,0 +1,5 @@
+error: comptime `@run` (X) raised an unhandled error: Bad
+error return trace (most recent call last):
+  bad at 2891-diagnostics-failable-global-run-error-fails-its-reader.sx:3:26
+help: handle it at the `@run` site — `@run <expr> catch |e| { ... }` or `@run <expr> ?? <default>`
+error: comptime init of 'Y' failed: `@run` (X) raised an unhandled error: Bad

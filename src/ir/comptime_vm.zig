@@ -711,7 +711,7 @@ pub const Vm = struct {
             }
         }
         const r: Reg = if (global.comptime_func) |fid|
-            try self.runEntry(fid)
+            try self.runSuccess(module, module.getFunction(fid).ret, global.name, try self.runEntry(fid))
         else if (global.init_val) |iv|
             try self.constToReg(iv, global.ty)
         else
@@ -1816,23 +1816,44 @@ pub const Vm = struct {
         self.call_stack.append(self.gpa, fid) catch @panic("comptime VM: out of memory (call stack)");
         defer _ = self.call_stack.pop();
         const result = try self.run(callee, argbuf);
-        if (callee.comptime_role == .run_wrapper) try self.checkRunEscape(module, callee, result);
+        if (callee.comptime_role == .run_wrapper) try self.checkRunEscape(module, callee.ret, callee.comptime_display_name orelse callee.name, result);
         return result;
     }
 
-    /// Fail the evaluation when a failable `@run` wrapper called from a body the
-    /// VM runs returns an error, which no `@run` lets escape.
-    fn checkRunEscape(self: *Vm, module: *const Module, wrapper: *const Function, result: Reg) Error!void {
-        if (wrapper.ret.isBuiltin()) return;
+    /// Fail the evaluation when a failable `@run` wrapper returns an error,
+    /// which no `@run` lets escape.
+    fn checkRunEscape(self: *Vm, module: *const Module, ret: TypeId, name: types.StringId, result: Reg) Error!void {
+        if (ret.isBuiltin()) return;
         const table = try self.requireTable();
-        const tag = switch (table.get(wrapper.ret)) {
+        const tag = switch (table.get(ret)) {
             .@"error" => result,
-            .failable => |f| try self.readField(table, result + fieldOffset(table, wrapper.ret, @intCast(table.failableValueSlotCount(f))), f.err),
+            .failable => |f| try self.readField(table, result + fieldOffset(table, ret, @intCast(table.failableValueSlotCount(f))), f.err),
             else => return,
         };
         if (tag == 0) return;
-        const name = module.types.getString(wrapper.comptime_display_name orelse wrapper.name);
-        return self.failFmt("`@run` ({s}) raised an unhandled error: {s}", .{ name, module.types.tags.getName(@intCast(tag)) });
+        return self.failFmt("`@run` ({s}) raised an unhandled error: {s}", .{ module.types.getString(name), module.types.tags.getName(@intCast(tag)) });
+    }
+
+    /// The value of a `@run` wrapper's `result` of type `ret`: a failable
+    /// result's success value, failing the evaluation on an escaping error.
+    fn runSuccess(self: *Vm, module: *const Module, ret: TypeId, name: types.StringId, result: Reg) Error!Reg {
+        try self.checkRunEscape(module, ret, name, result);
+        if (ret.isBuiltin()) return result;
+        const table = try self.requireTable();
+        const f = switch (table.get(ret)) {
+            .@"error" => return 0,
+            .failable => |f| f,
+            else => return result,
+        };
+        const n = table.failableValueSlotCount(f);
+        if (n == 0) return 0;
+        if (n == 1) return self.readField(table, result + fieldOffset(table, ret, 0), f.value);
+        const addr = self.machine.allocBytes(table.typeSizeBytes(f.value), table.typeAlignBytes(f.value));
+        for (0..n) |i| {
+            const slot = table.failableValueSlotType(f, i);
+            try self.writeField(table, addr + fieldOffset(table, f.value, @intCast(i)), slot, try self.readField(table, result + fieldOffset(table, ret, @intCast(i)), slot));
+        }
+        return addr;
     }
 
     /// The measurement of a type an open set's layout decides, or null while it

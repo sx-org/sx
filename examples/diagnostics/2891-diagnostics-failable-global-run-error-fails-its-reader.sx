@@ -1,0 +1,10 @@
+E :: error { Bad };
+
+bad :: () -> (i64, !E) { raise E.Bad; }
+
+X :: @run bad();
+Y :: @run X + 1;
+
+main :: () -> i64 {
+    Y
+}
