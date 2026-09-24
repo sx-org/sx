@@ -2,6 +2,7 @@ process :: scope {
     @import "modules/std/core.sx";
     @import "modules/std/fmt.sx";
     @import "modules/std/mem.sx";
+    @import "modules/std/writer.sx";
     @import "modules/std/c.sx";
     posix :: @import "modules/std/posix.sx";
     trace :: @import "modules/std/trace.sx";
@@ -22,25 +23,25 @@ process :: scope {
 
     // cmd is interpreted by /bin/sh; callers quote shell metacharacters.
     // Null means popen or pclose failed.
-    run :: (cmd: [:0]u8) -> ?ProcessResult {
-        f := popen(cmd, "r");
+    run :: (cmd: string) -> ?ProcessResult {
+        z := mem.cloneZ(cmd);
+        defer mem.free(z);
+        f := popen(z, "r");
         if f == null { return null; }
 
-        out := "";
-        buf := mem.allocString(4096);
-        loop := true;
-        while loop {
-            n := fread(buf.ptr, 1, 4096, f);
-            if n == 0 { loop = false; }
-            if n > 0 {
-                chunk : string = ---;
-                chunk.ptr = buf.ptr;
-                chunk.len = n.(i64);
-                out = concat(out, chunk);
-            }
+        sb := StringBuilder.init();
+        buf : [4096]u8 = ---;
+        while true {
+            n := fread(*buf[0], 1, 4096, f);
+            if n == 0 { break; }
+            sb.write(buf[0 .. n.(i64)]);
         }
+        out := sb.finish();
         rawStatus := pclose(f);
-        if rawStatus < 0 { return null; }
+        if rawStatus < 0 {
+            mem.free(out);
+            return null;
+        }
         ProcessResult{ exitCode = decodeStatus(rawStatus), stdout = out }
     }
 
@@ -53,16 +54,18 @@ process :: scope {
     }
 
     // Copy getenv's buffer because setenv can invalidate it.
-    env :: (name: [:0]u8) -> ?string {
-        p := getenv(toCstring(name));
+    env :: (name: string) -> ?string {
+        z := mem.cloneZ(name);
+        defer mem.free(z);
+        p := getenv(z);
         if p == null { return null; }
         mem.clone(p[0..])
     }
 
     // name must be shell-safe for command -v.
-    findExecutable :: (name: [:0]u8) -> ?string {
+    findExecutable :: (name: string) -> ?string {
         cmd := concat("command -v ", name);
-        if r := run(toCstring(cmd)) {
+        if r := run(cmd) {
             if r.exitCode != 0 { return null; }
             out := r.stdout;
             if out.len > 0 {
@@ -168,7 +171,7 @@ process :: scope {
         vec : [*]?[*:0]u8 = mem.alloc(context.allocator, ?[*:0]u8, argv.len + 1).ptr;
         i := 0;
         while i < argv.len {
-            vec[i] = toCstring(argv[i]);
+            vec[i] = mem.cloneZ(argv[i]);
             i += 1;
         }
         vec[argv.len] = null;

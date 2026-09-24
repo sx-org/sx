@@ -7,7 +7,7 @@
 // handle and concrete ones — a handle borrows the named object's storage,
 // never copies it (a snapshot would fork the live platform state).
 Platform :: interface {
-    init :: (self: *Self, title: [:0]u8, w: i32, h: i32) -> bool;
+    init :: (self: *Self, title: string, w: i32, h: i32) -> bool;
 
     runFrameLoop :: (self: *Self, frameFn: Closure());
 

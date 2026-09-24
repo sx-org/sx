@@ -35,7 +35,7 @@ glDrawArrays             : (u32, i32, i32) -> void abi(.c) = ---;
 glPolygonMode            : (u32, u32) -> void abi(.c) = ---;
 glLineWidth              : (f32) -> void abi(.c) = ---;
 glCreateShader           : (u32) -> u32 abi(.c) = ---;
-glShaderSource           : (u32, i32, *[*:0]u8, *i32) -> void abi(.c) = ---;
+glShaderSource           : (u32, i32, *[*]u8, *i32) -> void abi(.c) = ---;
 glCompileShader          : (u32) -> void abi(.c) = ---;
 glGetShaderiv            : (u32, u32, *i32) -> void abi(.c) = ---;
 glGetShaderInfoLog       : (u32, i32, *i32, [*]u8) -> void abi(.c) = ---;
@@ -177,7 +177,7 @@ loadGl :: (getProc: ([*:0]u8) -> *void abi(.c)) {
 
 // --- Shader utilities ---
 
-createProgram :: (vertSrc: [:0]u8, fragSrc: [:0]u8) -> u32 {
+createProgram :: (vertSrc: string, fragSrc: string) -> u32 {
     vs := compileShader(GL_VERTEX_SHADER, vertSrc);
     fs := compileShader(GL_FRAGMENT_SHADER, fragSrc);
 
@@ -198,10 +198,11 @@ createProgram :: (vertSrc: [:0]u8, fragSrc: [:0]u8) -> u32 {
     return prog;
 }
 
-compileShader :: (shaderType : u32, source: [:0]u8) -> u32 {
+compileShader :: (shaderType : u32, source: string) -> u32 {
     shader := glCreateShader(shaderType);
-    text : [*:0]u8 = source;
-    glShaderSource(shader, 1, *text, null);
+    text := source.ptr;
+    len := source.len.(i32);
+    glShaderSource(shader, 1, *text, *len);
     glCompileShader(shader);
 
     status : i32 = 0;

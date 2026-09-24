@@ -75,6 +75,14 @@ mem :: scope {
         .{ ptr = raw.([*]T), len = src.len }
     }
 
+    cloneZ :: ufcs (src: []$T, a: Allocator = context.allocator) -> [:0]T {
+        raw := a.allocBytes((src.len + 1) * @sizeOf(T));
+        c.memcpy(raw, src.ptr, src.len * @sizeOf(T));
+        p := raw.([*]T);
+        p[src.len] = 0;
+        .{ ptr = p, len = src.len }
+    }
+
     // Failure leaves the original slice live and owned by the caller.
     resize :: ufcs (slice: []$T, a: Allocator, newCount: i64) -> ?[]T {
         raw := a.allocBytes(newCount * @sizeOf(T));

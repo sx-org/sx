@@ -170,7 +170,7 @@ stdZipReaderSource :: (source: StdZipSource, maxMetadata: i64 = 67108864, alloc:
     StdZipReaderState{ owned = owned, sourceBridge = bridge }
 }
 
-stdZipReaderFile :: (path: [:0]u8, start: i64 = 0, size: i64 = 0, maxMetadata: i64 = 67108864, alloc: Allocator = context.allocator) -> (StdZipReaderState, !Error) {
+stdZipReaderFile :: (path: string, start: i64 = 0, size: i64 = 0, maxMetadata: i64 = 67108864, alloc: Allocator = context.allocator) -> (StdZipReaderState, !Error) {
     owned := try openZipFile(path, start, size, alloc, maxMetadata);
     StdZipReaderState{ owned = owned }
 }
@@ -277,7 +277,7 @@ stdZipReaderExtractTo :: (state: *StdZipReaderState, index: i64, target: StdZipS
     }
 }
 
-stdZipReaderExtractFile :: (state: *StdZipReaderState, index: i64, path: [:0]u8, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !Error) {
+stdZipReaderExtractFile :: (state: *StdZipReaderState, index: i64, path: string, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !Error) {
     try stdZipReaderReady(state);
     zipExtractToFile(*state.owned.reader, index, path, .{}, maxOutput, alloc) catch |e| {
         raise stdZipReaderFailure(state, e);
@@ -428,7 +428,7 @@ stdZipWriterSink :: (target: StdZipSink, zip64: bool = false, alloc: Allocator =
     StdZipWriterState.sink(payload)
 }
 
-stdZipWriterFile :: (path: [:0]u8, reserve: i64 = 0, zip64: bool = false, alloc: Allocator = context.allocator) -> (StdZipWriterState, !Error) {
+stdZipWriterFile :: (path: string, reserve: i64 = 0, zip64: bool = false, alloc: Allocator = context.allocator) -> (StdZipWriterState, !Error) {
     owned := try openZipWriterFile(path, reserve, zip64, true, alloc);
     payload : StdZipFileWriter = .{ owned = owned };
     StdZipWriterState.file(payload)
@@ -473,7 +473,7 @@ stdZipWriterFromReader :: (source: *StdZipReaderState, forceZip64: bool = false,
     state
 }
 
-stdZipWriterAppendFile :: (path: [:0]u8, forceZip64: bool = false, maxMetadata: i64 = 67108864, alloc: Allocator = context.allocator) -> (StdZipWriterState, !Error) {
+stdZipWriterAppendFile :: (path: string, forceZip64: bool = false, maxMetadata: i64 = 67108864, alloc: Allocator = context.allocator) -> (StdZipWriterState, !Error) {
     if !fs.exists(path) { return try stdZipWriterFile(path, 0, forceZip64, alloc); }
     source := try openZipFileWritable(path, 0, 0, alloc, maxMetadata);
     writer := zipFileWriterFromReader(*source, forceZip64, alloc) catch |e| {
@@ -588,7 +588,7 @@ stdZipWriterAddSource :: (state: *StdZipWriterState, name: string, source: StdZi
     stdZipAddSource(writer, name, source, actual) catch |e| { raise stdZipWriterFailure(state, e); };
 }
 
-stdZipWriterAddFile :: (state: *StdZipWriterState, name: string, path: [:0]u8, options: StdZipEntryOptions = .{}) -> !Error {
+stdZipWriterAddFile :: (state: *StdZipWriterState, name: string, path: string, options: StdZipEntryOptions = .{}) -> !Error {
     writer := try stdZipWriterReady(state);
     actual := try stdZipEntryOptions(options, true);
     writer.addFile(name, path, actual) catch |e| { raise stdZipWriterFailure(state, e); };

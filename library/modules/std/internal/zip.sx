@@ -1135,17 +1135,17 @@ openZipSource :: (source: ZipReadSource, detectPrefix: bool = true, alloc: Alloc
     OwnedZipReader{ reader = reader, bytes = bytes, alloc = alloc }
 }
 
-openZipFile :: (path: [:0]u8, start: i64 = 0, size: i64 = 0, alloc: Allocator = context.allocator, maxMetadata: i64 = 67108864) -> (OwnedZipReader, !Error) {
+openZipFile :: (path: string, start: i64 = 0, size: i64 = 0, alloc: Allocator = context.allocator, maxMetadata: i64 = 67108864) -> (OwnedZipReader, !Error) {
     openZipFileMode(path, start, size, false, alloc, maxMetadata)
 }
 
 // MZ_ZIP_FLAG_READ_ALLOW_WRITING: open the backing file read/write up front so
 // reader-to-writer conversion does not need to close and reopen it.
-openZipFileWritable :: (path: [:0]u8, start: i64 = 0, size: i64 = 0, alloc: Allocator = context.allocator, maxMetadata: i64 = 67108864) -> (OwnedZipReader, !Error) {
+openZipFileWritable :: (path: string, start: i64 = 0, size: i64 = 0, alloc: Allocator = context.allocator, maxMetadata: i64 = 67108864) -> (OwnedZipReader, !Error) {
     openZipFileMode(path, start, size, true, alloc, maxMetadata)
 }
 
-private openZipFileMode :: (path: [:0]u8, start: i64, size: i64, writable: bool, alloc: Allocator, maxMetadata: i64 = 67108864) -> (OwnedZipReader, !Error) {
+private openZipFileMode :: (path: string, start: i64, size: i64, writable: bool, alloc: Allocator, maxMetadata: i64 = 67108864) -> (OwnedZipReader, !Error) {
     if start < 0 or size < 0 or (size > 0 and size < 22) or maxMetadata < 0 {
         raise .InvalidData;
     }
@@ -1293,7 +1293,7 @@ private zipExtractToHandle :: (reader: *ZipReader, index: i64, file: *File, opti
     zipExtractToOutput(reader, index, sink, options, maxOutput, alloc)
 }
 
-zipExtractToFile :: (reader: *ZipReader, index: i64, path: [:0]u8, options: ZipExtractOptions = .{}, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !Error) {
+zipExtractToFile :: (reader: *ZipReader, index: i64, path: string, options: ZipExtractOptions = .{}, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !Error) {
     entry := reader.entry(index) catch |e| { raise e; };
     if entry.isDir() or !entry.isSupported() {
         raise .Unsupported;
@@ -1620,7 +1620,7 @@ zipDosTimeToUnix :: (dosTime: i64, dosDate: i64) -> (i64, bool) {
     return time.localEpoch(civil);
 }
 
-zipSetFileTime :: (path: [:0]u8, seconds: i64) -> bool {
+zipSetFileTime :: (path: string, seconds: i64) -> bool {
     setModifiedSeconds(path, seconds)
 }
 
@@ -2619,7 +2619,7 @@ ZipStreamWriter :: struct {
         try self.addSource(name, source, actualOptions);
     }
 
-    addFile :: (self: *ZipStreamWriter, name: string, path: [:0]u8, options: ZipEntryOptions) -> !Error {
+    addFile :: (self: *ZipStreamWriter, name: string, path: string, options: ZipEntryOptions) -> !Error {
         if options.useFileTime and !exists(path) {
             raise .Io;
         }
@@ -2764,11 +2764,11 @@ OwnedZipWriter :: struct {
     deinit :: (self: *OwnedZipWriter) { self.end(); }
 }
 
-openZipWriterFile :: (path: [:0]u8, reserve: i64 = 0, zip64: bool = false, allowReading: bool = false, alloc: Allocator = context.allocator) -> (OwnedZipWriter, !Error) {
+openZipWriterFile :: (path: string, reserve: i64 = 0, zip64: bool = false, allowReading: bool = false, alloc: Allocator = context.allocator) -> (OwnedZipWriter, !Error) {
     openZipWriterFileMode(path, reserve, zip64, allowReading, alloc)
 }
 
-openZipWriterFileMode :: (path: [:0]u8, reserve: i64, zip64: bool, allowReading: bool, alloc: Allocator) -> (OwnedZipWriter, !Error) {
+openZipWriterFileMode :: (path: string, reserve: i64, zip64: bool, allowReading: bool, alloc: Allocator) -> (OwnedZipWriter, !Error) {
     if reserve < 0 { raise .InvalidData; }
     maybeCreated := openFile(path, .write);
     if maybeCreated == null { raise .Io; }

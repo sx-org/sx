@@ -1,7 +1,7 @@
 // C's `char *` is `[*:0]u8`: ONE pointer to a null-terminated u8 buffer.
 // It crosses extern boundaries verbatim in both directions; `?[*:0]u8` is
 // the nullable case (null pointer = absent); a terminated value reaches it
-// through the type, while an arbitrary string materializes via toCstring;
+// through the type, while an arbitrary string materializes via mem.cloneZ;
 // `p[0..]` is the zero-copy view back.
 @import "modules/std.sx";
 
@@ -29,7 +29,9 @@ main :: () -> i32 {
 
     // round trip: built string -> owned C string -> view -> equality
     s := concat("hi-", "there");
-    c : [*:0]u8 = toCstring(s);
+    z := mem.cloneZ(s);
+    defer mem.free(z);
+    c : [*:0]u8 = z;
     r := c[0..];
     if r != "hi-there" { print("BUG: round trip\n"); return 6; }
     if c[0..].len != 8 { print("BUG: len\n"); return 7; }

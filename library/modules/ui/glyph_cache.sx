@@ -201,7 +201,7 @@ GlyphCache :: struct {
     // through `gpu` instead of raw GL.
     gpu: ?GPU = null;
 
-    init :: (self: *GlyphCache, path: [:0]u8, defaultSize: f32) -> bool {
+    init :: (self: *GlyphCache, path: string, defaultSize: f32) -> bool {
         // Preserve any pre-set GPU dispatch across the zero-out — the
         // surrounding struct c.memset would otherwise wipe it.
         savedGpu := self.gpu;
@@ -212,7 +212,9 @@ GlyphCache :: struct {
 
         // Load font file
         fileSize : i32 = 0;
-        fontData := read_file_bytes(path, *fileSize);
+        pathZ := mem.cloneZ(path);
+        defer mem.free(pathZ);
+        fontData := read_file_bytes(pathZ, *fileSize);
         if fontData == null {
             @printf("Failed to load font: ");
             @printf("{}", path);
