@@ -2353,7 +2353,7 @@ pub fn foldSourceConstInt(self: *Lowering, name: []const u8, frame: ?*const Cons
             const restore = self.pinConstValue(sel.info.value, sel.environment);
             defer restore.unpin();
             const ctx = SourceConstCtx{ .lowering = self, .frame = &f };
-            if (sel.info.ty == .f32) return if (program_index_mod.floatToIntExact(program_index_mod.evalConstFloatInit(sel.info.value, ctx, sel.info.ty) orelse return null)) |v| v else null;
+            if (sel.info.ty == .f32) return program_index_mod.floatToIntExact(program_index_mod.evalConstFloatInit(sel.info.value, ctx, sel.info.ty) orelse return null);
             return program_index_mod.evalConstIntExpr(sel.info.value, ctx);
         },
         .own_opaque, .ambiguous, .none => null,
@@ -2399,7 +2399,7 @@ pub fn foldQualifiedConstInt(self: *Lowering, ns: []const u8, field: []const u8,
     const restore = self.pinConstValue(sel.info.value, sel.environment);
     defer restore.unpin();
     const ctx = SourceConstCtx{ .lowering = self, .frame = &f };
-    if (sel.info.ty == .f32) return if (program_index_mod.floatToIntExact(program_index_mod.evalConstFloatInit(sel.info.value, ctx, sel.info.ty) orelse return null)) |v| v else null;
+    if (sel.info.ty == .f32) return program_index_mod.floatToIntExact(program_index_mod.evalConstFloatInit(sel.info.value, ctx, sel.info.ty) orelse return null);
     return program_index_mod.evalConstIntExpr(sel.info.value, ctx);
 }
 
@@ -2658,7 +2658,7 @@ pub fn foldConstStructField(self: *Lowering, name: []const u8, field: []const u8
     const value = constStructLiteralInner(self, sl, sel.info.ty, &f, index, sel.info.declared_type != null) orelse return null;
     return switch (value) {
         .int => |v| self.intConstantValue(v, field_ty),
-        .float => |v| if (program_index_mod.floatToIntExact(v)) |i| i else null,
+        .float => |v| program_index_mod.floatToIntExact(v),
         .zeroinit => 0,
         else => null,
     };

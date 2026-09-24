@@ -1482,7 +1482,7 @@ pub fn typedConstInitFits(self: *Lowering, value: *const Node, dst_ty: TypeId) b
         switch (value.data) {
             .float_literal, .binary_op, .unary_op => {
                 if (program_index_mod.evalConstFloatExpr(value, self)) |fv| {
-                    if (program_index_mod.floatToIntExact(fv) != null) return true;
+                    if (program_index_mod.isIntegralFloat(fv)) return true;
                 }
             },
             else => {},

@@ -282,20 +282,20 @@ test "evalConstIntExpr folds constant-expression array dimensions, halts on non-
 test "floatToIntExact accepts integral floats, rejects the rest" {
     const f = pi.floatToIntExact;
     // Integral floats (positive, zero, negative) fold to their exact integer.
-    try std.testing.expectEqual(@as(?i64, 4), f(4.0));
-    try std.testing.expectEqual(@as(?i64, 0), f(0.0));
-    try std.testing.expectEqual(@as(?i64, -2), f(-2.0));
+    try std.testing.expectEqual(@as(?i128, 4), f(4.0));
+    try std.testing.expectEqual(@as(?i128, 0), f(0.0));
+    try std.testing.expectEqual(@as(?i128, -2), f(-2.0));
+    try std.testing.expectEqual(@as(?i128, 10000000000000000000), f(1.0e19));
     // Non-integral / non-finite → null (the caller's clean halt).
     try std.testing.expect(f(4.5) == null);
     try std.testing.expect(f(0.1) == null);
     try std.testing.expect(f(std.math.inf(f64)) == null);
     try std.testing.expect(f(-std.math.inf(f64)) == null);
     try std.testing.expect(f(std.math.nan(f64)) == null);
-    // Out-of-i64-range integral floats → null (no @intFromFloat range panic).
-    // `-2^63` is exactly the i64 minimum and IS representable.
-    try std.testing.expectEqual(@as(?i64, std.math.minInt(i64)), f(-9223372036854775808.0));
-    try std.testing.expect(f(9223372036854775808.0) == null); // 2^63, just past maxInt(i64)
-    try std.testing.expect(f(1.0e30) == null);
+    // Out-of-i128-range integral floats → null (no @intFromFloat range panic).
+    // `-2^127` is exactly the i128 minimum and IS representable.
+    try std.testing.expectEqual(@as(?i128, std.math.minInt(i128)), f(-0x1p127));
+    try std.testing.expect(f(0x1p127) == null);
 }
 
 test "moduleConstInt folds expression-RHS consts and rejects cycles" {

@@ -1,0 +1,11 @@
+error: 300 is out of range for 'u8'
+  --> examples/diagnostics/2893-diagnostics-integral-float-outside-integer-is-out-of-range.sx:4:14
+   |
+ 4 |     x : u8 = K;
+   |              ^
+
+error: 1e19 is out of range for 'i64'
+  --> examples/diagnostics/2893-diagnostics-integral-float-outside-integer-is-out-of-range.sx:5:15
+   |
+ 5 |     y : i64 = 1e19;
+   |               ^^^^
