@@ -262,6 +262,7 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
         // an enum field inside a global struct) serializes to its tag int
         // against the leaf's declared enum type.
         .enum_literal => |el| self.constEnumLiteral(&el, expected_ty, expr.span),
+        .postfix_cast => |pc| constCastValue(self, &pc, expected_ty, expr.span, frame),
         // Any other shape: a compile-time CONST EXPRESSION over named consts
         // and const-aggregate leaves (`r = K + 1`, `g = LIT.r`, `b = K[1]`)
         // serializes through the shared folders — source-aware, like every
@@ -334,6 +335,19 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
             break :blk null;
         },
     };
+}
+
+/// `operand.(T)` over a constant operand: the operand's constant in its own
+/// type, cast to `T`, then carried to `expected_ty` implicitly.
+fn constCastValue(self: *Lowering, pc: *const ast.PostfixCast, expected_ty: TypeId, span: ast.Span, frame: ?*const ConstFoldFrame) ?inst_mod.ConstantValue {
+    if (pc.is_optional_chain) return null;
+    const dst = self.resolveTypeArg(pc.type_expr);
+    const src = self.inferExprType(pc.operand);
+    if (dst == .unresolved or src == .unresolved) return null;
+    const value = constNaturalValue(self, pc.operand, src, frame) orelse return null;
+    const cast = self.castConstant(value, src, dst) orelse return null;
+    if (!self.checkConstantWidens(dst, expected_ty, span)) return null;
+    return self.coerceConstant(cast, dst, expected_ty);
 }
 
 /// A float literal's constant at `expected_ty`. An integer destination takes

@@ -3112,6 +3112,9 @@ The target is exactly one **compile-time** type (a runtime-`Type` target
 would make the expression untypeable). `56.(i8)` lexes as a cast (never a
 float); `0..(5)` stays a range.
 
+A cast of a compile-time constant is a compile-time constant with the value
+the run-time cast computes, so `G : u8 = K.(u8);` initializes a global.
+
 **Interface and boxed views.** `p.(@Interface)` retrieves `{ctx, typeId}`
 field-wise from a handle; `av.(@Any)` retrieves `{data, typeId}` from a box.
 These are modeled conversions. An interface handle's other concrete targets

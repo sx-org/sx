@@ -235,6 +235,59 @@ pub fn coerceConstant(self: *Lowering, value: inst_mod.ConstantValue, src: TypeI
     };
 }
 
+/// `value`, a constant of type `src`, converted to `dst` as the explicit cast
+/// converts it at run time. Null when the conversion has no constant result.
+pub fn castConstant(self: *Lowering, value: inst_mod.ConstantValue, src: TypeId, dst: TypeId) ?inst_mod.ConstantValue {
+    const tt = &self.module.types;
+    switch (self.coercionResolver().classify(src, dst)) {
+        .no_op => return value,
+        .integer_retype, .widen, .narrow => {
+            if (value == .float and Lowering.isFloat(src) and Lowering.isFloat(dst))
+                return .{ .float = if (src == .f32 or dst == .f32) @as(f32, @floatCast(value.float)) else value.float };
+            const from = tt.integerLayout(src) orelse return null;
+            const to = tt.integerLayout(dst) orelse return null;
+            if (value != .int) return null;
+            return .{ .int = @bitCast(to.normalize(from.normalize(@bitCast(value.int)))) };
+        },
+        .int_to_float => {
+            if (value != .int) return null;
+            const from = tt.integerLayout(src).?;
+            const raw = from.normalize(@bitCast(value.int));
+            const f: f64 = if (from.signed) @floatFromInt(@as(i64, @bitCast(raw))) else @floatFromInt(raw);
+            return .{ .float = if (dst == .f32) @as(f32, @floatCast(f)) else f };
+        },
+        .float_to_int => {
+            if (value != .float or !std.math.isFinite(value.float)) return null;
+            const to = tt.integerLayout(dst).?;
+            const t = @trunc(value.float);
+            const raw: u64 = if (to.signed) signed: {
+                if (t < -9223372036854775808.0 or t >= 9223372036854775808.0) return null;
+                break :signed @bitCast(@as(i64, @intFromFloat(t)));
+            } else unsigned: {
+                if (t < 0 or t >= 18446744073709551616.0) return null;
+                break :unsigned @intFromFloat(t);
+            };
+            return .{ .int = @bitCast(to.normalize(raw)) };
+        },
+        .bool_to_number => {
+            if (value != .boolean) return null;
+            return castConstant(self, .{ .int = @intFromBool(value.boolean) }, .u8, dst);
+        },
+        .number_to_bool => return switch (value) {
+            .int => |n| .{ .boolean = n != 0 },
+            .float => |f| .{ .boolean = f != 0 },
+            else => null,
+        },
+        .int_to_enum => return castConstant(self, value, src, self.enumBackingType(dst).?),
+        .enum_to_int => return castConstant(self, value, self.enumBackingType(src).?, dst),
+        .optional_wrap => {
+            const child = tt.get(dst).optional.child;
+            return self.someConstant(child, castConstant(self, value, src, child) orelse return null);
+        },
+        else => return null,
+    }
+}
+
 fn isGlyphFreeImplicit(plan: @import("../conversions.zig").CoercionResolver.CoercionPlan) bool {
     if (plan.implicitPointer()) return true;
     return switch (plan) {
