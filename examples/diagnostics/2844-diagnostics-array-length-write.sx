@@ -1,0 +1,7 @@
+// An array's `len` is fixed by its type, not a storage place.
+
+main :: () -> i32 {
+    a := [3]i64.[1, 2, 3];
+    a.len = 7;
+    0
+}

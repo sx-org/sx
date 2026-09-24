@@ -14,6 +14,12 @@ main :: () -> i32 {
     q := *xs.ptr;
     q.* = b[1..].ptr;
     xs.len -= 1;
-    print("{} {} {}\n", s, k, xs);
+    t := "abcdef";
+    pt := *t;
+    pt.len, k = 5, 2;
+    r := *pt.len;
+    r.* -= 1;
+    --pt.len;
+    print("{} {} {} {}\n", s, k, xs, t);
     0
 }

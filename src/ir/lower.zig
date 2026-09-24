@@ -3813,6 +3813,7 @@ pub const Lowering = struct {
     pub const diagPayloadVariantWrite = lower_stmt.diagPayloadVariantWrite;
     pub const lowerExprAsPtr = lower_stmt.lowerExprAsPtr;
     pub const rootIsConstant = lower_stmt.rootIsConstant;
+    pub const constantRoot = lower_stmt.constantRoot;
     pub const storeOrCompound = lower_stmt.storeOrCompound;
     pub const emitCompoundOp = lower_stmt.emitCompoundOp;
     pub const Place = lower_stmt.Place;

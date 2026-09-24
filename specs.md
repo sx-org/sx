@@ -5313,8 +5313,8 @@ falls through to ufcs functions only for non-members
 handle as its first parameter).
 
 UFCS works with pointer receivers (auto-deref, and auto address-of when
-the first param is `*T` and the receiver is a value; a `::` constant
-receiver is refused there) and with **generic** functions — the receiver
+the first param is `*T` and the receiver is a value; a receiver rooted at a
+`::` constant is refused there) and with **generic** functions — the receiver
 participates in `$T` binding and the call monomorphizes exactly like the
 direct spelling:
 

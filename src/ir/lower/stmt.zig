@@ -1580,14 +1580,20 @@ pub fn diagConstRootWrite(self: *Lowering, target: *const Node) bool {
             else => break,
         }
     }
-    const root = assignmentRootIdent(self, target) orelse return false;
-    const shadowed = if (self.scope) |s| s.lookup(root) != null else false;
-    if (!shadowed and rootIsConstant(self, root)) {
-        if (self.diagnostics) |d|
-            d.addFmt(.err, target.span, "cannot assign through constant '{s}' — constants are immutable (use a '=' global or a local copy for mutable data)", .{root});
-        return true;
+    const root = constantRoot(self, target) orelse return false;
+    if (self.diagnostics) |d|
+        d.addFmt(.err, target.span, "cannot assign through constant '{s}' — constants are immutable (use a '=' global or a local copy for mutable data)", .{root});
+    return true;
+}
+
+/// The module constant `target`'s chain roots at, unless a local shadows it
+/// or a deref breaks the chain (`assignmentRootIdent`).
+pub fn constantRoot(self: *Lowering, target: *const Node) ?[]const u8 {
+    const root = assignmentRootIdent(self, target) orelse return null;
+    if (self.scope) |s| {
+        if (s.lookup(root) != null) return null;
     }
-    return false;
+    return if (rootIsConstant(self, root)) root else null;
 }
 
 /// Context-root write guard, shared by lowerAssignment and lowerMultiAssign:
@@ -2643,68 +2649,21 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                 return;
             }
 
-            var obj_ptr = self.lowerExprAsPtr(fa.object);
-            var obj_ty = self.inferExprType(fa.object);
-            // A guard-narrowed `?*T` local writes through implicitly:
-            // load the optional, unwrap to the pointer, store through it
-            // — parity with reads/receivers. A narrowed
-            // `?Struct` VALUE keeps the explicit spelling (an in-place
-            // payload write is a different lvalue).
-            if (fa.object.data == .identifier and !obj_ty.isBuiltin()) {
-                const ninfo = self.module.types.get(obj_ty);
-                if (ninfo == .optional and self.provenPresent(fa.object.data.identifier.name)) {
-                    const child = ninfo.optional.child;
-                    if (!child.isBuiltin() and self.module.types.get(child) == .pointer) {
-                        const opt_val = self.builder.load(obj_ptr, obj_ty);
-                        const unwrapped = self.builder.emit(.{ .optional_unwrap = .{ .operand = opt_val } }, child);
-                        obj_ptr = unwrapped;
-                        obj_ty = self.module.types.get(child).pointer.pointee;
-                    }
-                }
-            }
-            // A pointer held in a field or an element arrives as its slot's
-            // address, so the pointer is loaded out of it; a call's pointer
-            // result IS the address.
-            if ((fa.object.data == .field_access or fa.object.data == .index_expr or self.fieldCall(fa.object) != null) and !obj_ty.isBuiltin()) {
-                const pinfo = self.module.types.get(obj_ty);
-                if (pinfo == .pointer) {
-                    obj_ptr = self.builder.load(obj_ptr, obj_ty);
-                    obj_ty = pinfo.pointer.pointee;
-                }
-            } else if (!obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .pointer) {
-                obj_ty = self.module.types.get(obj_ty).pointer.pointee;
-            }
+            const obj = fieldObject(self, fa.object);
+            const obj_ptr = obj.ptr;
+            const obj_ty = obj.ty;
 
             // Reject a direct write to a payload enum variant: it
             // sets the payload but not the tag. Construct via `x = .variant(...)`.
             if (self.diagPayloadVariantWrite(obj_ty, fa.field, asgn.target.span)) return;
 
-            // A constant count must fit the length word whatever built it
-            // — a literal, a folded arithmetic RHS, or the operand of a
-            // compound `+=` / `-=`. A RHS that already diagnosed says it
-            // once.
-            const is_slice = switch (self.module.types.get(obj_ty)) {
-                .string, .slice => true,
-                else => false,
-            };
-            if (is_slice and !rhs_diagnosed and std.mem.eql(u8, fa.field, "len")) {
-                if (self.foldedInt(val)) |n| {
-                    const len_ty = self.module.types.lenTypeOf(obj_ty);
-                    if (n < 0) {
-                        if (self.diagnostics) |d|
-                            d.addFmt(.err, asgn.value.span, "negative length {} does not fit the {s} length word of '{s}'", .{
-                                n, self.formatTypeName(len_ty), self.formatTypeName(obj_ty),
-                            });
-                    } else {
-                        self.checkIntLiteralMagnitudeFits(n, len_ty, asgn.value.span);
-                    }
-                }
-            }
+            // A RHS that already diagnosed says it once.
+            if (!rhs_diagnosed) checkLengthWordValue(self, obj_ty, fa.field, val, asgn.value.span);
 
             if (self.storeSwizzle(obj_ptr, obj_ty, fa.field, val, asgn.op, asgn.target.span, asgn.value.span)) {
                 // Multi-letter shuffle store (and diagnosed swizzle errors).
             } else switch (self.fieldLvalueMention(obj_ptr, obj_ty, fa.field, asgn.target.span)) {
-                .private => {},
+                .diagnosed => {},
                 // Resolve the target field (struct / union direct / promoted
                 // struct member / tuple element / vector lane) via the shared
                 // lvalue resolver — the same one the address-of and
@@ -2866,30 +2825,10 @@ pub fn resolveMutablePlace(self: *Lowering, target: *const Node) ?Place {
             if (self.lookupObjcPropertyOnPointer(fa.object, fa.field) != null) return null;
             if (self.lookupObjcDefinedStateFieldOnPointer(fa.object, fa.field) != null) return null;
 
-            var obj_ptr = self.lowerExprAsPtr(fa.object);
-            var obj_ty = self.inferExprType(fa.object);
-            if (fa.object.data == .identifier and !obj_ty.isBuiltin()) {
-                const ninfo = self.module.types.get(obj_ty);
-                if (ninfo == .optional and self.provenPresent(fa.object.data.identifier.name)) {
-                    const child = ninfo.optional.child;
-                    if (!child.isBuiltin() and self.module.types.get(child) == .pointer) {
-                        const opt_val = self.builder.load(obj_ptr, obj_ty);
-                        obj_ptr = self.builder.emit(.{ .optional_unwrap = .{ .operand = opt_val } }, child);
-                        obj_ty = self.module.types.get(child).pointer.pointee;
-                    }
-                }
-            }
-            if (fa.object.data != .identifier and !obj_ty.isBuiltin()) {
-                const pinfo = self.module.types.get(obj_ty);
-                if (pinfo == .pointer) {
-                    obj_ptr = self.builder.load(obj_ptr, obj_ty);
-                    obj_ty = pinfo.pointer.pointee;
-                }
-            }
+            const obj = fieldObject(self, fa.object);
+            if (isPayloadVariantField(self, obj.ty, fa.field)) return null;
 
-            if (isPayloadVariantField(self, obj_ty, fa.field)) return null;
-
-            const fl = self.fieldLvaluePtr(obj_ptr, obj_ty, fa.field) orelse return null;
+            const fl = self.fieldLvaluePtr(obj.ptr, obj.ty, fa.field) orelse return null;
             return .{ .slot = .{ .ptr = fl.ptr, .ty = fl.ty } };
         },
         .index_expr => |ie| {
@@ -2981,7 +2920,51 @@ pub fn storeSwizzle(
     }
 }
 
+/// A constant count stored to a slice's `len` must fit the length word,
+/// whatever built it: a literal, a folded arithmetic RHS, or the operand of a
+/// compound `+=` / `-=`.
+fn checkLengthWordValue(self: *Lowering, obj_ty: TypeId, field: []const u8, val: Ref, span: ast.Span) void {
+    switch (self.module.types.get(obj_ty)) {
+        .string, .slice => {},
+        else => return,
+    }
+    if (!std.mem.eql(u8, field, "len")) return;
+    const n = self.foldedInt(val) orelse return;
+    const len_ty = self.module.types.lenTypeOf(obj_ty);
+    if (n < 0) {
+        if (self.diagnostics) |d|
+            d.addFmt(.err, span, "negative length {} does not fit the {s} length word of '{s}'", .{
+                n, self.formatTypeName(len_ty), self.formatTypeName(obj_ty),
+            });
+    } else {
+        self.checkIntLiteralMagnitudeFits(n, len_ty, span);
+    }
+}
+
 const FieldLvalue = struct { ptr: Ref, ty: TypeId };
+
+/// The aggregate `obj.field` addresses: `obj`'s storage and type, with a
+/// pointer object dereferenced. A pointer held in a field, an element or a
+/// deref arrives as its slot's address and is loaded out of it; any other
+/// pointer object's value already is the address. A guard-narrowed `?*T` local
+/// unwraps to its pointee; a narrowed `?Struct` value stays the optional.
+fn fieldObject(self: *Lowering, obj: *const Node) FieldLvalue {
+    const ptr = self.lowerExprAsPtr(obj);
+    const ty = self.inferExprType(obj);
+    if (ty.isBuiltin()) return .{ .ptr = ptr, .ty = ty };
+    const info = self.module.types.get(ty);
+    if (info == .optional and obj.data == .identifier and self.provenPresent(obj.data.identifier.name)) {
+        const child = info.optional.child;
+        if (!child.isBuiltin() and self.module.types.get(child) == .pointer) {
+            const unwrapped = self.builder.emit(.{ .optional_unwrap = .{ .operand = self.builder.load(ptr, ty) } }, child);
+            return .{ .ptr = unwrapped, .ty = self.module.types.get(child).pointer.pointee };
+        }
+    }
+    if (info != .pointer) return .{ .ptr = ptr, .ty = ty };
+    const in_slot = obj.data == .field_access or obj.data == .index_expr or
+        obj.data == .deref_expr or self.fieldCall(obj) != null;
+    return .{ .ptr = if (in_slot) self.builder.load(ptr, ty) else ptr, .ty = info.pointer.pointee };
+}
 
 /// Pure description of which slot `obj.field` resolves to — the GEP path plus
 /// the field's value type — computed WITHOUT emitting any IR. The single
@@ -3126,6 +3109,14 @@ pub fn fieldLvaluePtr(self: *Lowering, obj_ptr: Ref, obj_ty: TypeId, field: []co
 /// payload for a promoted member — so a private field is refused on the write
 /// path exactly where it is refused on the read path.
 pub fn fieldLvalueMention(self: *Lowering, obj_ptr: Ref, obj_ty: TypeId, field: []const u8, span: ast.Span) FieldLvalueMention {
+    switch (self.module.types.get(obj_ty)) {
+        .array, .vector => if (std.mem.eql(u8, field, "len") or std.mem.eql(u8, field, "ptr")) {
+            if (self.diagnostics) |d|
+                d.addFmt(.err, span, "'{s}' of '{s}' is not a storage place — its length and address are fixed", .{ field, self.formatTypeName(obj_ty) });
+            return .diagnosed;
+        },
+        else => {},
+    }
     const res = self.fieldLvalueResolve(obj_ty, field) orelse return .missing;
     const owner: ?TypeId = switch (res) {
         .indexed => obj_ty,
@@ -3133,16 +3124,16 @@ pub fn fieldLvalueMention(self: *Lowering, obj_ptr: Ref, obj_ty: TypeId, field: 
         .union_direct, .swizzle => null,
     };
     if (owner) |o| {
-        if (self.mentionField(o, field, span) == .private) return .private;
+        if (self.mentionField(o, field, span) == .private) return .diagnosed;
     }
     return .{ .ptr = fieldLvaluePtrFrom(self, obj_ptr, obj_ty, res) orelse return .missing };
 }
 
-/// `.private` is already diagnosed — the caller stops without adding a
+/// `.diagnosed` is already reported — the caller stops without adding a
 /// field-not-found on top of it.
 pub const FieldLvalueMention = union(enum) {
     missing,
-    private,
+    diagnosed,
     ptr: FieldLvalue,
 };
 
@@ -3373,45 +3364,9 @@ pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
                     }
                 }
             }
-            var obj_ptr = self.lowerExprAsPtr(fa.object);
-            var obj_ty = self.inferExprType(fa.object);
-            // A guard-narrowed `?*T` local roots the lvalue chain through
-            // its pointer: load the optional, unwrap, GEP through the
-            // pointee — narrowing parity for address-of chains (the
-            // getter-receiver and address-of routes both land here). A
-            // narrowed `?Struct` VALUE keeps the explicit
-            // spelling, same as the store path.
-            if (fa.object.data == .identifier and !obj_ty.isBuiltin()) {
-                const ninfo = self.module.types.get(obj_ty);
-                if (ninfo == .optional and self.provenPresent(fa.object.data.identifier.name)) {
-                    const child = ninfo.optional.child;
-                    if (!child.isBuiltin() and self.module.types.get(child) == .pointer) {
-                        const opt_val = self.builder.load(obj_ptr, obj_ty);
-                        obj_ptr = self.builder.emit(.{ .optional_unwrap = .{ .operand = opt_val } }, child);
-                        obj_ty = self.module.types.get(child).pointer.pointee;
-                    }
-                }
-            }
-            // Auto-deref for chained pointer field access:
-            // When fa.object is a field_access or index_expr, lowerExprAsPtr returns
-            // a structGep/pointer to the SLOT. If the slot holds a pointer type,
-            // we need to load the pointer value before GEPing into the pointee struct.
-            // (Identifiers are already loaded by the identifier handler in lowerExprAsPtr.)
-            //
-            // Only those slot-producing kinds. Everything else — a call result, a
-            // force-unwrap, any shape that reaches lowerExprAsPtr's value fallback —
-            // already IS the pointer, and loading it again GEPs through the pointee's
-            // first bytes as if they were an address.
-            const obj_is_slot = fa.object.data == .field_access or
-                fa.object.data == .index_expr or
-                fa.object.data == .deref_expr or self.fieldCall(fa.object) != null;
-            if (obj_is_slot and !obj_ty.isBuiltin()) {
-                const info = self.module.types.get(obj_ty);
-                if (info == .pointer) {
-                    obj_ptr = self.builder.load(obj_ptr, obj_ty);
-                    obj_ty = info.pointer.pointee;
-                }
-            }
+            const obj = fieldObject(self, fa.object);
+            const obj_ptr = obj.ptr;
+            const obj_ty = obj.ty;
             // Resolve the field lvalue (struct / union direct / promoted
             // anonymous-struct member / tuple element) via the shared
             // resolver so address-of and the multi-target store path never
@@ -3437,7 +3392,7 @@ pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
                 }
             }
             switch (self.fieldLvalueMention(obj_ptr, obj_ty, fa.field, node.span)) {
-                .private => return self.emitPlaceholder(fa.field),
+                .diagnosed => return self.emitPlaceholder(fa.field),
                 .ptr => |r| return r.ptr,
                 .missing => return self.emitFieldError(obj_ty, fa.field, node.span),
             }
@@ -3795,6 +3750,8 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
     // target — see setMultiAssignTargetType), then assign to LHS targets.
     var vals = std.ArrayList(Ref).empty;
     defer vals.deinit(self.alloc);
+    var vals_diagnosed = std.ArrayList(bool).empty;
+    defer vals_diagnosed.deinit(self.alloc);
     const old_target = self.target_type;
     for (ma.values, 0..) |v, vi| {
         self.target_type = old_target;
@@ -3806,7 +3763,9 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                 setMultiAssignTargetType(self, ma.targets[vi], v);
             }
         }
+        const errors_before = if (self.diagnostics) |d| d.errorCount() else 0;
         vals.append(self.alloc, self.lowerExpr(v)) catch unreachable;
+        vals_diagnosed.append(self.alloc, if (self.diagnostics) |d| d.errorCount() > errors_before else false) catch unreachable;
     }
     self.target_type = old_target;
 
@@ -3967,17 +3926,19 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                 // already-lowered RHS value (multi-assign evaluated all RHS up
                 // front). Falls through for an ordinary field.
                 if (tryLowerPropertyStore(self, fa, val, target.span)) continue;
-                const obj_ptr = self.lowerExprAsPtr(fa.object);
-                const obj_ty = self.inferExprType(fa.object);
+                const obj = fieldObject(self, fa.object);
+                const obj_ptr = obj.ptr;
+                const obj_ty = obj.ty;
                 // Reject a direct write to a payload enum variant.
                 if (self.diagPayloadVariantWrite(obj_ty, fa.field, target.span)) continue;
+                if (!vals_diagnosed.items[i]) checkLengthWordValue(self, obj_ty, fa.field, val, ma.values[i].span);
                 // Resolve the target field via the shared lvalue resolver —
                 // the same one address-of uses — so a missing field emits a
                 // diagnostic instead of defaulting to field 0 / field_ty
                 // .unresolved, which silently corrupts a neighbouring field
                 // (or panics at LLVM emission).
                 switch (self.fieldLvalueMention(obj_ptr, obj_ty, fa.field, target.span)) {
-                    .private => {},
+                    .diagnosed => {},
                     .ptr => |r| {
                         const val_ty = self.builder.getRefType(val);
                         if (!self.checkAssignable(val_ty, r.ty, ma.values[i].span, "assign", fa.field)) continue;

@@ -3,11 +3,14 @@
 
 V :: struct { n: i64; }
 bump :: ufcs (p: *V) { p.n = 7; }
+W :: struct { inner: V; }
 K :: V{ n = 1 };
+N :: W{ inner = V{ n = 1 } };
 
 main :: () -> i32 {
     v :: V{ n = 1 };
     v.bump();
     K.bump();
+    N.inner.bump();
     0
 }

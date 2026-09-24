@@ -1179,6 +1179,10 @@ pub fn fixupMethodReceiver(self: *Lowering, method_args: *std.ArrayList(Ref), fu
                 if (oi == .pointer) return; // already a pointer
             }
             self.noteStorageWrite(obj_node);
+            if (self.constantRoot(obj_node)) |root| {
+                method_args.items[0] = diagConstantReceiver(self, root, obj_node.span);
+                return;
+            }
             if (place) |p| {
                 method_args.items[0] = receiverPointer(self, p, obj_ty);
                 return;
@@ -1203,9 +1207,6 @@ pub fn fixupMethodReceiver(self: *Lowering, method_args: *std.ArrayList(Ref), fu
                     }
                     // A non-alloca local (SSA value / by-value param) has no
                     // stable storage to address — fall through to alloca+store.
-                } else if (self.rootIsConstant(nm)) {
-                    method_args.items[0] = diagConstantReceiver(self, nm, obj_node.span);
-                    return;
                 } else if (self.resolveGlobalRef(nm, null) != null) {
                     // MUTABLE module-global lvalue receiver: address the global's
                     // LIVE storage so `self: *T` mutations target the global
