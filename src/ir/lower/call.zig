@@ -3871,7 +3871,7 @@ const boxed_as_sources = [_]TypeId{ .bool, .f32, .f64 };
 /// modeled scalar plans and optional payload conversions.
 fn boxedAsConverts(self: *Lowering, s: TypeId, dst: TypeId) bool {
     return switch (self.coercionResolver().classify(s, dst)) {
-        .no_op, .integer_retype, .widen, .narrow, .int_to_float, .float_to_int, .int_to_enum, .enum_to_int, .error_to_int => true,
+        .no_op, .integer_retype, .widen, .narrow, .int_to_float, .float_to_int, .bool_to_number, .number_to_bool, .int_to_enum, .enum_to_int, .error_to_int => true,
         .optional_wrap => boxedAsConverts(self, s, self.module.types.get(dst).optional.child),
         else => false,
     };

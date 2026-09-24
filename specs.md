@@ -3001,6 +3001,10 @@ without `xx` / `.(T)`:
   (`y : i64 = xx 1.5` → 1); this is the escape hatch from the implicit rule above
 - Unsigned to signed of same or narrower width (`u8` → `i8`)
 
+`bool` is not numeric: it converts to and from integers and floats only
+explicitly. `b.(T)` is `1` for `true` and `0` for `false`; `n.(bool)` is
+`n != 0`, so `2.(bool)` is `true`.
+
 Function values carry their parameter types, return type, calling convention and
 C-variadic tail. A matching function slot takes the value unchanged. Raw function
 addresses use `@reinterpret(T, function)` with a pointer-sized destination.
@@ -3107,6 +3111,9 @@ x.(u8).(i64)            // postfix chains left to right
 The target is exactly one **compile-time** type (a runtime-`Type` target
 would make the expression untypeable). `56.(i8)` lexes as a cast (never a
 float); `0..(5)` stays a range.
+
+A cast of a compile-time constant is a compile-time constant with the value
+the run-time cast computes, so `G : u8 = K.(u8);` initializes a global.
 
 **Interface and boxed views.** `p.(@Interface)` retrieves `{ctx, typeId}`
 field-wise from a handle; `av.(@Any)` retrieves `{data, typeId}` from a box.

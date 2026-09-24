@@ -48,6 +48,8 @@ pub const CoercionResolver = struct {
         member_to_open_set, // a member VALUE → its open set's inline slot
         int_to_float,
         float_to_int,
+        bool_to_number, // false → 0, true → 1 (explicit only)
+        number_to_bool, // n != 0 (explicit only)
         int_to_enum, // int → payload-less enum (through the enum's backing type)
         enum_to_int, // payload-less enum → int (through the enum's backing type)
         integer_retype,
@@ -307,6 +309,9 @@ pub const CoercionResolver = struct {
         const dst_float = Lowering.isFloat(dst_ty);
         const src_int = self.l.isIntEx(src_ty);
         const dst_int = self.l.isIntEx(dst_ty);
+
+        if (src_ty == .bool and self.isNumericScalar(dst_ty)) return .bool_to_number;
+        if (dst_ty == .bool and self.isNumericScalar(src_ty)) return .number_to_bool;
 
         // Int ↔ payload-less enum. Such an enum IS an integer of its backing
         // type (§Enums), so the conversion is that integer conversion plus a

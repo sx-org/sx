@@ -235,6 +235,72 @@ pub fn coerceConstant(self: *Lowering, value: inst_mod.ConstantValue, src: TypeI
     };
 }
 
+/// `value`, a constant of type `src`, converted to `dst` as the explicit cast
+/// converts it at run time. Null when the conversion has no constant result.
+pub fn castConstant(self: *Lowering, value: inst_mod.ConstantValue, src: TypeId, dst: TypeId) ?inst_mod.ConstantValue {
+    const tt = &self.module.types;
+    if (value == .zeroinit) if (scalarZero(self, src)) |zero| return castConstant(self, zero, src, dst);
+    switch (self.coercionResolver().classify(src, dst)) {
+        .no_op => return value,
+        .integer_retype, .widen, .narrow => {
+            if (value == .float and Lowering.isFloat(src) and Lowering.isFloat(dst))
+                return .{ .float = if (src == .f32 or dst == .f32) @as(f32, @floatCast(value.float)) else value.float };
+            const from = tt.integerLayout(src) orelse return null;
+            const to = tt.integerLayout(dst) orelse return null;
+            if (value != .int) return null;
+            return .{ .int = @bitCast(to.normalize(from.normalize(@bitCast(value.int)))) };
+        },
+        .int_to_float => {
+            if (value != .int) return null;
+            const from = tt.integerLayout(src).?;
+            const raw = from.normalize(@bitCast(value.int));
+            return .{ .float = if (dst == .f32) intToFloat(f32, raw, from.signed) else intToFloat(f64, raw, from.signed) };
+        },
+        .float_to_int => {
+            if (value != .float or !std.math.isFinite(value.float)) return null;
+            const to = tt.integerLayout(dst).?;
+            const t = @trunc(value.float);
+            const raw: u64 = if (to.signed) signed: {
+                if (t < -9223372036854775808.0 or t >= 9223372036854775808.0) return null;
+                break :signed @bitCast(@as(i64, @intFromFloat(t)));
+            } else unsigned: {
+                if (t < 0 or t >= 18446744073709551616.0) return null;
+                break :unsigned @intFromFloat(t);
+            };
+            return .{ .int = @bitCast(to.normalize(raw)) };
+        },
+        .bool_to_number => {
+            if (value != .boolean) return null;
+            return castConstant(self, .{ .int = @intFromBool(value.boolean) }, .u8, dst);
+        },
+        .number_to_bool => return switch (value) {
+            .int => |n| .{ .boolean = n != 0 },
+            .float => |f| .{ .boolean = f != 0 },
+            else => null,
+        },
+        .int_to_enum => return castConstant(self, value, src, self.enumBackingType(dst).?),
+        .enum_to_int => return castConstant(self, value, self.enumBackingType(src).?, dst),
+        .optional_wrap => {
+            const child = tt.get(dst).optional.child;
+            return self.someConstant(child, castConstant(self, value, src, child) orelse return null);
+        },
+        else => return null,
+    }
+}
+
+/// `raw` rounded once to `F`, as the run-time conversion rounds it.
+fn intToFloat(comptime F: type, raw: u64, signed: bool) F {
+    return if (signed) @floatFromInt(@as(i64, @bitCast(raw))) else @floatFromInt(raw);
+}
+
+/// The zero of the scalar `ty` in the constant form its other values take.
+fn scalarZero(self: *Lowering, ty: TypeId) ?inst_mod.ConstantValue {
+    if (ty == .bool) return .{ .boolean = false };
+    if (Lowering.isFloat(ty)) return .{ .float = 0 };
+    if (self.module.types.integerLayout(ty) != null) return .{ .int = 0 };
+    return null;
+}
+
 fn isGlyphFreeImplicit(plan: @import("../conversions.zig").CoercionResolver.CoercionPlan) bool {
     if (plan.implicitPointer()) return true;
     return switch (plan) {
@@ -1268,6 +1334,7 @@ fn checkAssignableWith(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: as
     // Lowering owns the specific refusal diagnostics for these pairs.
     const plan = self.coercionResolver().classify(src_ty, dst_ty);
     if (plan.refuses() or plan == .unbox_any) return true;
+    if (refuseBoolNumber(self, src_ty, dst_ty, span)) return false;
     if (!src_ty.isBuiltin() and !dst_ty.isBuiltin() and
         self.module.types.get(src_ty) == .@"error" and self.module.types.get(dst_ty) == .@"error") return true;
     if (self.diagnostics) |d| {
@@ -1391,12 +1458,24 @@ pub fn checkConstantLeaf(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: 
     if (src_ty == dst_ty or dst_ty == .unresolved) return true;
     if (refuseSetWeld(self, src_ty, dst_ty, span)) return false;
     if (self.conversionAvailable(src_ty, dst_ty, .implicit)) return true;
+    if (refuseBoolNumber(self, src_ty, dst_ty, span)) return false;
     switch (self.coercionResolver().classify(src_ty, dst_ty)) {
         .optional_wrap => return checkConstantLeaf(self, src_ty, self.module.types.get(dst_ty).optional.child, span),
         .adds_terminator_reject => self.refuseAddedTerminator(src_ty, dst_ty, span, null),
         else => refuseConversion(self, src_ty, dst_ty, .implicit, span),
     }
     return false;
+}
+
+/// Refuses an implicit bool/number pair at `span` with the explicit-cast fix-it; false for any other pair.
+fn refuseBoolNumber(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: ast.Span) bool {
+    switch (self.coercionResolver().classify(src_ty, dst_ty)) {
+        .bool_to_number, .number_to_bool => {},
+        .optional_wrap => return refuseBoolNumber(self, src_ty, self.module.types.get(dst_ty).optional.child, span),
+        else => return false,
+    }
+    diagImplicitNumericConversion(self, src_ty, dst_ty, span);
+    return true;
 }
 
 /// Return-path variant of the guard, with a return-specific message and the
@@ -1408,6 +1487,7 @@ pub fn checkConstantLeaf(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: 
 pub fn checkReturnable(self: *Lowering, _: Ref, src_ty: TypeId, dst_ty: TypeId, span: ast.Span) bool {
     if (refuseSetWeld(self, src_ty, dst_ty, span)) return false;
     if (recoveringConversion(self, src_ty, dst_ty) or self.conversionAvailable(src_ty, dst_ty, .implicit)) return true;
+    if (refuseBoolNumber(self, src_ty, dst_ty, span)) return false;
     if (self.diagnostics) |d| {
         d.addFmt(.err, span, "cannot return a value of type '{s}' where '{s}' is expected", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty) });
         self.assignability_error_count += 1;
@@ -1430,7 +1510,7 @@ pub fn conversionAvailable(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, mode
     const plan = self.coercionResolver().classify(src_ty, dst_ty);
     if (plan == .none or plan.refuses()) return false;
     return switch (plan) {
-        .error_to_int, .single_to_many, .void_to_c_function, .unbox_any => mode == .explicit,
+        .error_to_int, .single_to_many, .void_to_c_function, .unbox_any, .bool_to_number, .number_to_bool => mode == .explicit,
         .optional_wrap => self.conversionAvailable(src_ty, self.module.types.get(dst_ty).optional.child, mode),
         .optional_to_optional => self.conversionAvailable(self.module.types.get(src_ty).optional.child, self.module.types.get(dst_ty).optional.child, mode),
         else => true,
@@ -1477,7 +1557,7 @@ pub fn checkConstantWidens(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span
 fn implicitNumericConversion(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) ?bool {
     if (implicitIntegerConversion(self, src_ty, dst_ty)) |widens| return widens;
     return switch (self.coercionResolver().classify(src_ty, dst_ty)) {
-        .float_to_int => false,
+        .float_to_int, .bool_to_number, .number_to_bool => false,
         .narrow => if (Lowering.isFloat(src_ty) and Lowering.isFloat(dst_ty)) false else null,
         else => null,
     };
@@ -1769,6 +1849,16 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
                 return refuseImplicitNumericConversion(self, src_ty, dst_ty);
             }
             return self.builder.emit(.{ .float_to_int = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty);
+        },
+        .bool_to_number => {
+            if (mode == .implicit) return refuseImplicitNumericConversion(self, src_ty, dst_ty);
+            const bit = self.builder.emit(.{ .widen = .{ .operand = val, .from = .bool, .to = .u8 } }, .u8);
+            return self.coerceMode(bit, .u8, dst_ty, mode);
+        },
+        .number_to_bool => {
+            if (mode == .implicit) return refuseImplicitNumericConversion(self, src_ty, dst_ty);
+            const zero = if (Lowering.isFloat(src_ty)) self.builder.constFloat(0, src_ty) else self.builder.constInt(0, src_ty);
+            return self.builder.emit(.{ .cmp_ne = .{ .lhs = val, .rhs = zero } }, .bool);
         },
         // Int ↔ payload-less enum: run the integer ladder to/from the enum's
         // backing type, then retype the word to the other side. The retype is

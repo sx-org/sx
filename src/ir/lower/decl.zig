@@ -1463,9 +1463,7 @@ pub fn registerTypedModuleConst(self: *Lowering, cd: *const ast.ConstDecl) void 
 /// (conversions.zig): that planner judges RUNTIME value coercions and is
 /// unsound as a compile-time literal-representability oracle here — a `null`
 /// literal's natural type is `.void`, so `classify(.void, *T)` yields `.none`
-/// and would reject the valid `P : *void : null`; `bool` is 1 bit wide, so
-/// `classify(.bool, i64)` yields `.widen` and would accept the bogus
-/// `B : i64 : true`.
+/// and would reject the valid `P : *void : null`.
 pub fn typedConstInitFits(self: *Lowering, value: *const Node, dst_ty: TypeId) bool {
     // An INTEGER-annotated constant accepts a compile-time INTEGRAL float —
     // a literal (`K : i64 : 4.0`), an int-leaf expression (`K : i64 : M + 2.0`
@@ -1686,8 +1684,11 @@ pub fn globalInitValue(self: *Lowering, vd: *const ast.VarDecl, var_ty: TypeId) 
             .undef_literal => return .zeroinit,
             else => {},
         }
-        const child = self.module.types.get(var_ty).optional.child;
-        return self.someConstant(child, self.globalInitValuePayload(vd, v, child) orelse return null);
+        const init_ty = self.inferExprType(v);
+        if (init_ty.isBuiltin() or self.module.types.get(init_ty) != .optional) {
+            const child = self.module.types.get(var_ty).optional.child;
+            return self.someConstant(child, self.globalInitValuePayload(vd, v, child) orelse return null);
+        }
     }
 
     return self.globalInitValuePayload(vd, v, var_ty);
@@ -1779,7 +1780,7 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
         // An enum-literal global (`chosen : Color = .green;`) serializes to
         // the variant's tag value against the destination enum type.
         .enum_literal => |el| self.constEnumLiteral(&el, var_ty, v.span),
-        .call => self.constExprValue(v, var_ty) orelse self.diagnoseNonConstGlobal(vd, v, errors_before),
+        .call, .postfix_cast => self.constExprValue(v, var_ty) orelse self.diagnoseNonConstGlobal(vd, v, errors_before),
         // Any other initializer shape (`.field_access` on a const, an
         // arithmetic expression, …) is not a static constant the compiler can
         // evaluate here. Diagnose loudly rather than emit a null payload that

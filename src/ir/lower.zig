@@ -4068,6 +4068,7 @@ pub const Lowering = struct {
     pub const isByValueBindingIdent = lower_coerce.isByValueBindingIdent;
     pub const coerceOrErase = lower_coerce.coerceOrErase;
     pub const coerceConstant = lower_coerce.coerceConstant;
+    pub const castConstant = lower_coerce.castConstant;
     pub const buildProtocolErasure = lower_coerce.buildProtocolErasure;
     pub const viewOfConcreteAddr = lower_coerce.viewOfConcreteAddr;
     pub const inferConcreteTypeName = lower_coerce.inferConcreteTypeName;

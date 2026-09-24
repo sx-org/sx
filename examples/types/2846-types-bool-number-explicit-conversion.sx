@@ -1,0 +1,8 @@
+@import "modules/std.sx";
+
+main :: () {
+    t := true;
+    half := 0.5;
+    print("{} {} {}\n", t.(i64), false.(u8), t.(f64));
+    print("{} {} {}\n", 2.(bool), 0.(bool), half.(bool));
+}
