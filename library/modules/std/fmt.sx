@@ -27,23 +27,10 @@ last :: ufcs (s: []$T) -> ?$T {
 
 // ── [*:0]u8: the C-boundary string ────────────────────────────────────
 // C's `char *` is ONE pointer to a null-terminated u8 buffer. It carries
-// no length (`cstringLen` walks to the terminator) and crosses `extern`
+// no length (`p[0..]` walks to the terminator) and crosses `extern`
 // boundaries verbatim in both directions; `?[*:0]u8` is the nullable case
 // (null pointer = absent). The terminator is the TYPE's: a terminated value
 // reaches it on its own, while a `string` materializes through `toCstring`.
-
-// Byte length of `c` (strlen — O(n), walks to the terminator).
-cstringLen :: (c: [*:0]u8) -> i64 {
-    n := 0;
-    while c[n] != '\0' { n += 1; }
-    n
-}
-
-// A zero-copy terminated VIEW over `c`'s bytes ({ptr, strlen}). The view
-// shares C's buffer — copy it if it must outlive the source.
-fromCstring :: (c: [*:0]u8) -> cstring {
-    cstring{ ptr = c.([*]u8), len = cstringLen(c) }
-}
 
 // An owned, terminated copy of `s`.
 toCstring :: (s: string) -> cstring {

@@ -56,7 +56,7 @@ process :: scope {
     env :: (name: [:0]u8) -> ?string {
         p := getenv(toCstring(name));
         if p == null { return null; }
-        mem.clone(fromCstring(p))
+        mem.clone(p[0..])
     }
 
     // name must be shell-safe for command -v.

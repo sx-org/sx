@@ -89,11 +89,13 @@ pub const ExprTyper = struct {
         return if (optional) self.l.optionalOfFlattened(element) else element;
     }
 
-    pub fn sliceType(self: ExprTyper, receiver: TypeId) ?TypeId {
+    pub fn sliceType(self: ExprTyper, receiver: TypeId, open_ended: bool) ?TypeId {
         if (receiver == .string) return .string;
         const element = self.l.getElementType(receiver);
         if (element == .unresolved) return null;
-        return self.l.module.types.sliceOfLen(element, self.l.module.types.lenTypeOf(receiver));
+        const table = &self.l.module.types;
+        if (open_ended) if (table.sentinelOf(receiver)) |x| return table.sliceOfSentinel(element, x);
+        return table.sliceOfLen(element, table.lenTypeOf(receiver));
     }
 
     /// Infer the IR type an expression evaluates to (without lowering it).
@@ -589,7 +591,7 @@ pub const ExprTyper = struct {
             },
             .slice_expr => |se| {
                 const obj_ty = self.l.narrowedContainerChild(se.object) orelse self.l.inferExprType(se.object);
-                return self.sliceType(obj_ty) orelse .unresolved;
+                return self.sliceType(obj_ty, se.end == null) orelse .unresolved;
             },
             .deref_expr => |de| {
                 const ptr_ty = self.l.inferExprType(de.operand);

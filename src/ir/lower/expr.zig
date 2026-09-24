@@ -3209,16 +3209,16 @@ pub fn lowerSliceExpr(self: *Lowering, se: *const ast.SliceExpr) Ref {
         }
         return self.builder.constUndef(self.module.types.sliceOf(.u8));
     }
+    const elem_ty = self.getElementType(obj_ty);
+    const sentinel = if (se.end == null) self.module.types.sentinelOf(obj_ty) else null;
     var lo = if (se.start) |s| self.lowerExpr(s) else self.builder.constInt(0, .i64);
     if (se.start_exclusive) lo = self.builder.add(lo, self.builder.constInt(1, .i64), .i64);
     var hi = if (se.end) |e|
         self.lowerExpr(e)
     else if (!obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .many_pointer) blk: {
-        // A many-pointer `[*]T` carries no length, so an open-ended slice
-        // `mp[lo..]` has no upper bound to resolve — a `.length` op on it would
-        // yield a garbage length. Require an explicit `hi`.
+        if (sentinel) |x| break :blk emitTerminatorScan(self, obj, lo, elem_ty, x);
         if (self.diagnostics) |d|
-            d.addFmt(.err, se.object.span, "slicing a many-pointer `[*]T` requires an explicit upper bound (`mp[lo..hi]`) — it has no length", .{});
+            d.addFmt(.err, se.object.span, "slicing a many-pointer '{s}' requires an explicit upper bound (`mp[lo..hi]`) — it has no length", .{self.formatTypeName(obj_ty)});
         break :blk self.builder.constInt(0, .i64);
     } else self.emitLengthI64(obj, obj_ty);
     if (se.end_inclusive) hi = self.builder.add(hi, self.builder.constInt(1, .i64), .i64);
@@ -3226,7 +3226,6 @@ pub fn lowerSliceExpr(self: *Lowering, se: *const ast.SliceExpr) Ref {
     if (obj_ty == .string) {
         return self.builder.emit(.{ .subslice = .{ .base = obj, .lo = lo, .hi = hi, .base_ty = obj_ty } }, .string);
     }
-    const elem_ty = self.getElementType(obj_ty);
     // A subslice keeps its base's length word: `@Slice(T, Len)[a..b]` is again
     // `@Slice(T, Len)`, as `string[a..b]` stays `string`. A typed destination
     // that is a slice of the same element (`b : @Slice(u8, u32) = a[0..]`)
@@ -3241,7 +3240,9 @@ pub fn lowerSliceExpr(self: *Lowering, se: *const ast.SliceExpr) Ref {
         }
         break :blk base_len_ty;
     };
-    const slice_ty = if (elem_ty != .void)
+    const slice_ty = if (sentinel != null and len_ty == base_len_ty)
+        self.module.types.sliceOfSentinel(elem_ty, sentinel)
+    else if (elem_ty != .void)
         self.module.types.sliceOfLen(elem_ty, len_ty)
     else
         self.module.types.sliceOfLen(.u8, len_ty);
@@ -3294,6 +3295,22 @@ pub fn lowerSliceExpr(self: *Lowering, se: *const ast.SliceExpr) Ref {
         return self.builder.emit(.{ .subslice = .{ .base = obj, .lo = lo, .hi = hi, .base_ty = obj_ty } }, slice_ty);
     }
     return self.builder.emit(.{ .subslice = .{ .base = obj, .lo = lo, .hi = hi, .base_ty = obj_ty } }, slice_ty);
+}
+
+/// The index of the first `sentinel` at or after `lo` in the many-pointer `base`.
+fn emitTerminatorScan(self: *Lowering, base: Ref, lo: Ref, elem_ty: TypeId, sentinel: i64) Ref {
+    const lo_ty = self.builder.getRefType(lo);
+    const start = if (lo_ty == .i64) lo else self.builder.widen(lo, lo_ty, .i64);
+    const head = self.freshBlockWithParams("scan.head", &.{.i64});
+    const done = self.freshBlockWithParams("scan.done", &.{.i64});
+    self.builder.br(head, &.{start});
+    self.builder.switchToBlock(head);
+    const at = self.builder.blockParam(head, 0, .i64);
+    const elem = self.builder.emit(.{ .index_get = .{ .lhs = base, .rhs = at } }, elem_ty);
+    const next = self.builder.add(at, self.builder.constInt(1, .i64), .i64);
+    self.builder.condBr(self.builder.cmpEq(elem, self.sentinelValue(sentinel, elem_ty)), done, &.{at}, head, &.{next});
+    self.builder.switchToBlock(done);
+    return self.builder.blockParam(done, 0, .i64);
 }
 
 const AnonLiteralValue = struct { ty: TypeId, value: ?Ref = null };
