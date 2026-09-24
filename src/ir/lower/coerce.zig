@@ -1153,16 +1153,15 @@ pub fn diagNonIntegralNarrow(self: *Lowering, span: ast.Span, value: f64, dst_ty
         d.addFmt(.err, span, "cannot implicitly narrow non-integral float '{d}' to '{s}'; use an explicit cast (`.({s})`)", .{ value, self.formatTypeName(dst_ty), self.formatTypeName(dst_ty) });
 }
 
-/// The integer an implicit compile-time float `value` folds to at the integer
-/// type `dst_ty`, checked as that integer's literal is, or null once a
-/// non-integral float is refused at `span`.
+/// The integer word an implicit compile-time float `value` folds to at the
+/// integer type `dst_ty`, or null once a non-integral float or one outside
+/// `dst_ty` is refused at `span`.
 pub fn foldIntegralFloat(self: *Lowering, value: f64, dst_ty: TypeId, span: ast.Span) ?i64 {
-    const iv = program_index_mod.floatToIntExact(value) orelse {
+    if (!program_index_mod.isIntegralFloat(value)) {
         diagNonIntegralNarrow(self, span, value, dst_ty);
         return null;
-    };
-    self.checkIntLiteralFits(iv, dst_ty, span);
-    return iv;
+    }
+    return @bitCast(constFloatToInt(self, value, dst_ty, span) orelse return null);
 }
 
 /// The integer word the compile-time float `value` truncates to at `dst_ty`,

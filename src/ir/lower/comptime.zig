@@ -334,7 +334,7 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
 
 /// `operand.(T)` over a constant operand: the operand's constant in its own
 /// type, cast to `T`, then carried to `expected_ty` implicitly.
-fn constCastValue(self: *Lowering, pc: *const ast.PostfixCast, expected_ty: TypeId, span: ast.Span, frame: ?*const ConstFoldFrame) ?inst_mod.ConstantValue {
+pub fn constCastValue(self: *Lowering, pc: *const ast.PostfixCast, expected_ty: TypeId, span: ast.Span, frame: ?*const ConstFoldFrame) ?inst_mod.ConstantValue {
     if (pc.is_optional_chain) return null;
     const dst = self.resolveTypeArg(pc.type_expr);
     const src = self.inferExprType(pc.operand);
@@ -2353,7 +2353,7 @@ pub fn foldSourceConstInt(self: *Lowering, name: []const u8, frame: ?*const Cons
             const restore = self.pinConstValue(sel.info.value, sel.environment);
             defer restore.unpin();
             const ctx = SourceConstCtx{ .lowering = self, .frame = &f };
-            if (sel.info.ty == .f32) return if (program_index_mod.floatToIntExact(program_index_mod.evalConstFloatInit(sel.info.value, ctx, sel.info.ty) orelse return null)) |v| v else null;
+            if (sel.info.ty == .f32) return program_index_mod.floatToIntExact(program_index_mod.evalConstFloatInit(sel.info.value, ctx, sel.info.ty) orelse return null);
             return program_index_mod.evalConstIntExpr(sel.info.value, ctx);
         },
         .own_opaque, .ambiguous, .none => null,
@@ -2399,7 +2399,7 @@ pub fn foldQualifiedConstInt(self: *Lowering, ns: []const u8, field: []const u8,
     const restore = self.pinConstValue(sel.info.value, sel.environment);
     defer restore.unpin();
     const ctx = SourceConstCtx{ .lowering = self, .frame = &f };
-    if (sel.info.ty == .f32) return if (program_index_mod.floatToIntExact(program_index_mod.evalConstFloatInit(sel.info.value, ctx, sel.info.ty) orelse return null)) |v| v else null;
+    if (sel.info.ty == .f32) return program_index_mod.floatToIntExact(program_index_mod.evalConstFloatInit(sel.info.value, ctx, sel.info.ty) orelse return null);
     return program_index_mod.evalConstIntExpr(sel.info.value, ctx);
 }
 
@@ -2658,7 +2658,7 @@ pub fn foldConstStructField(self: *Lowering, name: []const u8, field: []const u8
     const value = constStructLiteralInner(self, sl, sel.info.ty, &f, index, sel.info.declared_type != null) orelse return null;
     return switch (value) {
         .int => |v| self.intConstantValue(v, field_ty),
-        .float => |v| if (program_index_mod.floatToIntExact(v)) |i| i else null,
+        .float => |v| program_index_mod.floatToIntExact(v),
         .zeroinit => 0,
         else => null,
     };

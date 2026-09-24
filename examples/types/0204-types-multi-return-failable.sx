@@ -4,7 +4,7 @@
 // single-value failable `-> (T, !)` (one value + error) is exactly `-> (T, !)`,
 // NOT a multi-return.
 //
-// Consume it like any failable: `catch` / `or` / a guarded destructure or
+// Consume it like any failable: `catch` / `??` / a guarded destructure or
 // single bind. The error rides the SEPARATE `!` channel — a bound result holds
 // only the VALUE slots, never the error (so `c.doubled` / `c.big`, no `c.err`).
 @import "modules/std.sx";

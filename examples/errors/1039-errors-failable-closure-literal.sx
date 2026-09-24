@@ -1,7 +1,7 @@
 // Failable closure literals: a lambda literal may declare a
 // failable return type — `-> (T, !)` / `-> !Named` — in both block and arrow
 // body forms, and `raise` inside. Called directly through the bound local, the
-// error channel is consumed by `catch` / `or`; passed as a `Closure(...)`
+// error channel is consumed by `catch` / `??`; passed as a `Closure(...)`
 // parameter, it composes through the callee (here absorbed with `catch`).
 // (A capturing closure into a bare `(T)->U` slot, and a failable closure into a
 // non-failable slot, are rejected — see the FFI-boundary rule.)

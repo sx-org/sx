@@ -182,9 +182,15 @@ fn lowerTail(self: *Lowering, tail: *const Node, demand: TailDemand) BodyTail {
             // tail value is caught by the missing-value diagnostic instead.
             self.force_block_value = !isNoElseValuelessIf(tail);
             const saved_marker = self.marked_error_expr;
-            if (demand == .return_value and self.errorChannelOf(demand.return_value) != null)
+            const saved_target = self.target_type;
+            if (demand == .return_value and self.errorChannelOf(demand.return_value) != null) {
                 self.marked_error_expr = .{ .node = tail, .pure_only = false };
-            defer self.marked_error_expr = saved_marker;
+                self.target_type = self.failableReturnTarget(demand.return_value, tail);
+            }
+            defer {
+                self.marked_error_expr = saved_marker;
+                self.target_type = saved_target;
+            }
             const v = self.tryLowerAsExpr(tail) orelse return .no_value;
             if (expressionDiverged(self, v)) return .{ .terminated = .noreturn };
             return .{ .value = v };

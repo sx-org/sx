@@ -140,21 +140,21 @@ pub const ModuleConstInfo = struct {
     declared_type: ?TypeId = null,
 };
 
-/// A finite, INTEGRAL `f64` (`4.0`) → its exact `i64` value; a non-integral
-/// (`4.5`), infinite, NaN, or out-of-`i64`-range float → null. THE single place
+pub fn isIntegralFloat(v: f64) bool {
+    return std.math.isFinite(v) and @trunc(v) == v;
+}
+
+/// An integral `f64` (`4.0`) → its exact value; a non-integral (`4.5`),
+/// infinite, NaN, or out-of-`i128`-range float → null. THE single place
 /// the "an integral float counts as an integer count" rule lives, shared by the
 /// `.float_literal` leaf of `evalConstIntExpr` (a direct `[4.0]T` dim) and
 /// `moduleConstInt` (a float-typed module const `N : f64 : 4.0` used as a
 /// count). One source, so an integral float resolves to the SAME integer at
 /// every dimension / lane / count / value-param / inline-for site; positivity
 /// and u32-range are still enforced downstream by `foldDimU32`.
-pub fn floatToIntExact(v: f64) ?i64 {
-    if (!std.math.isFinite(v)) return null;
-    if (@trunc(v) != v) return null;
-    // `-2^63` is exactly representable and is `minInt(i64)`; `2^63` is the first
-    // f64 above `maxInt(i64)`. Guard both so `@intFromFloat`'s range assert can
-    // never trip on a valid-but-oversized integral float.
-    if (v < -9223372036854775808.0 or v >= 9223372036854775808.0) return null;
+pub fn floatToIntExact(v: f64) ?i128 {
+    if (!isIntegralFloat(v)) return null;
+    if (v < -0x1p127 or v >= 0x1p127) return null;
     return @intFromFloat(v);
 }
 
@@ -446,7 +446,7 @@ fn moduleConstIntFramed(index: *const ProgramIndex, table: *types.TypeTable, nam
     if (!isCountableConstType(table, ci.ty)) return null;
     var frame = ModuleConstFrame{ .name = name, .parent = parent };
     const ctx = ModuleConstCtx{ .index = index, .table = table, .frame = &frame };
-    if (ci.ty == .f32) return if (floatToIntExact(evalConstFloatInit(ci.value, ctx, ci.ty) orelse return null)) |v| v else null;
+    if (ci.ty == .f32) return floatToIntExact(evalConstFloatInit(ci.value, ctx, ci.ty) orelse return null);
     return evalConstIntExpr(ci.value, ctx);
 }
 
@@ -588,12 +588,12 @@ pub const IntConstFault = error{ Overflow, DivisionByZero };
 
 /// `evalConstIntExpr`, reporting an overflow or a division by zero.
 pub fn foldConstInt(node: *const Node, ctx: anytype) IntConstFault!?i128 {
-    if (isFloatValuedExpr(node, ctx)) return if (floatToIntExact(evalConstFloatExpr(node, ctx) orelse return null)) |v| v else null;
+    if (isFloatValuedExpr(node, ctx)) return floatToIntExact(evalConstFloatExpr(node, ctx) orelse return null);
     return switch (node.data) {
         .int_literal => |lit| @as(u64, @bitCast(lit.value)),
         .char_literal => |lit| lit.value,
         // An integral float literal (`[4.0]T`) folds to its integer; `4.5` → null.
-        .float_literal => |lit| if (floatToIntExact(lit.value)) |v| v else null,
+        .float_literal => |lit| floatToIntExact(lit.value),
         .identifier => |id| ctx.lookupDimName(id.name) orelse qualifiedDottedInt(id.name, ctx),
         .type_expr => |te| ctx.lookupDimName(te.name) orelse qualifiedDottedInt(te.name, ctx),
         .field_access => |fa| blk: {
