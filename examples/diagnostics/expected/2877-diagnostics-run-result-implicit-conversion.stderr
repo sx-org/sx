@@ -1,0 +1,11 @@
+error: cannot implicitly convert 'i64' to 'u64'; use an explicit cast (`.(u64)`)
+  --> examples/diagnostics/2877-diagnostics-run-result-implicit-conversion.sx:3:16
+   |
+ 3 | K : u64 : @run neg();
+   |                ^^^^^
+
+error: cannot implicitly convert 'i64' to 'u64'; use an explicit cast (`.(u64)`)
+  --> examples/diagnostics/2877-diagnostics-run-result-implicit-conversion.sx:6:5
+   |
+ 6 |     x : u64 = @run neg();
+   |     ^^^^^^^^^^^^^^^^^^^^^

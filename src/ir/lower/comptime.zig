@@ -904,7 +904,8 @@ pub fn lowerComptimeSideEffect(self: *Lowering, expr: *const Node) void {
 /// Creates a comptime function and emits a `call` to it, so the
 /// interpreter can evaluate it and replace with the constant result.
 pub fn lowerInlineComptime(self: *Lowering, expr: *const Node) Ref {
-    const ret_ty: TypeId = self.target_type orelse self.inferExprType(expr);
+    const own_ty = self.inferExprType(expr);
+    const ret_ty: TypeId = if (program_index_mod.untypedConst(expr, self) != null) self.target_type orelse own_ty else own_ty;
     const func_id = self.createComptimeFunction("__ct", .ordinary, expr, ret_ty);
     // Carry the binding const's name (when this `@run` initializes one) onto the
     // wrapper so a comptime-init failure names the user const, not `__ct_N`.
@@ -2252,8 +2253,10 @@ pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, ph
     // result's own type settles the wrapper's return.
     const result = if (ret_ty == .unresolved or self.errorChannelOf(ret_ty) != null)
         self.lowerMarkedExpr(expr, false)
+    else if (ret_ty == .void)
+        self.lowerExpr(expr)
     else
-        self.lowerExpr(expr);
+        lowerComptimeResult(self, expr, ret_ty);
     const settled_ret: TypeId = if (ret_ty == .unresolved) self.builder.getRefType(result) else ret_ty;
     self.module.getFunctionMut(func_id).ret = settled_ret;
     if (settled_ret == .void) {
@@ -2272,6 +2275,19 @@ pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, ph
     self.builder.inst_counter = saved_counter;
 
     return func_id;
+}
+
+/// `expr` lowered at `ret_ty` and converted to it as an initializer converts.
+fn lowerComptimeResult(self: *Lowering, expr: *const Node, ret_ty: TypeId) Ref {
+    self.target_type = ret_ty;
+    const value = self.lowerExpr(expr);
+    self.target_type = null;
+    const value_ty = self.builder.getRefType(value);
+    if (value_ty == ret_ty or value_ty == .void) return value;
+    const saved_span = self.builder.current_span;
+    defer self.builder.current_span = saved_span;
+    self.builder.current_span = .{ .start = expr.span.start, .end = expr.span.end };
+    return self.coerceToType(value, value_ty, ret_ty);
 }
 
 // ── Source-const folding ────────────────────────────────────────
