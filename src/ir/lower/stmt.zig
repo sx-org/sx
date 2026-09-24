@@ -1658,7 +1658,8 @@ fn nonstoreRootOf(self: *Lowering, target: *const Node) ?NonstoreRoot {
 /// storage. Null when a hop addresses pointee memory instead: an explicit
 /// deref, a pointer-typed identifier (its value is the address), or indexing a
 /// pointer/slice/string. A pointer-typed field of the root (`h.p` in `h.p.n`)
-/// is still the root — GEP needs the root's address.
+/// is still the root — GEP needs the root's address. An untyped string
+/// constant's bytes are the constant itself, so indexing one keeps the root.
 fn storageRootName(self: *Lowering, target: *const Node) ?[]const u8 {
     var node = target;
     while (true) {
@@ -1672,7 +1673,7 @@ fn storageRootName(self: *Lowering, target: *const Node) ?[]const u8 {
         const ty = self.inferExprType(obj);
         switch (self.module.types.get(ty)) {
             .pointer => if (obj.data == .identifier or node.data == .index_expr) return null,
-            .string, .slice => if (node.data == .index_expr) return null,
+            .string, .slice => if (node.data == .index_expr and self.untypedString(obj) == null) return null,
             else => {},
         }
         if (obj.data == .identifier) return obj.data.identifier.name;
