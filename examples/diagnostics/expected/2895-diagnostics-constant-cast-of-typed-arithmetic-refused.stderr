@@ -1,0 +1,5 @@
+error: 2e30 is out of range for 'i32'
+  --> examples/diagnostics/2895-diagnostics-constant-cast-of-typed-arithmetic-refused.sx:3:7
+   |
+ 3 | K :: (F * 2.0).(i32);
+   |       ^^^^^^^^^^^^^^

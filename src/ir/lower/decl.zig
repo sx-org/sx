@@ -3970,6 +3970,10 @@ pub fn callableReturnBinder(fd: *const ast.FnDecl, ret_ty: TypeId) ?*const Node 
 /// float, and the folded integer must fit. Null when the type is not numeric
 /// or the initializer does not fold.
 pub fn numericConstValue(self: *Lowering, ci: ModuleConstInfo, ctx: lower.SourceConstCtx) ?inst_mod.ConstantValue {
+    if (ci.value.data == .postfix_cast) {
+        if (!self.isIntEx(ci.ty) and !isFloat(ci.ty)) return null;
+        return self.constCastValue(&ci.value.data.postfix_cast, ci.ty, ci.value.span, ctx.frame);
+    }
     if (self.isIntEx(ci.ty)) {
         switch (program_index_mod.foldCount(ci.value, ctx)) {
             .int => |iv| {
@@ -4002,11 +4006,13 @@ pub fn emitModuleConst(self: *Lowering, name: []const u8, ci: ModuleConstInfo, e
     const frame = lower.ConstFoldFrame{ .name = name, .environment = environment, .parent = self.module_const_frame };
     self.module_const_frame = &frame;
     defer self.module_const_frame = frame.parent;
+    const errors_before = errorCount(self);
     if (self.numericConstValue(ci, .{ .lowering = self, .frame = &frame })) |value| return switch (value) {
         .int => |iv| self.builder.constInt(iv, ci.ty),
         .float => |fv| self.builder.constFloat(fv, ci.ty),
         else => unreachable,
     };
+    if (errorCount(self) != errors_before) return self.builder.constUndef(ci.ty);
     switch (ci.value.data) {
         .int_literal => |lit| {
             // If declared type is float, convert integer value to float constant

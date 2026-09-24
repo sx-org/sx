@@ -334,7 +334,7 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
 
 /// `operand.(T)` over a constant operand: the operand's constant in its own
 /// type, cast to `T`, then carried to `expected_ty` implicitly.
-fn constCastValue(self: *Lowering, pc: *const ast.PostfixCast, expected_ty: TypeId, span: ast.Span, frame: ?*const ConstFoldFrame) ?inst_mod.ConstantValue {
+pub fn constCastValue(self: *Lowering, pc: *const ast.PostfixCast, expected_ty: TypeId, span: ast.Span, frame: ?*const ConstFoldFrame) ?inst_mod.ConstantValue {
     if (pc.is_optional_chain) return null;
     const dst = self.resolveTypeArg(pc.type_expr);
     const src = self.inferExprType(pc.operand);
