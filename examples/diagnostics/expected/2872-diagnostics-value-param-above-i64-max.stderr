@@ -1,0 +1,5 @@
+error: value 18446744073709551615 does not fit in parameter N: a generic value parameter holds an i64
+  --> examples/diagnostics/2872-diagnostics-value-param-above-i64-max.sx:7:13
+   |
+ 7 |     b : Box(0xFFFF_FFFF_FFFF_FFFF) = ---;
+   |             ^^^^^^^^^^^^^^^^^^^^^

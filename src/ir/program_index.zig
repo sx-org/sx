@@ -861,20 +861,17 @@ pub fn reportDimError(diag: *errors.DiagnosticList, span: ?ast.Span, result: Dim
 /// type can hold, addressed by the type NAME as written on a generic value-param
 /// constraint (`$K: u32`). null for a non-integer / unrecognised name — the
 /// caller then skips the range check (folds without bounding) rather than
-/// guessing. Bounds are clamped into `i64`: a `u64`/`usize` ceiling exceeds
-/// `i64`, but a folded value-param arg is already an `i64`, so `maxInt(i64)` is
-/// its effective ceiling and the only failure a `u64` param can have is a
-/// negative arg. THE single declared-type → range map for the value-param gate,
+/// guessing. THE single declared-type → range map for the value-param gate,
 /// so the bound at every binding site agrees. The `u32` count case is gated
 /// through `foldDimU32` instead (the documented dim/lane/value-param u32 gate);
 /// both encode the same `[0, maxInt(u32)]`.
-pub const IntRange = struct { min: i64, max: i64 };
+pub const IntRange = struct { min: i128, max: i128 };
 pub fn intTypeRange(name: []const u8) ?IntRange {
     const eql = std.mem.eql;
     if (eql(u8, name, "u8")) return .{ .min = 0, .max = std.math.maxInt(u8) };
     if (eql(u8, name, "u16")) return .{ .min = 0, .max = std.math.maxInt(u16) };
     if (eql(u8, name, "u32")) return .{ .min = 0, .max = std.math.maxInt(u32) };
-    if (eql(u8, name, "u64") or eql(u8, name, "usize")) return .{ .min = 0, .max = std.math.maxInt(i64) };
+    if (eql(u8, name, "u64") or eql(u8, name, "usize")) return .{ .min = 0, .max = std.math.maxInt(u64) };
     if (eql(u8, name, "i8")) return .{ .min = std.math.minInt(i8), .max = std.math.maxInt(i8) };
     if (eql(u8, name, "i16")) return .{ .min = std.math.minInt(i16), .max = std.math.maxInt(i16) };
     if (eql(u8, name, "i32")) return .{ .min = std.math.minInt(i32), .max = std.math.maxInt(i32) };

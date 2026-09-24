@@ -1527,7 +1527,8 @@ pub fn resolveValueParamArg(self: *Lowering, arg_node: *const Node, param_name: 
         }
     }
     return std.math.cast(i64, v) orelse {
-        self.diagValueParamRange(arg_node, param_name, "i64", v);
+        if (self.diagnostics) |d|
+            d.addFmt(.err, arg_node.span, "value {} does not fit in parameter {s}: a generic value parameter holds an i64", .{ v, param_name });
         return null;
     };
 }
