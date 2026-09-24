@@ -1708,8 +1708,7 @@ pub fn diagNonstoreRootWrite(self: *Lowering, target: *const Node) bool {
 }
 
 /// `--x` on a target that names no slot: a literal, an accessor property, a
-/// slice header word, a runtime-index field view — everything `resolveMutablePlace`
-/// answers null for.
+/// runtime-index field view — everything `resolveMutablePlace` answers null for.
 pub fn diagDecrementTarget(self: *Lowering, span: ast.Span) Ref {
     if (self.diagnostics) |d|
         d.add(.err, "pre-decrement needs an addressable storage place", span);
@@ -2474,25 +2473,6 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                 // struct_init.ty == .unresolved → LLVM-emission panic).
                 if (self.fieldLvalueResolve(obj_ty, fa.field)) |res| {
                     self.target_type = res.valueType();
-                } else {
-                    // The special-container pseudo-fields (`.ptr`/`.len` on
-                    // string/slice/array/vector) are not struct fields, so the
-                    // resolver returns null — without a target the AMBIENT one
-                    // (the enclosing fn's return type, per decl.zig) leaks into
-                    // the RHS and mis-types `s.ptr = xx raw` as an xx-to-string
-                    // (surfaced by the explicit-pun refusal). Mirror the
-                    // store arm's field types.
-                    const is_special = switch (self.module.types.get(obj_ty)) {
-                        .string, .slice, .array, .vector => true,
-                        else => false,
-                    };
-                    if (is_special) {
-                        if (std.mem.eql(u8, fa.field, "ptr")) {
-                            self.target_type = self.module.types.manyPtrTo(self.getElementType(obj_ty));
-                        } else if (std.mem.eql(u8, fa.field, "len")) {
-                            self.target_type = self.module.types.lenTypeOf(obj_ty);
-                        }
-                    }
                 }
             }
         }
@@ -2699,38 +2679,29 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
             // sets the payload but not the tag. Construct via `x = .variant(...)`.
             if (self.diagPayloadVariantWrite(obj_ty, fa.field, asgn.target.span)) return;
 
-            // Special .len/.ptr handling only for slices, strings, arrays — NOT structs
-            const is_special_container = switch (self.module.types.get(obj_ty)) {
-                .string, .slice, .array, .vector => true,
+            // A constant count must fit the length word whatever built it
+            // — a literal, a folded arithmetic RHS, or the operand of a
+            // compound `+=` / `-=`. A RHS that already diagnosed says it
+            // once.
+            const is_slice = switch (self.module.types.get(obj_ty)) {
+                .string, .slice => true,
                 else => false,
             };
-
-            if (is_special_container and std.mem.eql(u8, fa.field, "len")) {
-                const len_ty = self.module.types.lenTypeOf(obj_ty);
-                // A constant count must fit the length word whatever built it
-                // — a literal, a folded arithmetic RHS, or the operand of a
-                // compound `+=` / `-=`. A RHS that already diagnosed says it
-                // once.
-                if (!rhs_diagnosed) {
-                    if (self.foldedInt(val)) |n| {
-                        if (n < 0) {
-                            if (self.diagnostics) |d|
-                                d.addFmt(.err, asgn.value.span, "negative length {} does not fit the {s} length word of '{s}'", .{
-                                    n, self.formatTypeName(len_ty), self.formatTypeName(obj_ty),
-                                });
-                        } else {
-                            self.checkIntLiteralMagnitudeFits(n, len_ty, asgn.value.span);
-                        }
+            if (is_slice and !rhs_diagnosed and std.mem.eql(u8, fa.field, "len")) {
+                if (self.foldedInt(val)) |n| {
+                    const len_ty = self.module.types.lenTypeOf(obj_ty);
+                    if (n < 0) {
+                        if (self.diagnostics) |d|
+                            d.addFmt(.err, asgn.value.span, "negative length {} does not fit the {s} length word of '{s}'", .{
+                                n, self.formatTypeName(len_ty), self.formatTypeName(obj_ty),
+                            });
+                    } else {
+                        self.checkIntLiteralMagnitudeFits(n, len_ty, asgn.value.span);
                     }
                 }
-                const gep = self.builder.structGepTyped(obj_ptr, 1, len_ty, obj_ty);
-                self.storeOrCompound(gep, val, asgn.op, len_ty);
-            } else if (is_special_container and std.mem.eql(u8, fa.field, "ptr")) {
-                const elem_ty = self.getElementType(obj_ty);
-                const field_ty = self.module.types.manyPtrTo(elem_ty);
-                const gep = self.builder.structGepTyped(obj_ptr, 0, self.module.types.ptrTo(field_ty), obj_ty);
-                self.storeOrCompound(gep, val, asgn.op, field_ty);
-            } else if (self.storeSwizzle(obj_ptr, obj_ty, fa.field, val, asgn.op, asgn.target.span, asgn.value.span)) {
+            }
+
+            if (self.storeSwizzle(obj_ptr, obj_ty, fa.field, val, asgn.op, asgn.target.span, asgn.value.span)) {
                 // Multi-letter shuffle store (and diagnosed swizzle errors).
             } else switch (self.fieldLvalueMention(obj_ptr, obj_ty, fa.field, asgn.target.span)) {
                 .private => {},
@@ -2918,13 +2889,6 @@ pub fn resolveMutablePlace(self: *Lowering, target: *const Node) ?Place {
 
             if (isPayloadVariantField(self, obj_ty, fa.field)) return null;
 
-            const is_special_container = switch (self.module.types.get(obj_ty)) {
-                .string, .slice, .array, .vector => true,
-                else => false,
-            };
-            if (is_special_container and
-                (std.mem.eql(u8, fa.field, "len") or std.mem.eql(u8, fa.field, "ptr"))) return null;
-
             const fl = self.fieldLvaluePtr(obj_ptr, obj_ty, fa.field) orelse return null;
             return .{ .slot = .{ .ptr = fl.ptr, .ty = fl.ty } };
         },
@@ -3040,8 +3004,8 @@ const FieldResolution = union(enum) {
     /// Promoted member of an anonymous-struct union variant: union_gep into
     /// the variant struct `variant_ty`, then struct_gep into the member.
     union_promoted: struct { variant_index: u32, variant_ty: TypeId, member_index: u32, ty: TypeId },
-    /// Tuple element / vector lane / plain struct field: a single
-    /// struct_gep(index) into the aggregate.
+    /// Tuple element / vector lane / plain struct field / slice header word:
+    /// a single struct_gep(index) into the aggregate.
     indexed: struct { index: u32, ty: TypeId },
     /// Letter-swizzle on a vector, array, or slice. `result_ty` is the
     /// scalar element when `len == 1`, otherwise `@Vector(N, T)` or `[N]T`.
@@ -3069,10 +3033,19 @@ const FieldResolution = union(enum) {
 /// descriptor, or null when no field matches (the caller emits the
 /// field-not-found diagnostic). Emits NO IR — see `FieldResolution`.
 ///
-/// Handles union direct fields, promoted anonymous-struct union members,
-/// tuple elements (numeric or named), vector lanes (`.x`/`.y`/`.z`/`.w` and
-/// the colour aliases), and plain struct fields.
+/// Handles a slice's `ptr`/`len` header words, union direct fields, promoted
+/// anonymous-struct union members, tuple elements (numeric or named), vector
+/// lanes (`.x`/`.y`/`.z`/`.w` and the colour aliases), and plain struct fields.
 pub fn fieldLvalueResolve(self: *Lowering, obj_ty: TypeId, field: []const u8) ?FieldResolution {
+    switch (self.module.types.get(obj_ty)) {
+        .string, .slice => {
+            if (std.mem.eql(u8, field, "ptr"))
+                return .{ .indexed = .{ .index = 0, .ty = self.module.types.manyPtrTo(self.getElementType(obj_ty)) } };
+            if (std.mem.eql(u8, field, "len"))
+                return .{ .indexed = .{ .index = 1, .ty = self.module.types.lenTypeOf(obj_ty) } };
+        },
+        else => {},
+    }
     if (obj_ty.isBuiltin()) return null;
     const field_name_id = self.module.types.internString(field);
     const type_info = self.module.types.get(obj_ty);

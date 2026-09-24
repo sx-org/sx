@@ -1,0 +1,19 @@
+// A slice's `len` and `ptr` are storage places.
+
+@import "modules/std.sx";
+
+main :: () -> i32 {
+    s := "abcdef";
+    k := 0;
+    s.len, k = 4, 1;
+    p := *s.len;
+    p.* -= 1;
+    --s.len;
+    b := [3]i64.[1, 2, 3];
+    xs : []i64 = b[0..];
+    q := *xs.ptr;
+    q.* = b[1..].ptr;
+    xs.len -= 1;
+    print("{} {} {}\n", s, k, xs);
+    0
+}
