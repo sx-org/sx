@@ -111,14 +111,16 @@ test "expr_typer: mixed int+float arithmetic promotes to float, order-independen
     try std.testing.expectEqual(TypeId.f64, l.inferExprType(&mul_if));
 }
 
-test "arithResultType promotes scalar integers with a float rhs" {
+test "arithResultType promotes an integer to a float scalar, and a float scalar does not enter integer lanes" {
     var module = ir_mod.Module.init(std.testing.allocator);
     defer module.deinit();
     var l = Lowering.init(&module);
     const signed24 = module.types.internInteger(24, true);
     const vector = module.types.vectorOf(signed24, 2);
-    try std.testing.expectEqual(@as(?TypeId, .f64), l.arithResultType(.add, signed24, .f64));
-    try std.testing.expectEqual(@as(?TypeId, vector), l.arithResultType(.add, vector, .f64));
+    const Result = Lowering.ArithResult;
+    try std.testing.expectEqual(Result{ .type = .f64 }, l.arithResultType(.add, signed24, .f64));
+    try std.testing.expectEqual(Result.lane, l.arithResultType(.add, vector, .f64));
+    try std.testing.expectEqual(Result{ .type = vector }, l.arithResultType(.add, .i8, vector));
 }
 
 test "expr_typer: unary not is bool, negate preserves operand type" {

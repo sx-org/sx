@@ -4404,8 +4404,10 @@ integer meets a strictly wider signed one at the signed type: with `x : i32`
 and `w : i64`, `x + w` and `w + x` are both `i64`. Integers of opposite
 signedness with no common type (`i32` and `u32`) are refused; an explicit cast
 on one side chooses. An untyped operand takes its typed peer's type, so
-`1 + x` is `i32`. A scalar meets a vector at the vector. A shift keeps its left
-operand's type.
+`1 + x` is `i32`. A scalar meets a vector at the vector when it converts
+implicitly to the lane type, and is refused otherwise: `x` enters `i64` lanes,
+`w` does not enter `i32` lanes. An untyped operand beside a vector takes the
+lane type. A shift keeps its left operand's type.
 
 ### Chained Comparisons
 Comparison operators can be chained. Each operand is evaluated exactly once.

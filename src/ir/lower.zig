@@ -2964,34 +2964,61 @@ pub const Lowering = struct {
         return adopted;
     }
 
-    /// The type of `lhs op rhs` for an arithmetic, bitwise or shift `op`: two
-    /// numeric scalars meet at their common type, a scalar meets a vector at
-    /// the vector, and a shift keeps its left operand's type. Null when two
-    /// integers of opposite signedness have no common type.
-    pub fn arithResultType(self: *Lowering, op: ast.BinaryOp.Op, lhs_ty: TypeId, rhs_ty: TypeId) ?TypeId {
-        if (op == .shl or op == .shr) return lhs_ty;
+    /// The type of `lhs op rhs` for an arithmetic, bitwise or shift `op`, or
+    /// why its operands have none.
+    pub const ArithResult = union(enum) {
+        type: TypeId,
+        /// Integers of opposite signedness that do not widen into each other.
+        signedness,
+        /// A scalar that does not convert implicitly to its vector peer's lane type.
+        lane,
+    };
+
+    /// Two numeric scalars meet at their common type, a scalar meets a vector
+    /// at the vector when it converts implicitly to the lane type, and a shift
+    /// keeps its left operand's type.
+    pub fn arithResultType(self: *Lowering, op: ast.BinaryOp.Op, lhs_ty: TypeId, rhs_ty: TypeId) ArithResult {
+        if (op == .shl or op == .shr) return .{ .type = lhs_ty };
         const coercions = self.coercionResolver();
-        if (!coercions.isNumericScalar(lhs_ty)) return lhs_ty;
-        if (!coercions.isNumericScalar(rhs_ty)) return if (self.isVectorType(rhs_ty)) rhs_ty else lhs_ty;
-        return switch (coercions.numericMeet(lhs_ty, rhs_ty)) {
-            .type => |ty| ty,
-            .signedness => null,
+        const l_scalar = coercions.isNumericScalar(lhs_ty);
+        const r_scalar = coercions.isNumericScalar(rhs_ty);
+        if (l_scalar and r_scalar) return switch (coercions.numericMeet(lhs_ty, rhs_ty)) {
+            .type => |ty| .{ .type = ty },
+            .signedness => .signedness,
+        };
+        if (r_scalar and self.isVectorType(lhs_ty)) return self.vectorScalarMeet(lhs_ty, rhs_ty);
+        if (l_scalar and self.isVectorType(rhs_ty)) return self.vectorScalarMeet(rhs_ty, lhs_ty);
+        return .{ .type = lhs_ty };
+    }
+
+    fn vectorScalarMeet(self: *Lowering, vector_ty: TypeId, scalar_ty: TypeId) ArithResult {
+        const lane = self.module.types.get(vector_ty).vector.element;
+        const coercions = self.coercionResolver();
+        if (!coercions.isNumericScalar(lane)) return .lane;
+        return switch (coercions.numericMeet(scalar_ty, lane)) {
+            .type => |ty| if (ty == lane) .{ .type = vector_ty } else .lane,
+            .signedness => .lane,
         };
     }
 
-    /// The type an untyped integer operand of an arithmetic or bitwise `op`
-    /// takes from its typed peer: the peer's numeric type, or a vector peer's
-    /// element type.
-    pub fn untypedIntegerOperandType(self: *Lowering, op: ast.BinaryOp.Op, operand: *const Node, peer: *const Node) ?TypeId {
+    /// The type an untyped operand of an arithmetic or bitwise `op` takes from
+    /// its typed peer: an integer takes a numeric peer's type or a vector
+    /// peer's lane type, and a float takes a vector peer's float lane type.
+    pub fn untypedOperandType(self: *Lowering, op: ast.BinaryOp.Op, operand: *const Node, peer: *const Node) ?TypeId {
         switch (op) {
             .add, .sub, .mul, .div, .mod, .bit_and, .bit_or, .bit_xor => {},
             else => return null,
         }
         const kind = program_index_mod.untypedConst(operand, self) orelse return null;
-        if (kind != .integer or program_index_mod.untypedConst(peer, self) != null) return null;
+        if (kind == .string or program_index_mod.untypedConst(peer, self) != null) return null;
         const peer_ty = self.operandType(self.inferExprType(peer));
-        const scalar = if (self.isVectorType(peer_ty)) self.module.types.get(peer_ty).vector.element else peer_ty;
-        return if (self.coercionResolver().isNumericScalar(scalar)) scalar else null;
+        const coercions = self.coercionResolver();
+        if (self.isVectorType(peer_ty)) {
+            const lane = self.module.types.get(peer_ty).vector.element;
+            const adopts = if (kind == .integer) coercions.isNumericScalar(lane) else isFloat(lane);
+            return if (adopts) lane else null;
+        }
+        return if (kind == .integer and coercions.isNumericScalar(peer_ty)) peer_ty else null;
     }
 
     pub fn isVectorType(self: *Lowering, ty: TypeId) bool {

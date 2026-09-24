@@ -5492,8 +5492,8 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         if (isCompareNumericPeer(self, peer_ty)) self.target_type = peer_ty;
     }
     const float_operands = program_index_mod.floatOperandTypes(bop.*, self.operandType(self.inferExprType(bop.lhs)), self.operandType(self.inferExprType(bop.rhs)), self);
-    const lhs_adopted = self.untypedIntegerOperandType(bop.op, bop.lhs, bop.rhs);
-    const rhs_adopted = self.untypedIntegerOperandType(bop.op, bop.rhs, bop.lhs);
+    const lhs_adopted = self.untypedOperandType(bop.op, bop.lhs, bop.rhs);
+    const rhs_adopted = self.untypedOperandType(bop.op, bop.rhs, bop.lhs);
     const operand_tt = self.target_type;
     if (self.isAdaptableFloat(bop.lhs)) self.target_type = float_operands.lhs;
     if (lhs_adopted) |ty| self.target_type = ty;
@@ -5699,11 +5699,21 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         },
         else => {
             const rhs_operand_ty = self.operandType(rhs_ty);
-            ty = self.arithResultType(bop.op, ty, rhs_operand_ty) orelse {
-                if (self.diagnostics) |d| d.addFmt(.err, .{ .start = bop.lhs.span.start, .end = bop.rhs.span.end }, "cannot apply '{s}' to signed and unsigned values of type '{s}' and '{s}'; write an explicit cast on one side", .{
-                    binOpSymbol(bop.op), self.formatTypeName(ty), self.formatTypeName(rhs_operand_ty),
-                });
-                return self.emitPlaceholder("arith-signedness");
+            const span: ast.Span = .{ .start = bop.lhs.span.start, .end = bop.rhs.span.end };
+            ty = switch (self.arithResultType(bop.op, ty, rhs_operand_ty)) {
+                .type => |result_ty| result_ty,
+                .signedness => {
+                    if (self.diagnostics) |d| d.addFmt(.err, span, "cannot apply '{s}' to signed and unsigned values of type '{s}' and '{s}'; write an explicit cast on one side", .{
+                        binOpSymbol(bop.op), self.formatTypeName(ty), self.formatTypeName(rhs_operand_ty),
+                    });
+                    return self.emitPlaceholder("arith-signedness");
+                },
+                .lane => {
+                    if (self.diagnostics) |d| d.addFmt(.err, span, "cannot apply '{s}' to '{s}' and '{s}': the scalar does not convert implicitly to the vector's lane type; write an explicit cast", .{
+                        binOpSymbol(bop.op), self.formatTypeName(ty), self.formatTypeName(rhs_operand_ty),
+                    });
+                    return self.emitPlaceholder("arith-lane");
+                },
             };
             lhs = convertArithOperand(self, lhs, ty);
             if (bop.op != .shl and bop.op != .shr) rhs = convertArithOperand(self, rhs, ty);
@@ -6127,13 +6137,14 @@ fn meetCompareOperands(
     }
 }
 
-/// A numeric scalar operand converts to its operation's type; a scalar beside
-/// a vector is splatted at emission.
+/// A numeric scalar operand converts to its operation's type, or beside a
+/// vector to the lane type, which emission splats.
 fn convertArithOperand(self: *Lowering, val: Ref, ty: TypeId) Ref {
     const src_ty = self.builder.getRefType(val);
+    const dst_ty = if (self.isVectorType(ty)) self.module.types.get(ty).vector.element else ty;
     const coercions = self.coercionResolver();
-    if (src_ty == ty or !coercions.isNumericScalar(src_ty) or !coercions.isNumericScalar(ty)) return val;
-    return self.coerceToType(val, src_ty, ty);
+    if (src_ty == dst_ty or !coercions.isNumericScalar(src_ty) or !coercions.isNumericScalar(dst_ty)) return val;
+    return self.coerceToType(val, src_ty, dst_ty);
 }
 
 fn coerceCompareOperand(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId) Ref {
