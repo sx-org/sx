@@ -1718,10 +1718,12 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
     };
     if (isFloat(var_ty) and self.isAdaptableFloat(v)) return self.constExprValue(v, var_ty);
     if (self.untypedString(v)) |lit| return self.constStringLiteral(lit, var_ty, v.span);
+    if (program_index_mod.untypedInteger(v, self) != null)
+        return self.constExprValue(v, var_ty) orelse self.diagnoseNonConstGlobal(vd, v, errors_before);
     return switch (v.data) {
         .undef_literal => .zeroinit,
         .null_literal => .null_val,
-        .int_literal, .char_literal, .float_literal => self.constExprValue(v, var_ty),
+        .float_literal => self.constExprValue(v, var_ty),
         .unary_op => blk: {
             const u = v.data.unary_op;
             // `xx <global>` at a protocol-typed global folds to the protocol
