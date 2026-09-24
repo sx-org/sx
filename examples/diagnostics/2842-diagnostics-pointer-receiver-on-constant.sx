@@ -1,0 +1,13 @@
+// A `*T` receiver never binds to a constant, whether or not the constant has
+// storage.
+
+V :: struct { n: i64; }
+bump :: ufcs (p: *V) { p.n = 7; }
+K :: V{ n = 1 };
+
+main :: () -> i32 {
+    v :: V{ n = 1 };
+    v.bump();
+    K.bump();
+    0
+}

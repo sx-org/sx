@@ -5313,9 +5313,10 @@ falls through to ufcs functions only for non-members
 handle as its first parameter).
 
 UFCS works with pointer receivers (auto-deref, and auto address-of when
-the first param is `*T` and the receiver is a value) and with **generic**
-functions — the receiver participates in `$T` binding and the call
-monomorphizes exactly like the direct spelling:
+the first param is `*T` and the receiver is a value; a `::` constant
+receiver is refused there) and with **generic** functions — the receiver
+participates in `$T` binding and the call monomorphizes exactly like the
+direct spelling:
 
 ```sx
 firstOf :: ufcs (xs: []$T) -> T { xs[0] }

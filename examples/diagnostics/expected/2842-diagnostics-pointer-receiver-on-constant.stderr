@@ -1,0 +1,11 @@
+error: cannot take the address of constant 'v' for a '*T' receiver — constants are immutable (use a '=' variable or a local copy for mutable data)
+  --> examples/diagnostics/2842-diagnostics-pointer-receiver-on-constant.sx:10:5
+   |
+10 |     v.bump();
+   |     ^
+
+error: cannot take the address of constant 'K' for a '*T' receiver — constants are immutable (use a '=' variable or a local copy for mutable data)
+  --> examples/diagnostics/2842-diagnostics-pointer-receiver-on-constant.sx:11:5
+   |
+11 |     K.bump();
+   |     ^

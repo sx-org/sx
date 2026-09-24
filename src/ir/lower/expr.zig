@@ -1152,6 +1152,13 @@ fn receiverPointer(self: *Lowering, place: Ref, obj_ty: TypeId) Ref {
     return self.builder.emit(.{ .addr_of = .{ .operand = place } }, ptr_ty);
 }
 
+/// A `*T` receiver never binds to a constant: its storage is read-only or absent.
+fn diagConstantReceiver(self: *Lowering, name: []const u8, span: ast.Span) Ref {
+    if (self.diagnostics) |d|
+        d.addFmt(.err, span, "cannot take the address of constant '{s}' for a '*T' receiver — constants are immutable (use a '=' variable or a local copy for mutable data)", .{name});
+    return self.emitPlaceholder("addr_of_const");
+}
+
 /// If a method's first param expects a pointer (*T) but we're passing T by value,
 /// swap the first arg with the alloca address (implicit address-of). `place` is
 /// the receiver's storage when the caller already produced it — the node
@@ -1190,23 +1197,21 @@ pub fn fixupMethodReceiver(self: *Lowering, method_args: *std.ArrayList(Ref), fu
                             receiverPointer(self, binding.ref, obj_ty);
                         return;
                     }
+                    if (binding.origin == .local_const) {
+                        method_args.items[0] = diagConstantReceiver(self, nm, obj_node.span);
+                        return;
+                    }
                     // A non-alloca local (SSA value / by-value param) has no
                     // stable storage to address — fall through to alloca+store.
-                } else if (self.resolveGlobalRef(nm, null) != null and !self.rootIsConstant(nm)) {
+                } else if (self.rootIsConstant(nm)) {
+                    method_args.items[0] = diagConstantReceiver(self, nm, obj_node.span);
+                    return;
+                } else if (self.resolveGlobalRef(nm, null) != null) {
                     // MUTABLE module-global lvalue receiver: address the global's
                     // LIVE storage so `self: *T` mutations target the global
                     // itself, not a throwaway stack copy. Mirrors
                     // the compound-lvalue branch below; `lowerExprAsPtr` yields
                     // the global's `global_addr`.
-                    //
-                    // A `::` CONST global is deliberately EXCLUDED: its storage
-                    // is read-only (`.rodata`), so handing a `*T` to it would let
-                    // a mutating method store through it — a silent write past
-                    // the `cannot assign through constant` guard, and a SIGBUS in
-                    // an AOT binary. Const receivers fall through to the value
-                    // copy below: a read-only `*Self` method
-                    // still sees the right value via the copy; a mutating one
-                    // harmlessly scribbles the throwaway, never the `.rodata`.
                     method_args.items[0] = receiverPointer(self, self.lowerExprAsPtr(obj_node), obj_ty);
                     return;
                 }
