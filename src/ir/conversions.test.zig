@@ -306,7 +306,7 @@ test "conversions: a failable welds only into a channel holding its members" {
     try std.testing.expect(l.conversionAvailable(a, both, .implicit));
 }
 
-test "conversions: classifyCompare meets pointers, numbers, and refuses mixed signedness" {
+test "conversions: classifyCompare meets pointers and numbers, and refuses mixed signedness and bool against a number" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -329,6 +329,7 @@ test "conversions: classifyCompare meets pointers, numbers, and refuses mixed si
 
     try std.testing.expectEqual(Meet.signedness, cr.classifyCompare(.i32, .u32));
     try std.testing.expectEqual(Meet.signedness, cr.classifyCompare(.i64, .u64));
+    try std.testing.expectEqual(Meet.bool_number, cr.classifyCompare(.bool, .f64));
 
     try std.testing.expectEqual(Meet{ .type = ptr_void }, cr.classifyCompare(ptr_i64, ptr_u8));
     try std.testing.expectEqual(Meet.incompatible, cr.classifyCompare(ptr_i64, .i64));

@@ -1,0 +1,8 @@
+main :: () -> i32 {
+    t := true;
+    f := 1.0;
+    n := 3;
+    if t == f { return 1; }
+    if n < t { return 2; }
+    0
+}

@@ -6117,6 +6117,14 @@ fn meetCompareOperands(
             }
             return null;
         },
+        .bool_number => {
+            if (self.diagnostics) |d| {
+                d.addFmt(.err, span, "cannot compare values of type '{s}' and '{s}'; use an explicit cast (`.({s})`)", .{
+                    self.formatTypeName(lhs_ty), self.formatTypeName(rhs_ty), self.formatTypeName(if (lhs_ty == .bool) rhs_ty else lhs_ty),
+                });
+            }
+            return null;
+        },
         .none => {
             const l_proto = self.getProtocolInfo(lhs_ty) != null;
             const r_proto = self.getProtocolInfo(rhs_ty) != null;
