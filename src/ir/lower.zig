@@ -168,13 +168,13 @@ pub fn constFoldFrameContains(frame: ?*const ConstFoldFrame, name: []const u8, e
 pub const SourceConstCtx = struct {
     lowering: *Lowering,
     frame: ?*const ConstFoldFrame,
-    pub fn lookupDimName(self: SourceConstCtx, name: []const u8) ?i64 {
+    pub fn lookupDimName(self: SourceConstCtx, name: []const u8) ?i128 {
         return self.lowering.foldSourceConstInt(name, self.frame);
     }
     pub fn lookupPackLen(self: SourceConstCtx, name: []const u8) ?i64 {
         return self.lowering.lookupPackLen(name);
     }
-    pub fn typeLimitInt(self: SourceConstCtx, receiver: *const Node, field: []const u8) ?i64 {
+    pub fn typeLimitInt(self: SourceConstCtx, receiver: *const Node, field: []const u8) ?i128 {
         return self.lowering.typeLimitInt(receiver, field);
     }
     pub fn untypedLeaf(self: SourceConstCtx, node: *const Node) ?program_index_mod.Untyped {
@@ -201,12 +201,12 @@ pub const SourceConstCtx = struct {
     pub fn lookupConstAggLen(self: SourceConstCtx, name: []const u8) ?i64 {
         return self.lowering.foldConstAggLen(name);
     }
-    pub fn lookupConstArrayElem(self: SourceConstCtx, name: []const u8, idx: i64, span: ?ast.Span) ?i64 {
+    pub fn lookupConstArrayElem(self: SourceConstCtx, name: []const u8, idx: i64, span: ?ast.Span) ?i128 {
         return self.lowering.foldConstArrayElem(name, idx, span, self.frame);
     }
-    pub fn lookupConstStructField(self: SourceConstCtx, name: []const u8, field: []const u8, span: ?ast.Span) ?i64 {
-        return self.lowering.foldComptimeStructField(name, field) orelse
-            self.lowering.foldConstStructField(name, field, span, self.frame);
+    pub fn lookupConstStructField(self: SourceConstCtx, name: []const u8, field: []const u8, span: ?ast.Span) ?i128 {
+        if (self.lowering.foldComptimeStructField(name, field)) |v| return v;
+        return self.lowering.foldConstStructField(name, field, span, self.frame);
     }
     pub fn evalConstCallInt(self: SourceConstCtx, node: *const Node) ?i64 {
         if (self.lowering.fieldCall(node) != null) return self.lowering.foldFieldInt(node, self.frame);
@@ -215,7 +215,7 @@ pub const SourceConstCtx = struct {
     pub fn evalConstFieldAccessInt(self: SourceConstCtx, node: *const Node) ?i64 {
         return self.lowering.evalConstFieldAccessInt(node);
     }
-    pub fn lookupQualifiedConst(self: SourceConstCtx, ns: []const u8, field: []const u8) ?i64 {
+    pub fn lookupQualifiedConst(self: SourceConstCtx, ns: []const u8, field: []const u8) ?i128 {
         return self.lowering.foldQualifiedConstInt(ns, field, self.frame);
     }
     pub fn lookupQualifiedConstFloat(self: SourceConstCtx, ns: []const u8, field: []const u8) ?f64 {
@@ -224,7 +224,7 @@ pub const SourceConstCtx = struct {
     pub fn qualifiedNameIsFloatTyped(self: SourceConstCtx, ns: []const u8, field: []const u8) bool {
         return self.lowering.qualifiedConstIsFloatTyped(ns, field, self.frame);
     }
-    pub fn lookupQualifiedConstNode(self: SourceConstCtx, node: *const Node) ?i64 {
+    pub fn lookupQualifiedConstNode(self: SourceConstCtx, node: *const Node) ?i128 {
         return self.lowering.foldQualifiedConstNodeInt(node, self.frame);
     }
     pub fn lookupQualifiedConstNodeFloat(self: SourceConstCtx, node: *const Node) ?f64 {
@@ -292,6 +292,9 @@ pub const Binding = struct {
     alias_node: ?*ast.Node = null,
     origin: Origin = .other,
     untyped: ?program_index_mod.Untyped = null,
+    /// An untyped integer local constant's exact value, which each read folds
+    /// at its own type; `ref` holds its low 64 bits as an `i64`.
+    untyped_integer: ?i128 = null,
     /// A `:=` local initialized from an untyped string constant: that initializer.
     literal_init: ?*const ast.Node = null,
     /// The binding names a C `va_list` this frame BORROWS — an incoming
@@ -468,7 +471,6 @@ pub const Lowering = struct {
     continue_target: ?BlockId = null,
     loop_defer_base: usize = 0, // defer-stack height at the innermost loop's body start (break/continue drain to here)
     suppress_int_fit_check: bool = false, // inside an explicit `xx` cast operand: truncation is requested, skip the literal fits-check
-    int_lit_extra_fit_ty: ?TypeId = null, // inside a `cast(T)` operand (T is the ambient type here): an ADDITIONAL range the literal may fit — set to i64 so a value fitting i64 but not T still truncates rather than erroring
     block_counter: u32 = 0,
     comptime_counter: u32 = 0,
     /// Hands out `BindingId`s to every scope this lowering builds. It is NOT
@@ -1825,7 +1827,7 @@ pub const Lowering = struct {
     /// is a hard error and yields null; the caller poisons rather than
     /// fabricating a width.
     pub fn resolveIntWidth(self: *Lowering, width_node: *const Node) ?u8 {
-        const out_of_range: i64 = switch (program_index_mod.foldDimU32(width_node, self, 1)) {
+        const out_of_range: i128 = switch (program_index_mod.foldDimU32(width_node, self, 1)) {
             .ok => |n| if (n <= types.max_int_width) return @intCast(n) else n,
             .below_min, .too_large => |v| v,
             .non_integral_float => |v| {
@@ -1862,7 +1864,7 @@ pub const Lowering = struct {
 
     /// Leaf-name lookup for the shared dimension evaluator: a name bound to a
     /// compile-time integer across the three const tables.
-    pub fn lookupDimName(self: *Lowering, name: []const u8) ?i64 {
+    pub fn lookupDimName(self: *Lowering, name: []const u8) ?i128 {
         return self.comptimeIntNamed(name);
     }
 
@@ -1985,6 +1987,7 @@ pub const Lowering = struct {
             if (scoped.crossed != .none) return null;
             if (scoped.binding) |binding| {
                 if (binding.origin != .local_const) return null;
+                if (binding.untyped_integer) |v| return @floatFromInt(v);
                 if (self.builder.constFloatInfo(binding.ref)) |info| return info.value;
                 if (self.foldedInt(binding.ref)) |v| return @floatFromInt(v);
                 return null;
@@ -2005,17 +2008,17 @@ pub const Lowering = struct {
     pub fn lookupConstAggLen(self: *Lowering, name: []const u8) ?i64 {
         return self.foldConstAggLen(name);
     }
-    pub fn lookupConstArrayElem(self: *Lowering, name: []const u8, idx: i64, span: ?ast.Span) ?i64 {
+    pub fn lookupConstArrayElem(self: *Lowering, name: []const u8, idx: i64, span: ?ast.Span) ?i128 {
         return self.foldConstArrayElem(name, idx, span, null);
     }
-    pub fn lookupConstStructField(self: *Lowering, name: []const u8, field: []const u8, span: ?ast.Span) ?i64 {
-        return self.foldComptimeStructField(name, field) orelse
-            self.foldConstStructField(name, field, span, null);
+    pub fn lookupConstStructField(self: *Lowering, name: []const u8, field: []const u8, span: ?ast.Span) ?i128 {
+        if (self.foldComptimeStructField(name, field)) |v| return v;
+        return self.foldConstStructField(name, field, span, null);
     }
     /// Qualified-import-member const leaf (`m.CAP`) for the shared
     /// dimension evaluator — resolves the namespace alias `ns` to its target
     /// module and folds its `field` const there.
-    pub fn lookupQualifiedConst(self: *Lowering, ns: []const u8, field: []const u8) ?i64 {
+    pub fn lookupQualifiedConst(self: *Lowering, ns: []const u8, field: []const u8) ?i128 {
         return self.foldQualifiedConstInt(ns, field, null);
     }
     pub fn lookupQualifiedConstFloat(self: *Lowering, ns: []const u8, field: []const u8) ?f64 {
@@ -2024,7 +2027,7 @@ pub const Lowering = struct {
     pub fn qualifiedNameIsFloatTyped(self: *Lowering, ns: []const u8, field: []const u8) bool {
         return self.qualifiedConstIsFloatTyped(ns, field, null);
     }
-    pub fn lookupQualifiedConstNode(self: *Lowering, node: *const Node) ?i64 {
+    pub fn lookupQualifiedConstNode(self: *Lowering, node: *const Node) ?i128 {
         return self.foldQualifiedConstNodeInt(node, null);
     }
     pub fn lookupQualifiedConstNodeFloat(self: *Lowering, node: *const Node) ?f64 {
@@ -2927,14 +2930,24 @@ pub const Lowering = struct {
         return ty == .f32 or ty == .f64;
     }
 
-    pub fn floatContext(self: *Lowering, target: ?TypeId) ?TypeId {
+    fn underOptionals(self: *Lowering, target: ?TypeId) ?TypeId {
         var ty = target orelse return null;
         while (!ty.isBuiltin()) {
             const info = self.module.types.get(ty);
-            if (info != .optional) return null;
+            if (info != .optional) return ty;
             ty = info.optional.child;
         }
+        return ty;
+    }
+
+    pub fn floatContext(self: *Lowering, target: ?TypeId) ?TypeId {
+        const ty = self.underOptionals(target) orelse return null;
         return if (isFloat(ty)) ty else null;
+    }
+
+    pub fn integerContext(self: *Lowering, target: ?TypeId) ?TypeId {
+        const ty = self.underOptionals(target) orelse return null;
+        return if (self.isIntEx(ty)) ty else null;
     }
 
     pub fn isAdaptableFloat(self: *Lowering, node: *const Node) bool {
@@ -3002,16 +3015,22 @@ pub const Lowering = struct {
     }
 
     /// The type an untyped operand of an arithmetic or bitwise `op` takes from
-    /// its typed peer: an integer takes a numeric peer's type or a vector
-    /// peer's lane type, and a float takes a vector peer's float lane type.
+    /// its typed peer.
     pub fn untypedOperandType(self: *Lowering, op: ast.BinaryOp.Op, operand: *const Node, peer: *const Node) ?TypeId {
+        if (program_index_mod.untypedConst(peer, self) != null) return null;
+        return self.untypedOperandTypeAt(op, operand, self.operandType(self.inferExprType(peer)));
+    }
+
+    /// The type an untyped operand of an arithmetic or bitwise `op` takes from
+    /// a peer of `peer_ty`: an integer takes a numeric peer's type or a vector
+    /// peer's lane type, and a float takes a vector peer's float lane type.
+    pub fn untypedOperandTypeAt(self: *Lowering, op: ast.BinaryOp.Op, operand: *const Node, peer_ty: TypeId) ?TypeId {
         switch (op) {
             .add, .sub, .mul, .div, .mod, .bit_and, .bit_or, .bit_xor => {},
             else => return null,
         }
         const kind = program_index_mod.untypedConst(operand, self) orelse return null;
-        if (kind == .string or program_index_mod.untypedConst(peer, self) != null) return null;
-        const peer_ty = self.operandType(self.inferExprType(peer));
+        if (kind == .string) return null;
         const coercions = self.coercionResolver();
         if (self.isVectorType(peer_ty)) {
             const lane = self.module.types.get(peer_ty).vector.element;
@@ -3416,63 +3435,30 @@ pub const Lowering = struct {
         return info.@"enum".tag_type;
     }
 
-    /// Value range of an integer type, for literal fits-checks. Null for
-    /// 64-bit types — every i64 literal bit pattern is legal there (a 64-bit
-    /// hex literal wraps negative through the lexer's i64 value, so a
-    /// min/max check would false-positive) — and for non-integers.
-    pub fn intLiteralRange(self: *Lowering, ty: TypeId) ?struct { min: i64, max: i64 } {
+    /// Exact value range of an integer type, for literal fits-checks. Null for
+    /// non-integers.
+    pub fn intLiteralRange(self: *Lowering, ty: TypeId) ?struct { min: i128, max: i128 } {
         const layout = self.module.types.integerLayout(ty) orelse return null;
-        if (layout.width >= 64) return null;
-        return .{ .min = layout.limit(false), .max = layout.limit(true) };
+        return .{ .min = layout.bound(false), .max = layout.bound(true) };
     }
 
-    /// Max NON-NEGATIVE magnitude a bare integer literal may hold in `ty`. A
-    /// bare `int_literal` is always non-negative (negation is a separate fold),
-    /// so its true value is the unsigned magnitude — checked against this cap.
-    /// Uses `u64` so the 64-bit widths are EXACT (`i64` → i64.max, `u64` →
-    /// u64.max), unlike `intLiteralRange` which returns null there because a
-    /// >i64.max value can't be an i64 range bound. Null for non-integers.
-    pub fn intLiteralMaxMagnitude(self: *Lowering, ty: TypeId) ?u64 {
-        const layout = self.module.types.integerLayout(ty) orelse return null;
-        return @bitCast(layout.limit(true));
+    /// The integer an `i64` constant of type `ty` holds: an unsigned
+    /// constant is its bit pattern.
+    pub fn intConstantValue(self: *Lowering, value: i64, ty: TypeId) i128 {
+        const layout = self.module.types.integerLayout(ty) orelse return value;
+        return if (layout.signed) value else @as(u64, @bitCast(value));
     }
 
-    /// Fits-check for a BARE integer literal, magnitude-based (see
-    /// `intLiteralMaxMagnitude`). Correctly admits a `u64` literal up to
-    /// u64.max while still rejecting a >i64.max literal at an `i64` destination.
-    /// The constant is still emitted by the caller so lowering continues.
+    /// Fits-check for a BARE integer literal, whose `value` is the magnitude's
+    /// bit pattern.
     pub fn checkIntLiteralMagnitudeFits(self: *Lowering, value: i64, ty: TypeId, span: ast.Span) void {
-        if (self.suppress_int_fit_check) return;
-        const cap = self.intLiteralMaxMagnitude(ty) orelse return;
-        const mag: u64 = @bitCast(value);
-        if (mag <= cap) return;
-        // Cast operand: a `cast(T) <lit>` folds against T (the
-        // ambient `ty` here) but still TRUNCATES, so a literal that fits i64
-        // yet overflows a narrower T (`cast(i8) 300`) must be accepted, not
-        // rejected. `int_lit_extra_fit_ty` (set to i64 for the cast operand)
-        // is that additional allowed range: accept when the value fits it,
-        // erroring only when it fits NEITHER T NOR i64.
-        if (self.int_lit_extra_fit_ty) |extra| {
-            if (self.intLiteralMaxMagnitude(extra)) |ecap| {
-                if (mag <= ecap) return;
-            }
-        }
-        const d = self.diagnostics orelse return;
-        const tn = self.formatTypeName(ty);
-        // Sub-64-bit types have an i64-expressible range — keep the exact
-        // "(range min..max)" wording. The 64-bit types (i64/u64) can't (their
-        // bound overflows i64), so report the max magnitude instead.
-        if (self.intLiteralRange(ty)) |r| {
-            d.addFmt(.err, span, "integer literal {} does not fit in {s} (range {}..{}) — use an explicit `.({s})` to truncate", .{ mag, tn, r.min, r.max, tn });
-        } else {
-            d.addFmt(.err, span, "integer literal {} does not fit in {s} (max {}) — use an explicit `.({s})` to truncate", .{ mag, tn, cap, tn });
-        }
+        self.checkIntLiteralFits(@as(u64, @bitCast(value)), ty, span);
     }
 
-    /// Diagnose an integer literal that cannot be represented in `ty`
-    /// (REJECTED PATTERNS: no silent wrap). The constant is still emitted by
-    /// the caller so lowering continues and surfaces further errors.
-    pub fn checkIntLiteralFits(self: *Lowering, value: i64, ty: TypeId, span: ast.Span) void {
+    /// Diagnose an integer constant whose exact `value` cannot be represented
+    /// in `ty` (REJECTED PATTERNS: no silent wrap). The constant is still
+    /// emitted by the caller so lowering continues and surfaces further errors.
+    pub fn checkIntLiteralFits(self: *Lowering, value: i128, ty: TypeId, span: ast.Span) void {
         if (self.suppress_int_fit_check) return;
         const r = self.intLiteralRange(ty) orelse return;
         if (value < r.min or value > r.max) {
@@ -4377,6 +4363,7 @@ pub const Lowering = struct {
     pub const asmResultType = lower_expr.asmResultType;
     pub const refCapturePointee = lower_expr.refCapturePointee;
     pub const lowerBinaryOp = lower_expr.lowerBinaryOp;
+    pub const meetArithOperands = lower_expr.meetArithOperands;
     pub const lowerIs = lower_expr.lowerIs;
     pub const conformanceAsk = lower_expr.conformanceAsk;
     pub const lowerBoolCondition = lower_expr.lowerBoolCondition;

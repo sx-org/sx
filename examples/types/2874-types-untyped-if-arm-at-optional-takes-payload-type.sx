@@ -1,0 +1,12 @@
+// An untyped constant in an `if` arm at an optional destination takes the
+// payload type as its context.
+
+@import "modules/std.sx";
+
+main :: () -> i32 {
+    c := true;
+    y : ?u8 = if c then 1 else 0;
+    z : ?f32 = if c then 1 else 2.5;
+    print("{} {}\n", y?!, z?!);
+    0
+}

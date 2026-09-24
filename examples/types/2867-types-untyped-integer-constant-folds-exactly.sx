@@ -1,0 +1,22 @@
+// Untyped integer constant arithmetic, shifts and bitwise operators included,
+// folds exactly beyond `i64` wherever it is written, and the folded value takes
+// the type its context gives it.
+
+@import "modules/std.sx";
+
+M :: 0xFFFF_FFFF_FFFF_FFFF;
+N :: M - 1;
+H : u64 : 0xFFFF_FFFF_FFFF_FFFF / 2;
+K :: 1 << 4;
+A : [K]u8 = ---;
+G : u8 = K;
+
+main :: () -> i32 {
+    f : u64 = 0xFFFF_FFFF_FFFF_FFFF / 2;
+    x : u64 = M - 1;
+    y : u64 = N;
+    b : u8 = 5 | 3;
+    print("{} {} {} {} {}\n", f, x, y, H, b);
+    print("{} {}\n", A.len, G);
+    0
+}

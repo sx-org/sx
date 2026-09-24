@@ -1,0 +1,14 @@
+// An untyped integer constant converts to a global or constant leaf as the
+// literal does, so it is refused where the literal is.
+
+@import "modules/std.sx";
+
+K :: 2;
+S :: struct { flag: bool; n: u8; }
+CS : S : .{ flag = K, n = 1 };
+GA : [2]u8 = K;
+
+main :: () -> i32 {
+    print("{} {}\n", CS.flag, GA[0]);
+    0
+}

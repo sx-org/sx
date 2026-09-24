@@ -564,10 +564,8 @@ n      := u64.max;                // 18446744073709551615 (all-ones)
 - **Value.** Pure `(width, signedness)` arithmetic — never a per-name table:
   signed `N` has `min = -(2^(N-1))`, `max = 2^(N-1) - 1`; unsigned `N` has
   `min = 0`, `max = 2^N - 1`.
-- **`u64.max`** exceeds the signed `i64` range of integer constants: it is
-  stored as the exact all-ones bit pattern carrying the `u64` type and cannot be
-  written as a decimal literal. The default integer formatter is
-  signedness-aware, so `print("{}", u64.max)` renders `18446744073709551615`.
+- The default integer formatter is signedness-aware, so
+  `print("{}", u64.max)` renders `18446744073709551615`.
 - `.min` / `.max` on a non-numeric type (`bool`, `string`, a pointer, a
   `struct`, `void`, an `enum`) is a compile error.
 
@@ -2952,12 +2950,18 @@ isReady : ValueListenable(bool) = map(
 - Explicit annotation overrides inference: `NAME : f64 : 0.9;`
 - Integer literals default to `i64`
 - Untyped integer expressions — integer literals, unannotated integer
-  constants, unary negation and `+ - * / %` over them — fold at compile time
-  and take their destination's numeric type, as a literal does:
-  `d : i32 = 2 * 3` is `6` as `i32`, and `d : i8 = 100 + 100` is refused
-  because `200` does not fit `i8`. Without a destination the type is `i64`.
-  They fold in `i64`; overflow and division by zero are located compile
-  errors.
+  constants, and every integer operator over them (`+ - * / %`, unary `-`,
+  `& | ^ ~`, and `<< >>` with an untyped left operand) — fold exactly at
+  compile time, in 128-bit arithmetic. Only the folded value takes a type, and
+  it must fit it: its destination's type, through `?` as well, or its typed
+  peer's type, and `i64` without either. An explicit cast (`.(T)`, `xx`)
+  converts it, truncating.
+  `f : u64 = 0xFFFF_FFFF_FFFF_FFFF / 2` is `9223372036854775807`,
+  `d : i8 = 100 + 100` is refused because `200` does not fit `i8`, and
+  `m : u8 = ~0` is refused because `-1` does not fit `u8`. A value outside 128
+  bits and a division by zero are located compile errors. An untyped shift by
+  a runtime amount does not fold and computes in the type it takes (see
+  [Arithmetic](#arithmetic)).
 - String literals, and `::` constants bound to them, take the shape their
   destination names and default to `string` (see [Literals](#literals))
 - Untyped float expressions comprise numeric literals, unannotated numeric
@@ -4434,7 +4438,11 @@ on one side chooses. An untyped operand takes its typed peer's type, so
 `1 + x` is `i32`. A scalar meets a vector at the vector when it converts
 implicitly to the lane type, and is refused otherwise: `x` enters `i64` lanes,
 `w` does not enter `i32` lanes. An untyped operand beside a vector takes the
-lane type. A shift keeps its left operand's type.
+lane type. A shift keeps its left operand's type. A shift whose left operand is
+untyped is itself untyped: it takes a typed peer's type, an integer
+destination's type or an explicit cast's type (`.(T)`, `xx`), and is `i64`
+otherwise. With `n : u8`, `z : u16 = (1 << n) + 1` shifts in `u16`, and
+`((1 << n) >> 2).(u8)` in `u8`.
 
 ### Chained Comparisons
 Comparison operators can be chained. Each operand is evaluated exactly once.
@@ -5384,7 +5392,7 @@ at its `}` instead, and the last expression or declaration before a `}` may drop
 its terminator.
 
 - **Declaration**: `name :: value;` / `name := value;`
-- **Assignment**: `name = value;` / `name += value;` (and other compound assignments). Also supports field targets: `obj.field = value;`
+- **Assignment**: `name = value;` / `name += value;` (and other compound assignments). Also supports field targets: `obj.field = value;`. A compound assignment `x op= v` converts `v` to `x`'s type as `x = v` does, a scalar `v` to a vector `x`'s lane type, then applies `op`: with `x : i64`, `x += 2.0` adds `2` and `x += 2.5` is refused.
 - **Multi-target assignment**: `a, b = b, a;` — all RHS values are evaluated before any stores, enabling swaps without temporaries. Target count must equal value count. Only plain `=` is supported (no compound operators). Each target must be a valid lvalue (variable, field, index, dereference).
 - **Expression statement**: `expr;` — evaluates the expression (last in a block = return value)
 - **Return**: `return expr;` — returns from the enclosing function with the given value. `return;` returns void.

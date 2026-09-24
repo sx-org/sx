@@ -78,7 +78,7 @@ const StatelessInner = struct {
     /// to. The non-negative check is applied once, on the final
     /// dimension value in `resolveArrayLen` — not here, so an intermediate
     /// operand may legitimately be negative.
-    pub fn lookupDimName(self: StatelessInner, name: []const u8) ?i64 {
+    pub fn lookupDimName(self: StatelessInner, name: []const u8) ?i128 {
         const facts = self.facts orelse return null;
         return program_index_mod.moduleConstInt(facts, self.table, name);
     }
@@ -89,10 +89,10 @@ const StatelessInner = struct {
     pub fn lookupConstAggLen(_: StatelessInner, _: []const u8) ?i64 {
         return null;
     }
-    pub fn lookupConstArrayElem(_: StatelessInner, _: []const u8, _: i64, _: ?ast.Span) ?i64 {
+    pub fn lookupConstArrayElem(_: StatelessInner, _: []const u8, _: i64, _: ?ast.Span) ?i128 {
         return null;
     }
-    pub fn lookupConstStructField(_: StatelessInner, _: []const u8, _: []const u8, _: ?ast.Span) ?i64 {
+    pub fn lookupConstStructField(_: StatelessInner, _: []const u8, _: []const u8, _: ?ast.Span) ?i128 {
         return null;
     }
     pub fn lookupPackLen(_: StatelessInner, _: []const u8) ?i64 {
@@ -100,9 +100,9 @@ const StatelessInner = struct {
     }
     /// Registration time holds no generic bindings, so a constructor whose
     /// width is a bound `$N` cannot resolve here; a builtin type name does,
-    /// through the same `TypeTable.integerLimit` the body-lowering ctx answers
+    /// through the same `TypeTable.integerBound` the body-lowering ctx answers
     /// with.
-    pub fn typeLimitInt(self: StatelessInner, receiver: *const Node, field: []const u8) ?i64 {
+    pub fn typeLimitInt(self: StatelessInner, receiver: *const Node, field: []const u8) ?i128 {
         return program_index_mod.builtinNameLimit(self.table, receiver, field);
     }
     // A type-query builtin call (`field_count`/`@sizeOf`/`@alignOf`) needs to
@@ -115,7 +115,7 @@ const StatelessInner = struct {
     pub fn evalConstFieldAccessInt(_: StatelessInner, _: *const Node) ?i64 {
         return null;
     }
-    pub fn lookupQualifiedConst(_: StatelessInner, _: []const u8, _: []const u8) ?i64 {
+    pub fn lookupQualifiedConst(_: StatelessInner, _: []const u8, _: []const u8) ?i128 {
         return null;
     }
     pub fn lookupQualifiedConstFloat(_: StatelessInner, _: []const u8, _: []const u8) ?f64 {
@@ -124,7 +124,7 @@ const StatelessInner = struct {
     pub fn qualifiedNameIsFloatTyped(_: StatelessInner, _: []const u8, _: []const u8) bool {
         return false;
     }
-    pub fn lookupQualifiedConstNode(_: StatelessInner, _: *const Node) ?i64 {
+    pub fn lookupQualifiedConstNode(_: StatelessInner, _: *const Node) ?i128 {
         return null;
     }
 

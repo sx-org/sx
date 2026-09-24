@@ -1572,7 +1572,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
                 if (self.externalErrorsExist()) return self.builder.constUndef(dst_ty);
                 if (self.builder.getRefOp(val)) |op| {
                     if (op == .const_int) {
-                        self.checkIntLiteralFits(op.const_int, dst_ty, span);
+                        self.checkIntLiteralFits(self.intConstantValue(op.const_int, src_ty), dst_ty, span);
                         return self.builder.constInt(op.const_int, dst_ty);
                     }
                 }

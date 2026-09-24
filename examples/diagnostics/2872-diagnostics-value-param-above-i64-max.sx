@@ -1,0 +1,9 @@
+// A generic value parameter holds an `i64`, so a `u64` argument above
+// `i64.max` is refused.
+
+Box :: struct ($N: u64) { x: u8; }
+
+main :: () -> i32 {
+    b : Box(0xFFFF_FFFF_FFFF_FFFF) = ---;
+    0
+}

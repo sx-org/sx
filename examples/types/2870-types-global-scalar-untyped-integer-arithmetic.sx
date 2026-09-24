@@ -1,0 +1,11 @@
+// A global scalar initialized by untyped integer arithmetic holds the folded
+// value at its type.
+
+@import "modules/std.sx";
+
+H : u8 = 2 + 3;
+
+main :: () -> i32 {
+    print("{}\n", H);
+    0
+}

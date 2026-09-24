@@ -343,6 +343,39 @@ test "sema: terminated array, slice and many-pointer types display their termina
     }
 }
 
+test "sema: an untyped shift or bitwise operation takes its typed peer's type and is i64 alone" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\main :: () {
+        \\    n: u8 = 3;
+        \\    e: u32 = 1;
+        \\    peer := (1 << n) + e;
+        \\    alone := (1 << n) >> 2;
+        \\    bits := ~(1 | 2) & e;
+        \\}
+    ;
+    var parser = try Parser.init(alloc, source);
+    const root = try parser.parse();
+    var analyzer = sema.Analyzer.init(alloc);
+    const result = try analyzer.analyze(root);
+    const expected = [_]struct { name: []const u8, display: []const u8 }{
+        .{ .name = "peer", .display = "u32" },
+        .{ .name = "alone", .display = "i64" },
+        .{ .name = "bits", .display = "u32" },
+    };
+    for (expected) |want| {
+        var found = false;
+        for (result.symbols) |symbol| {
+            if (!std.mem.eql(u8, symbol.name, want.name)) continue;
+            try std.testing.expectEqualStrings(want.display, try symbol.ty.?.displayName(alloc));
+            found = true;
+        }
+        try std.testing.expect(found);
+    }
+}
+
 test "generic editor instances retain selected declarations behind equal display names" {
     const parser_mod = @import("parser.zig");
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);

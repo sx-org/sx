@@ -1121,6 +1121,14 @@ pub fn lowerConstDecl(self: *Lowering, cd: *const ast.ConstDecl) void {
 
     const errs_before: usize = if (self.diagnostics) |d| d.errorCount() else 0;
     const annotated: ?TypeId = if (cd.type_annotation) |ta| self.resolveType(ta) else null;
+    if (annotated == null) {
+        if (untypedIntegerValue(self, cd.value)) |v| {
+            if (self.scope) |scope| {
+                scope.put(cd.name, .{ .ref = self.builder.constInt(@truncate(v), .i64), .ty = .i64, .is_alloca = false, .origin = .local_const, .untyped = .integer, .untyped_integer = v });
+            }
+            return;
+        }
+    }
     const saved_target = self.target_type;
     self.target_type = annotated;
     var ref = self.lowerMarkedExpr(cd.value, true);
@@ -1142,10 +1150,27 @@ pub fn lowerConstDecl(self: *Lowering, cd: *const ast.ConstDecl) void {
         }
     }
 
-    const untyped = if (annotated == null) program_index_mod.untypedConst(cd.value, self) else null;
+    const untyped = if (annotated == null) localConstUntyped(self, cd.value, ref) else null;
     if (self.scope) |scope| {
         scope.put(cd.name, .{ .ref = ref, .ty = ty, .is_alloca = false, .origin = .local_const, .untyped = untyped });
     }
+}
+
+fn untypedIntegerValue(self: *Lowering, value: *const Node) ?i128 {
+    if (program_index_mod.untypedInteger(value, self) == null) return null;
+    return program_index_mod.evalConstIntExpr(value, self);
+}
+
+/// A local constant stays untyped while its value is known here; a runtime
+/// value takes its type at the binding.
+fn localConstUntyped(self: *Lowering, value: *const Node, ref: Ref) ?program_index_mod.Untyped {
+    const kind = program_index_mod.untypedConst(value, self) orelse return null;
+    const known = switch (kind) {
+        .integer => self.foldedInt(ref) != null,
+        .float => self.builder.constFloatInfo(ref) != null,
+        .string => true,
+    };
+    return if (known) kind else null;
 }
 
 /// Validate an explicit `return` value against a multi-VALUE return type (≥2
@@ -2371,7 +2396,7 @@ fn tryLowerPropertyAssignment(self: *Lowering, asgn: *const ast.Assignment) bool
 /// forms that would forward the type unchanged into method-call arg slots
 /// (`resolveCallParamTypes` can't override target_type per-arg).
 fn rhsNeedsTargetType(self: *Lowering, value: *const ast.Node) bool {
-    if (self.isAdaptableFloat(value)) return true;
+    if (program_index_mod.untypedConst(value, self)) |kind| if (kind != .string) return true;
     return switch (value.data) {
         .enum_literal, .struct_literal, .tuple_literal, .array_literal, .if_expr, .match_expr, .block, .unary_op, .binary_op, .null_literal, .undef_literal => true,
         .call => |vc| vc.callee.data == .enum_literal,
@@ -2501,6 +2526,13 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                 // below diagnoses the bad deref target.
                 if (pinfo == .pointer) self.target_type = pinfo.pointer.pointee;
             }
+        }
+    }
+    // An untyped operand takes the type it takes beside the place in the
+    // spelled-out operation: a vector place gives it the lane type.
+    if (asgn.op != .assign) {
+        if (self.target_type) |place_ty| {
+            if (self.untypedOperandTypeAt(compoundAssignToBinaryOp(asgn.op), asgn.value, place_ty)) |ty| self.target_type = ty;
         }
     }
     // The RHS is a VALUE position: a block-form `if C { A } else { B }` /
@@ -2679,8 +2711,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                     // slot and corrupt neighbors. Plain `=` only;
                     // compound ops load-op-store through the field type.
                     if (asgn.op == .assign and !self.checkAssignable(src_ty, fl.ty, asgn.value.span, "assign", fa.field)) return;
-                    const coerced = self.coerceToType(val, src_ty, fl.ty);
-                    self.storeOrCompound(fl.ptr, coerced, asgn.op, fl.ty);
+                    self.storeOrCompound(fl.ptr, val, asgn.op, fl.ty);
                 },
                 // No struct / union / tuple / vector field matches the
                 // assignment target. Emit the same field-not-found
@@ -2758,7 +2789,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
             const field = self.lowerFieldPlace(asgn.target) orelse return;
             const src_ty = self.builder.getRefType(val);
             if (asgn.op == .assign and !self.checkAssignable(src_ty, field.ty, asgn.value.span, "assign", "field")) return;
-            self.storeOrCompound(field.ptr, self.coerceToType(val, src_ty, field.ty), asgn.op, field.ty);
+            self.storeOrCompound(field.ptr, val, asgn.op, field.ty);
         },
         else => {
             _ = self.emitError("assignment_target", asgn.target.span);
@@ -3480,7 +3511,9 @@ pub fn emitCompoundOp(self: *Lowering, lhs: Ref, rhs: Ref, op: ast.Assignment.Op
     const span = ast.Span{ .start = self.builder.current_span.start, .end = self.builder.current_span.end };
     if (op != .assign and self.diagOperandTypes(compoundAssignToBinaryOp(op), ty, self.operandType(rhs_ty), span))
         return self.emitPlaceholder("operand-type-mismatch");
-    const rhs_c = if (rhs_ty != ty and rhs_ty != .void and ty != .void)
+    const rhs_c = if (self.isVectorType(ty) and !self.isVectorType(rhs_ty))
+        (self.meetArithOperands(compoundAssignToBinaryOp(op), lhs, ty, rhs, self.operandType(rhs_ty), span) orelse return self.emitPlaceholder("arith-meet")).rhs
+    else if (rhs_ty != ty and rhs_ty != .void and ty != .void)
         self.coerceToType(rhs, rhs_ty, ty)
     else
         rhs;

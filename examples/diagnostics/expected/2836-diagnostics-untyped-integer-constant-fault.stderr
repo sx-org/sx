@@ -1,11 +1,11 @@
-error: integer constant overflows 'i64'
+error: integer constant divides by zero
   --> examples/diagnostics/2836-diagnostics-untyped-integer-constant-fault.sx:5:10
    |
- 5 |     d := 9223372036854775807 + 1;
-   |          ^^^^^^^^^^^^^^^^^^^^^^^
-
-error: integer constant divides by zero
-  --> examples/diagnostics/2836-diagnostics-untyped-integer-constant-fault.sx:6:10
-   |
- 6 |     e := 7 / 0;
+ 5 |     e := 7 / 0;
    |          ^^^^^
+
+error: integer constant overflows 128 bits
+  --> examples/diagnostics/2836-diagnostics-untyped-integer-constant-fault.sx:6:11
+   |
+ 6 |     g := (1 << 100) * (1 << 100) >> 190;
+   |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

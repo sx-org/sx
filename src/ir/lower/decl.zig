@@ -1471,7 +1471,7 @@ pub fn typedConstInitFits(self: *Lowering, value: *const Node, dst_ty: TypeId) b
     // (`F : f64 : 2.5; K : i64 : F + 1.5` → 4). Integrality is judged on the
     // FLOAT fold (`evalConstFloatExpr` + `floatToIntExact`) — the SAME facility
     // the typed-local path (`foldComptimeFloatInit`) uses — not the int-only
-    // folder, which folds leaf-by-leaf in `i64` and so misses an integral SUM
+    // folder, which folds leaf-by-leaf as integers and so misses an integral SUM
     // built from a non-integral float leaf. A non-integral fold (`1.5`,
     // `M + 0.5`, `F + 0.25`) yields null here and falls through to the
     // rejecting checks below, where `registerTypedModuleConst` emits the
@@ -1718,10 +1718,12 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
     };
     if (isFloat(var_ty) and self.isAdaptableFloat(v)) return self.constExprValue(v, var_ty);
     if (self.untypedString(v)) |lit| return self.constStringLiteral(lit, var_ty, v.span);
+    if (program_index_mod.untypedInteger(v, self) != null)
+        return self.constExprValue(v, var_ty) orelse self.diagnoseNonConstGlobal(vd, v, errors_before);
     return switch (v.data) {
         .undef_literal => .zeroinit,
         .null_literal => .null_val,
-        .int_literal, .char_literal, .float_literal => self.constExprValue(v, var_ty),
+        .float_literal => self.constExprValue(v, var_ty),
         .unary_op => blk: {
             const u = v.data.unary_op;
             // `xx <global>` at a protocol-typed global folds to the protocol
@@ -3969,13 +3971,13 @@ pub fn callableReturnBinder(fd: *const ast.FnDecl, ret_ty: TypeId) ?*const Node 
 /// or the initializer does not fold.
 pub fn numericConstValue(self: *Lowering, ci: ModuleConstInfo, ctx: lower.SourceConstCtx) ?inst_mod.ConstantValue {
     if (self.isIntEx(ci.ty)) {
-        switch (program_index_mod.foldCountI64(ci.value, ctx)) {
+        switch (program_index_mod.foldCount(ci.value, ctx)) {
             .int => |iv| {
                 switch (ci.value.data) {
                     .char_literal => |cl| self.checkCharLiteralFits(cl, ci.ty, ci.value.span),
                     else => self.checkIntLiteralFits(iv, ci.ty, ci.value.span),
                 }
-                return .{ .int = iv };
+                return .{ .int = @truncate(iv) };
             },
             .non_integral, .not_const => {},
         }
@@ -4033,7 +4035,9 @@ pub fn emitModuleConst(self: *Lowering, name: []const u8, ci: ModuleConstInfo, e
             return self.builder.constNull(ci.ty);
         },
         else => {
-            var demand = self.enterDemand(if (ci.declared_type) |ty| .{ .coerce = ty } else .{ .inferred = ci.ty });
+            // An untyped value takes the use's destination.
+            const untyped = ci.declared_type == null and program_index_mod.untypedConst(ci.value, self) != null;
+            var demand = self.enterDemand(if (ci.declared_type) |ty| .{ .coerce = ty } else if (untyped) null else .{ .inferred = ci.ty });
             defer demand.restore();
             return self.lowerExpr(ci.value);
         },

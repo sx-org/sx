@@ -420,8 +420,7 @@ if.then.55:                                       ; preds = %if.merge.54
 if.merge.56:                                      ; preds = %if.merge.54
   %loadN = load { [128 x i8], i32 }, ptr %allocaN, align 4
   %sgN = extractvalue { [128 x i8], i32 } %loadN, 1
-  %zext = zext i32 %sgN to i64
-  %icmpN = icmp ne i64 %zext, 14
+  %icmpN = icmp ne i32 %sgN, 14
   br i1 %icmpN, label %if.then.57, label %if.merge.58
 
 if.then.57:                                       ; preds = %if.merge.56
