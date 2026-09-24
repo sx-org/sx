@@ -852,18 +852,17 @@ pub fn lowerComptimeGlobal(self: *Lowering, declaration: @import("../../imports.
     // helpers, silently wrong for anything else.
     const expr_ty = self.inferExprType(expr);
     // A failable `@run` (bare, no `catch`/`??`): the comptime function
-    // returns the full failable tuple so the @run site can inspect the
-    // error slot, but the GLOBAL is typed as the success value. On a
-    // comptime error the global never materializes — emit halts with a
-    // diagnostic + trace. A handled `@run … catch/?? …` already
-    // strips the error channel, so it lands here as non-failable.
-    const is_failable = self.errorChannelOf(expr_ty) != null;
-    const func_ret: TypeId = if (is_failable)
-        expr_ty
-    else if (type_ann) |n|
-        self.resolveTypeWithBindings(n)
-    else
-        expr_ty;
+    // returns a failable tuple so the @run site can inspect the error
+    // slot, and the GLOBAL is typed as its success value — the annotation
+    // when one is written. On a comptime error the global never
+    // materializes — emit halts with a diagnostic + trace. A handled
+    // `@run … catch/?? …` already strips the error channel, so it lands
+    // here as non-failable.
+    const channel = self.errorChannelOf(expr_ty);
+    const func_ret: TypeId = if (type_ann) |n| ret: {
+        const annotated = self.resolveTypeWithBindings(n);
+        break :ret if (channel) |ch| self.module.types.internFailable(annotated, ch) else annotated;
+    } else expr_ty;
     // The result crosses into the runtime image, which is what makes this an
     // escape site (specs.md §6.9).
     const func_id = self.createComptimeFunction(name, .ordinary, expr, func_ret);
@@ -2261,6 +2260,11 @@ pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, ph
     self.module.getFunctionMut(func_id).ret = settled_ret;
     if (settled_ret == .void) {
         self.builder.retVoid();
+    } else if (!settled_ret.isBuiltin() and self.module.types.get(settled_ret) == .failable) {
+        const saved_span = self.builder.current_span;
+        defer self.builder.current_span = saved_span;
+        self.builder.current_span = .{ .start = expr.span.start, .end = expr.span.end };
+        self.lowerFailableSuccessReturn(result, settled_ret, expr.span);
     } else {
         self.builder.ret(result, settled_ret);
     }
