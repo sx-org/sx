@@ -1815,7 +1815,24 @@ pub const Vm = struct {
         }
         self.call_stack.append(self.gpa, fid) catch @panic("comptime VM: out of memory (call stack)");
         defer _ = self.call_stack.pop();
-        return self.run(callee, argbuf);
+        const result = try self.run(callee, argbuf);
+        if (callee.comptime_role == .run_wrapper) try self.checkRunEscape(module, callee, result);
+        return result;
+    }
+
+    /// Fail the evaluation when a failable `@run` wrapper called from a body the
+    /// VM runs returns an error, which no `@run` lets escape.
+    fn checkRunEscape(self: *Vm, module: *const Module, wrapper: *const Function, result: Reg) Error!void {
+        if (wrapper.ret.isBuiltin()) return;
+        const table = try self.requireTable();
+        const tag = switch (table.get(wrapper.ret)) {
+            .@"error" => result,
+            .failable => |f| try self.readField(table, result + fieldOffset(table, wrapper.ret, @intCast(table.failableValueSlotCount(f))), f.err),
+            else => return,
+        };
+        if (tag == 0) return;
+        const name = module.types.getString(wrapper.comptime_display_name orelse wrapper.name);
+        return self.failFmt("`@run` ({s}) raised an unhandled error: {s}", .{ name, module.types.tags.getName(@intCast(tag)) });
     }
 
     /// The measurement of a type an open set's layout decides, or null while it

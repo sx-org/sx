@@ -1,0 +1,11 @@
+@import "modules/std.sx";
+
+E :: error { Bad };
+
+three :: () -> (i64, !E) { 3 }
+
+main :: () {
+    x := @run three();
+    y : i64 = @run three();
+    print("{} {}\n", x, y);
+}

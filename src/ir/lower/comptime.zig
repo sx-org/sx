@@ -914,7 +914,12 @@ pub fn lowerInlineComptime(self: *Lowering, expr: *const Node) Ref {
         self.alloc.dupe(Ref, &.{self.current_ctx_ref}) catch &.{}
     else
         &.{};
-    return self.builder.call(func_id, final_args, func.ret);
+    const result = self.builder.call(func_id, final_args, func.ret);
+    // A failable wrapper's escaping error halts the build where the call folds,
+    // so the `@run` is its success value.
+    const channel = self.errorChannelOf(func.ret) orelse return result;
+    if (channel == func.ret) return self.builder.constInt(0, .void);
+    return self.extractSuccessValue(result, func.ret, self.failableSuccessType(func.ret));
 }
 
 /// Lower a `@insert expr` statement. Evaluates `expr` at compile time to get

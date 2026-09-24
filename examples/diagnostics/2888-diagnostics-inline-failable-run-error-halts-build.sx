@@ -1,0 +1,7 @@
+E :: error { Bad };
+
+fails :: () -> !E { raise E.Bad; }
+
+main :: () {
+    @run fails();
+}

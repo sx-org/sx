@@ -1019,7 +1019,7 @@ pub const LLVMEmitter = struct {
     /// return null. On success, return the value part (error channel stripped):
     /// `void_val` for a pure failable, the lone value for `(T, !)`, the
     /// value-tuple for multi-value.
-    fn checkComptimeFailable(self: *LLVMEmitter, result: Value, fail_ty: TypeId, label: []const u8) ?Value {
+    pub fn checkComptimeFailable(self: *LLVMEmitter, result: Value, fail_ty: TypeId, label: []const u8) ?Value {
         const channel = self.comptimeErrChannel(fail_ty) orelse return result;
         var tag: u32 = 0;
         var success: Value = .void_val;
@@ -1540,6 +1540,14 @@ pub const LLVMEmitter = struct {
                 const has = self.valueToLLVMConst(fields[1], .bool, global_name);
                 var ofields = [_]c.LLVMValueRef{ payload, has };
                 return c.LLVMConstStructInContext(self.context, &ofields, 2, 0);
+            }
+            if (info == .failable) {
+                const slot_types = self.ir_mod.types.failableAbiTypes(info.failable, self.alloc);
+                defer self.alloc.free(slot_types);
+                const slot_vals = self.alloc.alloc(c.LLVMValueRef, fields.len) catch unreachable;
+                defer self.alloc.free(slot_vals);
+                for (slot_types, fields, slot_vals) |slot_ty, fv, *out| out.* = self.valueToLLVMConst(fv, slot_ty, global_name);
+                return c.LLVMConstStructInContext(self.context, slot_vals.ptr, @intCast(slot_vals.len), 0);
             }
         }
 
