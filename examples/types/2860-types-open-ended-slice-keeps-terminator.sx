@@ -1,0 +1,36 @@
+// An open-ended slice of a terminated value runs to its terminator and keeps
+// it: `c[i..]` of a `[:X]T` or `[N:X]T` is `[:X]T`, and `p[i..]` of a
+// `[*:X]T` scans to the first `X`. A bounded `c[i..j]` is `[]T`.
+@import "modules/std.sx";
+
+strlen :: (s: [*:0]u8) -> usize extern "strlen";
+
+slices :: () {
+    c : [:0]u8 = "hello";
+    tail := c[1..];
+    print("{} {} {} {}\n", @typeName(@typeOf(tail)), tail.len, tail, strlen(tail));
+    mid := c[1..3];
+    print("{} {}\n", @typeName(@typeOf(mid)), mid);
+
+    buf : [5:0]u8 = "bytes";
+    rest := buf[2..];
+    print("{} {} {}\n", @typeName(@typeOf(rest)), rest.len, rest);
+
+    p : [*:0]u8 = "world";
+    all := p[0..];
+    part := p[2..];
+    print("{} {} {}\n", @typeName(@typeOf(all)), all.len, all);
+    print("{} {} {}\n", @typeName(@typeOf(part)), part.len, part);
+
+    nums : [4:7]i64 = .[1, 2, 3, 4];
+    q : [*:7]i64 = nums;
+    run := q[1..];
+    print("{} {} {} {} {}\n", @typeName(@typeOf(run)), run.len, run[0], run[2], run.ptr[run.len]);
+}
+
+@run slices();
+
+main :: () -> i32 {
+    slices();
+    0
+}

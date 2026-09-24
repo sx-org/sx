@@ -79,7 +79,7 @@ sx_sum_doubles :: (n: i32, ap: @VaList) -> f64 export {
 }
 
 countOne :: (ap: *@VaList) -> i64 {
-    return cstringLen(@vaArg([*:0]u8, ap));
+    return @vaArg([*:0]u8, ap)[0..].len;
 }
 
 sx_total_text :: (n: i32, ap: @VaList) -> i64 export {
@@ -209,21 +209,21 @@ main :: () -> i32 {
     print("twice own={} c={}\n", ownTwice(3, a, b, c), c_twice_tail(3, a, b, c));
     print("twiceBorrowed sx={} c={}\n", ownForwardTwice(3, a, b, c), c_calls_sx_twice(3, a, b, c));
 
-    print("mprintf={}\n", fromCstring(formatDirect("%d-%s", 42, one)?!));
+    print("mprintf={}\n", formatDirect("%d-%s", 42, one)?![0..]);
     buf: [64]u8 = ---;
-    print("snprint={}\n", fromCstring(@reinterpret([*:0]u8, intoDirect(buf, "%d/%d", a, b))));
+    print("snprint={}\n", @reinterpret([*:0]u8, intoDirect(buf, "%d/%d", a, b))[0..]);
     s: sqlite3Str = .{};
     appendDirect(*s, "%s", two);
     appendDirect(*s, "%d", c);
-    print("appendf={}\n", fromCstring(@reinterpret([*:0]u8, *s.text[0])));
+    print("appendf={}\n", @reinterpret([*:0]u8, *s.text[0])[0..]);
 
     api := Api{ mprintf = vmprintf, snprint = xvsnprintf, appendf = str_vappendf };
-    print("fieldMprintf={}\n", fromCstring(formatField(*api, "%s+%d", two, a)?!));
-    print("fieldSnprint={}\n", fromCstring(@reinterpret([*:0]u8, intoField(*api, buf, "%d*%d", b, c))));
+    print("fieldMprintf={}\n", formatField(*api, "%s+%d", two, a)?![0..]);
+    print("fieldSnprint={}\n", @reinterpret([*:0]u8, intoField(*api, buf, "%d*%d", b, c))[0..]);
     t: sqlite3Str = .{};
     appendField(*api, *t, "%d", a);
     appendField(*api, *t, "%s", one);
-    print("fieldAppendf={}\n", fromCstring(@reinterpret([*:0]u8, *t.text[0])));
+    print("fieldAppendf={}\n", @reinterpret([*:0]u8, *t.text[0])[0..]);
 
     print("vmprintfType={}\n", @typeName(VMPrintf));
     print("snprintfType={}\n", @typeName(XVsnprintf));

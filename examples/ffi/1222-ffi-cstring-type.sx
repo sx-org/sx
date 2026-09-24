@@ -2,7 +2,7 @@
 // It crosses extern boundaries verbatim in both directions; `?[*:0]u8` is
 // the nullable case (null pointer = absent); a terminated value reaches it
 // through the type, while an arbitrary string materializes via toCstring;
-// fromCstring is the zero-copy view back.
+// `p[0..]` is the zero-copy view back.
 @import "modules/std.sx";
 
 libc :: @library "c";
@@ -13,14 +13,14 @@ dlerrorC  :: () -> ?[*:0]u8 extern libc "dlerror";
 main :: () -> i32 {
     // literal -> C param; C pointer return -> view
     e := strerrorC(2);
-    v := fromCstring(e);
+    v := e[0..];
     if v.len < 5 { print("BUG: strerror short\n"); return 1; }
     print("strerror ok\n");
 
     // ?[*:0]u8: present, absent, and null-returning C call
     p := getenvC("PATH");
     if p == null { print("BUG: PATH null\n"); return 2; }
-    if cstringLen(p?!) < 1 { print("BUG: PATH empty\n"); return 3; }
+    if p?![0..].len < 1 { print("BUG: PATH empty\n"); return 3; }
     q := getenvC("NO_SUCH_VAR_ZZZ");
     if q != null { print("BUG: missing not null\n"); return 4; }
     d := dlerrorC();
@@ -29,10 +29,10 @@ main :: () -> i32 {
 
     // round trip: built string -> owned C string -> view -> equality
     s := concat("hi-", "there");
-    c := toCstring(s);
-    r := fromCstring(c);
+    c : [*:0]u8 = toCstring(s);
+    r := c[0..];
     if r != "hi-there" { print("BUG: round trip\n"); return 6; }
-    if cstringLen(c) != 8 { print("BUG: len\n"); return 7; }
+    if c[0..].len != 8 { print("BUG: len\n"); return 7; }
     print("round trip ok\n");
     return 0;
 }

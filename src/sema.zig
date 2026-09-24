@@ -993,10 +993,13 @@ pub const Analyzer = struct {
             .slice_expr => |se| {
                 const obj_ty = self.inferExprType(se.object);
                 if (obj_ty == .string_type) return .string_type;
-                if (obj_ty.isArray()) return .{ .slice_type = .{ .element_name = obj_ty.array_type.element_name, .is_raw = obj_ty.array_type.is_raw } };
-                if (obj_ty.isManyPointer()) return .{ .slice_type = .{ .element_name = obj_ty.many_pointer_type.element_name, .is_raw = obj_ty.many_pointer_type.is_raw } };
-                if (obj_ty.isSlice()) return obj_ty;
-                return .void_type;
+                const open_ended = se.end == null;
+                return switch (obj_ty) {
+                    .array_type => |a| .{ .slice_type = .{ .element_name = a.element_name, .is_raw = a.is_raw, .sentinel = if (open_ended) a.sentinel else null } },
+                    .many_pointer_type => |p| .{ .slice_type = .{ .element_name = p.element_name, .is_raw = p.is_raw, .sentinel = if (open_ended) p.sentinel else null } },
+                    .slice_type => |s| .{ .slice_type = .{ .element_name = s.element_name, .is_raw = s.is_raw, .sentinel = if (open_ended) s.sentinel else null } },
+                    else => .void_type,
+                };
             },
             .while_expr => .void_type,
             .for_expr => .void_type,

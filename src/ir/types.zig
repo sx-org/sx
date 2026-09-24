@@ -1393,6 +1393,17 @@ pub const TypeTable = struct {
         };
     }
 
+    /// The `X` of a `[N:X]T`, `[:X]T` or `[*:X]T`. Null for every other type.
+    pub fn sentinelOf(self: *const TypeTable, ty: TypeId) ?i64 {
+        if (self.sliceInfoOf(ty)) |s| return s.sentinel;
+        if (ty.isBuiltin()) return null;
+        return switch (self.get(ty)) {
+            .array => |a| a.sentinel,
+            .many_pointer => |p| p.sentinel,
+            else => null,
+        };
+    }
+
     /// The type of a fat pointer's length word: a slice's declared `Len`,
     /// `i64` for `string` and every other container whose `.len` is a count.
     pub fn lenTypeOf(self: *const TypeTable, ty: TypeId) TypeId {

@@ -1837,7 +1837,10 @@ A slice `[]T` is a fat pointer `{ptr, i64}` referencing a contiguous sequence of
 
 `[:X]T` is a **terminated** slice: the same `{ptr, i64}` fat pointer, whose
 element one past `.len` is `X`. `[:0]u8` is `cstring`; every other terminated
-slice is a type of its own, distinct from `[]T`.
+slice is a type of its own, distinct from `[]T`. A `[:X]T` comes from a
+string literal (`[:0]u8`), a terminated array, an open-ended subslice of a
+terminated value (§Subslicing), or a `.{ptr, len}` literal, whose author
+asserts `ptr[len] == X` unchecked.
 ```sx
 @typeName([:1]u8)  // "[:1]u8"
 @typeName([]u8)    // "string"
@@ -1885,7 +1888,7 @@ the length word (`@Slice(T, u32)` → `[]T`) is implicit; implicit narrowing of
 a non-constant length is not.
 
 ### Subslicing
-Arrays, slices, and strings support subslice syntax to create zero-copy views:
+Arrays, slices, strings and many-pointers support subslice syntax to create zero-copy views:
 ```sx
 arr : [5]i32 = .[3, 1, 4, 1, 5];
 sub := arr[1..4];    // []i32 → [1, 4, 1]
@@ -1899,8 +1902,20 @@ word := msg[6..11];  // string → "world"
 - `expr[start..]` — elements from `start` to end
 - `expr[..end]` — elements from beginning to `end`
 - `expr[..]` — the whole collection as a slice
-- Result type: `[]T` for arrays/slices, `string` for strings
+- Result type: `[]T` for arrays, slices and many-pointers, `string` for strings
 - No memory allocation — the result points into the original backing storage
+
+An open-ended `expr[start..]` of a terminated `[N:X]T`, `[:X]T` or `[*:X]T`
+runs to its terminator and keeps it: the result is `[:X]T`. A `[*:X]T` has no
+length, so its end is the first `X` at or after `start`, found by a scan. An
+unterminated `[*]T` has neither, and slices only with an explicit `end`.
+```sx
+c : [:0]u8 = "hello";
+c[1..]         // [:0]u8 → "ello"
+c[1..3]        // string → "el"
+p : [*:0]u8 = "world";
+p[2..]         // [:0]u8 → "rld", length 3
+```
 
 Slicing an array is a **zero-copy view**: for an *addressable* array (a
 local, a global, a struct field, or a `*[N]T` dereference) the slice
@@ -2013,6 +2028,8 @@ op : ?*Vec2 = null;    // same layout; deref demands proof of presence
 
 **Many-pointer**: `[*]T` supports indexing for buffers of unknown size. An
 index is the only way to step a pointer — `+` / `-` have no pointer form.
+`mp[lo..hi]` views `hi - lo` elements as a slice; a `[*:X]T` also slices
+open-ended (§Subslicing).
 ```sx
 arr : [5]i32 = .[10, 20, 30, 40, 50];
 mp : [*]i32 = *arr[0];
@@ -2057,7 +2074,7 @@ content `==` are the slice's own (§Slice Types, §Array Types), and
 `?cstring` is the slice's 16 bytes with a null `ptr` meaning absent.
 
 C's `char *` is `[*:0]u8`: ONE pointer to a null-terminated u8 buffer,
-carrying no length (`cstringLen` walks to the terminator, O(n)) and
+carrying no length (`p[0..]` walks to the terminator, O(n)) and
 crossing `extern` boundaries verbatim in BOTH directions. `?[*:0]u8` is
 the nullable case and lowers to the same bare pointer (null = absent) —
 the type for `getenv`-style returns and optional `char *` parameters.
@@ -2074,7 +2091,7 @@ Conversion discipline:
 - Dropping the guarantee is implicit: `cstring` → `string` is the
   `[:X]T` → `[]T` arm, so `string` methods take a `cstring` receiver.
 - `[*:0]u8` does not coerce to `cstring` implicitly — the length is an
-  O(n) strlen the code must ask for. `fromCstring(c)` is the zero-copy
+  O(n) strlen the code must ask for. `p[0..]` is the zero-copy
   view (shares C's buffer); a copy must be made for it to outlive C's
   buffer.
 - `xx` bit-casts `[*:0]u8` ↔ `*u8` / `[*]u8` / integer-pointer values
@@ -2285,7 +2302,7 @@ SxFoo     :: @ObjcClass("SxFoo")    export { counter: i32; bump :: (self: *Self)
 | C type | sx type | Notes |
 |--------|---------|-------|
 | `const char*` (input) | `[*:0]u8` | the pointer, verbatim; a terminated value reaches it |
-| `const char*` (return) | `[*:0]u8` | the pointer, verbatim; `fromCstring` to view |
+| `const char*` (return) | `[*:0]u8` | the pointer, verbatim; `p[0..]` to view |
 | nullable `const char*` (both directions) | `?[*:0]u8` | null pointer = `null` |
 | `char*` (output buffer) | `[*]u8` | raw buffer, no length |
 | `int*` (single out) | `*i32` | |

@@ -116,16 +116,6 @@ pub const CoercionResolver = struct {
         return if (di == .many_pointer) di.many_pointer.sentinel else null;
     }
 
-    /// The terminator `dst_ty` guarantees, over every shape that names one.
-    pub fn destSentinel(self: CoercionResolver, dst_ty: TypeId) ?i64 {
-        if (self.l.module.types.sliceInfoOf(dst_ty)) |s| return s.sentinel;
-        if (!dst_ty.isBuiltin()) {
-            const di = self.l.module.types.get(dst_ty);
-            if (di == .array) return di.array.sentinel;
-        }
-        return self.pointerDestSentinel(dst_ty);
-    }
-
     fn byteSized(elem: TypeId) bool {
         return elem == .u8 or elem == .i8;
     }
@@ -348,7 +338,7 @@ pub const CoercionResolver = struct {
                 self.l.module.types.sameType(src.failable.value, dst.failable.value) and
                 lower_error.errorSetValueRetypeIsLegal(self.l, src.failable.err, dst.failable.err)) return .failable_retype;
         }
-        if (self.destSentinel(dst_ty) != null and
+        if (self.l.module.types.sentinelOf(dst_ty) != null and
             src_ty != .void and src_ty != .noreturn and src_ty != .unresolved) return .adds_terminator_reject;
         return .none;
     }

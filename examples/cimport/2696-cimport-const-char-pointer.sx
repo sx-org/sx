@@ -13,7 +13,7 @@ main :: () -> i32 {
     print("length = {}\n", cu.text_length("hello"));
 
     tag := cu.text_tag();
-    print("tag = {} {}\n", @typeName(@typeOf(tag)), fromCstring(tag));
+    print("tag = {} {}\n", @typeName(@typeOf(tag)), tag[0..]);
 
     raw := cu.text_buffer();
     print("buffer = {} {}\n", @typeName(@typeOf(raw)), string{ ptr = raw, len = 3 });

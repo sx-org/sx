@@ -1068,9 +1068,9 @@ pub const Vm = struct {
                 const sty = ins.ty;
                 // `string`/`cstring`/`any` are builtin TWO-WORD aggregates
                 // (`{ptr@0, len@8}` / `{tag@0, value@8}`) — a literal like
-                // `cstring{ ptr = p, len = n }` (e.g. `fromCstring`) struct_inits
-                // one. Lay each operand as an 8-byte word; the other builtins have
-                // no aggregate literal form.
+                // `cstring{ ptr = p, len = n }` struct_inits one. Lay each
+                // operand as an 8-byte word; the other builtins have no
+                // aggregate literal form.
                 if (sty == .string or sty == .cstring or sty == .any) {
                     const a = self.machine.allocBytes(16, 8);
                     for (agg.fields, 0..) |fr, i| {
