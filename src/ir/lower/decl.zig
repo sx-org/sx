@@ -3973,7 +3973,7 @@ pub fn numericConstValue(self: *Lowering, ci: ModuleConstInfo, ctx: lower.Source
             .int => |iv| {
                 switch (ci.value.data) {
                     .char_literal => |cl| self.checkCharLiteralFits(cl, ci.ty, ci.value.span),
-                    else => self.checkIntLiteralFits(iv, ci.ty, ci.value.span),
+                    else => self.checkIntLiteralFits(self.foldedIntValue(ci.value, iv), ci.ty, ci.value.span),
                 }
                 return .{ .int = iv };
             },

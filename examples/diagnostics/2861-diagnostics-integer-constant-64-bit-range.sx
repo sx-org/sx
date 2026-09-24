@@ -1,0 +1,14 @@
+// An integer constant is checked against the exact range of a 64-bit
+// destination: a negative value does not fit `u64`, and a literal above
+// `i64.max` does not fit `i64`.
+
+M :: 0xFFFF_FFFF_FFFF_FFFF;
+K : u64 : -1;
+G : u64 = -1;
+
+main :: () -> i32 {
+    x : u64 = -1;
+    y := M;
+    z := K;
+    0
+}

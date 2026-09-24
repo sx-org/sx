@@ -468,7 +468,6 @@ pub const Lowering = struct {
     continue_target: ?BlockId = null,
     loop_defer_base: usize = 0, // defer-stack height at the innermost loop's body start (break/continue drain to here)
     suppress_int_fit_check: bool = false, // inside an explicit `xx` cast operand: truncation is requested, skip the literal fits-check
-    int_lit_extra_fit_ty: ?TypeId = null, // inside a `cast(T)` operand (T is the ambient type here): an ADDITIONAL range the literal may fit — set to i64 so a value fitting i64 but not T still truncates rather than erroring
     block_counter: u32 = 0,
     comptime_counter: u32 = 0,
     /// Hands out `BindingId`s to every scope this lowering builds. It is NOT
@@ -2946,6 +2945,7 @@ pub const Lowering = struct {
     }
 
     pub const untypedLeaf = lower_comptime.untypedLeaf;
+    pub const untypedIntLiteral = lower_comptime.untypedIntLiteral;
 
     pub fn floatLeafType(self: *Lowering, node: *const Node) ?TypeId {
         switch (node.data) {
@@ -3416,63 +3416,39 @@ pub const Lowering = struct {
         return info.@"enum".tag_type;
     }
 
-    /// Value range of an integer type, for literal fits-checks. Null for
-    /// 64-bit types — every i64 literal bit pattern is legal there (a 64-bit
-    /// hex literal wraps negative through the lexer's i64 value, so a
-    /// min/max check would false-positive) — and for non-integers.
-    pub fn intLiteralRange(self: *Lowering, ty: TypeId) ?struct { min: i64, max: i64 } {
+    /// Exact value range of an integer type, for literal fits-checks. Null for
+    /// non-integers.
+    pub fn intLiteralRange(self: *Lowering, ty: TypeId) ?struct { min: i128, max: i128 } {
         const layout = self.module.types.integerLayout(ty) orelse return null;
-        if (layout.width >= 64) return null;
-        return .{ .min = layout.limit(false), .max = layout.limit(true) };
+        const max = layout.limit(true);
+        return .{ .min = layout.limit(false), .max = if (layout.signed) max else @as(u64, @bitCast(max)) };
     }
 
-    /// Max NON-NEGATIVE magnitude a bare integer literal may hold in `ty`. A
-    /// bare `int_literal` is always non-negative (negation is a separate fold),
-    /// so its true value is the unsigned magnitude — checked against this cap.
-    /// Uses `u64` so the 64-bit widths are EXACT (`i64` → i64.max, `u64` →
-    /// u64.max), unlike `intLiteralRange` which returns null there because a
-    /// >i64.max value can't be an i64 range bound. Null for non-integers.
-    pub fn intLiteralMaxMagnitude(self: *Lowering, ty: TypeId) ?u64 {
-        const layout = self.module.types.integerLayout(ty) orelse return null;
-        return @bitCast(layout.limit(true));
+    /// The integer an `i64` constant of type `ty` holds: an unsigned
+    /// constant is its bit pattern.
+    pub fn intConstantValue(self: *Lowering, value: i64, ty: TypeId) i128 {
+        const layout = self.module.types.integerLayout(ty) orelse return value;
+        return if (layout.signed) value else @as(u64, @bitCast(value));
     }
 
-    /// Fits-check for a BARE integer literal, magnitude-based (see
-    /// `intLiteralMaxMagnitude`). Correctly admits a `u64` literal up to
-    /// u64.max while still rejecting a >i64.max literal at an `i64` destination.
-    /// The constant is still emitted by the caller so lowering continues.
+    /// The integer `node` denotes, given its `i64` fold `value`. An integer
+    /// literal, directly or through unannotated constants, folds to its
+    /// magnitude's bit pattern, and a typed value to its type's.
+    pub fn foldedIntValue(self: *Lowering, node: *const Node, value: i64) i128 {
+        if (program_index_mod.untypedConst(node, self) == null) return self.intConstantValue(value, self.inferExprType(node));
+        return if (self.untypedIntLiteral(node)) @as(u64, @bitCast(value)) else value;
+    }
+
+    /// Fits-check for a BARE integer literal, whose `value` is the magnitude's
+    /// bit pattern.
     pub fn checkIntLiteralMagnitudeFits(self: *Lowering, value: i64, ty: TypeId, span: ast.Span) void {
-        if (self.suppress_int_fit_check) return;
-        const cap = self.intLiteralMaxMagnitude(ty) orelse return;
-        const mag: u64 = @bitCast(value);
-        if (mag <= cap) return;
-        // Cast operand: a `cast(T) <lit>` folds against T (the
-        // ambient `ty` here) but still TRUNCATES, so a literal that fits i64
-        // yet overflows a narrower T (`cast(i8) 300`) must be accepted, not
-        // rejected. `int_lit_extra_fit_ty` (set to i64 for the cast operand)
-        // is that additional allowed range: accept when the value fits it,
-        // erroring only when it fits NEITHER T NOR i64.
-        if (self.int_lit_extra_fit_ty) |extra| {
-            if (self.intLiteralMaxMagnitude(extra)) |ecap| {
-                if (mag <= ecap) return;
-            }
-        }
-        const d = self.diagnostics orelse return;
-        const tn = self.formatTypeName(ty);
-        // Sub-64-bit types have an i64-expressible range — keep the exact
-        // "(range min..max)" wording. The 64-bit types (i64/u64) can't (their
-        // bound overflows i64), so report the max magnitude instead.
-        if (self.intLiteralRange(ty)) |r| {
-            d.addFmt(.err, span, "integer literal {} does not fit in {s} (range {}..{}) — use an explicit `.({s})` to truncate", .{ mag, tn, r.min, r.max, tn });
-        } else {
-            d.addFmt(.err, span, "integer literal {} does not fit in {s} (max {}) — use an explicit `.({s})` to truncate", .{ mag, tn, cap, tn });
-        }
+        self.checkIntLiteralFits(@as(u64, @bitCast(value)), ty, span);
     }
 
-    /// Diagnose an integer literal that cannot be represented in `ty`
-    /// (REJECTED PATTERNS: no silent wrap). The constant is still emitted by
-    /// the caller so lowering continues and surfaces further errors.
-    pub fn checkIntLiteralFits(self: *Lowering, value: i64, ty: TypeId, span: ast.Span) void {
+    /// Diagnose an integer constant whose exact `value` cannot be represented
+    /// in `ty` (REJECTED PATTERNS: no silent wrap). The constant is still
+    /// emitted by the caller so lowering continues and surfaces further errors.
+    pub fn checkIntLiteralFits(self: *Lowering, value: i128, ty: TypeId, span: ast.Span) void {
         if (self.suppress_int_fit_check) return;
         const r = self.intLiteralRange(ty) orelse return;
         if (value < r.min or value > r.max) {

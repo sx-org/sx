@@ -1,0 +1,12 @@
+// A constant above `i64.max` keeps its value at a `u64` destination.
+
+@import "modules/std.sx";
+
+M :: 0xFFFF_FFFF_FFFF_FFFF;
+K : u64 : u64.max - 1;
+
+main :: () -> i32 {
+    b : u64 = M;
+    print("{} {}\n", b, K);
+    0
+}

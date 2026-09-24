@@ -3784,19 +3784,24 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
     return result;
 }
 
-/// A negated literal wraps, so `-9223372036854775808` is `i64`'s minimum.
-/// Null when an operand does not fold; lowering that operand diagnoses it.
-fn untypedIntegerValue(self: *Lowering, node: *const Node) program_index_mod.IntArithmeticFault!?i64 {
+/// The exact value of an untyped integer expression. A negated literal is
+/// exact, so `-9223372036854775808` is `i64`'s minimum. Null when an operand
+/// does not fold; lowering that operand diagnoses it.
+fn untypedIntegerValue(self: *Lowering, node: *const Node) program_index_mod.IntArithmeticFault!?i128 {
     switch (node.data) {
         .unary_op => |u| {
-            if (u.operand.data == .int_literal) return -%u.operand.data.int_literal.value;
             const v = program_index_mod.evalConstIntExpr(u.operand, self) orelse return null;
+            if (self.untypedIntLiteral(u.operand)) return -@as(i128, @as(u64, @bitCast(v)));
             return try std.math.negate(v);
         },
         .binary_op => |b| {
             const l = program_index_mod.evalConstIntExpr(b.lhs, self) orelse return null;
             const r = program_index_mod.evalConstIntExpr(b.rhs, self) orelse return null;
             return try program_index_mod.foldIntArithmetic(b.op, l, r);
+        },
+        .identifier, .type_expr, .field_access => {
+            const v = program_index_mod.evalConstIntExpr(node, self) orelse return null;
+            return self.foldedIntValue(node, v);
         },
         else => return null,
     }
@@ -3822,7 +3827,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                 const ty = integerLiteralType(self, self.target_type);
                 if (Lowering.isFloat(ty)) return self.builder.constFloat(@floatFromInt(value), ty);
                 self.checkIntLiteralFits(value, ty, node.span);
-                return self.builder.constInt(value, ty);
+                return self.builder.constInt(@truncate(value), ty);
             }
         },
     };

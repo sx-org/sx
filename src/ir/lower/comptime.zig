@@ -94,6 +94,27 @@ pub fn untypedLeaf(self: *Lowering, node: *const Node) ?program_index_mod.Untype
     return untypedSelected(self, constLeaf(self, node) orelse return null);
 }
 
+/// Whether the untyped integer `node` is an integer literal, directly or
+/// through unannotated module constants. A local constant holds an `i64`.
+pub fn untypedIntLiteral(self: *Lowering, node: *const Node) bool {
+    const name: ?[]const u8 = switch (node.data) {
+        .int_literal => return true,
+        .identifier => |id| id.name,
+        .type_expr => |te| te.name,
+        .field_access => null,
+        else => return false,
+    };
+    if (name) |n| if (self.scope) |scope| if (scope.lookup(n) != null) return false;
+    const leaf = constLeaf(self, node) orelse return false;
+    if (leaf.declared_type != null) return false;
+    const pin = self.pinConstValue(leaf.value, leaf.environment);
+    defer pin.unpin();
+    const saved_scope = self.scope;
+    self.scope = null;
+    defer self.scope = saved_scope;
+    return untypedIntLiteral(self, leaf.value);
+}
+
 const ConstLeaf = struct {
     value: *const Node,
     declared_type: ?TypeId,
@@ -246,10 +267,10 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
         .unary_op => |uo| switch (uo.op) {
             .negate => switch (uo.operand.data) {
                 .int_literal => |il| blk: {
-                    const v = -%il.value;
+                    const v = -@as(i128, @as(u64, @bitCast(il.value)));
                     if (isFloat(expected_ty)) break :blk .{ .float = @floatFromInt(v) };
                     self.checkIntLiteralFits(v, expected_ty, expr.span);
-                    break :blk .{ .int = v };
+                    break :blk .{ .int = @truncate(v) };
                 },
                 .float_literal => |fl| constFloatLeaf(self, -fl.value, expected_ty, expr.span),
                 else => null,
@@ -320,7 +341,7 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
                     // An operation's result keeps its type; a named or builtin read adapts as a literal does.
                     const typed = expr.data == .binary_op or expr.data == .index_expr;
                     if (typed and !self.checkConstantWidens(self.inferExprType(expr), expected_ty, expr.span)) break :blk null;
-                    self.checkIntLiteralFits(v, expected_ty, expr.span);
+                    self.checkIntLiteralFits(self.foldedIntValue(expr, v), expected_ty, expr.span);
                     break :blk inst_mod.ConstantValue{ .int = v };
                 }
             }
