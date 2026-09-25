@@ -53,7 +53,13 @@ MIN_CAP        :: 8;
 // Fingerprint = top 7 bits of the 64-bit hash (the low log2(cap) bits go
 // to the bucket index, so the high bits carry independent entropy).
 mapFingerprint :: (h: u64) -> u8 {
-    ((h >> 57) & (0x7F.(u64))).(u8)
+    ((h >> 57) & 0x7F).(u8)
+}
+
+// The probe start in a table of `mask + 1` buckets: `mask` is non-negative, so
+// the slot is the hash's low bits.
+mapSlot :: (h: u64, mask: i64) -> i64 {
+    h.(i64) & mask
 }
 
 // Smallest power-of-two capacity whose 80% load still holds `n` entries.
@@ -190,7 +196,7 @@ HashMap :: struct ($K: Type, $V: Type) {
         h    := mapHashKey(key);
         fp   := mapFingerprint(h);
         mask := self.cap - 1;
-        idx  := (h & (mask.(u64))).(i64);
+        idx  := mapSlot(h, mask);
         while self.metadata[idx] != META_FREE { idx = (idx + 1) & mask; }
         self.metadata[idx] = META_USED_BIT | fp;
         self.keys[idx]     = key;
@@ -244,7 +250,7 @@ HashMap :: struct ($K: Type, $V: Type) {
         fp         := mapFingerprint(h);
         usedByte  := META_USED_BIT | fp;
         mask       := self.cap - 1;
-        idx        := (h & (mask.(u64))).(i64);
+        idx        := mapSlot(h, mask);
         firstTomb : i64 = -1;
         limit      := self.cap;
         while limit > 0 {
@@ -331,7 +337,7 @@ HashMap :: struct ($K: Type, $V: Type) {
         fp        := mapFingerprint(h);
         usedByte := META_USED_BIT | fp;
         mask      := self.cap - 1;
-        idx       := (h & (mask.(u64))).(i64);
+        idx       := mapSlot(h, mask);
         limit     := self.cap;
         while limit > 0 {
             m := self.metadata[idx];
@@ -572,7 +578,7 @@ IndexMap :: struct ($K: Type, $V: Type) {
     // forever / write OOB (mirrors HashMap's fail-loud philosophy).
     indexInsert :: (self: *IndexMap(K, V), h: u64, e: i64) {
         mask := self.icap - 1;
-        slot := (h & (mask.(u64))).(i64);
+        slot := mapSlot(h, mask);
         limit := self.icap;
         while self.index[slot] >= 0 {
             slot = (slot + 1) & mask;
@@ -591,7 +597,7 @@ IndexMap :: struct ($K: Type, $V: Type) {
     // contract) — failing to find it across a full walk is a loud abort.
     indexRemove :: (self: *IndexMap(K, V), h: u64, e: i64) {
         mask := self.icap - 1;
-        slot := (h & (mask.(u64))).(i64);
+        slot := mapSlot(h, mask);
         limit := self.icap;
         while self.index[slot] != e {
             slot = (slot + 1) & mask;
@@ -605,7 +611,7 @@ IndexMap :: struct ($K: Type, $V: Type) {
             while true {
                 j = (j + 1) & mask;
                 if self.index[j] < 0 { return; }   // gap chain ends — done
-                k := (self.entries[self.index[j]].hash & (mask.(u64))).(i64);
+                k := mapSlot(self.entries[self.index[j]].hash, mask);
                 // Keep scanning while ideal slot `k` lies cyclically in (i, j]
                 // (that entry is anchored past the gap and must NOT move back);
                 // otherwise it can fill the gap — pull it in.
@@ -624,7 +630,7 @@ IndexMap :: struct ($K: Type, $V: Type) {
     // without finding it is a loud abort.
     indexRetarget :: (self: *IndexMap(K, V), h: u64, from: i64, to: i64) {
         mask := self.icap - 1;
-        slot := (h & (mask.(u64))).(i64);
+        slot := mapSlot(h, mask);
         limit := self.icap;
         while self.index[slot] != from {
             slot = (slot + 1) & mask;
@@ -670,7 +676,7 @@ IndexMap :: struct ($K: Type, $V: Type) {
         if self.icap == 0 { return -1; }
         h := mapHashKey(key);
         mask := self.icap - 1;
-        slot := (h & (mask.(u64))).(i64);
+        slot := mapSlot(h, mask);
         limit := self.icap;
         while limit > 0 {
             e := self.index[slot];

@@ -59,7 +59,7 @@ ListState :: struct {
     // Points per second along the axis, and the clock readings the velocity
     // and the fling were last advanced at.
     velocity: f32 = 0.0;
-    lastMoveNs: u64 = 0;
+    lastMoveNs: i64 = 0;
     lastFrameNs: ?i64 = null;
 
     init :: (gpa: Allocator, reversed: bool = false) -> ListState => .{ gpa = gpa, reversed = reversed };

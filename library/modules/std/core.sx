@@ -225,7 +225,7 @@ impl Writer for FdWriter {
         while off < s.len {
             n := c.write(self.fd, *s[off], s.len - off);
             if n <= 0 { return; }
-            off += n.(i64);
+            off += n;
         }
     }
 }
@@ -310,7 +310,7 @@ writeHex :: ufcs (w: Writer, n: u64) {
     v := n;
     while true {
         i -= 1;
-        buf[i] = encoding.hexDigit((v & 0xF).(i64));
+        buf[i] = encoding.hexDigit(v & 0xF);
         v = v >> 4;
         if v == 0 { break; }
     }

@@ -87,10 +87,10 @@ localCivil :: (unixSeconds: i64) -> (CivilTime, bool) {
     civil := CivilTime{
         year = broken.year.(i64) + 1900,
         month = broken.mon.(i64) + 1,
-        day = broken.mday.(i64),
-        hour = broken.hour.(i64),
-        minute = broken.min.(i64),
-        second = broken.sec.(i64),
+        day = broken.mday,
+        hour = broken.hour,
+        minute = broken.min,
+        second = broken.sec,
     };
     return civil, true;
 }

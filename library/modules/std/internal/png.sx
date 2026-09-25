@@ -5,6 +5,7 @@
 
 @import "modules/std/core.sx";
 @import "modules/std/compress.sx";
+@import "modules/std/encoding.sx";
 @import "modules/std/internal/compress.sx";
 
 DecodeErr :: error {
@@ -138,10 +139,6 @@ DecodedPng :: struct {
     channels: i64;
 }
 
-private pngU32be :: (d: string, off: i64) -> i64 {
-    (d[off].(i64) << 24) | (d[off + 1].(i64) << 16) | (d[off + 2].(i64) << 8) | d[off + 3].(i64)
-}
-
 private paeth :: (a: i64, b: i64, c: i64) -> i64 {
     p := a + b - c;
     pa := if p >= a then p - a else a - p;
@@ -176,18 +173,18 @@ pngDecodeBytes :: (data: string, alloc: Allocator) -> (DecodedPng, !DecodeErr) {
     off := 8;
     while off < data.len {
         if off + 12 > data.len { raise .TruncatedData; }
-        len := pngU32be(data, off);
+        len := encoding.readU32Be(data, off);
         if len < 0 or off + 12 + len > data.len { raise .TruncatedData; }
         kind := data[off + 4..off + 8];
         payload := data[off + 8..off + 8 + len];
-        expect := pngU32be(data, off + 8 + len);
+        expect := encoding.readU32Be(data, off + 8 + len);
         actual := crc32(kind);
         actual = crc32(payload, actual);
         if (actual & 0xffffffff) != expect { raise .ChecksumMismatch; }
         if kind == "IHDR" {
             if len != 13 { raise .UnsupportedFormat; }
-            width = pngU32be(payload, 0);
-            height = pngU32be(payload, 4);
+            width = encoding.readU32Be(payload, 0);
+            height = encoding.readU32Be(payload, 4);
             bit := payload[8].(i64);
             ct := payload[9].(i64);
             if bit != 8 or payload[10] != 0 or payload[11] != 0 { raise .UnsupportedFormat; }
@@ -216,7 +213,7 @@ pngDecodeBytes :: (data: string, alloc: Allocator) -> (DecodedPng, !DecodeErr) {
     at := 0;
     off = 8;
     while true {
-        len := pngU32be(data, off);
+        len := encoding.readU32Be(data, off);
         kind := data[off + 4..off + 8];
         if kind == "IEND" { break; }
         if kind == "IDAT" {
@@ -262,9 +259,9 @@ pngDecodeBytes :: (data: string, alloc: Allocator) -> (DecodedPng, !DecodeErr) {
         c := 0;
         while c < rowBytes {
             x := filtered[r * filteredRowBytes + 1 + c].(i64);
-            a := if c >= bpp then out[r * rowBytes + c - bpp].(i64) else 0;
-            b := if r > 0 then out[(r - 1) * rowBytes + c].(i64) else 0;
-            cc := if r > 0 and c >= bpp then out[(r - 1) * rowBytes + c - bpp].(i64) else 0;
+            a := if c >= bpp then out[r * rowBytes + c - bpp] else 0;
+            b := if r > 0 then out[(r - 1) * rowBytes + c] else 0;
+            cc := if r > 0 and c >= bpp then out[(r - 1) * rowBytes + c - bpp] else 0;
             v := x;
             if f == 1 { v = x + a; }
             else if f == 2 { v = x + b; }

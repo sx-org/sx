@@ -1,0 +1,14 @@
+// An unsigned index narrower than 64 bits selects the element at its value,
+// including one above the signed range of its width.
+@import "modules/std.sx";
+
+main :: () -> i32 {
+    table : [256]u8 = ---;
+    i := 0;
+    while i < 256 { table[i] = i.(u8); i += 1; }
+    k : u8 = 200;
+    print("{}\n", table[k]);
+    table[k] = 7;
+    print("{}\n", table[200]);
+    return 0;
+}

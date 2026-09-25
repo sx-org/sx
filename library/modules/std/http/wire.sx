@@ -288,7 +288,7 @@ private quality :: (value: string) -> i64 {
     i : i64 = 2;
     while i < v.len {
         if v[i] < '0' or v[i] > '9' { return 0; }
-        digit : i64 = (v[i] - '0').(i64);
+        digit : i64 = v[i] - '0';
         if whole == '1' and digit != 0 { return 0; }
         result += digit * scale;
         scale = scale / 10;

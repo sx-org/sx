@@ -41,7 +41,7 @@ private ELEMENT_DOMAIN :: "ui.fluent.element.v1";
 // One site's tally within the build in progress.
 private SiteCount :: struct {
     key: u64 = 0;
-    count: i64 = 0;
+    count: u64 = 0;
 }
 
 // The per-root identity carrier. It outlives every build, so its tally list is
@@ -75,7 +75,7 @@ Identity :: struct {
         self.scopeKey = prev;
     }
 
-    nextOccurrence :: (self: *Identity, site: u64) -> i64 {
+    nextOccurrence :: (self: *Identity, site: u64) -> u64 {
         hasher := SourceSiteHasher{ state = site };
         hasher.writeU64Le(self.scopeKey);
         key := hasher.state;
@@ -104,6 +104,6 @@ elementId :: (site: SiteId = siteOf(@caller)) -> ElementId {
     process.assert(context.fluentUi != null, "elementId outside a fluent build — push .{ fluentUi = *root.identity }");
     occurrence := context.fluentUi.nextOccurrence(site.key);
     hasher := siteHasher(site.key, ELEMENT_DOMAIN, context.fluentUi.scopeKey);
-    hasher.writeU64Le(occurrence.(u64));
+    hasher.writeU64Le(occurrence);
     ElementId{ value = hasher.state }
 }

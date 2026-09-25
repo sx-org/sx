@@ -89,6 +89,6 @@ impl PixelSurface for GlOffscreen {
         out
     }
 
-    width :: (self: *GlOffscreen) -> i64 { self.w.(i64) }
-    height :: (self: *GlOffscreen) -> i64 { self.h.(i64) }
+    width :: (self: *GlOffscreen) -> i64 { self.w }
+    height :: (self: *GlOffscreen) -> i64 { self.h }
 }

@@ -1,0 +1,11 @@
+// encoding.hexDigit takes a nibble of any integer type.
+@import "modules/std.sx";
+
+main :: () -> i32 {
+    a : u8 = 11;
+    b : u64 = 15;
+    c : i64 = 3;
+    digits : [3]u8 = .[encoding.hexDigit(a), encoding.hexDigit(b), encoding.hexDigit(c)];
+    print("{}\n", digits[..]);
+    return 0;
+}

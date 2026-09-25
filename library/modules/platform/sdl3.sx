@@ -104,7 +104,7 @@ translateSdlEvent :: (sdl: *SDL_Event) -> ?PlatformEvent {
         }
         case .keyDown: |data| {
             return .input(.keyDown(.{
-                header = .{ timeNs = data.timestamp, modifiers = sdlModifiers(data.mod) },
+                header = .{ timeNs = data.timestamp.(i64), modifiers = sdlModifiers(data.mod) },
                 physical = .{ code = data.scancode },
                 logical = logicalKeyFromSdl(data.key),
                 repeat = data.repeat != 0,
@@ -112,15 +112,15 @@ translateSdlEvent :: (sdl: *SDL_Event) -> ?PlatformEvent {
         }
         case .keyUp: |data| {
             return .input(.keyUp(.{
-                header = .{ timeNs = data.timestamp, modifiers = sdlModifiers(data.mod) },
+                header = .{ timeNs = data.timestamp.(i64), modifiers = sdlModifiers(data.mod) },
                 physical = .{ code = data.scancode },
                 logical = logicalKeyFromSdl(data.key),
             }));
         }
         case .mouseMotion: |data| {
             pe : PointerEvent = .{
-                header = .{ timeNs = data.timestamp },
-                pointer = .{ value = data.which.(u64) },
+                header = .{ timeNs = data.timestamp.(i64) },
+                pointer = .{ value = data.which },
                 kind = .mouse,
                 position = .{ x = data.x, y = data.y },
             };
@@ -136,8 +136,8 @@ translateSdlEvent :: (sdl: *SDL_Event) -> ?PlatformEvent {
         case .mouseWheel: |data| {
             flip : f32 = if data.direction == 1 then -1.0 else 1.0;
             return .input(.scroll(.{
-                header = .{ timeNs = data.timestamp },
-                pointer = .{ value = data.which.(u64) },
+                header = .{ timeNs = data.timestamp.(i64) },
+                pointer = .{ value = data.which },
                 position = .{ x = data.mouseX, y = data.mouseY },
                 delta = .{ x = data.x * flip, y = data.y * flip },
             }));
@@ -154,8 +154,8 @@ sdlPointerButton :: (data: SDL_MouseButtonData) -> PointerEvent {
         else: .none;
     };
     PointerEvent{
-        header = .{ timeNs = data.timestamp },
-        pointer = .{ value = data.which.(u64) },
+        header = .{ timeNs = data.timestamp.(i64) },
+        pointer = .{ value = data.which },
         kind = .mouse,
         button = btn,
         position = .{ x = data.x, y = data.y },
