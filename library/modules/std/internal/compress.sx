@@ -463,7 +463,7 @@ private TdeflTokenBuffer :: struct {
     literal :: (self: *TdeflTokenBuffer, value: i64, alloc: Allocator) {
         self.codes[self.codeLen] = value.(u8);
         self.codeLen += 1;
-        self.codes[self.flagsAt] = (self.codes[self.flagsAt].(i64) >> 1).(u8);
+        self.codes[self.flagsAt] >>= 1;
         self.nextFlag();
         self.litFreq[value] += 1;
         self.sourceBytes += 1;
@@ -478,7 +478,7 @@ private TdeflTokenBuffer :: struct {
         self.codes[self.codeLen + 1] = matchDistance.(u8);
         self.codes[self.codeLen + 2] = (matchDistance >> 8).(u8);
         self.codeLen += 3;
-        self.codes[self.flagsAt] = ((self.codes[self.flagsAt].(i64) >> 1) | 0x80).(u8);
+        self.codes[self.flagsAt] = (self.codes[self.flagsAt] >> 1) | 0x80;
         self.nextFlag();
         self.litFreq[symbol] += 1;
         self.distFreq[di] += 1;
@@ -606,7 +606,7 @@ private tdeflLengths :: (frequencies: []u16, maxBits: i64) -> [288]u8 {
         }
     }
 
-    syms[0].key = (syms[0].key.(i64) + syms[1].key.(i64)).(u16);
+    syms[0].key += syms[1].key;
     root := 0;
     leaf := 2;
     next := 1;
@@ -620,11 +620,11 @@ private tdeflLengths :: (frequencies: []u16, maxBits: i64) -> [288]u8 {
             leaf += 1;
         }
         if leaf >= used or (root < next and syms[root].key < syms[leaf].key) {
-            syms[next].key = (syms[next].key.(i64) + syms[root].key.(i64)).(u16);
+            syms[next].key += syms[root].key;
             syms[root].key = next.(u16);
             root += 1;
         } else {
-            syms[next].key = (syms[next].key.(i64) + syms[leaf].key.(i64)).(u16);
+            syms[next].key += syms[leaf].key;
             leaf += 1;
         }
         next += 1;
@@ -633,7 +633,7 @@ private tdeflLengths :: (frequencies: []u16, maxBits: i64) -> [288]u8 {
     next = used - 3;
     while next >= 0 {
         parent := syms[next].key.(i64);
-        syms[next].key = (syms[parent].key.(i64) + 1).(u16);
+        syms[next].key = syms[parent].key + 1;
         next -= 1;
     }
 
@@ -1879,14 +1879,14 @@ Deflater :: struct {
                 codes[codeLen + 1] = packedDistance.(u8);
                 codes[codeLen + 2] = (packedDistance >> 8).(u8);
                 codeLen += 3;
-                codes[flagsAt] = ((codes[flagsAt].(i64) >> 1) | 0x80).(u8);
+                codes[flagsAt] = (codes[flagsAt] >> 1) | 0x80;
                 self.lz.litFreq[257 + li] += 1;
                 self.lz.distFreq[di] += 1;
             } else {
                 literal := first & 0xff;
                 codes[codeLen] = literal.(u8);
                 codeLen += 1;
-                codes[flagsAt] = (codes[flagsAt].(i64) >> 1).(u8);
+                codes[flagsAt] >>= 1;
                 self.lz.litFreq[literal] += 1;
             }
             flagsLeft -= 1;
@@ -1907,7 +1907,7 @@ Deflater :: struct {
             literal := dict[lookaheadPos & 32767].(i64);
             codes[codeLen] = literal.(u8);
             codeLen += 1;
-            codes[flagsAt] = (codes[flagsAt].(i64) >> 1).(u8);
+            codes[flagsAt] >>= 1;
             self.lz.litFreq[literal] += 1;
             flagsLeft -= 1;
             if flagsLeft == 0 {
