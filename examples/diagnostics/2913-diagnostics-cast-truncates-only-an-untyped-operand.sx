@@ -8,7 +8,6 @@ main :: () -> i32 {
     o : ?i8 = null;
     c := false;
     print("{}\n", (if c then v else 300).(i64));
-    print("{}\n", (v + 300).(i64));
     print("{}\n", (o ?? 300).(i64));
     return 0;
 }

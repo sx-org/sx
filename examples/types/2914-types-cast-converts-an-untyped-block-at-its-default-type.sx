@@ -1,0 +1,8 @@
+// A cast converts an untyped block value from its default type.
+
+@import "modules/std.sx";
+
+main :: () {
+    y : u8 = xx { 300 };
+    print("{} {}\n", ({ 300 }).(u8), y);
+}

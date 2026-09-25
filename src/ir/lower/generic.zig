@@ -1343,7 +1343,7 @@ pub fn inferMatchResultType(self: *Lowering, me: *const ast.MatchExpr) TypeId {
             // substitutes a zero/undef of the result type for a valueless arm.
             continue;
         }
-        if (untypedArm(self, last_node)) |kind| {
+        if (untypedValue(self, last_node)) |kind| {
             untyped = if (kind == .float) kind else untyped orelse kind;
             untyped_node = untyped_node orelse last_node;
             continue;
@@ -1411,18 +1411,18 @@ pub fn unifyValueArmTypes(self: *Lowering, a: TypeId, b: TypeId) ?TypeId {
 
 /// The type value arms `a` and `b`, inferred as `a_ty` and `b_ty`, meet at.
 pub fn meetValueArms(self: *Lowering, a: *const Node, a_ty: TypeId, b: *const Node, b_ty: TypeId) ?TypeId {
-    const a_kind = untypedArm(self, a);
-    const b_kind = untypedArm(self, b);
+    const a_kind = untypedValue(self, a);
+    const b_kind = untypedValue(self, b);
     if (a_kind != null and b_kind == null) return meetUntypedArms(self, b_ty, a_kind.?);
     if (b_kind != null and a_kind == null) return meetUntypedArms(self, a_ty, b_kind.?);
     return unifyValueArmTypes(self, a_ty, b_ty);
 }
 
-/// The numeric untyped constant an arm yields, a block through its tail.
-fn untypedArm(self: *Lowering, node: *const Node) ?program_index_mod.Untyped {
+/// The numeric untyped constant `node` yields, a block through its tail.
+pub fn untypedValue(self: *Lowering, node: *const Node) ?program_index_mod.Untyped {
     if (node.data == .block) {
         const b = node.data.block;
-        return if (b.produces_value and b.stmts.len > 0) untypedArm(self, b.stmts[b.stmts.len - 1]) else null;
+        return if (b.produces_value and b.stmts.len > 0) untypedValue(self, b.stmts[b.stmts.len - 1]) else null;
     }
     const kind = program_index_mod.untypedConst(node, self) orelse return null;
     return if (kind == .string) null else kind;

@@ -3773,6 +3773,10 @@ fn lowerCastOperand(self: *Lowering, operand: *const Node) Ref {
     const saved = self.cast_operand;
     defer self.cast_operand = saved;
     self.cast_operand = if (program_index_mod.untypedConst(operand, self) != null) .untyped else .typed;
+    // An untyped block value takes its default type, which the cast converts.
+    const saved_target = self.target_type;
+    defer self.target_type = saved_target;
+    if (operand.data == .block and self.untypedValue(operand) != null) self.target_type = null;
     return self.lowerExpr(operand);
 }
 

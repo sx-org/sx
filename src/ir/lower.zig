@@ -4262,6 +4262,7 @@ pub const Lowering = struct {
     pub const matchCaptureType = lower_generic.matchCaptureType;
     pub const unifyValueArmTypes = lower_generic.unifyValueArmTypes;
     pub const meetValueArms = lower_generic.meetValueArms;
+    pub const untypedValue = lower_generic.untypedValue;
     pub const isTypeCategoryMatch = lower_generic.isTypeCategoryMatch;
     pub const isRuntimeCategoryName = lower_generic.isRuntimeCategoryName;
     pub const isTypeParamDecl = lower_generic.isTypeParamDecl;
