@@ -5,15 +5,15 @@ error: integer literal -1 does not fit in u64 (range 0..18446744073709551615) �
    |           ^^
 
 error: integer literal -1 does not fit in u64 (range 0..18446744073709551615) — use an explicit `.(u64)` to truncate
-  --> examples/diagnostics/2861-diagnostics-integer-constant-64-bit-range.sx:14:15
+  --> examples/diagnostics/2861-diagnostics-integer-constant-64-bit-range.sx:13:15
    |
-14 |     x : u64 = -1;
+13 |     x : u64 = -1;
    |               ^^
 
 error: integer literal 18446744073709551615 does not fit in i64 (range -9223372036854775808..9223372036854775807) — use an explicit `.(i64)` to truncate
-  --> examples/diagnostics/2861-diagnostics-integer-constant-64-bit-range.sx:15:10
+  --> examples/diagnostics/2861-diagnostics-integer-constant-64-bit-range.sx:14:10
    |
-15 |     y := M;
+14 |     y := M;
    |          ^
 
 error: integer literal -1 does not fit in u64 (range 0..18446744073709551615) — use an explicit `.(u64)` to truncate
@@ -23,19 +23,13 @@ error: integer literal -1 does not fit in u64 (range 0..18446744073709551615) �
    |           ^^
 
 error: integer literal -1 does not fit in u64 (range 0..18446744073709551615) — use an explicit `.(u64)` to truncate
-  --> examples/diagnostics/2861-diagnostics-integer-constant-64-bit-range.sx:18:15
+  --> examples/diagnostics/2861-diagnostics-integer-constant-64-bit-range.sx:17:15
    |
-18 |     a := u == N;
+17 |     a := u == N;
    |               ^
 
-error: integer literal -1 does not fit in u64 (range 0..18446744073709551615) — use an explicit `.(u64)` to truncate
-  --> examples/diagnostics/2861-diagnostics-integer-constant-64-bit-range.sx:19:10
-   |
-19 |     b := u == S;
-   |          ^^^^^^
-
 error: integer literal 18446744073709551616 does not fit in u64 (range 0..18446744073709551615) — use an explicit `.(u64)` to truncate
-  --> examples/diagnostics/2861-diagnostics-integer-constant-64-bit-range.sx:11:11
+  --> examples/diagnostics/2861-diagnostics-integer-constant-64-bit-range.sx:10:11
    |
-11 | W : u64 : U + 1;
+10 | W : u64 : U + 1;
    |           ^^^^^

@@ -6,7 +6,6 @@ M :: 0xFFFF_FFFF_FFFF_FFFF;
 K : u64 : -1;
 G : u64 = -1;
 N :: -1;
-S : i64 : -1;
 U : u64 : u64.max;
 W : u64 : U + 1;
 
@@ -16,7 +15,6 @@ main :: () -> i32 {
     z := K;
     u : u64 = 3;
     a := u == N;
-    b := u == S;
     w := W;
     0
 }

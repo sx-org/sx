@@ -5675,14 +5675,7 @@ fn lowerBinaryValues(self: *Lowering, op: ast.BinaryOp.Op, lhs_value: Ref, lhs_t
     switch (op) {
         .eq, .neq, .lt, .lte, .gt, .gte => {
             const span = ast.Span{ .start = lhs_span.start, .end = rhs_span.end };
-            const lhs_ir = self.builder.getRefType(lhs);
-            const rhs_ir = self.builder.getRefType(rhs);
-            if (meetCompareOperands(self, lhs, rhs, lhs_ir, rhs_ir, span)) |met| {
-                lhs = met.lhs;
-                rhs = met.rhs;
-            } else {
-                return self.emitPlaceholder("compare-meet");
-            }
+            return lowerComparison(self, op, lhs, rhs, span) orelse self.emitPlaceholder("compare-meet");
         },
         else => {
             const span: ast.Span = .{ .start = lhs_span.start, .end = rhs_span.end };
@@ -5725,12 +5718,7 @@ fn lowerBinaryValues(self: *Lowering, op: ast.BinaryOp.Op, lhs_value: Ref, lhs_t
         .mul => self.builder.mul(lhs, rhs, ty),
         .div => self.builder.div(lhs, rhs, ty),
         .mod => self.builder.emit(.{ .mod = .{ .lhs = lhs, .rhs = rhs } }, ty),
-        .eq => self.builder.cmpEq(lhs, rhs),
-        .neq => self.builder.emit(.{ .cmp_ne = .{ .lhs = lhs, .rhs = rhs } }, .bool),
-        .lt => self.builder.cmpLt(lhs, rhs),
-        .lte => self.builder.emit(.{ .cmp_le = .{ .lhs = lhs, .rhs = rhs } }, .bool),
-        .gt => self.builder.cmpGt(lhs, rhs),
-        .gte => self.builder.emit(.{ .cmp_ge = .{ .lhs = lhs, .rhs = rhs } }, .bool),
+        .eq, .neq, .lt, .lte, .gt, .gte => unreachable, // returned by lowerComparison
         .and_op => self.builder.emit(.{ .bool_and = .{ .lhs = lhs, .rhs = rhs } }, .bool),
         .or_op => self.builder.emit(.{ .bool_or = .{ .lhs = lhs, .rhs = rhs } }, .bool),
         .bit_and => self.builder.emit(.{ .bit_and = .{ .lhs = lhs, .rhs = rhs } }, ty),
@@ -6068,23 +6056,15 @@ fn constIntOf(self: *Lowering, val: Ref) ?i64 {
     };
 }
 
-const CompareOperands = struct { lhs: Ref, rhs: Ref };
-
-/// Convert both sides of a comparison to the comparison type, or diagnose.
-fn meetCompareOperands(
-    self: *Lowering,
-    lhs: Ref,
-    rhs: Ref,
-    lhs_ty: TypeId,
-    rhs_ty: TypeId,
-    span: ast.Span,
-) ?CompareOperands {
+/// `lhs op rhs` for a comparison `op`, or null once refused at `span`.
+fn lowerComparison(self: *Lowering, op: ast.BinaryOp.Op, lhs: Ref, rhs: Ref, span: ast.Span) ?Ref {
+    const lhs_ty = self.builder.getRefType(lhs);
+    const rhs_ty = self.builder.getRefType(rhs);
     switch (self.coercionResolver().classifyCompare(lhs_ty, rhs_ty)) {
         .type => |meet_ty| {
-            return .{
-                .lhs = coerceCompareOperand(self, lhs, lhs_ty, meet_ty),
-                .rhs = coerceCompareOperand(self, rhs, rhs_ty, meet_ty),
-            };
+            const l = coerceCompareOperand(self, lhs, lhs_ty, meet_ty);
+            const r = coerceCompareOperand(self, rhs, rhs_ty, meet_ty);
+            return compareValues(self, op, l, r);
         },
         .incompatible => {
             if (self.diagnostics) |d| {
@@ -6093,24 +6073,9 @@ fn meetCompareOperands(
             return null;
         },
         .signedness => {
-            if (constIntOf(self, lhs)) |n| {
-                if (self.isIntEx(rhs_ty)) {
-                    self.checkIntLiteralFits(self.intConstantValue(n, lhs_ty), rhs_ty, span);
-                    return .{ .lhs = self.builder.constInt(n, rhs_ty), .rhs = rhs };
-                }
-            }
-            if (constIntOf(self, rhs)) |n| {
-                if (self.isIntEx(lhs_ty)) {
-                    self.checkIntLiteralFits(self.intConstantValue(n, rhs_ty), lhs_ty, span);
-                    return .{ .lhs = lhs, .rhs = self.builder.constInt(n, lhs_ty) };
-                }
-            }
-            if (self.diagnostics) |d| {
-                d.addFmt(.err, span, "cannot compare signed and unsigned values of type '{s}' and '{s}'; write an explicit cast on one side (e.g. `a.(u64) < b`)", .{
-                    self.formatTypeName(lhs_ty), self.formatTypeName(rhs_ty),
-                });
-            }
-            return null;
+            if (self.foldedInt(lhs)) |n| return compareWithConstant(self, op, n, lhs_ty, rhs, rhs_ty, true);
+            if (self.foldedInt(rhs)) |n| return compareWithConstant(self, op, n, rhs_ty, lhs, lhs_ty, false);
+            return compareOppositeSignedness(self, op, lhs, lhs_ty, rhs, rhs_ty);
         },
         .bool_number => {
             if (self.diagnostics) |d| {
@@ -6130,9 +6095,63 @@ fn meetCompareOperands(
                 }
                 return null;
             }
-            return .{ .lhs = lhs, .rhs = rhs };
+            return compareValues(self, op, lhs, rhs);
         },
     }
+}
+
+fn compareValues(self: *Lowering, op: ast.BinaryOp.Op, lhs: Ref, rhs: Ref) Ref {
+    return switch (op) {
+        .eq => self.builder.cmpEq(lhs, rhs),
+        .neq => self.builder.emit(.{ .cmp_ne = .{ .lhs = lhs, .rhs = rhs } }, .bool),
+        .lt => self.builder.cmpLt(lhs, rhs),
+        .lte => self.builder.emit(.{ .cmp_le = .{ .lhs = lhs, .rhs = rhs } }, .bool),
+        .gt => self.builder.cmpGt(lhs, rhs),
+        .gte => self.builder.emit(.{ .cmp_ge = .{ .lhs = lhs, .rhs = rhs } }, .bool),
+        else => unreachable,
+    };
+}
+
+/// `lhs op rhs` for operands known to differ, `lhs_less` telling which is less.
+fn unequalAnswer(op: ast.BinaryOp.Op, lhs_less: bool) bool {
+    return switch (op) {
+        .eq => false,
+        .neq => true,
+        .lt, .lte => lhs_less,
+        .gt, .gte => !lhs_less,
+        else => unreachable,
+    };
+}
+
+/// Integers of opposite signedness with no common type compare exactly: a
+/// negative signed operand is less than every unsigned value, and otherwise
+/// both compare as the unsigned type, which is at least as wide.
+fn compareOppositeSignedness(self: *Lowering, op: ast.BinaryOp.Op, lhs: Ref, lhs_ty: TypeId, rhs: Ref, rhs_ty: TypeId) Ref {
+    const signed_left = !self.module.types.isUnsignedInt(lhs_ty);
+    const signed = if (signed_left) lhs else rhs;
+    const signed_ty = if (signed_left) lhs_ty else rhs_ty;
+    const as_unsigned = self.coerceExplicit(signed, signed_ty, if (signed_left) rhs_ty else lhs_ty);
+    const unsigned_cmp = if (signed_left) compareValues(self, op, as_unsigned, rhs) else compareValues(self, op, lhs, as_unsigned);
+    const zero = self.builder.constInt(0, signed_ty);
+    if (unequalAnswer(op, signed_left)) {
+        const negative = self.builder.cmpLt(signed, zero);
+        return self.builder.emit(.{ .bool_or = .{ .lhs = negative, .rhs = unsigned_cmp } }, .bool);
+    }
+    const non_negative = self.builder.emit(.{ .cmp_ge = .{ .lhs = signed, .rhs = zero } }, .bool);
+    return self.builder.emit(.{ .bool_and = .{ .lhs = non_negative, .rhs = unsigned_cmp } }, .bool);
+}
+
+/// `compareOppositeSignedness` with the constant `n` of type `n_ty` on one
+/// side: inside the range of `other_ty` it compares as an `other_ty`, and
+/// outside it lies below or above every `other_ty` value.
+fn compareWithConstant(self: *Lowering, op: ast.BinaryOp.Op, n: i64, n_ty: TypeId, other: Ref, other_ty: TypeId, constant_left: bool) Ref {
+    const value = self.intConstantValue(n, n_ty);
+    const range = self.intLiteralRange(other_ty).?;
+    if (value < range.min or value > range.max) {
+        return self.builder.constBool(unequalAnswer(op, constant_left == (value < range.min)));
+    }
+    const constant = self.builder.constInt(n, other_ty);
+    return if (constant_left) compareValues(self, op, constant, other) else compareValues(self, op, other, constant);
 }
 
 pub const ArithOperands = struct { lhs: Ref, rhs: Ref, ty: TypeId };
