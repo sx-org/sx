@@ -1,0 +1,9 @@
+// glOffset passes a byte offset where GL takes a pointer: the pointer's
+// address is the offset.
+@import "modules/std.sx";
+@import "modules/ffi/opengl.sx";
+
+main :: () -> i32 {
+    print("{}\n", @reinterpret(usize, glOffset(48)));
+    return 0;
+}

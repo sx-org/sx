@@ -329,13 +329,13 @@ impl GPU for Gles3Gpu {
         // sources attribs from the zero-buffer (invisible geometry).
         glVertexAttribPointer(0, 2, GL_FLOAT, 0, 64, null);
         glEnableVertexAttribArray(0);
-        glVertexAttribPointer(1, 2, GL_FLOAT, 0, 64, @reinterpret(*void, 8.(usize)));
+        glVertexAttribPointer(1, 2, GL_FLOAT, 0, 64, glOffset(8));
         glEnableVertexAttribArray(1);
-        glVertexAttribPointer(2, 4, GL_FLOAT, 0, 64, @reinterpret(*void, 16.(usize)));
+        glVertexAttribPointer(2, 4, GL_FLOAT, 0, 64, glOffset(16));
         glEnableVertexAttribArray(2);
-        glVertexAttribPointer(3, 4, GL_FLOAT, 0, 64, @reinterpret(*void, 32.(usize)));
+        glVertexAttribPointer(3, 4, GL_FLOAT, 0, 64, glOffset(32));
         glEnableVertexAttribArray(3);
-        glVertexAttribPointer(4, 4, GL_FLOAT, 0, 64, @reinterpret(*void, 48.(usize)));
+        glVertexAttribPointer(4, 4, GL_FLOAT, 0, 64, glOffset(48));
         glEnableVertexAttribArray(4);
     }
 
@@ -425,14 +425,13 @@ impl GPU for Gles3Gpu {
         // MeshVertex: position at 0, normal at 12, uv at 24, stride 32.
         glVertexAttribPointer(0, 3, GL_FLOAT, 0, 32, null);
         glEnableVertexAttribArray(0);
-        glVertexAttribPointer(1, 3, GL_FLOAT, 0, 32, @reinterpret(*void, 12.(usize)));
+        glVertexAttribPointer(1, 3, GL_FLOAT, 0, 32, glOffset(12));
         glEnableVertexAttribArray(1);
-        glVertexAttribPointer(2, 2, GL_FLOAT, 0, 32, @reinterpret(*void, 24.(usize)));
+        glVertexAttribPointer(2, 2, GL_FLOAT, 0, 32, glOffset(24));
         glEnableVertexAttribArray(2);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self.currentIbo);
 
-        byteOffset : i64 = (indexOffset * 4).(i64);
-        glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, @reinterpret(*void, byteOffset.(usize)));
+        glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, glOffset((indexOffset * 4).(usize)));
     }
 
     drawSkinned :: (self: *Gles3Gpu, indexOffset: i32, indexCount: i32) {
@@ -449,13 +448,13 @@ impl GPU for Gles3Gpu {
         // 32, weights at 48, stride 64.
         glVertexAttribPointer(0, 3, GL_FLOAT, 0, 64, null);
         glEnableVertexAttribArray(0);
-        glVertexAttribPointer(1, 3, GL_FLOAT, 0, 64, @reinterpret(*void, 12.(usize)));
+        glVertexAttribPointer(1, 3, GL_FLOAT, 0, 64, glOffset(12));
         glEnableVertexAttribArray(1);
-        glVertexAttribPointer(2, 2, GL_FLOAT, 0, 64, @reinterpret(*void, 24.(usize)));
+        glVertexAttribPointer(2, 2, GL_FLOAT, 0, 64, glOffset(24));
         glEnableVertexAttribArray(2);
-        glVertexAttribPointer(3, 4, GL_FLOAT, 0, 64, @reinterpret(*void, 32.(usize)));
+        glVertexAttribPointer(3, 4, GL_FLOAT, 0, 64, glOffset(32));
         glEnableVertexAttribArray(3);
-        glVertexAttribPointer(4, 4, GL_FLOAT, 0, 64, @reinterpret(*void, 48.(usize)));
+        glVertexAttribPointer(4, 4, GL_FLOAT, 0, 64, glOffset(48));
         glEnableVertexAttribArray(4);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self.currentIbo);
 
@@ -464,8 +463,7 @@ impl GPU for Gles3Gpu {
             glUniform4fv(bonesLoc, 3.(i32) * self.boneCount, @reinterpret([*]f32, *self.bonePalette[0]));
         }
 
-        byteOffset : i64 = (indexOffset * 4).(i64);
-        glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, @reinterpret(*void, byteOffset.(usize)));
+        glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, glOffset((indexOffset * 4).(usize)));
     }
 }
 

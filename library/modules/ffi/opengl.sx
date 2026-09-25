@@ -107,6 +107,9 @@ GL_TEXTURE_WRAP_S        :u32: 0x2802;
 GL_TEXTURE_WRAP_T        :u32: 0x2803;
 GL_CLAMP_TO_EDGE         :u32: 0x812F;
 
+// A byte offset into the bound buffer, passed where GL takes a pointer.
+glOffset :: (bytes: usize) -> *void { @reinterpret(*void, bytes) }
+
 // Loader: call once after creating GL context
 // Pass in a proc loader (e.g. SDL_GL_GetProcAddress)
 loadFn :: (slot: *$T, name: [*:0]u8, getProc: ([*:0]u8) -> *void abi(.c)) {
