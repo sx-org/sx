@@ -413,7 +413,7 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.Ta
         } else if (has_else and !else_div and t != .void and t != .unresolved and t != .noreturn) {
             const et = self.inferExprType(ie.else_branch.?);
             if (et != .void and et != .unresolved and et != .noreturn) {
-                if (self.unifyValueArmTypes(t, et)) |joined| t = joined;
+                if (self.meetValueArms(ie.then_branch, t, ie.else_branch.?, et)) |joined| t = joined;
             }
         }
         // Live arm not statically inferable AND not a plain `.unresolved`

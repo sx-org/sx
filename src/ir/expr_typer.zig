@@ -193,7 +193,7 @@ pub const ExprTyper = struct {
                     if (then_ty == .noreturn) return self.l.inferExprType(eb);
                     const else_ty = self.l.inferExprType(eb);
                     if (else_ty == .noreturn) return then_ty;
-                    return self.l.unifyValueArmTypes(then_ty, else_ty) orelse then_ty;
+                    return self.l.meetValueArms(ie.then_branch, then_ty, eb, else_ty) orelse then_ty;
                 }
                 return .void;
             },

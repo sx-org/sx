@@ -1,0 +1,39 @@
+// The average filter adds half the full sum of a byte's left and upper
+// neighbors: 250 and 200 average to 225.
+
+@import "modules/std.sx";
+
+Bytes :: struct { buf: [96]u8; len: i64; }
+
+put :: (b: *Bytes, s: string) {
+    i := 0;
+    while i < s.len { b.buf[b.len] = s[i]; b.len += 1; i += 1; }
+}
+
+putU32 :: (b: *Bytes, v: i64) {
+    word : [4]u8 = .[(v >> 24).(u8), (v >> 16).(u8), (v >> 8).(u8), v.(u8)];
+    put(b, word[..]);
+}
+
+chunk :: (b: *Bytes, kind: string, payload: string) {
+    putU32(b, payload.len);
+    put(b, kind);
+    put(b, payload);
+    putU32(b, gzip.checksum(payload, gzip.checksum(kind)));
+}
+
+main :: () {
+    // 2x2 grayscale: row 0 unfiltered, row 1 average-filtered.
+    rows : [6]u8 = .[0, 200, 200, 3, 150, 0];
+    ihdr : [13]u8 = .[0, 0, 0, 2, 0, 0, 0, 2, 8, 0, 0, 0, 0];
+    signature : [8]u8 = .[137, 80, 78, 71, 13, 10, 26, 10];
+    idat := zlib.encode(rows[..]) catch |e| { print("encode failed\n"); process.exit(1); "" };
+    b : Bytes = ---;
+    b.len = 0;
+    put(*b, signature[..]);
+    chunk(*b, "IHDR", ihdr[..]);
+    chunk(*b, "IDAT", idat);
+    chunk(*b, "IEND", "");
+    img := png.decode(b.buf[..b.len]) catch |e| { print("decode failed\n"); process.exit(1); png.Image{ pixels = "", width = 0, height = 0, format = .gray } };
+    print("{} {} {} {}\n", img.pixels[0], img.pixels[1], img.pixels[2], img.pixels[3]);
+}

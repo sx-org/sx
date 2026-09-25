@@ -4606,6 +4606,11 @@ if i == 2 continue;
 y := x + if false { 7 } else { 12 };
 ```
 
+The results of an `if`, and the arms of a value `match`, meet at one type. An
+untyped result takes its typed peer's type, as an untyped operand does in
+[§Arithmetic](#arithmetic); with no typed result the untyped default applies.
+With `v : u8`, `if c then v else 0` is `u8`, and `if c then 1 else 2` is `i64`.
+
 `then` is an optional delimiter between the condition and the result. It is
 **required** where the result's first token can continue the condition — `(`,
 `[`, `.`, `{`, `*`, `-`, or a binary operator:

@@ -1275,6 +1275,9 @@ pub fn inferMatchResultType(self: *Lowering, me: *const ast.MatchExpr) TypeId {
     var saw_unresolved = false;
     var saw_noreturn = false;
     var result: ?TypeId = null;
+    var typed_node: ?*const Node = null;
+    var untyped: ?program_index_mod.Untyped = null;
+    var untyped_node: ?*const Node = null;
     for (me.arms) |arm| {
         // A DIVERGING arm (`return`/`raise`/`break`/`continue`, or a `noreturn`
         // expression) never reaches the merge, so it must NOT decide the result
@@ -1332,22 +1335,43 @@ pub fn inferMatchResultType(self: *Lowering, me: *const ast.MatchExpr) TypeId {
             saw_unresolved = true;
             continue;
         }
-        if (result == null) {
+        if (arm_ty == .void) {
             // A `.void` FIRST decisive arm means "no value" — the match is a
             // statement; later arms' discarded tails don't re-open it.
-            if (arm_ty == .void) return .void;
-            result = arm_ty;
+            if (result == null and untyped == null) return .void;
+            // A later void-tail arm doesn't join: in a value match `lowerMatch`
+            // substitutes a zero/undef of the result type for a valueless arm.
             continue;
         }
-        // A later void-tail arm doesn't join: in a value match `lowerMatch`
-        // substitutes a zero/undef of the result type for a valueless arm.
-        if (arm_ty == .void) continue;
+        if (untypedArm(self, last_node)) |kind| {
+            untyped = if (kind == .float) kind else untyped orelse kind;
+            untyped_node = untyped_node orelse last_node;
+            continue;
+        }
+        if (result == null) {
+            result = arm_ty;
+            typed_node = last_node;
+            continue;
+        }
         if (unifyValueArmTypes(self, result.?, arm_ty)) |joined| {
             result = joined;
         } else if (self.diagnostics) |diags| {
             diags.addFmt(.err, last_node.span, "match arms have incompatible types: '{s}' vs '{s}'", .{
                 self.formatTypeName(result.?),
                 self.formatTypeName(arm_ty),
+            });
+        }
+    }
+    if (untyped) |kind| {
+        if (meetUntypedArms(self, result, kind)) |met| {
+            result = met;
+        } else if (self.diagnostics) |diags| {
+            const typed_first = typed_node.?.span.start < untyped_node.?.span.start;
+            const first = if (typed_first) result.? else untypedDefault(kind);
+            const second = if (typed_first) untypedDefault(kind) else result.?;
+            diags.addFmt(.err, (if (typed_first) untyped_node else typed_node).?.span, "match arms have incompatible types: '{s}' vs '{s}'", .{
+                self.formatTypeName(first),
+                self.formatTypeName(second),
             });
         }
     }
@@ -1383,6 +1407,39 @@ pub fn unifyValueArmTypes(self: *Lowering, a: TypeId, b: TypeId) ?TypeId {
     if (self.conversionAvailable(b, a, .implicit)) return a;
     if (self.conversionAvailable(a, b, .implicit)) return b;
     return null;
+}
+
+/// The type value arms `a` and `b`, inferred as `a_ty` and `b_ty`, meet at.
+pub fn meetValueArms(self: *Lowering, a: *const Node, a_ty: TypeId, b: *const Node, b_ty: TypeId) ?TypeId {
+    const a_kind = untypedArm(self, a);
+    const b_kind = untypedArm(self, b);
+    if (a_kind != null and b_kind == null) return meetUntypedArms(self, b_ty, a_kind.?);
+    if (b_kind != null and a_kind == null) return meetUntypedArms(self, a_ty, b_kind.?);
+    return unifyValueArmTypes(self, a_ty, b_ty);
+}
+
+/// The numeric untyped constant an arm yields, a block through its tail.
+fn untypedArm(self: *Lowering, node: *const Node) ?program_index_mod.Untyped {
+    if (node.data == .block) {
+        const b = node.data.block;
+        return if (b.produces_value and b.stmts.len > 0) untypedArm(self, b.stmts[b.stmts.len - 1]) else null;
+    }
+    const kind = program_index_mod.untypedConst(node, self) orelse return null;
+    return if (kind == .string) null else kind;
+}
+
+/// Untyped numeric arms of `kind` beside typed arms meeting at `typed` take
+/// `typed` where an untyped operand takes its typed peer's type (an integer a
+/// numeric type, a float a float type, through `?`); otherwise their default
+/// type joins it.
+fn meetUntypedArms(self: *Lowering, typed: ?TypeId, kind: program_index_mod.Untyped) ?TypeId {
+    const peer = typed orelse return untypedDefault(kind);
+    if (self.floatContext(peer) != null or (kind == .integer and self.integerContext(peer) != null)) return peer;
+    return unifyValueArmTypes(self, peer, untypedDefault(kind));
+}
+
+fn untypedDefault(kind: program_index_mod.Untyped) TypeId {
+    return if (kind == .float) .f64 else .i64;
 }
 
 /// Is `name` a runtime type-CATEGORY keyword denoting a tag SET (many
