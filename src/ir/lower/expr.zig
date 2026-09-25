@@ -5893,11 +5893,11 @@ fn lowerSequenceEquality(self: *Lowering, lhs: Ref, rhs: Ref, elem: TypeId, want
 pub fn lowerFieldEquality(self: *Lowering, lf: Ref, rf: Ref, field_ty: TypeId, span: ast.Span) ?Ref {
     if (sequenceElement(self, field_ty)) |elem| return lowerSequenceEquality(self, lf, rf, elem, true, span);
 
-    // Builtins (ints, floats, bool, pointers, enums-as-int, usize/isize): a
-    // plain `cmp_eq`. The LLVM emitter picks fcmp for a float operand and icmp
-    // otherwise off the operand's own type, so f32/f64 fields get the correct
-    // ordered-equal compare with no special-casing here.
-    if (field_ty.isBuiltin()) return self.builder.cmpEq(lf, rf);
+    // Builtins (ints, floats, bool, pointers, enums-as-int, usize/isize) and
+    // every `@int(N, ...)`: a plain `cmp_eq`. The LLVM emitter picks fcmp for a
+    // float operand and icmp otherwise off the operand's own type, so f32/f64
+    // fields get the correct ordered-equal compare with no special-casing here.
+    if (field_ty.isBuiltin() or self.module.types.isIntegerType(field_ty)) return self.builder.cmpEq(lf, rf);
 
     const fi = self.module.types.get(field_ty);
     return switch (fi) {
