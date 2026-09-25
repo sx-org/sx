@@ -32,12 +32,12 @@ fsFileClose :: (handle: i64) -> bool {
 
 fsFileRead :: (handle: i64, output: string) -> i64 {
     if !fsFileIsValid(handle) { return -1; }
-    fsPosixC.c.read(handle.(i32), output.ptr, output.len).(i64)
+    fsPosixC.c.read(handle.(i32), output.ptr, output.len)
 }
 
 fsFileWrite :: (handle: i64, data: string) -> i64 {
     if !fsFileIsValid(handle) { return -1; }
-    fsPosixC.c.write(handle.(i32), data.ptr, data.len).(i64)
+    fsPosixC.c.write(handle.(i32), data.ptr, data.len)
 }
 
 fsFileTruncate :: (handle: i64, len: i64) -> bool {
@@ -70,7 +70,7 @@ fsOpenHandle :: (path: string, mode: i32) -> i64 {
     z := mem.cloneZ(path);
     defer mem.free(z);
     fd := fsPosixC.c.open(z, fsPosixModeToFlags(mode), 420); // 0o644 = 420
-    fd.(i64)
+    fd
 }
 
 // One-shot read: opens, slurps the whole file into a fresh buffer,
@@ -202,8 +202,8 @@ fsCopyFile :: (src: string, dst: string) -> bool {
         if n == 0 { loop = false; }
         if n > 0 {
             at := 0;
-            while at < n.(i64) {
-                made := fsPosixC.c.write(dstFd, *buf.ptr[at], (n.(i64) - at));
+            while at < n {
+                made := fsPosixC.c.write(dstFd, *buf.ptr[at], (n - at));
                 if made <= 0 { ok = false; loop = false; break; }
                 at += made;
             }

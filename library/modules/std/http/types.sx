@@ -57,7 +57,7 @@ Request :: struct {
             return f(self.bodyReadCtx, dst, cap);
         }
         if cap <= 0 { return 0; }
-        blen : i64 = self.body.len.(i64);
+        blen : i64 = self.body.len;
         left := blen - self.bodyOff;
         if left <= 0 { return 0; }
         n := if cap < left then cap else left;

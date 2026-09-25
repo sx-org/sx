@@ -72,7 +72,7 @@ inline match @host.os {
             if fd < 0 { return -1; }
             at := 0;
             while at < cap {
-                made := c.read(fd, *buf[at], (cap - at)).(i64);
+                made := c.read(fd, *buf[at], (cap - at));
                 if made < 0 { c.close(fd); return -1; }
                 if made == 0 { break; }
                 at += made;
@@ -155,7 +155,7 @@ exitUsage :: () -> noreturn { process.exit(EX_USAGE); }
 // process, since argv[0] is the executable path.
 osArgc :: () -> i64 {
     inline match @host.os {
-        case .macos: { return (nsGetArgc().*).(i64); }
+        case .macos: { return nsGetArgc().*; }
         case .linux: {
             cmdlineLoad();
             return cmdlineArgc;
@@ -180,11 +180,11 @@ osArgs :: (buf: []string) -> []string {
     inline match @host.os {
         case .macos: {
             argc := (nsGetArgc().*).(i64);
-            argv : [*]i64 = @reinterpret([*]i64, ((nsGetArgv().*)).(usize));
+            argv : [*]i64 = @reinterpret([*]i64, nsGetArgv().*);
             n := if argc > buf.len then buf.len else argc;
             i := 0;
             while i < n {
-                cstr : [*]u8 = @reinterpret([*]u8, argv[i].(usize));
+                cstr : [*]u8 = @reinterpret([*]u8, argv[i]);
                 len := 0;
                 while cstr[len] != 0 { len += 1; }
                 buf[i] = string{ ptr = cstr, len = len };

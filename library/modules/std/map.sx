@@ -53,7 +53,7 @@ MIN_CAP        :: 8;
 // Fingerprint = top 7 bits of the 64-bit hash (the low log2(cap) bits go
 // to the bucket index, so the high bits carry independent entropy).
 mapFingerprint :: (h: u64) -> u8 {
-    ((h >> 57) & (0x7F.(u64))).(u8)
+    ((h >> 57) & 0x7F).(u8)
 }
 
 // Smallest power-of-two capacity whose 80% load still holds `n` entries.

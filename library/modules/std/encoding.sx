@@ -38,9 +38,9 @@ encoding :: scope {
     }
 
     hexValue :: (c: u8) -> ?i64 {
-        if '0' <= c <= '9' { return c.(i64) - '0'; }
-        if 'a' <= c <= 'f' { return c.(i64) - 'a' + 10; }
-        if 'A' <= c <= 'F' { return c.(i64) - 'A' + 10; }
+        if '0' <= c <= '9' { return c - '0'; }
+        if 'a' <= c <= 'f' { return c - 'a' + 10; }
+        if 'A' <= c <= 'F' { return c - 'A' + 10; }
         null
     }
 }

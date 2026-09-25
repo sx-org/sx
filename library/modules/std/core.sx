@@ -225,7 +225,7 @@ impl Writer for FdWriter {
         while off < s.len {
             n := c.write(self.fd, *s[off], s.len - off);
             if n <= 0 { return; }
-            off += n.(i64);
+            off += n;
         }
     }
 }

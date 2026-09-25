@@ -237,7 +237,7 @@ fnv1aFold :: (h: u64, data: [*]u8, len: i64) -> u64 {
     hh := h;
     i := 0;
     while i < len {
-        hh = hh ^ (data[i].(u64));
+        hh = hh ^ data[i];
         hh = hh * FNV_PRIME;           // wraps mod 2^64 (FNV spec)
         i += 1;
     }

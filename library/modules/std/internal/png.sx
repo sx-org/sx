@@ -262,9 +262,9 @@ pngDecodeBytes :: (data: string, alloc: Allocator) -> (DecodedPng, !DecodeErr) {
         c := 0;
         while c < rowBytes {
             x := filtered[r * filteredRowBytes + 1 + c].(i64);
-            a := if c >= bpp then out[r * rowBytes + c - bpp].(i64) else 0;
-            b := if r > 0 then out[(r - 1) * rowBytes + c].(i64) else 0;
-            cc := if r > 0 and c >= bpp then out[(r - 1) * rowBytes + c - bpp].(i64) else 0;
+            a := if c >= bpp then out[r * rowBytes + c - bpp] else 0;
+            b := if r > 0 then out[(r - 1) * rowBytes + c] else 0;
+            cc := if r > 0 and c >= bpp then out[(r - 1) * rowBytes + c - bpp] else 0;
             v := x;
             if f == 1 { v = x + a; }
             else if f == 2 { v = x + b; }

@@ -260,8 +260,7 @@ impl GPU for Gles3Gpu {
     updateTextureRegion :: (self: *Gles3Gpu, handle: TextureHandle, x: i32, y: i32, w: i32, h: i32, pixels: *void) {
         inline if @host.os != .android { return; }
         if handle == 0 { return; }
-        h64 : i64 = handle.(i64);
-        if h64 > self.textures.len { return; }
+        if handle > self.textures.len { return; }
         slot := self.textures.items[handle - 1];
         if slot.tex == 0 { return; }
         if pixels == null { return; }
@@ -298,8 +297,7 @@ impl GPU for Gles3Gpu {
     destroyTexture :: (self: *Gles3Gpu, tex: TextureHandle) {
         inline if @host.os != .android { return; }
         if tex == 0 { return; }
-        h64 : i64 = tex.(i64);
-        if h64 > self.textures.len { return; }
+        if tex > self.textures.len { return; }
         t := self.textures.items[tex - 1].tex;
         if t == 0 { return; }
         glDeleteTextures(1, *t);
@@ -311,8 +309,7 @@ impl GPU for Gles3Gpu {
     setShader :: (self: *Gles3Gpu, handle: ShaderHandle) {
         inline if @host.os != .android { return; }
         if handle == 0 { return; }
-        h64 : i64 = handle.(i64);
-        if h64 > self.shaders.len { return; }
+        if handle > self.shaders.len { return; }
         prog := self.shaders.items[handle - 1].program;
         if prog == 0 { return; }
         glUseProgram(prog);
@@ -351,15 +348,13 @@ impl GPU for Gles3Gpu {
         inline if @host.os != .android { return; }
         if slot != 0 { return; } // renderer only uses unit 0
         if handle == 0 { return; }
-        h64 : i64 = handle.(i64);
-        if h64 > self.textures.len { return; }
+        if handle > self.textures.len { return; }
         t := self.textures.items[handle - 1].tex;
         if t == 0 { return; }
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, t);
         if self.currentShader != 0 {
-            cs64 : i64 = self.currentShader.(i64);
-            if cs64 <= self.shaders.len {
+            if self.currentShader <= self.shaders.len {
                 loc := self.shaders.items[self.currentShader - 1].texLoc;
                 if loc >= 0 { glUniform1i(loc, 0); }
             }
@@ -372,8 +367,7 @@ impl GPU for Gles3Gpu {
     setVertexConstants :: (self: *Gles3Gpu, slot: u32, data: *void, sizeBytes: i64) {
         inline if @host.os != .android { return; }
         if self.currentShader == 0 { return; }
-        cs64 : i64 = self.currentShader.(i64);
-        if cs64 > self.shaders.len { return; }
+        if self.currentShader > self.shaders.len { return; }
         shader: *Gles3ShaderSlot = *self.shaders.items[self.currentShader - 1];
 
         if slot == 1 and sizeBytes == 64 {
@@ -407,7 +401,7 @@ impl GPU for Gles3Gpu {
         if data == null { return; }
         if count < 0 { return; }
         if count > GPU_MAX_BONES { return; }
-        n : i64 = count.(i64);
+        n : i64 = count;
         c.memcpy(*self.bonePalette[0], data, n * @sizeOf(BoneMatrix));
         self.boneCount = count;
     }
@@ -494,23 +488,20 @@ gles3ApplyDepthMode :: (self: *Gles3Gpu) {
 gles3BonesLoc :: (self: *Gles3Gpu) -> i32 {
     inline if @host.os != .android { return -1; }
     if self.currentShader == 0 { return -1; }
-    cs64 : i64 = self.currentShader.(i64);
-    if cs64 > self.shaders.len { return -1; }
+    if self.currentShader > self.shaders.len { return -1; }
     self.shaders.items[self.currentShader - 1].bonesLoc
 }
 
 gles3LookupBuffer :: (self: *Gles3Gpu, handle: u32) -> u32 {
     inline if @host.os != .android { return 0; }
     if handle == 0 { return 0; }
-    h64 : i64 = handle.(i64);
-    if h64 > self.buffers.len { return 0; }
+    if handle > self.buffers.len { return 0; }
     self.buffers.items[handle - 1]
 }
 
 gles3LookupIndex :: (self: *Gles3Gpu, handle: u32) -> u32 {
     inline if @host.os != .android { return 0; }
     if handle == 0 { return 0; }
-    h64 : i64 = handle.(i64);
-    if h64 > self.indices.len { return 0; }
+    if handle > self.indices.len { return 0; }
     self.indices.items[handle - 1]
 }

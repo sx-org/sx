@@ -12,7 +12,7 @@ bound :: (sourceLen: i64) -> (i64, !Error) {
     compressBound(sourceLen)
 }
 
-checksum :: (data: string, initial: u32 = 1) -> u32 { adler32(data, initial.(i64)).(u32) }
+checksum :: (data: string, initial: u32 = 1) -> u32 { adler32(data, initial).(u32) }
 
 Encoder :: struct {
     state: ZlibDeflater;

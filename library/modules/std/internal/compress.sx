@@ -75,7 +75,7 @@ adler32 :: (data: string, initial: i64 = 1) -> i64 {
         remaining -= blockLen;
         blockLen = 5552;
     }
-    ((s2 << 16) | s1).(i64)
+    (s2 << 16) | s1
 }
 
 private CRC32_TABLE : [256]i64 = .[
@@ -117,14 +117,14 @@ crc32 :: (data: string, initial: i64 = 0) -> i64 {
     crc := (initial ^ 0xffffffff) & 0xffffffff;
     at := 0;
     while at + 3 < data.len {
-        crc = (crc >> 8) ^ CRC32_TABLE[(crc ^ data[at].(i64)) & 0xff];
-        crc = (crc >> 8) ^ CRC32_TABLE[(crc ^ data[at + 1].(i64)) & 0xff];
-        crc = (crc >> 8) ^ CRC32_TABLE[(crc ^ data[at + 2].(i64)) & 0xff];
-        crc = (crc >> 8) ^ CRC32_TABLE[(crc ^ data[at + 3].(i64)) & 0xff];
+        crc = (crc >> 8) ^ CRC32_TABLE[(crc ^ data[at]) & 0xff];
+        crc = (crc >> 8) ^ CRC32_TABLE[(crc ^ data[at + 1]) & 0xff];
+        crc = (crc >> 8) ^ CRC32_TABLE[(crc ^ data[at + 2]) & 0xff];
+        crc = (crc >> 8) ^ CRC32_TABLE[(crc ^ data[at + 3]) & 0xff];
         at += 4;
     }
     while at < data.len {
-        crc = (crc >> 8) ^ CRC32_TABLE[(crc ^ data[at].(i64)) & 0xff];
+        crc = (crc >> 8) ^ CRC32_TABLE[(crc ^ data[at]) & 0xff];
         at += 1;
     }
     (crc ^ 0xffffffff) & 0xffffffff
@@ -524,15 +524,15 @@ private TDEFL_LARGE_DIST_INDEX : [128]u8 = .[
 ];
 
 private tdeflLengthIndex :: (length: i64) -> i64 {
-    TDEFL_LENGTH_INDEX[length - 3].(i64)
+    TDEFL_LENGTH_INDEX[length - 3]
 }
 
 private tdeflDistanceIndex :: (distance: i64) -> i64 {
     value := distance - 1;
     if value < 512 {
-        return TDEFL_SMALL_DIST_INDEX[value].(i64);
+        return TDEFL_SMALL_DIST_INDEX[value];
     }
-    TDEFL_LARGE_DIST_INDEX[value >> 8].(i64)
+    TDEFL_LARGE_DIST_INDEX[value >> 8]
 }
 
 private CodeLengthToken :: struct { symbol: i32; extra: i32; extraBits: i32; }
@@ -589,7 +589,7 @@ private tdeflLengths :: (frequencies: []u16, maxBits: i64) -> [288]u8 {
 
     // miniz omits the high-byte pass when every key is below 256. Copy the
     // one-pass result back so the redundancy code always consumes `syms`.
-    if hist[256].(i64) == used {
+    if hist[256] == used {
         i = 0;
         while i < used { syms[i] = scratch[i]; i += 1; }
     } else {
@@ -642,7 +642,7 @@ private tdeflLengths :: (frequencies: []u16, maxBits: i64) -> [288]u8 {
     root = used - 2;
     next = used - 1;
     while available > 0 {
-        while root >= 0 and syms[root].key.(i64) == depth {
+        while root >= 0 and syms[root].key == depth {
             usedAtDepth += 1;
             root -= 1;
         }
@@ -657,7 +657,7 @@ private tdeflLengths :: (frequencies: []u16, maxBits: i64) -> [288]u8 {
     }
 
     i = 0;
-    while i < used { numCodes[syms[i].key.(i64)] += 1; i += 1; }
+    while i < used { numCodes[syms[i].key] += 1; i += 1; }
     i = maxBits + 1;
     while i <= 32 { numCodes[maxBits] += numCodes[i]; i += 1; }
     total := 0;
@@ -683,7 +683,7 @@ private tdeflLengths :: (frequencies: []u16, maxBits: i64) -> [288]u8 {
         count := numCodes[i];
         while count > 0 {
             next -= 1;
-            result[syms[next].symbol.(i64)] = i.(u8);
+            result[syms[next].symbol] = i.(u8);
             count -= 1;
         }
         i += 1;
@@ -811,7 +811,7 @@ private emitTdeflDynamic :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Allo
     while i < packedLengths.len {
         item := packedLengths.items[i];
         symbol := item.symbol.(i64);
-        writer.write(clCodes[symbol].(i64), clLengths[symbol]);
+        writer.write(clCodes[symbol], clLengths[symbol]);
         if item.extraBits > 0 { writer.write(item.extra, item.extraBits); }
         i += 1;
     }
@@ -865,13 +865,13 @@ private emitTdeflDynamic :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Allo
             // flag sentinel prevents crossing into the next flag byte.
             if (flags & 2) == 0 and at < buffer.codeLen {
                 flags = flags >> 1;
-                symbol = buffer.codes[at].(i64);
+                symbol = buffer.codes[at];
                 at += 1;
                 bitBuffer = bitBuffer | (litCodes[symbol].(i64) << bitsIn);
                 bitsIn += litLengths[symbol];
                 if (flags & 2) == 0 and at < buffer.codeLen {
                     flags = flags >> 1;
-                    symbol = buffer.codes[at].(i64);
+                    symbol = buffer.codes[at];
                     at += 1;
                     bitBuffer = bitBuffer | (litCodes[symbol].(i64) << bitsIn);
                     bitsIn += litLengths[symbol];
@@ -955,7 +955,7 @@ private emitTdeflFixed :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Alloca
             }
             if (flags & 2) == 0 and at < buffer.codeLen {
                 flags = flags >> 1;
-                literal = buffer.codes[at].(i64);
+                literal = buffer.codes[at];
                 at += 1;
                 if literal <= 143 {
                     bitBuffer = bitBuffer | (reverseBits(0x30 + literal, 8) << bitsIn);
@@ -966,7 +966,7 @@ private emitTdeflFixed :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Alloca
                 }
                 if (flags & 2) == 0 and at < buffer.codeLen {
                     flags = flags >> 1;
-                    literal = buffer.codes[at].(i64);
+                    literal = buffer.codes[at];
                     at += 1;
                     if literal <= 143 {
                         bitBuffer = bitBuffer | (reverseBits(0x30 + literal, 8) << bitsIn);
@@ -1091,14 +1091,14 @@ private buildHuffmanInto :: (h: *Huffman, lengths: string, allowSingle: bool = t
     // when the block contains no matches. It is an unusable tree and decoding
     // a match through it still fails, but literal-only/Huffman-only blocks are
     // valid. No other alphabet may be empty.
-    if h.counts[0].(i64) == lengths.len {
+    if h.counts[0] == lengths.len {
         if allowEmpty { return; }
         raise .InvalidData;
     }
     left := 1;
     len := 1;
     while len <= 15 {
-        left = (left << 1) - h.counts[len].(i64);
+        left = (left << 1) - h.counts[len];
         if left < 0 { raise .InvalidData; }
         len += 1;
     }
@@ -1132,7 +1132,7 @@ private buildHuffmanInto :: (h: *Huffman, lengths: string, allowSingle: bool = t
     treeNext := -1;
     len = 1;
     while len <= 15 {
-        if len > 1 { code = (code + h.counts[len - 1].(i64)) << 1; }
+        if len > 1 { code = (code + h.counts[len - 1]) << 1; }
         nextCode[len] = code;
         len += 1;
     }
@@ -1170,7 +1170,7 @@ private buildHuffmanInto :: (h: *Huffman, lengths: string, allowSingle: bool = t
                         treeCur = treeNext;
                         treeNext -= 2;
                     } else {
-                        treeCur = h.tree[treeAt].(i64);
+                        treeCur = h.tree[treeAt];
                     }
                     remaining -= 1;
                 }
@@ -1190,7 +1190,7 @@ private huffmanResolve :: (h: *Huffman, bits: i64) -> i64 {
     if entry >= 0 { return entry; }
     length := 10;
     while entry < 0 {
-        entry = h.tree[-entry - 1 + ((bits >> length) & 1)].(i64);
+        entry = h.tree[-entry - 1 + ((bits >> length) & 1)];
         length += 1;
     }
     (length << 9) | entry
@@ -1632,7 +1632,7 @@ Deflater :: struct {
         self.phase = .done;
     }
 
-    dictByte :: (self: *Deflater, absolute: i64) -> i64 { self.dict[absolute & 32767].(i64) }
+    dictByte :: (self: *Deflater, absolute: i64) -> i64 { self.dict[absolute & 32767] }
 
     normalHashAt :: (self: *Deflater, absolute: i64) -> i64 {
         ((self.dictByte(absolute) << (self.hashShift * 2)) ^
@@ -1660,7 +1660,7 @@ Deflater :: struct {
         rollingReady := false;
         if history >= 2 {
             insPos := (absolute - 2) & 32767;
-            rolling = (dict[insPos].(i64) << self.hashShift) ^ dict[insPos + 1].(i64);
+            rolling = (dict[insPos].(i64) << self.hashShift) ^ dict[insPos + 1];
             rollingReady = true;
         }
         at := 0;
@@ -1672,14 +1672,14 @@ Deflater :: struct {
             lookahead += 1;
             history += 1;
             if rollingReady {
-                rolling = ((rolling << self.hashShift) ^ value.(i64)) & self.hashMask;
+                rolling = ((rolling << self.hashShift) ^ value) & self.hashMask;
                 inserted := absolute - 2;
                 insPos := inserted & 32767;
                 links[insPos] = heads[rolling];
                 heads[rolling] = (inserted & 65535).(u16);
             } else if history == 2 {
                 previous := (absolute - 1) & 32767;
-                rolling = (dict[previous].(i64) << self.hashShift) ^ value.(i64);
+                rolling = (dict[previous].(i64) << self.hashShift) ^ value;
                 rollingReady = true;
             }
             absolute += 1;
@@ -1791,8 +1791,8 @@ Deflater :: struct {
                 }
                 if length > lookaheadSize { length = lookaheadSize; }
                 if length > result.length.(u32) {
-                    result.length = length.(i64);
-                    result.distance = distance.(i64);
+                    result.length = length;
+                    result.distance = distance;
                     if length == lookaheadSize { break; }
                     tailAt = pos + length - 1;
                     tailWords = @reinterpret([*]u16, *dict[tailAt]);
@@ -1834,7 +1834,7 @@ Deflater :: struct {
             length := 1;
             probePos := probe & 32767;
             candidateAt : [*]u32 = @reinterpret([*]u32, *dict[probePos]);
-            if distance <= dictSize and (candidateAt[0].(i64) & 0xffffff) == first {
+            if distance <= dictSize and (candidateAt[0] & 0xffffff) == first {
                 sourceWords : [*]u16 = @reinterpret([*]u16, *dict[pos]);
                 candidateWords : [*]u16 = @reinterpret([*]u16, *dict[probePos]);
                 // Compare a full group on the hot equal path, then recover
@@ -2905,7 +2905,7 @@ Inflater :: struct {
         // precision. Scan only EOB and the at-most-29 length symbols; the
         // remainder is literal weight. Literal-dense blocks can use the
         // bookkeeping-light two-literal loop below.
-        nonliteralWeight := 1 << (15 - self.dynamicLengths[256].(i64));
+        nonliteralWeight := 1 << (15 - self.dynamicLengths[256]);
         i := 257;
         while i < self.hlit {
             bits := self.dynamicLengths[i].(i64);
@@ -3878,7 +3878,7 @@ GzipInflater :: struct {
                 if self.fixedAt < 10 { return Progress{ consumed = consumed, produced = produced, status = .needInput }; }
                 if self.fixed[0] != 0x1f or self.fixed[1] != 0x8b { raise .InvalidData; }
                 if self.fixed[2] != 8 { raise .Unsupported; }
-                self.flags = self.fixed[3].(i64);
+                self.flags = self.fixed[3];
                 if (self.flags & 0xe0) != 0 { raise .InvalidData; }
                 if (self.flags & 4) != 0 { self.phase = .extraLength; }
                 else { self.afterExtra(); }
@@ -4213,7 +4213,7 @@ gzipCompressOptionsStrategy :: (data: string, options: GzipOptions, level: i64, 
     if level >= 8 { xfl = 2; }
     if level <= 2 { xfl = 4; }
     out.put(xfl);
-    out.put(options.os.(i64));
+    out.put(options.os);
     if options.extra.len > 0 {
         out.putU16le(options.extra.len);
         out.putBytes(options.extra);

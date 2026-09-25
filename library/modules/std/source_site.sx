@@ -47,12 +47,12 @@ SourceSiteHasher :: struct {
     state: u64 = hash.FNV_OFFSET_BASIS;
 
     writeByte :: (self: *SourceSiteHasher, value: u8) {
-        self.state = (self.state ^ value.(u64)) * hash.FNV_PRIME;
+        self.state = (self.state ^ value) * hash.FNV_PRIME;
     }
 
     writeU64Le :: (self: *SourceSiteHasher, value: u64) {
         inline for index in 0..8 {
-            self.writeByte((value >> (index * 8).(u64)).(u8));
+            self.writeByte((value >> (index * 8)).(u8));
         }
     }
 

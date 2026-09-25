@@ -103,7 +103,7 @@ pointerToString :: (p: $T) -> string {
         sb := StringBuilder.init();
         sb.write(@typeName(T));
         sb.write("@0x");
-        sb.writeHex(addr.(u64));
+        sb.writeHex(addr);
         sb.finish()
     }
 }
@@ -265,7 +265,7 @@ writePointer :: ufcs (w: Writer, val: any) {
     pt := @typeOf(val);
     w.write(@typeName(pt));
     w.write("@0x");
-    w.writeHex(@reinterpret(usize, p).(u64));
+    w.writeHex(@reinterpret(usize, p));
 }
 
 anyToString :: (val: any) -> string {

@@ -249,7 +249,7 @@ private parseStatusLine :: (line: string) -> (i64, string) {
     code : i64 = 0;
     digits : i64 = 0;
     while p < line.len and line.ptr[p] >= '0' and line.ptr[p] <= '9' {
-        code = code * 10 + (line.ptr[p] - '0').(i64);
+        code = code * 10 + (line.ptr[p] - '0');
         p += 1; digits += 1;
     }
     if digits == 0 { return 0, ""; }
@@ -385,7 +385,7 @@ private parseUrl :: (url: string) -> (Url, bool) {
         v : i64 = 0;
         d : i64 = 0;
         while ps < rest.len and rest[ps] >= '0' and rest[ps] <= '9' {
-            v = v * 10 + (rest[ps] - '0').(i64);
+            v = v * 10 + (rest[ps] - '0');
             ps += 1;
             d += 1;
         }
@@ -842,7 +842,7 @@ private validContentLength :: (value: string) -> (i64, bool) {
         b := value[i];
         if b < '0' or b > '9' { return 0, false; }
         if result > 0x0CCCCCCCCCCCCCCC { return 0, false; }
-        result = result * 10 + (b - '0').(i64);
+        result = result * 10 + (b - '0');
         if result < 0 { return 0, false; }
         i += 1;
     }

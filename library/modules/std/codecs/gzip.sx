@@ -33,7 +33,7 @@ bound :: (sourceLen: i64, header: Header = .{}) -> (i64, !Error) {
     value + overhead
 }
 
-checksum :: (data: string, initial: u32 = 0) -> u32 { crc32(data, initial.(i64)).(u32) }
+checksum :: (data: string, initial: u32 = 0) -> u32 { crc32(data, initial).(u32) }
 
 Encoder :: struct {
     state: GzipDeflater;
