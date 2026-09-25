@@ -3771,12 +3771,13 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
 
 fn lowerCastOperand(self: *Lowering, operand: *const Node) Ref {
     const saved = self.cast_operand;
-    defer self.cast_operand = saved;
+    const saved_reached = self.cast_reached;
+    defer {
+        self.cast_operand = saved;
+        self.cast_reached = saved_reached;
+    }
     self.cast_operand = if (program_index_mod.untypedConst(operand, self) != null) .untyped else .typed;
-    // An untyped block value takes its default type, which the cast converts.
-    const saved_target = self.target_type;
-    defer self.target_type = saved_target;
-    if (operand.data == .block and self.untypedValue(operand) != null) self.target_type = null;
+    self.cast_reached = if (self.cast_operand == .typed) operand else null;
     return self.lowerExpr(operand);
 }
 
@@ -4197,7 +4198,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
             break :blk self.emitError(id.name, node.span);
         },
 
-        .binary_op => |bop| self.lowerBinaryOp(&bop),
+        .binary_op => self.lowerBinaryOp(node),
 
         .unary_op => |uop| blk: {
             // `xx <pack>` with a slice target materializes the comptime
@@ -4316,7 +4317,11 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                 if (!self.isIntEx(ty)) break :blk self.diagDecrementNonInteger(ty, node.span);
                 break :blk self.lowerPlaceRmw(place, .sub_assign, self.builder.constInt(1, ty));
             }
-            const operand = if (uop.op == .xx) lowerCastOperand(self, uop.operand) else self.lowerExpr(uop.operand);
+            const operand = switch (uop.op) {
+                .xx => lowerCastOperand(self, uop.operand),
+                .negate, .bit_not => self.lowerReachedOperand(node, uop.operand),
+                else => self.lowerExpr(uop.operand),
+            };
             break :blk switch (uop.op) {
                 .negate => blk2: {
                     const value = self.unwrapOptionalOperand(operand, self.builder.getRefType(operand), uop.operand.span) orelse operand;
@@ -4355,7 +4360,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
             };
         },
 
-        .if_expr => |ie| self.lowerIfExpr(&ie, .value),
+        .if_expr => self.lowerIfExpr(node, .value),
         .match_expr => |me| self.lowerMatch(&me, .value),
         .while_expr => |we| self.lowerWhile(&we),
         .for_expr => |fe| self.lowerFor(&fe),
@@ -4664,6 +4669,9 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                 // a phi'd value instead of being demoted to a statement whose
                 // result is dropped. Mirrors `lowerBlockValue`.
                 self.force_block_value = true;
+                const tail = blk.stmts[blk.stmts.len - 1];
+                const saved_target = self.saveTarget();
+                self.reachOperand(node, tail);
                 // The last statement may itself terminate the block (a trailing
                 // `return`/`break`/`continue` statement — e.g. an `if`-arm
                 // `{ return -1; }` in value position). In that case there is no
@@ -4672,8 +4680,9 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                 // producing invalid "terminator in the middle of a block" IR.
                 // Return `Ref.none` — the caller detects the
                 // termination via `currentBlockHasTerminator()` and never reads it.
-                const last_val = self.tryLowerAsExpr(blk.stmts[blk.stmts.len - 1]) orelse
+                const last_val = self.tryLowerAsExpr(tail) orelse
                     (if (self.currentBlockHasTerminator()) Ref.none else self.builder.constInt(0, .void));
+                saved_target.restore();
                 self.force_block_value = saved_fbv;
                 break :blk last_val;
             }
@@ -5338,7 +5347,8 @@ pub fn conformanceAsk(self: *Lowering, tag: Ref, contract: TypeId) Ref {
     } }, .bool);
 }
 
-pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
+pub fn lowerBinaryOp(self: *Lowering, node: *const Node) Ref {
+    const bop = &node.data.binary_op;
     // `is` reads its RHS as a TYPE, so it is answered before either operand is
     // lowered as a value.
     if (bop.op == .is_op) return self.lowerIs(bop);
@@ -5378,11 +5388,12 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         .eq, .neq, .lt, .lte, .gt, .gte => true,
         else => false,
     };
-    const ambient_tt = self.target_type;
-    if (comparison) self.target_type = null;
-    defer if (comparison) {
-        self.target_type = ambient_tt;
-    };
+    const ambient = self.saveTarget();
+    if (comparison) {
+        self.target_type = null;
+        self.cast_reached = null;
+    }
+    defer if (comparison) ambient.restore();
 
     // Type-literal comparison fold: when both sides are type-shaped
     // AST nodes (`i64`, `*u8`, `?T`, `[3]f64`, etc.) OR resolve to
@@ -5484,11 +5495,12 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     const untyped_ty = untypedOperationType(self, bop);
     const shift = bop.op == .shl or bop.op == .shr;
     const lhs_adopted = self.untypedOperandType(bop.op, bop.lhs, bop.rhs) orelse untyped_ty orelse untypedBesideTyped(self, comparison, bop.lhs, self.inferExprType(bop.rhs));
-    const operand_tt = self.target_type;
+    const operand_target = self.saveTarget();
+    self.reachOperand(node, bop.lhs);
     if (self.isAdaptableFloat(bop.lhs)) self.target_type = float_operands.lhs;
     if (lhs_adopted) |ty| self.target_type = ty;
     var lhs = self.lowerExpr(bop.lhs);
-    self.target_type = operand_tt;
+    operand_target.restore();
     if (comparison) self.target_type = null;
     // A `for *x in xs` capture is a pointer; in a value position (here, an
     // operand) it auto-derefs to the element.
@@ -5505,24 +5517,19 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         break :blk if (it == .unresolved) self.builder.getRefType(lhs) else it;
     };
     const rhs_untyped = comparison and self.inferExprType(bop.rhs) == .unresolved;
-    const saved_tt = self.target_type;
-    if (lhs_ty != .void and lhs_ty != .unresolved) {
-        if (!lhs_ty.isBuiltin()) {
-            const lhs_info = self.module.types.get(lhs_ty);
-            if (lhs_info == .@"enum" or lhs_info == .@"union") {
-                self.target_type = lhs_ty;
-            } else if (lhs_info == .optional and (bop.op == .eq or bop.op == .neq)) {
-                // `?T == <rhs>`: type the RHS at the payload so a literal
-                // (numeric, enum shorthand, struct) lands on T directly —
-                // the mixed compare below needs the concrete side at T.
-                self.target_type = lhs_info.optional.child;
-            } else if (rhs_untyped) {
-                self.target_type = lhs_ty;
-            }
-        } else if (lhs_ty == .f32 or lhs_ty == .f64 or rhs_untyped) {
-            self.target_type = lhs_ty;
-        }
-    }
+    const saved_target = self.saveTarget();
+    const rhs_peer_tt: ?TypeId = peer: {
+        if (lhs_ty == .void or lhs_ty == .unresolved) break :peer null;
+        if (lhs_ty.isBuiltin()) break :peer if (lhs_ty == .f32 or lhs_ty == .f64 or rhs_untyped) lhs_ty else null;
+        const lhs_info = self.module.types.get(lhs_ty);
+        if (lhs_info == .@"enum" or lhs_info == .@"union") break :peer lhs_ty;
+        // `?T == <rhs>`: type the RHS at the payload so a literal
+        // (numeric, enum shorthand, struct) lands on T directly —
+        // the mixed compare below needs the concrete side at T.
+        if (lhs_info == .optional and (bop.op == .eq or bop.op == .neq)) break :peer lhs_info.optional.child;
+        break :peer if (rhs_untyped) lhs_ty else null;
+    };
+    if (rhs_peer_tt) |ty| self.target_type = ty else self.reachOperand(node, bop.rhs);
     // In a comparison, an anonymous positional literal on the RHS is typed
     // from the LHS just like an enum shorthand. This also keeps the following
     // `{` available as the if body.
@@ -5545,7 +5552,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     var rhs = self.lowerExpr(bop.rhs);
     const rhs_ref_pointee = self.refCapturePointee(bop.rhs);
     if (rhs_ref_pointee) |p| rhs = self.builder.load(rhs, p);
-    self.target_type = saved_tt;
+    saved_target.restore();
     const rhs_ty = blk: {
         if (rhs_ref_pointee) |p| break :blk p;
         if (rhs_adopted) |ty| break :blk ty;

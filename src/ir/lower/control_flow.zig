@@ -316,7 +316,8 @@ fn contextualArmType(self: *Lowering, inferred: TypeId) TypeId {
     return inferred;
 }
 
-pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.TailDemand) Ref {
+pub fn lowerIfExpr(self: *Lowering, node: *const Node, demand: lower_stmt.TailDemand) Ref {
+    const ie = &node.data.if_expr;
     // A PURE-failable body's tail `if` yields nothing: each live arm is its own
     // demanded tail, an error arm takes the function's exit where it stands,
     // and the merge carries no value for an arm's type to decide.
@@ -359,7 +360,7 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.Ta
         if (is_true) {
             // Condition always true: only lower then-branch
             if (!error_only and (ie.is_inline or self.force_block_value) and ie.else_branch != null) {
-                return self.lowerExpr(ie.then_branch);
+                return self.lowerReachedOperand(node, ie.then_branch);
             }
             lowerArmBody(self, ie.then_branch, demand);
             // If then-branch terminated (return/break), mark block as dead
@@ -372,7 +373,7 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.Ta
             // Condition always false: only lower else-branch (if any)
             if (ie.else_branch) |eb| {
                 if (!error_only and (ie.is_inline or self.force_block_value)) {
-                    return self.lowerExpr(eb);
+                    return self.lowerReachedOperand(node, eb);
                 }
                 lowerArmBody(self, eb, demand);
                 if (self.currentBlockHasTerminator()) {
@@ -419,8 +420,9 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.Ta
         // Live arm not statically inferable AND not a plain `.unresolved`
         // literal we can pin from context (`null`/bare enum): use the
         // contextually expected type. Genuine `.unresolved` (block-local tail)
-        // stays unresolved and is resolved post-lowering.
-        if (t == .unresolved) {
+        // stays unresolved and is resolved post-lowering. A cast's destination
+        // is no context for it.
+        if (t == .unresolved and self.cast_reached != node) {
             if (self.target_type) |tt| t = tt;
         }
         t = contextualArmType(self, t);
@@ -523,7 +525,7 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.Ta
     var merged: ?std.ArrayList(BindingId) = null;
     self.applyNarrowing(present_true.items);
     if (is_value) {
-        var v = self.lowerExpr(ie.then_branch);
+        var v = if (result_type == .unresolved) self.lowerReachedOperand(node, ie.then_branch) else self.lowerExpr(ie.then_branch);
         // A value-position arm that DIVERGES (its value is `noreturn`, e.g. a
         // trailing `process.exit(...)`) must terminate its block, NOT branch a
         // coerced-noreturn `<badref>` into the merge phi (LLVM verify failure).
@@ -560,7 +562,7 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.Ta
         self.builder.switchToBlock(else_bb.?);
         self.applyNarrowing(present_false.items);
         if (is_value) {
-            var v = self.lowerExpr(ie.else_branch.?);
+            var v = if (result_type == .unresolved) self.lowerReachedOperand(node, ie.else_branch.?) else self.lowerExpr(ie.else_branch.?);
             // Diverging value-position arm terminates rather than feeding a
             // `<badref>` to the merge phi (see the then-arm note above).
             if (!self.currentBlockHasTerminator() and self.builder.getRefType(v) == .noreturn) {

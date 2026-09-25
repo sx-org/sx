@@ -3,6 +3,7 @@
 @import "modules/std.sx";
 
 main :: () {
-    y : u8 = xx { 300 };
-    print("{} {}\n", ({ 300 }).(u8), y);
+    c := true;
+    y : u8 = xx (if c then { K :: 300; K } else { K :: 1; K });
+    print("{} {} {}\n", ({ 300 } + 1).(u8), y, (if true then { 300 } else 1).(u8));
 }

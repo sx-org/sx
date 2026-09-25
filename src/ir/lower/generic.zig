@@ -1419,7 +1419,7 @@ pub fn meetValueArms(self: *Lowering, a: *const Node, a_ty: TypeId, b: *const No
 }
 
 /// The numeric untyped constant `node` yields, a block through its tail.
-pub fn untypedValue(self: *Lowering, node: *const Node) ?program_index_mod.Untyped {
+fn untypedValue(self: *Lowering, node: *const Node) ?program_index_mod.Untyped {
     if (node.data == .block) {
         const b = node.data.block;
         return if (b.produces_value and b.stmts.len > 0) untypedValue(self, b.stmts[b.stmts.len - 1]) else null;
