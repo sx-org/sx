@@ -1,0 +1,26 @@
+// IndexMap's index slots are `?@int(63, .unsigned)`, 8 bytes, null when empty,
+// and findIndex answers null for an absent key. After an order-preserving
+// remove rebuilds the index, the removed keys are absent and every survivor
+// resolves at its shifted position, the first at entry 0.
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+
+main :: () -> i32 {
+    gpa := mem.GPA.init();
+    m : IndexMap(i64, i64) = .{};
+    k := 0;
+    while k < 12 { m.put(k * 7, k, gpa); k += 1; }
+    Slot :: @typeOf(m.index[0]);
+    print("slot {} {}\n", @typeName(Slot), @sizeOf(Slot));
+    m.remove(0, gpa);
+    m.remove(35, gpa);
+    print("find");
+    k = 0;
+    while k < 12 {
+        if at := m.findIndex(k * 7) { print(" {}@{}", k * 7, at); } else { print(" {}@-", k * 7); }
+        k += 1;
+    }
+    print("\n");
+    m.deinit(gpa);
+    return 0;
+}
