@@ -365,7 +365,6 @@ pub const Reflection = struct {
             },
             .bool => vname = "bool",
             .void => vname = "void",
-            .string => vname = "string",
             .any => vname = "any",
             .noreturn => vname = "noreturn",
             .type_value, .unresolved => vname = "typeValue",
@@ -388,6 +387,7 @@ pub const Reflection = struct {
                 vname = "array";
                 placed.append(self.e.alloc, .{ .off = P, .val = self.tyWord(a.element), .size = 8 }) catch unreachable;
                 placed.append(self.e.alloc, .{ .off = P + 8, .val = c.LLVMConstInt(self.e.cached_i64, @intCast(a.length), 0), .size = 8 }) catch unreachable;
+                self.placeSentinel(tt, ti, &placed, P, vname, 2, a.sentinel);
             },
             .vector => |v| {
                 vname = "vector";
@@ -397,6 +397,7 @@ pub const Reflection = struct {
             .slice => |sl| {
                 vname = "slice";
                 placed.append(self.e.alloc, .{ .off = P, .val = self.tyWord(sl.element), .size = 8 }) catch unreachable;
+                self.placeSentinel(tt, ti, &placed, P, vname, 1, sl.sentinel);
             },
             .pointer => |p| {
                 vname = "pointer";
@@ -405,6 +406,7 @@ pub const Reflection = struct {
             .many_pointer => |mp| {
                 vname = "manyPointer";
                 placed.append(self.e.alloc, .{ .off = P, .val = self.tyWord(mp.element), .size = 8 }) catch unreachable;
+                self.placeSentinel(tt, ti, &placed, P, vname, 1, mp.sentinel);
             },
             .optional => |o| {
                 vname = "optional";
@@ -447,6 +449,21 @@ pub const Reflection = struct {
         for (placed.items) |p| all.append(self.e.alloc, p) catch unreachable;
         const rec = self.packRecord(all.items, rec_size);
         return self.constGlobal(rec, "ti.rec");
+    }
+
+    /// Place a terminator in the `?i64` field `idx` of `family`'s payload at
+    /// `base`: its value word, then the set flag. With no terminator the field's
+    /// zero bytes read as null.
+    fn placeSentinel(self: Reflection, tt: anytype, ti: anytype, placed: *std.ArrayList(Placed), base: usize, family: []const u8, idx: usize, sentinel: ?i64) void {
+        const x = sentinel orelse return;
+        const pay = for (ti.variants) |v| {
+            if (std.mem.eql(u8, tt.getString(v.name), family)) break v.payload;
+        } else unreachable;
+        const field_ty = tt.get(pay).@"struct".fields[idx].ty;
+        const child = tt.get(field_ty).optional.child;
+        const off = base + sxFieldOffset(tt, pay, idx);
+        placed.append(self.e.alloc, .{ .off = off, .val = c.LLVMConstInt(self.e.cached_i64, @bitCast(x), 0), .size = 8 }) catch unreachable;
+        placed.append(self.e.alloc, .{ .off = off + tt.typeSizeBytes(child), .val = c.LLVMConstInt(self.e.cached_i8, 1, 0), .size = 1 }) catch unreachable;
     }
 
     /// One word of a member element, tagged by how it is written. A `text`

@@ -1,0 +1,15 @@
+// `{}` prints a slice of u8, whatever its terminator or length word, and a
+// terminated u8 array as text. A plain `[N]u8` and every other element type
+// print as a list. `@printf` renders the same u8 slices as text.
+@import "modules/std.sx";
+
+main :: () -> i32 {
+    t : [3:0]u8 = "abc";
+    u : [3]u8 = "abc";
+    k : [:7]u8 = .{ ptr = "hi\x07".ptr, len = 2 };
+    w : @Slice(u8, u32) = u[0..];
+    n : [2]i64 = .[1, 2];
+    print("{} {} {} {} {}\n", t, u, k, w, n[0..]);
+    @printf("{} {}\n", k, w);
+    0
+}

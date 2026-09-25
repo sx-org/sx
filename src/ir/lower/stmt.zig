@@ -480,7 +480,7 @@ pub fn emitBodyExit(self: *Lowering, value: ?Ref, ret_ty: TypeId, form: ExitForm
         self.builder.retVoid();
         return;
     }
-    const default_val = if (ret_ty == .string or ret_ty == .string_z or !ret_ty.isBuiltin())
+    const default_val = if (!ret_ty.isBuiltin() or self.module.types.sliceInfoOf(ret_ty) != null)
         self.builder.constUndef(ret_ty)
     else
         self.builder.constInt(0, ret_ty);
@@ -1668,7 +1668,7 @@ pub fn diagContextRootWrite(self: *Lowering, target: *const Node) bool {
         const ty = self.inferExprType(obj);
         switch (self.module.types.get(ty)) {
             .pointer => return false,
-            .string, .slice => if (node.data == .index_expr) return false,
+            .slice => if (node.data == .index_expr) return false,
             else => {},
         }
         node = obj;
@@ -1710,7 +1710,7 @@ fn storageRootName(self: *Lowering, target: *const Node) ?[]const u8 {
         const ty = self.inferExprType(obj);
         switch (self.module.types.get(ty)) {
             .pointer => if (obj.data == .identifier or node.data == .index_expr) return null,
-            .string, .slice => if (node.data == .index_expr and self.untypedString(obj) == null) return null,
+            .slice => if (node.data == .index_expr and self.untypedString(obj) == null) return null,
             else => {},
         }
         if (obj.data == .identifier) return obj.data.identifier.name;
@@ -2962,7 +2962,7 @@ pub fn storeSwizzle(
 /// compound `+=` / `-=`.
 fn checkLengthWordValue(self: *Lowering, obj_ty: TypeId, field: []const u8, val: Ref, span: ast.Span) void {
     switch (self.module.types.get(obj_ty)) {
-        .string, .slice => {},
+        .slice => {},
         else => return,
     }
     if (!std.mem.eql(u8, field, "len")) return;
@@ -3058,7 +3058,7 @@ const FieldResolution = union(enum) {
 /// lanes (`.x`/`.y`/`.z`/`.w` and the colour aliases), and plain struct fields.
 pub fn fieldLvalueResolve(self: *Lowering, obj_ty: TypeId, field: []const u8) ?FieldResolution {
     switch (self.module.types.get(obj_ty)) {
-        .string, .slice => {
+        .slice => {
             if (std.mem.eql(u8, field, "ptr"))
                 return .{ .indexed = .{ .index = 0, .ty = self.module.types.manyPtrTo(self.getElementType(obj_ty)) } };
             if (std.mem.eql(u8, field, "len"))

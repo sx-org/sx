@@ -24,7 +24,6 @@ describe :: ($T: Type) -> string {
         case .slice: |sl| { return format("slice elem={}", @typeName(sl.elem)); }
         case .pointer: |pi| { return format("pointer pointee={}", @typeName(pi.pointee)); }
         case .optional: |oi| { return format("optional inner={}", @typeName(oi.inner)); }
-        case .string: { return "string"; }
         case .bool: { return "bool"; }
         else: { return "other"; }
     }

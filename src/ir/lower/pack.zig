@@ -291,7 +291,7 @@ pub fn lowerVariadicArgs(self: *Lowering, param_name: []const u8, call_args: []c
         if (source_ty == .unresolved) {
             const ref_ty = self.builder.getRefType(val);
             switch (self.module.types.get(ref_ty)) {
-                .string, .f32, .f64, .bool, .@"struct", .slice, .optional, .closure => source_ty = ref_ty,
+                .f32, .f64, .bool, .@"struct", .slice, .optional, .closure => source_ty = ref_ty,
                 else => {},
             }
         }

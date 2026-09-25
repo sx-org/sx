@@ -186,7 +186,6 @@ pub const TypeInfo = union(enum) {
     f64,
     void,
     bool,
-    string, // []u8 — fat pointer {ptr, len}
 
     @"struct": StructInfo,
     @"enum": EnumInfo,
@@ -678,7 +677,7 @@ pub const TypeTable = struct {
             .{ .unsigned = 64 }, // 9: u64
             .f32, // 10
             .f64, // 11
-            .string, // 12
+            .{ .slice = .{ .element = .u8, .len_type = .i64 } }, // 12: string
             .any, // 13
             .noreturn, // 14
             .isize, // 15: isize (pointer-sized signed)
@@ -724,9 +723,7 @@ pub const TypeTable = struct {
     }
 
     /// Intern a TypeInfo, returning the existing TypeId if structurally equal.
-    /// `[]u8` IS `string`: the slice spelling interns to the primitive.
     pub fn intern(self: *TypeTable, info: TypeInfo) TypeId {
-        if (info == .slice and info.slice.element == .u8 and info.slice.len_type == .i64 and info.slice.sentinel == null) return .string;
         const key = TypeKey{ .info = info };
         if (self.intern_map.get(key)) |existing| {
             return existing;
@@ -1219,9 +1216,9 @@ pub const TypeTable = struct {
 
     /// Type of member `idx` of an aggregate: a struct/union field type, an enum
     /// variant's payload (`void` when it carries none), an array/vector element
-    /// type, or row 0 as the slice element, the string byte, or the optional
-    /// child. Null for a negative / out-of-range `idx` or a type with no member
-    /// types. Backs the `type_field_type` reader.
+    /// type, or row 0 as the slice element or the optional child. Null for a
+    /// negative / out-of-range `idx` or a type with no member types. Backs the
+    /// `type_field_type` reader.
     pub fn memberType(self: *const TypeTable, id: TypeId, idx: i64) ?TypeId {
         if (idx < 0 or id.index() >= self.infos.items.len) return null;
         const i: usize = @intCast(idx);
@@ -1232,7 +1229,6 @@ pub const TypeTable = struct {
             .array => |a| if (i < a.length) a.element else null,
             .vector => |v| if (i < v.length) v.element else null,
             .slice => |sl| if (i == 0) sl.element else null,
-            .string => if (i == 0) .u8 else null,
             .optional => |o| if (i == 0) o.child else null,
             else => null,
         };
@@ -1253,8 +1249,8 @@ pub const TypeTable = struct {
 
     /// Row count of the runtime member tables for `id` — `memberCount` where
     /// a count exists, ONE row for a strided kind and for the kinds that
-    /// answer a member TYPE without a static count (slice element / string
-    /// byte / optional child at row 0).
+    /// answer a member TYPE without a static count (slice element / optional
+    /// child at row 0).
     /// Null → the type gets a null master-table slot. Every runtime member
     /// table (names / types / offsets) and the GEP sizing on its readers
     /// derive from THIS, so a kind that answers `memberType` can never meet
@@ -1421,10 +1417,8 @@ pub const TypeTable = struct {
         return self.intern(.{ .slice = .{ .element = element, .len_type = len_type } });
     }
 
-    /// The slice shape of `ty`: a `[]T`'s own info, and `{u8, i64}` for
-    /// `string`. Null for every other type.
+    /// The slice shape of `ty`. Null for every other type.
     pub fn sliceInfoOf(self: *const TypeTable, ty: TypeId) ?TypeInfo.SliceInfo {
-        if (ty == .string) return .{ .element = .u8 };
         if (ty.index() >= self.infos.items.len) return null;
         return switch (self.get(ty)) {
             .slice => |s| s,
@@ -1444,7 +1438,7 @@ pub const TypeTable = struct {
     }
 
     /// The type of a fat pointer's length word: a slice's declared `Len`,
-    /// `i64` for `string` and every other container whose `.len` is a count.
+    /// `i64` for every other container whose `.len` is a count.
     pub fn lenTypeOf(self: *const TypeTable, ty: TypeId) TypeId {
         if (ty.isBuiltin()) return .i64;
         return switch (self.get(ty)) {
@@ -1553,7 +1547,7 @@ pub const TypeTable = struct {
     /// cannot.
     pub fn lenWordOf(self: *const TypeTable, id: TypeId) ?LenWord {
         if (id.index() >= self.infos.items.len) return null;
-        if (id != .string and self.get(id) != .slice) return null;
+        if (self.get(id) != .slice) return null;
         const len_ty = self.lenTypeOf(id);
         const layout = self.integerLayout(len_ty) orelse IntLayout{ .width = 64, .signed = true };
         return .{
@@ -1579,7 +1573,7 @@ pub const TypeTable = struct {
     pub fn optionalIsSentinel(self: *const TypeTable, child: TypeId) bool {
         if (child.index() >= self.infos.items.len) return false;
         return switch (self.get(child)) {
-            .pointer, .many_pointer, .function, .closure, .string, .slice => true,
+            .pointer, .many_pointer, .function, .closure, .slice => true,
             .@"struct" => |s| s.is_protocol,
             else => false,
         };
@@ -1938,7 +1932,6 @@ pub const TypeTable = struct {
             .unsigned => |w| @max(1, w / 8),
             .f32 => 4,
             .f64 => 8,
-            .string => 16, // {ptr, len}
             .pointer, .many_pointer, .function => 8,
             .closure => 16, // {fnPtr, env}
             .optional => |opt| blk: {
@@ -2033,10 +2026,9 @@ pub const TypeTable = struct {
         if (ty == .i32 or ty == .u32 or ty == .f32) return 4;
         if (ty == .i64 or ty == .u64 or ty == .f64) return 8;
         if (ty == .usize or ty == .isize) return ptr_size;
-        if (ty == .string or ty == .string_z) return 16; // {ptr, i64} — always 16 (i64 alignment pads on wasm32)
         if (ty == .any) return 16; // {i64 tag, i64 value} — Any boxed layout
         if (ty == .type_value) return 8; // 8-byte type handle (a `TypeId` in a word)
-        if (ty.isBuiltin()) return ptr_size; // default for unknown builtins
+        if (ty.isBuiltin() and self.sliceInfoOf(ty) == null) return ptr_size; // default for unknown builtins
         const info = self.get(ty);
         return switch (info) {
             .pointer, .many_pointer, .function => ptr_size,
@@ -2140,10 +2132,9 @@ pub const TypeTable = struct {
         if (ty == .i32 or ty == .u32 or ty == .f32) return 4;
         if (ty == .i64 or ty == .u64 or ty == .f64) return 8;
         if (ty == .usize or ty == .isize) return ptr_align;
-        if (ty == .string or ty == .string_z) return 8; // i64 drives alignment
         if (ty == .any) return 8; // {i64, i64} aligns to 8
         if (ty == .type_value) return 8; // 8-byte type handle
-        if (ty.isBuiltin()) return ptr_align;
+        if (ty.isBuiltin() and self.sliceInfoOf(ty) == null) return ptr_align;
         const info = self.get(ty);
         return switch (info) {
             .pointer, .many_pointer, .function => ptr_align,
@@ -2436,7 +2427,7 @@ fn hashTypeInfo(h: *std.hash.Wyhash, info: TypeInfo) void {
     switch (info) {
         .signed => |w| h.update(&.{w}),
         .unsigned => |w| h.update(&.{w}),
-        .f32, .f64, .void, .bool, .string, .any, .type_value, .noreturn, .usize, .isize, .unresolved => {},
+        .f32, .f64, .void, .bool, .any, .type_value, .noreturn, .usize, .isize, .unresolved => {},
         .pointer => |p| h.update(std.mem.asBytes(&p.pointee)),
         .many_pointer => |p| {
             h.update(std.mem.asBytes(&p.element));
@@ -2531,7 +2522,7 @@ fn typeInfoEql(a: TypeInfo, b: TypeInfo) bool {
     return switch (a) {
         .signed => |w| w == b.signed,
         .unsigned => |w| w == b.unsigned,
-        .f32, .f64, .void, .bool, .string, .any, .type_value, .noreturn, .usize, .isize, .unresolved => true,
+        .f32, .f64, .void, .bool, .any, .type_value, .noreturn, .usize, .isize, .unresolved => true,
         .pointer => |p| p.pointee == b.pointer.pointee,
         .many_pointer => |p| p.element == b.many_pointer.element and sentinelEql(p.sentinel, b.many_pointer.sentinel),
         .slice => |s| s.element == b.slice.element and s.len_type == b.slice.len_type and sentinelEql(s.sentinel, b.slice.sentinel),

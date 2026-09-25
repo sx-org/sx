@@ -1450,7 +1450,7 @@ pub const LLVMEmitter = struct {
         // Fat-pointer types: extract len, then read bytes from the data
         // field's address (whatever flavour the interp produced for it).
         const is_fat_pointer = switch (self.ir_mod.types.get(ty)) {
-            .string, .slice => true,
+            .slice => true,
             else => false,
         };
         if (is_fat_pointer and fields.len == 2) {

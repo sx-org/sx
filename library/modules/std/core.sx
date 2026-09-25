@@ -429,10 +429,12 @@ UnionInfo    :: struct { arms: []ArmInfo; }
 ErrorInfo    :: struct { members: []MemberInfo; }
 IntInfo      :: struct { bits: i64; signed: bool; }
 FloatInfo    :: struct { bits: i64; }
-ArrayInfo    :: struct { elem: Type; len: i64; }
+// `sentinel` is the terminator of `[N:X]T`, `[:X]T` and `[*:X]T`; a single
+// pointer has none.
+ArrayInfo    :: struct { elem: Type; len: i64; sentinel: ?i64; }
 VectorInfo   :: struct { elem: Type; len: i64; }
-SliceInfo    :: struct { elem: Type; }
-PointerInfo  :: struct { pointee: Type; }
+SliceInfo    :: struct { elem: Type; sentinel: ?i64; }
+PointerInfo  :: struct { pointee: Type; sentinel: ?i64; }
 OptionalInfo :: struct { inner: Type; }
 
 // EXHAUSTIVE over the type table's kinds — a kind the compiler adds fails the
@@ -448,7 +450,6 @@ TypeInfo :: enum {
     int: IntInfo;
     float: FloatInfo;
     bool;
-    string;
     void;
     array: ArrayInfo;
     vector: VectorInfo;

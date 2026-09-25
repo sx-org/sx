@@ -1518,7 +1518,6 @@ pub fn constExprInitFits(self: *Lowering, init_ty: TypeId, dst_ty: TypeId) bool 
     if (self.isIntEx(init_ty)) return self.isIntEx(dst_ty) or isFloat(dst_ty);
     if (isFloat(init_ty)) return isFloat(dst_ty) and !(init_ty == .f64 and dst_ty == .f32);
     if (init_ty == .bool) return dst_ty == .bool;
-    if (init_ty == .string) return dst_ty == .string;
     if (init_ty == .string_z) return dst_ty == .string_z or dst_ty == .string;
     // Any other concrete initializer type must match the annotation exactly.
     return self.module.types.sameType(init_ty, dst_ty);

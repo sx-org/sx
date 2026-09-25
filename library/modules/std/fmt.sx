@@ -149,7 +149,6 @@ writeAny :: ufcs (w: Writer, val: any) {
     match @typeInfo(t) {
         case .void: {}
         case .bool: writeBool(w, @unbox(bool, val));
-        case .string: w.write(@unbox(string, val));
         // A category arm binds the widened reading its whole tag set shares,
         // so one arm covers every width.
         case .int: {
@@ -222,11 +221,12 @@ writeAny :: ufcs (w: Writer, val: any) {
                 }
             }
         }
-        case .array: writeElements(w, val);
+        case .array: |ai| {
+            if @typeEq(ai.elem, u8) and ai.sentinel != null { writeText(w, val); } else { writeElements(w, val); }
+        }
         case .vector: writeElements(w, val);
-        case .slice: {
-            if @typeEq(t, [:0]u8) { w.write(@unbox([:0]u8, val)); }
-            else { writeElements(w, val); }
+        case .slice: |si| {
+            if @typeEq(si.elem, u8) { writeText(w, val); } else { writeElements(w, val); }
         }
         case .pointer: writePointer(w, val);
         case .manyPointer: writePointer(w, val);
@@ -251,6 +251,12 @@ writeElements :: ufcs (w: Writer, val: any) {
         i += 1;
     }
     w.write("]");
+}
+
+// Element 0's view addresses the bytes of an array and of a slice alike.
+writeText :: ufcs (w: Writer, val: any) {
+    n := @len(val);
+    if n > 0 { w.write(@rawAnyData(@field(val, 0)).([*]u8)[0..n]); }
 }
 
 writePointer :: ufcs (w: Writer, val: any) {

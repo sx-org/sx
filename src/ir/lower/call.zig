@@ -3338,10 +3338,11 @@ const PrintfKind = enum {
     }
 };
 
-/// The kind that renders a value of `ty`, or null when nothing does.
+/// The kind that renders a value of `ty`, or null when nothing does. A u8
+/// slice is text.
 fn printfKind(self: *Lowering, ty: TypeId) ?PrintfKind {
+    if (self.module.types.sliceInfoOf(ty)) |sl| return if (sl.element == .u8) .str else null;
     switch (ty) {
-        .string, .string_z => return .str,
         .bool => return .boolean,
         .i8, .i16, .i32, .i64, .isize => return .signed,
         .u8, .u16, .u32, .u64, .usize => return .unsigned,
