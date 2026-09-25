@@ -58,10 +58,10 @@ fn sentinelConstant(sentinel: i64, elem_ty: TypeId) inst_mod.ConstantValue {
 }
 
 /// The constant a value left to its default carries: zeroed storage, plus the
-/// terminator of every `[N:X]T` it holds. Null when zeroed storage already IS
-/// that value.
+/// terminator of every `[N:X]T` and the null of every high-bit optional it
+/// holds. Null when zeroed storage already IS that value.
 pub fn defaultConstant(self: *Lowering, ty: TypeId) ?inst_mod.ConstantValue {
-    if (!self.module.types.writesTerminator(ty)) return null;
+    if (!self.module.types.defaultIsNonZero(ty)) return null;
     switch (self.module.types.get(ty)) {
         .array => |a| {
             const vals = self.alloc.alloc(inst_mod.ConstantValue, a.storageLen()) catch return null;
@@ -74,6 +74,7 @@ pub fn defaultConstant(self: *Lowering, ty: TypeId) ?inst_mod.ConstantValue {
             for (st.fields, 0..) |f, i| vals[i] = self.defaultConstant(f.ty) orelse .zeroinit;
             return .{ .aggregate = vals };
         },
+        .optional => return nullConstant(self, ty),
         else => return null,
     }
 }
@@ -167,13 +168,21 @@ pub fn constExprValue(self: *Lowering, expr: *const Node, expected_ty: TypeId) ?
 
 /// The present `?child` constant holding `payload`.
 pub fn someConstant(self: *Lowering, child: TypeId, payload: inst_mod.ConstantValue) inst_mod.ConstantValue {
-    // A sentinel-shaped optional reuses the payload's own null representation,
-    // so it has no `{payload, has_value}` wrapper in LLVM.
-    if (self.module.types.optionalIsSentinel(child)) return payload;
+    // A pointer-word optional reuses the payload's own null representation,
+    // and a high-bit optional's present word is the payload itself.
+    if (self.module.types.optionalShape(child) != .flag) return payload;
     const fields = self.alloc.alloc(inst_mod.ConstantValue, 2) catch @panic("out of memory");
     fields[0] = payload;
     fields[1] = .{ .boolean = true };
     return .{ .aggregate = fields };
+}
+
+/// The null constant of `opt_ty`.
+pub fn nullConstant(self: *Lowering, opt_ty: TypeId) inst_mod.ConstantValue {
+    const child = self.module.types.get(opt_ty).optional.child;
+    if (self.module.types.optionalShape(child) == .high_bit)
+        return .{ .int = @bitCast(self.module.types.optionalNullWord(child)) };
+    return .null_val;
 }
 
 /// A string literal's constant at `dst`: the literal takes the shape `dst`
@@ -206,7 +215,7 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
     if (self.isErasedProtocolType(expected_ty)) return staticInterfaceLeaf(self, expr, expected_ty);
     if (isOptional(self, expected_ty)) {
         switch (expr.data) {
-            .null_literal => return .null_val,
+            .null_literal => return nullConstant(self, expected_ty),
             .undef_literal => return .zeroinit,
             else => {},
         }

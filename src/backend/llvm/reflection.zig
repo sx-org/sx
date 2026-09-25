@@ -94,7 +94,7 @@ pub const Reflection = struct {
     /// `[N x i1]` for flags), tag-indexed, one row per TypeId in table order.
     /// Values come from the SAME type-table queries the comptime folds use,
     /// so the static and dynamic answers can never diverge.
-    pub const ScalarTableKind = enum { canonical_type, size, alignment, flags, member_count, tag_width, slice_len_info, optional_flag, member_stride };
+    pub const ScalarTableKind = enum { canonical_type, size, alignment, flags, member_count, tag_width, slice_len_info, optional_probe, member_stride };
 
     pub fn getOrBuildScalarTable(self: Reflection, kind: ScalarTableKind) c.LLVMValueRef {
         const slot: *?c.LLVMValueRef, const len_slot: *u32 = switch (kind) {
@@ -105,7 +105,7 @@ pub const Reflection = struct {
             .member_count => .{ &self.e.member_count_array, &self.e.member_count_array_len },
             .tag_width => .{ &self.e.variant_tag_width_array, &self.e.variant_tag_width_array_len },
             .slice_len_info => .{ &self.e.slice_len_info_array, &self.e.slice_len_info_array_len },
-            .optional_flag => .{ &self.e.optional_flag_array, &self.e.optional_flag_array_len },
+            .optional_probe => .{ &self.e.optional_probe_array, &self.e.optional_probe_array_len },
             .member_stride => .{ &self.e.member_stride_array, &self.e.member_stride_array_len },
         };
         if (slot.*) |g| return g;
@@ -133,7 +133,7 @@ pub const Reflection = struct {
                 // Sign-encoded (negative = sign-extend); the i64 bit pattern.
                 .tag_width => @bitCast(tt.variantTagWidth(tid)),
                 .slice_len_info => @bitCast(tt.sliceLenInfo(tid)),
-                .optional_flag => @bitCast(tt.optionalFlagOffset(tid)),
+                .optional_probe => @bitCast(tt.optionalProbe(tid)),
                 // A zero-sized element strides by 0, so absence encodes negative.
                 .member_stride => @bitCast(tt.memberStride(tid) orelse -1),
             };
@@ -150,7 +150,7 @@ pub const Reflection = struct {
             .member_count => "__sx_member_counts",
             .tag_width => "__sx_variant_tag_widths",
             .slice_len_info => "__sx_slice_len_infos",
-            .optional_flag => "__sx_optional_flags",
+            .optional_probe => "__sx_optional_probes",
             .member_stride => "__sx_member_strides",
         };
         const global = c.LLVMAddGlobal(self.e.llvm_module, arr_ty, gname);

@@ -1669,10 +1669,8 @@ pub fn globalInitValue(self: *Lowering, vd: *const ast.VarDecl, var_ty: TypeId) 
     }
 
     if (!var_ty.isBuiltin() and self.module.types.get(var_ty) == .optional) {
-        // `.null_val` / `.zeroinit` emit as all-zero bytes of the optional's
-        // own LLVM type, which is the absent encoding of both shapes.
         switch (v.data) {
-            .null_literal => return .null_val,
+            .null_literal => return self.nullConstant(var_ty),
             .undef_literal => return .zeroinit,
             else => {},
         }

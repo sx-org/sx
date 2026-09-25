@@ -1191,7 +1191,7 @@ pub fn fixupMethodReceiver(self: *Lowering, method_args: *std.ArrayList(Ref), fu
                     if (binding.is_alloca) {
                         const binding_info = self.module.types.get(binding.ty);
                         method_args.items[0] = if (binding_info == .optional and
-                            binding_info.optional.child == obj_ty and !self.module.types.optionalIsSentinel(obj_ty))
+                            binding_info.optional.child == obj_ty and self.module.types.optionalShape(obj_ty) == .flag)
                             self.builder.structGepTyped(binding.ref, 0, self.module.types.ptrTo(obj_ty), binding.ty)
                         else
                             receiverPointer(self, binding.ref, obj_ty);

@@ -1115,12 +1115,13 @@ pub fn optionalOfFlattened(self: *Lowering, ty: TypeId) TypeId {
 }
 
 /// A type's default value: zeroed storage, plus the terminator of every
-/// `[N:X]T` it holds.
+/// `[N:X]T` and the null of every high-bit optional it holds.
 pub fn zeroValue(self: *Lowering, ty: TypeId) Ref {
-    if (!self.module.types.writesTerminator(ty)) return self.builder.constNull(ty);
+    if (!self.module.types.defaultIsNonZero(ty)) return self.builder.constNull(ty);
     return switch (self.module.types.get(ty)) {
         .array => |a| terminatedArray(self, ty, a),
         .@"struct" => |st| terminatedStruct(self, ty, st),
+        .optional => self.builder.constNull(ty),
         else => unreachable,
     };
 }
