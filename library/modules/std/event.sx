@@ -64,7 +64,7 @@ EventErr :: error {
 //   udata  — the word given at registration, verbatim.
 Event :: struct {
     fd: i32 = -1;
-    udata: usize = 0;
+    udata: i64 = 0;
     readable: bool = false;
     writable: bool = false;
     eof: bool = false;
@@ -94,13 +94,13 @@ ep :: @import "modules/std/net/epoll.sx";
 Reg :: struct {
     fd: i32 = -1;
     mask: u32 = 0;
-    udata: usize = 0;
+    udata: i64 = 0;
 }
 
 Loop :: struct {
     epfd: i32 = -1;
     wakeFd: i32 = -1;        // eventfd, lazily created by addWake
-    wakeUdata: usize = 0;
+    wakeUdata: i64 = 0;
     regs: List(Reg);
     // The Loop outlives the caller's current `context.allocator` scope, so
     // capture the owning allocator at init and grow `regs` through it (the
@@ -136,7 +136,7 @@ Loop :: struct {
     // Drive `fd`'s registration to interest `mask`: ADD a new fd, MOD an
     // existing one, or DEL (and forget) when the mask drops to zero. The
     // table is kept in lockstep with the kernel. True on success.
-    applyMask :: (self: *Loop, fd: i32, mask: u32, udata: usize) -> bool {
+    applyMask :: (self: *Loop, fd: i32, mask: u32, udata: i64) -> bool {
         idx := self.regIndex(fd);
         if mask == 0 {
             if idx < 0 { return true; }
@@ -157,7 +157,7 @@ Loop :: struct {
 
     // Read interest also arms EPOLLRDHUP so a peer half-close surfaces as
     // `Event.eof` — matching kqueue's EV_EOF, which comes for free.
-    addRead :: (self: *Loop, fd: i32, udata: usize) -> !EventErr {
+    addRead :: (self: *Loop, fd: i32, udata: i64) -> !EventErr {
         idx := self.regIndex(fd);
         mask := ep.EPOLLIN | ep.EPOLLRDHUP;
         if idx >= 0 { mask = self.regs.items[idx].mask | ep.EPOLLIN | ep.EPOLLRDHUP; }
@@ -170,7 +170,7 @@ Loop :: struct {
         mask := self.regs.items[idx].mask & ~(ep.EPOLLIN | ep.EPOLLRDHUP);
         self.applyMask(fd, mask, self.regs.items[idx].udata);
     }
-    addWrite :: (self: *Loop, fd: i32, udata: usize) -> !EventErr {
+    addWrite :: (self: *Loop, fd: i32, udata: i64) -> !EventErr {
         idx := self.regIndex(fd);
         mask := ep.EPOLLOUT;
         if idx >= 0 { mask = self.regs.items[idx].mask | ep.EPOLLOUT; }
@@ -188,7 +188,7 @@ Loop :: struct {
     // from any thread writes the 8-byte counter, making wait() return an
     // Event carrying `udata` with `.user` set. (kqueue uses EVFILT_USER;
     // epoll's idiom is eventfd.) One registration serves the Loop's life.
-    addWake :: (self: *Loop, udata: usize) -> !EventErr {
+    addWake :: (self: *Loop, udata: i64) -> !EventErr {
         if self.wakeFd < 0 {
             self.wakeFd = ep.eventfd(0, ep.EFD_CLOEXEC | ep.EFD_NONBLOCK);
             if self.wakeFd < 0 { raise .Register; }
@@ -258,14 +258,14 @@ Loop :: struct {
         self.kq = -1;
     }
 
-    addRead :: (self: *Loop, fd: i32, udata: usize) -> !EventErr {
+    addRead :: (self: *Loop, fd: i32, udata: i64) -> !EventErr {
         if !kqb.kqApply(self.kq, kqb.kevChange(fd, kqb.EVFILT_READ, kqb.EV_ADD, udata)) { raise .Register; }
         return;
     }
     delRead :: (self: *Loop, fd: i32) {
         kqb.kqApply(self.kq, kqb.kevChange(fd, kqb.EVFILT_READ, kqb.EV_DELETE, 0));
     }
-    addWrite :: (self: *Loop, fd: i32, udata: usize) -> !EventErr {
+    addWrite :: (self: *Loop, fd: i32, udata: i64) -> !EventErr {
         if !kqb.kqApply(self.kq, kqb.kevChange(fd, kqb.EVFILT_WRITE, kqb.EV_ADD, udata)) { raise .Register; }
         return;
     }
@@ -277,9 +277,8 @@ Loop :: struct {
     // wait() return an Event carrying `udata` with `.user` set. EV_CLEAR
     // auto-resets, so one registration serves the loop's lifetime.
     // (kqueue EVFILT_USER here; the epoll twin maps to eventfd.)
-    addWake :: (self: *Loop, udata: usize) -> !EventErr {
-        ch : kqb.Kevent = .{ ident = 0, filter = kqb.EVFILT_USER, flags = kqb.EV_ADD | kqb.EV_CLEAR, udata = udata };
-        if !kqb.kqApply(self.kq, ch) { raise .Register; }
+    addWake :: (self: *Loop, udata: i64) -> !EventErr {
+        if !kqb.kqApply(self.kq, kqb.kevChange(0, kqb.EVFILT_USER, kqb.EV_ADD | kqb.EV_CLEAR, udata)) { raise .Register; }
         return;
     }
 
@@ -300,7 +299,7 @@ Loop :: struct {
         i := 0;
         while i < n {
             ev := raw[i];
-            e : Event = .{ fd = ev.ident.(i32), udata = ev.udata, nbytes = ev.data };
+            e : Event = .{ fd = ev.ident.(i32), udata = ev.udata.(i64), nbytes = ev.data };
             if ev.filter == kqb.EVFILT_READ  { e.readable = true; }
             if ev.filter == kqb.EVFILT_WRITE { e.writable = true; }
             if ev.filter == kqb.EVFILT_USER  { e.user = true; }

@@ -57,8 +57,8 @@ EV_ERROR   :u16: 0x4000;
 EV_EOF     :u16: 0x8000;
 
 // A change entry for one (fd, filter) registration.
-kevChange :: (fd: i32, filter: i16, flags: u16, udata: usize) -> Kevent {
-    return Kevent{ ident = fd.(usize), filter = filter, flags = flags, udata = udata };
+kevChange :: (fd: i32, filter: i16, flags: u16, udata: i64) -> Kevent {
+    return Kevent{ ident = fd.(usize), filter = filter, flags = flags, udata = udata.(usize) };
 }
 
 // Apply one registration change immediately (no event drain).

@@ -700,9 +700,9 @@ private bodyChanRead :: (ctx: usize, dst: [*]u8, cap: i64) -> i64 {
 }
 
 // The listener's udata; connection udata is the slot index.
-private LISTENER_UDATA :usize: 0xFFFFFFFF;
+private LISTENER_UDATA :i64: 0xFFFFFFFF;
 // The pool wake channel's udata.
-private WAKE_UDATA :usize: 0xFFFFFFFE;
+private WAKE_UDATA :i64: 0xFFFFFFFE;
 
 // storage for one cached IMF-fixdate (29 bytes used; struct-wrapped
 // so it can carry a `.{}` field default, like thread.MutexBuf).
@@ -1840,7 +1840,7 @@ Server :: struct {
                 self.resumeStreamPumps();   // a worker fed a hungry channel
                 continue;
             }
-            slot : i64 = ev.udata.(i64);
+            slot := ev.udata;
             c: *Conn = *self.conns[slot];
             if c.state == CONN_FREE or c.fd != ev.fd { continue; }   // stale event for a recycled slot
             if c.state == CONN_HANDLING { continue; }   // buffer frozen until the worker finishes
@@ -1931,7 +1931,7 @@ Server :: struct {
                     // conn stays read-parked: inbound is discard-only
                     // until the linger close.
                     rae := false;
-                    self.loop.addRead(c.fd, i.(usize)) catch { rae = true; };
+                    self.loop.addRead(c.fd, i) catch { rae = true; };
                     if rae {
                         self.emit(EventKind.READ_FAULT, i, 0);
                         self.connClose(i);
@@ -2195,7 +2195,7 @@ Server :: struct {
             self.stAccepted += 1;
             self.emit(EventKind.ACCEPT, slot, 0);
             are := false;
-            self.loop.addRead(fd, slot.(usize)) catch { are = true; };
+            self.loop.addRead(fd, slot) catch { are = true; };
             if are {
                 self.emit(EventKind.ACCEPT_FAULT, slot, 0);
                 self.connClose(slot);
@@ -2232,7 +2232,7 @@ Server :: struct {
         if step == TlsStep.WantWrite {
             if !c.writeArmed {
                 awe := false;
-                self.loop.addWrite(c.fd, slot.(usize)) catch { awe = true; };
+                self.loop.addWrite(c.fd, slot) catch { awe = true; };
                 if awe {
                     self.emit(EventKind.TLS_HANDSHAKE_FAULT, slot, 0);
                     self.connClose(slot);
@@ -2552,7 +2552,7 @@ Server :: struct {
                 // Still streaming and not re-parked → hungry for wire bytes.
                 if c.state == CONN_BODY and !c.bodyParked and c.bodyMode != 0 {
                     are := false;
-                    self.loop.addRead(c.fd, i.(usize)) catch { are = true; };
+                    self.loop.addRead(c.fd, i) catch { are = true; };
                     if are {
                         self.emit(EventKind.READ_FAULT, i, 0);
                         self.connClose(i);
@@ -2665,7 +2665,7 @@ Server :: struct {
                 c.tlsRdWantWrite = true;
                 if !c.writeArmed {
                     awe := false;
-                    self.loop.addWrite(c.fd, slot.(usize)) catch { awe = true; };
+                    self.loop.addWrite(c.fd, slot) catch { awe = true; };
                     if awe { raise socket.SockErr.Closed; }
                     c.writeArmed = true;
                 }
@@ -3715,7 +3715,7 @@ Server :: struct {
             // re-arm: inbound is discard-only until the linger close.)
             if !early {
                 rae := false;
-                self.loop.addRead(c.fd, done.slot.(usize)) catch { rae = true; };
+                self.loop.addRead(c.fd, done.slot) catch { rae = true; };
                 if rae {
                     self.ownAlloc.deallocBytes(done.out.buf);
                     // the chan is NOT attached yet, so the
@@ -3881,7 +3881,7 @@ Server :: struct {
                     // read watch delivers the retry.
                     if !c.writeArmed and !c.tlsWrWantRead {
                         awe := false;
-                        self.loop.addWrite(c.fd, slot.(usize)) catch { awe = true; };
+                        self.loop.addWrite(c.fd, slot) catch { awe = true; };
                         if awe {                             // arming the write watch failed
                             self.emit(EventKind.WRITE_FAULT, slot, 0);
                             self.connClose(slot);
@@ -3994,7 +3994,7 @@ Server :: struct {
         self.tlsWantDrop(slot);
         socket.shutdown(c.fd, socket.SHUT_WR);
         are := false;
-        self.loop.addRead(c.fd, slot.(usize)) catch { are = true; };
+        self.loop.addRead(c.fd, slot) catch { are = true; };
         if are {   // can't watch the fd: fall back to the abrupt close
             self.connClose(slot);
             return;
