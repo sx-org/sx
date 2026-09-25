@@ -306,7 +306,7 @@ fn bindConditionPayload(self: *Lowering, cond: LoweredCondition, name: []const u
 
 fn contextualArmType(self: *Lowering, inferred: TypeId) TypeId {
     // A cast converts the merged value; its operand keeps its inferred type.
-    if (self.suppress_int_fit_check) return inferred;
+    if (self.cast_operand != null) return inferred;
     const target = self.target_type orelse return inferred;
     if (self.isIntEx(inferred)) if (self.integerContext(target)) |ty| return ty;
     if (Lowering.isFloat(inferred)) if (self.floatContext(target)) |ty| return ty;

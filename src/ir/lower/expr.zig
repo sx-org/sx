@@ -3769,6 +3769,13 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
     return result;
 }
 
+fn lowerCastOperand(self: *Lowering, operand: *const Node) Ref {
+    const saved = self.cast_operand;
+    defer self.cast_operand = saved;
+    self.cast_operand = if (program_index_mod.untypedConst(operand, self) != null) .untyped else .typed;
+    return self.lowerExpr(operand);
+}
+
 fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
     if (program_index_mod.untypedConst(node, self)) |untyped| switch (untyped) {
         .float => {
@@ -4305,12 +4312,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                 if (!self.isIntEx(ty)) break :blk self.diagDecrementNonInteger(ty, node.span);
                 break :blk self.lowerPlaceRmw(place, .sub_assign, self.builder.constInt(1, ty));
             }
-            // An explicit `xx` cast requests the conversion, truncation
-            // included — literal operands skip the fits-check.
-            const saved_fit = self.suppress_int_fit_check;
-            if (uop.op == .xx) self.suppress_int_fit_check = true;
-            const operand = self.lowerExpr(uop.operand);
-            self.suppress_int_fit_check = saved_fit;
+            const operand = if (uop.op == .xx) lowerCastOperand(self, uop.operand) else self.lowerExpr(uop.operand);
             break :blk switch (uop.op) {
                 .negate => blk2: {
                     const value = self.unwrapOptionalOperand(operand, self.builder.getRefType(operand), uop.operand.span) orelse operand;
@@ -4598,13 +4600,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
             const saved_target = self.target_type;
             self.target_type = dst;
             defer self.target_type = saved_target;
-            // An explicit cast requests the conversion, truncation
-            // included — literal operands skip the fits-check (same
-            // stance as the `xx` unary arm).
-            const saved_fit = self.suppress_int_fit_check;
-            self.suppress_int_fit_check = true;
-            const operand = self.lowerExpr(pc.operand);
-            self.suppress_int_fit_check = saved_fit;
+            const operand = lowerCastOperand(self, pc.operand);
             const saved_postfix = self.xx_is_postfix;
             self.xx_is_postfix = true;
             defer self.xx_is_postfix = saved_postfix;
