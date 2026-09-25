@@ -2960,7 +2960,8 @@ isReady : ValueListenable(bool) = map(
   compile time, in 128-bit arithmetic. Only the folded value takes a type, and
   it must fit it: its destination's type, through `?` as well, or its typed
   peer's type, and `i64` without either. An explicit cast (`.(T)`, `xx`)
-  converts it, truncating.
+  converts it, truncating; within a larger operand the cast is no destination,
+  so `({ 300 }).(u8)` converts the block's `i64` `300` to `44`.
   `f : u64 = 0xFFFF_FFFF_FFFF_FFFF / 2` is `9223372036854775807`,
   `d : i8 = 100 + 100` is refused because `200` does not fit `i8`, and
   `m : u8 = ~0` is refused because `-1` does not fit `u8`. A value outside 128
@@ -4605,6 +4606,11 @@ x := if true 1 else 2;
 if i == 2 continue;
 y := x + if false { 7 } else { 12 };
 ```
+
+The results of an `if`, and the arms of a value `match`, meet at one type. An
+untyped result takes its typed peer's type, as an untyped operand does in
+[§Arithmetic](#arithmetic); with no typed result the untyped default applies.
+With `v : u8`, `if c then v else 0` is `u8`, and `if c then 1 else 2` is `i64`.
 
 `then` is an optional delimiter between the condition and the result. It is
 **required** where the result's first token can continue the condition — `(`,

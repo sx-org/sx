@@ -457,6 +457,11 @@ pub fn nameVisibleOverEdges(
     return false;
 }
 
+/// The operand of an explicit `.(T)` or `xx`, which the cast converts. Only an
+/// untyped constant operand truncates by request; a literal inside a typed
+/// operand must fit the type it takes.
+pub const CastOperand = enum { typed, untyped };
+
 // ── Lowering ────────────────────────────────────────────────────────────
 
 /// A literal belongs to its source function's specialization, including inside initializer thunks.
@@ -470,7 +475,11 @@ pub const Lowering = struct {
     break_target: ?BlockId = null,
     continue_target: ?BlockId = null,
     loop_defer_base: usize = 0, // defer-stack height at the innermost loop's body start (break/continue drain to here)
-    suppress_int_fit_check: bool = false, // inside an explicit `xx` cast operand: truncation is requested, skip the literal fits-check
+    cast_operand: ?CastOperand = null,
+    /// The node a cast's destination reaches as its target: a typed cast
+    /// operand, and each operand a reached node computes its value from at its
+    /// own target (see `reachOperand`).
+    cast_reached: ?*const Node = null,
     block_counter: u32 = 0,
     comptime_counter: u32 = 0,
     /// Hands out `BindingId`s to every scope this lowering builds. It is NOT
@@ -1383,6 +1392,42 @@ pub const Lowering = struct {
             .none => self.target_type = null,
         }
         return scope;
+    }
+
+    /// The target and the cast reach an operand is lowered under, restored
+    /// together.
+    pub const TargetScope = struct {
+        l: *Lowering,
+        target_type: ?TypeId,
+        cast_reached: ?*const Node,
+
+        pub fn restore(s: TargetScope) void {
+            s.l.target_type = s.target_type;
+            s.l.cast_reached = s.cast_reached;
+        }
+    };
+
+    pub fn saveTarget(self: *Lowering) TargetScope {
+        return .{ .l = self, .target_type = self.target_type, .cast_reached = self.cast_reached };
+    }
+
+    /// Reach `operand`, which `node` computes its value from at `node`'s own
+    /// target. A cast's destination that reached `node` reaches `operand`,
+    /// except as the type of an untyped numeric value: that value takes its
+    /// default type, which the cast converts.
+    pub fn reachOperand(self: *Lowering, node: *const Node, operand: *const Node) void {
+        if (self.cast_reached != node) return;
+        const untyped = program_index_mod.untypedConst(operand, self);
+        if (untyped != null and untyped.? != .string) self.target_type = null else self.cast_reached = operand;
+    }
+
+    /// Lower `operand`, which `node` computes its value from at `node`'s own
+    /// target (see `reachOperand`).
+    pub fn lowerReachedOperand(self: *Lowering, node: *const Node, operand: *const Node) Ref {
+        const saved = self.saveTarget();
+        defer saved.restore();
+        self.reachOperand(node, operand);
+        return self.lowerExpr(operand);
     }
 
     pub fn init(module: *Module) Lowering {
@@ -3458,7 +3503,7 @@ pub const Lowering = struct {
     /// in `ty` (REJECTED PATTERNS: no silent wrap). The constant is still
     /// emitted by the caller so lowering continues and surfaces further errors.
     pub fn checkIntLiteralFits(self: *Lowering, value: i128, ty: TypeId, span: ast.Span) void {
-        if (self.suppress_int_fit_check) return;
+        if (self.cast_operand == .untyped) return;
         const r = self.intLiteralRange(ty) orelse return;
         if (value < r.min or value > r.max) {
             if (self.diagnostics) |d| {
@@ -3475,7 +3520,7 @@ pub const Lowering = struct {
     /// `'raw'` is included so the user sees which literal overflowed. The
     /// constant is still emitted by the caller so lowering continues.
     pub fn checkCharLiteralFits(self: *Lowering, cl: ast.CharLiteral, ty: TypeId, span: ast.Span) void {
-        if (self.suppress_int_fit_check) return;
+        if (self.cast_operand == .untyped) return;
         const r = self.intLiteralRange(ty) orelse return;
         if (cl.value < r.min or cl.value > r.max) {
             if (self.diagnostics) |d| {
@@ -4256,6 +4301,7 @@ pub const Lowering = struct {
     pub const inferMatchResultType = lower_generic.inferMatchResultType;
     pub const matchCaptureType = lower_generic.matchCaptureType;
     pub const unifyValueArmTypes = lower_generic.unifyValueArmTypes;
+    pub const meetValueArms = lower_generic.meetValueArms;
     pub const isTypeCategoryMatch = lower_generic.isTypeCategoryMatch;
     pub const isRuntimeCategoryName = lower_generic.isRuntimeCategoryName;
     pub const isTypeParamDecl = lower_generic.isTypeParamDecl;
