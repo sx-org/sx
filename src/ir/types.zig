@@ -131,16 +131,15 @@ pub const IntLayout = struct {
     }
 };
 
-/// How `?child` marks null. The codes fill an `optionalProbe` row, where 0 is
-/// a non-optional kind.
+/// How `?child` marks null.
 pub const OptionalShape = enum(u8) {
     /// `{ child, i1 }`: a has_value byte follows the payload.
-    flag = 1,
+    flag,
     /// The child's own leading pointer word is null.
-    pointer_word = 2,
+    pointer_word,
     /// An integer narrower than its storage word: a present word holds the
     /// payload's bits with every spare bit clear, and null sets its high bit.
-    high_bit = 3,
+    high_bit,
 };
 
 /// The reserved integer spellings and the layout each names.
@@ -1604,12 +1603,12 @@ pub const TypeTable = struct {
     /// How `@inner` reads presence out of a boxed `id`, packed into one row:
     /// bits 0..7 the `OptionalShape` code, bits 8..31 the byte offset of the
     /// byte it reads — the has_value flag, or the storage word's high byte.
-    /// 0 for a non-optional kind. Feeds the `__sx_optional_probes` runtime
+    /// Null for a non-optional kind. Feeds the `__sx_optional_probes` runtime
     /// table.
-    pub fn optionalProbe(self: *const TypeTable, id: TypeId) i64 {
-        if (id.index() >= self.infos.items.len) return 0;
+    pub fn optionalProbe(self: *const TypeTable, id: TypeId) ?i64 {
+        if (id.index() >= self.infos.items.len) return null;
         const info = self.get(id);
-        if (info != .optional) return 0;
+        if (info != .optional) return null;
         const child = info.optional.child;
         const shape = self.optionalShape(child);
         const offset: usize = switch (shape) {

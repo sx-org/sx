@@ -2454,7 +2454,7 @@ pub const Vm = struct {
                     .rt_member_count => @as(Reg, @intCast(table.memberCount(tid) orelse 0)),
                     .rt_variant_tag_width => @as(Reg, @bitCast(table.variantTagWidth(tid))),
                     .rt_slice_len_info => @as(Reg, @bitCast(table.sliceLenInfo(tid))),
-                    .rt_optional_probe => @as(Reg, @bitCast(table.optionalProbe(tid))),
+                    .rt_optional_probe => @as(Reg, @bitCast(table.optionalProbe(tid) orelse 0)),
                     else => unreachable,
                 };
             },

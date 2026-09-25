@@ -133,7 +133,7 @@ pub const Reflection = struct {
                 // Sign-encoded (negative = sign-extend); the i64 bit pattern.
                 .tag_width => @bitCast(tt.variantTagWidth(tid)),
                 .slice_len_info => @bitCast(tt.sliceLenInfo(tid)),
-                .optional_probe => @bitCast(tt.optionalProbe(tid)),
+                .optional_probe => @bitCast(tt.optionalProbe(tid) orelse 0),
                 // A zero-sized element strides by 0, so absence encodes negative.
                 .member_stride => @bitCast(tt.memberStride(tid) orelse -1),
             };
