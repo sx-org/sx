@@ -61,14 +61,15 @@ sx lsp                   # start language server
 | `@int(N, .signed)` / `@int(N, .unsigned)` | The integer of width `N`, 1 to 64 — `@int(8, .signed)` is `i8` |
 | `f32`, `f64` | Floats (default `f64`) |
 | `bool` | `true` / `false` |
-| `string` | UTF-8 `{ptr, len}` |
+| `string` | `[]u8`, UTF-8 by convention; string literals default to it |
 | `[N]T` / `[]T` | Array / slice |
+| `[N:0]u8` / `[:0]u8` / `[*:0]u8` | Terminated array / slice / C `char *` |
 | `*T` / `[*]T` | Single / many pointer |
 | `?T` | Optional |
 | `struct` / `enum` / `union` | Aggregates |
 | `Closure(args) -> ret` | Erased callable — `mem.closure(\|params\|_{ caps } body)` |
 
-`[N]T` coerces to `[]T`. A `[*]T` has no length — slice it with `ptr[0..len]`.
+`[N]T` coerces to `[]T`. A `[*]T` has no length — slice it with `ptr[0..len]`; `p[0..]` of a `[*:0]u8` scans to the terminator. A string literal takes the shape its destination names. No conversion adds a terminator: `mem.cloneZ(s)` makes an owned `[:0]u8` copy of a `string`.
 
 A typed store needs a modeled conversion; equal storage size grants none. Byte views use `@reinterpret(T, value)`. `x.(T)` is the explicit ladder: `1000.(i8)` truncates; `dog.(Speaker)` builds an interface handle over `dog`. On `any`: `try av.(i64)` / `av.(i64)` / `av.(?i64)`. `o?.(T)` maps over an optional.
 
