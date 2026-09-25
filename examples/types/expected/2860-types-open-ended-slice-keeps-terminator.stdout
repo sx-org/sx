@@ -1,13 +1,13 @@
-cstring 4 ello 4
+[:0]u8 4 ello 4
 string el
-cstring 3 tes
-cstring 5 world
-cstring 3 rld
+[:0]u8 3 tes
+[:0]u8 5 world
+[:0]u8 3 rld
 [:7]i64 3 2 4 7
 --- build done ---
-cstring 4 ello 4
+[:0]u8 4 ello 4
 string el
-cstring 3 tes
-cstring 5 world
-cstring 3 rld
+[:0]u8 3 tes
+[:0]u8 5 world
+[:0]u8 3 rld
 [:7]i64 3 2 4 7

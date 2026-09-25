@@ -272,7 +272,7 @@
       "patterns": [
         {
           "name": "support.type.primitive.sx",
-          "match": "(?<!\\.)\\b(?:[iu](?:8|16|32|64)|f32|f64|bool|string|cstring|void|usize|isize|any|Type|Self)\\b"
+          "match": "(?<!\\.)\\b(?:[iu](?:8|16|32|64)|f32|f64|bool|string|void|usize|isize|any|Type|Self)\\b"
         }
       ]
     },

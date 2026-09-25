@@ -1,10 +1,10 @@
-// A `?cstring` is the cstring's own 16 bytes — a null `ptr` IS absent — so a
+// A `?[:0]u8` is the slice's own 16 bytes — a null `ptr` IS absent — so a
 // struct field costs no flag word, and the same presence test answers alike
 // at runtime and in the comptime VM.
 
 @import "modules/std.sx";
 
-S :: struct { a: ?cstring; b: i64; }
+S :: struct { a: ?[:0]u8; b: i64; }
 
 GPU :: interface {
   ping :: (self: *Self) -> i64;
@@ -15,7 +15,7 @@ impl GPU for Impl {
   ping :: (self: *Impl) -> i64 { 42 }
 }
 
-present :: (c: ?cstring) -> bool { return c != null; }
+present :: (c: ?[:0]u8) -> bool { return c != null; }
 
 protocolPresent :: () -> bool {
     impl := Impl{};
@@ -23,7 +23,7 @@ protocolPresent :: () -> bool {
     return g != null;
 }
 
-COMPTIME_CSTRING  :: @run present("hi");
+COMPTIME_TERMINATED  :: @run present("hi");
 COMPTIME_PROTOCOL :: @run protocolPresent();
 
 main :: () -> i32 {
@@ -31,7 +31,7 @@ main :: () -> i32 {
     with    := S{ a = "hi", b = 7 };
     without := S{ a = null, b = 9 };
     print("{} {}\n", with.b, without.b);
-    print("{} {}\n", present("hi"), COMPTIME_CSTRING);
+    print("{} {}\n", present("hi"), COMPTIME_TERMINATED);
     print("{}\n", COMPTIME_PROTOCOL);
     return 0;
 }

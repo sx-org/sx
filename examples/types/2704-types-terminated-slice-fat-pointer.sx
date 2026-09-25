@@ -1,0 +1,27 @@
+// `[:0]u8` is the `{ptr, len}` fat pointer whose bytes end in a terminator.
+// `.len` counts the bytes before it, `==` compares content like any other
+// slice, dropping the guarantee reaches `string` with no glyph, and
+// `?[:0]u8` is the slice's own 16 bytes with a null `ptr` meaning absent.
+
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+
+strlen :: (s: [*:0]u8) -> usize extern "strlen";
+
+main :: () -> i32 {
+    print("{} {} {}\n", @typeName([:0]u8), @sizeOf([:0]u8), @sizeOf(?[:0]u8));
+
+    s :: "hi";
+    print("{} {}\n", @typeName(@typeOf(s)), strlen(s));
+
+    c : [:0]u8 = mem.cloneZ("hi");
+    print("{} {} {}\n", c.len, c == "hi", c == s);
+
+    view : string = c;
+    print("{} {}\n", view.len, mem.clone(c).len);
+
+    absent : ?[:0]u8 = null;
+    present : ?[:0]u8 = c;
+    print("{} {}\n", absent == null, (present ?? "").len);
+    0
+}

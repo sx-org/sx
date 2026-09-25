@@ -1083,12 +1083,12 @@ pub const Vm = struct {
             .struct_init => |agg| {
                 const table = try self.requireTable();
                 const sty = ins.ty;
-                // `string`/`cstring`/`any` are builtin TWO-WORD aggregates
+                // `string`/`[:0]u8`/`any` are builtin TWO-WORD aggregates
                 // (`{ptr@0, len@8}` / `{tag@0, value@8}`) — a literal like
-                // `cstring{ ptr = p, len = n }` struct_inits one. Lay each
+                // `.{ ptr = p, len = n }` struct_inits one. Lay each
                 // operand as an 8-byte word; the other builtins have no
                 // aggregate literal form.
-                if (sty == .string or sty == .cstring or sty == .any) {
+                if (sty == .string or sty == .string_z or sty == .any) {
                     const a = self.machine.allocBytes(16, 8);
                     for (agg.fields, 0..) |fr, i| {
                         if (i >= 2) break;
@@ -2793,7 +2793,7 @@ pub const Vm = struct {
                 return .{ .int = @bitCast(normalizeWord(table, ty, reg)) };
             },
             .aggregate => {
-                if (ty == .string or ty == .cstring) {
+                if (ty == .string or ty == .string_z) {
                     const src = try self.machine.bytes(try self.sliceData(table, reg), @intCast(try self.sliceLen(table, ty, reg)));
                     return .{ .string = alloc.dupe(u8, src) catch return self.failMsg("reg→value: out of memory (string)") };
                 }
@@ -2991,7 +2991,7 @@ pub const Vm = struct {
             // A comptime `Type` value is an 8-byte handle (a `TypeId` in a word) —
             // distinct from the 16-byte boxed `.any`. It rides as a word.
             .type_value => return .word,
-            .string, .cstring => return .aggregate, // {ptr,len} fat pointer (16B), by-address
+            .string, .string_z => return .aggregate, // {ptr,len} fat pointer (16B), by-address
             .any => return .aggregate, // boxed { type_tag, value } (16B), by-address
             else => {},
         }

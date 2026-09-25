@@ -967,7 +967,7 @@ test "integerLayout: null for every non-integer" {
     var table = TypeTable.init(alloc);
     defer table.deinit();
 
-    for ([_]TypeId{ .bool, .f32, .f64, .string, .cstring, .void, .any, .noreturn, .type_value, .unresolved }) |ty| {
+    for ([_]TypeId{ .bool, .f32, .f64, .string, .string_z, .void, .any, .noreturn, .type_value, .unresolved }) |ty| {
         try std.testing.expect(table.integerLayout(ty) == null);
     }
     try std.testing.expect(table.integerLayout(table.ptrTo(.u8)) == null);

@@ -16,8 +16,8 @@ Line comments start with `//` and extend to end of line.
 #### Reserved type names
 
 A spelling that names a builtin type — the eight integer aliases `i8` / `i16` /
-`i32` / `i64` / `u8` / `u16` / `u32` / `u64`, plus `bool`, `string`, `cstring`,
-`void`, `f32`, `f64`, `usize`, `isize`, `any` —
+`i32` / `i64` / `u8` / `u16` / `u32` / `u64`, plus `bool`, `string`, `void`,
+`f32`, `f64`, `usize`, `isize`, `any` —
 is reserved: bare, it is not a value or declaration name. A value spelled as a
 type parses as a *type*, not a value, so its address-of / autoref paths would
 mis-lower; a declaration spelled as a builtin would shadow the builtin. The
@@ -1834,15 +1834,13 @@ iterations rather than being an error.
 A slice `[]T` is a fat pointer `{ptr, i64}` referencing a contiguous sequence of `T` elements. Same runtime layout as `string`.
 
 `[:X]T` is a **terminated** slice: the same `{ptr, i64}` fat pointer, whose
-element one past `.len` is `X`. `[:0]u8` is `cstring`; every other terminated
-slice is a type of its own, distinct from `[]T`. A `[:X]T` comes from a
-string literal (`[:0]u8`), a terminated array, an open-ended subslice of a
-terminated value (§Subslicing), or a `.{ptr, len}` literal, whose author
-asserts `ptr[len] == X` unchecked.
+element one past `.len` is `X`, and a type of its own, distinct from `[]T`. A
+`[:X]T` comes from a string literal (`[:0]u8`), a terminated array, an
+open-ended subslice of a terminated value (§Subslicing), or a `.{ptr, len}`
+literal, whose author asserts `ptr[len] == X` unchecked.
 ```sx
-@typeName([:1]u8)  // "[:1]u8"
 @typeName([]u8)    // "string"
-@typeName([:0]u8)  // "cstring"
+@typeName([:0]u8)  // "[:0]u8"
 ```
 
 `==` on two slices compares content (§Array Types).
@@ -2062,14 +2060,15 @@ chain is rooted at a constant is rejected (see
 [Constant-Write Rejection](#constant-write-rejection)); a dereference in
 the chain leaves the checked zone.
 
-**Fat pointer layout**: `string`, `cstring`, `[]T` and `[:X]T` are `{ptr, i64}` structs. The raw pointer is always the first field at offset 0.
+**Fat pointer layout**: `string`, `[]T` and `[:X]T` are `{ptr, i64}` structs. The raw pointer is always the first field at offset 0.
 
-### cstring
+### C strings and terminated bytes
 
-`cstring` is `[:0]u8`: the `{ptr, i64}` slice whose bytes end in a
-terminator. `.len` counts the bytes before it, indexing, iteration and
-content `==` are the slice's own (§Slice Types, §Array Types), and
-`?cstring` is the slice's 16 bytes with a null `ptr` meaning absent.
+`[:0]u8` is the `{ptr, i64}` slice whose bytes end in a terminator. `.len`
+counts the bytes before it, indexing, iteration and content `==` are the
+slice's own (§Slice Types, §Array Types), and `?[:0]u8` is the slice's 16
+bytes with a null `ptr` meaning absent. A fixed buffer is `[N:0]u8`
+(§Array Types).
 
 C's `char *` is `[*:0]u8`: ONE pointer to a null-terminated u8 buffer,
 carrying no length (`p[0..]` walks to the terminator, O(n)) and
@@ -2080,7 +2079,7 @@ the type for `getenv`-style returns and optional `char *` parameters.
 
 Conversion discipline:
 
-- The terminator is the TYPE's, so a terminated value reaches `cstring`
+- The terminator is the TYPE's, so a terminated value reaches `[:0]u8`
   and `[*:0]u8` on its own — a string literal, and a `::` constant bound
   to one, takes either shape.
 - A value whose type carries no terminator does NOT coerce to either,
@@ -2088,14 +2087,12 @@ Conversion discipline:
   `mem.cloneZ(s, a = context.allocator)` makes an owned `[:0]T` copy,
   which `mem.free` releases. Library APIs take `string` and terminate at
   their own C calls: `z := mem.cloneZ(s); defer mem.free(z);`.
-- Dropping the guarantee is implicit: `cstring` → `string` is the
-  `[:X]T` → `[]T` arm, so `string` methods take a `cstring` receiver.
-- `[*:0]u8` does not coerce to `cstring` implicitly — the length is an
+- Dropping the guarantee is implicit: `[:0]u8` → `string` is the
+  `[:X]T` → `[]T` arm, so `string` methods take a `[:0]u8` receiver.
+- `[*:0]u8` does not coerce to `[:0]u8` implicitly — the length is an
   O(n) strlen the code must ask for. `p[0..]` is the zero-copy
   view (shares C's buffer); a copy must be made for it to outlive C's
   buffer.
-- `xx` bit-casts `[*:0]u8` ↔ `*u8` / `[*]u8` / integer-pointer values
-  for low-level interop.
 
 ### Optional Types
 

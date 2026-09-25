@@ -3341,7 +3341,7 @@ const PrintfKind = enum {
 /// The kind that renders a value of `ty`, or null when nothing does.
 fn printfKind(self: *Lowering, ty: TypeId) ?PrintfKind {
     switch (ty) {
-        .string, .cstring => return .str,
+        .string, .string_z => return .str,
         .bool => return .boolean,
         .i8, .i16, .i32, .i64, .isize => return .signed,
         .u8, .u16, .u32, .u64, .usize => return .unsigned,

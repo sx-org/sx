@@ -1,0 +1,5 @@
+error: unknown type 'cstring'
+  --> examples/diagnostics/2897-diagnostics-cstring-is-an-unknown-type.sx:5:9
+   |
+ 5 |     c : cstring = "hi";
+   |         ^^^^^^^

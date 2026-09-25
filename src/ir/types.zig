@@ -36,7 +36,7 @@ pub const TypeId = enum(u32) {
     isize = 15,
     usize = 16,
     void = 17,
-    cstring = 18, // [:0]u8
+    string_z = 18, // [:0]u8
     /// A comptime `Type` VALUE — an 8-byte handle (a `TypeId` stored in a word),
     /// DISTINCT from `.any`. A `Type` value is the reified type itself
     /// (`reflect`/`const_type`/the comptime compiler-API), not a boxed Any. It used
@@ -684,7 +684,7 @@ pub const TypeTable = struct {
             .isize, // 15: isize (pointer-sized signed)
             .usize, // 16: usize (pointer-sized unsigned)
             .void, // 17
-            .{ .slice = .{ .element = .u8, .len_type = .i64, .sentinel = 0 } }, // 18: cstring
+            .{ .slice = .{ .element = .u8, .len_type = .i64, .sentinel = 0 } }, // 18: [:0]u8
             .type_value, // 19: comptime `Type` value (8-byte handle, distinct from any)
         };
         // Seed intern_map so `intern(.{ .signed = 8 })` answers `.i8`.
@@ -2033,7 +2033,7 @@ pub const TypeTable = struct {
         if (ty == .i32 or ty == .u32 or ty == .f32) return 4;
         if (ty == .i64 or ty == .u64 or ty == .f64) return 8;
         if (ty == .usize or ty == .isize) return ptr_size;
-        if (ty == .string or ty == .cstring) return 16; // {ptr, i64} — always 16 (i64 alignment pads on wasm32)
+        if (ty == .string or ty == .string_z) return 16; // {ptr, i64} — always 16 (i64 alignment pads on wasm32)
         if (ty == .any) return 16; // {i64 tag, i64 value} — Any boxed layout
         if (ty == .type_value) return 8; // 8-byte type handle (a `TypeId` in a word)
         if (ty.isBuiltin()) return ptr_size; // default for unknown builtins
@@ -2140,7 +2140,7 @@ pub const TypeTable = struct {
         if (ty == .i32 or ty == .u32 or ty == .f32) return 4;
         if (ty == .i64 or ty == .u64 or ty == .f64) return 8;
         if (ty == .usize or ty == .isize) return ptr_align;
-        if (ty == .string or ty == .cstring) return 8; // i64 drives alignment
+        if (ty == .string or ty == .string_z) return 8; // i64 drives alignment
         if (ty == .any) return 8; // {i64, i64} aligns to 8
         if (ty == .type_value) return 8; // 8-byte type handle
         if (ty.isBuiltin()) return ptr_align;
@@ -2217,7 +2217,7 @@ pub const TypeTable = struct {
             .f32 => "f32",
             .f64 => "f64",
             .string => "string",
-            .cstring => "cstring",
+            .string_z => "[:0]u8",
             .any => "any",
             .type_value => "Type",
             .noreturn => "noreturn",
