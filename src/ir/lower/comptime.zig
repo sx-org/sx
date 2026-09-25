@@ -177,7 +177,8 @@ pub fn someConstant(self: *Lowering, child: TypeId, payload: inst_mod.ConstantVa
     return .{ .aggregate = fields };
 }
 
-/// The null constant of `opt_ty`.
+/// The null constant of `opt_ty`. A `.null_val` emits as zeroed storage, which
+/// a high-bit optional reads as a present 0.
 pub fn nullConstant(self: *Lowering, opt_ty: TypeId) inst_mod.ConstantValue {
     const child = self.module.types.get(opt_ty).optional.child;
     if (self.module.types.optionalShape(child) == .high_bit)
