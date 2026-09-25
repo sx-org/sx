@@ -4696,10 +4696,11 @@ match av {
 - **Category arms** (`int`, `signed`, `unsigned`, `float`, `struct`, `enum`,
   `union`, `slice`, `array`, `pointer`, `vector`, `optional`, `error`,
   `closure`, `type`) are tag SETS, and a `|v|` capture binds the reading the
-  whole set shares: `signed`/`unsigned` an `i64` widened by each tag's own
-  signedness, `float` an `f64`, `pointer` a `*void`. Every other category
-  binds the subject's own `any` view, read through the reflection builtins.
-  `string`/`bool`/`void` are single types and take the concrete path.
+  whole set shares: `signed` an `i64` sign-extended from each tag,
+  `unsigned` a `u64` zero-extended from each tag, `float` an `f64`,
+  `pointer` a `*void`. Every other category binds the subject's own `any`
+  view, read through the reflection builtins. `string`/`bool`/`void` are
+  single types and take the concrete path.
 - **Arms overlap first-wins, loudly**: a tag belongs to the first arm that
   names it, so a concrete arm must come BEFORE the category that contains
   it (`case i64:` above `case int:`). An arm left with no tags — the
