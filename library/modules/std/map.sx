@@ -90,12 +90,13 @@ mapHashKey :: (key: $K) -> u64 {
 mapHashInto :: (v: $T, h: u64) -> u64 {
     inline if T is slice {
         E :: @typeInfo(T).slice.elem;
+        n := v.len.(i64);
         inline if E is int {
-            return fnv1aFold(h, @reinterpret([*]u8, v.ptr), v.len * @sizeOf(E));
+            return fnv1aFold(h, @reinterpret([*]u8, v.ptr), n * @sizeOf(E));
         }
         hh := h;
         i := 0;
-        while i < v.len {
+        while i < n {
             hh = mapHashInto(v[i], hh);
             i += 1;
         }
