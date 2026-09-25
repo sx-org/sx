@@ -1068,7 +1068,7 @@ pub const Vm = struct {
                 if (success) try self.writeField(table, ptr, elem_ty, frame.get(a.new.index()));
                 const opt_ty = ins.ty; // ?T
                 if (table.optionalShape(elem_ty) == .high_bit)
-                    return .{ .value = if (success) table.optionalNullWord(elem_ty) else actual };
+                    return .{ .value = if (success) table.optionalNullWord(elem_ty) else table.integerLayout(elem_ty).?.storageWord(actual) };
                 // Build the `?T` result in VM memory.
                 const addr = self.machine.allocBytes(table.typeSizeBytes(opt_ty), table.typeAlignBytes(opt_ty));
                 // writeWord(addr, SIZE, val): write the 1-byte has_value flag
@@ -1246,9 +1246,11 @@ pub const Vm = struct {
                 const table = try self.requireTable();
                 const child = table.get(ins.ty).optional.child; // ins.ty is ?T
                 const val = frame.get(u.operand.index());
-                // A pointer-word optional is the child value itself; a high-bit
-                // one is the zero-extended payload the register already holds.
-                if (table.optionalShape(child) != .flag) return .{ .value = val };
+                switch (table.optionalShape(child)) {
+                    .pointer_word => return .{ .value = val },
+                    .high_bit => return .{ .value = table.integerLayout(child).?.storageWord(val) },
+                    .flag => {},
+                }
                 const addr = self.machine.allocBytes(table.typeSizeBytes(ins.ty), table.typeAlignBytes(ins.ty));
                 try self.writeField(table, addr, child, val); // payload @ 0
                 try self.machine.writeWord(addr + table.typeSizeBytes(child), 1, 1); // has_value flag = 1
@@ -3089,8 +3091,7 @@ pub const Vm = struct {
         return table.optionalShape(child) == .pointer_word and table.typeSizeBytes(child) > table.pointer_size;
     }
 
-    /// The child of `ty` when `ty` is a `.high_bit` optional. Its register is
-    /// the storage word: the zero-extended payload, or the null word.
+    /// The child of `ty` when `ty` is a `.high_bit` optional.
     fn highBitChild(table: *const types.TypeTable, ty: TypeId) ?TypeId {
         if (ty.isBuiltin()) return null;
         const info = table.get(ty);
@@ -3159,7 +3160,12 @@ pub const Vm = struct {
             return self.machine.writeWord(addr, 4, bits);
         }
         switch (kindOf(table, ty)) {
-            .word => try self.machine.writeWord(addr, wordBytes(table, ty), val),
+            .word => {
+                // A narrow integer's spare storage bits are clear, as in the
+                // compiled image, so a `.high_bit` optional over it reads present.
+                const word = if (table.integerLayout(ty)) |layout| layout.storageWord(val) else val;
+                try self.machine.writeWord(addr, wordBytes(table, ty), word);
+            },
             .aggregate => {
                 const n = table.typeSizeBytes(ty);
                 if (n == 0) return;

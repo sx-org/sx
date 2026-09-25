@@ -85,6 +85,11 @@ pub const IntLayout = struct {
         return if (self.signed) @bitCast(@as(i64, @bitCast(low)) >> shift) else low >> shift;
     }
 
+    /// How `raw` sits in storage: its low `width` bits, every spare bit clear.
+    pub fn storageWord(self: IntLayout, raw: u64) u64 {
+        return (IntLayout{ .width = self.width, .signed = false }).normalize(raw);
+    }
+
     /// The layout's `.min`/`.max` as a raw two's-complement `i64` bit pattern.
     /// `u64.max` (18446744073709551615) exceeds `i64`, so it comes back as the
     /// all-ones pattern (`-1`); the caller pairs it with the unsigned `TypeId`
@@ -133,8 +138,8 @@ pub const OptionalShape = enum(u8) {
     flag = 1,
     /// The child's own leading pointer word is null.
     pointer_word = 2,
-    /// An unsigned integer narrower than its storage word: null sets the
-    /// word's high bit, which a present payload leaves clear.
+    /// An integer narrower than its storage word: a present word holds the
+    /// payload's bits with every spare bit clear, and null sets its high bit.
     high_bit = 3,
 };
 
@@ -1585,7 +1590,7 @@ pub const TypeTable = struct {
         return switch (self.get(child)) {
             .pointer, .many_pointer, .function, .closure, .slice => .pointer_word,
             .@"struct" => |s| if (s.is_protocol) .pointer_word else .flag,
-            .unsigned => |w| if (w < intAbiBytes(w) * 8) .high_bit else .flag,
+            .signed, .unsigned => |w| if (w < intAbiBytes(w) * 8) .high_bit else .flag,
             else => .flag,
         };
     }

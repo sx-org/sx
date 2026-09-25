@@ -168,9 +168,15 @@ pub fn constExprValue(self: *Lowering, expr: *const Node, expected_ty: TypeId) ?
 
 /// The present `?child` constant holding `payload`.
 pub fn someConstant(self: *Lowering, child: TypeId, payload: inst_mod.ConstantValue) inst_mod.ConstantValue {
-    // A pointer-word optional reuses the payload's own null representation,
-    // and a high-bit optional's present word is the payload itself.
-    if (self.module.types.optionalShape(child) != .flag) return payload;
+    switch (self.module.types.optionalShape(child)) {
+        // A pointer-word optional reuses the payload's own null representation.
+        .pointer_word => return payload,
+        .high_bit => return switch (payload) {
+            .int => |v| .{ .int = @bitCast(self.module.types.integerLayout(child).?.storageWord(@bitCast(v))) },
+            else => payload,
+        },
+        .flag => {},
+    }
     const fields = self.alloc.alloc(inst_mod.ConstantValue, 2) catch @panic("out of memory");
     fields[0] = payload;
     fields[1] = .{ .boolean = true };
