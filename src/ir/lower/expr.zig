@@ -6073,8 +6073,8 @@ fn lowerComparison(self: *Lowering, op: ast.BinaryOp.Op, lhs: Ref, rhs: Ref, spa
             return null;
         },
         .signedness => {
-            if (constIntOf(self, lhs)) |n| return compareWithConstant(self, op, n, lhs_ty, rhs, rhs_ty, true);
-            if (constIntOf(self, rhs)) |n| return compareWithConstant(self, op, n, rhs_ty, lhs, lhs_ty, false);
+            if (self.foldedInt(lhs)) |n| return compareWithConstant(self, op, n, lhs_ty, rhs, rhs_ty, true);
+            if (self.foldedInt(rhs)) |n| return compareWithConstant(self, op, n, rhs_ty, lhs, lhs_ty, false);
             return compareOppositeSignedness(self, op, lhs, lhs_ty, rhs, rhs_ty);
         },
         .bool_number => {

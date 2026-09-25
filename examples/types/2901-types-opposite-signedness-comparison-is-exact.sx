@@ -4,6 +4,7 @@
 @import "modules/std.sx";
 
 K : i64 : -1;
+N8 : i8 : -128;
 
 lessThan :: (a: i64, b: u64) -> bool { a < b }
 equal :: (a: i64, c: u64) -> bool { a == c }
@@ -15,7 +16,8 @@ main :: () -> i32 {
     a : i64 = -1;
     b : u64 = 0;
     c : u64 = 18446744073709551615;
-    print("{} {} {}\n", a < b, a == c, c > K);
+    b8 : u8 = 0;
+    print("{} {} {} {}\n", a < b, a == c, c > K, -N8 < b8);
     print("{} {}\n", LT, EQ);
     0
 }
