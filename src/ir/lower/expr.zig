@@ -2992,17 +2992,19 @@ pub fn resolveArrayLiteralType(self: *Lowering, te: *const Node) TypeId {
 }
 
 /// Lower a subscript's INDEX operand. An index is an integer position, never a
-/// value of the indexed expression's target type, so the ambient `target_type`
-/// must not steer it: under an `f32` target (`v : f32 = s[0];`, a `-> f32`
-/// body) the literal `0` lowered as the float constant `0.0` and reached the
-/// backend as `getelementptr float, ptr %d, float 0.0` — "GEP indexes must be
-/// integers" from the LLVM verifier, with no source location.
-/// Pin the target to `i64` for the operand and restore the caller's.
+/// value of the indexed expression's target type, so the operand lowers under an
+/// `i64` target whatever the caller's (`v : f32 = s[0];` indexes with the
+/// integer `0`). An unsigned index narrower than a pointer widens to `i64`,
+/// since LLVM sign-extends a GEP index to the pointer's width.
 pub fn lowerIndexOperand(self: *Lowering, index_node: *const ast.Node) Ref {
     const saved_tt = self.target_type;
     self.target_type = .i64;
     defer self.target_type = saved_tt;
-    return self.lowerExpr(index_node);
+    const idx = self.lowerExpr(index_node);
+    const ty = self.builder.getRefType(idx);
+    const layout = self.module.types.integerLayout(ty) orelse return idx;
+    if (layout.signed or layout.width >= self.module.types.pointer_size * 8) return idx;
+    return self.coerceToType(idx, ty, .i64);
 }
 
 pub fn lowerIndexExpr(self: *Lowering, ie: *const ast.IndexExpr) Ref {
