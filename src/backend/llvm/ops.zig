@@ -430,8 +430,8 @@ pub const Ops = struct {
     }
 
     /// A store of `val`, a `ty`, to `ptr`. A narrow integer writes its whole
-    /// storage word zero-extended: a `.high_bit` optional reads its spare bits
-    /// as null.
+    /// storage word zero-extended: a `.high_bit` optional's null is its top
+    /// spare bit.
     fn buildStore(self: Ops, ty: TypeId, val: c.LLVMValueRef, ptr: c.LLVMValueRef) c.LLVMValueRef {
         const word_ty = self.storageWordType(ty) orelse return c.LLVMBuildStore(self.e.builder, val, ptr);
         return c.LLVMBuildStore(self.e.builder, c.LLVMBuildZExt(self.e.builder, val, word_ty, "word"), ptr);
