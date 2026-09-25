@@ -10,6 +10,7 @@
 @import "modules/std/c.sx";
 @import "modules/std/list.sx";
 @import "modules/std/compress.sx";
+@import "modules/std/encoding.sx";
 deflateContracts :: @import "modules/std/codecs/deflate_contracts.sx";
 
 private Strategy :: deflateContracts.Strategy;
@@ -836,7 +837,7 @@ private emitTdeflDynamic :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Allo
         }
         if (flags & 1) != 0 {
             length := buffer.codes[at].(i64) + 3;
-            distance := buffer.codes[at + 1].(i64) | (buffer.codes[at + 2].(i64) << 8);
+            distance := encoding.readU16Le(buffer.codes, at + 1);
             at += 3;
             li := tdeflLengthIndex(length);
             symbol := 257 + li;
@@ -918,7 +919,7 @@ private emitTdeflFixed :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Alloca
         }
         if (flags & 1) != 0 {
             length := buffer.codes[at].(i64) + 3;
-            distance := buffer.codes[at + 1].(i64) | (buffer.codes[at + 2].(i64) << 8);
+            distance := encoding.readU16Le(buffer.codes, at + 1);
             at += 3;
             li := tdeflLengthIndex(length);
             symbol := 257 + li;
@@ -3141,10 +3142,7 @@ Inflater :: struct {
                         if directAvailable > limitAvailable { directAvailable = limitAvailable; }
                         while directAvailable >= 258 and input.len - consumed >= 8 {
                             if directCount < 30 {
-                                word := input[consumed].(i64) |
-                                    (input[consumed + 1].(i64) << 8) |
-                                    (input[consumed + 2].(i64) << 16) |
-                                    (input[consumed + 3].(i64) << 24);
+                                word := encoding.readU32Le(input, consumed);
                                 directBits = directBits | (word << directCount);
                                 directCount += 32;
                                 consumed += 4;
@@ -3193,10 +3191,7 @@ Inflater :: struct {
                     while output.len - produced >= 258 and input.len - consumed >= 8 and
                           self.maxOutput - directTotal >= 2 {
                         if directCount < 30 {
-                            word := input[consumed].(i64) |
-                                (input[consumed + 1].(i64) << 8) |
-                                (input[consumed + 2].(i64) << 16) |
-                                (input[consumed + 3].(i64) << 24);
+                            word := encoding.readU32Le(input, consumed);
                             directBits = directBits | (word << directCount);
                             directCount += 32;
                             consumed += 4;
@@ -3246,10 +3241,7 @@ Inflater :: struct {
                         // one-shot input; resumable calls continue through
                         // decodeDirect/decode below without read-ahead.
                         if self.bitCount < 30 and input.len - consumed >= 4 {
-                            word := input[consumed].(i64) |
-                                (input[consumed + 1].(i64) << 8) |
-                                (input[consumed + 2].(i64) << 16) |
-                                (input[consumed + 3].(i64) << 24);
+                            word := encoding.readU32Le(input, consumed);
                             self.bitBuffer = self.bitBuffer | (word << self.bitCount);
                             self.bitCount += 32;
                             consumed += 4;
@@ -3584,7 +3576,7 @@ ZlibInflater :: struct {
                     consumed += 1;
                 }
                 if self.trailerAt < 4 { return Progress{ consumed = consumed, produced = produced, status = .needInput }; }
-                expected := (self.trailer[0].(i64) << 24) | (self.trailer[1].(i64) << 16) | (self.trailer[2].(i64) << 8) | self.trailer[3].(i64);
+                expected := encoding.readU32Be(self.trailer, 0);
                 if self.checksum != expected {
                     self.lastConsumed = consumed; self.lastProduced = produced;
                     raise .ChecksumMismatch;
@@ -3893,7 +3885,7 @@ GzipInflater :: struct {
                 }
                 if consumed > start { self.headerChecksum = crc32(input[start..consumed], self.headerChecksum); }
                 if self.extraLengthAt < 2 { return Progress{ consumed = consumed, produced = produced, status = .needInput }; }
-                self.extraRemaining = self.extraLengthBytes[0].(i64) | (self.extraLengthBytes[1].(i64) << 8);
+                self.extraRemaining = encoding.readU16Le(self.extraLengthBytes, 0);
                 self.phase = .extraData;
                 continue;
             }
@@ -3929,7 +3921,7 @@ GzipInflater :: struct {
                     consumed += 1;
                 }
                 if self.headerCrcAt < 2 { return Progress{ consumed = consumed, produced = produced, status = .needInput }; }
-                expected := self.headerCrcBytes[0].(i64) | (self.headerCrcBytes[1].(i64) << 8);
+                expected := encoding.readU16Le(self.headerCrcBytes, 0);
                 if (self.headerChecksum & 0xffff) != expected { raise .ChecksumMismatch; }
                 self.phase = .body;
                 continue;
@@ -3958,8 +3950,8 @@ GzipInflater :: struct {
                     consumed += 1;
                 }
                 if self.trailerAt < 8 { return Progress{ consumed = consumed, produced = produced, status = .needInput }; }
-                expectedCrc := self.trailer[0].(i64) | (self.trailer[1].(i64) << 8) | (self.trailer[2].(i64) << 16) | (self.trailer[3].(i64) << 24);
-                expectedSize := self.trailer[4].(i64) | (self.trailer[5].(i64) << 8) | (self.trailer[6].(i64) << 16) | (self.trailer[7].(i64) << 24);
+                expectedCrc := encoding.readU32Le(self.trailer, 0);
+                expectedSize := encoding.readU32Le(self.trailer, 4);
                 if self.memberChecksum != expectedCrc or self.memberSize != expectedSize { raise .ChecksumMismatch; }
                 if consumed < input.len {
                     self.startMember();

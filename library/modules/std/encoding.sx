@@ -43,4 +43,16 @@ encoding :: scope {
         if 'A' <= c <= 'F' { return c - 'A' + 10; }
         null
     }
+
+    readU16Le :: (bytes: []u8, at: i64) -> i64 {
+        bytes[at].(i64) | (bytes[at + 1].(i64) << 8)
+    }
+
+    readU32Le :: (bytes: []u8, at: i64) -> i64 {
+        bytes[at].(i64) | (bytes[at + 1].(i64) << 8) | (bytes[at + 2].(i64) << 16) | (bytes[at + 3].(i64) << 24)
+    }
+
+    readU32Be :: (bytes: []u8, at: i64) -> i64 {
+        (bytes[at].(i64) << 24) | (bytes[at + 1].(i64) << 16) | (bytes[at + 2].(i64) << 8) | bytes[at + 3].(i64)
+    }
 }
