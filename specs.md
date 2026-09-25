@@ -3079,7 +3079,7 @@ are not written onward.
 | Pair | Comparison type |
 |---|---|
 | Both numeric, same signedness or int↔float | the arithmetic common type (widen; int+float → float) |
-| Signed vs unsigned, same width | error — write `a.(u64) < b` |
+| Signed vs unsigned with no common type | none — exact ([§Arithmetic](#arithmetic)) |
 | Two sequences of one element type (`[N]T`, `[N:X]T`, `[]T`, `[:X]T`, `string`) | their content (§Array Types); an array meets the slice |
 | Two pointers, any pointees (`*T`, `*void`, `[*]T`, `[*:X]T`, fn-ptr) | address bits / address order |
 | Pointer vs integer | error; compare an address read with `@reinterpret(isize, p)` or compare the pointer with `null` |
@@ -4450,6 +4450,11 @@ untyped is itself untyped: it takes a typed peer's type, an integer
 destination's type or an explicit cast's type (`.(T)`, `xx`), and is `i64`
 otherwise. With `n : u8`, `z : u16 = (1 << n) + 1` shifts in `u16`, and
 `((1 << n) >> 2).(u8)` in `u8`.
+
+**Opposite signedness.** A comparison of integers of opposite signedness with
+no common type is exact: a negative signed operand is less than every unsigned
+value, and otherwise both compare as unsigned. With `a : i64 = -1` and
+`b : u64 = 0`, `a < b` is `true`.
 
 ### Chained Comparisons
 Comparison operators can be chained. Each operand is evaluated exactly once.
