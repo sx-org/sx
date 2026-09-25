@@ -32,7 +32,6 @@ pub const TypeLowering = struct {
             .u64 => self.e.cached_i64,
             .f32 => self.e.cached_f32,
             .f64 => self.e.cached_f64,
-            .string => self.e.getStringStructType(),
             .any => self.e.getAnyStructType(),
             .noreturn => self.e.cached_void,
             .isize, .usize => if (self.e.target_config.isWasm32()) self.e.cached_i32 else self.e.cached_i64,
@@ -84,7 +83,6 @@ pub const TypeLowering = struct {
                 };
                 return c.LLVMStructTypeInContext(self.e.context, &field_types, 2, 0);
             },
-            .string => self.e.getStringStructType(),
             .pointer, .many_pointer, .function => self.e.cached_ptr,
             .closure => self.e.getClosureStructType(),
             .slice => |s| blk: {

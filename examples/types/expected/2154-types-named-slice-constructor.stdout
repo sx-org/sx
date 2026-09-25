@@ -1,18 +1,18 @@
-boxed b=[1, 2, 3, 4] t=[1, 2, 3, 4] n=[1, 2, 3, 4]
-boxed si=[1000, 2000] hold={data: [1, 2, 3, 4]} empty=[]
+boxed b=1234 t=1234 n=1234
+boxed si=[1000, 2000] hold={data: 1234} empty=
 boxed wide=4 str=ab
 --- build done ---
 same=true name=[]i32
 distinct=false bytes=@Slice(u8,u32)
-len=4 lenty=u32 b0=1 b3=4
-ptr0=1 total=10
+len=4 lenty=u32 b0=49 b3=52
+ptr0=49 total=202
 wide=4 wty=string
-sub=@Slice(u8,u32) h0=1 h1=2
-field=3 size=16
+sub=@Slice(u8,u32) h0=49 h1=50
+field=51 size=16
 string=2 slice=string
 comptime=24
-boxed b=[1, 2, 3, 4] t=[1, 2, 3, 4] n=[1, 2, 3, 4]
-boxed si=[1000, 2000] hold={data: [1, 2, 3, 4]} empty=[]
+boxed b=1234 t=1234 n=1234
+boxed si=[1000, 2000] hold={data: 1234} empty=
 boxed wide=4 str=ab
-nib=[1, 2, 3, 4] niblen=4
-generic @Slice(u8,u16) [1, 2, 3, 4]
+nib=1234 niblen=4
+generic @Slice(u8,u16) 1234

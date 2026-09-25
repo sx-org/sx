@@ -774,7 +774,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     }
 
     const aggregate_ok = switch (self.module.types.get(ty)) {
-        .string, .@"struct", .array, .vector, .slice, .closure, .failable => true,
+        .@"struct", .array, .vector, .slice, .closure, .failable => true,
         else => false,
     };
     if (!aggregate_ok) {
@@ -1099,16 +1099,12 @@ fn isSliceHeaderLiteral(sl: *const ast.StructLiteral) bool {
 /// Slot type of a `{ptr,len}` fat pointer or `{fnPtr,env}` closure literal,
 /// keyed by field name or by position. `getStructFields` is empty for these.
 fn fatPointerSlotType(self: *Lowering, ty: TypeId, name: ?[]const u8, index: usize) ?TypeId {
-    const is_string = ty == .string;
     const is_slice = self.module.types.get(ty) == .slice;
     const is_closure = !ty.isBuiltin() and self.module.types.get(ty) == .closure;
-    if (is_string or is_slice) {
+    if (is_slice) {
         const is_ptr = if (name) |n| std.mem.eql(u8, n, "ptr") else index == 0;
         const is_len = if (name) |n| std.mem.eql(u8, n, "len") else index == 1;
-        if (is_ptr) {
-            const elem = if (is_string) TypeId.u8 else self.getElementType(ty);
-            return self.module.types.manyPtrTo(elem);
-        }
+        if (is_ptr) return self.module.types.manyPtrTo(self.getElementType(ty));
         if (is_len) return self.module.types.lenTypeOf(ty);
         return null;
     }
@@ -1305,7 +1301,7 @@ pub fn builtinTypeName(ty: TypeId) ?[]const u8 {
 /// field entry and type through it.
 pub fn resolveFieldType(self: *Lowering, ty: TypeId, field: []const u8) TypeId {
     const is_special_container = switch (self.module.types.get(ty)) {
-        .string, .slice, .array, .vector => true,
+        .slice, .array, .vector => true,
         else => false,
     };
     if (is_special_container) {
@@ -1721,7 +1717,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
     if (std.mem.eql(u8, fa.field, "len") or std.mem.eql(u8, fa.field, "ptr")) {
         // Only use length/data_ptr for slice, string, array, vector types
         const is_special = switch (self.module.types.get(obj_ty)) {
-            .string, .slice, .array, .vector => true,
+            .slice, .array, .vector => true,
             else => false,
         };
 
@@ -3216,10 +3212,6 @@ pub fn lowerSliceExpr(self: *Lowering, se: *const ast.SliceExpr) Ref {
         break :blk self.builder.constInt(0, .i64);
     } else self.emitLengthI64(obj, obj_ty);
     if (se.end_inclusive) hi = self.builder.add(hi, self.builder.constInt(1, .i64), .i64);
-    // Subslice of string stays string (same {ptr, i64} layout, correct type category)
-    if (obj_ty == .string) {
-        return self.builder.emit(.{ .subslice = .{ .base = obj, .lo = lo, .hi = hi, .base_ty = obj_ty } }, .string);
-    }
     // A subslice keeps its base's length word: `@Slice(T, Len)[a..b]` is again
     // `@Slice(T, Len)`, as `string[a..b]` stays `string`. A typed destination
     // that is a slice of the same element (`b : @Slice(u8, u32) = a[0..]`)
@@ -5845,9 +5837,8 @@ fn refTypeOr(self: *Lowering, r: Ref, fallback: TypeId) TypeId {
 }
 
 /// The element type of a sequence whose `==` compares content — `[N]T`,
-/// `[N:X]T`, `[]T`, `[:X]T`, `string` — or null for every other type.
+/// `[N:X]T`, `[]T`, `[:X]T` — or null for every other type.
 fn sequenceElement(self: *Lowering, ty: TypeId) ?TypeId {
-    if (ty == .string) return .u8;
     return switch (self.module.types.get(ty)) {
         .array => |a| a.element,
         .slice => |sl| sl.element,

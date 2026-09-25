@@ -48,7 +48,7 @@ pub const AbiLowering = struct {
         if (self.e.ir_mod.types.isCVariadicCursor(ir_ty)) return self.e.cached_ptr;
 
         if (is_extern_c_api) switch (self.e.ir_mod.types.get(ir_ty)) {
-            .string, .slice => return self.e.cached_ptr,
+            .slice => return self.e.cached_ptr,
             else => {},
         };
 
@@ -93,7 +93,7 @@ pub const AbiLowering = struct {
     pub fn abiCoerceDefaultParamType(self: AbiLowering, ir_ty: TypeId, llvm_ty: c.LLVMTypeRef) c.LLVMTypeRef {
         if (self.e.target_config.isWasm32()) return llvm_ty;
         switch (self.e.ir_mod.types.get(ir_ty)) {
-            .string, .slice => return llvm_ty,
+            .slice => return llvm_ty,
             else => {},
         }
         if (c.LLVMGetTypeKind(llvm_ty) != c.LLVMStructTypeKind) return llvm_ty;
@@ -126,7 +126,7 @@ pub const AbiLowering = struct {
         if (self.e.target_config.isWasm32()) return false;
         if (self.e.ir_mod.types.isCVariadicCursor(ir_ty)) return false;
         switch (self.e.ir_mod.types.get(ir_ty)) {
-            .string, .slice => return false,
+            .slice => return false,
             else => {},
         }
         if (c.LLVMGetTypeKind(raw_llvm_ty) != c.LLVMStructTypeKind) return false;

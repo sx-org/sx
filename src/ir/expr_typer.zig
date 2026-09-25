@@ -31,7 +31,7 @@ pub const ExprTyper = struct {
             ty = self.l.module.types.get(ty).optional.child;
 
         const special_container = switch (self.l.module.types.get(ty)) {
-            .string, .slice, .array, .vector => true,
+            .slice, .array, .vector => true,
             else => false,
         };
         if (special_container) {
@@ -90,7 +90,6 @@ pub const ExprTyper = struct {
     }
 
     pub fn sliceType(self: ExprTyper, receiver: TypeId, open_ended: bool) ?TypeId {
-        if (receiver == .string) return .string;
         const element = self.l.getElementType(receiver);
         if (element == .unresolved) return null;
         const table = &self.l.module.types;
@@ -520,7 +519,7 @@ pub const ExprTyper = struct {
                 // ever lowers.
                 if (self.l.target_type) |tt| {
                     const usable = switch (self.l.module.types.get(tt)) {
-                        .string, .@"struct", .array, .vector, .slice, .closure, .@"union", .optional, .failable => true,
+                        .@"struct", .array, .vector, .slice, .closure, .@"union", .optional, .failable => true,
                         .@"enum" => |e| e.hasPayload(),
                         else => false,
                     };

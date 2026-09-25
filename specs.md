@@ -112,8 +112,8 @@ writer and `@isComptime`. So is the postfix assertion's spelled form, `@cast`
 `$fmt` is a comptime string in the same `{}` vocabulary `print` takes — `{}`
 consumes the next argument, `{{` and `}}` write a brace — and the compiler
 expands the call into one write per segment and per argument, in source order.
-An argument is a `string`, a `bool`, an integer or a float; any other type is a
-compile error, because rendering it takes the allocating formatter, `print`.
+An argument is a slice of `u8`, a `bool`, an integer or a float; any other type
+is a compile error, because rendering it takes the allocating formatter, `print`.
 
 `@panic(msg: string, site: @SourceSite = @caller) -> noreturn` writes
 `file:line: msg` to stderr and stops the program; a site with `line == 0`
@@ -519,7 +519,7 @@ c := vstack(1.0) {
 - `f32` — 32-bit floating point
 - `f64` — 64-bit floating point
 - `bool` — boolean (`true` / `false`)
-- `string` — string of characters
+- `string` — the text type: `[]u8`, under its name (§Slice Types)
 - `any` — type-erased BORROW, represented as `{ data: pointer, typeId: i64 }` — the data word (word 0) is the ADDRESS of the value, the typeId word (word 1) its runtime type tag (Odin `Raw_Any` `{data, id}`, same order; the `{pointer, typeId}` prefix is shared with interface handles — see Constraints and Interfaces), never a copy of its bits. Used for variadic arguments, runtime type dispatch, and reflection views. Boxing an addressable lvalue points at its storage (zero copy — mutations of the source stay visible through a live view); boxing an rvalue materializes a temporary scoped to the enclosing frame. An `any` is valid only while the referenced value lives: do not store an `any` beyond its referent. Unboxing via `xx` is an UNCHECKED typed load through the view — the target must be the boxed type (`data` covers exactly `@sizeOf(tag)` bytes; a wider target overreads); the checked forms are the postfix assertions (`av.(T)` / `try av.(T)` / `av.(?T)`). `==`/`!=` are NOT defined on `any` (compile error): unbox first, or compare `@typeOf(av)`.
 - `Type` — compile-time type value. At runtime, represented as an `i64` type tag (same tag space as `any`).
 
@@ -1831,7 +1831,7 @@ accepts any compile-time **integer**, including a negative one: `inline for
 iterations rather than being an error.
 
 ### Slice Types
-A slice `[]T` is a fat pointer `{ptr, i64}` referencing a contiguous sequence of `T` elements. Same runtime layout as `string`.
+A slice `[]T` is a fat pointer `{ptr, i64}` referencing a contiguous sequence of `T` elements. `string` is `[]u8`: one type, which `@typeName` and `@typeInfo` report as `string` and `.slice`.
 
 `[:X]T` is a **terminated** slice: the same `{ptr, i64}` fat pointer, whose
 element one past `.len` is `X`, and a type of its own, distinct from `[]T`. A
@@ -1843,7 +1843,8 @@ literal, whose author asserts `ptr[len] == X` unchecked.
 @typeName([:0]u8)  // "[:0]u8"
 ```
 
-`==` on two slices compares content (§Array Types).
+`==` on two slices compares content (§Array Types), and a `HashMap` slice key
+hashes its elements to agree with it.
 ```sx
 // Arrays implicitly coerce to slices at call sites
 arr : [5]i32 = .[3, 1, 4, 1, 5];
@@ -1855,6 +1856,10 @@ items[i] = val;    // write element at index
 items.len          // length (i64)
 items.ptr          // raw pointer
 ```
+
+`{}` prints a slice of `u8`, whatever its terminator or length word, and a
+terminated `[N:X]u8` array as text. A plain `[N]u8`, and a sequence of any
+other element type, prints as a list of its elements.
 
 `.len` and `.ptr` name the fat pointer's own slots, and are places like struct
 fields.
@@ -5630,6 +5635,7 @@ error: 'intern' runs only at compile time — it cannot be called from the
 - `@typeName($T: Type) -> string` — returns the name of type `T` as a string (e.g., `"Point"`)
 - `@typeInfo(T).struct.fields` / `@typeInfo(T).enum.fields` — a type's reflected members. `.struct` lists a struct's, tuple's, or union's fields as the prelude's `FieldInfo` (`.name` — `""` for a positional tuple element —, `.type`, `.offset`, `.index`); `.enum` lists an enum's variants as `VariantInfo` (`.name`, `.payload`, `.value`). The projected variant must be the one `@typeInfo` reflects `T` into. `.len` is the member count, and over a spelled type it is a compile-time integer.
 - `@typeInfo(T).struct.fields[i].type` / `@typeInfo(T).enum.fields[i].payload` — the reflected member's type, itself a type (`@typeInfo(@pointeeType(@typeInfo(T).struct.fields[i].type))`). A tagless variant's payload is `void`.
+- `@typeInfo(T).slice.sentinel` / `.array.sentinel` / `.manyPointer.sentinel` — the terminator `X` of `[:X]T`, `[N:X]T` and `[*:X]T` as a `?i64`, null for an unterminated shape; a single pointer's `.pointer.sentinel` is null.
 - `@typeInfo(tp)` accepts a **runtime `Type` value**: it loads the type's constant record from `__sx_type_infos` (one record per type, bytes matching the `TypeInfo` layout), so kind-first dispatch (`match @typeInfo(tp) { case .struct: |si| { … } }`) and every member read answer identically on compile-time and runtime `Type`s.
 - `@anyElement(elem: Type, av: any, idx: i64) -> any` — element view into an array/vector held by `av`: pure stride math, `{elem, @rawAnyData(av) + idx * @sizeOf(elem)}`. `elem` may be a compile-time type (the size folds to a constant) or a runtime `Type` (the size reads the runtime table). Bounds are the caller's responsibility (same OOB rule as the member views); vector lanes are packed, so the same stride walks both arrays and vectors.
 - `@rawAnyData(av: any) -> *void` / `@rawMakeAny(tp: Type, data: *void) -> any` — the raw layer over the `any` view's two words. The `{tag, data}` layout itself stays private; these are the stable contract, and `av.(@Any)` retrieves both words as one `{data, typeId}` pair (see Raw-view retrieval, §Postfix Cast). `@rawMakeAny` is UNCHECKED at runtime — the caller asserts `data` points at a live, aligned value of `tp` covering `@sizeOf(tp)` bytes — but a non-pointer `data` argument is a compile error. Three sharp edges: **tags are per-build values** (a serializer writes type names and re-resolves on load — never raw tags); **byte copies through the data pointer are shallow** (interior pointers — string/slice data, nested views — are not followed; a deep copy walks `@typeInfo`); **a view carries no lifetime** (assembling or copying a view never transfers or extends ownership of the referent).

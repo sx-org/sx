@@ -603,7 +603,7 @@ pub fn refStorageAddress(self: *Lowering, ref: Ref) ?Ref {
             const base_ty = self.builder.getRefType(b.lhs);
             var base = b.lhs;
             switch (self.module.types.get(base_ty)) {
-                .string, .slice, .pointer, .many_pointer => {},
+                .slice, .pointer, .many_pointer => {},
                 .array => base = self.refStorageAddress(b.lhs) orelse return null,
                 else => return null,
             }

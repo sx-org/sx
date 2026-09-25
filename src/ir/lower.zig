@@ -2792,11 +2792,10 @@ pub const Lowering = struct {
         }
     }
 
-    /// Get the element type for a slice/array/string type. A non-collection
-    /// type has no element type — return `.unresolved` (asking for it is a bug)
-    /// rather than a plausible `.i64`.
+    /// Get the element type for a slice/array/vector/many-pointer type. A
+    /// non-collection type has no element type — return `.unresolved` (asking
+    /// for it is a bug) rather than a plausible `.i64`.
     pub fn getElementType(self: *Lowering, ty: TypeId) TypeId {
-        if (ty == .string) return .u8;
         const info = self.module.types.get(ty);
         return switch (info) {
             .slice => |s| s.element,
