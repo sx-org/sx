@@ -1,5 +1,5 @@
 int:   i32 i32
 float: f32 f32
-str:   cstring cstring
+str:   [:0]u8 [:0]u8
 bare:  i64 f64 string
 neg:   i32 f32

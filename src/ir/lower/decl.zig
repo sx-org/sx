@@ -1519,7 +1519,7 @@ pub fn constExprInitFits(self: *Lowering, init_ty: TypeId, dst_ty: TypeId) bool 
     if (isFloat(init_ty)) return isFloat(dst_ty) and !(init_ty == .f64 and dst_ty == .f32);
     if (init_ty == .bool) return dst_ty == .bool;
     if (init_ty == .string) return dst_ty == .string;
-    if (init_ty == .cstring) return dst_ty == .cstring or dst_ty == .string;
+    if (init_ty == .string_z) return dst_ty == .string_z or dst_ty == .string;
     // Any other concrete initializer type must match the annotation exactly.
     return self.module.types.sameType(init_ty, dst_ty);
 }
@@ -2772,7 +2772,7 @@ pub fn selectNominalLeaf(self: *Lowering, name: []const u8, environment: imports
         if (TypeResolver.resolvePrimitive(name)) |id| return .{ .resolved = id };
     }
     // Structural string-forms that reach the leaf as a literal type-expr
-    // name (`[:0]u8` → cstring, `[*]T`, `*T`, `?T`) carry NO nominal author —
+    // name (`[:0]u8`, `[*]T`, `*T`, `?T`) carry NO nominal author —
     // they are wrappers, not declarations, so source-keying does not apply.
     // Resolve them through the stateless namer; only the bare nominal name
     // below goes through the collector.

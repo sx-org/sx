@@ -480,7 +480,7 @@ pub fn emitBodyExit(self: *Lowering, value: ?Ref, ret_ty: TypeId, form: ExitForm
         self.builder.retVoid();
         return;
     }
-    const default_val = if (ret_ty == .string or ret_ty == .cstring or !ret_ty.isBuiltin())
+    const default_val = if (ret_ty == .string or ret_ty == .string_z or !ret_ty.isBuiltin())
         self.builder.constUndef(ret_ty)
     else
         self.builder.constInt(0, ret_ty);

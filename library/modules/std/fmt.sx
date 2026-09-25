@@ -225,7 +225,7 @@ writeAny :: ufcs (w: Writer, val: any) {
         case .array: writeElements(w, val);
         case .vector: writeElements(w, val);
         case .slice: {
-            if @typeEq(t, cstring) { w.write(@unbox(cstring, val)); }
+            if @typeEq(t, [:0]u8) { w.write(@unbox([:0]u8, val)); }
             else { writeElements(w, val); }
         }
         case .pointer: writePointer(w, val);

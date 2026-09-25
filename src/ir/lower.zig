@@ -3551,7 +3551,7 @@ pub const Lowering = struct {
         if (self.isIntEx(init_ty)) return "an integer expression";
         if (isFloat(init_ty)) return "a floating-point expression";
         if (init_ty == .bool) return "a boolean expression";
-        if (init_ty == .string or init_ty == .cstring) return "a string expression";
+        if (init_ty == .string or init_ty == .string_z) return "a string expression";
         return "an expression of an incompatible type";
     }
 

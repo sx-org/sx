@@ -1,0 +1,12 @@
+// The terminator is a type guarantee, so nothing implicitly adds one: a
+// `string` reaches a `[:0]u8` slot only through `mem.cloneZ`'s owned copy.
+// Dropping the guarantee needs no glyph — a `[:0]u8` IS a `string` view.
+@import "modules/std.sx";
+
+main :: () -> i32 {
+    s := concat("a", "b");
+    c : [:0]u8 = s;             // error: an unterminated string -> [:0]u8
+    t : string = mem.cloneZ(s);
+    print("{}{}\n", t, c.len);
+    return 0;
+}

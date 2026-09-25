@@ -1,5 +1,0 @@
-error: a value of type 'string' does not coerce to 'cstring': no conversion adds a terminator — materialize one with mem.cloneZ(s)
-  --> examples/diagnostics/1173-diagnostics-cstring-coercions.sx:8:5
-   |
- 8 |     c : cstring = s;            // error: an unterminated string -> cstring
-   |     ^^^^^^^^^^^^^^^^

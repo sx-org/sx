@@ -1291,7 +1291,6 @@ pub fn builtinTypeName(ty: TypeId) ?[]const u8 {
         .f64 => "f64",
         .bool => "bool",
         .string => "string",
-        .cstring => "cstring",
         else => null,
     };
 }
@@ -1866,7 +1865,7 @@ pub fn lowerStringLiteral(self: *Lowering, lit: ast.StringLiteral) Ref {
 pub fn literalType(self: *Lowering, target: ?TypeId, len: usize) TypeId {
     return switch (self.literalShape(target)) {
         .string => .string,
-        .view => .cstring,
+        .view => .string_z,
         .array => self.module.types.arrayOfSentinel(.u8, @intCast(len), 0),
     };
 }
@@ -1893,7 +1892,7 @@ pub const LiteralShape = enum { string, view, array };
 /// pointer, and `string` everywhere else.
 pub fn literalShape(self: *Lowering, target: ?TypeId) LiteralShape {
     const t = target orelse return .string;
-    if (t == .cstring) return .view;
+    if (t == .string_z) return .view;
     if (t.isBuiltin()) return .string;
     return switch (self.module.types.get(t)) {
         .array => |a| if (a.element == .u8) .array else .string,

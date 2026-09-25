@@ -1416,7 +1416,7 @@ pub const LiteralLocalHelp = struct {
 /// is the literal-bound local the value was read from.
 pub fn refuseAddedTerminator(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: ast.Span, local: ?lower.LiteralLocal) void {
     const d = self.diagnostics orelse return;
-    const fix = if (src_ty == .string and !self.coercionResolver().classify(.cstring, dst_ty).refuses())
+    const fix = if (src_ty == .string and !self.coercionResolver().classify(.string_z, dst_ty).refuses())
         " — materialize one with mem.cloneZ(s)"
     else
         "";
