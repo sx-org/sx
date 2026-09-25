@@ -1661,7 +1661,7 @@ test "a strided kind's member tables cost its member ROW, not its length" {
     }
 }
 
-test "integer predicates expand late types into reachable exact-width loads" {
+test "integer predicates expand late types into reachable exact-width reads" {
     const alloc = std.testing.allocator;
     var module = Module.init(alloc);
     defer module.deinit();
@@ -1694,7 +1694,7 @@ test "integer predicates expand late types into reachable exact-width loads" {
     try std.testing.expect(std.mem.indexOf(u8, text, edge) != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "i64 4, label %exact") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "i64 4, label %integer") == null);
-    try std.testing.expect(std.mem.indexOf(u8, text, "load i40") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "trunc i64 %word to i40") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "sext i40") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "zext i40") != null);
 }

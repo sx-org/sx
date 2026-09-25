@@ -1,0 +1,14 @@
+// Value equality compares an arbitrary-width integer by value, inside an
+// optional and in a struct field alike.
+@import "modules/std.sx";
+
+U24 :: @int(24, .unsigned);
+P :: struct { a: U24; }
+
+main :: () -> i32 {
+    a : ?U24 = 5;
+    b : ?U24 = 5;
+    print("{} {} {}\n", a == b, a == 5, a == 6);
+    print("{} {}\n", P{ a = 1 } == P{ a = 1 }, P{ a = 1 } == P{ a = 2 });
+    return 0;
+}

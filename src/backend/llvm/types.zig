@@ -90,16 +90,16 @@ pub const TypeLowering = struct {
                 var field_types = [_]c.LLVMTypeRef{ self.e.cached_ptr, self.toLLVMType(s.len_type) };
                 break :blk c.LLVMStructTypeInContext(self.e.context, &field_types, 2, 0);
             },
-            .optional => |opt| {
-                // A sentinel-shaped optional IS its child: the child's own
-                // leading pointer word is null when none.
-                if (self.e.ir_mod.types.optionalIsSentinel(opt.child)) return self.toLLVMType(opt.child);
-                // ?T → { T, i1 }
-                var field_types: [2]c.LLVMTypeRef = .{
-                    self.fieldLLVMType(opt.child),
-                    self.e.cached_i1,
-                };
-                return c.LLVMStructTypeInContext(self.e.context, &field_types, 2, 0);
+            .optional => |opt| switch (self.e.ir_mod.types.optionalShape(opt.child)) {
+                .pointer_word => self.toLLVMType(opt.child),
+                .high_bit => self.intLLVMType(@intCast(self.e.ir_mod.types.typeSizeBytes(opt.child) * 8)),
+                .flag => blk: {
+                    var field_types: [2]c.LLVMTypeRef = .{
+                        self.fieldLLVMType(opt.child),
+                        self.e.cached_i1,
+                    };
+                    break :blk c.LLVMStructTypeInContext(self.e.context, &field_types, 2, 0);
+                },
             },
             .array => |arr| c.LLVMArrayType2(self.fieldLLVMType(arr.element), arr.storageLen()),
             .vector => |vec| {

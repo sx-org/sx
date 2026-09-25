@@ -1,0 +1,66 @@
+// An optional of an integer narrower than its storage word stores null in the
+// word's spare high bit, so it costs no byte beside the payload. A present
+// word holds the payload's bits with every spare bit clear, so a payload whose
+// own top bit is set — a large unsigned or a negative signed — stays present.
+
+@import "modules/std.sx";
+
+U63 :: @int(63, .unsigned);
+U7  :: @int(7, .unsigned);
+I63 :: @int(63, .signed);
+I7  :: @int(7, .signed);
+Slot :: struct { at: ?U63; n: i64; }
+Row  :: struct { cells: [3]?U7; }
+
+TOP :: 4611686018427387904;
+MIN :: -4611686018427387904;
+MAX :: 4611686018427387903;
+
+Seed : Slot = .{ n = 2 };
+Low : ?I63 = MIN;
+Signs : [3]?I7 = .[-64, null, 63];
+
+pick :: (want: bool, v: U63) -> ?U63 { if want { return v; } return null; }
+pickSigned :: (want: bool, v: I63) -> ?I63 { if want { return v; } return null; }
+
+topPayload :: () -> U63 { pick(true, TOP + 5) ?? 0 }
+extremes :: () -> string { format("{} {}", pickSigned(true, MIN) ?? 0, pickSigned(true, MAX) ?? 0) }
+absent :: () -> i64 { if v := pick(false, TOP) { v.(i64) } else { -1 } }
+fieldDefault :: () -> bool { s : Slot = .{ n = 1 }; s.at == null }
+narrow :: () -> i64 {
+    r : Row = .{};
+    r.cells[0] = 127;
+    r.cells[2] = 64;
+    (r.cells[0] ?? 0).(i64) + (r.cells[2] ?? 0).(i64) + (if r.cells[1] == null then 1000 else 0)
+}
+highBitWord :: () -> bool { @reinterpret(?U63, 18446744073709551615.(u64)) == null }
+negativeWord :: () -> u64 { o : ?I63 = -1; @reinterpret(u64, o) }
+negate :: ufcs (self: *I63) { self.* = 0 - self.*; }
+throughReceiver :: () -> i64 { o : ?I63 = 5; if o != null { o.negate(); } (o ?? 0).(i64) }
+boxed :: (v: any) -> string { format("{}", v) }
+
+CT_TOP      :: @run topPayload();
+CT_EXTREMES :: @run extremes();
+CT_ABSENT   :: @run absent();
+CT_FIELD    :: @run fieldDefault();
+CT_NARROW   :: @run narrow();
+CT_WORD     :: @run highBitWord();
+CT_NEGATIVE :: @run negativeWord();
+CT_RECEIVER :: @run throughReceiver();
+CT_BOXED    :: @run boxed(pickSigned(true, MIN));
+CT_SIGNED   : ?I63 : @run pickSigned(true, -1);
+
+main :: () -> i32 {
+    print("sizes {} {} {} {} {}\n", @sizeOf(?U63), @sizeOf(?U7), @sizeOf(?I63), @sizeOf(?I7), @sizeOf(Slot));
+    print("top {} {}\n", topPayload(), CT_TOP);
+    print("extremes {} / {}\n", extremes(), CT_EXTREMES);
+    print("absent {} {}\n", absent(), CT_ABSENT);
+    print("field {} {} {}\n", fieldDefault(), CT_FIELD, Seed.at == null);
+    print("narrow {} {}\n", narrow(), CT_NARROW);
+    print("word {} {}\n", highBitWord(), CT_WORD);
+    print("negative {} {}\n", negativeWord(), CT_NEGATIVE);
+    print("receiver {} {}\n", throughReceiver(), CT_RECEIVER);
+    print("static {} {} {} {} {}\n", Low ?? 0, Signs[0] ?? 0, Signs[1] == null, Signs[2] ?? 0, CT_SIGNED ?? 0);
+    print("boxed {} {} {} {}\n", boxed(pick(true, TOP + 5)), boxed(pick(false, 0)), boxed(pickSigned(true, MIN)), CT_BOXED);
+    return 0;
+}

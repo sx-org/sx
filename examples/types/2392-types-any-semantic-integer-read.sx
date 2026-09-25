@@ -3,7 +3,7 @@ I :: @int(24, .signed);
 S :: @int(40, .signed);
 U :: @int(40, .unsigned);
 category :: (a: any) -> i64 {
-    match a { case signed: |n| { n } case unsigned: |n| { n } else: { 100 } }
+    match a { case signed: |n| { n } case unsigned: |n| { n.(i64) } else: { 100 } }
 }
 convert :: (a: any) -> i64 { match a { case int: { @as(i64, a) } else: { 100 } } }
 priority :: (a: any) -> i64 { match a { case I: |n| { n.(i64) } case int: { 200 } else: { 100 } } }

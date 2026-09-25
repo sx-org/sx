@@ -3089,9 +3089,9 @@ pub fn tryLowerAtomicIntrinsic(self: *Lowering, name: []const u8, c: *const ast.
             return Ref.none;
         }
     }
-    // CAS (A.2) is likewise restricted to INTEGER types: the `?T` result is laid
-    // out as `{ T, i1 }` (null = success); pointer/niche optionals are out of
-    // scope, so a non-integer T is rejected LOUDLY here.
+    // CAS (A.2) is likewise restricted to INTEGER types: the `?T` result is
+    // null on success; pointer-word optionals are out of scope, so a
+    // non-integer T is rejected LOUDLY here.
     if (is_cas) {
         const int_ok = switch (self.module.types.get(elem_ty)) {
             .signed, .unsigned => true,
@@ -4276,10 +4276,10 @@ fn lowerBoxedViewIntrinsic(self: *Lowering, id: intrinsics.Id, c: *const ast.Cal
     return b.load(slot, .any);
 }
 
-/// `@inner(v)` — the payload of a boxed optional as a `?any`. The two reprs
-/// answer presence differently, so the row picks the probe: a flag byte at the
-/// row's offset, or the leading pointer word. Either way the payload sits at
-/// the front of the boxed storage.
+/// `@inner(v)` — the payload of a boxed optional as a `?any`. The row names
+/// the probe: a flag byte or the storage word's high byte at the row's offset,
+/// or the leading pointer word. The payload sits at the front of the boxed
+/// storage in every shape.
 fn lowerInnerIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
     const b = &self.builder;
     const opt_any = self.module.types.optionalOf(.any);
@@ -4293,22 +4293,33 @@ fn lowerInnerIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
     const payload = b.makeAny(child, b.anyData(recv, .i64));
 
     const row_args = self.alloc.dupe(Ref, &.{recv}) catch return b.constNull(opt_any);
-    const flag_off = b.callBuiltin(.rt_optional_flag, row_args, .i64);
+    const row = b.callBuiltin(.rt_optional_probe, row_args, .i64);
+    const shape = b.emit(.{ .bit_and = .{ .lhs = row, .rhs = b.constInt(0xFF, .i64) } }, .i64);
+    const offset = b.emit(.{ .shr = .{ .lhs = row, .rhs = b.constInt(8, .i64) } }, .i64);
     const bytes = b.anyData(recv, self.module.types.manyPtrTo(.u8));
+    const at = b.emit(.{ .index_gep = .{ .lhs = bytes, .rhs = offset } }, self.module.types.ptrTo(.u8));
+    // Non-zero exactly when the optional is present.
     const probe = b.alloca(.i64);
-    const flagged = b.emit(.{ .cmp_ge = .{ .lhs = flag_off, .rhs = b.constInt(0, .i64) } }, .bool);
     const flag_bb = self.freshBlock("inner.flag");
-    const sentinel_bb = self.freshBlock("inner.sentinel");
+    const word_bb = self.freshBlock("inner.word");
+    const high_bb = self.freshBlock("inner.high");
     const probed_bb = self.freshBlock("inner.probed");
-    b.condBr(flagged, flag_bb, &.{}, sentinel_bb, &.{});
+    b.switchBr(shape, &.{
+        .{ .value = @intFromEnum(types.OptionalShape.pointer_word), .target = word_bb, .args = &.{} },
+        .{ .value = @intFromEnum(types.OptionalShape.high_bit), .target = high_bb, .args = &.{} },
+    }, flag_bb, &.{});
 
     b.switchToBlock(flag_bb);
-    const at = b.emit(.{ .index_gep = .{ .lhs = bytes, .rhs = flag_off } }, self.module.types.ptrTo(.u8));
     b.store(probe, zextLoadI64(self, at, 1));
     b.br(probed_bb, &.{});
 
-    b.switchToBlock(sentinel_bb);
+    b.switchToBlock(word_bb);
     b.store(probe, zextLoadI64(self, bytes, self.module.types.pointer_size));
+    b.br(probed_bb, &.{});
+
+    b.switchToBlock(high_bb);
+    const high = b.emit(.{ .bit_and = .{ .lhs = zextLoadI64(self, at, 1), .rhs = b.constInt(0x80, .i64) } }, .i64);
+    b.store(probe, b.emit(.{ .bit_xor = .{ .lhs = high, .rhs = b.constInt(0x80, .i64) } }, .i64));
     b.br(probed_bb, &.{});
 
     b.switchToBlock(probed_bb);

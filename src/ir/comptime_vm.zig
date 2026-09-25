@@ -860,7 +860,11 @@ pub const Vm = struct {
             .const_int => |v| return .{ .value = normalizeWord(try self.requireTable(), ins.ty, @bitCast(v)) },
             .const_bool => |v| return .{ .value = @intFromBool(v) },
             .const_float => |v| return .{ .value = @bitCast(v) },
-            .const_null, .const_undef => return .{ .value = null_addr },
+            .const_null => {
+                const table = try self.requireTable();
+                return .{ .value = if (highBitChild(table, ins.ty)) |child| table.optionalNullWord(child) else null_addr };
+            },
+            .const_undef => return .{ .value = null_addr },
             // A `Type` literal: the 8-byte handle is the `TypeId` index in a word
             // (the `.type_value` representation). `regToValue` maps it back to a
             // `.type_tag` Value.
@@ -1052,8 +1056,8 @@ pub const Vm = struct {
             // behaves as a strong exchange (no spurious failure with one thread).
             // Result is `?T` (ins.ty): SUCCESS → none, FAILURE → some(actual).
             // Integer T only (the recognizer's guard rules out pointer optionals),
-            // so the optional is laid out as payload@0 + has_value flag — exactly
-            // like the `optional_wrap` arm below.
+            // so the optional is a high-bit word or payload@0 + has_value flag —
+            // exactly like the `optional_wrap` arm below.
             .atomic_cmpxchg => |a| {
                 const table = try self.requireTable();
                 const elem_ty = if (a.val_ty != .void) a.val_ty else return self.failMsg("comptime compare_exchange: missing element type");
@@ -1062,8 +1066,10 @@ pub const Vm = struct {
                 const cmp_val = frame.get(a.cmp.index());
                 const success = actual == cmp_val;
                 if (success) try self.writeField(table, ptr, elem_ty, frame.get(a.new.index()));
-                // Build the `?T` result in VM memory.
                 const opt_ty = ins.ty; // ?T
+                if (table.optionalShape(elem_ty) == .high_bit)
+                    return .{ .value = if (success) table.optionalNullWord(elem_ty) else table.integerLayout(elem_ty).?.storageWord(actual) };
+                // Build the `?T` result in VM memory.
                 const addr = self.machine.allocBytes(table.typeSizeBytes(opt_ty), table.typeAlignBytes(opt_ty));
                 // writeWord(addr, SIZE, val): write the 1-byte has_value flag
                 // EXPLICITLY (size=1) — never rely on alloc zero-init for the
@@ -1240,7 +1246,11 @@ pub const Vm = struct {
                 const table = try self.requireTable();
                 const child = table.get(ins.ty).optional.child; // ins.ty is ?T
                 const val = frame.get(u.operand.index());
-                if (table.optionalIsSentinel(child)) return .{ .value = val }; // sentinel-shaped: the child value itself
+                switch (table.optionalShape(child)) {
+                    .pointer_word => return .{ .value = val },
+                    .high_bit => return .{ .value = table.integerLayout(child).?.storageWord(val) },
+                    .flag => {},
+                }
                 const addr = self.machine.allocBytes(table.typeSizeBytes(ins.ty), table.typeAlignBytes(ins.ty));
                 try self.writeField(table, addr, child, val); // payload @ 0
                 try self.machine.writeWord(addr + table.typeSizeBytes(child), 1, 1); // has_value flag = 1
@@ -1255,8 +1265,7 @@ pub const Vm = struct {
                     return error.TypeError;
                 }
                 const child = table.get(opt_ty).optional.child;
-                if (table.optionalIsSentinel(child)) return .{ .value = v };
-                return .{ .value = try self.readField(table, v, child) };
+                return .{ .value = try self.optPayload(table, child, v) };
             },
             .optional_has_value => |u| {
                 const table = try self.requireTable();
@@ -1268,8 +1277,7 @@ pub const Vm = struct {
                 const v = frame.get(b.lhs.index());
                 if (try self.optHas(table, opt_ty, v)) {
                     const child = table.get(opt_ty).optional.child;
-                    if (table.optionalIsSentinel(child)) return .{ .value = v };
-                    return .{ .value = try self.readField(table, v, child) };
+                    return .{ .value = try self.optPayload(table, child, v) };
                 }
                 return .{ .value = frame.get(b.rhs.index()) };
             },
@@ -2429,7 +2437,7 @@ pub const Vm = struct {
             },
             // Runtime-Type scalar reflection: the tag resolves the same
             // way type_name's does; answers come straight from the type table.
-            .@"rt_@sizeOf", .@"rt_@alignOf", .rt_is_flags, .rt_member_count, .rt_variant_tag_width, .rt_slice_len_info, .rt_optional_flag => {
+            .@"rt_@sizeOf", .@"rt_@alignOf", .rt_is_flags, .rt_member_count, .rt_variant_tag_width, .rt_slice_len_info, .rt_optional_probe => {
                 const table = try self.requireTable();
                 if (bi.args.len < 1) return self.failMsg("comptime reflection: missing argument");
                 const tid = try self.reflectArgTypeId(try self.refTy(ref_types, bi.args[0]), frame.get(bi.args[0].index()));
@@ -2446,7 +2454,7 @@ pub const Vm = struct {
                     .rt_member_count => @as(Reg, @intCast(table.memberCount(tid) orelse 0)),
                     .rt_variant_tag_width => @as(Reg, @bitCast(table.variantTagWidth(tid))),
                     .rt_slice_len_info => @as(Reg, @bitCast(table.sliceLenInfo(tid))),
-                    .rt_optional_flag => @as(Reg, @bitCast(table.optionalFlagOffset(tid))),
+                    .rt_optional_probe => @as(Reg, @bitCast(table.optionalProbe(tid) orelse 0)),
                     else => unreachable,
                 };
             },
@@ -2865,11 +2873,12 @@ pub const Vm = struct {
                     return .{ .aggregate = out };
                 }
                 if (info == .optional) {
-                    // A pointer-child optional is a word and bridges through the
-                    // `.word` arm; what lands here is a wide sentinel — the child
-                    // value itself — or the `{ payload@0, has_value@sizeof(child) }`
-                    // aggregate. The `const_null` form is a bare `null_addr` with
-                    // no allocation behind it.
+                    // A pointer-child or high-bit optional is a word and bridges
+                    // through the `.word` arm; what lands here is a wide
+                    // sentinel — the child value itself — or the
+                    // `{ payload@0, has_value@sizeof(child) }` aggregate. The
+                    // `const_null` form is a bare `null_addr` with no allocation
+                    // behind it.
                     const child = info.optional.child;
                     if (optChildIsPtr(table, child))
                         return self.failMsg("reg→value: pointer optional reached the aggregate arm");
@@ -2995,10 +3004,10 @@ pub const Vm = struct {
     }
 
     /// How a value of type `ty` is held: a register word (scalar, pointer,
-    /// func-ref, enum tag, error tag, pointer-child optional) or by-address in
-    /// comptime memory (struct, array, tuple, slice, string, `any`, payload
-    /// enum, non-pointer optional). Everything else — `void`, `noreturn`,
-    /// `unresolved`, vectors — is `.unsupported`.
+    /// func-ref, enum tag, error tag, pointer-child or high-bit optional) or
+    /// by-address in comptime memory (struct, array, tuple, slice, string,
+    /// `any`, payload enum, any other optional). Everything else — `void`,
+    /// `noreturn`, `unresolved`, vectors — is `.unsupported`.
     const Kind = enum { word, aggregate, unsupported };
 
     /// The bytes a word-kind value occupies at its address: the type's size,
@@ -3027,8 +3036,9 @@ pub const Vm = struct {
             .@"enum" => |e| if (e.hasPayload()) .aggregate else .word,
             .@"error" => .word, // the error channel is a u32 tag id — a word
             .@"struct", .array, .slice, .failable => .aggregate,
-            // `?T`: a one-word sentinel child is null-as-0 (word); else `{T, i1}` by-address.
-            .optional => |o| if (optChildIsPtr(table, o.child)) .word else .aggregate,
+            // `?T`: a one-word sentinel child is null-as-0 and a high-bit
+            // optional is its storage word (word); else `{T, i1}` by-address.
+            .optional => |o| if (optChildIsPtr(table, o.child) or table.optionalShape(o.child) == .high_bit) .word else .aggregate,
             else => .unsupported,
         };
     }
@@ -3071,26 +3081,45 @@ pub const Vm = struct {
     /// A sentinel `?T` that fits ONE pointer word rides as a bare pointer
     /// (null == 0), not a `{T, i1}` aggregate; a wider one stays by-address.
     fn optChildIsPtr(table: *const types.TypeTable, child: TypeId) bool {
-        return table.optionalIsSentinel(child) and table.typeSizeBytes(child) == table.pointer_size;
+        return table.optionalShape(child) == .pointer_word and table.typeSizeBytes(child) == table.pointer_size;
     }
 
     /// A sentinel `?T` WIDER than a pointer word — a slice, a closure, a
     /// protocol handle. Its leading pointer word is the null state, so there is
     /// no flag byte to write and the value passes through wrap/unwrap unchanged.
     fn optChildIsWide(table: *const types.TypeTable, child: TypeId) bool {
-        return table.optionalIsSentinel(child) and table.typeSizeBytes(child) > table.pointer_size;
+        return table.optionalShape(child) == .pointer_word and table.typeSizeBytes(child) > table.pointer_size;
+    }
+
+    /// The child of `ty` when `ty` is a `.high_bit` optional.
+    fn highBitChild(table: *const types.TypeTable, ty: TypeId) ?TypeId {
+        if (ty.isBuiltin()) return null;
+        const info = table.get(ty);
+        if (info != .optional or table.optionalShape(info.optional.child) != .high_bit) return null;
+        return info.optional.child;
     }
 
     /// Does an optional value `v` of type `opt_ty` hold a value? A pointer optional
-    /// is present iff non-null; a wide sentinel iff its leading pointer word is;
+    /// is present iff non-null; a high-bit optional iff its high bit is clear;
+    /// a wide sentinel iff its leading pointer word is non-null;
     /// a `{T,i1}` optional is none when `v` is `null_addr` (the `const_null`
     /// form) else its flag byte (at offset `sizeof(child)`) is set.
     fn optHas(self: *Vm, table: *const types.TypeTable, opt_ty: TypeId, v: Reg) Error!bool {
         const child = table.get(opt_ty).optional.child;
         if (optChildIsPtr(table, child)) return v != null_addr;
+        if (table.optionalShape(child) == .high_bit) return v & table.optionalNullWord(child) == 0;
         if (v == null_addr) return false;
         if (optChildIsWide(table, child)) return (try self.machine.readWord(v, table.pointer_size)) != null_addr;
         return (try self.machine.readWord(v + table.typeSizeBytes(child), 1)) != 0;
+    }
+
+    /// The payload of a present optional `v` over `child`.
+    fn optPayload(self: *Vm, table: *const types.TypeTable, child: TypeId, v: Reg) Error!Reg {
+        return switch (table.optionalShape(child)) {
+            .pointer_word => v,
+            .high_bit => normalizeWord(table, child, v),
+            .flag => self.readField(table, v, child),
+        };
     }
 
     /// Read a value of type `ty` from comptime address `addr`: a scalar reads its
@@ -3131,7 +3160,12 @@ pub const Vm = struct {
             return self.machine.writeWord(addr, 4, bits);
         }
         switch (kindOf(table, ty)) {
-            .word => try self.machine.writeWord(addr, wordBytes(table, ty), val),
+            .word => {
+                // A narrow integer's spare storage bits are clear, as in the
+                // compiled image, so a `.high_bit` optional over it reads present.
+                const word = if (table.integerLayout(ty)) |layout| layout.storageWord(val) else val;
+                try self.machine.writeWord(addr, wordBytes(table, ty), word);
+            },
             .aggregate => {
                 const n = table.typeSizeBytes(ty);
                 if (n == 0) return;

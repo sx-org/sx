@@ -1242,9 +1242,10 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
 }
 
 /// The value a type-switch category arm binds: the widened reading every tag
-/// in the set shares — `signed`/`unsigned` an i64, `float` an f64, `pointer` a
-/// `*void`. A category whose members have no common scalar reading binds the
-/// subject's own view, so the arm reads it through the reflection builtins.
+/// in the set shares — `signed` an i64, `unsigned` a u64, `float` an f64,
+/// `pointer` a `*void`. A category whose members have no common scalar reading
+/// binds the subject's own view, so the arm reads it through the reflection
+/// builtins.
 fn categoryCapture(self: *Lowering, pat: *const Node, subject: Ref, tags: []const u64) struct { ref: Ref, ty: TypeId } {
     const name: []const u8 = switch (pat.data) {
         .identifier => |id| id.name,
@@ -1252,8 +1253,9 @@ fn categoryCapture(self: *Lowering, pat: *const Node, subject: Ref, tags: []cons
         else => "",
     };
     if (std.mem.eql(u8, name, "signed") or std.mem.eql(u8, name, "unsigned")) {
+        const word: TypeId = if (std.mem.eql(u8, name, "signed")) .i64 else .u64;
         const args = self.alloc.dupe(Ref, &.{subject}) catch unreachable;
-        return .{ .ref = self.builder.callBuiltin(.read_integer, args, .i64), .ty = .i64 };
+        return .{ .ref = self.builder.callBuiltin(.read_integer, args, word), .ty = word };
     }
     if (std.mem.eql(u8, name, "float")) {
         return .{ .ref = self.widenAnyToF64(subject, tags), .ty = .f64 };
