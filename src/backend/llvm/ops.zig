@@ -409,6 +409,34 @@ pub const Ops = struct {
     }
 
     // ── Memory ────────────────────────────────────────────
+
+    /// The storage word a narrow integer `ty` occupies, or null when `ty` is
+    /// not an integer narrower than its storage.
+    fn storageWordType(self: Ops, ty: TypeId) ?c.LLVMTypeRef {
+        const layout = self.e.ir_mod.types.integerLayout(ty) orelse return null;
+        const bits = self.e.ir_mod.types.typeSizeBytes(ty) * 8;
+        if (layout.width == bits) return null;
+        return c.LLVMIntTypeInContext(self.e.context, @intCast(bits));
+    }
+
+    /// A load of a `ty` from `ptr`. A narrow integer reads its whole storage
+    /// word.
+    fn buildLoad(self: Ops, ty: TypeId, ptr: c.LLVMValueRef, name: [*c]const u8, is_volatile: bool) c.LLVMValueRef {
+        const llvm_ty = self.e.toLLVMType(ty);
+        const word_ty = self.storageWordType(ty);
+        const load = c.LLVMBuildLoad2(self.e.builder, word_ty orelse llvm_ty, ptr, if (word_ty == null) name else "word");
+        if (is_volatile) c.LLVMSetVolatile(load, 1);
+        return if (word_ty == null) load else c.LLVMBuildTrunc(self.e.builder, load, llvm_ty, name);
+    }
+
+    /// A store of `val`, a `ty`, to `ptr`. A narrow integer writes its whole
+    /// storage word zero-extended: a `.high_bit` optional reads its spare bits
+    /// as null.
+    fn buildStore(self: Ops, ty: TypeId, val: c.LLVMValueRef, ptr: c.LLVMValueRef) c.LLVMValueRef {
+        const word_ty = self.storageWordType(ty) orelse return c.LLVMBuildStore(self.e.builder, val, ptr);
+        return c.LLVMBuildStore(self.e.builder, c.LLVMBuildZExt(self.e.builder, val, word_ty, "word"), ptr);
+    }
+
     pub fn emitAlloca(self: Ops, elem_ty: TypeId) void {
         const llvm_ty = self.e.toLLVMType(elem_ty);
         const result = self.e.buildEntryAlloca(llvm_ty, "alloca");
@@ -419,9 +447,7 @@ pub const Ops = struct {
         const ptr = self.e.resolveRef(un.operand);
         const ptr_kind = c.LLVMGetTypeKind(c.LLVMTypeOf(ptr));
         if (ptr_kind == c.LLVMPointerTypeKind and instruction.ty != .void) {
-            const llvm_ty = self.e.toLLVMType(instruction.ty);
-            const result = c.LLVMBuildLoad2(self.e.builder, llvm_ty, ptr, "load");
-            self.e.mapRef(result);
+            self.e.mapRef(self.buildLoad(instruction.ty, ptr, "load", false));
         } else {
             self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(if (instruction.ty == .void) .i64 else instruction.ty)));
         }
@@ -440,17 +466,16 @@ pub const Ops = struct {
             // Never unwrap .many_pointer — it only appears as struct_gep field
             // value types (e.g., [*]BigNode), where unwrapping to the element
             // type gives a wrong store size (stores BigNode-sized instead of ptr).
-            if (self.e.getRefIRType(st.ptr)) |ptr_ir_ty| {
-                const pointee_info = self.e.ir_mod.types.get(ptr_ir_ty);
-                const target_ty: ?c.LLVMTypeRef = switch (pointee_info) {
-                    .pointer => |p| self.e.toLLVMType(p.pointee),
-                    else => null,
-                };
-                if (target_ty) |tt| {
-                    val = self.e.coerceArg(val, tt);
-                }
+            const pointee: ?TypeId = if (self.e.getRefIRType(st.ptr)) |ptr_ir_ty| switch (self.e.ir_mod.types.get(ptr_ir_ty)) {
+                .pointer => |p| p.pointee,
+                else => null,
+            } else null;
+            if (pointee) |ty| {
+                val = self.e.coerceArg(val, self.e.toLLVMType(ty));
+                _ = self.buildStore(ty, val, ptr);
+            } else {
+                _ = c.LLVMBuildStore(self.e.builder, val, ptr);
             }
-            _ = c.LLVMBuildStore(self.e.builder, val, ptr);
         }
         self.e.advanceRefCounter();
     }
@@ -464,10 +489,7 @@ pub const Ops = struct {
         const ptr = self.e.resolveRef(un.operand);
         const ptr_kind = c.LLVMGetTypeKind(c.LLVMTypeOf(ptr));
         if (ptr_kind == c.LLVMPointerTypeKind and instruction.ty != .void) {
-            const llvm_ty = self.e.toLLVMType(instruction.ty);
-            const result = c.LLVMBuildLoad2(self.e.builder, llvm_ty, ptr, "volatile_load");
-            c.LLVMSetVolatile(result, 1);
-            self.e.mapRef(result);
+            self.e.mapRef(self.buildLoad(instruction.ty, ptr, "volatile_load", true));
         } else {
             self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(if (instruction.ty == .void) .i64 else instruction.ty)));
         }
@@ -484,8 +506,7 @@ pub const Ops = struct {
             // type — that is the caller's view of the memory, not the access
             // size, and narrowing to it would disagree with the matching load.
             val = self.e.coerceArg(val, self.e.toLLVMType(st.val_ty));
-            const store = c.LLVMBuildStore(self.e.builder, val, ptr);
-            c.LLVMSetVolatile(store, 1);
+            c.LLVMSetVolatile(self.buildStore(st.val_ty, val, ptr), 1);
         }
         self.e.advanceRefCounter();
     }
@@ -741,8 +762,7 @@ pub const Ops = struct {
             self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
             return;
         };
-        const llvm_ty = self.e.toLLVMType(instruction.ty);
-        self.e.mapRef(c.LLVMBuildLoad2(self.e.builder, llvm_ty, llvm_global, "gload"));
+        self.e.mapRef(self.buildLoad(instruction.ty, llvm_global, "gload", false));
     }
 
     pub fn emitGlobalAddr(self: Ops, gid: GlobalId) void {
@@ -769,7 +789,7 @@ pub const Ops = struct {
             return;
         };
         const val = self.e.resolveRef(gs.value);
-        _ = c.LLVMBuildStore(self.e.builder, val, llvm_global);
+        _ = self.buildStore(self.e.ir_mod.globals.items[gs.global.index()].ty, val, llvm_global);
         self.e.advanceRefCounter();
     }
 
@@ -845,8 +865,7 @@ pub const Ops = struct {
 
     pub fn emitDeref(self: Ops, instruction: *const Inst, un: UnaryOp) void {
         const ptr = self.e.resolveRef(un.operand);
-        const llvm_ty = self.e.toLLVMType(instruction.ty);
-        self.e.mapRef(c.LLVMBuildLoad2(self.e.builder, llvm_ty, ptr, "deref"));
+        self.e.mapRef(self.buildLoad(instruction.ty, ptr, "deref", false));
     }
 
     // ── Calls ─────────────────────────────────────────────
@@ -1920,7 +1939,7 @@ pub const Ops = struct {
                     const bb = c.LLVMAppendBasicBlockInContext(self.e.context, function, "ri.load");
                     c.LLVMAddCase(dispatch, c.LLVMConstInt(self.e.cached_i64, idx, 0), bb);
                     c.LLVMPositionBuilderAtEnd(self.e.builder, bb);
-                    const loaded = c.LLVMBuildLoad2(self.e.builder, self.e.toLLVMType(tid), ptr, "ri.exact");
+                    const loaded = self.buildLoad(tid, ptr, "ri.exact", false);
                     const value = if (layout.width == 64) loaded else if (layout.signed)
                         c.LLVMBuildSExt(self.e.builder, loaded, self.e.cached_i64, "ri.signed")
                     else
@@ -2431,14 +2450,14 @@ pub const Ops = struct {
             const elem_ty = self.e.toLLVMType(instruction.ty);
             var indices = [_]c.LLVMValueRef{idx};
             const ptr = c.LLVMBuildGEP2(self.e.builder, elem_ty, base, &indices, 1, "ig.ptr");
-            self.e.mapRef(c.LLVMBuildLoad2(self.e.builder, elem_ty, ptr, "ig.val"));
+            self.e.mapRef(self.buildLoad(instruction.ty, ptr, "ig.val", false));
         } else if (kind == c.LLVMStructTypeKind) {
             // Slice/string {ptr, len} — extract ptr, GEP, load
             const data = c.LLVMBuildExtractValue(self.e.builder, base, 0, "ig.data");
             const elem_ty = self.e.toLLVMType(instruction.ty);
             var indices = [_]c.LLVMValueRef{idx};
             const ptr = c.LLVMBuildGEP2(self.e.builder, elem_ty, data, &indices, 1, "ig.ptr");
-            self.e.mapRef(c.LLVMBuildLoad2(self.e.builder, elem_ty, ptr, "ig.val"));
+            self.e.mapRef(self.buildLoad(instruction.ty, ptr, "ig.val", false));
         } else {
             // Non-aggregate base (lowering error) — emit undef
             self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
@@ -2843,8 +2862,7 @@ pub const Ops = struct {
             // Typed LOAD through the view's data pointer (word 0).
             const raw = c.LLVMBuildExtractValue(self.e.builder, any_val, 0, "ua.raw");
             const ptr = c.LLVMBuildIntToPtr(self.e.builder, raw, self.e.cached_ptr, "ua.ptr");
-            const target_ty = self.e.toLLVMType(instruction.ty);
-            self.e.mapRef(c.LLVMBuildLoad2(self.e.builder, target_ty, ptr, "ua.load"));
+            self.e.mapRef(self.buildLoad(instruction.ty, ptr, "ua.load", false));
         } else {
             self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
         }

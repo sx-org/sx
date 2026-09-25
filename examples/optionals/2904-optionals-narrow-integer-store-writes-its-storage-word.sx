@@ -1,0 +1,13 @@
+// A store of an integer narrower than its storage writes the whole storage
+// word zero-extended, so a write through a narrowed `?I7` receiver leaves the
+// word's high bit, the optional's null, clear.
+
+I7 :: @int(7, .signed);
+
+setTo :: ufcs (self: *I7, v: I7) { self.* = v; }
+
+main :: () -> i32 {
+    o : ?I7 = 5;
+    if o != null { o.setTo(-64); }
+    return (o ?? 0).(i32) + 64;
+}

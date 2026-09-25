@@ -1,0 +1,52 @@
+
+@kDefaultContext = internal constant {} zeroinitializer
+
+; Function Attrs: nounwind
+define internal void @setTo(ptr %0, ptr %1, i7 %2) #0 {
+entry:
+  %alloca = alloca ptr, align 8
+  store ptr %1, ptr %alloca, align 8
+  %allocaN = alloca i7, align 1
+  %word = zext i7 %2 to i8
+  store i8 %word, ptr %allocaN, align 1
+  %wordN = load i8, ptr %allocaN, align 1
+  %load = trunc i8 %wordN to i7
+  %loadN = load ptr, ptr %alloca, align 8
+  %wordN = zext i7 %load to i8
+  store i8 %wordN, ptr %loadN, align 1
+  ret void
+}
+
+; Function Attrs: nounwind
+define i32 @main() #0 {
+entry:
+  %alloca = alloca i8, align 1
+  store i8 5, ptr %alloca, align 1
+  %load = load i8, ptr %alloca, align 1
+  %oh.clear = icmp sge i8 %load, 0
+  br i1 %oh.clear, label %if.then.0, label %if.merge.1
+
+if.then.0:                                        ; preds = %entry
+  %loadN = load i8, ptr %alloca, align 1
+  %oh.payload = trunc i8 %loadN to i7
+  call void @setTo(ptr @kDefaultContext, ptr %alloca, i7 -64)
+  br label %if.merge.1
+
+if.merge.1:                                       ; preds = %if.then.0, %entry
+  %loadN = load i8, ptr %alloca, align 1
+  %oh.clear3 = icmp sge i8 %loadN, 0
+  br i1 %oh.clear3, label %nc.has.2, label %nc.rhs.3
+
+nc.has.2:                                         ; preds = %if.merge.1
+  %oh.payload4 = trunc i8 %loadN to i7
+  br label %nc.merge.4
+
+nc.rhs.3:                                         ; preds = %if.merge.1
+  br label %nc.merge.4
+
+nc.merge.4:                                       ; preds = %nc.rhs.3, %nc.has.2
+  %bp = phi i7 [ %oh.payload4, %nc.has.2 ], [ 0, %nc.rhs.3 ]
+  %sext = sext i7 %bp to i32
+  %add = add i32 %sext, 64
+  ret i32 %add
+}
