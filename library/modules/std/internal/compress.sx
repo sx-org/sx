@@ -291,8 +291,8 @@ private BitWriter :: struct {
         if self.out.failed { return; }
         bytes := self.count >> 3;
         if bytes > 0 {
-            words : [*]u64 = (*self.out.bytes.items.ptr[self.out.bytes.items.len]).([*]u64);
-            words[0] = self.bits.(u64);
+            words : [*]i64 = (*self.out.bytes.items.ptr[self.out.bytes.items.len]).([*]i64);
+            words[0] = self.bits;
             self.out.bytes.items.len += bytes;
             self.bits = self.bits >> (bytes * 8);
             self.count = self.count & 7;
@@ -879,8 +879,8 @@ private emitTdeflDynamic :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Allo
                 }
             }
         }
-        outputWords : [*]u64 = @reinterpret([*]u64, *outputPtr[outputAt]);
-        outputWords[0] = bitBuffer.(u64);
+        outputWords : [*]i64 = @reinterpret([*]i64, *outputPtr[outputAt]);
+        outputWords[0] = bitBuffer;
         outputAt += bitsIn >> 3;
         bitBuffer = bitBuffer >> (bitsIn & ~7);
         bitsIn = bitsIn & 7;
@@ -888,8 +888,8 @@ private emitTdeflDynamic :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Allo
     }
     bitBuffer = bitBuffer | (litCodes[256].(i64) << bitsIn);
     bitsIn += litLengths[256];
-    outputWords : [*]u64 = @reinterpret([*]u64, *outputPtr[outputAt]);
-    outputWords[0] = bitBuffer.(u64);
+    outputWords : [*]i64 = @reinterpret([*]i64, *outputPtr[outputAt]);
+    outputWords[0] = bitBuffer;
     outputAt += bitsIn >> 3;
     bitBuffer = bitBuffer >> (bitsIn & ~7);
     bitsIn = bitsIn & 7;
@@ -979,8 +979,8 @@ private emitTdeflFixed :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Alloca
                 }
             }
         }
-        outputWords : [*]u64 = @reinterpret([*]u64, *outputPtr[outputAt]);
-        outputWords[0] = bitBuffer.(u64);
+        outputWords : [*]i64 = @reinterpret([*]i64, *outputPtr[outputAt]);
+        outputWords[0] = bitBuffer;
         outputAt += bitsIn >> 3;
         bitBuffer = bitBuffer >> (bitsIn & ~7);
         bitsIn = bitsIn & 7;
@@ -988,8 +988,8 @@ private emitTdeflFixed :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Alloca
     }
     bitBuffer = bitBuffer | (reverseBits(0, 7) << bitsIn);
     bitsIn += 7;
-    outputWords : [*]u64 = @reinterpret([*]u64, *outputPtr[outputAt]);
-    outputWords[0] = bitBuffer.(u64);
+    outputWords : [*]i64 = @reinterpret([*]i64, *outputPtr[outputAt]);
+    outputWords[0] = bitBuffer;
     outputAt += bitsIn >> 3;
     bitBuffer = bitBuffer >> (bitsIn & ~7);
     bitsIn = bitsIn & 7;
