@@ -61,7 +61,7 @@ LogicalKey :: enum {
 // modifiers.
 InputHeader :: struct {
     root: UiRootId = .{ value = 0 };
-    timeNs: u64 = 0;
+    timeNs: i64 = 0;
     device: InputDeviceId = .{ value = 0 };
     modifiers: InputModifiers = .{};
 }

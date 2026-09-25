@@ -310,7 +310,7 @@ writeHex :: ufcs (w: Writer, n: u64) {
     v := n;
     while true {
         i -= 1;
-        buf[i] = encoding.hexDigit((v & 0xF).(i64));
+        buf[i] = encoding.hexDigit(v & 0xF);
         v = v >> 4;
         if v == 0 { break; }
     }

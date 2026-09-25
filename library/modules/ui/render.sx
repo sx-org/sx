@@ -127,7 +127,7 @@ ScrollPhase :: enum {
 ScrollGesture :: struct {
     phase: ScrollPhase;
     delta: Point = .{ x = 0.0, y = 0.0 };
-    timeNs: u64 = 0;
+    timeNs: i64 = 0;
 }
 
 // A scrollable region declared during render, paint-ordered like hit regions:

@@ -376,7 +376,7 @@ sxAndroidDrainTouches :: (plat: *AndroidPlatform, out: *List(PlatformEvent)) {
     sxAndroidEnsureTouchMutex(plat);
     c.pthread_mutex_lock(*plat.touchMutex);
     inv : f32 = if plat.dpiScale > 0.0 then 1.0 / plat.dpiScale else 1.0;
-    now : u64 = androidNowNs().(u64);
+    now := androidNowNs();
     while plat.touchHead != plat.touchTail {
         t := plat.touchQueue[plat.touchHead];
         plat.touchHead = (plat.touchHead + 1) % 64;

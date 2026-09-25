@@ -33,7 +33,7 @@ encoding :: scope {
     }
 
     // n is a 0..15 nibble.
-    hexDigit :: (n: i64) -> u8 {
+    hexDigit :: (n: $T) -> u8 {
         if n < 10 then (n + '0').(u8) else (n - 10 + 'a').(u8)
     }
 

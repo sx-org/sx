@@ -222,7 +222,7 @@ Router :: struct {
     }
 
     // Hands a gesture to the scroll region the CURRENT snapshot carries for `id`.
-    scroll :: (self: *Router, id: u64, phase: ScrollPhase, delta: Point, timeNs: u64) {
+    scroll :: (self: *Router, id: u64, phase: ScrollPhase, delta: Point, timeNs: i64) {
         for r in self.snap.scrollList {
             if r.id == id {
                 if h := r.onScroll {
