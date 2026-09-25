@@ -8,8 +8,9 @@ main :: () -> i32 {
     u : [3]u8 = "abc";
     k : [:7]u8 = .{ ptr = "hi\x07".ptr, len = 2 };
     w : @Slice(u8, u32) = u[0..];
+    x : @Slice(u8, u64) = u[1..];
     n : [2]i64 = .[1, 2];
     print("{} {} {} {} {}\n", t, u, k, w, n[0..]);
-    @printf("{} {}\n", k, w);
+    @printf("{} {} {}\n", k, w, x);
     0
 }

@@ -3237,7 +3237,7 @@ and is not reserved — it is an ordinary identifier.
 Examples:
 ```sx
 SOME_INT    :: 0;           // i64
-SOME_STR    :: "Hello";     // [5:0]u8
+SOME_STR    :: "Hello";     // string
 SOME_FLOAT  :: 0.3;         // f64
 SOME_DOUBLE : f64 : 0.9;   // f64 (explicit)
 SOME_FUNC   :: () => 42;    // () -> i64

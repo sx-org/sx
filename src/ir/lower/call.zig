@@ -3418,7 +3418,9 @@ fn emitPrintfArg(self: *Lowering, sink: PrintfSink, arg: *const Node) void {
         if (self.diagnostics) |d| d.addFmt(.err, arg.span, "@printf renders a string, a bool, an integer or a float — '{s}' takes the allocating formatter, `print`", .{self.formatTypeName(arg_ty)});
         return;
     };
-    emitPrintfWrite(self, sink, kind, self.coerceToType(raw, arg_ty, kind.param()));
+    // A u8 slice's length word need not fit `string`'s i64.
+    const val = if (kind == .str) self.coerceExplicit(raw, arg_ty, .string) else self.coerceToType(raw, arg_ty, kind.param());
+    emitPrintfWrite(self, sink, kind, val);
 }
 
 /// Recognize `@printf($fmt, ..$args)` and expand it onto a stdout `FdWriter`:
