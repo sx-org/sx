@@ -628,9 +628,8 @@ pub const BuiltinId = enum(u16) {
     // runtime fat-pointer read needs. Internal — serves the boxed `@len` /
     // `@field` read.
     rt_slice_len_info,
-    // The byte offset of an optional's has_value flag, or -1 when its null
-    // state is the leading pointer word. Serves `@inner`'s presence probe.
-    rt_optional_flag,
+    // An optional's `optionalProbe` row. Serves `@inner`'s presence probe.
+    rt_optional_probe,
     rt_type_eq,
     // Member-view runtime paths: master-index [N x ptr] tables → per-type
     // arrays of member type tags and byte offsets.

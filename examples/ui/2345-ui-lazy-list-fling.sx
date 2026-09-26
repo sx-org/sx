@@ -11,7 +11,7 @@
 MS :: 1_000_000;
 
 drag :: (st: *fluent.ListState, phase: fluent.ScrollPhase, dy: f32, atMs: i64) {
-    g := fluent.ScrollGesture{ phase = phase, delta = .{ x = 0.0, y = dy }, timeNs = (atMs * MS).(u64) };
+    g := fluent.ScrollGesture{ phase = phase, delta = .{ x = 0.0, y = dy }, timeNs = atMs * MS };
     st.gesture(*g);
 }
 

@@ -138,8 +138,11 @@ pub const Ops = struct {
 
     pub fn emitConstNull(self: Ops, instruction: *const Inst) void {
         const ty = if (instruction.ty == .void) self.e.cached_ptr else self.e.toLLVMType(instruction.ty);
-        const llvm_val = c.LLVMConstNull(ty);
-        self.e.mapRef(llvm_val);
+        if (self.optionalShape(instruction.ty) == .high_bit) {
+            const child = self.e.ir_mod.types.get(instruction.ty).optional.child;
+            return self.e.mapRef(c.LLVMConstInt(ty, self.e.ir_mod.types.optionalNullWord(child), 0));
+        }
+        self.e.mapRef(c.LLVMConstNull(ty));
     }
 
     pub fn emitConstUndef(self: Ops, instruction: *const Inst) void {
@@ -406,6 +409,34 @@ pub const Ops = struct {
     }
 
     // ── Memory ────────────────────────────────────────────
+
+    /// The storage word a narrow integer `ty` occupies, or null when `ty` is
+    /// not an integer narrower than its storage.
+    fn storageWordType(self: Ops, ty: TypeId) ?c.LLVMTypeRef {
+        const layout = self.e.ir_mod.types.integerLayout(ty) orelse return null;
+        const bits = self.e.ir_mod.types.typeSizeBytes(ty) * 8;
+        if (layout.width == bits) return null;
+        return c.LLVMIntTypeInContext(self.e.context, @intCast(bits));
+    }
+
+    /// A load of a `ty` from `ptr`. A narrow integer reads its whole storage
+    /// word.
+    fn buildLoad(self: Ops, ty: TypeId, ptr: c.LLVMValueRef, name: [*c]const u8, is_volatile: bool) c.LLVMValueRef {
+        const llvm_ty = self.e.toLLVMType(ty);
+        const word_ty = self.storageWordType(ty);
+        const load = c.LLVMBuildLoad2(self.e.builder, word_ty orelse llvm_ty, ptr, if (word_ty == null) name else "word");
+        if (is_volatile) c.LLVMSetVolatile(load, 1);
+        return if (word_ty == null) load else c.LLVMBuildTrunc(self.e.builder, load, llvm_ty, name);
+    }
+
+    /// A store of `val`, a `ty`, to `ptr`. A narrow integer writes its whole
+    /// storage word zero-extended: a `.high_bit` optional's null is its top
+    /// spare bit.
+    fn buildStore(self: Ops, ty: TypeId, val: c.LLVMValueRef, ptr: c.LLVMValueRef) c.LLVMValueRef {
+        const word_ty = self.storageWordType(ty) orelse return c.LLVMBuildStore(self.e.builder, val, ptr);
+        return c.LLVMBuildStore(self.e.builder, c.LLVMBuildZExt(self.e.builder, val, word_ty, "word"), ptr);
+    }
+
     pub fn emitAlloca(self: Ops, elem_ty: TypeId) void {
         const llvm_ty = self.e.toLLVMType(elem_ty);
         const result = self.e.buildEntryAlloca(llvm_ty, "alloca");
@@ -416,9 +447,7 @@ pub const Ops = struct {
         const ptr = self.e.resolveRef(un.operand);
         const ptr_kind = c.LLVMGetTypeKind(c.LLVMTypeOf(ptr));
         if (ptr_kind == c.LLVMPointerTypeKind and instruction.ty != .void) {
-            const llvm_ty = self.e.toLLVMType(instruction.ty);
-            const result = c.LLVMBuildLoad2(self.e.builder, llvm_ty, ptr, "load");
-            self.e.mapRef(result);
+            self.e.mapRef(self.buildLoad(instruction.ty, ptr, "load", false));
         } else {
             self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(if (instruction.ty == .void) .i64 else instruction.ty)));
         }
@@ -437,17 +466,16 @@ pub const Ops = struct {
             // Never unwrap .many_pointer — it only appears as struct_gep field
             // value types (e.g., [*]BigNode), where unwrapping to the element
             // type gives a wrong store size (stores BigNode-sized instead of ptr).
-            if (self.e.getRefIRType(st.ptr)) |ptr_ir_ty| {
-                const pointee_info = self.e.ir_mod.types.get(ptr_ir_ty);
-                const target_ty: ?c.LLVMTypeRef = switch (pointee_info) {
-                    .pointer => |p| self.e.toLLVMType(p.pointee),
-                    else => null,
-                };
-                if (target_ty) |tt| {
-                    val = self.e.coerceArg(val, tt);
-                }
+            const pointee: ?TypeId = if (self.e.getRefIRType(st.ptr)) |ptr_ir_ty| switch (self.e.ir_mod.types.get(ptr_ir_ty)) {
+                .pointer => |p| p.pointee,
+                else => null,
+            } else null;
+            if (pointee) |ty| {
+                val = self.e.coerceArg(val, self.e.toLLVMType(ty));
+                _ = self.buildStore(ty, val, ptr);
+            } else {
+                _ = c.LLVMBuildStore(self.e.builder, val, ptr);
             }
-            _ = c.LLVMBuildStore(self.e.builder, val, ptr);
         }
         self.e.advanceRefCounter();
     }
@@ -461,10 +489,7 @@ pub const Ops = struct {
         const ptr = self.e.resolveRef(un.operand);
         const ptr_kind = c.LLVMGetTypeKind(c.LLVMTypeOf(ptr));
         if (ptr_kind == c.LLVMPointerTypeKind and instruction.ty != .void) {
-            const llvm_ty = self.e.toLLVMType(instruction.ty);
-            const result = c.LLVMBuildLoad2(self.e.builder, llvm_ty, ptr, "volatile_load");
-            c.LLVMSetVolatile(result, 1);
-            self.e.mapRef(result);
+            self.e.mapRef(self.buildLoad(instruction.ty, ptr, "volatile_load", true));
         } else {
             self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(if (instruction.ty == .void) .i64 else instruction.ty)));
         }
@@ -481,8 +506,7 @@ pub const Ops = struct {
             // type — that is the caller's view of the memory, not the access
             // size, and narrowing to it would disagree with the matching load.
             val = self.e.coerceArg(val, self.e.toLLVMType(st.val_ty));
-            const store = c.LLVMBuildStore(self.e.builder, val, ptr);
-            c.LLVMSetVolatile(store, 1);
+            c.LLVMSetVolatile(self.buildStore(st.val_ty, val, ptr), 1);
         }
         self.e.advanceRefCounter();
     }
@@ -650,11 +674,9 @@ pub const Ops = struct {
 
     // LLVMBuildAtomicCmpXchg returns a `{ T, i1 }` pair: field 0 = the value
     // that was loaded (the ACTUAL current value), field 1 = a `success` i1.
-    // sx's `?T` (integer T) is also `{ T, i1 }` = `{ payload, has_value }`, but
-    // with the OPPOSITE convention: null = SUCCESS. So we build the result as
-    // `{ actual, NOT success }` — has_value = xor(success, true). singleThread
-    // stays 0; `weak` is set via LLVMSetWeak. Integer-only (recognizer guard),
-    // so the optional is never a pointer/niche optional.
+    // sx's `?T` is null on SUCCESS and carries the actual value on failure.
+    // singleThread stays 0; `weak` is set via LLVMSetWeak. Integer-only
+    // (recognizer guard), so the optional is never a pointer-word optional.
     pub fn emitAtomicCmpxchg(self: Ops, instruction: *const Inst, a: AtomicCmpxchg) void {
         const ptr = self.e.resolveRef(a.ptr);
         const cmp = self.e.resolveRef(a.cmp);
@@ -675,10 +697,13 @@ pub const Ops = struct {
             if (a.weak) c.LLVMSetWeak(pair, 1);
             const actual = c.LLVMBuildExtractValue(self.e.builder, pair, 0, "cas.actual");
             const success = c.LLVMBuildExtractValue(self.e.builder, pair, 1, "cas.success");
-            // has_value = NOT success  (sx `?T`: null = success).
-            const has = c.LLVMBuildXor(self.e.builder, success, c.LLVMConstInt(self.e.cached_i1, 1, 0), "cas.has");
-            // Assemble the `?T` = `{ T, i1 }` result.
             const opt_ty = self.e.toLLVMType(instruction.ty);
+            if (self.optionalShape(instruction.ty) == .high_bit) {
+                const null_word = c.LLVMConstInt(opt_ty, self.e.ir_mod.types.optionalNullWord(a.val_ty), 0);
+                const word = c.LLVMBuildZExt(self.e.builder, actual, opt_ty, "cas.word");
+                return self.e.mapRef(c.LLVMBuildSelect(self.e.builder, success, null_word, word, "cas.opt"));
+            }
+            const has = c.LLVMBuildXor(self.e.builder, success, c.LLVMConstInt(self.e.cached_i1, 1, 0), "cas.has");
             var result = c.LLVMGetUndef(opt_ty);
             result = c.LLVMBuildInsertValue(self.e.builder, result, actual, 0, "cas.val");
             result = c.LLVMBuildInsertValue(self.e.builder, result, has, 1, "cas.opt");
@@ -737,8 +762,7 @@ pub const Ops = struct {
             self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
             return;
         };
-        const llvm_ty = self.e.toLLVMType(instruction.ty);
-        self.e.mapRef(c.LLVMBuildLoad2(self.e.builder, llvm_ty, llvm_global, "gload"));
+        self.e.mapRef(self.buildLoad(instruction.ty, llvm_global, "gload", false));
     }
 
     pub fn emitGlobalAddr(self: Ops, gid: GlobalId) void {
@@ -765,7 +789,7 @@ pub const Ops = struct {
             return;
         };
         const val = self.e.resolveRef(gs.value);
-        _ = c.LLVMBuildStore(self.e.builder, val, llvm_global);
+        _ = self.buildStore(self.e.ir_mod.globals.items[gs.global.index()].ty, val, llvm_global);
         self.e.advanceRefCounter();
     }
 
@@ -841,8 +865,7 @@ pub const Ops = struct {
 
     pub fn emitDeref(self: Ops, instruction: *const Inst, un: UnaryOp) void {
         const ptr = self.e.resolveRef(un.operand);
-        const llvm_ty = self.e.toLLVMType(instruction.ty);
-        self.e.mapRef(c.LLVMBuildLoad2(self.e.builder, llvm_ty, ptr, "deref"));
+        self.e.mapRef(self.buildLoad(instruction.ty, ptr, "deref", false));
     }
 
     // ── Calls ─────────────────────────────────────────────
@@ -1835,7 +1858,7 @@ pub const Ops = struct {
             .member_count => self.e.member_count_array_len,
             .tag_width => self.e.variant_tag_width_array_len,
             .slice_len_info => self.e.slice_len_info_array_len,
-            .optional_flag => self.e.optional_flag_array_len,
+            .optional_probe => self.e.optional_probe_array_len,
             .member_stride => self.e.member_stride_array_len,
         };
         const elem_ty = if (kind == .flags) self.e.cached_i1 else self.e.cached_i64;
@@ -1916,7 +1939,7 @@ pub const Ops = struct {
                     const bb = c.LLVMAppendBasicBlockInContext(self.e.context, function, "ri.load");
                     c.LLVMAddCase(dispatch, c.LLVMConstInt(self.e.cached_i64, idx, 0), bb);
                     c.LLVMPositionBuilderAtEnd(self.e.builder, bb);
-                    const loaded = c.LLVMBuildLoad2(self.e.builder, self.e.toLLVMType(tid), ptr, "ri.exact");
+                    const loaded = self.buildLoad(tid, ptr, "ri.exact", false);
                     const value = if (layout.width == 64) loaded else if (layout.signed)
                         c.LLVMBuildSExt(self.e.builder, loaded, self.e.cached_i64, "ri.signed")
                     else
@@ -1945,7 +1968,7 @@ pub const Ops = struct {
                 const result = c.LLVMBuildLoad2(self.e.builder, self.e.cached_i1, gep, "tiu.load");
                 self.e.mapRef(result);
             },
-            .@"rt_@sizeOf", .@"rt_@alignOf", .rt_is_flags, .rt_member_count, .rt_variant_tag_width, .rt_slice_len_info, .rt_optional_flag => {
+            .@"rt_@sizeOf", .@"rt_@alignOf", .rt_is_flags, .rt_member_count, .rt_variant_tag_width, .rt_slice_len_info, .rt_optional_probe => {
                 // Runtime-Type scalar reflection: resolve the tag the
                 // arg denotes (any → its type-tag), GEP the builtin's lazy
                 // table, load. Same shape as the type_name/is_unsigned arms.
@@ -1956,7 +1979,7 @@ pub const Ops = struct {
                     .rt_member_count => .member_count,
                     .rt_variant_tag_width => .tag_width,
                     .rt_slice_len_info => .slice_len_info,
-                    .rt_optional_flag => .optional_flag,
+                    .rt_optional_probe => .optional_probe,
                     else => unreachable,
                 };
                 const tid_idx = self.reflectArgTypeId(bi.args[0], "runtime reflection");
@@ -2427,14 +2450,14 @@ pub const Ops = struct {
             const elem_ty = self.e.toLLVMType(instruction.ty);
             var indices = [_]c.LLVMValueRef{idx};
             const ptr = c.LLVMBuildGEP2(self.e.builder, elem_ty, base, &indices, 1, "ig.ptr");
-            self.e.mapRef(c.LLVMBuildLoad2(self.e.builder, elem_ty, ptr, "ig.val"));
+            self.e.mapRef(self.buildLoad(instruction.ty, ptr, "ig.val", false));
         } else if (kind == c.LLVMStructTypeKind) {
             // Slice/string {ptr, len} — extract ptr, GEP, load
             const data = c.LLVMBuildExtractValue(self.e.builder, base, 0, "ig.data");
             const elem_ty = self.e.toLLVMType(instruction.ty);
             var indices = [_]c.LLVMValueRef{idx};
             const ptr = c.LLVMBuildGEP2(self.e.builder, elem_ty, data, &indices, 1, "ig.ptr");
-            self.e.mapRef(c.LLVMBuildLoad2(self.e.builder, elem_ty, ptr, "ig.val"));
+            self.e.mapRef(self.buildLoad(instruction.ty, ptr, "ig.val", false));
         } else {
             // Non-aggregate base (lowering error) — emit undef
             self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
@@ -2623,17 +2646,17 @@ pub const Ops = struct {
 
     // ── Optional ops ─────────────────────────────────────────
 
-    /// True when the `?T` at `opt_ty` carries no has_value flag: the child's own
-    /// leading pointer word is its null state. The LLVM shape cannot answer —
-    /// a narrow-length slice header is itself a `{ptr, i1}`.
-    fn isSentinelOptional(self: Ops, opt_ty: ?TypeId) bool {
-        const ty = opt_ty orelse return false;
-        if (ty.isBuiltin()) return false;
+    /// How the `?T` at `opt_ty` marks null. The LLVM shape cannot answer — a
+    /// narrow-length slice header is itself a `{ptr, i1}`.
+    fn optionalShape(self: Ops, opt_ty: ?TypeId) ir_types.OptionalShape {
+        const ty = opt_ty orelse return .flag;
+        if (ty.isBuiltin()) return .flag;
         const info = self.e.ir_mod.types.get(ty);
-        return info == .optional and self.e.ir_mod.types.optionalIsSentinel(info.optional.child);
+        if (info != .optional) return .flag;
+        return self.e.ir_mod.types.optionalShape(info.optional.child);
     }
 
-    /// The presence test of a sentinel-shaped optional: its leading pointer
+    /// The presence test of a pointer-word optional: its leading pointer
     /// word, which is the whole value when the child is one word wide.
     fn sentinelPresent(self: Ops, val: c.LLVMValueRef, name: [*c]const u8) c.LLVMValueRef {
         const lead = if (c.LLVMGetTypeKind(c.LLVMTypeOf(val)) == c.LLVMStructTypeKind)
@@ -2643,10 +2666,23 @@ pub const Ops = struct {
         return c.LLVMBuildICmp(self.e.builder, c.LLVMIntNE, lead, c.LLVMConstNull(c.LLVMTypeOf(lead)), name);
     }
 
+    fn highBitPresent(self: Ops, val: c.LLVMValueRef, name: [*c]const u8) c.LLVMValueRef {
+        return c.LLVMBuildICmp(self.e.builder, c.LLVMIntSGE, val, c.LLVMConstNull(c.LLVMTypeOf(val)), name);
+    }
+
+    fn highBitPayload(self: Ops, opt_ty: TypeId, val: c.LLVMValueRef) c.LLVMValueRef {
+        const child = self.e.ir_mod.types.get(opt_ty).optional.child;
+        return c.LLVMBuildTrunc(self.e.builder, val, self.e.toLLVMType(child), "oh.payload");
+    }
+
     pub fn emitOptionalWrap(self: Ops, instruction: *const Inst, un: UnaryOp) void {
         const val = self.e.resolveRef(un.operand);
-        if (self.isSentinelOptional(instruction.ty)) return self.e.mapRef(val);
         const opt_ty = self.e.toLLVMType(instruction.ty);
+        switch (self.optionalShape(instruction.ty)) {
+            .pointer_word => return self.e.mapRef(val),
+            .high_bit => return self.e.mapRef(c.LLVMBuildZExt(self.e.builder, val, opt_ty, "ow.word")),
+            .flag => {},
+        }
         const inner_ty = c.LLVMStructGetTypeAtIndex(opt_ty, 0);
         var result = c.LLVMGetUndef(opt_ty);
         result = c.LLVMBuildInsertValue(self.e.builder, result, self.e.coerceArg(val, inner_ty), 0, "ow.val");
@@ -2656,27 +2692,36 @@ pub const Ops = struct {
 
     pub fn emitOptionalUnwrap(self: Ops, un: UnaryOp) void {
         const val = self.e.resolveRef(un.operand);
-        if (self.isSentinelOptional(self.e.getRefIRType(un.operand))) return self.e.mapRef(val);
-        self.e.mapRef(c.LLVMBuildExtractValue(self.e.builder, val, 0, "ou.val"));
+        const opt_ty = self.e.getRefIRType(un.operand);
+        self.e.mapRef(switch (self.optionalShape(opt_ty)) {
+            .pointer_word => val,
+            .high_bit => self.highBitPayload(opt_ty.?, val),
+            .flag => c.LLVMBuildExtractValue(self.e.builder, val, 0, "ou.val"),
+        });
     }
 
     pub fn emitOptionalHasValue(self: Ops, un: UnaryOp) void {
         const val = self.e.resolveRef(un.operand);
-        if (self.isSentinelOptional(self.e.getRefIRType(un.operand)))
-            return self.e.mapRef(self.sentinelPresent(val, "oh.nn"));
-        self.e.mapRef(c.LLVMBuildExtractValue(self.e.builder, val, 1, "oh.has"));
+        self.e.mapRef(switch (self.optionalShape(self.e.getRefIRType(un.operand))) {
+            .pointer_word => self.sentinelPresent(val, "oh.nn"),
+            .high_bit => self.highBitPresent(val, "oh.clear"),
+            .flag => c.LLVMBuildExtractValue(self.e.builder, val, 1, "oh.has"),
+        });
     }
 
     pub fn emitOptionalCoalesce(self: Ops, bin: BinOp) void {
         // a ?? b — if a has value, use a's value; otherwise use b
         const a = self.e.resolveRef(bin.lhs);
         var b_val = self.e.resolveRef(bin.rhs);
-        if (self.isSentinelOptional(self.e.getRefIRType(bin.lhs))) {
-            const present = self.sentinelPresent(a, "oc.nn");
-            return self.e.mapRef(c.LLVMBuildSelect(self.e.builder, present, a, b_val, "oc.sel"));
-        }
-        const has = c.LLVMBuildExtractValue(self.e.builder, a, 1, "oc.has");
-        const unwrapped = c.LLVMBuildExtractValue(self.e.builder, a, 0, "oc.val");
+        const opt_ty = self.e.getRefIRType(bin.lhs);
+        const has, const unwrapped = switch (self.optionalShape(opt_ty)) {
+            .pointer_word => .{ self.sentinelPresent(a, "oc.nn"), a },
+            .high_bit => .{ self.highBitPresent(a, "oc.clear"), self.highBitPayload(opt_ty.?, a) },
+            .flag => .{
+                c.LLVMBuildExtractValue(self.e.builder, a, 1, "oc.has"),
+                c.LLVMBuildExtractValue(self.e.builder, a, 0, "oc.val"),
+            },
+        };
         const uw_ty = c.LLVMTypeOf(unwrapped);
         if (uw_ty != c.LLVMTypeOf(b_val)) b_val = self.e.coerceArg(b_val, uw_ty);
         self.e.mapRef(c.LLVMBuildSelect(self.e.builder, has, unwrapped, b_val, "oc.sel"));
@@ -2817,8 +2862,7 @@ pub const Ops = struct {
             // Typed LOAD through the view's data pointer (word 0).
             const raw = c.LLVMBuildExtractValue(self.e.builder, any_val, 0, "ua.raw");
             const ptr = c.LLVMBuildIntToPtr(self.e.builder, raw, self.e.cached_ptr, "ua.ptr");
-            const target_ty = self.e.toLLVMType(instruction.ty);
-            self.e.mapRef(c.LLVMBuildLoad2(self.e.builder, target_ty, ptr, "ua.load"));
+            self.e.mapRef(self.buildLoad(instruction.ty, ptr, "ua.load", false));
         } else {
             self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
         }

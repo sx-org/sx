@@ -306,7 +306,7 @@ fn bindConditionPayload(self: *Lowering, cond: LoweredCondition, name: []const u
 
 fn contextualArmType(self: *Lowering, inferred: TypeId) TypeId {
     // A cast converts the merged value; its operand keeps its inferred type.
-    if (self.suppress_int_fit_check) return inferred;
+    if (self.cast_operand != null) return inferred;
     const target = self.target_type orelse return inferred;
     if (self.isIntEx(inferred)) if (self.integerContext(target)) |ty| return ty;
     if (Lowering.isFloat(inferred)) if (self.floatContext(target)) |ty| return ty;
@@ -316,7 +316,8 @@ fn contextualArmType(self: *Lowering, inferred: TypeId) TypeId {
     return inferred;
 }
 
-pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.TailDemand) Ref {
+pub fn lowerIfExpr(self: *Lowering, node: *const Node, demand: lower_stmt.TailDemand) Ref {
+    const ie = &node.data.if_expr;
     // A PURE-failable body's tail `if` yields nothing: each live arm is its own
     // demanded tail, an error arm takes the function's exit where it stands,
     // and the merge carries no value for an arm's type to decide.
@@ -359,7 +360,7 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.Ta
         if (is_true) {
             // Condition always true: only lower then-branch
             if (!error_only and (ie.is_inline or self.force_block_value) and ie.else_branch != null) {
-                return self.lowerExpr(ie.then_branch);
+                return self.lowerReachedOperand(node, ie.then_branch);
             }
             lowerArmBody(self, ie.then_branch, demand);
             // If then-branch terminated (return/break), mark block as dead
@@ -372,7 +373,7 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.Ta
             // Condition always false: only lower else-branch (if any)
             if (ie.else_branch) |eb| {
                 if (!error_only and (ie.is_inline or self.force_block_value)) {
-                    return self.lowerExpr(eb);
+                    return self.lowerReachedOperand(node, eb);
                 }
                 lowerArmBody(self, eb, demand);
                 if (self.currentBlockHasTerminator()) {
@@ -413,14 +414,15 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.Ta
         } else if (has_else and !else_div and t != .void and t != .unresolved and t != .noreturn) {
             const et = self.inferExprType(ie.else_branch.?);
             if (et != .void and et != .unresolved and et != .noreturn) {
-                if (self.unifyValueArmTypes(t, et)) |joined| t = joined;
+                if (self.meetValueArms(ie.then_branch, t, ie.else_branch.?, et)) |joined| t = joined;
             }
         }
         // Live arm not statically inferable AND not a plain `.unresolved`
         // literal we can pin from context (`null`/bare enum): use the
         // contextually expected type. Genuine `.unresolved` (block-local tail)
-        // stays unresolved and is resolved post-lowering.
-        if (t == .unresolved) {
+        // stays unresolved and is resolved post-lowering. A cast's destination
+        // is no context for it.
+        if (t == .unresolved and self.cast_reached != node) {
             if (self.target_type) |tt| t = tt;
         }
         t = contextualArmType(self, t);
@@ -523,7 +525,7 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.Ta
     var merged: ?std.ArrayList(BindingId) = null;
     self.applyNarrowing(present_true.items);
     if (is_value) {
-        var v = self.lowerExpr(ie.then_branch);
+        var v = if (result_type == .unresolved) self.lowerReachedOperand(node, ie.then_branch) else self.lowerExpr(ie.then_branch);
         // A value-position arm that DIVERGES (its value is `noreturn`, e.g. a
         // trailing `process.exit(...)`) must terminate its block, NOT branch a
         // coerced-noreturn `<badref>` into the merge phi (LLVM verify failure).
@@ -560,7 +562,7 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.Ta
         self.builder.switchToBlock(else_bb.?);
         self.applyNarrowing(present_false.items);
         if (is_value) {
-            var v = self.lowerExpr(ie.else_branch.?);
+            var v = if (result_type == .unresolved) self.lowerReachedOperand(node, ie.else_branch.?) else self.lowerExpr(ie.else_branch.?);
             // Diverging value-position arm terminates rather than feeding a
             // `<badref>` to the merge phi (see the then-arm note above).
             if (!self.currentBlockHasTerminator() and self.builder.getRefType(v) == .noreturn) {
@@ -1242,9 +1244,10 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
 }
 
 /// The value a type-switch category arm binds: the widened reading every tag
-/// in the set shares — `signed`/`unsigned` an i64, `float` an f64, `pointer` a
-/// `*void`. A category whose members have no common scalar reading binds the
-/// subject's own view, so the arm reads it through the reflection builtins.
+/// in the set shares — `signed` an i64, `unsigned` a u64, `float` an f64,
+/// `pointer` a `*void`. A category whose members have no common scalar reading
+/// binds the subject's own view, so the arm reads it through the reflection
+/// builtins.
 fn categoryCapture(self: *Lowering, pat: *const Node, subject: Ref, tags: []const u64) struct { ref: Ref, ty: TypeId } {
     const name: []const u8 = switch (pat.data) {
         .identifier => |id| id.name,
@@ -1252,8 +1255,9 @@ fn categoryCapture(self: *Lowering, pat: *const Node, subject: Ref, tags: []cons
         else => "",
     };
     if (std.mem.eql(u8, name, "signed") or std.mem.eql(u8, name, "unsigned")) {
+        const word: TypeId = if (std.mem.eql(u8, name, "signed")) .i64 else .u64;
         const args = self.alloc.dupe(Ref, &.{subject}) catch unreachable;
-        return .{ .ref = self.builder.callBuiltin(.read_integer, args, .i64), .ty = .i64 };
+        return .{ .ref = self.builder.callBuiltin(.read_integer, args, word), .ty = word };
     }
     if (std.mem.eql(u8, name, "float")) {
         return .{ .ref = self.widenAnyToF64(subject, tags), .ty = .f64 };

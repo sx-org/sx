@@ -279,8 +279,8 @@ JsonWriter :: struct {
             } else if c < ' ' {
                 self.out.write(s[run..i]);
                 u : [6]u8 = .['\\', 'u', '0', '0',
-                              encoding.hexDigit((c.(i64) >> 4) & 0xF),
-                              encoding.hexDigit(c.(i64) & 0xF)];
+                              encoding.hexDigit((c >> 4) & 0xF),
+                              encoding.hexDigit(c & 0xF)];
                 self.out.write(u[..]);
             } else {
                 i += 1;
@@ -517,7 +517,7 @@ JsonParser :: struct {
             while self.pos < self.src.len {
                 c := self.src[self.pos];
                 if c < '0' or c > '9' { break; }
-                if sig.push((c.(i64)) - '0') { exp10 -= 1; }
+                if sig.push(c - '0') { exp10 -= 1; }
                 fdigits += 1;
                 self.pos += 1;
             }
@@ -539,7 +539,7 @@ JsonParser :: struct {
             while self.pos < self.src.len {
                 c := self.src[self.pos];
                 if c < '0' or c > '9' { break; }
-                if ev <= EXP_LIMIT { ev = ev * 10 + ((c.(i64)) - '0'); }
+                if ev <= EXP_LIMIT { ev = ev * 10 + (c - '0'); }
                 self.pos += 1;
             }
             if eneg { ev = 0 - ev; }

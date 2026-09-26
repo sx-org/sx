@@ -5,18 +5,19 @@
 @import "modules/std/list.sx";
 @import "modules/std/fs.sx";
 @import "modules/std/compress.sx";
+@import "modules/std/encoding.sx";
 @import "modules/std/internal/compress.sx";
 zipContracts :: @import "modules/std/codecs/zip_contracts.sx";
 time :: @import "modules/std/time.sx";
 
 private le16 :: (data: string, at: i64) -> (i64, !Error) {
     if at < 0 or at + 2 > data.len { raise .UnexpectedEnd; }
-    data[at].(i64) | (data[at + 1].(i64) << 8)
+    encoding.readU16Le(data, at)
 }
 
 private le32 :: (data: string, at: i64) -> (i64, !Error) {
     if at < 0 or at + 4 > data.len { raise .UnexpectedEnd; }
-    data[at].(i64) | (data[at + 1].(i64) << 8) | (data[at + 2].(i64) << 16) | (data[at + 3].(i64) << 24)
+    encoding.readU32Le(data, at)
 }
 
 private le64 :: (data: string, at: i64) -> (i64, !Error) {

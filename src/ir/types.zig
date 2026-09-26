@@ -85,6 +85,11 @@ pub const IntLayout = struct {
         return if (self.signed) @bitCast(@as(i64, @bitCast(low)) >> shift) else low >> shift;
     }
 
+    /// How `raw` sits in storage: its low `width` bits, every spare bit clear.
+    pub fn storageWord(self: IntLayout, raw: u64) u64 {
+        return (IntLayout{ .width = self.width, .signed = false }).normalize(raw);
+    }
+
     /// The layout's `.min`/`.max` as a raw two's-complement `i64` bit pattern.
     /// `u64.max` (18446744073709551615) exceeds `i64`, so it comes back as the
     /// all-ones pattern (`-1`); the caller pairs it with the unsigned `TypeId`
@@ -124,6 +129,17 @@ pub const IntLayout = struct {
     pub fn format(self: IntLayout, writer: *std.Io.Writer) std.Io.Writer.Error!void {
         try writer.print("@int({d}, .{s})", .{ self.width, if (self.signed) "signed" else "unsigned" });
     }
+};
+
+/// How `?child` marks null.
+pub const OptionalShape = enum(u8) {
+    /// `{ child, i1 }`: a has_value byte follows the payload.
+    flag,
+    /// The child's own leading pointer word is null.
+    pointer_word,
+    /// An integer narrower than its storage word: a present word holds the
+    /// payload's bits with every spare bit clear, and null sets its high bit.
+    high_bit,
 };
 
 /// The reserved integer spellings and the layout each names.
@@ -1568,27 +1584,39 @@ pub const TypeTable = struct {
             (@as(i64, @intCast(lw.offset)) << 16);
     }
 
-    /// True when `?child` needs no separate has_value flag: its null state is
-    /// the child's own leading pointer word.
-    pub fn optionalIsSentinel(self: *const TypeTable, child: TypeId) bool {
-        if (child.index() >= self.infos.items.len) return false;
+    pub fn optionalShape(self: *const TypeTable, child: TypeId) OptionalShape {
+        if (child.index() >= self.infos.items.len) return .flag;
         return switch (self.get(child)) {
-            .pointer, .many_pointer, .function, .closure, .slice => true,
-            .@"struct" => |s| s.is_protocol,
-            else => false,
+            .pointer, .many_pointer, .function, .closure, .slice => .pointer_word,
+            .@"struct" => |s| if (s.is_protocol) .pointer_word else .flag,
+            .signed, .unsigned => |w| if (w < intAbiBytes(w) * 8) .high_bit else .flag,
+            else => .flag,
         };
     }
 
-    /// Byte offset of an optional's has_value flag, or -1 when its null state
-    /// is the leading pointer word. Feeds the `__sx_optional_flags` runtime
-    /// table, which `@inner` probes; -1 for a non-optional kind.
-    pub fn optionalFlagOffset(self: *const TypeTable, id: TypeId) i64 {
-        if (id.index() >= self.infos.items.len) return -1;
+    /// The storage word of a null `.high_bit` optional over `child`: the high
+    /// bit alone.
+    pub fn optionalNullWord(self: *const TypeTable, child: TypeId) u64 {
+        return @as(u64, 1) << @intCast(self.typeSizeBytes(child) * 8 - 1);
+    }
+
+    /// How `@inner` reads presence out of a boxed `id`, packed into one row:
+    /// bits 0..7 the `OptionalShape` code, bits 8..31 the byte offset of the
+    /// byte it reads — the has_value flag, or the storage word's high byte.
+    /// Null for a non-optional kind. Feeds the `__sx_optional_probes` runtime
+    /// table.
+    pub fn optionalProbe(self: *const TypeTable, id: TypeId) ?i64 {
+        if (id.index() >= self.infos.items.len) return null;
         const info = self.get(id);
-        if (info != .optional) return -1;
+        if (info != .optional) return null;
         const child = info.optional.child;
-        if (self.optionalIsSentinel(child)) return -1;
-        return @intCast(self.typeSizeBytes(child));
+        const shape = self.optionalShape(child);
+        const offset: usize = switch (shape) {
+            .flag => self.typeSizeBytes(child),
+            .pointer_word => 0,
+            .high_bit => self.typeSizeBytes(child) - 1,
+        };
+        return @as(i64, @intFromEnum(shape)) | (@as(i64, @intCast(offset)) << 8);
     }
 
     pub fn arrayOf(self: *TypeTable, element: TypeId, length: u32) TypeId {
@@ -1908,16 +1936,18 @@ pub const TypeTable = struct {
         return self.errorSetType(self.internString(dyn_channel_spelling), &.{});
     }
 
-    /// Whether a default value of `id` writes a non-zero terminator anywhere:
-    /// a `[N:X]T` with a non-zero X, directly or under an element or a field.
-    /// Zeroed storage IS the default value of every other type.
-    pub fn writesTerminator(self: *const TypeTable, id: TypeId) bool {
+    /// Whether a default value of `id` holds a non-zero byte: the terminator
+    /// of a `[N:X]T` with a non-zero X, or the null of a `.high_bit` optional,
+    /// directly or under an element or a field. Zeroed storage IS the default
+    /// value of every other type.
+    pub fn defaultIsNonZero(self: *const TypeTable, id: TypeId) bool {
         if (id.isBuiltin()) return false;
         return switch (self.get(id)) {
-            .array => |a| (a.sentinel orelse 0) != 0 or self.writesTerminator(a.element),
+            .array => |a| (a.sentinel orelse 0) != 0 or self.defaultIsNonZero(a.element),
             .@"struct" => |st| for (st.fields) |f| {
-                if (self.writesTerminator(f.ty)) break true;
+                if (self.defaultIsNonZero(f.ty)) break true;
             } else false,
+            .optional => |o| self.optionalShape(o.child) == .high_bit,
             else => false,
         };
     }
@@ -1934,10 +1964,10 @@ pub const TypeTable = struct {
             .f64 => 8,
             .pointer, .many_pointer, .function => 8,
             .closure => 16, // {fnPtr, env}
-            .optional => |opt| blk: {
-                if (self.optionalIsSentinel(opt.child)) break :blk self.sizeOf(opt.child);
+            .optional => |opt| switch (self.optionalShape(opt.child)) {
                 // Discriminated form: payload + has_value flag (8-aligned).
-                break :blk self.sizeOf(opt.child) + 8;
+                .flag => self.sizeOf(opt.child) + 8,
+                .pointer_word, .high_bit => self.sizeOf(opt.child),
             },
             .slice => 16, // {ptr, len} — both words round up to 8 in this model
             .array => |arr| arr.storageLen() * self.sizeOf(arr.element),
@@ -2040,7 +2070,7 @@ pub const TypeTable = struct {
             },
             .closure => 2 * ptr_size, // {fnPtr, env_ptr}
             .optional => |o| blk: {
-                if (self.optionalIsSentinel(o.child)) break :blk self.typeSizeBytes(o.child);
+                if (self.optionalShape(o.child) != .flag) break :blk self.typeSizeBytes(o.child);
                 const cs = self.typeSizeBytes(o.child);
                 const ca = self.typeAlignBytes(o.child);
                 // { T, i1 } — i1 goes right after T, then pad to struct alignment

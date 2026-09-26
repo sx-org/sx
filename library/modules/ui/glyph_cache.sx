@@ -255,7 +255,7 @@ GlyphCache :: struct {
         // Allocate atlas bitmap
         self.atlasWidth = GLYPH_ATLAS_W;
         self.atlasHeight = GLYPH_ATLAS_H;
-        bitmapSize : i64 = (self.atlasWidth * self.atlasHeight).(i64);
+        bitmapSize : i64 = self.atlasWidth * self.atlasHeight;
         self.bitmap = self.parentAllocator.allocBytes(bitmapSize);
         c.memset(self.bitmap, 0, bitmapSize);
 
@@ -311,7 +311,7 @@ GlyphCache :: struct {
 
         // Hash table lookup (open addressing, linear probing)
         mask := self.hashCap - 1;
-        slot : i64 = (((key * 2654435761) >> 24) & mask).(i64);
+        slot : i64 = ((key * 2654435761) >> 24) & mask;
         while self.hashKeys[slot] != 0 {
             if self.hashKeys[slot] == key {
                 return *self.entries.items[self.hashVals[slot]].glyph;
@@ -364,7 +364,7 @@ GlyphCache :: struct {
         }
 
         // Rasterize directly into atlas bitmap
-        destOffset : i64 = (pack.y * self.atlasWidth + pack.x).(i64);
+        destOffset : i64 = pack.y * self.atlasWidth + pack.x;
         stbtt_MakeGlyphBitmap(
             self.fontInfo,
             *self.bitmap[destOffset],
@@ -405,7 +405,7 @@ GlyphCache :: struct {
             self.hashGrow();
         }
         mask := self.hashCap - 1;
-        slot : i64 = (((key * 2654435761) >> 24) & mask).(i64);
+        slot : i64 = ((key * 2654435761) >> 24) & mask;
         while self.hashKeys[slot] != 0 {
             slot = (slot + 1) & mask;
         }
@@ -432,7 +432,7 @@ GlyphCache :: struct {
         while i < oldCap {
             k := oldKeys[i];
             if k != 0 {
-                slot : i64 = (((k * 2654435761) >> 24) & mask).(i64);
+                slot : i64 = ((k * 2654435761) >> 24) & mask;
                 while self.hashKeys[slot] != 0 {
                     slot = (slot + 1) & mask;
                 }
@@ -503,15 +503,15 @@ GlyphCache :: struct {
     grow :: (self: *GlyphCache) {
         newW := self.atlasWidth * 2;
         newH := self.atlasHeight * 2;
-        newSize : i64 = (newW * newH).(i64);
+        newSize : i64 = newW * newH;
         newBitmap : [*]u8 = (self.parentAllocator.allocBytes(newSize)).([*]u8);
         c.memset(newBitmap, 0, newSize);
 
         // Copy old rows into new bitmap
         y : i32 = 0;
         while y < self.atlasHeight {
-            oldOff : i64 = (y * self.atlasWidth).(i64);
-            newOff : i64 = (y * newW).(i64);
+            oldOff : i64 = y * self.atlasWidth;
+            newOff : i64 = y * newW;
             c.memcpy(*newBitmap[newOff], *self.bitmap[oldOff], self.atlasWidth);
             y += 1;
         }

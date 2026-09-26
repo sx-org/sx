@@ -972,7 +972,7 @@ impl Platform for UIKitPlatform {
 // process monotonic clock.
 uikitPointer :: (pos: Point) -> PointerEvent {
     PointerEvent{
-        header = .{ timeNs = time.monoNs().(u64) },
+        header = .{ timeNs = time.monoNs() },
         kind = .touch,
         position = pos,
     }
@@ -981,7 +981,7 @@ uikitPointer :: (pos: Point) -> PointerEvent {
 // dlsym(RTLD_DEFAULT, name) — Apple platforms. RTLD_DEFAULT is (void*)-2.
 // abi(.c) so this is callable from `loadGl`'s C-conv proc-loader slot.
 iosGlProc :: (name: [*:0]u8) -> *void abi(.c) {
-    rtldDefault : *void = @reinterpret(*void, (0 - 2).(usize));
+    rtldDefault : *void = @reinterpret(*void, 0 - 2);
     dlsym(rtldDefault, name)
 }
 
@@ -989,7 +989,7 @@ iosGlProc :: (name: [*:0]u8) -> *void abi(.c) {
 // extern variable holds a pointer to the NSString instance — dlsym returns
 // the address of that variable, which we dereference.
 uikitExternNsstring :: (name: [*]u8) -> *void {
-    rtldDefault : *void = @reinterpret(*void, (0 - 2).(usize));
+    rtldDefault : *void = @reinterpret(*void, 0 - 2);
     p := dlsym(rtldDefault, name);
     if p == null { return null; }
     pp : **void = p.(**void);

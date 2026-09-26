@@ -34,7 +34,7 @@ process :: scope {
         while true {
             n := fread(*buf[0], 1, 4096, f);
             if n == 0 { break; }
-            sb.write(buf[0 .. n.(i64)]);
+            sb.write(buf[0 .. n]);
         }
         out := sb.finish();
         rawStatus := pclose(f);

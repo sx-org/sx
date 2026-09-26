@@ -1,0 +1,13 @@
+// A cast truncates an untyped constant operand. An untyped literal inside a
+// typed operand takes its peer's type and must fit it.
+
+@import "modules/std.sx";
+
+main :: () -> i32 {
+    v : u8 = 5;
+    o : ?i8 = null;
+    c := false;
+    print("{}\n", (if c then v else 300).(i64));
+    print("{}\n", (o ?? 300).(i64));
+    return 0;
+}

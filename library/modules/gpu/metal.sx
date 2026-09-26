@@ -281,22 +281,19 @@ MetalGPU :: struct {
     // Handle → retained object lookups shared by the buffer/shader paths.
     lookupBuffer :: (self: *MetalGPU, handle: u32) -> *MTLBuffer {
         if handle == 0 { return null; }
-        h64 : i64 = handle.(i64);
-        if h64 > self.buffers.len { return null; }
+        if handle > self.buffers.len { return null; }
         self.buffers.items[handle - 1]
     }
 
     lookupIndex :: (self: *MetalGPU, handle: u32) -> *MTLBuffer {
         if handle == 0 { return null; }
-        h64 : i64 = handle.(i64);
-        if h64 > self.indices.len { return null; }
+        if handle > self.indices.len { return null; }
         self.indices.items[handle - 1]
     }
 
     lookupShader :: (self: *MetalGPU, handle: u32) -> *MTLRenderPipelineState {
         if handle == 0 { return null; }
-        h64 : i64 = handle.(i64);
-        if h64 > self.shaders.len { return null; }
+        if handle > self.shaders.len { return null; }
         self.shaders.items[handle - 1]
     }
 
@@ -666,8 +663,8 @@ impl GPU for MetalGPU {
         if base == null { return; }
         // Add byteOffset via integer arithmetic. `@dst[i]` on `[*]u8` does
         // the same thing; the explicit form keeps the arithmetic visible.
-        baseI : i64 = @reinterpret(isize, base).(i64);
-        dstAt : *void = @reinterpret(*void, (baseI + byteOffset).(usize));
+        baseI : i64 = @reinterpret(isize, base);
+        dstAt : *void = @reinterpret(*void, baseI + byteOffset);
         c.memcpy(dstAt, data, sizeBytes);
     }
 
@@ -711,8 +708,7 @@ impl GPU for MetalGPU {
 
     updateTextureRegion :: (self: *MetalGPU, tex: TextureHandle, x: i32, y: i32, w: i32, h: i32, pixels: *void) {
         if tex == 0 { return; }
-        h64 : i64 = tex.(i64);
-        if h64 > self.textures.len { return; }
+        if tex > self.textures.len { return; }
         slot := self.textures.items[tex - 1];
         if slot.tex == null { return; }
         if pixels == null { return; }
@@ -723,7 +719,7 @@ impl GPU for MetalGPU {
             origin = .{ x = x.(u64), y = y.(u64), z = 0 },
             size   = .{ width = w.(u64), height = h.(u64), depth = 1 },
         };
-        bytesPerRow : u64 = (slot.bytesPerPixel * w.(u32)).(u64);
+        bytesPerRow : u64 = slot.bytesPerPixel * w.(u32);
         slot.tex.replaceRegion_mipmapLevel_withBytes_bytesPerRow(region, 0, pixels, bytesPerRow);
     }
 
@@ -737,8 +733,7 @@ impl GPU for MetalGPU {
 
     destroyShader :: (self: *MetalGPU, sh: ShaderHandle) {
         if sh == 0 { return; }
-        h64 : i64 = sh.(i64);
-        if h64 > self.shaders.len { return; }
+        if sh > self.shaders.len { return; }
         obj := self.shaders.items[sh - 1];
         if obj == null { return; }
         obj.release();
@@ -747,8 +742,7 @@ impl GPU for MetalGPU {
 
     destroyBuffer :: (self: *MetalGPU, buf: BufferHandle) {
         if buf == 0 { return; }
-        h64 : i64 = buf.(i64);
-        if h64 > self.buffers.len { return; }
+        if buf > self.buffers.len { return; }
         obj := self.buffers.items[buf - 1];
         if obj == null { return; }
         obj.release();
@@ -757,8 +751,7 @@ impl GPU for MetalGPU {
 
     destroyIndexBuffer :: (self: *MetalGPU, buf: IndexHandle) {
         if buf == 0 { return; }
-        h64 : i64 = buf.(i64);
-        if h64 > self.indices.len { return; }
+        if buf > self.indices.len { return; }
         obj := self.indices.items[buf - 1];
         if obj == null { return; }
         if self.boundIndex == obj { self.boundIndex = null; }
@@ -768,8 +761,7 @@ impl GPU for MetalGPU {
 
     destroyTexture :: (self: *MetalGPU, tex: TextureHandle) {
         if tex == 0 { return; }
-        h64 : i64 = tex.(i64);
-        if h64 > self.textures.len { return; }
+        if tex > self.textures.len { return; }
         obj := self.textures.items[tex - 1].tex;
         if obj == null { return; }
         obj.release();
@@ -802,8 +794,7 @@ impl GPU for MetalGPU {
     setTexture :: (self: *MetalGPU, slot: u32, tex: TextureHandle) {
         if self.encoder == null { return; }
         if tex == 0 { return; }
-        h64 : i64 = tex.(i64);
-        if h64 > self.textures.len { return; }
+        if tex > self.textures.len { return; }
         mtex := self.textures.items[tex - 1].tex;
         if mtex == null { return; }
         self.encoder.setFragmentTexture_atIndex(mtex, slot);
@@ -847,7 +838,7 @@ impl GPU for MetalGPU {
         if data == null { return; }
         if count < 0 { return; }
         if count > GPU_MAX_BONES { return; }
-        n : i64 = count.(i64);
+        n : i64 = count;
         c.memcpy(*self.bonePalette[0], data, n * @sizeOf(BoneMatrix));
         self.boneCount = count;
     }
@@ -877,7 +868,7 @@ impl GPU for MetalGPU {
         if indexOffset < 0 { return; }
         if self.boneCount <= 0 { return; }
 
-        n : i64 = self.boneCount.(i64);
+        n : i64 = self.boneCount;
         self.encoder.setVertexBytes_length_atIndex(
             *self.bonePalette[0], (n * @sizeOf(BoneMatrix)).(u64), 8);
 

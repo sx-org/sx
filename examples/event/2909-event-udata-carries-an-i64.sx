@@ -1,0 +1,20 @@
+// A registration's udata is an i64 and comes back with its sign.
+@import "modules/std.sx";
+
+main :: () -> i32 {
+    pair : [2]i32 = ---;
+    if socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM, 0, *pair[0]) != 0 { return 1; }
+    loop, ie := event.Loop.init();
+    if ie { return 1; }
+    slot : i64 = -2;
+    are := false;
+    loop.addRead(pair[0], slot) catch { are = true; };
+    if are { return 1; }
+    socket.write(pair[1], "x".ptr, 1);
+    evs : [4]event.Event = ---;
+    n, we := loop.wait(.{ ptr = *evs[0], len = 4 }, 1000);
+    if we or n != 1 { return 1; }
+    print("{}\n", evs[0].udata);
+    loop.close();
+    return 0;
+}

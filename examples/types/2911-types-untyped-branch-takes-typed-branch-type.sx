@@ -1,0 +1,15 @@
+// An untyped branch takes its typed peer branch's type; with no typed branch
+// the untyped default applies.
+
+@import "modules/std.sx";
+
+main :: () {
+    v : u8 = 5;
+    f : f32 = 0.5;
+    c := true;
+    x := if c then v else 0;
+    m := match c { case true: 0; else: v };
+    g := if c then f else 2.5;
+    d := if c then 1 else 2;
+    print("{} {} {} {}\n", @typeName(@typeOf(x)), @typeName(@typeOf(m)), @typeName(@typeOf(g)), @typeName(@typeOf(d)));
+}

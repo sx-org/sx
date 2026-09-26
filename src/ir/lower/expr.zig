@@ -1191,7 +1191,7 @@ pub fn fixupMethodReceiver(self: *Lowering, method_args: *std.ArrayList(Ref), fu
                     if (binding.is_alloca) {
                         const binding_info = self.module.types.get(binding.ty);
                         method_args.items[0] = if (binding_info == .optional and
-                            binding_info.optional.child == obj_ty and !self.module.types.optionalIsSentinel(obj_ty))
+                            binding_info.optional.child == obj_ty and self.module.types.optionalShape(obj_ty) == .flag)
                             self.builder.structGepTyped(binding.ref, 0, self.module.types.ptrTo(obj_ty), binding.ty)
                         else
                             receiverPointer(self, binding.ref, obj_ty);
@@ -2992,17 +2992,19 @@ pub fn resolveArrayLiteralType(self: *Lowering, te: *const Node) TypeId {
 }
 
 /// Lower a subscript's INDEX operand. An index is an integer position, never a
-/// value of the indexed expression's target type, so the ambient `target_type`
-/// must not steer it: under an `f32` target (`v : f32 = s[0];`, a `-> f32`
-/// body) the literal `0` lowered as the float constant `0.0` and reached the
-/// backend as `getelementptr float, ptr %d, float 0.0` — "GEP indexes must be
-/// integers" from the LLVM verifier, with no source location.
-/// Pin the target to `i64` for the operand and restore the caller's.
+/// value of the indexed expression's target type, so the operand lowers under an
+/// `i64` target whatever the caller's (`v : f32 = s[0];` indexes with the
+/// integer `0`). An unsigned index narrower than a pointer widens to `i64`,
+/// since LLVM sign-extends a GEP index to the pointer's width.
 pub fn lowerIndexOperand(self: *Lowering, index_node: *const ast.Node) Ref {
     const saved_tt = self.target_type;
     self.target_type = .i64;
     defer self.target_type = saved_tt;
-    return self.lowerExpr(index_node);
+    const idx = self.lowerExpr(index_node);
+    const ty = self.builder.getRefType(idx);
+    const layout = self.module.types.integerLayout(ty) orelse return idx;
+    if (layout.signed or layout.width >= self.module.types.pointer_size * 8) return idx;
+    return self.coerceToType(idx, ty, .i64);
 }
 
 pub fn lowerIndexExpr(self: *Lowering, ie: *const ast.IndexExpr) Ref {
@@ -3767,6 +3769,18 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
     return result;
 }
 
+fn lowerCastOperand(self: *Lowering, operand: *const Node) Ref {
+    const saved = self.cast_operand;
+    const saved_reached = self.cast_reached;
+    defer {
+        self.cast_operand = saved;
+        self.cast_reached = saved_reached;
+    }
+    self.cast_operand = if (program_index_mod.untypedConst(operand, self) != null) .untyped else .typed;
+    self.cast_reached = if (self.cast_operand == .typed) operand else null;
+    return self.lowerExpr(operand);
+}
+
 fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
     if (program_index_mod.untypedConst(node, self)) |untyped| switch (untyped) {
         .float => {
@@ -4184,7 +4198,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
             break :blk self.emitError(id.name, node.span);
         },
 
-        .binary_op => |bop| self.lowerBinaryOp(&bop),
+        .binary_op => self.lowerBinaryOp(node),
 
         .unary_op => |uop| blk: {
             // `xx <pack>` with a slice target materializes the comptime
@@ -4303,12 +4317,11 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                 if (!self.isIntEx(ty)) break :blk self.diagDecrementNonInteger(ty, node.span);
                 break :blk self.lowerPlaceRmw(place, .sub_assign, self.builder.constInt(1, ty));
             }
-            // An explicit `xx` cast requests the conversion, truncation
-            // included — literal operands skip the fits-check.
-            const saved_fit = self.suppress_int_fit_check;
-            if (uop.op == .xx) self.suppress_int_fit_check = true;
-            const operand = self.lowerExpr(uop.operand);
-            self.suppress_int_fit_check = saved_fit;
+            const operand = switch (uop.op) {
+                .xx => lowerCastOperand(self, uop.operand),
+                .negate, .bit_not => self.lowerReachedOperand(node, uop.operand),
+                else => self.lowerExpr(uop.operand),
+            };
             break :blk switch (uop.op) {
                 .negate => blk2: {
                     const value = self.unwrapOptionalOperand(operand, self.builder.getRefType(operand), uop.operand.span) orelse operand;
@@ -4347,7 +4360,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
             };
         },
 
-        .if_expr => |ie| self.lowerIfExpr(&ie, .value),
+        .if_expr => self.lowerIfExpr(node, .value),
         .match_expr => |me| self.lowerMatch(&me, .value),
         .while_expr => |we| self.lowerWhile(&we),
         .for_expr => |fe| self.lowerFor(&fe),
@@ -4596,13 +4609,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
             const saved_target = self.target_type;
             self.target_type = dst;
             defer self.target_type = saved_target;
-            // An explicit cast requests the conversion, truncation
-            // included — literal operands skip the fits-check (same
-            // stance as the `xx` unary arm).
-            const saved_fit = self.suppress_int_fit_check;
-            self.suppress_int_fit_check = true;
-            const operand = self.lowerExpr(pc.operand);
-            self.suppress_int_fit_check = saved_fit;
+            const operand = lowerCastOperand(self, pc.operand);
             const saved_postfix = self.xx_is_postfix;
             self.xx_is_postfix = true;
             defer self.xx_is_postfix = saved_postfix;
@@ -4662,6 +4669,9 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                 // a phi'd value instead of being demoted to a statement whose
                 // result is dropped. Mirrors `lowerBlockValue`.
                 self.force_block_value = true;
+                const tail = blk.stmts[blk.stmts.len - 1];
+                const saved_target = self.saveTarget();
+                self.reachOperand(node, tail);
                 // The last statement may itself terminate the block (a trailing
                 // `return`/`break`/`continue` statement — e.g. an `if`-arm
                 // `{ return -1; }` in value position). In that case there is no
@@ -4670,8 +4680,9 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                 // producing invalid "terminator in the middle of a block" IR.
                 // Return `Ref.none` — the caller detects the
                 // termination via `currentBlockHasTerminator()` and never reads it.
-                const last_val = self.tryLowerAsExpr(blk.stmts[blk.stmts.len - 1]) orelse
+                const last_val = self.tryLowerAsExpr(tail) orelse
                     (if (self.currentBlockHasTerminator()) Ref.none else self.builder.constInt(0, .void));
+                saved_target.restore();
                 self.force_block_value = saved_fbv;
                 break :blk last_val;
             }
@@ -5336,7 +5347,8 @@ pub fn conformanceAsk(self: *Lowering, tag: Ref, contract: TypeId) Ref {
     } }, .bool);
 }
 
-pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
+pub fn lowerBinaryOp(self: *Lowering, node: *const Node) Ref {
+    const bop = &node.data.binary_op;
     // `is` reads its RHS as a TYPE, so it is answered before either operand is
     // lowered as a value.
     if (bop.op == .is_op) return self.lowerIs(bop);
@@ -5376,11 +5388,12 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         .eq, .neq, .lt, .lte, .gt, .gte => true,
         else => false,
     };
-    const ambient_tt = self.target_type;
-    if (comparison) self.target_type = null;
-    defer if (comparison) {
-        self.target_type = ambient_tt;
-    };
+    const ambient = self.saveTarget();
+    if (comparison) {
+        self.target_type = null;
+        self.cast_reached = null;
+    }
+    defer if (comparison) ambient.restore();
 
     // Type-literal comparison fold: when both sides are type-shaped
     // AST nodes (`i64`, `*u8`, `?T`, `[3]f64`, etc.) OR resolve to
@@ -5482,11 +5495,12 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     const untyped_ty = untypedOperationType(self, bop);
     const shift = bop.op == .shl or bop.op == .shr;
     const lhs_adopted = self.untypedOperandType(bop.op, bop.lhs, bop.rhs) orelse untyped_ty orelse untypedBesideTyped(self, comparison, bop.lhs, self.inferExprType(bop.rhs));
-    const operand_tt = self.target_type;
+    const operand_target = self.saveTarget();
+    self.reachOperand(node, bop.lhs);
     if (self.isAdaptableFloat(bop.lhs)) self.target_type = float_operands.lhs;
     if (lhs_adopted) |ty| self.target_type = ty;
     var lhs = self.lowerExpr(bop.lhs);
-    self.target_type = operand_tt;
+    operand_target.restore();
     if (comparison) self.target_type = null;
     // A `for *x in xs` capture is a pointer; in a value position (here, an
     // operand) it auto-derefs to the element.
@@ -5503,24 +5517,19 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         break :blk if (it == .unresolved) self.builder.getRefType(lhs) else it;
     };
     const rhs_untyped = comparison and self.inferExprType(bop.rhs) == .unresolved;
-    const saved_tt = self.target_type;
-    if (lhs_ty != .void and lhs_ty != .unresolved) {
-        if (!lhs_ty.isBuiltin()) {
-            const lhs_info = self.module.types.get(lhs_ty);
-            if (lhs_info == .@"enum" or lhs_info == .@"union") {
-                self.target_type = lhs_ty;
-            } else if (lhs_info == .optional and (bop.op == .eq or bop.op == .neq)) {
-                // `?T == <rhs>`: type the RHS at the payload so a literal
-                // (numeric, enum shorthand, struct) lands on T directly —
-                // the mixed compare below needs the concrete side at T.
-                self.target_type = lhs_info.optional.child;
-            } else if (rhs_untyped) {
-                self.target_type = lhs_ty;
-            }
-        } else if (lhs_ty == .f32 or lhs_ty == .f64 or rhs_untyped) {
-            self.target_type = lhs_ty;
-        }
-    }
+    const saved_target = self.saveTarget();
+    const rhs_peer_tt: ?TypeId = peer: {
+        if (lhs_ty == .void or lhs_ty == .unresolved) break :peer null;
+        if (lhs_ty.isBuiltin()) break :peer if (lhs_ty == .f32 or lhs_ty == .f64 or rhs_untyped) lhs_ty else null;
+        const lhs_info = self.module.types.get(lhs_ty);
+        if (lhs_info == .@"enum" or lhs_info == .@"union") break :peer lhs_ty;
+        // `?T == <rhs>`: type the RHS at the payload so a literal
+        // (numeric, enum shorthand, struct) lands on T directly —
+        // the mixed compare below needs the concrete side at T.
+        if (lhs_info == .optional and (bop.op == .eq or bop.op == .neq)) break :peer lhs_info.optional.child;
+        break :peer if (rhs_untyped) lhs_ty else null;
+    };
+    if (rhs_peer_tt) |ty| self.target_type = ty else self.reachOperand(node, bop.rhs);
     // In a comparison, an anonymous positional literal on the RHS is typed
     // from the LHS just like an enum shorthand. This also keeps the following
     // `{` available as the if body.
@@ -5543,7 +5552,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     var rhs = self.lowerExpr(bop.rhs);
     const rhs_ref_pointee = self.refCapturePointee(bop.rhs);
     if (rhs_ref_pointee) |p| rhs = self.builder.load(rhs, p);
-    self.target_type = saved_tt;
+    saved_target.restore();
     const rhs_ty = blk: {
         if (rhs_ref_pointee) |p| break :blk p;
         if (rhs_adopted) |ty| break :blk ty;
@@ -5893,11 +5902,11 @@ fn lowerSequenceEquality(self: *Lowering, lhs: Ref, rhs: Ref, elem: TypeId, want
 pub fn lowerFieldEquality(self: *Lowering, lf: Ref, rf: Ref, field_ty: TypeId, span: ast.Span) ?Ref {
     if (sequenceElement(self, field_ty)) |elem| return lowerSequenceEquality(self, lf, rf, elem, true, span);
 
-    // Builtins (ints, floats, bool, pointers, enums-as-int, usize/isize): a
-    // plain `cmp_eq`. The LLVM emitter picks fcmp for a float operand and icmp
-    // otherwise off the operand's own type, so f32/f64 fields get the correct
-    // ordered-equal compare with no special-casing here.
-    if (field_ty.isBuiltin()) return self.builder.cmpEq(lf, rf);
+    // Builtins (ints, floats, bool, pointers, enums-as-int, usize/isize) and
+    // every `@int(N, ...)`: a plain `cmp_eq`. The LLVM emitter picks fcmp for a
+    // float operand and icmp otherwise off the operand's own type, so f32/f64
+    // fields get the correct ordered-equal compare with no special-casing here.
+    if (field_ty.isBuiltin() or self.module.types.isIntegerType(field_ty)) return self.builder.cmpEq(lf, rf);
 
     const fi = self.module.types.get(field_ty);
     return switch (fi) {

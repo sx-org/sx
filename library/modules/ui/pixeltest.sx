@@ -82,7 +82,7 @@ inkedRows :: (px: string, w: i64, y0: i64, y1: i64) -> bool {
     while y < y1 {
         x := 0;
         while x < w {
-            if px[(y * w + x) * 4].(i64) > 128 { return true; }
+            if px[(y * w + x) * 4] > 128 { return true; }
             x += 1;
         }
         y += 1;

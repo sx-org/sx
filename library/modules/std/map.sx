@@ -53,7 +53,13 @@ MIN_CAP        :: 8;
 // Fingerprint = top 7 bits of the 64-bit hash (the low log2(cap) bits go
 // to the bucket index, so the high bits carry independent entropy).
 mapFingerprint :: (h: u64) -> u8 {
-    ((h >> 57) & (0x7F.(u64))).(u8)
+    ((h >> 57) & 0x7F).(u8)
+}
+
+// The probe start in a table of `mask + 1` buckets: `mask` is non-negative, so
+// the slot is the hash's low bits.
+mapSlot :: (h: u64, mask: i64) -> i64 {
+    h.(i64) & mask
 }
 
 // Smallest power-of-two capacity whose 80% load still holds `n` entries.
@@ -190,7 +196,7 @@ HashMap :: struct ($K: Type, $V: Type) {
         h    := mapHashKey(key);
         fp   := mapFingerprint(h);
         mask := self.cap - 1;
-        idx  := (h & (mask.(u64))).(i64);
+        idx  := mapSlot(h, mask);
         while self.metadata[idx] != META_FREE { idx = (idx + 1) & mask; }
         self.metadata[idx] = META_USED_BIT | fp;
         self.keys[idx]     = key;
@@ -244,21 +250,21 @@ HashMap :: struct ($K: Type, $V: Type) {
         fp         := mapFingerprint(h);
         usedByte  := META_USED_BIT | fp;
         mask       := self.cap - 1;
-        idx        := (h & (mask.(u64))).(i64);
-        firstTomb : i64 = -1;
+        idx        := mapSlot(h, mask);
+        firstTomb : ?i64 = null;
         limit      := self.cap;
         while limit > 0 {
             m := self.metadata[idx];
             if m == META_FREE {
-                dst := if firstTomb >= 0 then firstTomb else idx;
-                if firstTomb >= 0 { self.tombstones -= 1; }   // recycled a tombstone
+                dst := firstTomb ?? idx;
+                if firstTomb != null { self.tombstones -= 1; }   // recycled a tombstone
                 self.metadata[dst] = usedByte;
                 self.keys[dst]     = key;
                 self.count += 1;
                 return .{ keyPtr = *self.keys[dst], valuePtr = *self.values[dst], foundExisting = false };
             }
             if m == META_TOMBSTONE {
-                if firstTomb < 0 { firstTomb = idx; }
+                if firstTomb == null { firstTomb = idx; }
             } else if m == usedByte {
                 if self.keys[idx] == key {
                     return .{ keyPtr = *self.keys[idx], valuePtr = *self.values[idx], foundExisting = true };
@@ -268,12 +274,12 @@ HashMap :: struct ($K: Type, $V: Type) {
             idx = (idx + 1) & mask;
         }
         // Full walk, key absent: a tombstone seen on the way is still reusable.
-        if firstTomb >= 0 {
-            self.metadata[firstTomb] = usedByte;
-            self.keys[firstTomb]     = key;
+        if t := firstTomb {
+            self.metadata[t] = usedByte;
+            self.keys[t]     = key;
             self.count += 1;
             self.tombstones -= 1;
-            return .{ keyPtr = *self.keys[firstTomb], valuePtr = *self.values[firstTomb], foundExisting = false };
+            return .{ keyPtr = *self.keys[t], valuePtr = *self.values[t], foundExisting = false };
         }
         // No free bucket and no tombstone across the whole table — impossible
         // at ≤ 80% load. Broken capacity accounting; fail loud, never corrupt.
@@ -323,65 +329,64 @@ HashMap :: struct ($K: Type, $V: Type) {
         return null;
     }
 
-    // Bucket index of `key`, or -1 if absent. Stops at a free bucket
+    // Bucket index of `key`, or null if absent. Stops at a free bucket
     // (proof the key was never inserted on this chain); skips tombstones.
-    findIndex :: (self: *HashMap(K, V), key: K) -> i64 {
-        if self.count == 0 { return -1; }
+    findIndex :: (self: *HashMap(K, V), key: K) -> ?i64 {
+        if self.count == 0 { return null; }
         h         := mapHashKey(key);
         fp        := mapFingerprint(h);
         usedByte := META_USED_BIT | fp;
         mask      := self.cap - 1;
-        idx       := (h & (mask.(u64))).(i64);
+        idx       := mapSlot(h, mask);
         limit     := self.cap;
         while limit > 0 {
             m := self.metadata[idx];
-            if m == META_FREE { return -1; }
+            if m == META_FREE { return null; }
             if m == usedByte {
                 if self.keys[idx] == key { return idx; }
             }
             limit -= 1;
             idx = (idx + 1) & mask;
         }
-        -1
+        null
     }
 
     get :: (self: *HashMap(K, V), key: K) -> ?V {
-        i := self.findIndex(key);
-        if i < 0 { return null; }
-        self.values[i]
+        if i := self.findIndex(key) { return self.values[i]; }
+        null
     }
 
     getPtr :: (self: *HashMap(K, V), key: K) -> ?*V {
-        i := self.findIndex(key);
-        if i < 0 { return null; }
-        *self.values[i]
+        if i := self.findIndex(key) { return *self.values[i]; }
+        null
     }
 
     contains :: (self: *HashMap(K, V), key: K) -> bool {
-        self.findIndex(key) >= 0
+        self.findIndex(key) != null
     }
 
     // Delete `key`. Returns true if it was present. Leaves a tombstone so
     // chains that cross this bucket still resolve; the slot is reclaimed on
     // the next colliding insert (or dropped entirely by a grow/rehash).
     remove :: (self: *HashMap(K, V), key: K, alloc: Allocator = context.allocator) -> bool {
-        i := self.findIndex(key);
-        if i < 0 { return false; }
-        self.metadata[i] = META_TOMBSTONE;
-        self.count -= 1;
-        self.tombstones += 1;
-        true
+        if i := self.findIndex(key) {
+            self.metadata[i] = META_TOMBSTONE;
+            self.count -= 1;
+            self.tombstones += 1;
+            return true;
+        }
+        false
     }
 
     // Remove `key`, returning its value if it was present (else null).
     fetchRemove :: (self: *HashMap(K, V), key: K, alloc: Allocator = context.allocator) -> ?V {
-        i := self.findIndex(key);
-        if i < 0 { return null; }
-        v := self.values[i];
-        self.metadata[i] = META_TOMBSTONE;
-        self.count -= 1;
-        self.tombstones += 1;
-        return v;
+        if i := self.findIndex(key) {
+            self.metadata[i] = META_TOMBSTONE;
+            self.count -= 1;
+            self.tombstones += 1;
+            return self.values[i];
+        }
+        null
     }
 
     // Deep copy: a fresh map with an independent table holding the same live
@@ -432,12 +437,15 @@ HashMap :: struct ($K: Type, $V: Type) {
         self.tombstones = 0;
     }
 
-    // Next used bucket index at or after `from`; returns `cap` when done.
-    // Iterate with: `i := m.nextUsed(0); while i < m.cap { ...; i = m.nextUsed(i + 1); }`
-    nextUsed :: (self: *HashMap(K, V), from: i64) -> i64 {
+    // Next used bucket index at or after `from`, or null past the last one.
+    // Iterate with: `at := 0; while i := m.nextUsed(at) { ...; at = i + 1; }`
+    nextUsed :: (self: *HashMap(K, V), from: i64) -> ?i64 {
         i := from;
-        while i < self.cap and (self.metadata[i] & META_USED_BIT) == 0 { i += 1; }
-        i
+        while i < self.cap {
+            if (self.metadata[i] & META_USED_BIT) != 0 { return i; }
+            i += 1;
+        }
+        null
     }
 
     // Stateful iterator over live entries in unspecified (bucket) order. Use:
@@ -463,10 +471,11 @@ HashIter :: struct ($K: Type, $V: Type) {
     pos: i64 = 0;
 
     next :: (self: *HashIter(K, V)) -> ?HashKV(K, V) {
-        i := self.map.nextUsed(self.pos);
-        if i >= self.map.cap { return null; }
-        self.pos = i + 1;
-        return HashKV(K, V){ keyPtr = *self.map.keys[i], valuePtr = *self.map.values[i] };
+        if i := self.map.nextUsed(self.pos) {
+            self.pos = i + 1;
+            return HashKV(K, V){ keyPtr = *self.map.keys[i], valuePtr = *self.map.values[i] };
+        }
+        null
     }
 
     // Restart from the first live bucket.
@@ -501,6 +510,8 @@ hashmapInit :: ($K: Type, $V: Type) -> HashMap(K, V) {
 
 INDEX_LOAD_PCT :: 60;   // index stays ≤ 60% full — short probe chains
 
+U63 :: @int(63, .unsigned);
+
 IMEntry :: struct ($K: Type, $V: Type) {
     hash:  u64;
     key:   K;
@@ -521,7 +532,7 @@ IndexMap :: struct ($K: Type, $V: Type) {
     entries: [*]IMEntry(K, V) = null;
     ecount:  i64 = 0;    // live entries (== `len`), in insertion order
     ecap:    i64 = 0;    // allocated entry capacity
-    index:   [*]i64 = null;   // per-slot entry index; -1 = empty
+    index:   [*]?U63 = null;  // per-slot entry index
     icap:    i64 = 0;    // index slot count; power of two, or 0
 
     // `m.len` → live entry count.
@@ -551,9 +562,9 @@ IndexMap :: struct ($K: Type, $V: Type) {
         newIcap := 8;
         while newIcap < need { newIcap = newIcap * 2; }
         if self.icap > 0 { alloc.deallocBytes(self.index); }
-        ni : [*]i64 = mem.alloc(alloc, i64, newIcap).ptr;
+        ni : [*]?U63 = mem.alloc(alloc, ?U63, newIcap).ptr;
         s := 0;
-        while s < newIcap { ni[s] = -1; s += 1; }
+        while s < newIcap { ni[s] = null; s += 1; }
         self.index = ni;
         self.icap = newIcap;
         e := 0;
@@ -572,14 +583,14 @@ IndexMap :: struct ($K: Type, $V: Type) {
     // forever / write OOB (mirrors HashMap's fail-loud philosophy).
     indexInsert :: (self: *IndexMap(K, V), h: u64, e: i64) {
         mask := self.icap - 1;
-        slot := (h & (mask.(u64))).(i64);
+        slot := mapSlot(h, mask);
         limit := self.icap;
-        while self.index[slot] >= 0 {
+        while self.index[slot] != null {
             slot = (slot + 1) & mask;
             limit -= 1;
             if limit <= 0 { c.abort(); }   // full index — broken capacity accounting
         }
-        self.index[slot] = e;
+        self.index[slot] = e.(U63);
     }
 
     // Delete the index slot that stores entry-index `e` (probing from `h`) via
@@ -591,9 +602,9 @@ IndexMap :: struct ($K: Type, $V: Type) {
     // contract) — failing to find it across a full walk is a loud abort.
     indexRemove :: (self: *IndexMap(K, V), h: u64, e: i64) {
         mask := self.icap - 1;
-        slot := (h & (mask.(u64))).(i64);
+        slot := mapSlot(h, mask);
         limit := self.icap;
-        while self.index[slot] != e {
+        while self.index[slot] != e.(U63) {
             slot = (slot + 1) & mask;
             limit -= 1;
             if limit <= 0 { c.abort(); }   // `e` absent from index — broken invariant
@@ -601,11 +612,12 @@ IndexMap :: struct ($K: Type, $V: Type) {
         i := slot;
         j := slot;
         while true {
-            self.index[i] = -1;              // open a gap at `i`
+            self.index[i] = null;            // open a gap at `i`
             while true {
                 j = (j + 1) & mask;
-                if self.index[j] < 0 { return; }   // gap chain ends — done
-                k := (self.entries[self.index[j]].hash & (mask.(u64))).(i64);
+                moved := self.index[j];
+                if moved == null { return; }   // gap chain ends — done
+                k := mapSlot(self.entries[moved].hash, mask);
                 // Keep scanning while ideal slot `k` lies cyclically in (i, j]
                 // (that entry is anchored past the gap and must NOT move back);
                 // otherwise it can fill the gap — pull it in.
@@ -624,14 +636,14 @@ IndexMap :: struct ($K: Type, $V: Type) {
     // without finding it is a loud abort.
     indexRetarget :: (self: *IndexMap(K, V), h: u64, from: i64, to: i64) {
         mask := self.icap - 1;
-        slot := (h & (mask.(u64))).(i64);
+        slot := mapSlot(h, mask);
         limit := self.icap;
-        while self.index[slot] != from {
+        while self.index[slot] != from.(U63) {
             slot = (slot + 1) & mask;
             limit -= 1;
             if limit <= 0 { c.abort(); }
         }
-        self.index[slot] = to;
+        self.index[slot] = to.(U63);
     }
 
     // Grow the INDEX so it can hold `n` entries at ≤ 60% load without a
@@ -644,9 +656,9 @@ IndexMap :: struct ($K: Type, $V: Type) {
         while want < need { want = want * 2; }
         if want == self.icap { return; }
         if self.icap > 0 { alloc.deallocBytes(self.index); }
-        ni : [*]i64 = mem.alloc(alloc, i64, want).ptr;
+        ni : [*]?U63 = mem.alloc(alloc, ?U63, want).ptr;
         s := 0;
-        while s < want { ni[s] = -1; s += 1; }
+        while s < want { ni[s] = null; s += 1; }
         self.index = ni;
         self.icap = want;
         e := 0;
@@ -664,22 +676,22 @@ IndexMap :: struct ($K: Type, $V: Type) {
     // can hold before it must grow.
     capacity :: (self: *IndexMap(K, V)) -> i64 => self.ecap;
 
-    // Entry index for `key`, or -1. Linear-probe the index, deref into
+    // Entry index for `key`, or null. Linear-probe the index, deref into
     // entries to confirm (hash pre-filter, then `==`). Stops at an empty slot.
-    findIndex :: (self: *IndexMap(K, V), key: K) -> i64 {
-        if self.icap == 0 { return -1; }
+    findIndex :: (self: *IndexMap(K, V), key: K) -> ?i64 {
+        if self.icap == 0 { return null; }
         h := mapHashKey(key);
         mask := self.icap - 1;
-        slot := (h & (mask.(u64))).(i64);
+        slot := mapSlot(h, mask);
         limit := self.icap;
         while limit > 0 {
             e := self.index[slot];
-            if e < 0 { return -1; }
+            if e == null { return null; }
             if self.entries[e].hash == h and self.entries[e].key == key { return e; }
             slot = (slot + 1) & mask;
             limit -= 1;
         }
-        -1
+        null
     }
 
     // Find-or-append in one probe. Appends a fresh entry (preserving order) on
@@ -687,8 +699,7 @@ IndexMap :: struct ($K: Type, $V: Type) {
     // pointers to the existing entry, unchanged. Pointers/index are valid
     // until the next structural mutation.
     getOrPut :: (self: *IndexMap(K, V), key: K, alloc: Allocator = context.allocator) -> IndexEntryPtr(K, V) {
-        existing := self.findIndex(key);
-        if existing >= 0 {
+        if existing := self.findIndex(key) {
             return .{ keyPtr = *self.entries[existing].key, valuePtr = *self.entries[existing].value,
                       foundExisting = true, index = existing };
         }
@@ -737,8 +748,7 @@ IndexMap :: struct ($K: Type, $V: Type) {
     // Insert without growing the ordered array (caller ensured capacity via
     // `ensureTotalCapacity`). Overwrites on hit; appends + indexes on miss.
     putAssumeCapacity :: (self: *IndexMap(K, V), key: K, val: V) {
-        existing := self.findIndex(key);
-        if existing >= 0 { self.entries[existing].value = val; return; }
+        if existing := self.findIndex(key) { self.entries[existing].value = val; return; }
         h := mapHashKey(key);
         e := self.ecount;
         self.entries[e] = IMEntry(K, V){ hash = h, key = key, value = val };
@@ -748,8 +758,7 @@ IndexMap :: struct ($K: Type, $V: Type) {
 
     // putAssumeCapacity returning the previous value (or null on insert).
     fetchPutAssumeCapacity :: (self: *IndexMap(K, V), key: K, val: V) -> ?V {
-        existing := self.findIndex(key);
-        if existing >= 0 {
+        if existing := self.findIndex(key) {
             old := self.entries[existing].value;
             self.entries[existing].value = val;
             return old;
@@ -763,31 +772,30 @@ IndexMap :: struct ($K: Type, $V: Type) {
     }
 
     get :: (self: *IndexMap(K, V), key: K) -> ?V {
-        i := self.findIndex(key);
-        if i < 0 { return null; }
-        self.entries[i].value
+        if i := self.findIndex(key) { return self.entries[i].value; }
+        null
     }
 
     getPtr :: (self: *IndexMap(K, V), key: K) -> ?*V {
-        i := self.findIndex(key);
-        if i < 0 { return null; }
-        *self.entries[i].value
+        if i := self.findIndex(key) { return *self.entries[i].value; }
+        null
     }
 
     contains :: (self: *IndexMap(K, V), key: K) -> bool {
-        self.findIndex(key) >= 0
+        self.findIndex(key) != null
     }
 
     // ORDER-PRESERVING remove (O(n)): drop the entry and shift every later
     // entry down one, then rebuild the index (their indices changed).
     remove :: (self: *IndexMap(K, V), key: K, alloc: Allocator = context.allocator) -> bool {
-        e := self.findIndex(key);
-        if e < 0 { return false; }
-        j := e;
-        while j < self.ecount - 1 { self.entries[j] = self.entries[j + 1]; j += 1; }
-        self.ecount -= 1;
-        self.reindex(alloc);
-        true
+        if e := self.findIndex(key) {
+            j := e;
+            while j < self.ecount - 1 { self.entries[j] = self.entries[j + 1]; j += 1; }
+            self.ecount -= 1;
+            self.reindex(alloc);
+            return true;
+        }
+        false
     }
 
     // O(1)-amortized remove that BREAKS insertion order: the tail entry is
@@ -796,44 +804,47 @@ IndexMap :: struct ($K: Type, $V: Type) {
     // entry was not itself the tail, retarget the slot pointing at the former
     // tail to the hole. Use only when order doesn't matter.
     swapRemove :: (self: *IndexMap(K, V), key: K, alloc: Allocator = context.allocator) -> bool {
-        e := self.findIndex(key);
-        if e < 0 { return false; }
-        last := self.ecount - 1;
-        self.indexRemove(self.entries[e].hash, e);       // drop the removed key's slot
-        if e != last {
-            self.entries[e] = self.entries[last];         // tail fills the hole
-            self.indexRetarget(self.entries[e].hash, last, e);   // its slot now points at `e`
+        if e := self.findIndex(key) {
+            last := self.ecount - 1;
+            self.indexRemove(self.entries[e].hash, e);       // drop the removed key's slot
+            if e != last {
+                self.entries[e] = self.entries[last];         // tail fills the hole
+                self.indexRetarget(self.entries[e].hash, last, e);   // its slot now points at `e`
+            }
+            self.ecount -= 1;
+            return true;
         }
-        self.ecount -= 1;
-        true
+        false
     }
 
     // ORDER-PRESERVING remove returning the removed value (or null if absent).
     fetchRemove :: (self: *IndexMap(K, V), key: K, alloc: Allocator = context.allocator) -> ?V {
-        e := self.findIndex(key);
-        if e < 0 { return null; }
-        v := self.entries[e].value;
-        j := e;
-        while j < self.ecount - 1 { self.entries[j] = self.entries[j + 1]; j += 1; }
-        self.ecount -= 1;
-        self.reindex(alloc);
-        return v;
+        if e := self.findIndex(key) {
+            v := self.entries[e].value;
+            j := e;
+            while j < self.ecount - 1 { self.entries[j] = self.entries[j + 1]; j += 1; }
+            self.ecount -= 1;
+            self.reindex(alloc);
+            return v;
+        }
+        null
     }
 
     // O(1)-amortized order-BREAKING remove returning the removed value (or
     // null). In-place index fixup, exactly as `swapRemove` — no reindex.
     fetchSwapRemove :: (self: *IndexMap(K, V), key: K, alloc: Allocator = context.allocator) -> ?V {
-        e := self.findIndex(key);
-        if e < 0 { return null; }
-        v := self.entries[e].value;
-        last := self.ecount - 1;
-        self.indexRemove(self.entries[e].hash, e);       // drop the removed key's slot
-        if e != last {
-            self.entries[e] = self.entries[last];         // tail fills the hole
-            self.indexRetarget(self.entries[e].hash, last, e);   // its slot now points at `e`
+        if e := self.findIndex(key) {
+            v := self.entries[e].value;
+            last := self.ecount - 1;
+            self.indexRemove(self.entries[e].hash, e);       // drop the removed key's slot
+            if e != last {
+                self.entries[e] = self.entries[last];         // tail fills the hole
+                self.indexRetarget(self.entries[e].hash, last, e);   // its slot now points at `e`
+            }
+            self.ecount -= 1;
+            return v;
         }
-        self.ecount -= 1;
-        return v;
+        null
     }
 
     // Remove and return the LAST (most recently appended) entry, or null if
@@ -852,7 +863,7 @@ IndexMap :: struct ($K: Type, $V: Type) {
     clear :: (self: *IndexMap(K, V)) {
         self.ecount = 0;
         s := 0;
-        while s < self.icap { self.index[s] = -1; s += 1; }
+        while s < self.icap { self.index[s] = null; s += 1; }
     }
 
     // Deep copy: a fresh map with an independent ordered array (same insertion

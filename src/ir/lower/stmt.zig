@@ -220,8 +220,8 @@ fn lowerErrorOnlyTail(self: *Lowering, tail: *const Node, ret_ty: TypeId) BodyTa
         .block => return lowerDemandedBody(self, tail, demand),
         // Every live arm carries the same demand: the construct itself yields
         // nothing, so no merge is typed and no arm decides for another.
-        .if_expr => |ie| {
-            _ = self.lowerIfExpr(&ie, demand);
+        .if_expr => {
+            _ = self.lowerIfExpr(tail, demand);
             return if (self.currentBlockHasTerminator()) .{ .terminated = .noreturn } else .no_value;
         },
         .match_expr => |me| {

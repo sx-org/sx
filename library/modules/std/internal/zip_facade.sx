@@ -39,7 +39,7 @@ private stdZipEntryOptions :: (options: StdZipEntryOptions, fromFile: bool = fal
         centralExtra = central,
         separateCentralExtra = options.centralExtra != null,
         comment = options.comment,
-        externalAttributes = options.externalAttributes.(i64),
+        externalAttributes = options.externalAttributes,
         asciiFilename = !options.utf8,
         dataDescriptor = options.dataDescriptor,
         autoStoreSmall = options.storeSmall,

@@ -2112,10 +2112,11 @@ y: ?i32 = null;      // optional i32, no value
 Any type `T` can be made optional: `?i32`, `?string`, `?Point`, `?*T`, `?[]T`.
 
 #### LLVM Representation
-An optional takes one of three shapes:
+An optional takes one of four shapes:
 - `{ T, i1 }` — payload plus a presence flag, for a `T` with no spare null state (`?i32`, `?Point`).
 - One pointer word, null when absent (`?*T`, `?[*:X]T`, `?((i64) -> i64)`).
 - The child's own bytes, whose LEADING pointer word is null when absent (`?[]T`, `?string`, `?[:X]T`, `?Closure`, `?I`). `@sizeOf(?[]T)` is `@sizeOf([]T)`, so an optional slice costs nothing beside the slice.
+- The storage word of an integer narrower than that word, signed or unsigned (`?@int(63, .unsigned)`, `?@int(7, .signed)`). A present word holds the payload's own bits with every spare bit clear, null is the word with its high bit alone set, and presence tests that bit alone. `@sizeOf(?@int(63, .signed))` is 8 and `@sizeOf(?@int(7, .unsigned))` is 1.
 
 #### Implicit Wrapping
 A value of type `T` implicitly converts to `?T`:
@@ -2959,7 +2960,8 @@ isReady : ValueListenable(bool) = map(
   compile time, in 128-bit arithmetic. Only the folded value takes a type, and
   it must fit it: its destination's type, through `?` as well, or its typed
   peer's type, and `i64` without either. An explicit cast (`.(T)`, `xx`)
-  converts it, truncating.
+  converts it, truncating; within a larger operand the cast is no destination,
+  so `({ 300 }).(u8)` converts the block's `i64` `300` to `44`.
   `f : u64 = 0xFFFF_FFFF_FFFF_FFFF / 2` is `9223372036854775807`,
   `d : i8 = 100 + 100` is refused because `200` does not fit `i8`, and
   `m : u8 = ~0` is refused because `-1` does not fit `u8`. A value outside 128
@@ -4605,6 +4607,11 @@ if i == 2 continue;
 y := x + if false { 7 } else { 12 };
 ```
 
+The results of an `if`, and the arms of a value `match`, meet at one type. An
+untyped result takes its typed peer's type, as an untyped operand does in
+[§Arithmetic](#arithmetic); with no typed result the untyped default applies.
+With `v : u8`, `if c then v else 0` is `u8`, and `if c then 1 else 2` is `i64`.
+
 `then` is an optional delimiter between the condition and the result. It is
 **required** where the result's first token can continue the condition — `(`,
 `[`, `.`, `{`, `*`, `-`, or a binary operator:
@@ -4695,10 +4702,11 @@ match av {
 - **Category arms** (`int`, `signed`, `unsigned`, `float`, `struct`, `enum`,
   `union`, `slice`, `array`, `pointer`, `vector`, `optional`, `error`,
   `closure`, `type`) are tag SETS, and a `|v|` capture binds the reading the
-  whole set shares: `signed`/`unsigned` an `i64` widened by each tag's own
-  signedness, `float` an `f64`, `pointer` a `*void`. Every other category
-  binds the subject's own `any` view, read through the reflection builtins.
-  `string`/`bool`/`void` are single types and take the concrete path.
+  whole set shares: `signed` an `i64` sign-extended from each tag,
+  `unsigned` a `u64` zero-extended from each tag, `float` an `f64`,
+  `pointer` a `*void`. Every other category binds the subject's own `any`
+  view, read through the reflection builtins. `string`/`bool`/`void` are
+  single types and take the concrete path.
 - **Arms overlap first-wins, loudly**: a tag belongs to the first arm that
   names it, so a concrete arm must come BEFORE the category that contains
   it (`case i64:` above `case int:`). An arm left with no tags — the

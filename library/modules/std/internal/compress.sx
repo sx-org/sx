@@ -10,6 +10,7 @@
 @import "modules/std/c.sx";
 @import "modules/std/list.sx";
 @import "modules/std/compress.sx";
+@import "modules/std/encoding.sx";
 deflateContracts :: @import "modules/std/codecs/deflate_contracts.sx";
 
 private Strategy :: deflateContracts.Strategy;
@@ -75,7 +76,7 @@ adler32 :: (data: string, initial: i64 = 1) -> i64 {
         remaining -= blockLen;
         blockLen = 5552;
     }
-    ((s2 << 16) | s1).(i64)
+    (s2 << 16) | s1
 }
 
 private CRC32_TABLE : [256]i64 = .[
@@ -117,14 +118,14 @@ crc32 :: (data: string, initial: i64 = 0) -> i64 {
     crc := (initial ^ 0xffffffff) & 0xffffffff;
     at := 0;
     while at + 3 < data.len {
-        crc = (crc >> 8) ^ CRC32_TABLE[(crc ^ data[at].(i64)) & 0xff];
-        crc = (crc >> 8) ^ CRC32_TABLE[(crc ^ data[at + 1].(i64)) & 0xff];
-        crc = (crc >> 8) ^ CRC32_TABLE[(crc ^ data[at + 2].(i64)) & 0xff];
-        crc = (crc >> 8) ^ CRC32_TABLE[(crc ^ data[at + 3].(i64)) & 0xff];
+        crc = (crc >> 8) ^ CRC32_TABLE[(crc ^ data[at]) & 0xff];
+        crc = (crc >> 8) ^ CRC32_TABLE[(crc ^ data[at + 1]) & 0xff];
+        crc = (crc >> 8) ^ CRC32_TABLE[(crc ^ data[at + 2]) & 0xff];
+        crc = (crc >> 8) ^ CRC32_TABLE[(crc ^ data[at + 3]) & 0xff];
         at += 4;
     }
     while at < data.len {
-        crc = (crc >> 8) ^ CRC32_TABLE[(crc ^ data[at].(i64)) & 0xff];
+        crc = (crc >> 8) ^ CRC32_TABLE[(crc ^ data[at]) & 0xff];
         at += 1;
     }
     (crc ^ 0xffffffff) & 0xffffffff
@@ -290,8 +291,8 @@ private BitWriter :: struct {
         if self.out.failed { return; }
         bytes := self.count >> 3;
         if bytes > 0 {
-            words : [*]u64 = (*self.out.bytes.items.ptr[self.out.bytes.items.len]).([*]u64);
-            words[0] = self.bits.(u64);
+            words : [*]i64 = (*self.out.bytes.items.ptr[self.out.bytes.items.len]).([*]i64);
+            words[0] = self.bits;
             self.out.bytes.items.len += bytes;
             self.bits = self.bits >> (bytes * 8);
             self.count = self.count & 7;
@@ -462,7 +463,7 @@ private TdeflTokenBuffer :: struct {
     literal :: (self: *TdeflTokenBuffer, value: i64, alloc: Allocator) {
         self.codes[self.codeLen] = value.(u8);
         self.codeLen += 1;
-        self.codes[self.flagsAt] = (self.codes[self.flagsAt].(i64) >> 1).(u8);
+        self.codes[self.flagsAt] >>= 1;
         self.nextFlag();
         self.litFreq[value] += 1;
         self.sourceBytes += 1;
@@ -477,7 +478,7 @@ private TdeflTokenBuffer :: struct {
         self.codes[self.codeLen + 1] = matchDistance.(u8);
         self.codes[self.codeLen + 2] = (matchDistance >> 8).(u8);
         self.codeLen += 3;
-        self.codes[self.flagsAt] = ((self.codes[self.flagsAt].(i64) >> 1) | 0x80).(u8);
+        self.codes[self.flagsAt] = (self.codes[self.flagsAt] >> 1) | 0x80;
         self.nextFlag();
         self.litFreq[symbol] += 1;
         self.distFreq[di] += 1;
@@ -524,15 +525,15 @@ private TDEFL_LARGE_DIST_INDEX : [128]u8 = .[
 ];
 
 private tdeflLengthIndex :: (length: i64) -> i64 {
-    TDEFL_LENGTH_INDEX[length - 3].(i64)
+    TDEFL_LENGTH_INDEX[length - 3]
 }
 
 private tdeflDistanceIndex :: (distance: i64) -> i64 {
     value := distance - 1;
     if value < 512 {
-        return TDEFL_SMALL_DIST_INDEX[value].(i64);
+        return TDEFL_SMALL_DIST_INDEX[value];
     }
-    TDEFL_LARGE_DIST_INDEX[value >> 8].(i64)
+    TDEFL_LARGE_DIST_INDEX[value >> 8]
 }
 
 private CodeLengthToken :: struct { symbol: i32; extra: i32; extraBits: i32; }
@@ -589,7 +590,7 @@ private tdeflLengths :: (frequencies: []u16, maxBits: i64) -> [288]u8 {
 
     // miniz omits the high-byte pass when every key is below 256. Copy the
     // one-pass result back so the redundancy code always consumes `syms`.
-    if hist[256].(i64) == used {
+    if hist[256] == used {
         i = 0;
         while i < used { syms[i] = scratch[i]; i += 1; }
     } else {
@@ -605,7 +606,7 @@ private tdeflLengths :: (frequencies: []u16, maxBits: i64) -> [288]u8 {
         }
     }
 
-    syms[0].key = (syms[0].key.(i64) + syms[1].key.(i64)).(u16);
+    syms[0].key += syms[1].key;
     root := 0;
     leaf := 2;
     next := 1;
@@ -619,11 +620,11 @@ private tdeflLengths :: (frequencies: []u16, maxBits: i64) -> [288]u8 {
             leaf += 1;
         }
         if leaf >= used or (root < next and syms[root].key < syms[leaf].key) {
-            syms[next].key = (syms[next].key.(i64) + syms[root].key.(i64)).(u16);
+            syms[next].key += syms[root].key;
             syms[root].key = next.(u16);
             root += 1;
         } else {
-            syms[next].key = (syms[next].key.(i64) + syms[leaf].key.(i64)).(u16);
+            syms[next].key += syms[leaf].key;
             leaf += 1;
         }
         next += 1;
@@ -632,7 +633,7 @@ private tdeflLengths :: (frequencies: []u16, maxBits: i64) -> [288]u8 {
     next = used - 3;
     while next >= 0 {
         parent := syms[next].key.(i64);
-        syms[next].key = (syms[parent].key.(i64) + 1).(u16);
+        syms[next].key = syms[parent].key + 1;
         next -= 1;
     }
 
@@ -642,7 +643,7 @@ private tdeflLengths :: (frequencies: []u16, maxBits: i64) -> [288]u8 {
     root = used - 2;
     next = used - 1;
     while available > 0 {
-        while root >= 0 and syms[root].key.(i64) == depth {
+        while root >= 0 and syms[root].key == depth {
             usedAtDepth += 1;
             root -= 1;
         }
@@ -657,7 +658,7 @@ private tdeflLengths :: (frequencies: []u16, maxBits: i64) -> [288]u8 {
     }
 
     i = 0;
-    while i < used { numCodes[syms[i].key.(i64)] += 1; i += 1; }
+    while i < used { numCodes[syms[i].key] += 1; i += 1; }
     i = maxBits + 1;
     while i <= 32 { numCodes[maxBits] += numCodes[i]; i += 1; }
     total := 0;
@@ -683,7 +684,7 @@ private tdeflLengths :: (frequencies: []u16, maxBits: i64) -> [288]u8 {
         count := numCodes[i];
         while count > 0 {
             next -= 1;
-            result[syms[next].symbol.(i64)] = i.(u8);
+            result[syms[next].symbol] = i.(u8);
             count -= 1;
         }
         i += 1;
@@ -811,7 +812,7 @@ private emitTdeflDynamic :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Allo
     while i < packedLengths.len {
         item := packedLengths.items[i];
         symbol := item.symbol.(i64);
-        writer.write(clCodes[symbol].(i64), clLengths[symbol]);
+        writer.write(clCodes[symbol], clLengths[symbol]);
         if item.extraBits > 0 { writer.write(item.extra, item.extraBits); }
         i += 1;
     }
@@ -836,7 +837,7 @@ private emitTdeflDynamic :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Allo
         }
         if (flags & 1) != 0 {
             length := buffer.codes[at].(i64) + 3;
-            distance := buffer.codes[at + 1].(i64) | (buffer.codes[at + 2].(i64) << 8);
+            distance := encoding.readU16Le(buffer.codes, at + 1);
             at += 3;
             li := tdeflLengthIndex(length);
             symbol := 257 + li;
@@ -865,21 +866,21 @@ private emitTdeflDynamic :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Allo
             // flag sentinel prevents crossing into the next flag byte.
             if (flags & 2) == 0 and at < buffer.codeLen {
                 flags = flags >> 1;
-                symbol = buffer.codes[at].(i64);
+                symbol = buffer.codes[at];
                 at += 1;
                 bitBuffer = bitBuffer | (litCodes[symbol].(i64) << bitsIn);
                 bitsIn += litLengths[symbol];
                 if (flags & 2) == 0 and at < buffer.codeLen {
                     flags = flags >> 1;
-                    symbol = buffer.codes[at].(i64);
+                    symbol = buffer.codes[at];
                     at += 1;
                     bitBuffer = bitBuffer | (litCodes[symbol].(i64) << bitsIn);
                     bitsIn += litLengths[symbol];
                 }
             }
         }
-        outputWords : [*]u64 = @reinterpret([*]u64, *outputPtr[outputAt]);
-        outputWords[0] = bitBuffer.(u64);
+        outputWords : [*]i64 = @reinterpret([*]i64, *outputPtr[outputAt]);
+        outputWords[0] = bitBuffer;
         outputAt += bitsIn >> 3;
         bitBuffer = bitBuffer >> (bitsIn & ~7);
         bitsIn = bitsIn & 7;
@@ -887,8 +888,8 @@ private emitTdeflDynamic :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Allo
     }
     bitBuffer = bitBuffer | (litCodes[256].(i64) << bitsIn);
     bitsIn += litLengths[256];
-    outputWords : [*]u64 = @reinterpret([*]u64, *outputPtr[outputAt]);
-    outputWords[0] = bitBuffer.(u64);
+    outputWords : [*]i64 = @reinterpret([*]i64, *outputPtr[outputAt]);
+    outputWords[0] = bitBuffer;
     outputAt += bitsIn >> 3;
     bitBuffer = bitBuffer >> (bitsIn & ~7);
     bitsIn = bitsIn & 7;
@@ -918,7 +919,7 @@ private emitTdeflFixed :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Alloca
         }
         if (flags & 1) != 0 {
             length := buffer.codes[at].(i64) + 3;
-            distance := buffer.codes[at + 1].(i64) | (buffer.codes[at + 2].(i64) << 8);
+            distance := encoding.readU16Le(buffer.codes, at + 1);
             at += 3;
             li := tdeflLengthIndex(length);
             symbol := 257 + li;
@@ -955,7 +956,7 @@ private emitTdeflFixed :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Alloca
             }
             if (flags & 2) == 0 and at < buffer.codeLen {
                 flags = flags >> 1;
-                literal = buffer.codes[at].(i64);
+                literal = buffer.codes[at];
                 at += 1;
                 if literal <= 143 {
                     bitBuffer = bitBuffer | (reverseBits(0x30 + literal, 8) << bitsIn);
@@ -966,7 +967,7 @@ private emitTdeflFixed :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Alloca
                 }
                 if (flags & 2) == 0 and at < buffer.codeLen {
                     flags = flags >> 1;
-                    literal = buffer.codes[at].(i64);
+                    literal = buffer.codes[at];
                     at += 1;
                     if literal <= 143 {
                         bitBuffer = bitBuffer | (reverseBits(0x30 + literal, 8) << bitsIn);
@@ -978,8 +979,8 @@ private emitTdeflFixed :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Alloca
                 }
             }
         }
-        outputWords : [*]u64 = @reinterpret([*]u64, *outputPtr[outputAt]);
-        outputWords[0] = bitBuffer.(u64);
+        outputWords : [*]i64 = @reinterpret([*]i64, *outputPtr[outputAt]);
+        outputWords[0] = bitBuffer;
         outputAt += bitsIn >> 3;
         bitBuffer = bitBuffer >> (bitsIn & ~7);
         bitsIn = bitsIn & 7;
@@ -987,8 +988,8 @@ private emitTdeflFixed :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Alloca
     }
     bitBuffer = bitBuffer | (reverseBits(0, 7) << bitsIn);
     bitsIn += 7;
-    outputWords : [*]u64 = @reinterpret([*]u64, *outputPtr[outputAt]);
-    outputWords[0] = bitBuffer.(u64);
+    outputWords : [*]i64 = @reinterpret([*]i64, *outputPtr[outputAt]);
+    outputWords[0] = bitBuffer;
     outputAt += bitsIn >> 3;
     bitBuffer = bitBuffer >> (bitsIn & ~7);
     bitsIn = bitsIn & 7;
@@ -1091,14 +1092,14 @@ private buildHuffmanInto :: (h: *Huffman, lengths: string, allowSingle: bool = t
     // when the block contains no matches. It is an unusable tree and decoding
     // a match through it still fails, but literal-only/Huffman-only blocks are
     // valid. No other alphabet may be empty.
-    if h.counts[0].(i64) == lengths.len {
+    if h.counts[0] == lengths.len {
         if allowEmpty { return; }
         raise .InvalidData;
     }
     left := 1;
     len := 1;
     while len <= 15 {
-        left = (left << 1) - h.counts[len].(i64);
+        left = (left << 1) - h.counts[len];
         if left < 0 { raise .InvalidData; }
         len += 1;
     }
@@ -1132,7 +1133,7 @@ private buildHuffmanInto :: (h: *Huffman, lengths: string, allowSingle: bool = t
     treeNext := -1;
     len = 1;
     while len <= 15 {
-        if len > 1 { code = (code + h.counts[len - 1].(i64)) << 1; }
+        if len > 1 { code = (code + h.counts[len - 1]) << 1; }
         nextCode[len] = code;
         len += 1;
     }
@@ -1170,7 +1171,7 @@ private buildHuffmanInto :: (h: *Huffman, lengths: string, allowSingle: bool = t
                         treeCur = treeNext;
                         treeNext -= 2;
                     } else {
-                        treeCur = h.tree[treeAt].(i64);
+                        treeCur = h.tree[treeAt];
                     }
                     remaining -= 1;
                 }
@@ -1190,7 +1191,7 @@ private huffmanResolve :: (h: *Huffman, bits: i64) -> i64 {
     if entry >= 0 { return entry; }
     length := 10;
     while entry < 0 {
-        entry = h.tree[-entry - 1 + ((bits >> length) & 1)].(i64);
+        entry = h.tree[-entry - 1 + ((bits >> length) & 1)];
         length += 1;
     }
     (length << 9) | entry
@@ -1632,7 +1633,7 @@ Deflater :: struct {
         self.phase = .done;
     }
 
-    dictByte :: (self: *Deflater, absolute: i64) -> i64 { self.dict[absolute & 32767].(i64) }
+    dictByte :: (self: *Deflater, absolute: i64) -> i64 { self.dict[absolute & 32767] }
 
     normalHashAt :: (self: *Deflater, absolute: i64) -> i64 {
         ((self.dictByte(absolute) << (self.hashShift * 2)) ^
@@ -1660,7 +1661,7 @@ Deflater :: struct {
         rollingReady := false;
         if history >= 2 {
             insPos := (absolute - 2) & 32767;
-            rolling = (dict[insPos].(i64) << self.hashShift) ^ dict[insPos + 1].(i64);
+            rolling = (dict[insPos].(i64) << self.hashShift) ^ dict[insPos + 1];
             rollingReady = true;
         }
         at := 0;
@@ -1672,14 +1673,14 @@ Deflater :: struct {
             lookahead += 1;
             history += 1;
             if rollingReady {
-                rolling = ((rolling << self.hashShift) ^ value.(i64)) & self.hashMask;
+                rolling = ((rolling << self.hashShift) ^ value) & self.hashMask;
                 inserted := absolute - 2;
                 insPos := inserted & 32767;
                 links[insPos] = heads[rolling];
                 heads[rolling] = (inserted & 65535).(u16);
             } else if history == 2 {
                 previous := (absolute - 1) & 32767;
-                rolling = (dict[previous].(i64) << self.hashShift) ^ value.(i64);
+                rolling = (dict[previous].(i64) << self.hashShift) ^ value;
                 rollingReady = true;
             }
             absolute += 1;
@@ -1791,8 +1792,8 @@ Deflater :: struct {
                 }
                 if length > lookaheadSize { length = lookaheadSize; }
                 if length > result.length.(u32) {
-                    result.length = length.(i64);
-                    result.distance = distance.(i64);
+                    result.length = length;
+                    result.distance = distance;
                     if length == lookaheadSize { break; }
                     tailAt = pos + length - 1;
                     tailWords = @reinterpret([*]u16, *dict[tailAt]);
@@ -1834,7 +1835,7 @@ Deflater :: struct {
             length := 1;
             probePos := probe & 32767;
             candidateAt : [*]u32 = @reinterpret([*]u32, *dict[probePos]);
-            if distance <= dictSize and (candidateAt[0].(i64) & 0xffffff) == first {
+            if distance <= dictSize and (candidateAt[0] & 0xffffff) == first {
                 sourceWords : [*]u16 = @reinterpret([*]u16, *dict[pos]);
                 candidateWords : [*]u16 = @reinterpret([*]u16, *dict[probePos]);
                 // Compare a full group on the hot equal path, then recover
@@ -1878,14 +1879,14 @@ Deflater :: struct {
                 codes[codeLen + 1] = packedDistance.(u8);
                 codes[codeLen + 2] = (packedDistance >> 8).(u8);
                 codeLen += 3;
-                codes[flagsAt] = ((codes[flagsAt].(i64) >> 1) | 0x80).(u8);
+                codes[flagsAt] = (codes[flagsAt] >> 1) | 0x80;
                 self.lz.litFreq[257 + li] += 1;
                 self.lz.distFreq[di] += 1;
             } else {
                 literal := first & 0xff;
                 codes[codeLen] = literal.(u8);
                 codeLen += 1;
-                codes[flagsAt] = (codes[flagsAt].(i64) >> 1).(u8);
+                codes[flagsAt] >>= 1;
                 self.lz.litFreq[literal] += 1;
             }
             flagsLeft -= 1;
@@ -1906,7 +1907,7 @@ Deflater :: struct {
             literal := dict[lookaheadPos & 32767].(i64);
             codes[codeLen] = literal.(u8);
             codeLen += 1;
-            codes[flagsAt] = (codes[flagsAt].(i64) >> 1).(u8);
+            codes[flagsAt] >>= 1;
             self.lz.litFreq[literal] += 1;
             flagsLeft -= 1;
             if flagsLeft == 0 {
@@ -2905,7 +2906,7 @@ Inflater :: struct {
         // precision. Scan only EOB and the at-most-29 length symbols; the
         // remainder is literal weight. Literal-dense blocks can use the
         // bookkeeping-light two-literal loop below.
-        nonliteralWeight := 1 << (15 - self.dynamicLengths[256].(i64));
+        nonliteralWeight := 1 << (15 - self.dynamicLengths[256]);
         i := 257;
         while i < self.hlit {
             bits := self.dynamicLengths[i].(i64);
@@ -3141,10 +3142,7 @@ Inflater :: struct {
                         if directAvailable > limitAvailable { directAvailable = limitAvailable; }
                         while directAvailable >= 258 and input.len - consumed >= 8 {
                             if directCount < 30 {
-                                word := input[consumed].(i64) |
-                                    (input[consumed + 1].(i64) << 8) |
-                                    (input[consumed + 2].(i64) << 16) |
-                                    (input[consumed + 3].(i64) << 24);
+                                word := encoding.readU32Le(input, consumed);
                                 directBits = directBits | (word << directCount);
                                 directCount += 32;
                                 consumed += 4;
@@ -3193,10 +3191,7 @@ Inflater :: struct {
                     while output.len - produced >= 258 and input.len - consumed >= 8 and
                           self.maxOutput - directTotal >= 2 {
                         if directCount < 30 {
-                            word := input[consumed].(i64) |
-                                (input[consumed + 1].(i64) << 8) |
-                                (input[consumed + 2].(i64) << 16) |
-                                (input[consumed + 3].(i64) << 24);
+                            word := encoding.readU32Le(input, consumed);
                             directBits = directBits | (word << directCount);
                             directCount += 32;
                             consumed += 4;
@@ -3246,10 +3241,7 @@ Inflater :: struct {
                         // one-shot input; resumable calls continue through
                         // decodeDirect/decode below without read-ahead.
                         if self.bitCount < 30 and input.len - consumed >= 4 {
-                            word := input[consumed].(i64) |
-                                (input[consumed + 1].(i64) << 8) |
-                                (input[consumed + 2].(i64) << 16) |
-                                (input[consumed + 3].(i64) << 24);
+                            word := encoding.readU32Le(input, consumed);
                             self.bitBuffer = self.bitBuffer | (word << self.bitCount);
                             self.bitCount += 32;
                             consumed += 4;
@@ -3584,7 +3576,7 @@ ZlibInflater :: struct {
                     consumed += 1;
                 }
                 if self.trailerAt < 4 { return Progress{ consumed = consumed, produced = produced, status = .needInput }; }
-                expected := (self.trailer[0].(i64) << 24) | (self.trailer[1].(i64) << 16) | (self.trailer[2].(i64) << 8) | self.trailer[3].(i64);
+                expected := encoding.readU32Be(self.trailer, 0);
                 if self.checksum != expected {
                     self.lastConsumed = consumed; self.lastProduced = produced;
                     raise .ChecksumMismatch;
@@ -3878,7 +3870,7 @@ GzipInflater :: struct {
                 if self.fixedAt < 10 { return Progress{ consumed = consumed, produced = produced, status = .needInput }; }
                 if self.fixed[0] != 0x1f or self.fixed[1] != 0x8b { raise .InvalidData; }
                 if self.fixed[2] != 8 { raise .Unsupported; }
-                self.flags = self.fixed[3].(i64);
+                self.flags = self.fixed[3];
                 if (self.flags & 0xe0) != 0 { raise .InvalidData; }
                 if (self.flags & 4) != 0 { self.phase = .extraLength; }
                 else { self.afterExtra(); }
@@ -3893,7 +3885,7 @@ GzipInflater :: struct {
                 }
                 if consumed > start { self.headerChecksum = crc32(input[start..consumed], self.headerChecksum); }
                 if self.extraLengthAt < 2 { return Progress{ consumed = consumed, produced = produced, status = .needInput }; }
-                self.extraRemaining = self.extraLengthBytes[0].(i64) | (self.extraLengthBytes[1].(i64) << 8);
+                self.extraRemaining = encoding.readU16Le(self.extraLengthBytes, 0);
                 self.phase = .extraData;
                 continue;
             }
@@ -3929,7 +3921,7 @@ GzipInflater :: struct {
                     consumed += 1;
                 }
                 if self.headerCrcAt < 2 { return Progress{ consumed = consumed, produced = produced, status = .needInput }; }
-                expected := self.headerCrcBytes[0].(i64) | (self.headerCrcBytes[1].(i64) << 8);
+                expected := encoding.readU16Le(self.headerCrcBytes, 0);
                 if (self.headerChecksum & 0xffff) != expected { raise .ChecksumMismatch; }
                 self.phase = .body;
                 continue;
@@ -3958,8 +3950,8 @@ GzipInflater :: struct {
                     consumed += 1;
                 }
                 if self.trailerAt < 8 { return Progress{ consumed = consumed, produced = produced, status = .needInput }; }
-                expectedCrc := self.trailer[0].(i64) | (self.trailer[1].(i64) << 8) | (self.trailer[2].(i64) << 16) | (self.trailer[3].(i64) << 24);
-                expectedSize := self.trailer[4].(i64) | (self.trailer[5].(i64) << 8) | (self.trailer[6].(i64) << 16) | (self.trailer[7].(i64) << 24);
+                expectedCrc := encoding.readU32Le(self.trailer, 0);
+                expectedSize := encoding.readU32Le(self.trailer, 4);
                 if self.memberChecksum != expectedCrc or self.memberSize != expectedSize { raise .ChecksumMismatch; }
                 if consumed < input.len {
                     self.startMember();
@@ -4213,7 +4205,7 @@ gzipCompressOptionsStrategy :: (data: string, options: GzipOptions, level: i64, 
     if level >= 8 { xfl = 2; }
     if level <= 2 { xfl = 4; }
     out.put(xfl);
-    out.put(options.os.(i64));
+    out.put(options.os);
     if options.extra.len > 0 {
         out.putU16le(options.extra.len);
         out.putBytes(options.extra);

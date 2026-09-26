@@ -381,8 +381,8 @@ pub const LLVMEmitter = struct {
     variant_tag_width_array_len: u32 = 0,
     slice_len_info_array: ?c.LLVMValueRef = null,
     slice_len_info_array_len: u32 = 0,
-    optional_flag_array: ?c.LLVMValueRef = null,
-    optional_flag_array_len: u32 = 0,
+    optional_probe_array: ?c.LLVMValueRef = null,
+    optional_probe_array_len: u32 = 0,
     member_stride_array: ?c.LLVMValueRef = null,
     member_stride_array_len: u32 = 0,
     // Member-view master-index tables: [N x ptr] → per-type arrays.
@@ -1525,9 +1525,10 @@ pub const LLVMEmitter = struct {
                 }
                 return c.LLVMConstArray2(llvm_elem_ty, elem_vals.items.ptr, @intCast(elem_vals.items.len));
             }
-            // Only a non-sentinel optional reaches here as an aggregate: the
-            // VM bridges a sentinel-shaped one as the child's own Value. The
-            // `{ payload, i1 }` `toLLVMType` builds for it is anonymous.
+            // Only a flag-shaped optional reaches here as an aggregate: the VM
+            // bridges a pointer-word one as the child's own Value and a
+            // high-bit one as its storage word. The `{ payload, i1 }`
+            // `toLLVMType` builds for it is anonymous.
             if (info == .optional) {
                 if (fields.len != 2) {
                     std.debug.print(
