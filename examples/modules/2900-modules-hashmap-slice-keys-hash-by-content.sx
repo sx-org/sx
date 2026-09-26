@@ -1,0 +1,35 @@
+// A slice key hashes its elements, as `==` compares them, so an equal key in
+// another buffer finds the entry whatever the element type, terminator or
+// length word.
+@import "modules/std.sx";
+
+main :: () -> i32 {
+    a : [2]i64 = .[1, 2];
+    b : [2]i64 = .[1, 2];
+    ints : HashMap([]i64, i64) = .{};
+    ints.put(a[0..], 7);
+    print("{}\n", ints.get(b[0..]) ?? -1);
+
+    x : [3:0]u8 = "key";
+    y : [3:0]u8 = "key";
+    terminated : HashMap([:0]u8, i64) = .{};
+    terminated.put(x[0..], 1);
+    print("{}\n", terminated.get(y[0..]) ?? -1);
+
+    p : [2]string = .["a", "bc"];
+    q : [2]string = .["a", "bc"];
+    nested : HashMap([]string, i64) = .{};
+    nested.put(p[0..], 3);
+    print("{}\n", nested.get(q[0..]) ?? -1);
+
+    bytes : HashMap(@Slice(u8, u64), i64) = .{};
+    bytes.put(x[0..], 4);
+    print("{}\n", bytes.get(y[0..]) ?? -1);
+
+    f : [2]bool = .[true, false];
+    g : [2]bool = .[true, false];
+    flags : HashMap(@Slice(bool, u64), i64) = .{};
+    flags.put(f[0..], 5);
+    print("{}\n", flags.get(g[0..]) ?? -1);
+    0
+}

@@ -354,7 +354,7 @@ pub const ErrorAnalysis = struct {
                 if (self.l.exprTyper().indexType(self.receiverType(fd, ix.object))) |ty| return ty;
             },
             .slice_expr => |sl| {
-                if (self.l.exprTyper().sliceType(self.receiverType(fd, sl.object))) |ty| return ty;
+                if (self.l.exprTyper().sliceType(self.receiverType(fd, sl.object), sl.end == null)) |ty| return ty;
             },
             .call => |call| result: {
                 if (call.callee.data != .field_access) break :result;

@@ -183,7 +183,7 @@ private AcceptEncoding :: struct {
 }
 
 asciiLower :: (c: u8) -> u8 {
-    c + if 'A' <= c <= 'Z' then ' ' else 0
+    if 'A' <= c <= 'Z' then c + ' ' else c
 }
 
 ceAsciiIeq :: (a: string, b: string) -> bool {
@@ -309,7 +309,7 @@ private itemQuality :: (item: string) -> i64 {
         nameAt := at;
         while at < item.len and item[at] != '=' and item[at] != ';' { at += 1; }
         name := trimOws(item[nameAt..at]);
-        value : string = "";
+        value := "";
         if at < item.len and item[at] == '=' {
             at += 1;
             valueAt := at;

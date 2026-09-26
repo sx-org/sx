@@ -197,11 +197,11 @@ testStreaming :: (alloc: Allocator) -> bool {
     while turns < 256 {
         inputEnd := inputAt + 2;
         if inputEnd > PLAIN.len { inputEnd = PLAIN.len; }
-        input : string = "";
+        input := "";
         if inputAt < inputEnd { input = PLAIN[inputAt..inputEnd]; }
         outputEnd := outputAt + 1;
         if outputEnd > encoded.len { outputEnd = encoded.len; }
-        output : string = "";
+        output := "";
         if outputAt < outputEnd { output = encoded[outputAt..outputEnd]; }
         mode : deflate.Flush = if inputEnd == PLAIN.len then .finish else .none;
         progress := encoder.flush(input, output, mode) catch { encoder.deinit(); return false; };
@@ -221,11 +221,11 @@ testStreaming :: (alloc: Allocator) -> bool {
     while turns < 256 {
         inputEnd := inputAt + 1;
         if inputEnd > RAW.len { inputEnd = RAW.len; }
-        input : string = "";
+        input := "";
         if inputAt < inputEnd { input = rawFixture()[inputAt..inputEnd]; }
         outputEnd := outputAt + 2;
         if outputEnd > decoded.len { outputEnd = decoded.len; }
-        output : string = "";
+        output := "";
         if outputAt < outputEnd { output = decoded[outputAt..outputEnd]; }
         progress := decoder.read(input, output) catch { decoder.deinit(); return false; };
         inputAt += progress.consumed;

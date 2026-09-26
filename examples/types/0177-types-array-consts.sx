@@ -1,11 +1,10 @@
 // Array-typed `::` constants are IMMUTABLE GLOBALS: one storage, reads
 // GEP it, the emitter marks it constant, dead-global elimination drops
 // unused ones. Typed (`K : [4]i64 : .[...]`) and untyped (`A :: .[...]`,
-// element type inferred — all ints i64; any float promotes the element
-// type to f64 with ints converting exactly; bool/string homogeneous).
-// Element shapes cover nested aggregates. Reads are normal array values:
-// indexing, .len, by-value copies (independent of the const), passing to
-// fixed-array params, and @-address (reads through *[4]i64).
+// typed as the literal written inline). Element shapes cover nested
+// aggregates. Reads are normal array values: indexing, .len, by-value
+// copies (independent of the const), passing to fixed-array params, and
+// @-address (reads through *[4]i64).
 
 @import "modules/std.sx";
 

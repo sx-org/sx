@@ -1,0 +1,10 @@
+@import "modules/std.sx";
+
+to_i32 :: (x: f64) -> i32 { x.(i32) }
+
+A :: @run to_i32(1e30);
+B :: @run to_i32(0.0 / 0.0);
+
+main :: () {
+    print("{} {}\n", A, B);
+}

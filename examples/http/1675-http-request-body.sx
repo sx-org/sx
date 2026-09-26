@@ -97,7 +97,7 @@ roundtrip :: (srv: *http.Server, reqtext: string, scratch: [*]u8) -> string {
     socket.write(fd, reqtext.ptr, reqtext.len);
     total : i64 = 0;
     tries := 0;
-    out : string = "";
+    out := "";
     while tries < 4000 {
         srv.tick(2) catch {};
         n, re := socket.readNb(fd, *scratch[total], (8192 - total));
@@ -121,7 +121,7 @@ roundtripSplit :: (srv: *http.Server, reqtext: string, pieces: i64, scratch: [*]
     if piece < 1 { piece = 1; }
     total : i64 = 0;
     tries := 0;
-    out : string = "";
+    out := "";
     while tries < 8000 {
         // dribble out one slice per tick while bytes remain
         if sent < reqtext.len {
@@ -201,7 +201,7 @@ main :: () -> i32 {
             // build the multi-chunk request under a scratch arena (freed
             // below) so the test's own concats don't show up as GPA leaks.
             ta := mem.Arena.init(gpa, 4096);
-            req : string = "";
+            req := "";
             push .{ allocator = ta } {
                 req = concat(
                     "POST /echo HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n",

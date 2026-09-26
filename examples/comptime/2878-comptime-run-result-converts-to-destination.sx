@@ -1,0 +1,10 @@
+@import "modules/std.sx";
+
+three :: () -> i64 { 3 }
+half :: (x: f64) -> f64 { x / 2 }
+
+K : f64 : @run three();
+
+main :: () {
+    print("{} {}\n", K, half(@run three()));
+}

@@ -11,7 +11,7 @@ printAny :: (..args: []any) {
         type := @typeOf(it);
         match type {
             case int: @printf("{}", @as(i64, it));
-            case cstring: @printf("{}", it.(cstring));
+            case string: @printf("{}", it.(string));
             case bool: @printf("{}", it.(bool));
             case float: @printf("{}", @as(f64, it));
             case Point: {

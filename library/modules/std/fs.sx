@@ -53,22 +53,22 @@ File :: struct {
     }
 }
 
-openFile :: (path: [:0]u8, mode: OpenMode) -> ?File {
+openFile :: (path: string, mode: OpenMode) -> ?File {
     handle := fsOpenHandle(path, mode);
     if !fsFileIsValid(handle) { return null; }
     File{ fd = handle }
 }
-readFile :: (path: [:0]u8) -> ?string { fsReadFile(path) }
-writeFile :: (path: [:0]u8, data: string) -> bool { fsWriteFile(path, data) }
-appendFile :: (path: [:0]u8, data: string) -> bool { fsAppendFile(path, data) }
-exists :: (path: [:0]u8) -> bool { fsExists(path) }
-deleteFile :: (path: [:0]u8) -> bool { fsDeleteFile(path) }
-deleteDir :: (path: [:0]u8) -> bool { fsDeleteDir(path) }
-createDir :: (path: [:0]u8) -> bool { fsCreateDir(path) }
-createDirAll :: (path: [:0]u8) -> bool { fsCreateDirAll(path) }
-setMode :: (path: [:0]u8, mode: u32) -> bool { fsSetMode(path, mode) }
-move :: (oldPath: [:0]u8, newPath: [:0]u8) -> bool { fsMove(oldPath, newPath) }
-copyFile :: (source: [:0]u8, destination: [:0]u8) -> bool { fsCopyFile(source, destination) }
+readFile :: (path: string) -> ?string { fsReadFile(path) }
+writeFile :: (path: string, data: string) -> bool { fsWriteFile(path, data) }
+appendFile :: (path: string, data: string) -> bool { fsAppendFile(path, data) }
+exists :: (path: string) -> bool { fsExists(path) }
+deleteFile :: (path: string) -> bool { fsDeleteFile(path) }
+deleteDir :: (path: string) -> bool { fsDeleteDir(path) }
+createDir :: (path: string) -> bool { fsCreateDir(path) }
+createDirAll :: (path: string) -> bool { fsCreateDirAll(path) }
+setMode :: (path: string, mode: u32) -> bool { fsSetMode(path, mode) }
+move :: (oldPath: string, newPath: string) -> bool { fsMove(oldPath, newPath) }
+copyFile :: (source: string, destination: string) -> bool { fsCopyFile(source, destination) }
 basename :: (path: string) -> string { fsBasename(path) }
 dirname :: (path: string) -> string { fsDirname(path) }
 
@@ -78,4 +78,4 @@ modifiedSeconds :: (file: *File) -> (i64, bool) {
     if file == null or !file.isValid() { return 0, false; }
     fsModifiedSecondsHandle(file.fd)
 }
-setModifiedSeconds :: (path: [:0]u8, seconds: i64) -> bool { fsSetModifiedSeconds(path, seconds) }
+setModifiedSeconds :: (path: string, seconds: i64) -> bool { fsSetModifiedSeconds(path, seconds) }

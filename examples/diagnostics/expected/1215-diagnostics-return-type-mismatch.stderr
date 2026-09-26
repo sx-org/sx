@@ -1,10 +1,10 @@
-error: cannot return a value of type 'cstring' where 'i64' is expected
+error: cannot return a value of type 'string' where 'i64' is expected
   --> examples/diagnostics/1215-diagnostics-return-type-mismatch.sx:6:28
    |
  6 | badTrailing :: () -> i64 { "not an int" }
    |                            ^^^^^^^^^^^^
 
-error: cannot return a value of type 'cstring' where 'i64' is expected
+error: cannot return a value of type 'string' where 'i64' is expected
   --> examples/diagnostics/1215-diagnostics-return-type-mismatch.sx:7:35
    |
  7 | badExplicit :: () -> i64 { return "also not an int"; }

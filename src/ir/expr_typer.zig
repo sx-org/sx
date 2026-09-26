@@ -31,7 +31,7 @@ pub const ExprTyper = struct {
             ty = self.l.module.types.get(ty).optional.child;
 
         const special_container = switch (self.l.module.types.get(ty)) {
-            .string, .slice, .array, .vector => true,
+            .slice, .array, .vector => true,
             else => false,
         };
         if (special_container) {
@@ -89,11 +89,12 @@ pub const ExprTyper = struct {
         return if (optional) self.l.optionalOfFlattened(element) else element;
     }
 
-    pub fn sliceType(self: ExprTyper, receiver: TypeId) ?TypeId {
-        if (receiver == .string) return .string;
+    pub fn sliceType(self: ExprTyper, receiver: TypeId, open_ended: bool) ?TypeId {
         const element = self.l.getElementType(receiver);
         if (element == .unresolved) return null;
-        return self.l.module.types.sliceOfLen(element, self.l.module.types.lenTypeOf(receiver));
+        const table = &self.l.module.types;
+        if (open_ended) if (table.sentinelOf(receiver)) |x| return table.sliceOfSentinel(element, x);
+        return table.sliceOfLen(element, table.lenTypeOf(receiver));
     }
 
     /// Infer the IR type an expression evaluates to (without lowering it).
@@ -106,7 +107,7 @@ pub const ExprTyper = struct {
             // delegate through `Lowering.inferExprType` so a call node reaching
             // here is typed by that single owner, not mistyped as `.unresolved`.
             .call => self.l.inferExprType(node),
-            .string_literal => .cstring,
+            .string_literal => .string,
             .int_literal => .i64,
             .float_literal => .f64,
             .bool_literal => .bool,
@@ -126,12 +127,17 @@ pub const ExprTyper = struct {
                 .and_op, .or_op, .in_op, .is_op => .bool,
                 else => blk: {
                     const operands = program_index_mod.floatOperandTypes(bop, self.l.operandType(self.l.inferExprType(bop.lhs)), self.l.operandType(self.l.inferExprType(bop.rhs)), self.l);
-                    break :blk self.l.arithResultType(operands.lhs.?, operands.rhs.?);
+                    const lhs_ty = self.l.untypedOperandType(bop.op, bop.lhs, bop.rhs) orelse operands.lhs.?;
+                    const rhs_ty = self.l.untypedOperandType(bop.op, bop.rhs, bop.lhs) orelse operands.rhs.?;
+                    break :blk switch (self.l.arithResultType(bop.op, lhs_ty, rhs_ty)) {
+                        .type => |ty| ty,
+                        .signedness, .lane => .unresolved,
+                    };
                 },
             },
             .unary_op => |uop| switch (uop.op) {
                 .not => .bool,
-                .negate => self.l.operandType(self.l.inferExprType(uop.operand)),
+                .negate, .bit_not => self.l.operandType(self.l.inferExprType(uop.operand)),
                 .xx => self.l.target_type orelse .unresolved,
                 .address_of => blk: {
                     const inner = self.l.inferExprType(uop.operand);
@@ -139,7 +145,6 @@ pub const ExprTyper = struct {
                     break :blk self.l.module.types.ptrTo(inner);
                 },
                 .pre_decrement => self.l.inferExprType(uop.operand),
-                else => .unresolved,
             },
             // `try X` evaluates to X's success type (the value part). A
             // pure-failable operand (`-> !` / `-> !Named`, whose type IS the
@@ -514,7 +519,7 @@ pub const ExprTyper = struct {
                 // ever lowers.
                 if (self.l.target_type) |tt| {
                     const usable = switch (self.l.module.types.get(tt)) {
-                        .string, .@"struct", .array, .vector, .slice, .closure, .@"union", .optional, .failable => true,
+                        .@"struct", .array, .vector, .slice, .closure, .@"union", .optional, .failable => true,
                         .@"enum" => |e| e.hasPayload(),
                         else => false,
                     };
@@ -522,6 +527,7 @@ pub const ExprTyper = struct {
                 }
                 return self.l.inferAnonStructType(&sl);
             },
+            .array_literal => |al| self.l.arrayLiteralType(&al) catch .unresolved,
             .tuple_literal => |tl| {
                 // Explicitly-typed construction with a type prefix: the literal's type is
                 // the carried tuple type (preserves field names for the named
@@ -583,7 +589,7 @@ pub const ExprTyper = struct {
             },
             .slice_expr => |se| {
                 const obj_ty = self.l.narrowedContainerChild(se.object) orelse self.l.inferExprType(se.object);
-                return self.sliceType(obj_ty) orelse .unresolved;
+                return self.sliceType(obj_ty, se.end == null) orelse .unresolved;
             },
             .deref_expr => |de| {
                 const ptr_ty = self.l.inferExprType(de.operand);

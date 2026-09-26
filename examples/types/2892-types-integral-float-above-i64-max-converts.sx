@@ -1,0 +1,6 @@
+@import "modules/std.sx";
+
+main :: () {
+    x : u64 = 1e19;
+    print("{}\n", x);
+}

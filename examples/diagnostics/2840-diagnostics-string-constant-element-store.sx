@@ -1,0 +1,8 @@
+// A string constant's bytes are the constant: storing to an element is a
+// write through it.
+
+main :: () -> i32 {
+    s :: "x";
+    s[0] = 65;
+    0
+}

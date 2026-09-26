@@ -25,35 +25,6 @@ last :: ufcs (s: []$T) -> ?$T {
     s[s.len - 1]
 }
 
-// ── [*:0]u8: the C-boundary string ────────────────────────────────────
-// C's `char *` is ONE pointer to a null-terminated u8 buffer. It carries
-// no length (`cstringLen` walks to the terminator) and crosses `extern`
-// boundaries verbatim in both directions; `?[*:0]u8` is the nullable case
-// (null pointer = absent). The terminator is the TYPE's: a terminated value
-// reaches it on its own, while a `string` materializes through `toCstring`.
-
-// Byte length of `c` (strlen — O(n), walks to the terminator).
-cstringLen :: (c: [*:0]u8) -> i64 {
-    n := 0;
-    while c[n] != '\0' { n += 1; }
-    n
-}
-
-// A zero-copy terminated VIEW over `c`'s bytes ({ptr, strlen}). The view
-// shares C's buffer — copy it if it must outlive the source.
-fromCstring :: (c: [*:0]u8) -> cstring {
-    cstring{ ptr = c.([*]u8), len = cstringLen(c) }
-}
-
-// An owned, terminated copy of `s`.
-toCstring :: (s: string) -> cstring {
-    sb := StringBuilder.init();
-    sb.reserve(s.len + 1);
-    sb.write(s);
-    sb.write("\0");
-    cstring{ ptr = sb.finish().ptr, len = s.len }
-}
-
 // Join path components with the POSIX separator ('/'). Skips empty
 // components and collapses duplicate separators at component
 // boundaries. Used for bundle paths where Apple .app and Android APK
@@ -178,7 +149,6 @@ writeAny :: ufcs (w: Writer, val: any) {
     match @typeInfo(t) {
         case .void: {}
         case .bool: writeBool(w, @unbox(bool, val));
-        case .string: w.write(@unbox(string, val));
         // A category arm binds the widened reading its whole tag set shares,
         // so one arm covers every width.
         case .int: {
@@ -251,11 +221,12 @@ writeAny :: ufcs (w: Writer, val: any) {
                 }
             }
         }
-        case .array: writeElements(w, val);
+        case .array: |ai| {
+            if @typeEq(ai.elem, u8) and ai.sentinel != null { writeText(w, val); } else { writeElements(w, val); }
+        }
         case .vector: writeElements(w, val);
-        case .slice: {
-            if @typeEq(t, cstring) { w.write(@unbox(cstring, val)); }
-            else { writeElements(w, val); }
+        case .slice: |si| {
+            if @typeEq(si.elem, u8) { writeText(w, val); } else { writeElements(w, val); }
         }
         case .pointer: writePointer(w, val);
         case .manyPointer: writePointer(w, val);
@@ -280,6 +251,12 @@ writeElements :: ufcs (w: Writer, val: any) {
         i += 1;
     }
     w.write("]");
+}
+
+// Element 0's view addresses the bytes of an array and of a slice alike.
+writeText :: ufcs (w: Writer, val: any) {
+    n := @len(val);
+    if n > 0 { w.write(@rawAnyData(@field(val, 0)).([*]u8)[0..n]); }
 }
 
 writePointer :: ufcs (w: Writer, val: any) {
@@ -312,7 +289,7 @@ emitSegment :: (code: string, sink: string, start: i64, end: i64) -> string {
 // literal run goes out as a view into `fmt`, a `{}` as its argument's
 // rendering, and `{{` / `}}` carry one brace through.
 buildFormat :: (fmt: string, sink: string) -> string {
-    code : string = "";
+    code := "";
     segStart := 0;
     i := 0;
     argIdx := 0;

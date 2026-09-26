@@ -9,12 +9,6 @@ help: the handle borrows the global's own symbol, which is what the image can ho
 12 | g : S = .{ inner = W{ v = 4 } };
    |                    ^^^^^^^^^^
 
-error: global 'g' must be initialized by a compile-time constant
-  --> examples/diagnostics/2209-diagnostics-interface-static-leaf-refusals.sx:12:9
-   |
-12 | g : S = .{ inner = W{ v = 4 } };
-   |         ^^^^^^^^^^^^^^^^^^^^^^^
-
 error: '.{ }' is a struct literal, not a 'P' handle
   --> examples/diagnostics/2209-diagnostics-interface-static-leaf-refusals.sx:15:20
    |
@@ -25,9 +19,3 @@ help: a static 'P' position names a module-scope global of a conforming type
    |
 15 | z : S = .{ inner = .{} };
    |                    ^^^
-
-error: global 'z' must be initialized by a compile-time constant
-  --> examples/diagnostics/2209-diagnostics-interface-static-leaf-refusals.sx:15:9
-   |
-15 | z : S = .{ inner = .{} };
-   |         ^^^^^^^^^^^^^^^^

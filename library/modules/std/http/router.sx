@@ -304,8 +304,8 @@ private parsePairs :: (s: string, out: [*]KV, cap: i64) -> i64 {
             if seg[k] == '=' { eq = k; break; }
             k += 1;
         }
-        key : string = "";
-        val : string = "";
+        key := "";
+        val := "";
         if eq < 0 {
             key = seg;
         } else {
@@ -452,7 +452,7 @@ dispatch :: (req: *Request, resp: *Response, ctx: usize) {
     // No method+path match. Does the PATH match any route (wrong method)
     // → 405 + Allow; else → 404.
     pathMatched := false;
-    allow : string = "";
+    allow := "";
     hasGet := false;
     hasHead := false;
     scratch : [MAX_PARAMS]KV = ---;

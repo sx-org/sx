@@ -163,7 +163,7 @@ sdlPointerButton :: (data: SDL_MouseButtonData) -> PointerEvent {
 }
 
 impl Platform for SdlPlatform {
-    init :: (self: *SdlPlatform, title: [:0]u8, w: i32, h: i32) -> bool {
+    init :: (self: *SdlPlatform, title: string, w: i32, h: i32) -> bool {
         self.running = true;
         self.hasFrameClosure = false;
         self.deltaTime = 0.008;
@@ -216,7 +216,9 @@ impl Platform for SdlPlatform {
             windowFlags |= SDL_WINDOW_METAL;
         }
 
-        self.window = SDL_CreateWindow(title, initW, initH, windowFlags);
+        titleZ := mem.cloneZ(title);
+        defer mem.free(titleZ);
+        self.window = SDL_CreateWindow(titleZ, initW, initH, windowFlags);
         if self.window == null { return false; }
 
         if self.gpuMode == .opengl {

@@ -8,16 +8,16 @@
 // The backend owns only hidden primitive operations. std/fs.sx owns every
 // portable type and method and stores Win32 HANDLE bits in an i64 slot.
 
-fsWindowsWidePath :: (path: [:0]u8) -> FsWindowsWidePath {
-    if path.ptr == null { return .{}; }
-    count := fsWindowsMultiByteToWideChar(FS_WINDOWS_CP_UTF8, 0, path.ptr, -1, null, 0);
+fsWindowsWidePath :: (path: string) -> FsWindowsWidePath {
+    count := fsWindowsMultiByteToWideChar(FS_WINDOWS_CP_UTF8, 0, path.ptr, path.len.(i32), null, 0);
     if count <= 0 { return .{}; }
     heap := fsWindowsGetProcessHeap(); if heap == null { return .{}; }
-    raw := fsWindowsHeapAlloc(heap, 0, (count.(u64) * 2)); if raw == null { return .{}; }
+    raw := fsWindowsHeapAlloc(heap, 0, ((count.(u64) + 1) * 2)); if raw == null { return .{}; }
     wide : [*]u16 = raw.([*]u16);
-    if fsWindowsMultiByteToWideChar(FS_WINDOWS_CP_UTF8, 0, path.ptr, -1, wide, count) != count {
+    if fsWindowsMultiByteToWideChar(FS_WINDOWS_CP_UTF8, 0, path.ptr, path.len.(i32), wide, count) != count {
         fsWindowsHeapFree(heap, 0, raw); return .{};
     }
+    wide[count] = 0;
     .{ ptr = wide, heap = heap }
 }
 
@@ -63,7 +63,7 @@ fsFileTruncate :: (handle: i64, len: i64) -> bool {
     fsWindowsSetEndOfFile(fsWindowsHandle(handle)) != 0
 }
 
-fsOpenHandle :: (path: [:0]u8, mode: i32) -> i64 {
+fsOpenHandle :: (path: string, mode: i32) -> i64 {
     wide := fsWindowsWidePath(path); if wide.ptr == null { return -1; }
     access := FS_WINDOWS_GENERIC_READ; creation := FS_WINDOWS_OPEN_EXISTING;
     if mode == 1 { access = FS_WINDOWS_GENERIC_WRITE; creation = FS_WINDOWS_CREATE_ALWAYS; }
@@ -77,17 +77,17 @@ fsOpenHandle :: (path: [:0]u8, mode: i32) -> i64 {
     bits
 }
 
-fsExists :: (path: [:0]u8) -> bool {
+fsExists :: (path: string) -> bool {
     wide := fsWindowsWidePath(path); if wide.ptr == null { return false; }
     attributes := fsWindowsGetFileAttributesW(wide.ptr); fsWindowsWideFree(wide); attributes != FS_WINDOWS_INVALID_ATTRIBUTES
 }
 
-fsDeleteFile :: (path: [:0]u8) -> bool {
+fsDeleteFile :: (path: string) -> bool {
     wide := fsWindowsWidePath(path); if wide.ptr == null { return false; }
     ok := fsWindowsDeleteFileW(wide.ptr) != 0; fsWindowsWideFree(wide); ok
 }
 
-fsWriteFile :: (path: [:0]u8, data: string) -> bool {
+fsWriteFile :: (path: string, data: string) -> bool {
     handle := fsOpenHandle(path, 1); if !fsFileIsValid(handle) { return false; }
     at := 0;
     while at < data.len {
@@ -98,7 +98,7 @@ fsWriteFile :: (path: [:0]u8, data: string) -> bool {
     fsFileClose(handle)
 }
 
-fsReadFile :: (path: [:0]u8) -> ?string {
+fsReadFile :: (path: string) -> ?string {
     handle := fsOpenHandle(path, 0); if !fsFileIsValid(handle) { return null; }
     size := fsFileSeek(handle, 0, 2);
     if size < 0 or fsFileSeek(handle, 0, 0) < 0 { fsFileClose(handle); return null; }
@@ -120,7 +120,7 @@ fsReadFile :: (path: [:0]u8) -> ?string {
     result
 }
 
-fsAppendFile :: (path: [:0]u8, data: string) -> bool {
+fsAppendFile :: (path: string, data: string) -> bool {
     handle := fsOpenHandle(path, 2); if !fsFileIsValid(handle) { return false; }
     at := 0;
     while at < data.len {
@@ -131,17 +131,17 @@ fsAppendFile :: (path: [:0]u8, data: string) -> bool {
     fsFileClose(handle)
 }
 
-fsDeleteDir :: (path: [:0]u8) -> bool {
+fsDeleteDir :: (path: string) -> bool {
     wide := fsWindowsWidePath(path); if wide.ptr == null { return false; }
     ok := fsWindowsRemoveDirectoryW(wide.ptr) != 0; fsWindowsWideFree(wide); ok
 }
 
-fsCreateDir :: (path: [:0]u8) -> bool {
+fsCreateDir :: (path: string) -> bool {
     wide := fsWindowsWidePath(path); if wide.ptr == null { return false; }
     ok := fsWindowsCreateDirectoryW(wide.ptr, null) != 0; fsWindowsWideFree(wide); ok
 }
 
-fsSetMode :: (path: [:0]u8, mode: u32) -> bool {
+fsSetMode :: (path: string, mode: u32) -> bool {
     wide := fsWindowsWidePath(path); if wide.ptr == null { return false; }
     attributes := fsWindowsGetFileAttributesW(wide.ptr);
     if attributes == FS_WINDOWS_INVALID_ATTRIBUTES { fsWindowsWideFree(wide); return false; }
@@ -152,7 +152,7 @@ fsSetMode :: (path: [:0]u8, mode: u32) -> bool {
     ok
 }
 
-fsMove :: (oldPath: [:0]u8, newPath: [:0]u8) -> bool {
+fsMove :: (oldPath: string, newPath: string) -> bool {
     oldWide := fsWindowsWidePath(oldPath); if oldWide.ptr == null { return false; }
     newWide := fsWindowsWidePath(newPath);
     if newWide.ptr == null { fsWindowsWideFree(oldWide); return false; }
@@ -160,7 +160,7 @@ fsMove :: (oldPath: [:0]u8, newPath: [:0]u8) -> bool {
     fsWindowsWideFree(newWide); fsWindowsWideFree(oldWide); ok
 }
 
-fsCopyFile :: (source: [:0]u8, destination: [:0]u8) -> bool {
+fsCopyFile :: (source: string, destination: string) -> bool {
     sourceWide := fsWindowsWidePath(source); if sourceWide.ptr == null { return false; }
     destinationWide := fsWindowsWidePath(destination);
     if destinationWide.ptr == null { fsWindowsWideFree(sourceWide); return false; }
@@ -170,7 +170,7 @@ fsCopyFile :: (source: [:0]u8, destination: [:0]u8) -> bool {
 
 fsWindowsSeparator :: (byte: u8) -> bool { byte == '/' or byte == '\\' }
 
-fsCreateDirAll :: (path: [:0]u8) -> bool {
+fsCreateDirAll :: (path: string) -> bool {
     if path.len == 0 or fsExists(path) { return true; }
     last := path.len - 1;
     while last > 0 {
@@ -178,13 +178,7 @@ fsCreateDirAll :: (path: [:0]u8) -> bool {
         last -= 1;
     }
     // Do not recurse below a drive root such as C:\\.
-    if last > 0 and !(last == 2 and path[1] == ':') {
-        parent := mem.allocString(last);
-        fsWindowsC.c.memcpy(parent.ptr, path.ptr, last);
-        parentOk := fsCreateDirAll(parent);
-        context.allocator.deallocBytes(parent.ptr);
-        if !parentOk { return false; }
-    }
+    if last > 0 and !(last == 2 and path[1] == ':') and !fsCreateDirAll(path[0 .. last]) { return false; }
     fsCreateDir(path) or fsExists(path)
 }
 
@@ -226,7 +220,7 @@ fsModifiedSecondsHandle :: (handle: i64) -> (i64, bool) {
     return ((ticks - epochTicks) / 10000000).(i64), true;
 }
 
-fsSetModifiedSeconds :: (path: [:0]u8, seconds: i64) -> bool {
+fsSetModifiedSeconds :: (path: string, seconds: i64) -> bool {
     if seconds < -11644473600 or seconds > 1833029933770 { return false; }
     wide := fsWindowsWidePath(path); if wide.ptr == null { return false; }
     handle := fsWindowsCreateFileW(wide.ptr, FS_WINDOWS_FILE_WRITE_ATTRIBUTES, FS_WINDOWS_FILE_SHARE_ALL, null, FS_WINDOWS_OPEN_EXISTING, FS_WINDOWS_FILE_ATTRIBUTE_NORMAL, null);

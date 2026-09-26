@@ -1,0 +1,5 @@
+error: 'len' of '[3]i64' is not a storage place — its length and address are fixed
+  --> examples/diagnostics/2844-diagnostics-array-length-write.sx:5:5
+   |
+ 5 |     a.len = 7;
+   |     ^^^^^

@@ -32,7 +32,6 @@ test "adoptsForwardStructStub: scalar / non-nominal incoming kinds never adopt" 
     try std.testing.expect(!nominal.adoptsForwardStructStub(stub, .{ .unsigned = 32 }));
     try std.testing.expect(!nominal.adoptsForwardStructStub(stub, .f64));
     try std.testing.expect(!nominal.adoptsForwardStructStub(stub, .bool));
-    try std.testing.expect(!nominal.adoptsForwardStructStub(stub, .string));
     try std.testing.expect(!nominal.adoptsForwardStructStub(stub, .void));
 }
 

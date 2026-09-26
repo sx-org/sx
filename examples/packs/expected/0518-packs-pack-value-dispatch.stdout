@@ -1,7 +1,7 @@
 i64
-cstring
+string
 f64
 got i64
-got cstring
+got string
 got bool
 got other

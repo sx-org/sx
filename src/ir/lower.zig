@@ -168,20 +168,20 @@ pub fn constFoldFrameContains(frame: ?*const ConstFoldFrame, name: []const u8, e
 pub const SourceConstCtx = struct {
     lowering: *Lowering,
     frame: ?*const ConstFoldFrame,
-    pub fn lookupDimName(self: SourceConstCtx, name: []const u8) ?i64 {
+    pub fn lookupDimName(self: SourceConstCtx, name: []const u8) ?i128 {
         return self.lowering.foldSourceConstInt(name, self.frame);
     }
     pub fn lookupPackLen(self: SourceConstCtx, name: []const u8) ?i64 {
         return self.lowering.lookupPackLen(name);
     }
-    pub fn typeLimitInt(self: SourceConstCtx, receiver: *const Node, field: []const u8) ?i64 {
+    pub fn typeLimitInt(self: SourceConstCtx, receiver: *const Node, field: []const u8) ?i128 {
         return self.lowering.typeLimitInt(receiver, field);
     }
-    pub fn untypedNumericLeaf(self: SourceConstCtx, node: *const Node) ?program_index_mod.UntypedNumericKind {
+    pub fn untypedLeaf(self: SourceConstCtx, node: *const Node) ?program_index_mod.Untyped {
         const saved = self.lowering.scope;
         self.lowering.scope = null;
         defer self.lowering.scope = saved;
-        return self.lowering.untypedNumericLeaf(node);
+        return self.lowering.untypedLeaf(node);
     }
     pub fn floatLeafType(self: SourceConstCtx, node: *const Node) ?TypeId {
         const saved = self.lowering.scope;
@@ -201,12 +201,12 @@ pub const SourceConstCtx = struct {
     pub fn lookupConstAggLen(self: SourceConstCtx, name: []const u8) ?i64 {
         return self.lowering.foldConstAggLen(name);
     }
-    pub fn lookupConstArrayElem(self: SourceConstCtx, name: []const u8, idx: i64, span: ?ast.Span) ?i64 {
+    pub fn lookupConstArrayElem(self: SourceConstCtx, name: []const u8, idx: i64, span: ?ast.Span) ?i128 {
         return self.lowering.foldConstArrayElem(name, idx, span, self.frame);
     }
-    pub fn lookupConstStructField(self: SourceConstCtx, name: []const u8, field: []const u8, span: ?ast.Span) ?i64 {
-        return self.lowering.foldComptimeStructField(name, field) orelse
-            self.lowering.foldConstStructField(name, field, span, self.frame);
+    pub fn lookupConstStructField(self: SourceConstCtx, name: []const u8, field: []const u8, span: ?ast.Span) ?i128 {
+        if (self.lowering.foldComptimeStructField(name, field)) |v| return v;
+        return self.lowering.foldConstStructField(name, field, span, self.frame);
     }
     pub fn evalConstCallInt(self: SourceConstCtx, node: *const Node) ?i64 {
         if (self.lowering.fieldCall(node) != null) return self.lowering.foldFieldInt(node, self.frame);
@@ -215,7 +215,7 @@ pub const SourceConstCtx = struct {
     pub fn evalConstFieldAccessInt(self: SourceConstCtx, node: *const Node) ?i64 {
         return self.lowering.evalConstFieldAccessInt(node);
     }
-    pub fn lookupQualifiedConst(self: SourceConstCtx, ns: []const u8, field: []const u8) ?i64 {
+    pub fn lookupQualifiedConst(self: SourceConstCtx, ns: []const u8, field: []const u8) ?i128 {
         return self.lowering.foldQualifiedConstInt(ns, field, self.frame);
     }
     pub fn lookupQualifiedConstFloat(self: SourceConstCtx, ns: []const u8, field: []const u8) ?f64 {
@@ -224,7 +224,7 @@ pub const SourceConstCtx = struct {
     pub fn qualifiedNameIsFloatTyped(self: SourceConstCtx, ns: []const u8, field: []const u8) bool {
         return self.lowering.qualifiedConstIsFloatTyped(ns, field, self.frame);
     }
-    pub fn lookupQualifiedConstNode(self: SourceConstCtx, node: *const Node) ?i64 {
+    pub fn lookupQualifiedConstNode(self: SourceConstCtx, node: *const Node) ?i128 {
         return self.lowering.foldQualifiedConstNodeInt(node, self.frame);
     }
     pub fn lookupQualifiedConstNodeFloat(self: SourceConstCtx, node: *const Node) ?f64 {
@@ -241,6 +241,12 @@ pub const SourceConstCtx = struct {
 /// present, never a spelling, so a declaration shadowing a proven name has no
 /// proof of its own.
 pub const BindingId = enum(u64) { _ };
+
+pub const LiteralLocal = struct {
+    binding: BindingId,
+    name: []const u8,
+    init: *const ast.Node,
+};
 
 pub const Binding = struct {
     /// Where a NON-ALLOCA binding came from. Drives the shape-specific
@@ -285,7 +291,12 @@ pub const Binding = struct {
     /// interface-only constraint check.
     alias_node: ?*ast.Node = null,
     origin: Origin = .other,
-    untyped_numeric: ?program_index_mod.UntypedNumericKind = null,
+    untyped: ?program_index_mod.Untyped = null,
+    /// An untyped integer local constant's exact value, which each read folds
+    /// at its own type; `ref` holds its low 64 bits as an `i64`.
+    untyped_integer: ?i128 = null,
+    /// A `:=` local initialized from an untyped string constant: that initializer.
+    literal_init: ?*const ast.Node = null,
     /// The binding names a C `va_list` this frame BORROWS — an incoming
     /// boundary parameter. Its caller opened it and ends it, so `@vaStart` /
     /// `@vaEnd` here would act on another frame's list.
@@ -460,7 +471,6 @@ pub const Lowering = struct {
     continue_target: ?BlockId = null,
     loop_defer_base: usize = 0, // defer-stack height at the innermost loop's body start (break/continue drain to here)
     suppress_int_fit_check: bool = false, // inside an explicit `xx` cast operand: truncation is requested, skip the literal fits-check
-    int_lit_extra_fit_ty: ?TypeId = null, // inside a `cast(T)` operand (T is the ambient type here): an ADDITIONAL range the literal may fit — set to i64 so a value fitting i64 but not T still truncates rather than erroring
     block_counter: u32 = 0,
     comptime_counter: u32 = 0,
     /// Hands out `BindingId`s to every scope this lowering builds. It is NOT
@@ -766,6 +776,13 @@ pub const Lowering = struct {
     /// from name-keyed narrowing to the Ref-keyed `coerceMode` unwrap gate.
     /// Cleared per function body (the `Ref` space is per-function).
     narrowed_refs: std.AutoHashMap(Ref, void) = undefined,
+    /// The `Ref`s loaded from a `:=` local bound to a literal, for the `::`
+    /// fix-it where one reaches a terminated destination. Per function body.
+    literal_local_refs: std.AutoHashMap(Ref, LiteralLocal) = undefined,
+    /// Terminator refusals whose `::` fix-it waits for the end of lowering,
+    /// when every write of the local has been seen.
+    literal_local_helps: std.ArrayList(lower_coerce.LiteralLocalHelp) = .empty,
+    written_bindings: std.AutoHashMapUnmanaged(BindingId, void) = .empty,
     force_block_value: bool = false, // set by lowerDemandedBody for a demand that wants a value, to extract if-else values
     // Set while lowering a NAMED multi-return function body (`-> (x: A, y: B)`):
     // the slot names (1:1 with the return tuple's fields; a trailing "!" marks
@@ -1124,6 +1141,7 @@ pub const Lowering = struct {
         error_boundary: ?ErrorBoundary,
         narrowed: std.AutoHashMap(BindingId, void),
         narrowed_refs: std.AutoHashMap(Ref, void),
+        literal_local_refs: std.AutoHashMap(Ref, LiteralLocal),
         break_target: ?BlockId,
         continue_target: ?BlockId,
         loop_defer_base: usize,
@@ -1152,6 +1170,7 @@ pub const Lowering = struct {
                 // narrowing state and the outer state is restored after.
                 .narrowed = l.narrowed,
                 .narrowed_refs = l.narrowed_refs,
+                .literal_local_refs = l.literal_local_refs,
                 // Loop targets and build replays are lexical to one body for
                 // the same reasons `NestedBodyGuard` states.
                 .break_target = l.break_target,
@@ -1161,6 +1180,7 @@ pub const Lowering = struct {
             };
             l.narrowed = std.AutoHashMap(BindingId, void).init(l.alloc);
             l.narrowed_refs = std.AutoHashMap(Ref, void).init(l.alloc);
+            l.literal_local_refs = std.AutoHashMap(Ref, LiteralLocal).init(l.alloc);
             l.break_target = null;
             l.continue_target = null;
             l.loop_defer_base = 0;
@@ -1204,6 +1224,8 @@ pub const Lowering = struct {
             l.narrowed = g.narrowed;
             l.narrowed_refs.deinit();
             l.narrowed_refs = g.narrowed_refs;
+            l.literal_local_refs.deinit();
+            l.literal_local_refs = g.literal_local_refs;
             l.break_target = g.break_target;
             l.continue_target = g.continue_target;
             l.loop_defer_base = g.loop_defer_base;
@@ -1235,6 +1257,7 @@ pub const Lowering = struct {
         l: *Lowering,
         narrowed: std.AutoHashMap(BindingId, void),
         narrowed_refs: std.AutoHashMap(Ref, void),
+        literal_local_refs: std.AutoHashMap(Ref, LiteralLocal),
         break_target: ?BlockId,
         continue_target: ?BlockId,
         loop_defer_base: usize,
@@ -1256,6 +1279,7 @@ pub const Lowering = struct {
                 .module_const_frame = l.module_const_frame,
                 .narrowed = l.narrowed,
                 .narrowed_refs = l.narrowed_refs,
+                .literal_local_refs = l.literal_local_refs,
                 .break_target = l.break_target,
                 .continue_target = l.continue_target,
                 .loop_defer_base = l.loop_defer_base,
@@ -1266,6 +1290,7 @@ pub const Lowering = struct {
             };
             l.narrowed = std.AutoHashMap(BindingId, void).init(l.alloc);
             l.narrowed_refs = std.AutoHashMap(Ref, void).init(l.alloc);
+            l.literal_local_refs = std.AutoHashMap(Ref, LiteralLocal).init(l.alloc);
             l.break_target = null;
             l.continue_target = null;
             l.loop_defer_base = 0;
@@ -1290,6 +1315,8 @@ pub const Lowering = struct {
             g.l.narrowed = g.narrowed;
             g.l.narrowed_refs.deinit();
             g.l.narrowed_refs = g.narrowed_refs;
+            g.l.literal_local_refs.deinit();
+            g.l.literal_local_refs = g.literal_local_refs;
             g.l.break_target = g.break_target;
             g.l.continue_target = g.continue_target;
             g.l.loop_defer_base = g.loop_defer_base;
@@ -1436,6 +1463,7 @@ pub const Lowering = struct {
             .alias_cycle_diagnosed = std.AutoHashMap(usize, void).init(module.alloc),
             .resolving_type_aliases = std.AutoHashMap(imports_mod.DeclId, void).init(module.alloc),
             .narrowed_refs = std.AutoHashMap(Ref, void).init(module.alloc),
+            .literal_local_refs = std.AutoHashMap(Ref, LiteralLocal).init(module.alloc),
             .convert_reentrancy = std.AutoHashMap(u64, void).init(module.alloc),
             .inferred_error_sets = std.AutoHashMap(imports_mod.DeclId, []const u32).init(module.alloc),
             .impl_method_names = std.StringHashMap(void).init(module.alloc),
@@ -1799,7 +1827,7 @@ pub const Lowering = struct {
     /// is a hard error and yields null; the caller poisons rather than
     /// fabricating a width.
     pub fn resolveIntWidth(self: *Lowering, width_node: *const Node) ?u8 {
-        const out_of_range: i64 = switch (program_index_mod.foldDimU32(width_node, self, 1)) {
+        const out_of_range: i128 = switch (program_index_mod.foldDimU32(width_node, self, 1)) {
             .ok => |n| if (n <= types.max_int_width) return @intCast(n) else n,
             .below_min, .too_large => |v| v,
             .non_integral_float => |v| {
@@ -1836,7 +1864,7 @@ pub const Lowering = struct {
 
     /// Leaf-name lookup for the shared dimension evaluator: a name bound to a
     /// compile-time integer across the three const tables.
-    pub fn lookupDimName(self: *Lowering, name: []const u8) ?i64 {
+    pub fn lookupDimName(self: *Lowering, name: []const u8) ?i128 {
         return self.comptimeIntNamed(name);
     }
 
@@ -1959,6 +1987,7 @@ pub const Lowering = struct {
             if (scoped.crossed != .none) return null;
             if (scoped.binding) |binding| {
                 if (binding.origin != .local_const) return null;
+                if (binding.untyped_integer) |v| return @floatFromInt(v);
                 if (self.builder.constFloatInfo(binding.ref)) |info| return info.value;
                 if (self.foldedInt(binding.ref)) |v| return @floatFromInt(v);
                 return null;
@@ -1979,17 +2008,17 @@ pub const Lowering = struct {
     pub fn lookupConstAggLen(self: *Lowering, name: []const u8) ?i64 {
         return self.foldConstAggLen(name);
     }
-    pub fn lookupConstArrayElem(self: *Lowering, name: []const u8, idx: i64, span: ?ast.Span) ?i64 {
+    pub fn lookupConstArrayElem(self: *Lowering, name: []const u8, idx: i64, span: ?ast.Span) ?i128 {
         return self.foldConstArrayElem(name, idx, span, null);
     }
-    pub fn lookupConstStructField(self: *Lowering, name: []const u8, field: []const u8, span: ?ast.Span) ?i64 {
-        return self.foldComptimeStructField(name, field) orelse
-            self.foldConstStructField(name, field, span, null);
+    pub fn lookupConstStructField(self: *Lowering, name: []const u8, field: []const u8, span: ?ast.Span) ?i128 {
+        if (self.foldComptimeStructField(name, field)) |v| return v;
+        return self.foldConstStructField(name, field, span, null);
     }
     /// Qualified-import-member const leaf (`m.CAP`) for the shared
     /// dimension evaluator — resolves the namespace alias `ns` to its target
     /// module and folds its `field` const there.
-    pub fn lookupQualifiedConst(self: *Lowering, ns: []const u8, field: []const u8) ?i64 {
+    pub fn lookupQualifiedConst(self: *Lowering, ns: []const u8, field: []const u8) ?i128 {
         return self.foldQualifiedConstInt(ns, field, null);
     }
     pub fn lookupQualifiedConstFloat(self: *Lowering, ns: []const u8, field: []const u8) ?f64 {
@@ -1998,7 +2027,7 @@ pub const Lowering = struct {
     pub fn qualifiedNameIsFloatTyped(self: *Lowering, ns: []const u8, field: []const u8) bool {
         return self.qualifiedConstIsFloatTyped(ns, field, null);
     }
-    pub fn lookupQualifiedConstNode(self: *Lowering, node: *const Node) ?i64 {
+    pub fn lookupQualifiedConstNode(self: *Lowering, node: *const Node) ?i128 {
         return self.foldQualifiedConstNodeInt(node, null);
     }
     pub fn lookupQualifiedConstNodeFloat(self: *Lowering, node: *const Node) ?f64 {
@@ -2763,11 +2792,10 @@ pub const Lowering = struct {
         }
     }
 
-    /// Get the element type for a slice/array/string type. A non-collection
-    /// type has no element type — return `.unresolved` (asking for it is a bug)
-    /// rather than a plausible `.i64`.
+    /// Get the element type for a slice/array/vector/many-pointer type. A
+    /// non-collection type has no element type — return `.unresolved` (asking
+    /// for it is a bug) rather than a plausible `.i64`.
     pub fn getElementType(self: *Lowering, ty: TypeId) TypeId {
-        if (ty == .string) return .u8;
         const info = self.module.types.get(ty);
         return switch (info) {
             .slice => |s| s.element,
@@ -2780,7 +2808,7 @@ pub const Lowering = struct {
 
     /// A `[N:X]T` terminator as a value of the element type.
     pub fn sentinelValue(self: *Lowering, sentinel: i64, elem_ty: TypeId) Ref {
-        if (isFloat(elem_ty)) return self.builder.constFloat(@floatFromInt(sentinel), elem_ty);
+        if (isFloat(elem_ty)) return self.builder.constFloat(types.floatFromInt(sentinel, elem_ty), elem_ty);
         return self.builder.constInt(sentinel, elem_ty);
     }
 
@@ -2901,21 +2929,35 @@ pub const Lowering = struct {
         return ty == .f32 or ty == .f64;
     }
 
-    pub fn floatContext(self: *Lowering, target: ?TypeId) ?TypeId {
+    fn underOptionals(self: *Lowering, target: ?TypeId) ?TypeId {
         var ty = target orelse return null;
         while (!ty.isBuiltin()) {
             const info = self.module.types.get(ty);
-            if (info != .optional) return null;
+            if (info != .optional) return ty;
             ty = info.optional.child;
         }
+        return ty;
+    }
+
+    pub fn floatContext(self: *Lowering, target: ?TypeId) ?TypeId {
+        const ty = self.underOptionals(target) orelse return null;
         return if (isFloat(ty)) ty else null;
+    }
+
+    pub fn integerContext(self: *Lowering, target: ?TypeId) ?TypeId {
+        const ty = self.underOptionals(target) orelse return null;
+        return if (self.isIntEx(ty)) ty else null;
     }
 
     pub fn isAdaptableFloat(self: *Lowering, node: *const Node) bool {
         return program_index_mod.isAdaptableFloat(node, self);
     }
 
-    pub const untypedNumericLeaf = lower_comptime.untypedNumericLeaf;
+    pub fn untypedString(self: *Lowering, node: *const Node) ?ast.StringLiteral {
+        return program_index_mod.untypedString(node, self);
+    }
+
+    pub const untypedLeaf = lower_comptime.untypedLeaf;
 
     pub fn floatLeafType(self: *Lowering, node: *const Node) ?TypeId {
         switch (node.data) {
@@ -2934,9 +2976,71 @@ pub const Lowering = struct {
         return adopted;
     }
 
-    pub fn arithResultType(self: *Lowering, lhs_ty: TypeId, rhs_ty: TypeId) TypeId {
-        if (self.isIntEx(lhs_ty) and isFloat(rhs_ty)) return rhs_ty;
-        return lhs_ty;
+    /// The type of `lhs op rhs` for an arithmetic, bitwise or shift `op`, or
+    /// why its operands have none.
+    pub const ArithResult = union(enum) {
+        type: TypeId,
+        /// Integers of opposite signedness that do not widen into each other.
+        signedness,
+        /// A scalar that does not convert implicitly to its vector peer's lane type.
+        lane,
+    };
+
+    /// Two numeric scalars meet at their common type, a scalar meets a vector
+    /// at the vector when it converts implicitly to the lane type, and a shift
+    /// keeps its left operand's type.
+    pub fn arithResultType(self: *Lowering, op: ast.BinaryOp.Op, lhs_ty: TypeId, rhs_ty: TypeId) ArithResult {
+        if (op == .shl or op == .shr) return .{ .type = lhs_ty };
+        const coercions = self.coercionResolver();
+        const l_scalar = coercions.isNumericScalar(lhs_ty);
+        const r_scalar = coercions.isNumericScalar(rhs_ty);
+        if (l_scalar and r_scalar) return switch (coercions.numericMeet(lhs_ty, rhs_ty)) {
+            .type => |ty| .{ .type = ty },
+            .signedness => .signedness,
+        };
+        if (r_scalar and self.isVectorType(lhs_ty)) return self.vectorScalarMeet(lhs_ty, rhs_ty);
+        if (l_scalar and self.isVectorType(rhs_ty)) return self.vectorScalarMeet(rhs_ty, lhs_ty);
+        return .{ .type = lhs_ty };
+    }
+
+    fn vectorScalarMeet(self: *Lowering, vector_ty: TypeId, scalar_ty: TypeId) ArithResult {
+        const lane = self.module.types.get(vector_ty).vector.element;
+        const coercions = self.coercionResolver();
+        if (!coercions.isNumericScalar(lane)) return .lane;
+        return switch (coercions.numericMeet(scalar_ty, lane)) {
+            .type => |ty| if (ty == lane) .{ .type = vector_ty } else .lane,
+            .signedness => .lane,
+        };
+    }
+
+    /// The type an untyped operand of an arithmetic or bitwise `op` takes from
+    /// its typed peer.
+    pub fn untypedOperandType(self: *Lowering, op: ast.BinaryOp.Op, operand: *const Node, peer: *const Node) ?TypeId {
+        if (program_index_mod.untypedConst(peer, self) != null) return null;
+        return self.untypedOperandTypeAt(op, operand, self.operandType(self.inferExprType(peer)));
+    }
+
+    /// The type an untyped operand of an arithmetic or bitwise `op` takes from
+    /// a peer of `peer_ty`: an integer takes a numeric peer's type or a vector
+    /// peer's lane type, and a float takes a vector peer's float lane type.
+    pub fn untypedOperandTypeAt(self: *Lowering, op: ast.BinaryOp.Op, operand: *const Node, peer_ty: TypeId) ?TypeId {
+        switch (op) {
+            .add, .sub, .mul, .div, .mod, .bit_and, .bit_or, .bit_xor => {},
+            else => return null,
+        }
+        const kind = program_index_mod.untypedConst(operand, self) orelse return null;
+        if (kind == .string) return null;
+        const coercions = self.coercionResolver();
+        if (self.isVectorType(peer_ty)) {
+            const lane = self.module.types.get(peer_ty).vector.element;
+            const adopts = if (kind == .integer) coercions.isNumericScalar(lane) else isFloat(lane);
+            return if (adopts) lane else null;
+        }
+        return if (kind == .integer and coercions.isNumericScalar(peer_ty)) peer_ty else null;
+    }
+
+    pub fn isVectorType(self: *Lowering, ty: TypeId) bool {
+        return !ty.isBuiltin() and self.module.types.get(ty) == .vector;
     }
 
     /// Carry-rule resolution outcome for a namespace alias, diagnostic-free.
@@ -3330,63 +3434,30 @@ pub const Lowering = struct {
         return info.@"enum".tag_type;
     }
 
-    /// Value range of an integer type, for literal fits-checks. Null for
-    /// 64-bit types — every i64 literal bit pattern is legal there (a 64-bit
-    /// hex literal wraps negative through the lexer's i64 value, so a
-    /// min/max check would false-positive) — and for non-integers.
-    pub fn intLiteralRange(self: *Lowering, ty: TypeId) ?struct { min: i64, max: i64 } {
+    /// Exact value range of an integer type, for literal fits-checks. Null for
+    /// non-integers.
+    pub fn intLiteralRange(self: *Lowering, ty: TypeId) ?struct { min: i128, max: i128 } {
         const layout = self.module.types.integerLayout(ty) orelse return null;
-        if (layout.width >= 64) return null;
-        return .{ .min = layout.limit(false), .max = layout.limit(true) };
+        return .{ .min = layout.bound(false), .max = layout.bound(true) };
     }
 
-    /// Max NON-NEGATIVE magnitude a bare integer literal may hold in `ty`. A
-    /// bare `int_literal` is always non-negative (negation is a separate fold),
-    /// so its true value is the unsigned magnitude — checked against this cap.
-    /// Uses `u64` so the 64-bit widths are EXACT (`i64` → i64.max, `u64` →
-    /// u64.max), unlike `intLiteralRange` which returns null there because a
-    /// >i64.max value can't be an i64 range bound. Null for non-integers.
-    pub fn intLiteralMaxMagnitude(self: *Lowering, ty: TypeId) ?u64 {
-        const layout = self.module.types.integerLayout(ty) orelse return null;
-        return @bitCast(layout.limit(true));
+    /// The integer an `i64` constant of type `ty` holds: an unsigned
+    /// constant is its bit pattern.
+    pub fn intConstantValue(self: *Lowering, value: i64, ty: TypeId) i128 {
+        const layout = self.module.types.integerLayout(ty) orelse return value;
+        return if (layout.signed) value else @as(u64, @bitCast(value));
     }
 
-    /// Fits-check for a BARE integer literal, magnitude-based (see
-    /// `intLiteralMaxMagnitude`). Correctly admits a `u64` literal up to
-    /// u64.max while still rejecting a >i64.max literal at an `i64` destination.
-    /// The constant is still emitted by the caller so lowering continues.
+    /// Fits-check for a BARE integer literal, whose `value` is the magnitude's
+    /// bit pattern.
     pub fn checkIntLiteralMagnitudeFits(self: *Lowering, value: i64, ty: TypeId, span: ast.Span) void {
-        if (self.suppress_int_fit_check) return;
-        const cap = self.intLiteralMaxMagnitude(ty) orelse return;
-        const mag: u64 = @bitCast(value);
-        if (mag <= cap) return;
-        // Cast operand: a `cast(T) <lit>` folds against T (the
-        // ambient `ty` here) but still TRUNCATES, so a literal that fits i64
-        // yet overflows a narrower T (`cast(i8) 300`) must be accepted, not
-        // rejected. `int_lit_extra_fit_ty` (set to i64 for the cast operand)
-        // is that additional allowed range: accept when the value fits it,
-        // erroring only when it fits NEITHER T NOR i64.
-        if (self.int_lit_extra_fit_ty) |extra| {
-            if (self.intLiteralMaxMagnitude(extra)) |ecap| {
-                if (mag <= ecap) return;
-            }
-        }
-        const d = self.diagnostics orelse return;
-        const tn = self.formatTypeName(ty);
-        // Sub-64-bit types have an i64-expressible range — keep the exact
-        // "(range min..max)" wording. The 64-bit types (i64/u64) can't (their
-        // bound overflows i64), so report the max magnitude instead.
-        if (self.intLiteralRange(ty)) |r| {
-            d.addFmt(.err, span, "integer literal {} does not fit in {s} (range {}..{}) — use an explicit `.({s})` to truncate", .{ mag, tn, r.min, r.max, tn });
-        } else {
-            d.addFmt(.err, span, "integer literal {} does not fit in {s} (max {}) — use an explicit `.({s})` to truncate", .{ mag, tn, cap, tn });
-        }
+        self.checkIntLiteralFits(@as(u64, @bitCast(value)), ty, span);
     }
 
-    /// Diagnose an integer literal that cannot be represented in `ty`
-    /// (REJECTED PATTERNS: no silent wrap). The constant is still emitted by
-    /// the caller so lowering continues and surfaces further errors.
-    pub fn checkIntLiteralFits(self: *Lowering, value: i64, ty: TypeId, span: ast.Span) void {
+    /// Diagnose an integer constant whose exact `value` cannot be represented
+    /// in `ty` (REJECTED PATTERNS: no silent wrap). The constant is still
+    /// emitted by the caller so lowering continues and surfaces further errors.
+    pub fn checkIntLiteralFits(self: *Lowering, value: i128, ty: TypeId, span: ast.Span) void {
         if (self.suppress_int_fit_check) return;
         const r = self.intLiteralRange(ty) orelse return;
         if (value < r.min or value > r.max) {
@@ -3479,7 +3550,7 @@ pub const Lowering = struct {
         if (self.isIntEx(init_ty)) return "an integer expression";
         if (isFloat(init_ty)) return "a floating-point expression";
         if (init_ty == .bool) return "a boolean expression";
-        if (init_ty == .string or init_ty == .cstring) return "a string expression";
+        if (init_ty == .string or init_ty == .string_z) return "a string expression";
         return "an expression of an incompatible type";
     }
 
@@ -3665,6 +3736,9 @@ pub const Lowering = struct {
     pub const createComptimeFunction = lower_comptime.createComptimeFunction;
     pub const createComptimeFunctionWithPrelude = lower_comptime.createComptimeFunctionWithPrelude;
     pub const constExprValue = lower_comptime.constExprValue;
+    pub const constCastValue = lower_comptime.constCastValue;
+    pub const constStringLiteral = lower_comptime.constStringLiteral;
+    pub const someConstant = lower_comptime.someConstant;
     pub const constArrayLiteral = lower_comptime.constArrayLiteral;
     pub const defaultConstant = lower_comptime.defaultConstant;
     pub const constStructLiteral = lower_comptime.constStructLiteral;
@@ -3725,6 +3799,7 @@ pub const Lowering = struct {
     pub const diagPayloadVariantWrite = lower_stmt.diagPayloadVariantWrite;
     pub const lowerExprAsPtr = lower_stmt.lowerExprAsPtr;
     pub const rootIsConstant = lower_stmt.rootIsConstant;
+    pub const constantRoot = lower_stmt.constantRoot;
     pub const storeOrCompound = lower_stmt.storeOrCompound;
     pub const emitCompoundOp = lower_stmt.emitCompoundOp;
     pub const Place = lower_stmt.Place;
@@ -3742,6 +3817,7 @@ pub const Lowering = struct {
     pub const diagConstRootWrite = lower_stmt.diagConstRootWrite;
     pub const diagContextRootWrite = lower_stmt.diagContextRootWrite;
     pub const diagNonstoreRootWrite = lower_stmt.diagNonstoreRootWrite;
+    pub const noteStorageWrite = lower_stmt.noteStorageWrite;
     pub const diagDecrementTarget = lower_stmt.diagDecrementTarget;
     pub const diagDecrementNonInteger = lower_stmt.diagDecrementNonInteger;
     pub const lowerMultiAssign = lower_stmt.lowerMultiAssign;
@@ -3818,7 +3894,6 @@ pub const Lowering = struct {
     pub const registerTypedModuleConst = lower_decl.registerTypedModuleConst;
     pub const registerConstArrayGlobal = lower_decl.registerConstArrayGlobal;
     pub const maybeRegisterConstStructGlobal = lower_decl.maybeRegisterConstStructGlobal;
-    pub const inferConstArrayType = lower_decl.inferConstArrayType;
     pub const typedConstInitFits = lower_decl.typedConstInitFits;
     pub const constExprInitFits = lower_decl.constExprInitFits;
     pub const registerTopLevelGlobal = lower_decl.registerTopLevelGlobal;
@@ -3864,6 +3939,7 @@ pub const Lowering = struct {
     pub const declIdOf = lower_decl.declIdOf;
     pub const declFuncId = lower_decl.declFuncId;
     pub const bindDeclFuncId = lower_decl.bindDeclFuncId;
+    pub const numericConstValue = lower_decl.numericConstValue;
     pub const emitModuleConst = lower_decl.emitModuleConst;
     pub const emitPlaceholder = lower_decl.emitPlaceholder;
 
@@ -3978,6 +4054,7 @@ pub const Lowering = struct {
     pub const isByValueBindingIdent = lower_coerce.isByValueBindingIdent;
     pub const coerceOrErase = lower_coerce.coerceOrErase;
     pub const coerceConstant = lower_coerce.coerceConstant;
+    pub const castConstant = lower_coerce.castConstant;
     pub const buildProtocolErasure = lower_coerce.buildProtocolErasure;
     pub const viewOfConcreteAddr = lower_coerce.viewOfConcreteAddr;
     pub const inferConcreteTypeName = lower_coerce.inferConcreteTypeName;
@@ -3996,12 +4073,17 @@ pub const Lowering = struct {
     pub const coerceExplicit = lower_coerce.coerceExplicit;
     pub const coerceChecked = lower_coerce.coerceChecked;
     pub const checkAssignable = lower_coerce.checkAssignable;
+    pub const checkConstantLeaf = lower_coerce.checkConstantLeaf;
+    pub const checkConstantWidens = lower_coerce.checkConstantWidens;
+    pub const refuseAddedTerminator = lower_coerce.refuseAddedTerminator;
+    pub const emitLiteralLocalHelps = lower_coerce.emitLiteralLocalHelps;
     pub const checkFormationWritable = lower_coerce.checkFormationWritable;
     pub const checkReturnable = lower_coerce.checkReturnable;
     pub const conversionAvailable = lower_coerce.conversionAvailable;
     pub const externalErrorsExist = lower_coerce.externalErrorsExist;
     pub const coerceMode = lower_coerce.coerceMode;
     pub const diagNonIntegralNarrow = lower_coerce.diagNonIntegralNarrow;
+    pub const foldIntegralFloat = lower_coerce.foldIntegralFloat;
     pub const promoteCVariadicArgs = lower_coerce.promoteCVariadicArgs;
     pub const promotedTailType = lower_coerce.promotedTailType;
     pub const tailAdmissible = lower_coerce.tailAdmissible;
@@ -4227,8 +4309,10 @@ pub const Lowering = struct {
     pub const lowerStructConstant = lower_expr.lowerStructConstant;
     pub const lowerStringLiteral = lower_expr.lowerStringLiteral;
     pub const stringLiteralBytes = lower_expr.stringLiteralBytes;
-    pub const stringLiteralType = lower_expr.stringLiteralType;
-    pub const literalKeepsArray = lower_expr.literalKeepsArray;
+    pub const literalShape = lower_expr.literalShape;
+    pub const literalType = lower_expr.literalType;
+    pub const literalNodeType = lower_expr.literalNodeType;
+    pub const stringLiteralFits = lower_expr.stringLiteralFits;
     pub const lowerOptionalChain = lower_expr.lowerOptionalChain;
     pub const lowerOptionalChainIndex = lower_expr.lowerOptionalChainIndex;
     pub const vectorLaneIndex = lower_expr.vectorLaneIndex;
@@ -4258,6 +4342,8 @@ pub const Lowering = struct {
     pub const resolveVariantIndex = lower_expr.resolveVariantIndex;
     pub const hasVariant = lower_expr.hasVariant;
     pub const lowerArrayLiteral = lower_expr.lowerArrayLiteral;
+    pub const arrayLiteralType = lower_expr.arrayLiteralType;
+    pub const builtArrayLiteralType = lower_expr.builtArrayLiteralType;
     pub const resolveArrayLiteralType = lower_expr.resolveArrayLiteralType;
     pub const lowerIndexExpr = lower_expr.lowerIndexExpr;
     pub const lowerIndexOperand = lower_expr.lowerIndexOperand;
@@ -4278,6 +4364,7 @@ pub const Lowering = struct {
     pub const asmResultType = lower_expr.asmResultType;
     pub const refCapturePointee = lower_expr.refCapturePointee;
     pub const lowerBinaryOp = lower_expr.lowerBinaryOp;
+    pub const meetArithOperands = lower_expr.meetArithOperands;
     pub const lowerIs = lower_expr.lowerIs;
     pub const conformanceAsk = lower_expr.conformanceAsk;
     pub const lowerBoolCondition = lower_expr.lowerBoolCondition;
@@ -4287,7 +4374,6 @@ pub const Lowering = struct {
     pub const lowerOptionalEquality = lower_expr.lowerOptionalEquality;
     pub const lowerOptionalMixedEquality = lower_expr.lowerOptionalMixedEquality;
     pub const lowerChainedComparison = lower_expr.lowerChainedComparison;
-    pub const emitCmp = lower_expr.emitCmp;
 
     // --- lower/closure.zig (lower_closure) ---
     pub const lowerLambda = lower_closure.lowerLambda;

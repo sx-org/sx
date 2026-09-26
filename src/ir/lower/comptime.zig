@@ -53,7 +53,7 @@ fn constArrayLiteralInner(self: *Lowering, elements: []const *const Node, array_
 
 /// A `[N:X]T` terminator as a constant of the element type.
 fn sentinelConstant(sentinel: i64, elem_ty: TypeId) inst_mod.ConstantValue {
-    if (isFloat(elem_ty)) return .{ .float = @floatFromInt(sentinel) };
+    if (isFloat(elem_ty)) return .{ .float = types.floatFromInt(sentinel, elem_ty) };
     return .{ .int = sentinel };
 }
 
@@ -78,7 +78,7 @@ pub fn defaultConstant(self: *Lowering, ty: TypeId) ?inst_mod.ConstantValue {
     }
 }
 
-pub fn untypedNumericLeaf(self: *Lowering, node: *const Node) ?program_index_mod.UntypedNumericKind {
+pub fn untypedLeaf(self: *Lowering, node: *const Node) ?program_index_mod.Untyped {
     const name = switch (node.data) {
         .identifier => |id| id.name,
         .type_expr => |te| te.name,
@@ -88,38 +88,38 @@ pub fn untypedNumericLeaf(self: *Lowering, node: *const Node) ?program_index_mod
         if (self.scope) |scope| {
             const scoped = scope.lookupBoundary(n);
             if (scoped.crossed != .none) return null;
-            if (scoped.binding) |binding| return binding.untyped_numeric;
+            if (scoped.binding) |binding| return binding.untyped;
         }
     }
-    return untypedSelectedNumeric(self, numericConstLeaf(self, node) orelse return null);
+    return untypedSelected(self, constLeaf(self, node) orelse return null);
 }
 
-const NumericConstLeaf = struct {
+const ConstLeaf = struct {
     value: *const Node,
     declared_type: ?TypeId,
     source: ?[]const u8,
     environment: ?@import("../../imports.zig").EnvironmentId,
 
-    fn fromSelected(sel: SelectedConst) NumericConstLeaf {
+    fn fromSelected(sel: SelectedConst) ConstLeaf {
         return .{ .value = sel.info.value, .declared_type = sel.info.declared_type, .source = sel.source, .environment = sel.environment };
     }
 };
 
-fn numericConstLeaf(self: *Lowering, node: *const Node) ?NumericConstLeaf {
+fn constLeaf(self: *Lowering, node: *const Node) ?ConstLeaf {
     const name = switch (node.data) {
         .identifier => |id| id.name,
         .type_expr => |te| te.name,
         else => null,
     };
     if (name) |n| switch (self.selectModuleConst(n)) {
-        .resolved => |sel| return NumericConstLeaf.fromSelected(sel),
+        .resolved => |sel| return ConstLeaf.fromSelected(sel),
         else => {},
     };
     if (self.qualifiedTypeName(node)) |path| {
         defer self.alloc.free(path);
         if (std.mem.lastIndexOfScalar(u8, path, '.')) |dot| {
             if (self.selectQualifiedConst(path[0..dot], path[dot + 1 ..])) |sel|
-                return NumericConstLeaf.fromSelected(sel);
+                return ConstLeaf.fromSelected(sel);
         }
     }
     if (node.data == .field_access) {
@@ -139,7 +139,7 @@ fn numericConstLeaf(self: *Lowering, node: *const Node) ?NumericConstLeaf {
     return null;
 }
 
-fn untypedSelectedNumeric(self: *Lowering, sel: NumericConstLeaf) ?program_index_mod.UntypedNumericKind {
+fn untypedSelected(self: *Lowering, sel: ConstLeaf) ?program_index_mod.Untyped {
     if (sel.declared_type != null) return null;
     var frame = self.untyped_const_frame;
     while (frame) |f| : (frame = f.parent) {
@@ -153,7 +153,7 @@ fn untypedSelectedNumeric(self: *Lowering, sel: NumericConstLeaf) ?program_index
     const saved_scope = self.scope;
     self.scope = null;
     defer self.scope = saved_scope;
-    return program_index_mod.untypedNumericKind(sel.value, self);
+    return program_index_mod.untypedConst(sel.value, self);
 }
 
 /// Try to convert a single AST expression into a compile-time ConstantValue.
@@ -165,6 +165,37 @@ pub fn constExprValue(self: *Lowering, expr: *const Node, expected_ty: TypeId) ?
     return constExprValueInner(self, expr, expected_ty, null);
 }
 
+/// The present `?child` constant holding `payload`.
+pub fn someConstant(self: *Lowering, child: TypeId, payload: inst_mod.ConstantValue) inst_mod.ConstantValue {
+    // A sentinel-shaped optional reuses the payload's own null representation,
+    // so it has no `{payload, has_value}` wrapper in LLVM.
+    if (self.module.types.optionalIsSentinel(child)) return payload;
+    const fields = self.alloc.alloc(inst_mod.ConstantValue, 2) catch @panic("out of memory");
+    fields[0] = payload;
+    fields[1] = .{ .boolean = true };
+    return .{ .aggregate = fields };
+}
+
+/// A string literal's constant at `dst`: the literal takes the shape `dst`
+/// names and converts to `dst`. Null when no conversion reaches `dst`.
+pub fn constStringLiteral(self: *Lowering, lit: ast.StringLiteral, dst: TypeId, span: ast.Span) ?inst_mod.ConstantValue {
+    const bytes = self.stringLiteralBytes(lit);
+    const src = self.literalType(dst, bytes.len);
+    return switch (self.coercionResolver().classify(src, dst)) {
+        .no_op, .array_to_many_ptr => .{ .string = self.module.types.internString(bytes) },
+        .array_drop_terminator => blk: {
+            const vals = self.alloc.alloc(inst_mod.ConstantValue, bytes.len) catch @panic("out of memory");
+            for (bytes, vals) |b, *v| v.* = .{ .int = b };
+            break :blk .{ .aggregate = vals };
+        },
+        .adds_terminator_reject => blk: {
+            self.refuseAddedTerminator(src, dst, span, null);
+            break :blk null;
+        },
+        else => null,
+    };
+}
+
 fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, frame: ?*const ConstFoldFrame) ?inst_mod.ConstantValue {
     const author = Lowering.AuthorScope.enter(self, expr);
     defer author.leave();
@@ -173,34 +204,42 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
     // the image can hold. Serializing anything else here would lay the operand's
     // own bytes into the handle's three words.
     if (self.isErasedProtocolType(expected_ty)) return staticInterfaceLeaf(self, expr, expected_ty);
+    if (isOptional(self, expected_ty)) {
+        switch (expr.data) {
+            .null_literal => return .null_val,
+            .undef_literal => return .zeroinit,
+            else => {},
+        }
+        if (!isOptional(self, self.inferExprType(expr))) {
+            const child = self.module.types.get(expected_ty).optional.child;
+            return someConstant(self, child, constExprValueInner(self, expr, child, frame) orelse return null);
+        }
+    }
+    if (self.literalNodeType(expr, expected_ty)) |src| {
+        if (!self.checkConstantLeaf(src, expected_ty, expr.span)) return null;
+    }
     if (isFloat(expected_ty) and self.isAdaptableFloat(expr)) {
         if (program_index_mod.evalConstFloatInit(expr, self, expected_ty)) |value|
             return .{ .float = value };
     }
-    return switch (expr.data) {
+    if (self.untypedString(expr)) |lit| return constStringLiteral(self, lit, expected_ty, expr.span);
+    const ctx = SourceConstCtx{ .lowering = self, .frame = frame };
+    if (expr.data != .char_literal and program_index_mod.untypedInteger(expr, ctx) != null) {
+        const v = program_index_mod.evalConstIntExpr(expr, ctx) orelse return null;
         // An int element in a FLOAT destination converts exactly (the
         // int+float promotion rule, element-wise — `[2]f64 : .[1, 2.5]`).
-        .int_literal => |il| if (isFloat(expected_ty))
-            .{ .float = @floatFromInt(il.value) }
-        else
-            .{ .int = il.value },
-        .char_literal => |cl| if (isFloat(expected_ty))
-            .{ .float = @floatFromInt(cl.value) }
-        else
-            .{ .int = cl.value },
-        .bool_literal => |bl| .{ .boolean = bl.value },
-        // A float into an INTEGER destination follows the implicit
-        // narrowing rule: an integral float folds to its int, a
-        // non-integral one is a compile error (not a silent bit-coerce).
-        .float_literal => |fl| blk: {
-            if (self.isIntEx(expected_ty)) {
-                if (program_index_mod.floatToIntExact(fl.value)) |iv| break :blk inst_mod.ConstantValue{ .int = iv };
-                self.diagNonIntegralNarrow(expr.span, fl.value, expected_ty);
-                break :blk null;
-            }
-            break :blk inst_mod.ConstantValue{ .float = self.adoptFloatValue(fl.value, expected_ty, expr.span) };
+        if (isFloat(expected_ty)) return .{ .float = types.floatFromInt(v, expected_ty) };
+        self.checkIntLiteralFits(v, expected_ty, expr.span);
+        return .{ .int = @truncate(v) };
+    }
+    return switch (expr.data) {
+        .char_literal => |cl| blk: {
+            if (isFloat(expected_ty)) break :blk .{ .float = @floatFromInt(cl.value) };
+            self.checkCharLiteralFits(cl, expected_ty, expr.span);
+            break :blk .{ .int = cl.value };
         },
-        .string_literal => |sl| .{ .string = self.module.types.internString(sl.raw) },
+        .bool_literal => |bl| .{ .boolean = bl.value },
+        .float_literal => |fl| constFloatLeaf(self, fl.value, expected_ty, expr.span),
         .undef_literal => .zeroinit,
         // A `null` in a pointer (or optional-pointer) field is a
         // compile-time constant: the zero pointer. Without this arm the
@@ -208,11 +247,7 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
         .null_literal => .null_val,
         .unary_op => |uo| switch (uo.op) {
             .negate => switch (uo.operand.data) {
-                .int_literal => |il| if (isFloat(expected_ty))
-                    .{ .float = @floatFromInt(-il.value) }
-                else
-                    .{ .int = -il.value },
-                .float_literal => |fl| .{ .float = -self.adoptFloatValue(fl.value, expected_ty, expr.span) },
+                .float_literal => |fl| constFloatLeaf(self, -fl.value, expected_ty, expr.span),
                 else => null,
             },
             else => null,
@@ -223,6 +258,7 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
         // an enum field inside a global struct) serializes to its tag int
         // against the leaf's declared enum type.
         .enum_literal => |el| self.constEnumLiteral(&el, expected_ty, expr.span),
+        .postfix_cast => |pc| constCastValue(self, &pc, expected_ty, expr.span, frame),
         // Any other shape: a compile-time CONST EXPRESSION over named consts
         // and const-aggregate leaves (`r = K + 1`, `g = LIT.r`, `b = K[1]`)
         // serializes through the shared folders — source-aware, like every
@@ -257,6 +293,7 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
                         if (constNaturalValue(self, fa.object, object_ty, frame)) |value| {
                             if (value == .aggregate) {
                                 const field_ty = self.getStructFields(object_ty)[i].ty;
+                                if (!self.checkConstantWidens(field_ty, expected_ty, expr.span)) break :blk null;
                                 if (self.coerceConstant(value.aggregate[i], field_ty, expected_ty)) |converted| break :blk converted;
                             }
                         }
@@ -267,14 +304,20 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
                 if (self.fieldProjection(c)) |field| {
                     if (constNaturalValue(self, field.object, field.object_ty, frame)) |value| {
                         if (value == .aggregate) {
+                            if (!self.checkConstantWidens(field.ty, expected_ty, expr.span)) break :blk null;
                             if (self.coerceConstant(value.aggregate[field.index], field.ty, expected_ty)) |converted| break :blk converted;
                         }
                     }
                 }
             }
-            const ctx = SourceConstCtx{ .lowering = self, .frame = frame };
             if (self.isIntEx(expected_ty)) {
-                if (program_index_mod.evalConstIntExpr(expr, ctx)) |v| break :blk inst_mod.ConstantValue{ .int = v };
+                if (program_index_mod.evalConstIntExpr(expr, ctx)) |v| {
+                    // An operation's result keeps its type; a named or builtin read adapts as a literal does.
+                    const typed = expr.data == .binary_op or expr.data == .index_expr;
+                    if (typed and !self.checkConstantWidens(self.inferExprType(expr), expected_ty, expr.span)) break :blk null;
+                    self.checkIntLiteralFits(v, expected_ty, expr.span);
+                    break :blk inst_mod.ConstantValue{ .int = @truncate(v) };
+                }
             }
             if (isFloat(expected_ty)) {
                 const source_ty = self.inferExprType(expr);
@@ -282,11 +325,35 @@ fn constExprValueInner(self: *Lowering, expr: *const Node, expected_ty: TypeId, 
                     const v = program_index_mod.evalConstFloatExpr(expr, ctx) orelse break :blk null;
                     break :blk self.coerceConstant(.{ .float = v }, source_ty, expected_ty);
                 }
-                if (program_index_mod.evalConstIntExpr(expr, ctx)) |v| break :blk inst_mod.ConstantValue{ .float = @floatFromInt(v) };
+                if (program_index_mod.evalConstIntExpr(expr, ctx)) |v| break :blk inst_mod.ConstantValue{ .float = types.floatFromInt(v, expected_ty) };
             }
             break :blk null;
         },
     };
+}
+
+/// `operand.(T)` over a constant operand: the operand's constant in its own
+/// type, cast to `T`, then carried to `expected_ty` implicitly.
+pub fn constCastValue(self: *Lowering, pc: *const ast.PostfixCast, expected_ty: TypeId, span: ast.Span, frame: ?*const ConstFoldFrame) ?inst_mod.ConstantValue {
+    if (pc.is_optional_chain) return null;
+    const dst = self.resolveTypeArg(pc.type_expr);
+    const src = self.inferExprType(pc.operand);
+    if (dst == .unresolved or src == .unresolved) return null;
+    const value = constNaturalValue(self, pc.operand, src, frame) orelse return null;
+    const cast = self.castConstant(value, src, dst, span) orelse return null;
+    if (!self.checkConstantWidens(dst, expected_ty, span)) return null;
+    return self.coerceConstant(cast, dst, expected_ty);
+}
+
+/// A float literal's constant at `expected_ty`. An integer destination takes
+/// the float only when it is integral.
+fn constFloatLeaf(self: *Lowering, value: f64, expected_ty: TypeId, span: ast.Span) ?inst_mod.ConstantValue {
+    if (self.isIntEx(expected_ty)) return .{ .int = self.foldIntegralFloat(value, expected_ty, span) orelse return null };
+    return .{ .float = self.adoptFloatValue(value, expected_ty, span) };
+}
+
+fn isOptional(self: *Lowering, ty: TypeId) bool {
+    return !ty.isBuiltin() and self.module.types.get(ty) == .optional;
 }
 
 pub fn foldFieldInt(self: *Lowering, node: *const Node, frame: ?*const ConstFoldFrame) ?i64 {
@@ -305,7 +372,8 @@ fn constSelectedValue(self: *Lowering, name: []const u8, sel: SelectedConst, exp
     const pin = self.pinConstValue(sel.info.value, sel.environment);
     defer pin.unpin();
     const value = if (sel.info.declared_type != null)
-        constExprValueInner(self, sel.info.value, sel.info.ty, &f) orelse return null
+        self.numericConstValue(sel.info, .{ .lowering = self, .frame = &f }) orelse
+            constExprValueInner(self, sel.info.value, sel.info.ty, &f) orelse return null
     else
         constNaturalValue(self, sel.info.value, sel.info.ty, &f) orelse return null;
     return self.coerceConstant(value, sel.info.ty, expected_ty);
@@ -762,11 +830,11 @@ pub fn evalComptimeMatch(self: *Lowering, me: *const ast.MatchExpr) ?*const Node
 /// (`0..-2.0` → -2), and any constant-foldable expression over those
 /// (`inline for 0..(M + 1)`) all resolve identically. A range bound is an
 /// ENDPOINT, not a count (specs.md §2), so it deliberately does NOT take the
-/// `foldCountI64` float-const-leaf fallback the count sites add: it accepts a
+/// `foldCount` float-const-leaf fallback the count sites add: it accepts a
 /// direct integral float but leaves a float-const-leaf expression to the int
 /// folder (negatives are valid here, unlike a count).
 pub fn evalComptimeInt(self: *Lowering, node: *const Node) ?i64 {
-    return program_index_mod.evalConstIntExpr(node, self);
+    return std.math.cast(i64, program_index_mod.evalConstIntExpr(node, self) orelse return null);
 }
 
 /// Lower a `@run expr` that appears as a top-level constant binding:
@@ -780,18 +848,17 @@ pub fn lowerComptimeGlobal(self: *Lowering, declaration: @import("../../imports.
     // helpers, silently wrong for anything else.
     const expr_ty = self.inferExprType(expr);
     // A failable `@run` (bare, no `catch`/`??`): the comptime function
-    // returns the full failable tuple so the @run site can inspect the
-    // error slot, but the GLOBAL is typed as the success value. On a
-    // comptime error the global never materializes — emit halts with a
-    // diagnostic + trace. A handled `@run … catch/?? …` already
-    // strips the error channel, so it lands here as non-failable.
-    const is_failable = self.errorChannelOf(expr_ty) != null;
-    const func_ret: TypeId = if (is_failable)
-        expr_ty
-    else if (type_ann) |n|
-        self.resolveTypeWithBindings(n)
-    else
-        expr_ty;
+    // returns a failable tuple so the @run site can inspect the error
+    // slot, and the GLOBAL is typed as its success value — the annotation
+    // when one is written. On a comptime error the global never
+    // materializes — emit halts with a diagnostic + trace. A handled
+    // `@run … catch/?? …` already strips the error channel, so it lands
+    // here as non-failable.
+    const channel = self.errorChannelOf(expr_ty);
+    const func_ret: TypeId = if (type_ann) |n| ret: {
+        const annotated = self.resolveTypeWithBindings(n);
+        break :ret if (channel) |ch| self.module.types.internFailable(annotated, ch) else annotated;
+    } else expr_ty;
     // The result crosses into the runtime image, which is what makes this an
     // escape site (specs.md §6.9).
     const func_id = self.createComptimeFunction(name, .ordinary, expr, func_ret);
@@ -832,7 +899,8 @@ pub fn lowerComptimeSideEffect(self: *Lowering, expr: *const Node) void {
 /// Creates a comptime function and emits a `call` to it, so the
 /// interpreter can evaluate it and replace with the constant result.
 pub fn lowerInlineComptime(self: *Lowering, expr: *const Node) Ref {
-    const ret_ty: TypeId = self.target_type orelse self.inferExprType(expr);
+    const own_ty = self.inferExprType(expr);
+    const ret_ty: TypeId = if (program_index_mod.untypedConst(expr, self) != null) self.target_type orelse own_ty else own_ty;
     const func_id = self.createComptimeFunction("__ct", .ordinary, expr, ret_ty);
     // Carry the binding const's name (when this `@run` initializes one) onto the
     // wrapper so a comptime-init failure names the user const, not `__ct_N`.
@@ -846,7 +914,12 @@ pub fn lowerInlineComptime(self: *Lowering, expr: *const Node) Ref {
         self.alloc.dupe(Ref, &.{self.current_ctx_ref}) catch &.{}
     else
         &.{};
-    return self.builder.call(func_id, final_args, func.ret);
+    const result = self.builder.call(func_id, final_args, func.ret);
+    // A failable wrapper's escaping error halts the build where the call folds,
+    // so the `@run` is its success value.
+    const channel = self.errorChannelOf(func.ret) orelse return result;
+    if (channel == func.ret) return self.builder.constInt(0, .void);
+    return self.extractSuccessValue(result, func.ret, self.failableSuccessType(func.ret));
 }
 
 /// Lower a `@insert expr` statement. Evaluates `expr` at compile time to get
@@ -1216,7 +1289,7 @@ pub fn evalComptimeString(self: *Lowering, expr: *const Node) ?[:0]const u8 {
     // A non-string expression never reaches the VM: wrapping it as
     // `-> string` would hand `regToValue` a fat-pointer load of an integer.
     const expr_ty = self.inferExprType(expr);
-    if (expr_ty != .string and expr_ty != .cstring) {
+    if (expr_ty != .string and expr_ty != .string_z) {
         if (self.diagnostics) |d| {
             if (!d.hasErrors())
                 d.addFmt(.err, expr.span, "`@insert` requires a string", .{});
@@ -2180,12 +2253,19 @@ pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, ph
     // result's own type settles the wrapper's return.
     const result = if (ret_ty == .unresolved or self.errorChannelOf(ret_ty) != null)
         self.lowerMarkedExpr(expr, false)
+    else if (ret_ty == .void)
+        self.lowerExpr(expr)
     else
-        self.lowerExpr(expr);
+        lowerComptimeResult(self, expr, ret_ty);
     const settled_ret: TypeId = if (ret_ty == .unresolved) self.builder.getRefType(result) else ret_ty;
     self.module.getFunctionMut(func_id).ret = settled_ret;
     if (settled_ret == .void) {
         self.builder.retVoid();
+    } else if (!settled_ret.isBuiltin() and self.module.types.get(settled_ret) == .failable) {
+        const saved_span = self.builder.current_span;
+        defer self.builder.current_span = saved_span;
+        self.builder.current_span = .{ .start = expr.span.start, .end = expr.span.end };
+        self.lowerFailableSuccessReturn(result, settled_ret, expr.span);
     } else {
         self.builder.ret(result, settled_ret);
     }
@@ -2202,13 +2282,26 @@ pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, ph
     return func_id;
 }
 
+/// `expr` lowered at `ret_ty` and converted to it as an initializer converts.
+fn lowerComptimeResult(self: *Lowering, expr: *const Node, ret_ty: TypeId) Ref {
+    self.target_type = ret_ty;
+    const value = self.lowerExpr(expr);
+    self.target_type = null;
+    const value_ty = self.builder.getRefType(value);
+    if (value_ty == ret_ty or value_ty == .void) return value;
+    const saved_span = self.builder.current_span;
+    defer self.builder.current_span = saved_span;
+    self.builder.current_span = .{ .start = expr.span.start, .end = expr.span.end };
+    return self.coerceToType(value, value_ty, ret_ty);
+}
+
 // ── Source-const folding ────────────────────────────────────────
 
 /// Resolve a name to a compile-time integer across the three const tables.
 /// A comptime binding (generic value param / inline-for cursor) wins first;
 /// otherwise the name is a SOURCE-AWARE module const, folded with nested
 /// leaves resolved own-wins.
-pub fn comptimeIntNamed(self: *Lowering, name: []const u8) ?i64 {
+pub fn comptimeIntNamed(self: *Lowering, name: []const u8) ?i128 {
     if (self.comptime_constants.get(name)) |cv| switch (cv) {
         .int_val => |iv| return iv,
         else => {},
@@ -2220,7 +2313,9 @@ pub fn comptimeIntNamed(self: *Lowering, name: []const u8) ?i64 {
         const scoped = scope.lookupBoundary(name);
         if (scoped.crossed != .none) return null;
         if (scoped.binding) |binding| {
-            return if (binding.origin == .local_const and self.isIntEx(binding.ty)) self.foldedInt(binding.ref) else null;
+            if (binding.untyped_integer) |v| return v;
+            if (binding.origin != .local_const or !self.isIntEx(binding.ty)) return null;
+            return self.intConstantValue(self.foldedInt(binding.ref) orelse return null, binding.ty);
         }
     }
     return self.foldSourceConstInt(name, null);
@@ -2249,7 +2344,7 @@ pub fn comptimeValueRefNamed(self: *Lowering, name: []const u8) ?Ref {
 /// (`[K]u8`). `frame` (keyed by name + author-source) cycle-guards a const
 /// whose value references another const. With a single author the selected `ci`
 /// IS the global one and every nested leaf has exactly one author.
-pub fn foldSourceConstInt(self: *Lowering, name: []const u8, frame: ?*const ConstFoldFrame) ?i64 {
+pub fn foldSourceConstInt(self: *Lowering, name: []const u8, frame: ?*const ConstFoldFrame) ?i128 {
     return switch (self.selectModuleConst(name)) {
         .resolved => |sel| {
             if (constFoldFrameContains(frame, name, sel.environment)) return null;
@@ -2296,7 +2391,7 @@ pub fn selectQualifiedConst(self: *Lowering, ns: []const u8, field: []const u8) 
 /// leaves (`CAP :: BASE + 1`, `BASE` authored in the target module) re-select
 /// against the target module, not the use site. `frame` (keyed by name +
 /// author-source) cycle-guards a const whose value references another const.
-pub fn foldQualifiedConstInt(self: *Lowering, ns: []const u8, field: []const u8, frame: ?*const ConstFoldFrame) ?i64 {
+pub fn foldQualifiedConstInt(self: *Lowering, ns: []const u8, field: []const u8, frame: ?*const ConstFoldFrame) ?i128 {
     const sel = self.selectQualifiedConst(ns, field) orelse return null;
     if (constFoldFrameContains(frame, field, sel.environment)) return null;
     if (!program_index_mod.isCountableConstType(&self.module.types, sel.info.ty)) return null;
@@ -2339,7 +2434,7 @@ pub fn qualifiedConstIsFloatTyped(self: *Lowering, ns: []const u8, field: []cons
 /// generic constant evaluator cannot flatten `facade.engine_alias.N` itself;
 /// the stateful lowering context owns the allocator and the namespace graph,
 /// so reconstruct and route it through the same full-path selector here.
-pub fn foldQualifiedConstNodeInt(self: *Lowering, node: *const Node, frame: ?*const ConstFoldFrame) ?i64 {
+pub fn foldQualifiedConstNodeInt(self: *Lowering, node: *const Node, frame: ?*const ConstFoldFrame) ?i128 {
     const path = self.qualifiedTypeName(node) orelse return null;
     defer self.alloc.free(path);
     const dot = std.mem.lastIndexOfScalar(u8, path, '.') orelse return null;
@@ -2347,7 +2442,7 @@ pub fn foldQualifiedConstNodeInt(self: *Lowering, node: *const Node, frame: ?*co
 }
 
 pub fn foldQualifiedConstNodeFloat(self: *Lowering, node: *const Node, frame: ?*const ConstFoldFrame) ?f64 {
-    const sel = numericConstLeaf(self, node) orelse return null;
+    const sel = constLeaf(self, node) orelse return null;
     const path = self.qualifiedTypeName(node) orelse return null;
     defer self.alloc.free(path);
     if (constFoldFrameContains(frame, path, sel.environment)) return null;
@@ -2358,7 +2453,7 @@ pub fn foldQualifiedConstNodeFloat(self: *Lowering, node: *const Node, frame: ?*
 }
 
 pub fn qualifiedConstNodeIsFloatTyped(self: *Lowering, node: *const Node, frame: ?*const ConstFoldFrame) bool {
-    const sel = numericConstLeaf(self, node) orelse return false;
+    const sel = constLeaf(self, node) orelse return false;
     if (sel.declared_type) |ty| return isFloat(ty);
     const path = self.qualifiedTypeName(node) orelse return false;
     defer self.alloc.free(path);
@@ -2507,7 +2602,7 @@ pub fn foldConstAggLen(self: *Lowering, name: []const u8) ?i64 {
 /// `K[<const idx>]` over an ARRAY const: the element's compile-time integer
 /// value, folded in the AUTHOR's context. Out-of-range diagnoses loudly —
 /// never a wrap or a silent null-into-runtime.
-pub fn foldConstArrayElem(self: *Lowering, name: []const u8, idx: i64, span: ?ast.Span, frame: ?*const ConstFoldFrame) ?i64 {
+pub fn foldConstArrayElem(self: *Lowering, name: []const u8, idx: i64, span: ?ast.Span, frame: ?*const ConstFoldFrame) ?i128 {
     const sel = selectShapedConst(self, name) orelse return null;
     if (sel.info.value.data != .array_literal) return null;
     const elems = sel.info.value.data.array_literal.elements;
@@ -2538,7 +2633,7 @@ pub fn foldComptimeStructField(self: *Lowering, name: []const u8, field: []const
 
 /// `<struct const>.field` as a compile-time integer — the field's value in
 /// the selected author's literal, folded in the author's context.
-pub fn foldConstStructField(self: *Lowering, name: []const u8, field: []const u8, span: ?ast.Span, frame: ?*const ConstFoldFrame) ?i64 {
+pub fn foldConstStructField(self: *Lowering, name: []const u8, field: []const u8, span: ?ast.Span, frame: ?*const ConstFoldFrame) ?i128 {
     const sel = selectShapedConst(self, name) orelse return null;
     if (sel.info.value.data != .struct_literal) return null;
     const sl = &sel.info.value.data.struct_literal;
@@ -2562,7 +2657,7 @@ pub fn foldConstStructField(self: *Lowering, name: []const u8, field: []const u8
     defer restore.unpin();
     const value = constStructLiteralInner(self, sl, sel.info.ty, &f, index, sel.info.declared_type != null) orelse return null;
     return switch (value) {
-        .int => |v| v,
+        .int => |v| self.intConstantValue(v, field_ty),
         .float => |v| program_index_mod.floatToIntExact(v),
         .zeroinit => 0,
         else => null,
@@ -2703,10 +2798,5 @@ pub fn foldComptimeFloatInit(self: *Lowering, node: *const Node, dst: TypeId) ?R
     // `ME / 2` would look like integer division; `isFloatValuedExpr` (judging
     // by VALUE) catches that case so it narrows under the unified rule too.
     if (!isFloat(self.inferExprType(node)) and !program_index_mod.isFloatValuedExpr(node, self)) return null;
-    // Integral comptime float folds to its int (`floatToIntExact`, the same
-    // facility the array-dim / `$K: Count` paths use); a non-integral one is
-    // the narrowing error.
-    if (program_index_mod.floatToIntExact(fv)) |iv| return self.builder.constInt(iv, dst);
-    self.diagNonIntegralNarrow(node.span, fv, dst);
-    return self.builder.constInt(0, dst);
+    return self.builder.constInt(self.foldIntegralFloat(fv, dst, node.span) orelse 0, dst);
 }

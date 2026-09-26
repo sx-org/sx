@@ -1,0 +1,23 @@
+// A comparison of integers of opposite signedness is exact: a negative signed
+// operand is less than every unsigned value.
+
+@import "modules/std.sx";
+
+K : i64 : -1;
+N8 : i8 : -128;
+
+lessThan :: (a: i64, b: u64) -> bool { a < b }
+equal :: (a: i64, c: u64) -> bool { a == c }
+
+LT :: @run lessThan(-1, 0);
+EQ :: @run equal(-1, 18446744073709551615);
+
+main :: () -> i32 {
+    a : i64 = -1;
+    b : u64 = 0;
+    c : u64 = 18446744073709551615;
+    b8 : u8 = 0;
+    print("{} {} {} {}\n", a < b, a == c, c > K, -N8 < b8);
+    print("{} {}\n", LT, EQ);
+    0
+}

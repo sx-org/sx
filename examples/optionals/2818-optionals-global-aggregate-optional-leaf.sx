@@ -1,0 +1,15 @@
+// A value at an optional leaf of a global aggregate is the present optional
+// of that value.
+
+@import "modules/std.sx";
+
+Foo :: struct { o: ?i64; }
+
+K : i64 : 5;
+X : [3]?i64 = .[1, K, null];
+Y : Foo = .{ o = 7 };
+
+main :: () -> i32 {
+    print("{} {}\n", X, Y);
+    0
+}

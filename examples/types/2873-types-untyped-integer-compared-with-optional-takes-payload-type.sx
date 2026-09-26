@@ -1,0 +1,14 @@
+// An untyped integer compared with an optional operand takes the payload type,
+// so a constant above `i64.max` compares with a `?u64`.
+
+@import "modules/std.sx";
+
+M :: 0xFFFF_FFFF_FFFF_FFFF;
+
+main :: () -> i32 {
+    u : u64 = 0xFFFF_FFFF_FFFF_FFFF;
+    m : ?u64 = u;
+    print("{} {}\n", m == M, M == m);
+    if m != null { print("{}\n", m >= M); }
+    0
+}

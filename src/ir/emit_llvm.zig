@@ -1019,7 +1019,7 @@ pub const LLVMEmitter = struct {
     /// return null. On success, return the value part (error channel stripped):
     /// `void_val` for a pure failable, the lone value for `(T, !)`, the
     /// value-tuple for multi-value.
-    fn checkComptimeFailable(self: *LLVMEmitter, result: Value, fail_ty: TypeId, label: []const u8) ?Value {
+    pub fn checkComptimeFailable(self: *LLVMEmitter, result: Value, fail_ty: TypeId, label: []const u8) ?Value {
         const channel = self.comptimeErrChannel(fail_ty) orelse return result;
         var tag: u32 = 0;
         var success: Value = .void_val;
@@ -1082,7 +1082,7 @@ pub const LLVMEmitter = struct {
                 std.debug.print("  {s} at {s}:{d}:{d}\n", .{ fname, file, line, col });
             }
         }
-        std.debug.print("help: handle it at the `@run` site — `@run <expr> catch |e| {{ ... }}` or `@run <expr> or <default>`\n", .{});
+        std.debug.print("help: handle it at the `@run` site — `@run <expr> catch |e| {{ ... }}` or `@run <expr> ?? <default>`\n", .{});
     }
 
     /// Run comptime side-effect functions (e.g., `@run main();` at top level).
@@ -1450,7 +1450,7 @@ pub const LLVMEmitter = struct {
         // Fat-pointer types: extract len, then read bytes from the data
         // field's address (whatever flavour the interp produced for it).
         const is_fat_pointer = switch (self.ir_mod.types.get(ty)) {
-            .string, .slice => true,
+            .slice => true,
             else => false,
         };
         if (is_fat_pointer and fields.len == 2) {
@@ -1540,6 +1540,14 @@ pub const LLVMEmitter = struct {
                 const has = self.valueToLLVMConst(fields[1], .bool, global_name);
                 var ofields = [_]c.LLVMValueRef{ payload, has };
                 return c.LLVMConstStructInContext(self.context, &ofields, 2, 0);
+            }
+            if (info == .failable) {
+                const slot_types = self.ir_mod.types.failableAbiTypes(info.failable, self.alloc);
+                defer self.alloc.free(slot_types);
+                const slot_vals = self.alloc.alloc(c.LLVMValueRef, fields.len) catch unreachable;
+                defer self.alloc.free(slot_vals);
+                for (slot_types, fields, slot_vals) |slot_ty, fv, *out| out.* = self.valueToLLVMConst(fv, slot_ty, global_name);
+                return c.LLVMConstStructInContext(self.context, slot_vals.ptr, @intCast(slot_vals.len), 0);
             }
         }
 
@@ -2904,6 +2912,10 @@ pub const LLVMEmitter = struct {
         return self.typeLowering().toLLVMType(ty);
     }
 
+    pub fn fieldLLVMType(self: *LLVMEmitter, ty: TypeId) c.LLVMTypeRef {
+        return self.typeLowering().fieldLLVMType(ty);
+    }
+
     // ── C ABI coercion for extern functions ──────────────────────────
     // The coercion logic lives in `backend/llvm/abi.zig` (`AbiLowering`);
     // these stay the facade entry points (callers in signature/call emission +
@@ -3016,11 +3028,14 @@ pub const LLVMEmitter = struct {
         return tmp;
     }
 
-    /// A string constant at the shape its slot names: the `[N:0]u8` bytes, or
-    /// the `{ptr, len}` view.
+    /// A string constant at the shape its slot names: the `[N:0]u8` bytes, the
+    /// `[*:0]u8` address of those bytes, or the `{ptr, len}` view.
     fn constStringAt(self: *LLVMEmitter, llvm_ty: c.LLVMTypeRef, str: []const u8) c.LLVMValueRef {
-        if (c.LLVMGetTypeKind(llvm_ty) == c.LLVMArrayTypeKind) return self.emitTerminatedBytes(str);
-        return self.emitConstStringGlobal(str);
+        return switch (c.LLVMGetTypeKind(llvm_ty)) {
+            c.LLVMArrayTypeKind => self.emitTerminatedBytes(str),
+            c.LLVMPointerTypeKind => self.emitConstBytesGlobal(str),
+            else => self.emitConstStringGlobal(str),
+        };
     }
 
     /// Build a constant string { ptr, i64 } value without using the builder

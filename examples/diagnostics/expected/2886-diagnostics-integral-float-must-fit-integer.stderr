@@ -1,0 +1,17 @@
+error: 300 is out of range for 'u8'
+  --> examples/diagnostics/2886-diagnostics-integral-float-must-fit-integer.sx:1:10
+   |
+ 1 | G : u8 = 300.0;
+   |          ^^^^^
+
+error: 300 is out of range for 'u8'
+  --> examples/diagnostics/2886-diagnostics-integral-float-must-fit-integer.sx:4:14
+   |
+ 4 |     x : u8 = 300.0;
+   |              ^^^^^
+
+error: -1 is out of range for 'u8'
+  --> examples/diagnostics/2886-diagnostics-integral-float-must-fit-integer.sx:5:9
+   |
+ 5 |     x = -1.0;
+   |         ^^^^

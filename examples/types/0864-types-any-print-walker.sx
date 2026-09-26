@@ -49,7 +49,7 @@ printAny :: (av: any) {
         // ints load @sizeOf bytes and extend per signedness).
         case .int:    { print("{}", av); }
         case .float:  { print("{}", av); }
-        case .string: { print("{}", av); }
+        case .slice:  { print("{}", av); }
         case .bool:   { print("{}", av); }
         else:         { print("<?>"); }
     }

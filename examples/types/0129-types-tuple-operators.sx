@@ -507,7 +507,7 @@ main :: () {
         // a bare fn answers the same bound out of its own shape
         print("closure-hof-bare: {}\n", applyCl(dbl, 10));
 
-        scale := 2.5;
+        scale : f32 = 2.5;
         fF32 := |x: f32|_{ scale = scale } -> f32 x * scale;
         print("closure-f32: {}\n", fF32(4.0));
 

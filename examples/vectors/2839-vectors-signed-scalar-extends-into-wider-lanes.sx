@@ -1,0 +1,10 @@
+// A narrower signed scalar sign-extends into wider lanes on either side.
+
+@import "modules/std.sx";
+
+main :: () -> i32 {
+    v : @Vector(2, i64) = .[1, 2];
+    x : i32 = -3;
+    print("{} {}\n", x + v, v + x);
+    0
+}

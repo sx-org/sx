@@ -84,9 +84,6 @@ optionalToString :: fmt.optionalToString;
 concat      :: fmt.concat;
 last        :: fmt.last;
 pathJoin    :: fmt.pathJoin;
-cstringLen  :: fmt.cstringLen;
-fromCstring :: fmt.fromCstring;
-toCstring   :: fmt.toCstring;
 
 buildFormat :: fmt.buildFormat;
 

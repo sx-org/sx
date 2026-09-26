@@ -1,0 +1,7 @@
+// Untyped integer arithmetic whose value does not fit its destination is
+// refused as such a literal is.
+
+main :: () -> i32 {
+    d : i8 = 100 + 100;
+    0
+}

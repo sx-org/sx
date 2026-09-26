@@ -48,6 +48,8 @@ pub const CoercionResolver = struct {
         member_to_open_set, // a member VALUE → its open set's inline slot
         int_to_float,
         float_to_int,
+        bool_to_number, // false → 0, true → 1 (explicit only)
+        number_to_bool, // n != 0 (explicit only)
         int_to_enum, // int → payload-less enum (through the enum's backing type)
         enum_to_int, // payload-less enum → int (through the enum's backing type)
         integer_retype,
@@ -112,16 +114,6 @@ pub const CoercionResolver = struct {
         if (dst_ty.isBuiltin()) return null;
         const di = self.l.module.types.get(dst_ty);
         return if (di == .many_pointer) di.many_pointer.sentinel else null;
-    }
-
-    /// The terminator `dst_ty` guarantees, over every shape that names one.
-    pub fn destSentinel(self: CoercionResolver, dst_ty: TypeId) ?i64 {
-        if (self.l.module.types.sliceInfoOf(dst_ty)) |s| return s.sentinel;
-        if (!dst_ty.isBuiltin()) {
-            const di = self.l.module.types.get(dst_ty);
-            if (di == .array) return di.array.sentinel;
-        }
-        return self.pointerDestSentinel(dst_ty);
     }
 
     fn byteSized(elem: TypeId) bool {
@@ -308,6 +300,9 @@ pub const CoercionResolver = struct {
         const src_int = self.l.isIntEx(src_ty);
         const dst_int = self.l.isIntEx(dst_ty);
 
+        if (src_ty == .bool and self.isNumericScalar(dst_ty)) return .bool_to_number;
+        if (dst_ty == .bool and self.isNumericScalar(src_ty)) return .number_to_bool;
+
         // Int ↔ payload-less enum. Such an enum IS an integer of its backing
         // type (§Enums), so the conversion is that integer conversion plus a
         // retype. Modeled rather than left to the same-shaped passthrough,
@@ -343,7 +338,7 @@ pub const CoercionResolver = struct {
                 self.l.module.types.sameType(src.failable.value, dst.failable.value) and
                 lower_error.errorSetValueRetypeIsLegal(self.l, src.failable.err, dst.failable.err)) return .failable_retype;
         }
-        if (self.destSentinel(dst_ty) != null and
+        if (self.l.module.types.sentinelOf(dst_ty) != null and
             src_ty != .void and src_ty != .noreturn and src_ty != .unresolved) return .adds_terminator_reject;
         return .none;
     }
@@ -490,6 +485,8 @@ pub const CoercionResolver = struct {
         type: TypeId,
         /// Signed vs unsigned integers that do not widen into each other.
         signedness,
+        /// `bool` against a number: the conversion between them is explicit only.
+        bool_number,
         incompatible,
         /// No comparison-specific meeting; the existing operand rules apply.
         none,
@@ -507,13 +504,29 @@ pub const CoercionResolver = struct {
             return .{ .type = self.l.module.types.ptrTo(.void) };
         }
         if ((l_addr and self.l.isIntEx(rhs_ty)) or (r_addr and self.l.isIntEx(lhs_ty))) return .incompatible;
+        if ((lhs_ty == .bool and self.isNumericScalar(rhs_ty)) or (rhs_ty == .bool and self.isNumericScalar(lhs_ty))) return .bool_number;
 
+        if (!self.isNumericScalar(lhs_ty) or !self.isNumericScalar(rhs_ty)) return .none;
+        return switch (self.numericMeet(lhs_ty, rhs_ty)) {
+            .type => |ty| .{ .type = ty },
+            .signedness => .signedness,
+        };
+    }
+
+    pub fn isNumericScalar(self: CoercionResolver, ty: TypeId) bool {
+        return self.l.isIntEx(ty) or Lowering.isFloat(ty);
+    }
+
+    /// The arithmetic common type of two numeric scalars.
+    pub const NumericMeet = union(enum) {
+        type: TypeId,
+        /// Signed vs unsigned integers that do not widen into each other.
+        signedness,
+    };
+
+    pub fn numericMeet(self: CoercionResolver, lhs_ty: TypeId, rhs_ty: TypeId) NumericMeet {
         const l_float = Lowering.isFloat(lhs_ty);
         const r_float = Lowering.isFloat(rhs_ty);
-        const l_int = self.l.isIntEx(lhs_ty);
-        const r_int = self.l.isIntEx(rhs_ty);
-        if (!(l_int or l_float) or !(r_int or r_float)) return .none;
-
         if (l_float or r_float) {
             if (l_float and r_float) {
                 const lb = self.l.typeBitsEx(lhs_ty);

@@ -1,0 +1,13 @@
+// Only the folded value of untyped integer arithmetic is checked, against the
+// type its context gives it, or `i64` without one.
+
+M :: 0xFFFF_FFFF_FFFF_FFFF;
+K : u64 : -M;
+
+main :: () -> i32 {
+    k := K;
+    d := 9223372036854775807 + 1;
+    d8 : i8 = (1 << 6) + 100;
+    m : u8 = ~0;
+    0
+}

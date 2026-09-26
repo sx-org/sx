@@ -1,0 +1,5 @@
+error: cannot use a value of type '?u64' as an operand: an optional does not implicitly unwrap; force-unwrap with '?!', supply a fallback with '?? <default>', or guard with '!= null'
+  --> examples/diagnostics/2880-diagnostics-optional-operand-in-comparison-chain.sx:4:13
+   |
+ 4 |     if 0 <= m <= 5 { }
+   |             ^

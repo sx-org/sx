@@ -14,7 +14,7 @@ propagate :: (db: *m.Db) -> ! {
 }
 
 handle :: (db: *m.Db) -> ! {
-    st :: db.prepare() catch { raise E.Missing; };
+    st := db.prepare() catch { raise E.Missing; };
     rc := try st.step();
     if rc == 0 { raise E.Missing; }
 }

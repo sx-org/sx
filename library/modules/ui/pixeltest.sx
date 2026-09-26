@@ -16,7 +16,7 @@
 // when ANY channel exceeds maxChannelDelta; the run fails when more
 // than maxDiffPct percent of pixels differ — AA drift on a driver
 // update stays within budget, real regressions do not.
-pixelGolden :: (actual: string, w: i64, h: i64, refPath: [:0]u8,
+pixelGolden :: (actual: string, w: i64, h: i64, refPath: string,
                 maxChannelDelta: i64 = 12, maxDiffPct: i64 = 1) -> bool {
     process.assert(actual.len == w * h * 4, "pixel buffer size matches dimensions");
 

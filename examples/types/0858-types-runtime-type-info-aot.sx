@@ -16,7 +16,7 @@ kindOf :: (tp: Type) -> string {
         case .union: |ui| { return format("union n={}", ui.arms.len); }
         case .int: |ii| { return format("int {}sig={}", ii.bits, ii.signed); }
         case .array: |ai| { return format("array [{}]{}", ai.len, @typeName(ai.elem)); }
-        case .string: { return "string"; }
+        case .slice: |sl| { return format("slice {}", @typeName(sl.elem)); }
         else: { return "other"; }
     }
     return "?";

@@ -16,7 +16,7 @@ test "builtin types pre-populated" {
     try std.testing.expectEqual(TypeInfo{ .signed = 32 }, table.get(.i32));
     try std.testing.expectEqual(TypeInfo{ .unsigned = 8 }, table.get(.u8));
     try std.testing.expectEqual(TypeInfo.f64, table.get(.f64));
-    try std.testing.expectEqual(TypeInfo.string, table.get(.string));
+    try std.testing.expectEqual(TypeInfo{ .slice = .{ .element = .u8 } }, table.get(.string));
     try std.testing.expectEqual(TypeInfo.any, table.get(.any));
 }
 
@@ -909,7 +909,7 @@ test "intern: a builtin's structural info answers its builtin slot" {
     try std.testing.expectEqual(@as(TypeId, .f32), table.intern(.f32));
     try std.testing.expectEqual(@as(TypeId, .f64), table.intern(.f64));
     try std.testing.expectEqual(@as(TypeId, .bool), table.intern(.bool));
-    try std.testing.expectEqual(@as(TypeId, .string), table.intern(.string));
+    try std.testing.expectEqual(@as(TypeId, .string), table.intern(.{ .slice = .{ .element = .u8 } }));
     try std.testing.expectEqual(@as(TypeId, .void), table.intern(.void));
     try std.testing.expectEqual(@as(TypeId, .i8), table.intern(.{ .signed = 8 }));
     try std.testing.expectEqual(@as(TypeId, .u32), table.intern(.{ .unsigned = 32 }));
@@ -937,6 +937,19 @@ test "canonicalInt: a builtin slot only where a reserved spelling exists" {
     try std.testing.expect(types.canonicalInt(24, true) == null);
 }
 
+test "IntLayout.truncFloat: a truncation inside the layout converts, NaN and one outside it do not" {
+    const i8_layout = types.IntLayout{ .width = 8, .signed = true };
+    const u64_layout = types.IntLayout{ .width = 64, .signed = false };
+    try std.testing.expectEqual(@as(?u64, 127), i8_layout.truncFloat(127.9));
+    try std.testing.expectEqual(@as(?u64, @bitCast(@as(i64, -128))), i8_layout.truncFloat(-128.9));
+    try std.testing.expectEqual(@as(?u64, null), i8_layout.truncFloat(128));
+    try std.testing.expectEqual(@as(?u64, null), i8_layout.truncFloat(-129));
+    try std.testing.expectEqual(@as(?u64, 0), u64_layout.truncFloat(-0.9));
+    try std.testing.expectEqual(@as(?u64, 18446744073709549568), u64_layout.truncFloat(18446744073709549568.0));
+    try std.testing.expectEqual(@as(?u64, null), u64_layout.truncFloat(18446744073709551616.0));
+    try std.testing.expectEqual(@as(?u64, null), u64_layout.truncFloat(std.math.nan(f64)));
+}
+
 test "integerLayout: usize/isize carry the target pointer width" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
@@ -954,7 +967,7 @@ test "integerLayout: null for every non-integer" {
     var table = TypeTable.init(alloc);
     defer table.deinit();
 
-    for ([_]TypeId{ .bool, .f32, .f64, .string, .cstring, .void, .any, .noreturn, .type_value, .unresolved }) |ty| {
+    for ([_]TypeId{ .bool, .f32, .f64, .string, .string_z, .void, .any, .noreturn, .type_value, .unresolved }) |ty| {
         try std.testing.expect(table.integerLayout(ty) == null);
     }
     try std.testing.expect(table.integerLayout(table.ptrTo(.u8)) == null);

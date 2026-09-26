@@ -1,0 +1,10 @@
+// A typed constant read by a global is range-checked at its declaration, as
+// a local's read is.
+
+K :: 3;
+KO : u8 : K + 300;
+G : [1]u8 = .[KO];
+
+main :: () -> i32 {
+    0
+}

@@ -1,0 +1,5 @@
+error: integer literal 200 does not fit in i8 (range -128..127) — use an explicit `.(i8)` to truncate
+  --> examples/diagnostics/2831-diagnostics-untyped-integer-arithmetic-range.sx:5:14
+   |
+ 5 |     d : i8 = 100 + 100;
+   |              ^^^^^^^^^

@@ -28,6 +28,21 @@ fn baseName(name: []const u8) []const u8 {
     return if (std.mem.lastIndexOfScalar(u8, name, '.')) |idx| name[idx + 1 ..] else name;
 }
 
+/// An integer written without a type: a literal, its negation or complement,
+/// arithmetic or a bitwise operation over such integers, or a shift of one.
+fn isUntypedInteger(node: *const Node) bool {
+    return switch (node.data) {
+        .int_literal, .char_literal => true,
+        .unary_op => |u| (u.op == .negate or u.op == .bit_not) and isUntypedInteger(u.operand),
+        .binary_op => |b| switch (b.op) {
+            .add, .sub, .mul, .div, .mod, .bit_and, .bit_or, .bit_xor => isUntypedInteger(b.lhs) and isUntypedInteger(b.rhs),
+            .shl, .shr => isUntypedInteger(b.lhs),
+            else => false,
+        },
+        else => false,
+    };
+}
+
 pub const SymbolKind = enum {
     variable,
     constant,
@@ -834,11 +849,16 @@ pub const Analyzer = struct {
                     .eq, .neq, .lt, .lte, .gt, .gte, .and_op, .or_op, .in_op => return .boolean,
                     else => {
                         // Editor display only: approximate an arithmetic result as
-                        // its left operand's type (or the right when the left is
-                        // unresolved). Numeric promotion is a compiler decision on
-                        // `TypeId`, never recomputed here.
+                        // its left operand's type, or the right's when the left is
+                        // unresolved or, outside a shift, an untyped integer.
+                        // Numeric promotion is a compiler decision on `TypeId`,
+                        // never recomputed here.
                         const lhs_ty = self.inferExprType(binop.lhs);
-                        if (lhs_ty == .unresolved) return self.inferExprType(binop.rhs);
+                        const shift = binop.op == .shl or binop.op == .shr;
+                        if (lhs_ty == .unresolved or (!shift and isUntypedInteger(binop.lhs))) {
+                            const rhs_ty = self.inferExprType(binop.rhs);
+                            if (rhs_ty != .unresolved) return rhs_ty;
+                        }
                         return lhs_ty;
                     },
                 }
@@ -993,10 +1013,13 @@ pub const Analyzer = struct {
             .slice_expr => |se| {
                 const obj_ty = self.inferExprType(se.object);
                 if (obj_ty == .string_type) return .string_type;
-                if (obj_ty.isArray()) return .{ .slice_type = .{ .element_name = obj_ty.array_type.element_name, .is_raw = obj_ty.array_type.is_raw } };
-                if (obj_ty.isManyPointer()) return .{ .slice_type = .{ .element_name = obj_ty.many_pointer_type.element_name, .is_raw = obj_ty.many_pointer_type.is_raw } };
-                if (obj_ty.isSlice()) return obj_ty;
-                return .void_type;
+                const open_ended = se.end == null;
+                return switch (obj_ty) {
+                    .array_type => |a| .{ .slice_type = .{ .element_name = a.element_name, .is_raw = a.is_raw, .sentinel = if (open_ended) a.sentinel else null } },
+                    .many_pointer_type => |p| .{ .slice_type = .{ .element_name = p.element_name, .is_raw = p.is_raw, .sentinel = if (open_ended) p.sentinel else null } },
+                    .slice_type => |s| .{ .slice_type = .{ .element_name = s.element_name, .is_raw = s.is_raw, .sentinel = if (open_ended) s.sentinel else null } },
+                    else => .void_type,
+                };
             },
             .while_expr => .void_type,
             .for_expr => .void_type,

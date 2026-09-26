@@ -1,0 +1,5 @@
+error: cannot assign through constant 's' — a '::' declaration is immutable; use ':=' to declare a mutable local
+  --> examples/diagnostics/2840-diagnostics-string-constant-element-store.sx:6:5
+   |
+ 6 |     s[0] = 65;
+   |     ^^^^

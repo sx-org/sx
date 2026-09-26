@@ -1,0 +1,22 @@
+@import "modules/std.sx";
+
+K : i64 : 5;
+K0 :: 3;
+KX : u8 : (K0 + 1).(u8);
+KF : i64 : 1152921573326323713;
+Pair :: struct { a: i64; b: i64; }
+KP :: Pair{ a = 4 };
+
+A : i32 = K.(i32);
+B : [2]i32 = .[K.(i32), 300.(u8)];
+C : [1]u8 = .[KX];
+D : u8 = KX;
+E : bool = 2.(bool);
+F : ?i64 = 5.(?i64);
+R : f32 = KF.(f32);
+Z : i32 = KP.b.(i32);
+
+main :: () {
+    print("{} {} {} {} {} {} {}\n", A, B[0], B[1], C[0], D, E, F);
+    print("{} {}\n", R, Z);
+}

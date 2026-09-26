@@ -366,6 +366,7 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
     // CP coverage lock: every generic instance carries both a template and an
     // author stamp (body-author ≡ layout-author by construction).
     self.assertInstanceMapsCoincide();
+    self.emitLiteralLocalHelps();
 }
 
 /// The entry-point signature gate. `main` takes no parameters and returns
@@ -744,34 +745,34 @@ pub fn registerLiteralModuleConsts(self: *Lowering, decls: []const *const Node) 
         if (decl.data != .const_decl) continue;
         self.setDeclarationContext(decl);
         const cd = decl.data.const_decl;
-        const float_annotation: ?TypeId = if (cd.type_annotation) |ta| blk: {
+        const numeric_annotation: ?TypeId = if (cd.type_annotation) |ta| blk: {
             const name = switch (ta.data) {
                 .type_expr => |te| if (te.is_raw) break :blk null else te.name,
                 .identifier => |id| if (id.is_raw) break :blk null else id.name,
                 else => break :blk null,
             };
             const ty = TypeResolver.resolvePrimitive(name) orelse break :blk null;
-            break :blk if (isFloat(ty)) ty else null;
+            break :blk if (isFloat(ty) or self.isIntEx(ty)) ty else null;
         } else null;
         switch (cd.value.data) {
             .int_literal => {
-                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = float_annotation orelse .i64, .declared_type = float_annotation };
+                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = numeric_annotation orelse .i64, .declared_type = numeric_annotation };
                 self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, info);
             },
             .char_literal => {
-                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = float_annotation orelse .i64, .declared_type = float_annotation };
+                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = numeric_annotation orelse .i64, .declared_type = numeric_annotation };
                 self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, info);
             },
             .float_literal => {
-                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = float_annotation orelse .f64, .declared_type = float_annotation };
+                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = numeric_annotation orelse .f64, .declared_type = numeric_annotation };
                 self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, info);
             },
             .binary_op, .unary_op => {
-                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = float_annotation orelse .i64, .declared_type = float_annotation };
+                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = numeric_annotation orelse .i64, .declared_type = numeric_annotation };
                 self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, info);
             },
             .call => if (Lowering.layoutQuery(cd.value) != null) {
-                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = float_annotation orelse .i64, .declared_type = float_annotation };
+                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = numeric_annotation orelse .i64, .declared_type = numeric_annotation };
                 self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, info);
             },
             // Bool/string literal consts carry their real type — registering
@@ -784,8 +785,8 @@ pub fn registerLiteralModuleConsts(self: *Lowering, decls: []const *const Node) 
                 const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = .bool };
                 self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, info);
             },
-            .string_literal => |lit| if (cd.type_annotation == null) {
-                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = self.stringLiteralType(lit) };
+            .string_literal => if (cd.type_annotation == null) {
+                const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = .string };
                 self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, info);
             },
             else => {},
@@ -1134,7 +1135,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                     // An aggregate-valued one registers in pass 1c' instead —
                     // its value node is final only once the brace front runs.
                     const lit_ty: ?TypeId = switch (cd.value.data) {
-                        .string_literal => |lit| self.stringLiteralType(lit),
+                        .string_literal => .string,
                         .int_literal => .i64,
                         .float_literal => .f64,
                         .bool_literal => .bool,
@@ -1235,7 +1236,14 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
     }
     // Pass 2: registrations that resolve a top-level type annotation run
     // after the alias fixpoint, so a forward identifier alias used as the
-    // annotation resolves to its target.
+    // annotation resolves to its target. Typed constants register first, so
+    // an array constant or a global that names one reads its declared type
+    // in either declaration order.
+    for (decls) |decl| {
+        if (decl.data != .const_decl) continue;
+        self.setDeclarationContext(decl);
+        self.registerTypedModuleConst(&decl.data.const_decl);
+    }
     for (decls) |decl| {
         self.setDeclarationContext(decl);
         switch (decl.data) {
@@ -1247,7 +1255,6 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                 if (!self.registerComptimeTypeList(&decl.data.const_decl)) self.registerConstArrayGlobal(&decl.data.const_decl);
             } else {
                 self.registerComptimeTypeListAlias(&decl.data.const_decl);
-                self.registerTypedModuleConst(&decl.data.const_decl);
                 self.maybeRegisterConstStructGlobal(&decl.data.const_decl);
             },
             else => {},
@@ -1456,27 +1463,19 @@ pub fn registerTypedModuleConst(self: *Lowering, cd: *const ast.ConstDecl) void 
 /// (conversions.zig): that planner judges RUNTIME value coercions and is
 /// unsound as a compile-time literal-representability oracle here — a `null`
 /// literal's natural type is `.void`, so `classify(.void, *T)` yields `.none`
-/// and would reject the valid `P : *void : null`; `bool` is 1 bit wide, so
-/// `classify(.bool, i64)` yields `.widen` and would accept the bogus
-/// `B : i64 : true`.
+/// and would reject the valid `P : *void : null`.
 pub fn typedConstInitFits(self: *Lowering, value: *const Node, dst_ty: TypeId) bool {
-    // An INTEGER-annotated constant accepts a compile-time INTEGRAL float —
-    // a literal (`K : i64 : 4.0`), an int-leaf expression (`K : i64 : M + 2.0`
-    // → 4), or a float-const-leaf expression whose SUM is integral
-    // (`F : f64 : 2.5; K : i64 : F + 1.5` → 4). Integrality is judged on the
-    // FLOAT fold (`evalConstFloatExpr` + `floatToIntExact`) — the SAME facility
-    // the typed-local path (`foldComptimeFloatInit`) uses — not the int-only
-    // folder, which folds leaf-by-leaf in `i64` and so misses an integral SUM
-    // built from a non-integral float leaf. A non-integral fold (`1.5`,
-    // `M + 0.5`, `F + 0.25`) yields null here and falls through to the
-    // rejecting checks below, where `registerTypedModuleConst` emits the
-    // unified narrowing diagnostic.
     if (isFloat(dst_ty) and self.isAdaptableFloat(value)) return true;
+    if (self.untypedString(value) != null) return self.stringLiteralFits(dst_ty);
+    // An integer-annotated constant accepts a compile-time integral float
+    // (`K : i64 : 4.0`, `F : f64 : 2.5; K : i64 : F + 1.5`); `numericConstValue`
+    // checks its range. A non-integral one (`F + 0.25`) falls through to the
+    // rejecting checks below.
     if (self.isIntEx(dst_ty)) {
         switch (value.data) {
             .float_literal, .binary_op, .unary_op => {
                 if (program_index_mod.evalConstFloatExpr(value, self)) |fv| {
-                    if (program_index_mod.floatToIntExact(fv) != null) return true;
+                    if (program_index_mod.isIntegralFloat(fv)) return true;
                 }
             },
             else => {},
@@ -1493,7 +1492,6 @@ pub fn typedConstInitFits(self: *Lowering, value: *const Node, dst_ty: TypeId) b
         // Float literal → a float type only (the float arm emits `constFloat`).
         .float_literal => isFloat(dst_ty),
         .bool_literal => dst_ty == .bool,
-        .string_literal => dst_ty == .string or dst_ty == .cstring or self.literalKeepsArray(dst_ty),
         // `null` → a pointer or optional.
         .null_literal => !dst_ty.isBuiltin() and switch (self.module.types.get(dst_ty)) {
             .pointer, .many_pointer, .optional => true,
@@ -1520,8 +1518,7 @@ pub fn constExprInitFits(self: *Lowering, init_ty: TypeId, dst_ty: TypeId) bool 
     if (self.isIntEx(init_ty)) return self.isIntEx(dst_ty) or isFloat(dst_ty);
     if (isFloat(init_ty)) return isFloat(dst_ty) and !(init_ty == .f64 and dst_ty == .f32);
     if (init_ty == .bool) return dst_ty == .bool;
-    if (init_ty == .string) return dst_ty == .string;
-    if (init_ty == .cstring) return dst_ty == .cstring or dst_ty == .string;
+    if (init_ty == .string_z) return dst_ty == .string_z or dst_ty == .string;
     // Any other concrete initializer type must match the annotation exactly.
     return self.module.types.sameType(init_ty, dst_ty);
 }
@@ -1533,30 +1530,26 @@ pub fn constExprInitFits(self: *Lowering, init_ty: TypeId, dst_ty: TypeId) bool 
 /// `selectGlobalAuthor` (the per-source partition is written here).
 pub fn registerConstArrayGlobal(self: *Lowering, cd: *const ast.ConstDecl) void {
     const al = &cd.value.data.array_literal;
-    const arr_ty: TypeId = blk: {
-        if (cd.type_annotation) |ta| {
-            const t = self.resolveType(ta);
-            if (t == .unresolved) return; // annotation already diagnosed
-            if (t.isBuiltin() or self.module.types.get(t) != .array) {
-                if (self.diagnostics) |d|
-                    d.addFmt(.err, cd.value.span, "constant '{s}' has an array-literal initializer but its annotation is not an array type", .{cd.name});
-                return;
-            }
-            const dim = self.module.types.get(t).array.length;
-            if (dim != al.elements.len) {
-                if (self.diagnostics) |d|
-                    d.addFmt(.err, cd.value.span, "constant '{s}' declares [{d}] elements but its initializer has {d}", .{ cd.name, dim, al.elements.len });
-                return;
-            }
-            break :blk t;
-        }
-        break :blk self.inferConstArrayType(cd.name, al.elements, cd.value.span) orelse return;
-    };
-    const init_val = self.constArrayLiteral(al.elements, arr_ty) orelse {
+    const arr_ty = if (cd.type_annotation) |ta| self.resolveType(ta) else self.builtArrayLiteralType(al, cd.value.span) orelse return;
+    if (arr_ty == .unresolved) return; // annotation already diagnosed
+    if (arr_ty.isBuiltin() or self.module.types.get(arr_ty) != .array) {
+        if (self.diagnostics) |d|
+            d.addFmt(.err, cd.value.span, "constant '{s}' has an array-literal initializer but its type is not an array type", .{cd.name});
+        return;
+    }
+    const dim = self.module.types.get(arr_ty).array.length;
+    if (dim != al.elements.len) {
+        if (self.diagnostics) |d|
+            d.addFmt(.err, cd.value.span, "constant '{s}' declares [{d}] elements but its initializer has {d}", .{ cd.name, dim, al.elements.len });
+        return;
+    }
+    const errors_before = errorCount(self);
+    const init_val = self.constArrayLiteral(al.elements, arr_ty);
+    if (init_val == null and errorCount(self) == errors_before) {
         if (self.diagnostics) |d|
             d.addFmt(.err, cd.value.span, "constant '{s}' must be initialized by compile-time constant elements", .{cd.name});
         return;
-    };
+    }
     const name_id = self.module.types.internString(cd.name);
     const gid = self.module.addGlobal(.{
         .name = name_id,
@@ -1572,56 +1565,6 @@ pub fn registerConstArrayGlobal(self: *Lowering, cd: *const ast.ConstDecl) void 
     self.putModuleConst(self.declId(.{ .const_decl = cd }, self.current_source_file), cd.name, .{ .value = cd.value, .ty = arr_ty });
 }
 
-/// Infer `[N]T` for an untyped array-literal constant. Element types unify:
-/// all ints → i64; ANY float promotes the element type to f64 (ints convert
-/// exactly — the int+float promotion rule for consts, element-wise); bool /
-/// string homogeneous only. A non-numeric mix or a non-inferable element
-/// shape (nested aggregate, enum literal, named const) asks for an
-/// annotation rather than guessing.
-pub fn inferConstArrayType(self: *Lowering, name: []const u8, elements: []const *const Node, span: ast.Span) ?TypeId {
-    if (elements.len == 0) {
-        if (self.diagnostics) |d|
-            d.addFmt(.err, span, "constant '{s}' is an empty array literal — annotate the type (e.g. `{s} : [0]i64 : .[]`)", .{ name, name });
-        return null;
-    }
-    var elem_ty: ?TypeId = null;
-    for (elements) |e| {
-        const leaf: ?TypeId = switch (e.data) {
-            .int_literal => .i64,
-            .float_literal => .f64,
-            .bool_literal => .bool,
-            .string_literal => .string,
-            .char_literal => .i64,
-            .unary_op => |uo| if (uo.op == .negate) switch (uo.operand.data) {
-                .int_literal => .i64,
-                .float_literal => .f64,
-                .char_literal => .i64,
-                else => null,
-            } else null,
-            else => null,
-        };
-        const lt = leaf orelse {
-            if (self.diagnostics) |d|
-                d.addFmt(.err, e.span, "cannot infer the element type of constant '{s}' from this element — annotate the array type", .{name});
-            return null;
-        };
-        if (elem_ty) |prev| {
-            if (prev == lt) continue;
-            // Numeric mix promotes to the float element type.
-            const numeric_pair = (prev == .i64 and lt == .f64) or (prev == .f64 and lt == .i64);
-            if (numeric_pair) {
-                elem_ty = .f64;
-                continue;
-            }
-            if (self.diagnostics) |d|
-                d.addFmt(.err, e.span, "constant '{s}' mixes incompatible element types — annotate the array type", .{name});
-            return null;
-        }
-        elem_ty = lt;
-    }
-    return self.module.types.arrayOf(elem_ty.?, @intCast(elements.len));
-}
-
 /// Migrate a struct-literal constant to an IMMUTABLE GLOBAL when every
 /// field serializes (literals, enum tags, nested aggregates, and — via the
 /// fold helpers — const expressions over named consts / const-aggregate
@@ -1635,7 +1578,9 @@ pub fn maybeRegisterConstStructGlobal(self: *Lowering, cd: *const ast.ConstDecl)
     const src = self.current_source_file orelse self.main_file orelse return;
     const ci = self.sourceModuleConst(src, cd.name) orelse return;
     if (ci.ty.isBuiltin() or self.module.types.get(ci.ty) != .@"struct") return;
-    const init_val = self.constStructLiteral(&cd.value.data.struct_literal, ci.ty, ci.declared_type != null) orelse return;
+    const errors_before = errorCount(self);
+    const init_val = self.constStructLiteral(&cd.value.data.struct_literal, ci.ty, ci.declared_type != null);
+    if (init_val == null and errorCount(self) == errors_before) return;
     const name_id = self.module.types.internString(cd.name);
     const gid = self.module.addGlobal(.{
         .name = name_id,
@@ -1719,6 +1664,9 @@ fn initializeTopLevelGlobal(self: *Lowering, vd: *const ast.VarDecl) void {
 pub fn globalInitValue(self: *Lowering, vd: *const ast.VarDecl, var_ty: TypeId) ?inst_mod.ConstantValue {
     if (vd.is_extern) return null;
     const v = vd.value.?;
+    if (self.literalNodeType(v, var_ty)) |src| {
+        if (!self.checkAssignable(src, var_ty, v.span, "initialize", vd.name)) return null;
+    }
 
     if (!var_ty.isBuiltin() and self.module.types.get(var_ty) == .optional) {
         // `.null_val` / `.zeroinit` emit as all-zero bytes of the optional's
@@ -1728,16 +1676,11 @@ pub fn globalInitValue(self: *Lowering, vd: *const ast.VarDecl, var_ty: TypeId) 
             .undef_literal => return .zeroinit,
             else => {},
         }
-        const child = self.module.types.get(var_ty).optional.child;
-        const payload = self.globalInitValuePayload(vd, v, child) orelse return null;
-        // A sentinel-shaped optional reuses the payload's own null
-        // representation, so the payload IS the whole initializer — there is no
-        // `{payload, has_value}` wrapper in LLVM.
-        if (self.module.types.optionalIsSentinel(child)) return payload;
-        const fields = self.alloc.alloc(inst_mod.ConstantValue, 2) catch return null;
-        fields[0] = payload;
-        fields[1] = .{ .boolean = true };
-        return .{ .aggregate = fields };
+        const init_ty = self.inferExprType(v);
+        if (init_ty.isBuiltin() or self.module.types.get(init_ty) != .optional) {
+            const child = self.module.types.get(var_ty).optional.child;
+            return self.someConstant(child, self.globalInitValuePayload(vd, v, child) orelse return null);
+        }
     }
 
     return self.globalInitValuePayload(vd, v, var_ty);
@@ -1748,6 +1691,7 @@ pub fn globalInitValue(self: *Lowering, vd: *const ast.VarDecl, var_ty: TypeId) 
 /// which handles the optional `{payload, has_value}` layout before calling
 /// here). This is the raw payload serializer.
 pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const Node, var_ty: TypeId) ?inst_mod.ConstantValue {
+    const errors_before = errorCount(self);
     // A borrow-kind protocol-typed global has exactly one static form — the
     // identity erasure of a named global — so its arm runs before the shape
     // dispatch below, which would otherwise serialize an rvalue initializer
@@ -1765,23 +1709,13 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
         else => return anyGlobalInit(self, vd, v),
     };
     if (isFloat(var_ty) and self.isAdaptableFloat(v)) return self.constExprValue(v, var_ty);
+    if (self.untypedString(v)) |lit| return self.constStringLiteral(lit, var_ty, v.span);
+    if (program_index_mod.untypedInteger(v, self) != null)
+        return self.constExprValue(v, var_ty) orelse self.diagnoseNonConstGlobal(vd, v, errors_before);
     return switch (v.data) {
         .undef_literal => .zeroinit,
         .null_literal => .null_val,
-        .int_literal => |il| blk: {
-            self.checkIntLiteralMagnitudeFits(il.value, var_ty, v.span);
-            break :blk .{ .int = il.value };
-        },
-        // Char literal — same as int, but a char-aware fit check so the
-        // diagnostic names it as a char literal and suggests wider storage.
-        .char_literal => |cl| blk: {
-            self.checkCharLiteralFits(cl, var_ty, v.span);
-            break :blk .{ .int = cl.value };
-        },
-        // A negated literal (`g : i64 = -1;`) folds through the shared
-        // const-expr serializer. The folded value follows the same rules as
-        // the direct literal arms: int fits-check; a float at an integer
-        // global narrows only when integral.
+        .float_literal => self.constExprValue(v, var_ty),
         .unary_op => blk: {
             const u = v.data.unary_op;
             // `xx <global>` at a protocol-typed global folds to the protocol
@@ -1800,34 +1734,11 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
                     else => {},
                 }
             }
-            if (self.constExprValue(v, var_ty)) |cv| {
-                switch (cv) {
-                    .int => |iv| self.checkIntLiteralFits(iv, var_ty, v.span),
-                    .float => |fv| if (self.isIntEx(var_ty)) {
-                        if (program_index_mod.floatToIntExact(fv)) |iv| break :blk inst_mod.ConstantValue{ .int = iv };
-                        self.diagNonIntegralNarrow(v.span, fv, var_ty);
-                        break :blk null;
-                    },
-                    else => {},
-                }
-                break :blk cv;
-            }
-            break :blk self.diagnoseNonConstGlobal(vd, v);
+            break :blk self.constExprValue(v, var_ty) orelse self.diagnoseNonConstGlobal(vd, v, errors_before);
         },
         .bool_literal => |bl| .{ .boolean = bl.value },
-        // A float initializer at an integer-typed global follows the
-        // implicit narrowing rule (integral folds, non-integral errors).
-        .float_literal => |fl| blk: {
-            if (self.isIntEx(var_ty)) {
-                if (program_index_mod.floatToIntExact(fl.value)) |iv| break :blk inst_mod.ConstantValue{ .int = iv };
-                self.diagNonIntegralNarrow(v.span, fl.value, var_ty);
-                break :blk null;
-            }
-            break :blk inst_mod.ConstantValue{ .float = self.adoptFloatValue(fl.value, var_ty, v.span) };
-        },
-        .string_literal => |sl| .{ .string = self.module.types.internString(sl.raw) },
-        .array_literal => |al| self.constArrayLiteral(al.elements, var_ty) orelse self.diagnoseNonConstGlobal(vd, v),
-        .struct_literal => |sl| self.constStructLiteral(&sl, var_ty, vd.type_annotation != null) orelse self.diagnoseNonConstGlobal(vd, v),
+        .array_literal => |al| self.constArrayLiteral(al.elements, var_ty) orelse self.diagnoseNonConstGlobal(vd, v, errors_before),
+        .struct_literal => |sl| self.constStructLiteral(&sl, var_ty, vd.type_annotation != null) orelse self.diagnoseNonConstGlobal(vd, v, errors_before),
         .identifier => |id| blk: {
             // A bare identifier at a PROTOCOL-typed global is an
             // identity erasure of the named global — the declared type states
@@ -1863,7 +1774,7 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
         // An enum-literal global (`chosen : Color = .green;`) serializes to
         // the variant's tag value against the destination enum type.
         .enum_literal => |el| self.constEnumLiteral(&el, var_ty, v.span),
-        .call => self.constExprValue(v, var_ty) orelse self.diagnoseNonConstGlobal(vd, v),
+        .call, .postfix_cast => self.constExprValue(v, var_ty) orelse self.diagnoseNonConstGlobal(vd, v, errors_before),
         // Any other initializer shape (`.field_access` on a const, an
         // arithmetic expression, …) is not a static constant the compiler can
         // evaluate here. Diagnose loudly rather than emit a null payload that
@@ -1880,7 +1791,7 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
 /// builds, over a payload global synthesized beside it.
 fn anyGlobalInit(self: *Lowering, vd: *const ast.VarDecl, v: *const Node) ?inst_mod.ConstantValue {
     const src_ty = self.inferExprType(v);
-    if (src_ty == .unresolved or src_ty == .any) return self.diagnoseNonConstGlobal(vd, v);
+    if (src_ty == .unresolved or src_ty == .any) return self.diagnoseNonConstGlobal(vd, v, errorCount(self));
     const payload = self.globalInitValuePayload(vd, v, src_ty) orelse return null;
     const name = std.fmt.allocPrint(self.alloc, "{s}.any", .{vd.name}) catch @panic("out of memory");
     const gid = self.module.addGlobal(.{
@@ -1897,11 +1808,17 @@ fn anyGlobalInit(self: *Lowering, vd: *const ast.VarDecl, v: *const Node) ?inst_
 /// A global aggregate initializer (array/struct literal) that does not fully
 /// reduce to a compile-time constant is rejected loudly. Without this the
 /// `null` payload would fall through to a zero-initialized global, silently
-/// dropping the declared fields.
-pub fn diagnoseNonConstGlobal(self: *Lowering, vd: *const ast.VarDecl, v: *const Node) ?inst_mod.ConstantValue {
+/// dropping the declared fields. An error reported since `errors_before` already
+/// names why the initializer did not reduce.
+pub fn diagnoseNonConstGlobal(self: *Lowering, vd: *const ast.VarDecl, v: *const Node, errors_before: usize) ?inst_mod.ConstantValue {
+    if (errorCount(self) != errors_before) return null;
     if (self.diagnostics) |d|
         d.addFmt(.err, v.span, "global '{s}' must be initialized by a compile-time constant", .{vd.name});
     return null;
+}
+
+fn errorCount(self: *Lowering) usize {
+    return if (self.diagnostics) |d| d.errorCount() else 0;
 }
 
 fn reserveStructLayouts(self: *Lowering, authored: []const *const Node) void {
@@ -2854,7 +2771,7 @@ pub fn selectNominalLeaf(self: *Lowering, name: []const u8, environment: imports
         if (TypeResolver.resolvePrimitive(name)) |id| return .{ .resolved = id };
     }
     // Structural string-forms that reach the leaf as a literal type-expr
-    // name (`[:0]u8` → cstring, `[*]T`, `*T`, `?T`) carry NO nominal author —
+    // name (`[:0]u8`, `[*]T`, `*T`, `?T`) carry NO nominal author —
     // they are wrappers, not declarations, so source-keying does not apply.
     // Resolve them through the stateless namer; only the bare nominal name
     // below goes through the collector.
@@ -4041,6 +3958,37 @@ pub fn callableReturnBinder(fd: *const ast.FnDecl, ret_ty: TypeId) ?*const Node 
 
 // ── Module-const emission ───────────────────────────────────────
 
+/// A numeric constant's value at its type: an integer type takes an integral
+/// float, and the folded integer must fit. Null when the type is not numeric
+/// or the initializer does not fold.
+pub fn numericConstValue(self: *Lowering, ci: ModuleConstInfo, ctx: lower.SourceConstCtx) ?inst_mod.ConstantValue {
+    if (ci.value.data == .postfix_cast) {
+        if (!self.isIntEx(ci.ty) and !isFloat(ci.ty)) return null;
+        return self.constCastValue(&ci.value.data.postfix_cast, ci.ty, ci.value.span, ctx.frame);
+    }
+    if (self.isIntEx(ci.ty)) {
+        if (program_index_mod.isFloatValuedExpr(ci.value, ctx)) {
+            const fv = program_index_mod.evalConstFloatExpr(ci.value, ctx) orelse return null;
+            // A refused float still yields a value, so a static reader does not refold the constant as an integer.
+            return .{ .int = self.foldIntegralFloat(fv, ci.ty, ci.value.span) orelse 0 };
+        }
+        switch (program_index_mod.foldCount(ci.value, ctx)) {
+            .int => |iv| {
+                switch (ci.value.data) {
+                    .char_literal => |cl| self.checkCharLiteralFits(cl, ci.ty, ci.value.span),
+                    else => self.checkIntLiteralFits(iv, ci.ty, ci.value.span),
+                }
+                return .{ .int = @truncate(iv) };
+            },
+            .non_integral, .not_const => {},
+        }
+    }
+    if (isFloat(ci.ty)) {
+        if (program_index_mod.evalConstFloatInit(ci.value, ctx, ci.ty)) |value| return .{ .float = value };
+    }
+    return null;
+}
+
 pub fn emitModuleConst(self: *Lowering, name: []const u8, ci: ModuleConstInfo, environment: ?imports.EnvironmentId) Ref {
     const author_pin = self.pinConstValue(ci.value, environment);
     defer author_pin.unpin();
@@ -4055,42 +4003,18 @@ pub fn emitModuleConst(self: *Lowering, name: []const u8, ci: ModuleConstInfo, e
     const frame = lower.ConstFoldFrame{ .name = name, .environment = environment, .parent = self.module_const_frame };
     self.module_const_frame = &frame;
     defer self.module_const_frame = frame.parent;
-    // An integer-typed const whose initializer is a compile-time integer —
-    // an int literal/expression, OR an INTEGRAL float that `typedConstInitFits`
-    // accepted under the unified narrowing rule — materializes as its folded
-    // int through the SAME `program_index.foldCountI64` the count / array-dim
-    // path uses, so the const's emitted VALUE and its use as a COUNT come from
-    // one fold (`K : i64 : 4.0` → 4; `K : i64 : M + 2.0` → 4; and a float-const-
-    // leaf `KF : i64 : F + 1.5` → 4, which the int-only folder could not reach).
-    // A non-integral float never arrives (it was rejected at registration); any
-    // other non-foldable shape falls through to the per-kind emitters below.
-    if (self.isIntEx(ci.ty)) {
-        switch (program_index_mod.foldCountI64(ci.value, self)) {
-            .int => |iv| {
-                // Range-check the folded value against the declared width — a
-                // typed module const (`C : u8 : '🦀'` / `C : u8 : 129408`) must
-                // report an out-of-range initializer here, not silently
-                // truncate. A char-literal initializer gets the char-specific
-                // "use a wider type" message; everything else the int message.
-                switch (ci.value.data) {
-                    .char_literal => |cl| self.checkCharLiteralFits(cl, ci.ty, ci.value.span),
-                    else => self.checkIntLiteralFits(iv, ci.ty, ci.value.span),
-                }
-                return self.builder.constInt(iv, ci.ty);
-            },
-            .non_integral, .not_const => {},
-        }
-    }
-    if (isFloat(ci.ty)) {
-        if (program_index_mod.evalConstFloatInit(ci.value, lower.SourceConstCtx{ .lowering = self, .frame = &frame }, ci.ty)) |value| {
-            return self.builder.constFloat(value, ci.ty);
-        }
-    }
+    const errors_before = errorCount(self);
+    if (self.numericConstValue(ci, .{ .lowering = self, .frame = &frame })) |value| return switch (value) {
+        .int => |iv| self.builder.constInt(iv, ci.ty),
+        .float => |fv| self.builder.constFloat(fv, ci.ty),
+        else => unreachable,
+    };
+    if (errorCount(self) != errors_before) return self.builder.constUndef(ci.ty);
     switch (ci.value.data) {
         .int_literal => |lit| {
             // If declared type is float, convert integer value to float constant
             if (ci.ty == .f32 or ci.ty == .f64) {
-                return self.builder.constFloat(@floatFromInt(lit.value), ci.ty);
+                return self.builder.constFloat(types.floatFromInt(lit.value, ci.ty), ci.ty);
             }
             return self.builder.constInt(lit.value, ci.ty);
         },
@@ -4114,7 +4038,9 @@ pub fn emitModuleConst(self: *Lowering, name: []const u8, ci: ModuleConstInfo, e
             return self.builder.constNull(ci.ty);
         },
         else => {
-            var demand = self.enterDemand(if (ci.declared_type) |ty| .{ .coerce = ty } else .{ .inferred = ci.ty });
+            // An untyped value takes the use's destination.
+            const untyped = ci.declared_type == null and program_index_mod.untypedConst(ci.value, self) != null;
+            var demand = self.enterDemand(if (ci.declared_type) |ty| .{ .coerce = ty } else if (untyped) null else .{ .inferred = ci.ty });
             defer demand.restore();
             return self.lowerExpr(ci.value);
         },

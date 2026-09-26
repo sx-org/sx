@@ -151,8 +151,7 @@ if.then.5:                                        ; preds = %while.body.3
 
 if.merge.6:                                       ; preds = %while.body.3
   %callN = call i32 @errno(ptr %0)
-  %sext = sext i32 %callN to i64
-  %icmpN = icmp ne i64 %sext, 4
+  %icmpN = icmp ne i32 %callN, 4
   br i1 %icmpN, label %if.then.7, label %if.merge.8
 
 if.then.7:                                        ; preds = %if.merge.6

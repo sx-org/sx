@@ -1,0 +1,7 @@
+// A global refuses a literal its type cannot hold, as a local does.
+
+A : string = 3;
+B : [3]i64 = true;
+C : *i64 = -3;
+
+main :: () -> i32 { 0 }

@@ -108,12 +108,12 @@ test "ProgramIndex keeps same-name authors' facts separate" {
 /// genuinely non-comptime.
 const DimCtx = struct {
     /// The stateless ctx's own numeric-limit answer: a receiver that spells a
-    /// builtin type, resolved through the shared `TypeTable.integerLimit`.
+    /// builtin type, resolved through the shared `TypeTable.integerBound`.
     table: *types.TypeTable,
-    pub fn typeLimitInt(self: DimCtx, receiver: *const Node, field: []const u8) ?i64 {
+    pub fn typeLimitInt(self: DimCtx, receiver: *const Node, field: []const u8) ?i128 {
         return pi.builtinNameLimit(self.table, receiver, field);
     }
-    pub fn lookupDimName(_: DimCtx, name: []const u8) ?i64 {
+    pub fn lookupDimName(_: DimCtx, name: []const u8) ?i128 {
         if (std.mem.eql(u8, name, "M")) return 4;
         if (std.mem.eql(u8, name, "N")) return 6;
         // `K : f64 : 4.0` is an INTEGRAL float const: it folds to 4 through the
@@ -126,10 +126,10 @@ const DimCtx = struct {
     pub fn lookupConstAggLen(_: DimCtx, _: []const u8) ?i64 {
         return null;
     }
-    pub fn lookupConstArrayElem(_: DimCtx, _: []const u8, _: i64, _: ?ast.Span) ?i64 {
+    pub fn lookupConstArrayElem(_: DimCtx, _: []const u8, _: i64, _: ?ast.Span) ?i128 {
         return null;
     }
-    pub fn lookupConstStructField(_: DimCtx, _: []const u8, _: []const u8, _: ?ast.Span) ?i64 {
+    pub fn lookupConstStructField(_: DimCtx, _: []const u8, _: []const u8, _: ?ast.Span) ?i128 {
         return null;
     }
     pub fn evalConstCallInt(_: DimCtx, _: *const ast.Node) ?i64 {
@@ -152,7 +152,7 @@ const DimCtx = struct {
         if (std.mem.eql(u8, name, "K")) return 4.0;
         return null;
     }
-    pub fn untypedNumericLeaf(_: DimCtx, _: *const Node) ?pi.UntypedNumericKind {
+    pub fn untypedLeaf(_: DimCtx, _: *const Node) ?pi.Untyped {
         return null;
     }
     pub fn floatLeafType(_: DimCtx, _: *const Node) ?types.TypeId {
@@ -168,7 +168,7 @@ const DimCtx = struct {
     }
     // This test ctx models no namespace imports — qualified-member consts
     // (`m.CAP`) are exercised end-to-end by the corpus, not here.
-    pub fn lookupQualifiedConst(_: DimCtx, _: []const u8, _: []const u8) ?i64 {
+    pub fn lookupQualifiedConst(_: DimCtx, _: []const u8, _: []const u8) ?i128 {
         return null;
     }
     pub fn lookupQualifiedConstFloat(_: DimCtx, _: []const u8, _: []const u8) ?f64 {
@@ -177,7 +177,7 @@ const DimCtx = struct {
     pub fn qualifiedNameIsFloatTyped(_: DimCtx, _: []const u8, _: []const u8) bool {
         return false;
     }
-    pub fn lookupQualifiedConstNode(_: DimCtx, _: *const Node) ?i64 {
+    pub fn lookupQualifiedConstNode(_: DimCtx, _: *const Node) ?i128 {
         return null;
     }
     pub fn lookupQualifiedConstNodeFloat(_: DimCtx, _: *const Node) ?f64 {
@@ -228,28 +228,28 @@ test "evalConstIntExpr folds constant-expression array dimensions, halts on non-
     var z = nIdent("Z"); // unbound — genuinely non-comptime
 
     // Leaves: literal, named const, unbound name.
-    try std.testing.expectEqual(@as(?i64, 5), eval(&l5, ctx));
-    try std.testing.expectEqual(@as(?i64, 4), eval(&m, ctx));
+    try std.testing.expectEqual(@as(?i128, 5), eval(&l5, ctx));
+    try std.testing.expectEqual(@as(?i128, 4), eval(&m, ctx));
     try std.testing.expect(eval(&z, ctx) == null);
 
     // `M + 1`, `M * N`, `N - M`.
     var add = nBin(.add, &m, &one);
     var mul = nBin(.mul, &m, &n);
     var sub = nBin(.sub, &n, &m);
-    try std.testing.expectEqual(@as(?i64, 5), eval(&add, ctx));
-    try std.testing.expectEqual(@as(?i64, 24), eval(&mul, ctx));
-    try std.testing.expectEqual(@as(?i64, 2), eval(&sub, ctx));
+    try std.testing.expectEqual(@as(?i128, 5), eval(&add, ctx));
+    try std.testing.expectEqual(@as(?i128, 24), eval(&mul, ctx));
+    try std.testing.expectEqual(@as(?i128, 2), eval(&sub, ctx));
 
     // Nested `(M + N) - 1` and parenthesised `(M + 1) * 2` (parens carry no node).
     var addmn = nBin(.add, &m, &n);
     var nested = nBin(.sub, &addmn, &one);
     var paren = nBin(.mul, &add, &two);
-    try std.testing.expectEqual(@as(?i64, 9), eval(&nested, ctx));
-    try std.testing.expectEqual(@as(?i64, 10), eval(&paren, ctx));
+    try std.testing.expectEqual(@as(?i128, 9), eval(&nested, ctx));
+    try std.testing.expectEqual(@as(?i128, 10), eval(&paren, ctx));
 
     // Unary negate.
     var neg = nNeg(&m);
-    try std.testing.expectEqual(@as(?i64, -4), eval(&neg, ctx));
+    try std.testing.expectEqual(@as(?i128, -4), eval(&neg, ctx));
 
     // `<pack>.len` leaf resolves via `ctx.lookupPackLen` and folds in an
     // expression (`xs.len` → 3, `xs.len - 1` → 2). A `.len` on a non-pack name
@@ -257,8 +257,8 @@ test "evalConstIntExpr folds constant-expression array dimensions, halts on non-
     var xs = nIdent("xs");
     var xslen = nField(&xs, "len");
     var xslen_m1 = nBin(.sub, &xslen, &one);
-    try std.testing.expectEqual(@as(?i64, 3), eval(&xslen, ctx));
-    try std.testing.expectEqual(@as(?i64, 2), eval(&xslen_m1, ctx));
+    try std.testing.expectEqual(@as(?i128, 3), eval(&xslen, ctx));
+    try std.testing.expectEqual(@as(?i128, 2), eval(&xslen_m1, ctx));
     var zlen = nField(&z, "len");
     var xscap = nField(&xs, "cap");
     try std.testing.expect(eval(&zlen, ctx) == null);
@@ -271,7 +271,8 @@ test "evalConstIntExpr folds constant-expression array dimensions, halts on non-
     var divz = nBin(.div, &m, &zero);
     var cmp = nBin(.lt, &m, &n);
     var big = nLit(std.math.maxInt(i64));
-    var ovf = nBin(.mul, &big, &two);
+    var square = nBin(.mul, &big, &big);
+    var ovf = nBin(.mul, &square, &big);
     try std.testing.expect(eval(&addz, ctx) == null);
     try std.testing.expect(eval(&divz, ctx) == null);
     try std.testing.expect(eval(&cmp, ctx) == null);
@@ -281,20 +282,20 @@ test "evalConstIntExpr folds constant-expression array dimensions, halts on non-
 test "floatToIntExact accepts integral floats, rejects the rest" {
     const f = pi.floatToIntExact;
     // Integral floats (positive, zero, negative) fold to their exact integer.
-    try std.testing.expectEqual(@as(?i64, 4), f(4.0));
-    try std.testing.expectEqual(@as(?i64, 0), f(0.0));
-    try std.testing.expectEqual(@as(?i64, -2), f(-2.0));
+    try std.testing.expectEqual(@as(?i128, 4), f(4.0));
+    try std.testing.expectEqual(@as(?i128, 0), f(0.0));
+    try std.testing.expectEqual(@as(?i128, -2), f(-2.0));
+    try std.testing.expectEqual(@as(?i128, 10000000000000000000), f(1.0e19));
     // Non-integral / non-finite → null (the caller's clean halt).
     try std.testing.expect(f(4.5) == null);
     try std.testing.expect(f(0.1) == null);
     try std.testing.expect(f(std.math.inf(f64)) == null);
     try std.testing.expect(f(-std.math.inf(f64)) == null);
     try std.testing.expect(f(std.math.nan(f64)) == null);
-    // Out-of-i64-range integral floats → null (no @intFromFloat range panic).
-    // `-2^63` is exactly the i64 minimum and IS representable.
-    try std.testing.expectEqual(@as(?i64, std.math.minInt(i64)), f(-9223372036854775808.0));
-    try std.testing.expect(f(9223372036854775808.0) == null); // 2^63, just past maxInt(i64)
-    try std.testing.expect(f(1.0e30) == null);
+    // Out-of-i128-range integral floats → null (no @intFromFloat range panic).
+    // `-2^127` is exactly the i128 minimum and IS representable.
+    try std.testing.expectEqual(@as(?i128, std.math.minInt(i128)), f(-0x1p127));
+    try std.testing.expect(f(0x1p127) == null);
 }
 
 test "moduleConstInt folds expression-RHS consts and rejects cycles" {
@@ -321,10 +322,10 @@ test "moduleConstInt folds expression-RHS consts and rejects cycles" {
     map.put(.module_const, map.synthetic("F", null), "F", .{ .value = &f_val, .ty = .f64 });
     map.put(.module_const, map.synthetic("G", null), "G", .{ .value = &g_val, .ty = .f64 });
 
-    try std.testing.expectEqual(@as(?i64, 2), pi.moduleConstInt(&map, &table, "M"));
-    try std.testing.expectEqual(@as(?i64, 3), pi.moduleConstInt(&map, &table, "N"));
-    try std.testing.expectEqual(@as(?i64, 6), pi.moduleConstInt(&map, &table, "P"));
-    try std.testing.expectEqual(@as(?i64, 4), pi.moduleConstInt(&map, &table, "F"));
+    try std.testing.expectEqual(@as(?i128, 2), pi.moduleConstInt(&map, &table, "M"));
+    try std.testing.expectEqual(@as(?i128, 3), pi.moduleConstInt(&map, &table, "N"));
+    try std.testing.expectEqual(@as(?i128, 6), pi.moduleConstInt(&map, &table, "P"));
+    try std.testing.expectEqual(@as(?i128, 4), pi.moduleConstInt(&map, &table, "F"));
     try std.testing.expect(pi.moduleConstInt(&map, &table, "G") == null);
     try std.testing.expect(pi.moduleConstInt(&map, &table, "absent") == null);
 
@@ -408,7 +409,7 @@ test "moduleConstInt gates the fold on the declared type, not the initializer no
     map.put(.module_const, map.synthetic("STR", null), "STR", .{ .value = &int_val, .ty = .string });
     map.put(.module_const, map.synthetic("BOOLEAN", null), "BOOLEAN", .{ .value = &int_val, .ty = .bool });
 
-    try std.testing.expectEqual(@as(?i64, 4), pi.moduleConstInt(&map, &table, "OK"));
+    try std.testing.expectEqual(@as(?i128, 4), pi.moduleConstInt(&map, &table, "OK"));
     try std.testing.expect(pi.moduleConstInt(&map, &table, "STR") == null);
     try std.testing.expect(pi.moduleConstInt(&map, &table, "BOOLEAN") == null);
 
@@ -422,7 +423,7 @@ test "moduleConstInt gates the fold on the declared type, not the initializer no
     var expr_val = nBin(.add, &m_lit, &add2);
     map.put(.module_const, map.synthetic("KEXPR", null), "KEXPR", .{ .value = &expr_val, .ty = .i64 });
     map.put(.module_const, map.synthetic("STREXPR", null), "STREXPR", .{ .value = &expr_val, .ty = .string });
-    try std.testing.expectEqual(@as(?i64, 4), pi.moduleConstInt(&map, &table, "KEXPR"));
+    try std.testing.expectEqual(@as(?i128, 4), pi.moduleConstInt(&map, &table, "KEXPR"));
     try std.testing.expect(pi.moduleConstInt(&map, &table, "STREXPR") == null);
 }
 
@@ -437,14 +438,14 @@ test "evalConstIntExpr folds an integral float literal, halts on a fractional on
     var one = nLit(1);
 
     // A direct integral float dimension (`[4.0]T`) folds; `4.5` does not.
-    try std.testing.expectEqual(@as(?i64, 4), eval(&f4, ctx));
+    try std.testing.expectEqual(@as(?i128, 4), eval(&f4, ctx));
     try std.testing.expect(eval(&f45, ctx) == null);
 
     // It composes inside an expression dimension (`4.0 + 1` → 5); a fractional
     // operand poisons the whole fold to null.
     var add = nBin(.add, &f4, &one);
     var addbad = nBin(.add, &f45, &one);
-    try std.testing.expectEqual(@as(?i64, 5), eval(&add, ctx));
+    try std.testing.expectEqual(@as(?i128, 5), eval(&add, ctx));
     try std.testing.expect(eval(&addbad, ctx) == null);
 }
 
@@ -551,7 +552,7 @@ test "a backtick raw-shadow receiver is a field read, not a numeric-limit fold" 
     var bare_feps = nField(&f64ty, "epsilon");
     var bare_smax = nField(&s8ty, "max");
     try std.testing.expectEqual(@as(?f64, @as(f64, std.math.floatEps(f64))), evalf(&bare_feps, ctx));
-    try std.testing.expectEqual(@as(?i64, std.math.maxInt(i8)), evali(&bare_smax, ctx));
+    try std.testing.expectEqual(@as(?i128, std.math.maxInt(i8)), evali(&bare_smax, ctx));
 
     // RAW receiver (`` `f64 ``/`` `i8 ``) shadows the builtin with a VALUE — the
     // field access is an ordinary runtime field READ, so it is NOT a compile-time
@@ -573,7 +574,7 @@ test "a backtick raw-shadow receiver is a field read, not a numeric-limit fold" 
     try std.testing.expect(!pi.isFloatValuedExpr(&raw_feps, ctx));
 }
 
-test "foldCountI64 / foldDimU32 fold an integral float count, reject a non-integral one" {
+test "foldCount / foldDimU32 fold an integral float count, reject a non-integral one" {
     var table = types.TypeTable.init(std.testing.allocator);
     defer table.deinit();
     const ctx = DimCtx{ .table = &table }; // M = 4, F = 2.5 (non-integral float const)
@@ -588,14 +589,14 @@ test "foldCountI64 / foldDimU32 fold an integral float count, reject a non-integ
     var fq = nBin(.add, &f, &quarter); //    F + 0.25 = 2.75 (non-integral)
     var z = nIdent("Z"); // unbound — genuinely non-const
 
-    // foldCountI64: integer / integral-float (literal OR float-const-leaf SUM)
+    // foldCount: integer / integral-float (literal OR float-const-leaf SUM)
     // fold to `.int`; a non-integral compile-time float surfaces as
     // `.non_integral`; a runtime leaf is `.not_const`.
-    try std.testing.expectEqual(pi.CountFold{ .int = 5 }, pi.foldCountI64(&five, ctx));
-    try std.testing.expectEqual(pi.CountFold{ .int = 4 }, pi.foldCountI64(&f4, ctx));
-    try std.testing.expectEqual(pi.CountFold{ .int = 4 }, pi.foldCountI64(&fh, ctx));
-    try std.testing.expectEqual(pi.CountFold{ .non_integral = 2.75 }, pi.foldCountI64(&fq, ctx));
-    try std.testing.expectEqual(pi.CountFold.not_const, pi.foldCountI64(&z, ctx));
+    try std.testing.expectEqual(pi.CountFold{ .int = 5 }, pi.foldCount(&five, ctx));
+    try std.testing.expectEqual(pi.CountFold{ .int = 4 }, pi.foldCount(&f4, ctx));
+    try std.testing.expectEqual(pi.CountFold{ .int = 4 }, pi.foldCount(&fh, ctx));
+    try std.testing.expectEqual(pi.CountFold{ .non_integral = 2.75 }, pi.foldCount(&fq, ctx));
+    try std.testing.expectEqual(pi.CountFold.not_const, pi.foldCount(&z, ctx));
 
     // foldDimU32 (min 0) inherits the rule: an integral float-const-leaf dim
     // narrows to a `u32` count, a non-integral one reports `.non_integral_float`,
@@ -623,8 +624,8 @@ test "integer extraction preserves float division" {
     var idiv = nBin(.div, &five, &two);
     var fraction = nBin(.div, &f5, &f2);
     var integral = nBin(.div, &f6, &f2);
-    try std.testing.expectEqual(@as(?i64, 2), pi.evalConstIntExpr(&idiv, ctx));
+    try std.testing.expectEqual(@as(?i128, 2), pi.evalConstIntExpr(&idiv, ctx));
     try std.testing.expect(pi.evalConstIntExpr(&fraction, ctx) == null);
-    try std.testing.expectEqual(@as(?i64, 3), pi.evalConstIntExpr(&integral, ctx));
+    try std.testing.expectEqual(@as(?i128, 3), pi.evalConstIntExpr(&integral, ctx));
     try std.testing.expectEqual(@as(?f64, 2.5), pi.evalConstFloatExpr(&fraction, ctx));
 }

@@ -14,7 +14,7 @@ tap :: (x: f32, y: f32) -> PlatformEvent =>
     .input(.pointerDown(.{ pointer = .{ value = 1 }, position = .{ x = x, y = y } }));
 
 textAt :: (b: *List(PlatformEvent), i: i64) -> string {
-    s : string = "";
+    s := "";
     match b.items[i] {
         case .input: |ie| {
             match ie {

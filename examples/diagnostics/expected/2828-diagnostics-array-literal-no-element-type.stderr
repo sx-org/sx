@@ -1,0 +1,11 @@
+error: cannot infer the element type of this array literal — annotate it
+  --> examples/diagnostics/2828-diagnostics-array-literal-no-element-type.sx:4:6
+   |
+ 4 | A :: .[null, null];
+   |      ^^^^^^^^^^^^^
+
+error: cannot infer the element type of this array literal — annotate it
+  --> examples/diagnostics/2828-diagnostics-array-literal-no-element-type.sx:7:10
+   |
+ 7 |     a := .[null, null];
+   |          ^^^^^^^^^^^^^

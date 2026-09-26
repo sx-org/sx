@@ -140,21 +140,21 @@ pub const ModuleConstInfo = struct {
     declared_type: ?TypeId = null,
 };
 
-/// A finite, INTEGRAL `f64` (`4.0`) → its exact `i64` value; a non-integral
-/// (`4.5`), infinite, NaN, or out-of-`i64`-range float → null. THE single place
+pub fn isIntegralFloat(v: f64) bool {
+    return std.math.isFinite(v) and @trunc(v) == v;
+}
+
+/// An integral `f64` (`4.0`) → its exact value; a non-integral (`4.5`),
+/// infinite, NaN, or out-of-`i128`-range float → null. THE single place
 /// the "an integral float counts as an integer count" rule lives, shared by the
 /// `.float_literal` leaf of `evalConstIntExpr` (a direct `[4.0]T` dim) and
 /// `moduleConstInt` (a float-typed module const `N : f64 : 4.0` used as a
 /// count). One source, so an integral float resolves to the SAME integer at
 /// every dimension / lane / count / value-param / inline-for site; positivity
 /// and u32-range are still enforced downstream by `foldDimU32`.
-pub fn floatToIntExact(v: f64) ?i64 {
-    if (!std.math.isFinite(v)) return null;
-    if (@trunc(v) != v) return null;
-    // `-2^63` is exactly representable and is `minInt(i64)`; `2^63` is the first
-    // f64 above `maxInt(i64)`. Guard both so `@intFromFloat`'s range assert can
-    // never trip on a valid-but-oversized integral float.
-    if (v < -9223372036854775808.0 or v >= 9223372036854775808.0) return null;
+pub fn floatToIntExact(v: f64) ?i128 {
+    if (!isIntegralFloat(v)) return null;
+    if (v < -0x1p127 or v >= 0x1p127) return null;
     return @intFromFloat(v);
 }
 
@@ -177,7 +177,7 @@ fn moduleConstFrameContains(frame: ?*const ModuleConstFrame, name: []const u8) b
 /// `<IntType>.min` / `.max` for a receiver that is a bare builtin type NAME —
 /// the answer a ctx with no type-resolution state can still give. A backtick
 /// raw receiver names a value, not a type.
-pub fn builtinNameLimit(table: *types.TypeTable, receiver: *const Node, field: []const u8) ?i64 {
+pub fn builtinNameLimit(table: *types.TypeTable, receiver: *const Node, field: []const u8) ?i128 {
     if (!type_resolver.TypeResolver.isIntLimitField(field)) return null;
     const name = switch (receiver.data) {
         .identifier => |id| if (id.is_raw) return null else id.name,
@@ -185,7 +185,7 @@ pub fn builtinNameLimit(table: *types.TypeTable, receiver: *const Node, field: [
         else => return null,
     };
     const ty = type_resolver.TypeResolver.resolvePrimitive(name) orelse return null;
-    return table.integerLimit(ty, std.mem.eql(u8, field, "max"));
+    return table.integerBound(ty, std.mem.eql(u8, field, "max"));
 }
 
 /// Folding context for a module-const EXPRESSION RHS (`N :: M + 1`): a leaf name
@@ -201,23 +201,23 @@ const ModuleConstCtx = struct {
     index: *const ProgramIndex,
     table: *types.TypeTable,
     frame: ?*const ModuleConstFrame,
-    pub fn lookupDimName(self: ModuleConstCtx, name: []const u8) ?i64 {
+    pub fn lookupDimName(self: ModuleConstCtx, name: []const u8) ?i128 {
         return moduleConstIntFramed(self.index, self.table, name, self.frame);
     }
     /// A module const's RHS reaches this ctx as a tree of SPELLINGS — no
     /// generic bindings, so a constructor whose width is a bound `$N` cannot
     /// resolve here. A builtin type name does, through the same
-    /// `TypeTable.integerLimit` every other ctx answers with.
-    pub fn typeLimitInt(self: ModuleConstCtx, receiver: *const Node, field: []const u8) ?i64 {
+    /// `TypeTable.integerBound` every other ctx answers with.
+    pub fn typeLimitInt(self: ModuleConstCtx, receiver: *const Node, field: []const u8) ?i128 {
         return builtinNameLimit(self.table, receiver, field);
     }
     pub fn lookupConstAggLen(_: ModuleConstCtx, _: []const u8) ?i64 {
         return null;
     }
-    pub fn lookupConstArrayElem(_: ModuleConstCtx, _: []const u8, _: i64, _: ?ast.Span) ?i64 {
+    pub fn lookupConstArrayElem(_: ModuleConstCtx, _: []const u8, _: i64, _: ?ast.Span) ?i128 {
         return null;
     }
-    pub fn lookupConstStructField(_: ModuleConstCtx, _: []const u8, _: []const u8, _: ?ast.Span) ?i64 {
+    pub fn lookupConstStructField(_: ModuleConstCtx, _: []const u8, _: []const u8, _: ?ast.Span) ?i128 {
         return null;
     }
     pub fn lookupPackLen(_: ModuleConstCtx, _: []const u8) ?i64 {
@@ -234,7 +234,7 @@ const ModuleConstCtx = struct {
     pub fn evalConstFieldAccessInt(_: ModuleConstCtx, _: *const Node) ?i64 {
         return null;
     }
-    pub fn lookupQualifiedConst(_: ModuleConstCtx, _: []const u8, _: []const u8) ?i64 {
+    pub fn lookupQualifiedConst(_: ModuleConstCtx, _: []const u8, _: []const u8) ?i128 {
         return null;
     }
     pub fn lookupQualifiedConstFloat(_: ModuleConstCtx, _: []const u8, _: []const u8) ?f64 {
@@ -243,7 +243,7 @@ const ModuleConstCtx = struct {
     pub fn qualifiedNameIsFloatTyped(_: ModuleConstCtx, _: []const u8, _: []const u8) bool {
         return false;
     }
-    pub fn lookupQualifiedConstNode(_: ModuleConstCtx, _: *const Node) ?i64 {
+    pub fn lookupQualifiedConstNode(_: ModuleConstCtx, _: *const Node) ?i128 {
         return null;
     }
     pub fn lookupQualifiedConstNodeFloat(_: ModuleConstCtx, _: *const Node) ?f64 {
@@ -252,7 +252,7 @@ const ModuleConstCtx = struct {
     pub fn qualifiedNodeIsFloatTyped(_: ModuleConstCtx, _: *const Node) bool {
         return false;
     }
-    pub fn untypedNumericLeaf(self: ModuleConstCtx, node: *const Node) ?UntypedNumericKind {
+    pub fn untypedLeaf(self: ModuleConstCtx, node: *const Node) ?Untyped {
         const name = switch (node.data) {
             .identifier => |id| id.name,
             .type_expr => |te| te.name,
@@ -262,7 +262,7 @@ const ModuleConstCtx = struct {
         const ci = self.index.lookup(.module_const, name) orelse return null;
         if (ci.declared_type != null) return null;
         const frame = ModuleConstFrame{ .name = name, .parent = self.frame };
-        return untypedNumericKind(ci.value, ModuleConstCtx{ .index = self.index, .table = self.table, .frame = &frame });
+        return untypedConst(ci.value, ModuleConstCtx{ .index = self.index, .table = self.table, .frame = &frame });
     }
     pub fn floatLeafType(self: ModuleConstCtx, node: *const Node) ?TypeId {
         return moduleFloatLeafType(self.index, node);
@@ -288,28 +288,65 @@ pub fn isFloatConstType(ty: TypeId) bool {
     return ty == .f32 or ty == .f64;
 }
 
-pub const UntypedNumericKind = enum { integer, float };
+/// An untyped constant — a literal, an unannotated `::` constant bound to one,
+/// numeric arithmetic or a bitwise operation over them, or a shift of an
+/// untyped integer — takes its type from each use's destination. A shift's
+/// amount may be a runtime value. A string carries its literal, which each use
+/// lowers.
+pub const Untyped = union(enum) {
+    integer,
+    float,
+    string: ast.StringLiteral,
+};
 
-pub fn untypedNumericKind(node: *const Node, ctx: anytype) ?UntypedNumericKind {
+pub fn untypedConst(node: *const Node, ctx: anytype) ?Untyped {
     return switch (node.data) {
-        .int_literal => .integer,
+        .int_literal, .char_literal => .integer,
         .float_literal => .float,
-        .unary_op => |u| if (u.op == .negate) untypedNumericKind(u.operand, ctx) else null,
-        .binary_op => |b| switch (b.op) {
-            .add, .sub, .mul, .div, .mod => blk: {
-                const lhs = untypedNumericKind(b.lhs, ctx) orelse break :blk null;
-                const rhs = untypedNumericKind(b.rhs, ctx) orelse break :blk null;
-                break :blk if (lhs == .float or rhs == .float) .float else .integer;
-            },
+        .string_literal => |lit| .{ .string = lit },
+        .unary_op => |u| switch (u.op) {
+            .negate => untypedNumeric(u.operand, ctx),
+            .bit_not => untypedInteger(u.operand, ctx),
             else => null,
         },
-        .identifier, .type_expr, .field_access => ctx.untypedNumericLeaf(node),
+        .binary_op => |b| untypedBinary(b, ctx),
+        .identifier, .type_expr, .field_access => ctx.untypedLeaf(node),
         else => null,
     };
 }
 
+pub fn untypedBinary(b: ast.BinaryOp, ctx: anytype) ?Untyped {
+    return switch (b.op) {
+        .add, .sub, .mul, .div, .mod => blk: {
+            const lhs = untypedNumeric(b.lhs, ctx) orelse break :blk null;
+            const rhs = untypedNumeric(b.rhs, ctx) orelse break :blk null;
+            break :blk if (lhs == .float or rhs == .float) .float else .integer;
+        },
+        .bit_and, .bit_or, .bit_xor => if (untypedInteger(b.lhs, ctx) != null) untypedInteger(b.rhs, ctx) else null,
+        .shl, .shr => untypedInteger(b.lhs, ctx),
+        else => null,
+    };
+}
+
+fn untypedNumeric(node: *const Node, ctx: anytype) ?Untyped {
+    const u = untypedConst(node, ctx) orelse return null;
+    return if (u == .string) null else u;
+}
+
+pub fn untypedInteger(node: *const Node, ctx: anytype) ?Untyped {
+    const u = untypedConst(node, ctx) orelse return null;
+    return if (u == .integer) u else null;
+}
+
 pub fn isAdaptableFloat(node: *const Node, ctx: anytype) bool {
-    return untypedNumericKind(node, ctx) == .float;
+    const u = untypedConst(node, ctx) orelse return false;
+    return u == .float;
+}
+
+/// The literal an untyped string constant names.
+pub fn untypedString(node: *const Node, ctx: anytype) ?ast.StringLiteral {
+    const u = untypedConst(node, ctx) orelse return null;
+    return if (u == .string) u.string else null;
 }
 
 pub fn floatOperandTypes(b: ast.BinaryOp, lhs: ?TypeId, rhs: ?TypeId, ctx: anytype) struct { lhs: ?TypeId, rhs: ?TypeId } {
@@ -337,8 +374,8 @@ pub fn constFloatType(node: *const Node, ctx: anytype) ?TypeId {
     };
 }
 
-pub fn moduleUntypedNumericLeaf(index: *const ProgramIndex, table: *types.TypeTable, node: *const Node) ?UntypedNumericKind {
-    return (ModuleConstCtx{ .index = index, .table = table, .frame = null }).untypedNumericLeaf(node);
+pub fn moduleUntypedLeaf(index: *const ProgramIndex, table: *types.TypeTable, node: *const Node) ?Untyped {
+    return (ModuleConstCtx{ .index = index, .table = table, .frame = null }).untypedLeaf(node);
 }
 
 pub fn moduleFloatLeafType(index: *const ProgramIndex, node: *const Node) ?TypeId {
@@ -361,6 +398,9 @@ pub fn moduleFloatLeafType(index: *const ProgramIndex, node: *const Node) ?TypeI
 }
 
 pub fn evalConstFloatInit(node: *const Node, ctx: anytype, ty: TypeId) ?f64 {
+    if (!isFloatValuedExpr(node, ctx)) {
+        if (evalConstIntExpr(node, ctx)) |iv| return types.floatFromInt(iv, ty);
+    }
     const value = evalConstFloatExpr(node, ctx) orelse return null;
     if (isAdaptableFloat(node, ctx)) return ctx.adoptFloatValue(value, ty, node.span);
     return if (ty == .f32) @as(f32, @floatCast(value)) else value;
@@ -400,7 +440,7 @@ pub fn isCountableConstType(table: *const types.TypeTable, ty: TypeId) bool {
     };
 }
 
-fn moduleConstIntFramed(index: *const ProgramIndex, table: *types.TypeTable, name: []const u8, parent: ?*const ModuleConstFrame) ?i64 {
+fn moduleConstIntFramed(index: *const ProgramIndex, table: *types.TypeTable, name: []const u8, parent: ?*const ModuleConstFrame) ?i128 {
     if (moduleConstFrameContains(parent, name)) return null;
     const ci = index.lookup(.module_const, name) orelse return null;
     if (!isCountableConstType(table, ci.ty)) return null;
@@ -423,7 +463,7 @@ fn moduleConstIntFramed(index: *const ProgramIndex, table: *types.TypeTable, nam
 /// RHS over other consts (`M :: 2; N :: M + 1` → 3) all resolve identically and
 /// everywhere a count is accepted. Cyclic consts fold to null (see
 /// `ModuleConstCtx`).
-pub fn moduleConstInt(index: *const ProgramIndex, table: *types.TypeTable, name: []const u8) ?i64 {
+pub fn moduleConstInt(index: *const ProgramIndex, table: *types.TypeTable, name: []const u8) ?i128 {
     return moduleConstIntFramed(index, table, name, null);
 }
 
@@ -489,7 +529,7 @@ pub fn isFloatValuedExpr(node: *const Node, ctx: anytype) bool {
 /// (`facade.engine_alias.N` -> prefix `facade.engine_alias`, member `N`). The
 /// lowering context proves every prefix edge; stateless contexts simply return
 /// null as before. Null for an unqualified name (no `.`).
-fn qualifiedDottedInt(name: []const u8, ctx: anytype) ?i64 {
+fn qualifiedDottedInt(name: []const u8, ctx: anytype) ?i128 {
     const dot = std.mem.lastIndexOfScalar(u8, name, '.') orelse return null;
     return ctx.lookupQualifiedConst(name[0..dot], name[dot + 1 ..]);
 }
@@ -502,16 +542,17 @@ fn qualifiedDottedIsFloat(name: []const u8, ctx: anytype) bool {
     return ctx.qualifiedNameIsFloatTyped(name[0..dot], name[dot + 1 ..]);
 }
 
-/// Evaluate a constant integer expression to its value. THE single
-/// integer-expression folder for the compiler — array dimensions (`[N]T`,
-/// `[M + 1]T`), `@Vector` lane counts (`@Vector(N, f32)`), generic value-param
-/// args (`Vec(N, f32)`), and `inline for 0..M` bounds all route here so they
-/// cannot disagree on what a given expression evaluates to (the
-/// two-resolver class of bug). Folds integer `+ - * / %` and unary negate over
-/// int literals, integral float literals (`[4.0]T` → 4, via `floatToIntExact`),
-/// and named module / comptime consts — recursively, so nested and parenthesised
-/// forms (`[M + N - 1]`, `[(M + 1) * 2]`) fold (a grouping `(…)` carries no AST
-/// node; the parser returns the inner expression).
+/// Evaluate a constant integer expression to its exact value. THE single
+/// integer-expression folder for the compiler — untyped integer constants,
+/// array dimensions (`[N]T`, `[M + 1]T`), `@Vector` lane counts
+/// (`@Vector(N, f32)`), generic value-param args (`Vec(N, f32)`), and
+/// `inline for 0..M` bounds all route here so they cannot disagree on what a
+/// given expression evaluates to (the two-resolver class of bug). Folds
+/// `+ - * / %` and unary `-`, and over untyped operands `<< >> & | ^ ~`, in
+/// `i128` over int literals, integral float literals (`[4.0]T` → 4, via
+/// `floatToIntExact`), and named module / comptime consts — recursively, so
+/// nested and parenthesised forms (`[M + N - 1]`, `[(M + 1) * 2]`) fold (a
+/// grouping `(…)` carries no AST node; the parser returns the inner expression).
 ///
 /// ONE exception keeps a float operation out of integer arithmetic: a `/` whose
 /// lhs/rhs is float-valued (`5.0 / 2.0`, `K / 3` with `K : f64 : 4.0`) is FLOAT
@@ -535,13 +576,21 @@ fn qualifiedDottedIsFloat(name: []const u8, ctx: anytype) bool {
 ///     spelling.
 ///
 /// Returns null when any operand is not a compile-time integer (a runtime value,
-/// a non-comptime call, an unbound name) or the arithmetic overflows / divides
-/// by zero: the caller then emits the clean compile-halting diagnostic, never a
-/// fabricated length / lane count / value-param.
-pub fn evalConstIntExpr(node: *const Node, ctx: anytype) ?i64 {
+/// a non-comptime call, an unbound name), a shift amount is negative, or the
+/// arithmetic overflows `i128` / divides by zero: the caller then emits the
+/// clean compile-halting diagnostic, never a fabricated length / lane count /
+/// value-param.
+pub fn evalConstIntExpr(node: *const Node, ctx: anytype) ?i128 {
+    return foldConstInt(node, ctx) catch null;
+}
+
+pub const IntConstFault = error{ Overflow, DivisionByZero };
+
+/// `evalConstIntExpr`, reporting an overflow or a division by zero.
+pub fn foldConstInt(node: *const Node, ctx: anytype) IntConstFault!?i128 {
     if (isFloatValuedExpr(node, ctx)) return floatToIntExact(evalConstFloatExpr(node, ctx) orelse return null);
     return switch (node.data) {
-        .int_literal => |lit| lit.value,
+        .int_literal => |lit| @as(u64, @bitCast(lit.value)),
         .char_literal => |lit| lit.value,
         // An integral float literal (`[4.0]T`) folds to its integer; `4.5` → null.
         .float_literal => |lit| floatToIntExact(lit.value),
@@ -567,16 +616,15 @@ pub fn evalConstIntExpr(node: *const Node, ctx: anytype) ?i64 {
                 // const's element count.
                 if (std.mem.eql(u8, fa.field, "len")) {
                     if (ctx.lookupPackLen(on)) |n| break :blk n;
-                    break :blk ctx.lookupConstAggLen(on);
+                    if (ctx.lookupConstAggLen(on)) |n| break :blk n;
+                    break :blk null;
                 }
             }
             // `<IntType>.min` / `.max` — the queried type's limit, read from the
             // RECEIVER so a constructor spelling (`[@int(2, .unsigned).max]T`)
             // folds wherever a name does. The ctx resolves the receiver and
-            // answers through `TypeTable.integerLimit`, so `[u8.max]T` agrees
-            // with `u8.max` in expression position. A `u64.max` (= -1 as i64)
-            // folds here too; `foldDimU32` then rejects it as a negative array
-            // dimension.
+            // answers through `TypeTable.integerBound`, so `[u8.max]T` agrees
+            // with `u8.max` in expression position.
             if (ctx.typeLimitInt(fa.object, fa.field)) |v| break :blk v;
             if (obj_name) |on| {
                 // A struct const's integer field (`LIT.r`) folds to the
@@ -603,8 +651,8 @@ pub fn evalConstIntExpr(node: *const Node, ctx: anytype) ?i64 {
                 else => null,
             };
             const name = on orelse break :blk null;
-            const idx = evalConstIntExpr(ie.index, ctx) orelse break :blk null;
-            break :blk ctx.lookupConstArrayElem(name, idx, node.span);
+            const idx = try foldConstInt(ie.index, ctx) orelse break :blk null;
+            break :blk ctx.lookupConstArrayElem(name, std.math.cast(i64, idx) orelse break :blk null, node.span);
         },
         // A pure int-returning type-query builtin call (`field_count(T)`,
         // `@sizeOf(T)`, `@alignOf(T)`) folds to its constant when the ctx can
@@ -612,27 +660,40 @@ pub fn evalConstIntExpr(node: *const Node, ctx: anytype) ?i64 {
         // can; the stateless registration ctxs return null. This is what lets a
         // reflection-derived count drive an `inline for` bound / array dim, the
         // same as a plain `K :: 3` const.
-        .call => ctx.evalConstCallInt(node),
+        .call => if (ctx.evalConstCallInt(node)) |v| v else null,
         .unary_op => |u| switch (u.op) {
-            .negate => {
-                const v = evalConstIntExpr(u.operand, ctx) orelse return null;
-                return if (v == std.math.minInt(i64)) null else -v;
-            },
+            .negate => try std.math.negate(try foldConstInt(u.operand, ctx) orelse return null),
+            .bit_not => if (untypedConst(node, ctx) == null) null else ~(try foldConstInt(u.operand, ctx) orelse return null),
             else => null,
         },
         .binary_op => |b| {
-            const l = evalConstIntExpr(b.lhs, ctx) orelse return null;
-            const r = evalConstIntExpr(b.rhs, ctx) orelse return null;
-            return switch (b.op) {
-                .add => std.math.add(i64, l, r) catch null,
-                .sub => std.math.sub(i64, l, r) catch null,
-                .mul => std.math.mul(i64, l, r) catch null,
-                .div => std.math.divTrunc(i64, l, r) catch null,
-                .mod => if (r == 0) null else @rem(l, r),
-                else => null,
-            };
+            switch (b.op) {
+                .add, .sub, .mul, .div, .mod => {},
+                .shl, .shr, .bit_and, .bit_or, .bit_xor => if (untypedBinary(b, ctx) == null) return null,
+                else => return null,
+            }
+            const l = try foldConstInt(b.lhs, ctx) orelse return null;
+            const r = try foldConstInt(b.rhs, ctx) orelse return null;
+            return foldIntOperation(b.op, l, r);
         },
         else => null,
+    };
+}
+
+/// `l op r` over `i128`. Null for a negative shift amount.
+fn foldIntOperation(op: ast.BinaryOp.Op, l: i128, r: i128) IntConstFault!?i128 {
+    return switch (op) {
+        .add => try std.math.add(i128, l, r),
+        .sub => try std.math.sub(i128, l, r),
+        .mul => try std.math.mul(i128, l, r),
+        .div => try std.math.divTrunc(i128, l, r),
+        .mod => l - try std.math.divTrunc(i128, l, r) * r,
+        .bit_and => l & r,
+        .bit_or => l | r,
+        .bit_xor => l ^ r,
+        .shl => if (r < 0) null else if (l == 0) 0 else try std.math.shlExact(i128, l, std.math.cast(u7, r) orelse return error.Overflow),
+        .shr => if (r < 0) null else l >> (std.math.cast(u7, r) orelse 127),
+        else => unreachable,
     };
 }
 
@@ -712,22 +773,22 @@ pub fn evalConstFloatExpr(node: *const Node, ctx: anytype) ?f64 {
     };
 }
 
-/// The outcome of folding a compile-time COUNT expression to an `i64` under the
-/// unified float→int narrowing rule. THE single int-or-
+/// The outcome of folding a compile-time COUNT expression to an integer under
+/// the unified float→int narrowing rule. THE single int-or-
 /// integral-float count fold: `foldDimU32` (array dim / `@Vector` lane / u32 value-
-/// param) and the non-`u32` value-param gate both route through `foldCountI64`,
+/// param) and the non-`u32` value-param gate both route through `foldCount`,
 /// so no count site can disagree on which floats fold (the unify-or-
 /// diverge rule extended to floats).
 pub const CountFold = union(enum) {
     /// An integer expression, or an INTEGRAL compile-time float (`[F + 1.5]` → 4).
-    int: i64,
+    int: i128,
     /// A compile-time float that is not integral (`[F + 0.25]` → 2.75).
     non_integral: f64,
     /// Not a compile-time constant (runtime value, unbound name, or overflow).
     not_const,
 };
 
-/// Fold `node` to an `i64` count, accepting an INTEGRAL compile-time float as the
+/// Fold `node` to an integer count, accepting an INTEGRAL compile-time float as the
 /// integer it equals (`4.0`, `F + 1.5`, a const folding to either) and surfacing a
 /// NON-integral compile-time float distinctly so the caller can reject it. Reuses
 /// the SAME facility the typed local/field/param/const sites use — `evalConstIntExpr`
@@ -736,7 +797,7 @@ pub const CountFold = union(enum) {
 /// yields no integer, `evalConstFloatExpr` + `floatToIntExact` (so an integral SUM
 /// built from a non-integral float-const leaf, `F + 1.5` = 4.0, still folds, while
 /// `F + 0.25` = 2.75 reports as non-integral). No parallel integral check.
-pub fn foldCountI64(node: *const Node, ctx: anytype) CountFold {
+pub fn foldCount(node: *const Node, ctx: anytype) CountFold {
     if (evalConstIntExpr(node, ctx)) |v| return .{ .int = v };
     const fv = evalConstFloatExpr(node, ctx) orelse return .not_const;
     if (floatToIntExact(fv)) |iv| return .{ .int = iv };
@@ -745,7 +806,7 @@ pub fn foldCountI64(node: *const Node, ctx: anytype) CountFold {
 
 /// The outcome of folding a comptime count and narrowing it to a `u32`
 /// (array dimension / `@Vector` lane / value-param count). `foldDimU32` is the
-/// SINGLE place a folded integer becomes a `u32`, so the i64→u32 narrowing is
+/// SINGLE place a folded integer becomes a `u32`, so the narrowing is
 /// range-checked exactly once and no call site does a bare `@intCast` that could
 /// panic the compiler on a valid-but-oversized fold (a literal `5_000_000_000`
 /// is a valid `i64` yet `> maxInt(u32)`). Each call site maps a
@@ -756,27 +817,26 @@ pub const DimU32 = union(enum) {
     /// Not a compile-time integer (runtime value, unbound name, or overflow).
     not_const,
     /// Folded, but below the required minimum (a negative dim, a non-positive lane).
-    below_min: i64,
+    below_min: i128,
     /// Folded, but greater than `maxInt(u32)` — too large for a `u32` count.
-    too_large: i64,
+    too_large: i128,
     /// A compile-time float that is not integral (`[F + 0.25]`) — under the unified
     /// float→int rule it cannot serve as an integer count; reported, never truncated.
     non_integral_float: f64,
 };
 
-/// Fold `node` to a `u32` count through `foldCountI64` (the unified int-or-
+/// Fold `node` to a `u32` count through `foldCount` (the unified int-or-
 /// integral-float fold), then range-check against `[min, maxInt(u32)]`. THE single
 /// fold-to-u32 for every array dimension, `@Vector` lane, and value-param count —
 /// routing all of them here guarantees the narrowing is checked once and can never
-/// abort the compiler. The fold itself stays in `i64`; only this one
-/// conversion is the `u32` gate.
+/// abort the compiler. This one conversion is the `u32` gate.
 pub fn foldDimU32(node: *const Node, ctx: anytype, min: u32) DimU32 {
-    const v = switch (foldCountI64(node, ctx)) {
+    const v = switch (foldCount(node, ctx)) {
         .int => |iv| iv,
         .non_integral => |fv| return .{ .non_integral_float = fv },
         .not_const => return .not_const,
     };
-    if (v < @as(i64, min)) return .{ .below_min = v };
+    if (v < min) return .{ .below_min = v };
     if (v > std.math.maxInt(u32)) return .{ .too_large = v };
     return .{ .ok = @intCast(v) };
 }
@@ -804,20 +864,17 @@ pub fn reportDimError(diag: *errors.DiagnosticList, span: ?ast.Span, result: Dim
 /// type can hold, addressed by the type NAME as written on a generic value-param
 /// constraint (`$K: u32`). null for a non-integer / unrecognised name — the
 /// caller then skips the range check (folds without bounding) rather than
-/// guessing. Bounds are clamped into `i64`: a `u64`/`usize` ceiling exceeds
-/// `i64`, but a folded value-param arg is already an `i64`, so `maxInt(i64)` is
-/// its effective ceiling and the only failure a `u64` param can have is a
-/// negative arg. THE single declared-type → range map for the value-param gate,
+/// guessing. THE single declared-type → range map for the value-param gate,
 /// so the bound at every binding site agrees. The `u32` count case is gated
 /// through `foldDimU32` instead (the documented dim/lane/value-param u32 gate);
 /// both encode the same `[0, maxInt(u32)]`.
-pub const IntRange = struct { min: i64, max: i64 };
+pub const IntRange = struct { min: i128, max: i128 };
 pub fn intTypeRange(name: []const u8) ?IntRange {
     const eql = std.mem.eql;
     if (eql(u8, name, "u8")) return .{ .min = 0, .max = std.math.maxInt(u8) };
     if (eql(u8, name, "u16")) return .{ .min = 0, .max = std.math.maxInt(u16) };
     if (eql(u8, name, "u32")) return .{ .min = 0, .max = std.math.maxInt(u32) };
-    if (eql(u8, name, "u64") or eql(u8, name, "usize")) return .{ .min = 0, .max = std.math.maxInt(i64) };
+    if (eql(u8, name, "u64") or eql(u8, name, "usize")) return .{ .min = 0, .max = std.math.maxInt(u64) };
     if (eql(u8, name, "i8")) return .{ .min = std.math.minInt(i8), .max = std.math.maxInt(i8) };
     if (eql(u8, name, "i16")) return .{ .min = std.math.minInt(i16), .max = std.math.maxInt(i16) };
     if (eql(u8, name, "i32")) return .{ .min = std.math.minInt(i32), .max = std.math.maxInt(i32) };

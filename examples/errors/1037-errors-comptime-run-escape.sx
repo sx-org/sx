@@ -1,4 +1,4 @@
-// Comptime `@run` of a failable whose error ESCAPES (no `catch` / `or`): the
+// Comptime `@run` of a failable whose error ESCAPES (no `catch` / `??`): the
 // compiler reports the raised tag name + the return trace at the `@run` site and
 // halts with a non-zero exit — never a segfault (const form) or a silent
 // success (statement form).

@@ -1,0 +1,15 @@
+@import "modules/std.sx";
+
+sum :: () -> f32 { a : f32 = 16777216; b : f32 = 1; (a + b) - a }
+narrow :: (x: f64) -> f64 { x.(f32).(f64) - 16777216 }
+root :: (x: f32) -> f64 { @sqrt(x).(f64) - 16777216 }
+
+S :: @run sum();
+N :: @run narrow(16777217);
+R :: @run root(281475010265088);
+
+main :: () {
+    print("{} {}\n", S, sum());
+    print("{} {}\n", N, narrow(16777217));
+    print("{} {}\n", R, root(281475010265088));
+}

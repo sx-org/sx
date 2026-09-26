@@ -1,0 +1,14 @@
+// The literal arms of a value `if` or `match` take the destination's shape, as
+// a lone literal does.
+
+puts :: (s: [*:0]u8) -> i32 extern;
+
+main :: () -> i32 {
+    n := 1;
+    _ = puts(if n > 0 then "yes" else "no");
+    v : [:0]u8 = if n > 0 then "view" else "other";
+    _ = puts(v);
+    m : [*:0]u8 = match n { case 1: { "matched" } else: { "missed" } };
+    _ = puts(m);
+    0
+}

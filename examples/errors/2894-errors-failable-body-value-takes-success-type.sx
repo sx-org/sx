@@ -1,0 +1,9 @@
+@import "modules/std.sx";
+
+E :: error { Bad };
+
+half :: () -> (f32, !E) { 1.5 }
+
+main :: () {
+    print("{}\n", half() ?? 0.0);
+}

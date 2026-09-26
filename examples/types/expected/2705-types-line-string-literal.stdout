@@ -1,6 +1,5 @@
-kept: [47:0]u8 size 48
 at a string slot: 47
-decayed: cstring len 18
+len 18
 [a\tb // content
 
 c]

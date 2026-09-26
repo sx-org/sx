@@ -906,8 +906,6 @@ pub fn extractTypeParam(self: *Lowering, type_node: *const Node, arg_ty: TypeId,
             // arg coerces to a slice at a `[]T` param (the same promotion
             // concrete slice params perform), so it binds from its
             // element type too.
-            // `string` IS the `[]u8` slice, so it binds the element param to `u8`.
-            if (arg_ty == .string) break :blk self.extractTypeParam(st.element_type, .u8, tp_name);
             break :blk switch (self.module.types.get(arg_ty)) {
                 .slice => |s| self.extractTypeParam(st.element_type, s.element, tp_name),
                 .array => |a| self.extractTypeParam(st.element_type, a.element, tp_name),
@@ -934,13 +932,17 @@ pub fn extractTypeParam(self: *Lowering, type_node: *const Node, arg_ty: TypeId,
                 else => null,
             };
         },
+        // A value binds the payload it wraps into; `null`, typed `void`, binds
+        // nothing.
         .optional_type_expr => |ot| blk: {
-            if (arg_ty.isBuiltin()) break :blk null;
-            const info = self.module.types.get(arg_ty);
-            break :blk switch (info) {
-                .optional => |o| self.extractTypeParam(ot.inner_type, o.child, tp_name),
-                else => null,
+            const payload = switch (arg_ty) {
+                .void, .unresolved => break :blk null,
+                else => if (!arg_ty.isBuiltin() and self.module.types.get(arg_ty) == .optional)
+                    self.module.types.get(arg_ty).optional.child
+                else
+                    arg_ty,
             };
+            break :blk self.extractTypeParam(ot.inner_type, payload, tp_name);
         },
         .array_type_expr => |at| blk: {
             if (arg_ty.isBuiltin()) break :blk null;
@@ -1177,7 +1179,7 @@ pub fn resolveTypeCategoryTags(self: *Lowering, name: []const u8) []const u64 {
                 .@"struct" => info == .@"struct" and !info.@"struct".is_protocol,
                 .@"enum" => info == .@"enum",
                 .@"union" => info == .@"union",
-                .slice => info == .slice or TypeId.fromIndex(@intCast(idx)) == .string,
+                .slice => info == .slice,
                 .array => info == .array,
                 .pointer => info == .pointer or info == .many_pointer,
                 .vector => info == .vector,
@@ -1507,7 +1509,7 @@ pub fn resolveValueParamArg(self: *Lowering, arg_node: *const Node, param_name: 
     // so an integral float arg (`Box(4.0)`, `Make(F + 1.5, ...)`) binds the
     // integer it equals, exactly as the `u32` gate above does; a non-integral
     // float / non-const arg is not a valid count.
-    const v = switch (program_index_mod.foldCountI64(arg_node, self)) {
+    const v = switch (program_index_mod.foldCount(arg_node, self)) {
         .int => |iv| iv,
         .non_integral, .not_const => {
             self.diagValueParamNotConst(arg_node, param_name);
@@ -1522,7 +1524,11 @@ pub fn resolveValueParamArg(self: *Lowering, arg_node: *const Node, param_name: 
             }
         }
     }
-    return v;
+    return std.math.cast(i64, v) orelse {
+        if (self.diagnostics) |d|
+            d.addFmt(.err, arg_node.span, "value {} does not fit in parameter {s}: a generic value parameter holds an i64", .{ v, param_name });
+        return null;
+    };
 }
 
 /// Resolve a generic value-param constraint type NAME to its canonical builtin
@@ -1547,7 +1553,7 @@ pub fn diagValueParamNotConst(self: *Lowering, arg_node: *const Node, param_name
         d.addFmt(.err, arg_node.span, "generic value parameter '{s}' must be a compile-time integer constant", .{param_name});
 }
 
-pub fn diagValueParamRange(self: *Lowering, arg_node: *const Node, param_name: []const u8, type_name: []const u8, value: i64) void {
+pub fn diagValueParamRange(self: *Lowering, arg_node: *const Node, param_name: []const u8, type_name: []const u8, value: i128) void {
     if (self.diagnostics) |d|
         d.addFmt(.err, arg_node.span, "value {} does not fit in {s} parameter {s}", .{ value, type_name, param_name });
 }

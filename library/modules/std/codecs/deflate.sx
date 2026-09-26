@@ -115,9 +115,9 @@ encodeInto :: (data: string, output: string, options: Options = .{}, alloc: Allo
     inputAt := 0;
     outputAt := 0;
     while true {
-        input : string = "";
+        input := "";
         if inputAt < data.len { input = data[inputAt..]; }
-        destination : string = "";
+        destination := "";
         if outputAt < output.len { destination = output[outputAt..]; }
         progress := try encoder.flush(input, destination, .finish);
         inputAt += progress.consumed;

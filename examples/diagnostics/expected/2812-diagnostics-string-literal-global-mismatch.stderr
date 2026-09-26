@@ -1,0 +1,23 @@
+error: cannot initialize 'A' of type '[4]u8' with a value of type '[3:0]u8'
+  --> examples/diagnostics/2812-diagnostics-string-literal-global-mismatch.sx:3:13
+   |
+ 3 | A : [4]u8 = "lit";
+   |             ^^^^^
+
+error: cannot initialize 'B' of type 'i64' with a value of type 'string'
+  --> examples/diagnostics/2812-diagnostics-string-literal-global-mismatch.sx:4:11
+   |
+ 4 | B : i64 = "lit";
+   |           ^^^^^
+
+error: cannot initialize 'C' of type '?*u8' with a value of type 'string'
+  --> examples/diagnostics/2812-diagnostics-string-literal-global-mismatch.sx:5:12
+   |
+ 5 | C : ?*u8 = "lit";
+   |            ^^^^^
+
+error: a value of type '[3:0]u8' does not coerce to '[4:0]u8': no conversion adds a terminator
+  --> examples/diagnostics/2812-diagnostics-string-literal-global-mismatch.sx:6:15
+   |
+ 6 | D : [4:0]u8 = "lit";
+   |               ^^^^^

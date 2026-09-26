@@ -2898,7 +2898,7 @@ fn bindCallableBinders(
 /// `Ordering` enum (library/modules/std/atomic.sx) and the IR `AtomicOrdering`
 /// enum (inst.zig) declare these variants in the SAME order, so a comptime-bound
 /// ordering's tag indexes this list. Keep all three in sync.
-fn atomicOrderingFromTag(tag: i64) ?inst_mod.AtomicOrdering {
+fn atomicOrderingFromTag(tag: i128) ?inst_mod.AtomicOrdering {
     return switch (tag) {
         0 => .relaxed,
         1 => .acquire,
@@ -3338,10 +3338,11 @@ const PrintfKind = enum {
     }
 };
 
-/// The kind that renders a value of `ty`, or null when nothing does.
+/// The kind that renders a value of `ty`, or null when nothing does. A u8
+/// slice is text.
 fn printfKind(self: *Lowering, ty: TypeId) ?PrintfKind {
+    if (self.module.types.sliceInfoOf(ty)) |sl| return if (sl.element == .u8) .str else null;
     switch (ty) {
-        .string, .cstring => return .str,
         .bool => return .boolean,
         .i8, .i16, .i32, .i64, .isize => return .signed,
         .u8, .u16, .u32, .u64, .usize => return .unsigned,
@@ -3417,7 +3418,9 @@ fn emitPrintfArg(self: *Lowering, sink: PrintfSink, arg: *const Node) void {
         if (self.diagnostics) |d| d.addFmt(.err, arg.span, "@printf renders a string, a bool, an integer or a float — '{s}' takes the allocating formatter, `print`", .{self.formatTypeName(arg_ty)});
         return;
     };
-    emitPrintfWrite(self, sink, kind, self.coerceToType(raw, arg_ty, kind.param()));
+    // A u8 slice's length word need not fit `string`'s i64.
+    const val = if (kind == .str) self.coerceExplicit(raw, arg_ty, .string) else self.coerceToType(raw, arg_ty, kind.param());
+    emitPrintfWrite(self, sink, kind, val);
 }
 
 /// Recognize `@printf($fmt, ..$args)` and expand it onto a stdout `FdWriter`:
@@ -3871,7 +3874,7 @@ const boxed_as_sources = [_]TypeId{ .bool, .f32, .f64 };
 /// modeled scalar plans and optional payload conversions.
 fn boxedAsConverts(self: *Lowering, s: TypeId, dst: TypeId) bool {
     return switch (self.coercionResolver().classify(s, dst)) {
-        .no_op, .integer_retype, .widen, .narrow, .int_to_float, .float_to_int, .int_to_enum, .enum_to_int, .error_to_int => true,
+        .no_op, .integer_retype, .widen, .narrow, .int_to_float, .float_to_int, .bool_to_number, .number_to_bool, .int_to_enum, .enum_to_int, .error_to_int => true,
         .optional_wrap => boxedAsConverts(self, s, self.module.types.get(dst).optional.child),
         else => false,
     };

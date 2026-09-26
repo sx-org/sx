@@ -9,7 +9,7 @@
 pick :: (v: $T) {
     inline match T {
         case i64: { print("int {}\n", v); }
-        case cstring: { print("str {}\n", v); }
+        case string: { print("str {}\n", v); }
         else: { @error("pick: unsupported type — add an arm or convert at the call site"); }
     }
 }

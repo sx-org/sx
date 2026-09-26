@@ -11,7 +11,7 @@
 
 main :: () -> i32 {
     n : i64 = 40;
-    s : string = "nope";
+    s := "nope";
     a := n + s;      // arithmetic: i64 + string
     b := s * n;      // arithmetic: non-numeric LHS (string * i64)
     c := n < s;      // ordering:   i64 < string

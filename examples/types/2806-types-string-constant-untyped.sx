@@ -1,0 +1,20 @@
+// A `::` constant bound to a string literal is an untyped constant that
+// defaults to `string`: it formats as its text, slices as a view of its bytes,
+// and binds a generic as `string` whatever its length.
+
+@import "modules/std.sx";
+
+K :: "abc";
+A :: "abcd";
+B :: "xy";
+
+show :: (v: $T) { print("{} {}\n", @typeName(T), v); }
+
+main :: () -> i32 {
+    print("{}\n", K);
+    tail := K[1..];
+    print("{} {}\n", @typeName(@typeOf(tail)), tail);
+    show(A);
+    show(B);
+    0
+}

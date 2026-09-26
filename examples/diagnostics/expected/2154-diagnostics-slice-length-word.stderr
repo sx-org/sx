@@ -57,3 +57,9 @@ error: cannot implicitly convert 'string' to '@Slice(u8,u8)': a non-constant len
    |
 35 |     tiny : Tiny = plain;
    |     ^^^^^^^^^^^^^^^^^^^^
+
+error: negative length -1 does not fit the i64 length word of 'string'
+  --> examples/diagnostics/2154-diagnostics-slice-length-word.sx:38:20
+   |
+38 |     plain.len, n = -1, 0;
+   |                    ^^

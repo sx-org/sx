@@ -1,0 +1,8 @@
+slice elem=u8 sentinel=null
+slice elem=u8 sentinel=0
+array elem=i64 len=2 sentinel=7
+manyPointer elem=u8 sentinel=0
+slice elem=u8 sentinel=null
+slice elem=u8 sentinel=0
+array elem=i64 len=2 sentinel=7
+manyPointer elem=u8 sentinel=0

@@ -13,16 +13,16 @@ main :: () {
 
     n := 7;
     // Shorthand and named fields in one env.
-    mix := |x: i32|_{ bias = 1, n, k = n * 2 } -> i32 x + bias + n + k;
+    mix := |x: i64|_{ bias = 1, n, k = n * 2 } -> i64 x + bias + n + k;
     print("mix {}\n", mix(1));                                  // 1+1+7+14
 
     // A bare field copies, so a later write to the outer name is not the field.
-    copy := |x: i32|_{ n } -> i32 x + n;
+    copy := |x: i64|_{ n } -> i64 x + n;
     n = 100;
     print("copy {}\n", copy(1));                                // 8
 
     // `n = *n` is a named field holding an address, loaded with `.*`.
-    ref := |x: i32|_{ n = *n } -> i32 x + n.*;
+    ref := |x: i64|_{ n = *n } -> i64 x + n.*;
     print("ref {} {}\n", ref(1), @sizeOf(@typeOf(ref)));        // 101 8
     n = 200;
     print("through {}\n", ref(1));                              // 201

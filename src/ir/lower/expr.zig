@@ -768,13 +768,13 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         const al = ast.ArrayLiteral{ .elements = elems.items };
         const saved_tt = self.target_type;
         self.target_type = ty;
-        const arr = self.lowerArrayLiteral(&al);
+        const arr = self.lowerArrayLiteral(&al, span);
         self.target_type = saved_tt;
         return self.coerceToType(arr, self.builder.getRefType(arr), ty);
     }
 
     const aggregate_ok = switch (self.module.types.get(ty)) {
-        .string, .@"struct", .array, .vector, .slice, .closure, .failable => true,
+        .@"struct", .array, .vector, .slice, .closure, .failable => true,
         else => false,
     };
     if (!aggregate_ok) {
@@ -1099,16 +1099,12 @@ fn isSliceHeaderLiteral(sl: *const ast.StructLiteral) bool {
 /// Slot type of a `{ptr,len}` fat pointer or `{fnPtr,env}` closure literal,
 /// keyed by field name or by position. `getStructFields` is empty for these.
 fn fatPointerSlotType(self: *Lowering, ty: TypeId, name: ?[]const u8, index: usize) ?TypeId {
-    const is_string = ty == .string;
     const is_slice = self.module.types.get(ty) == .slice;
     const is_closure = !ty.isBuiltin() and self.module.types.get(ty) == .closure;
-    if (is_string or is_slice) {
+    if (is_slice) {
         const is_ptr = if (name) |n| std.mem.eql(u8, n, "ptr") else index == 0;
         const is_len = if (name) |n| std.mem.eql(u8, n, "len") else index == 1;
-        if (is_ptr) {
-            const elem = if (is_string) TypeId.u8 else self.getElementType(ty);
-            return self.module.types.manyPtrTo(elem);
-        }
+        if (is_ptr) return self.module.types.manyPtrTo(self.getElementType(ty));
         if (is_len) return self.module.types.lenTypeOf(ty);
         return null;
     }
@@ -1152,6 +1148,13 @@ fn receiverPointer(self: *Lowering, place: Ref, obj_ty: TypeId) Ref {
     return self.builder.emit(.{ .addr_of = .{ .operand = place } }, ptr_ty);
 }
 
+/// A `*T` receiver never binds to a constant: its storage is read-only or absent.
+fn diagConstantReceiver(self: *Lowering, name: []const u8, span: ast.Span) Ref {
+    if (self.diagnostics) |d|
+        d.addFmt(.err, span, "cannot take the address of constant '{s}' for a '*T' receiver — constants are immutable (use a '=' variable or a local copy for mutable data)", .{name});
+    return self.emitPlaceholder("addr_of_const");
+}
+
 /// If a method's first param expects a pointer (*T) but we're passing T by value,
 /// swap the first arg with the alloca address (implicit address-of). `place` is
 /// the receiver's storage when the caller already produced it — the node
@@ -1171,6 +1174,11 @@ pub fn fixupMethodReceiver(self: *Lowering, method_args: *std.ArrayList(Ref), fu
                 const oi = self.module.types.get(obj_ty);
                 if (oi == .pointer) return; // already a pointer
             }
+            self.noteStorageWrite(obj_node);
+            if (self.constantRoot(obj_node)) |root| {
+                method_args.items[0] = diagConstantReceiver(self, root, obj_node.span);
+                return;
+            }
             if (place) |p| {
                 method_args.items[0] = receiverPointer(self, p, obj_ty);
                 return;
@@ -1189,23 +1197,18 @@ pub fn fixupMethodReceiver(self: *Lowering, method_args: *std.ArrayList(Ref), fu
                             receiverPointer(self, binding.ref, obj_ty);
                         return;
                     }
+                    if (binding.origin == .local_const) {
+                        method_args.items[0] = diagConstantReceiver(self, nm, obj_node.span);
+                        return;
+                    }
                     // A non-alloca local (SSA value / by-value param) has no
                     // stable storage to address — fall through to alloca+store.
-                } else if (self.resolveGlobalRef(nm, null) != null and !self.rootIsConstant(nm)) {
+                } else if (self.resolveGlobalRef(nm, null) != null) {
                     // MUTABLE module-global lvalue receiver: address the global's
                     // LIVE storage so `self: *T` mutations target the global
                     // itself, not a throwaway stack copy. Mirrors
                     // the compound-lvalue branch below; `lowerExprAsPtr` yields
                     // the global's `global_addr`.
-                    //
-                    // A `::` CONST global is deliberately EXCLUDED: its storage
-                    // is read-only (`.rodata`), so handing a `*T` to it would let
-                    // a mutating method store through it — a silent write past
-                    // the `cannot assign through constant` guard, and a SIGBUS in
-                    // an AOT binary. Const receivers fall through to the value
-                    // copy below: a read-only `*Self` method
-                    // still sees the right value via the copy; a mutating one
-                    // harmlessly scribbles the throwaway, never the `.rodata`.
                     method_args.items[0] = receiverPointer(self, self.lowerExprAsPtr(obj_node), obj_ty);
                     return;
                 }
@@ -1284,7 +1287,6 @@ pub fn builtinTypeName(ty: TypeId) ?[]const u8 {
         .f64 => "f64",
         .bool => "bool",
         .string => "string",
-        .cstring => "cstring",
         else => null,
     };
 }
@@ -1299,7 +1301,7 @@ pub fn builtinTypeName(ty: TypeId) ?[]const u8 {
 /// field entry and type through it.
 pub fn resolveFieldType(self: *Lowering, ty: TypeId, field: []const u8) TypeId {
     const is_special_container = switch (self.module.types.get(ty)) {
-        .string, .slice, .array, .vector => true,
+        .slice, .array, .vector => true,
         else => false,
     };
     if (is_special_container) {
@@ -1715,7 +1717,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
     if (std.mem.eql(u8, fa.field, "len") or std.mem.eql(u8, fa.field, "ptr")) {
         // Only use length/data_ptr for slice, string, array, vector types
         const is_special = switch (self.module.types.get(obj_ty)) {
-            .string, .slice, .array, .vector => true,
+            .slice, .array, .vector => true,
             else => false,
         };
 
@@ -1834,13 +1836,13 @@ pub fn lowerNumericLimit(self: *Lowering, fa: *const ast.FieldAccess, span: ast.
 }
 
 /// `<IntType>.min` / `.max` for the shared comptime-integer folder — the
-/// queried type's limit through the SAME receiver classifier and
-/// `TypeTable.integerLimit` the value path folds, so an array dimension
-/// (`[@int(2, .unsigned).max]i64`) and the expression agree.
-pub fn typeLimitInt(self: *Lowering, receiver: *const Node, field: []const u8) ?i64 {
+/// queried type's exact limit through the SAME receiver classifier the value
+/// path folds, so an array dimension (`[@int(2, .unsigned).max]i64`) and the
+/// expression agree.
+pub fn typeLimitInt(self: *Lowering, receiver: *const Node, field: []const u8) ?i128 {
     if (!TypeResolver.isIntLimitField(field)) return null;
     const ty = self.limitReceiverType(receiver) orelse return null;
-    return self.module.types.integerLimit(ty, std.mem.eql(u8, field, "max"));
+    return self.module.types.integerBound(ty, std.mem.eql(u8, field, "max"));
 }
 
 /// The bytes a string literal denotes, escapes resolved.
@@ -1849,35 +1851,55 @@ pub fn stringLiteralBytes(self: *Lowering, lit: ast.StringLiteral) []const u8 {
     return unescape.unescapeString(self.alloc, lit.raw) catch lit.raw;
 }
 
-/// A string literal's own type: `[N:0]u8` over its bytes.
-pub fn stringLiteralType(self: *Lowering, lit: ast.StringLiteral) TypeId {
-    return self.module.types.arrayOfSentinel(.u8, @intCast(self.stringLiteralBytes(lit).len), 0);
-}
-
-/// A string literal is `[N:0]u8`. It keeps that array where the destination
-/// names a shape only a terminated value reaches, and decays to the `[:0]u8`
-/// view everywhere else.
 pub fn lowerStringLiteral(self: *Lowering, lit: ast.StringLiteral) Ref {
     const str = self.stringLiteralBytes(lit);
     const sid = self.module.types.internString(str);
-    const ty = if (self.literalKeepsArray(self.target_type))
-        self.module.types.arrayOfSentinel(.u8, @intCast(str.len), 0)
-    else
-        .cstring;
-    return self.builder.emit(.{ .const_string = sid }, ty);
+    return self.builder.emit(.{ .const_string = sid }, self.literalType(self.target_type, str.len));
 }
 
-/// Whether the destination names a shape the decayed view cannot reach: the
-/// terminated array itself, or a byte pointer that wants the terminator.
-pub fn literalKeepsArray(self: *Lowering, target: ?TypeId) bool {
-    const t = target orelse return false;
-    if (t.isBuiltin()) return false;
-    return switch (self.module.types.get(t)) {
-        .array => |a| a.element == .u8,
-        .many_pointer => |mp| mp.element == .u8 or mp.element == .i8,
-        .optional => |o| self.literalKeepsArray(o.child),
-        else => false,
+/// The type a literal of `len` bytes takes at `target`.
+pub fn literalType(self: *Lowering, target: ?TypeId, len: usize) TypeId {
+    return switch (self.literalShape(target)) {
+        .string => .string,
+        .view => .string_z,
+        .array => self.module.types.arrayOfSentinel(.u8, @intCast(len), 0),
     };
+}
+
+/// The type the literal or untyped constant `node` takes at `target`; null
+/// when `node` is typed.
+pub fn literalNodeType(self: *Lowering, node: *const Node, target: ?TypeId) ?TypeId {
+    if (node.data == .bool_literal) return .bool;
+    return switch (program_index_mod.untypedConst(node, self) orelse return null) {
+        .integer => integerLiteralType(self, target),
+        .float => if (target) |t| (if (Lowering.isFloat(t)) t else .f64) else .f64,
+        .string => |lit| self.literalType(target, self.stringLiteralBytes(lit).len),
+    };
+}
+
+fn integerLiteralType(self: *Lowering, target: ?TypeId) TypeId {
+    return self.integerContext(target) orelse self.floatContext(target) orelse .i64;
+}
+
+pub const LiteralShape = enum { string, view, array };
+
+/// The shape a string literal takes at `target`: the `[:0]u8` view where the
+/// destination names it, the `[N:0]u8` array where it names an array or a byte
+/// pointer, and `string` everywhere else.
+pub fn literalShape(self: *Lowering, target: ?TypeId) LiteralShape {
+    const t = target orelse return .string;
+    if (t == .string_z) return .view;
+    if (t.isBuiltin()) return .string;
+    return switch (self.module.types.get(t)) {
+        .array => |a| if (a.element == .u8) .array else .string,
+        .many_pointer => |mp| if (mp.element == .u8 or mp.element == .i8) .array else .string,
+        .optional => |o| self.literalShape(o.child),
+        else => .string,
+    };
+}
+
+pub fn stringLiteralFits(self: *Lowering, ty: TypeId) bool {
+    return ty == .string or self.literalShape(ty) != .string;
 }
 
 /// Lower a struct-level constant value (e.g., Phys.GRAVITY).
@@ -2755,82 +2777,16 @@ pub fn resolveVariantIndex(self: *Lowering, ty: TypeId, variant_name: []const u8
     return 0;
 }
 
-pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
+pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral, span: ast.Span) Ref {
     var elems = std.ArrayList(Ref).empty;
     defer elems.deinit(self.alloc);
 
-    // Determine element type: explicit type_expr > target_type > inference
-    var elem_ty: TypeId = .unresolved;
-    var from_target = false;
-    var is_vector = false;
-    // The destination's terminator, written past the last element.
-    var sentinel: ?i64 = null;
-
-    // First, check explicit type annotation on the literal (e.g. `@Vector(3,f32).[1,2,3]`).
-    // The prefix slot names the AGGREGATE type; a prefix that resolves to
-    // anything else (scalar `i16.[…]`, struct `Point.[…]`) would read as an
-    // element-type prefix — a second meaning this spelling does not carry.
-    // Silently ignoring it lets elements fall back to the literal default, so
-    // `i32.[1]` builds a `[1]i64`; refuse it instead.
-    if (al.type_expr) |te| {
-        const resolved = self.resolveArrayLiteralType(te);
-        if (resolved != .unresolved) {
-            if (self.module.types.sliceInfoOf(resolved)) |s| {
-                elem_ty = s.element;
-                from_target = true;
-            } else if (!resolved.isBuiltin()) {
-                const info = self.module.types.get(resolved);
-                switch (info) {
-                    .array => |a| {
-                        elem_ty = a.element;
-                        sentinel = a.sentinel;
-                        from_target = true;
-                    },
-                    .vector => |v| {
-                        elem_ty = v.element;
-                        from_target = true;
-                        is_vector = true;
-                    },
-                    else => {},
-                }
-            }
-            if (!from_target) {
-                if (self.diagnostics) |d| {
-                    const name = self.module.types.formatTypeName(self.alloc, resolved, null);
-                    d.addFmt(.err, te.span, "a '.[ ]' literal's type prefix names the aggregate type, not the element type — '{s}' is not an array/vector/slice; annotate the binding instead: `x : [{d}]{s} = .[ … ]`", .{ name, al.elements.len, name });
-                }
-                return self.builder.constUndef(.unresolved);
-            }
-        }
-    }
-
-    if (!from_target) {
-        if (self.target_type) |tt| {
-            if (self.module.types.sliceInfoOf(tt)) |s| {
-                elem_ty = s.element;
-                from_target = true;
-            } else if (!tt.isBuiltin()) {
-                const info = self.module.types.get(tt);
-                switch (info) {
-                    .array => |a| {
-                        elem_ty = a.element;
-                        sentinel = a.sentinel;
-                        from_target = true;
-                    },
-                    .vector => |v| {
-                        elem_ty = v.element;
-                        from_target = true;
-                        is_vector = true;
-                    },
-                    else => {},
-                }
-            }
-        }
-    }
-    if (!from_target and al.elements.len > 0) {
-        const inferred = self.inferExprType(al.elements[0]);
-        if (inferred != .void) elem_ty = inferred;
-    }
+    const result_ty = self.builtArrayLiteralType(al, span) orelse return self.builder.constUndef(.unresolved);
+    const elem_ty: TypeId, const sentinel: ?i64 = switch (self.module.types.get(result_ty)) {
+        .array => |a| .{ a.element, a.sentinel },
+        .vector => |v| .{ v.element, null },
+        else => unreachable,
+    };
 
     for (al.elements) |elem| {
         const old_tt = self.target_type;
@@ -2861,11 +2817,52 @@ pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
 
     if (sentinel) |x| elems.append(self.alloc, self.sentinelValue(x, elem_ty)) catch unreachable;
 
-    const result_ty = if (is_vector)
-        self.module.types.vectorOf(elem_ty, @intCast(al.elements.len))
-    else
-        self.module.types.arrayOfSentinel(elem_ty, @intCast(al.elements.len), sentinel);
     return self.builder.structInit(elems.items, result_ty);
+}
+
+/// The array or vector a `.[…]` literal builds, shaped by its type prefix,
+/// else its target, else its elements. A prefix naming no array, vector or
+/// slice is diagnosed here. A literal nothing types is diagnosed only where it
+/// is built, because a caller asking its type may still give it a target.
+pub fn arrayLiteralType(self: *Lowering, al: *const ast.ArrayLiteral) error{ NotAggregatePrefix, NoElementType }!TypeId {
+    const length: u32 = @intCast(al.elements.len);
+    if (al.type_expr) |te| {
+        const resolved = self.resolveArrayLiteralType(te);
+        if (resolved != .unresolved) {
+            if (literalAggregate(self, resolved, length)) |ty| return ty;
+            if (self.diagnostics) |d| {
+                const name = self.module.types.formatTypeName(self.alloc, resolved, null);
+                d.addFmt(.err, te.span, "a '.[ ]' literal's type prefix names the aggregate type, not the element type — '{s}' is not an array/vector/slice; annotate the binding instead: `x : [{d}]{s} = .[ … ]`", .{ name, al.elements.len, name });
+            }
+            return error.NotAggregatePrefix;
+        }
+    }
+    if (self.target_type) |tt| if (literalAggregate(self, tt, length)) |ty| return ty;
+    if (length == 0) return self.module.types.arrayOf(.void, 0);
+    const elem_ty = self.genericResolver().elementBinding(al.elements) orelse return error.NoElementType;
+    return self.module.types.arrayOf(elem_ty, length);
+}
+
+/// The type of a `.[…]` literal built at `span`, where a literal nothing
+/// types is diagnosed.
+pub fn builtArrayLiteralType(self: *Lowering, al: *const ast.ArrayLiteral, span: ast.Span) ?TypeId {
+    return self.arrayLiteralType(al) catch |err| {
+        if (err == error.NoElementType) if (self.diagnostics) |d|
+            d.add(.err, "cannot infer the element type of this array literal — annotate it", span);
+        return null;
+    };
+}
+
+/// The array or vector a `.[…]` of `length` elements builds for the
+/// destination `ty`.
+fn literalAggregate(self: *Lowering, ty: TypeId, length: u32) ?TypeId {
+    if (self.module.types.sliceInfoOf(ty)) |s| return self.module.types.arrayOf(s.element, length);
+    if (ty.isBuiltin()) return null;
+    return switch (self.module.types.get(ty)) {
+        .array => |a| self.module.types.arrayOfSentinel(a.element, length, a.sentinel),
+        .vector => |v| self.module.types.vectorOf(v.element, length),
+        else => null,
+    };
 }
 
 /// Resolve the type annotation on an array literal (e.g. `@Vector(3,f32).[...]`).
@@ -3202,24 +3199,19 @@ pub fn lowerSliceExpr(self: *Lowering, se: *const ast.SliceExpr) Ref {
         }
         return self.builder.constUndef(self.module.types.sliceOf(.u8));
     }
+    const elem_ty = self.getElementType(obj_ty);
+    const sentinel = if (se.end == null) self.module.types.sentinelOf(obj_ty) else null;
     var lo = if (se.start) |s| self.lowerExpr(s) else self.builder.constInt(0, .i64);
     if (se.start_exclusive) lo = self.builder.add(lo, self.builder.constInt(1, .i64), .i64);
     var hi = if (se.end) |e|
         self.lowerExpr(e)
     else if (!obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .many_pointer) blk: {
-        // A many-pointer `[*]T` carries no length, so an open-ended slice
-        // `mp[lo..]` has no upper bound to resolve — a `.length` op on it would
-        // yield a garbage length. Require an explicit `hi`.
+        if (sentinel) |x| break :blk emitTerminatorScan(self, obj, lo, elem_ty, x);
         if (self.diagnostics) |d|
-            d.addFmt(.err, se.object.span, "slicing a many-pointer `[*]T` requires an explicit upper bound (`mp[lo..hi]`) — it has no length", .{});
+            d.addFmt(.err, se.object.span, "slicing a many-pointer '{s}' requires an explicit upper bound (`mp[lo..hi]`) — it has no length", .{self.formatTypeName(obj_ty)});
         break :blk self.builder.constInt(0, .i64);
     } else self.emitLengthI64(obj, obj_ty);
     if (se.end_inclusive) hi = self.builder.add(hi, self.builder.constInt(1, .i64), .i64);
-    // Subslice of string stays string (same {ptr, i64} layout, correct type category)
-    if (obj_ty == .string) {
-        return self.builder.emit(.{ .subslice = .{ .base = obj, .lo = lo, .hi = hi, .base_ty = obj_ty } }, .string);
-    }
-    const elem_ty = self.getElementType(obj_ty);
     // A subslice keeps its base's length word: `@Slice(T, Len)[a..b]` is again
     // `@Slice(T, Len)`, as `string[a..b]` stays `string`. A typed destination
     // that is a slice of the same element (`b : @Slice(u8, u32) = a[0..]`)
@@ -3228,16 +3220,15 @@ pub fn lowerSliceExpr(self: *Lowering, se: *const ast.SliceExpr) Ref {
     const len_ty = blk: {
         if (self.target_type) |tgt| {
             if (self.module.types.sliceInfoOf(tgt)) |ts| {
-                const same_elem = self.module.types.sameType(ts.element, elem_ty) or (elem_ty == .void and ts.element == .u8);
-                if (same_elem) break :blk ts.len_type;
+                if (self.module.types.sameType(ts.element, elem_ty)) break :blk ts.len_type;
             }
         }
         break :blk base_len_ty;
     };
-    const slice_ty = if (elem_ty != .void)
-        self.module.types.sliceOfLen(elem_ty, len_ty)
+    const slice_ty = if (sentinel != null and len_ty == base_len_ty)
+        self.module.types.sliceOfSentinel(elem_ty, sentinel)
     else
-        self.module.types.sliceOfLen(.u8, len_ty);
+        self.module.types.sliceOfLen(elem_ty, len_ty);
     if (self.foldedInt(lo)) |lo_v| {
         if (self.foldedInt(hi)) |hi_v| {
             const n: u64 = if (hi_v >= lo_v) @intCast(hi_v - lo_v) else 0;
@@ -3287,6 +3278,22 @@ pub fn lowerSliceExpr(self: *Lowering, se: *const ast.SliceExpr) Ref {
         return self.builder.emit(.{ .subslice = .{ .base = obj, .lo = lo, .hi = hi, .base_ty = obj_ty } }, slice_ty);
     }
     return self.builder.emit(.{ .subslice = .{ .base = obj, .lo = lo, .hi = hi, .base_ty = obj_ty } }, slice_ty);
+}
+
+/// The index of the first `sentinel` at or after `lo` in the many-pointer `base`.
+fn emitTerminatorScan(self: *Lowering, base: Ref, lo: Ref, elem_ty: TypeId, sentinel: i64) Ref {
+    const lo_ty = self.builder.getRefType(lo);
+    const start = if (lo_ty == .i64) lo else self.builder.widen(lo, lo_ty, .i64);
+    const head = self.freshBlockWithParams("scan.head", &.{.i64});
+    const done = self.freshBlockWithParams("scan.done", &.{.i64});
+    self.builder.br(head, &.{start});
+    self.builder.switchToBlock(head);
+    const at = self.builder.blockParam(head, 0, .i64);
+    const elem = self.builder.emit(.{ .index_get = .{ .lhs = base, .rhs = at } }, elem_ty);
+    const next = self.builder.add(at, self.builder.constInt(1, .i64), .i64);
+    self.builder.condBr(self.builder.cmpEq(elem, self.sentinelValue(sentinel, elem_ty)), done, &.{at}, head, &.{next});
+    self.builder.switchToBlock(done);
+    return self.builder.blockParam(done, 0, .i64);
 }
 
 const AnonLiteralValue = struct { ty: TypeId, value: ?Ref = null };
@@ -3761,11 +3768,32 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
 }
 
 fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
-    if (self.isAdaptableFloat(node)) {
-        const ty = self.floatContext(self.target_type) orelse .f64;
-        if (program_index_mod.evalConstFloatInit(node, self, ty)) |value|
-            return self.builder.constFloat(value, ty);
-    }
+    if (program_index_mod.untypedConst(node, self)) |untyped| switch (untyped) {
+        .float => {
+            const ty = self.floatContext(self.target_type) orelse .f64;
+            if (program_index_mod.evalConstFloatInit(node, self, ty)) |value|
+                return self.builder.constFloat(value, ty);
+        },
+        .string => |lit| return self.lowerStringLiteral(lit),
+        // A char literal keeps its code-point diagnostic.
+        .integer => if (node.data != .char_literal) {
+            // A shift by a runtime or negative amount does not fold; lowering
+            // computes or diagnoses it at its type.
+            const folded = program_index_mod.foldConstInt(node, self) catch |fault| {
+                if (self.diagnostics) |d| d.add(.err, switch (fault) {
+                    error.Overflow => "integer constant overflows 128 bits",
+                    error.DivisionByZero => "integer constant divides by zero",
+                }, node.span);
+                return self.emitPlaceholder("integer-constant-fault");
+            };
+            if (folded) |value| {
+                const ty = integerLiteralType(self, self.target_type);
+                if (Lowering.isFloat(ty)) return self.builder.constFloat(types.floatFromInt(value, ty), ty);
+                self.checkIntLiteralFits(value, ty, node.span);
+                return self.builder.constInt(@truncate(value), ty);
+            }
+        },
+    };
     return switch (node.data) {
         // Bare `$<pack>` in expression position → an `[]Type` slice
         // value where each element is a `const_type(arg_types[i])`.
@@ -3837,32 +3865,19 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
             break :blk self.builder.constType(.void);
         },
         .int_literal => |lit| {
-            // If target is a float type, emit as float literal
-            if (self.target_type) |tt| {
-                if (tt == .f32 or tt == .f64) {
-                    return self.builder.constFloat(@floatFromInt(lit.value), tt);
-                }
-            }
-            const ty = if (self.target_type) |tt| blk: {
-                break :blk if (self.isIntEx(tt)) tt else .i64;
-            } else .i64;
+            const ty = self.literalNodeType(node, self.target_type).?;
+            if (Lowering.isFloat(ty)) return self.builder.constFloat(types.floatFromInt(lit.value, ty), ty);
             self.checkIntLiteralMagnitudeFits(lit.value, ty, node.span);
             return self.builder.constInt(lit.value, ty);
         },
         .char_literal => |lit| {
-            if (self.target_type) |tt| {
-                if (tt == .f32 or tt == .f64) {
-                    return self.builder.constFloat(@floatFromInt(lit.value), tt);
-                }
-            }
-            const ty = if (self.target_type) |tt| blk: {
-                break :blk if (self.isIntEx(tt)) tt else .i64;
-            } else .i64;
+            const ty = self.literalNodeType(node, self.target_type).?;
+            if (Lowering.isFloat(ty)) return self.builder.constFloat(@floatFromInt(lit.value), ty);
             self.checkCharLiteralFits(lit, ty, node.span);
             return self.builder.constInt(lit.value, ty);
         },
         .float_literal => |lit| {
-            const fty: TypeId = if (self.target_type) |tt| (if (tt == .f32 or tt == .f64) tt else .f64) else .f64;
+            const fty = self.literalNodeType(node, self.target_type).?;
             return self.builder.constFloat(self.adoptFloatValue(lit.value, fty, node.span), fty);
         },
         .bool_literal => |lit| self.builder.constBool(lit.value),
@@ -3906,6 +3921,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                     if (binding.is_alloca) {
                         const loaded = self.builder.load(binding.ref, binding.ty);
                         if (is_narrowed) self.narrowed_refs.put(loaded, {}) catch {};
+                        if (binding.literal_init) |init| self.literal_local_refs.put(loaded, .{ .binding = binding.id.?, .name = id.name, .init = init }) catch {};
                         break :blk loaded;
                     }
                     if (is_narrowed) self.narrowed_refs.put(binding.ref, {}) catch {};
@@ -4184,6 +4200,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                 }
                 break :blk self.diagPackAsValue(pname, node.span, .generic);
             }
+            if (uop.op == .address_of) self.noteStorageWrite(uop.operand);
             // address_of(index_expr) → emit index_gep (pointer to element) instead of index_get + addr_of
             if (uop.op == .address_of and uop.operand.data == .index_expr) {
                 const ie = &uop.operand.data.index_expr;
@@ -4253,20 +4270,6 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                     break :blk self.emitPlaceholder("addr_of_const");
                 }
             }
-            // Fold a negated integer literal into one constant: `-128` must
-            // range-check as -128, not as an out-of-range +128 intermediate.
-            if (uop.op == .negate and uop.operand.data == .int_literal) {
-                const lit = uop.operand.data.int_literal;
-                const v = -%lit.value;
-                if (self.target_type) |tt| {
-                    if (tt == .f32 or tt == .f64) {
-                        break :blk self.builder.constFloat(@floatFromInt(v), tt);
-                    }
-                }
-                const nty = if (self.target_type) |tt| (if (self.isIntEx(tt)) tt else TypeId.i64) else TypeId.i64;
-                self.checkIntLiteralFits(v, nty, node.span);
-                break :blk self.builder.constInt(v, nty);
-            }
             // A dest-typed float literal is that dest width; the negated form
             // is the same constant with the sign flipped.
             if (uop.op == .negate and uop.operand.data == .float_literal) {
@@ -4289,6 +4292,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
             // operand is lowered: lowering it as a value would evaluate the
             // place's subexpressions a second time (`--xs[idx()]`).
             if (uop.op == .pre_decrement) {
+                self.noteStorageWrite(uop.operand);
                 if (self.diagConstRootWrite(uop.operand)) break :blk self.emitPlaceholder("pre-decrement");
                 if (self.diagContextRootWrite(uop.operand)) break :blk self.emitPlaceholder("pre-decrement");
                 if (self.diagEnclosingRootWrite(uop.operand)) break :blk self.emitPlaceholder("pre-decrement");
@@ -4332,7 +4336,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                     }
                     break :blk2 self.builder.constBool(false);
                 },
-                .bit_not => self.builder.emit(.{ .bit_not = .{ .operand = operand } }, self.inferExprType(uop.operand)),
+                .bit_not => self.builder.emit(.{ .bit_not = .{ .operand = operand } }, self.builder.getRefType(operand)),
                 .xx => self.lowerXX(operand, uop.operand),
                 .address_of => blk2: {
                     const inner_ty = self.inferExprType(uop.operand);
@@ -4360,7 +4364,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
             self.settleJuxtaposition(node);
             break :blk self.lowerExpr(node);
         },
-        .array_literal => |al| self.lowerArrayLiteral(&al),
+        .array_literal => |al| self.lowerArrayLiteral(&al, node.span),
         .index_expr => |ie| self.lowerIndexExpr(&ie),
         .slice_expr => |se| self.lowerSliceExpr(&se),
         // The literal's identity is its node: the env type memo keys on it.
@@ -5472,15 +5476,15 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         const peer_ty = self.inferExprType(bop.rhs);
         if (peer_ty != .unresolved and peer_ty != .void) self.target_type = peer_ty;
     }
-    // An integer literal takes the other operand's type — `n == 0` with
-    // `n: usize` is a usize compare, not signed-vs-unsigned.
-    if (comparison and isComptimeIntExpr(bop.lhs)) {
-        const peer_ty = self.inferExprType(bop.rhs);
-        if (isCompareNumericPeer(self, peer_ty)) self.target_type = peer_ty;
-    }
     const float_operands = program_index_mod.floatOperandTypes(bop.*, self.operandType(self.inferExprType(bop.lhs)), self.operandType(self.inferExprType(bop.rhs)), self);
+    // An untyped operand of an untyped operation computes in its type; of a
+    // typed one, with no typed peer, in `i64`.
+    const untyped_ty = untypedOperationType(self, bop);
+    const shift = bop.op == .shl or bop.op == .shr;
+    const lhs_adopted = self.untypedOperandType(bop.op, bop.lhs, bop.rhs) orelse untyped_ty orelse untypedBesideTyped(self, comparison, bop.lhs, self.inferExprType(bop.rhs));
     const operand_tt = self.target_type;
     if (self.isAdaptableFloat(bop.lhs)) self.target_type = float_operands.lhs;
+    if (lhs_adopted) |ty| self.target_type = ty;
     var lhs = self.lowerExpr(bop.lhs);
     self.target_type = operand_tt;
     if (comparison) self.target_type = null;
@@ -5493,6 +5497,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     // the lowered operand's concrete type rather than a guess.
     const lhs_ty = blk: {
         if (lhs_ref_pointee) |p| break :blk p;
+        if (lhs_adopted) |ty| break :blk ty;
         if (self.isAdaptableFloat(bop.lhs)) break :blk self.builder.getRefType(lhs);
         const it = self.inferExprType(bop.lhs);
         break :blk if (it == .unresolved) self.builder.getRefType(lhs) else it;
@@ -5516,9 +5521,6 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
             self.target_type = lhs_ty;
         }
     }
-    if (comparison and isComptimeIntExpr(bop.rhs) and isCompareNumericPeer(self, lhs_ty)) {
-        self.target_type = lhs_ty;
-    }
     // In a comparison, an anonymous positional literal on the RHS is typed
     // from the LHS just like an enum shorthand. This also keeps the following
     // `{` available as the if body.
@@ -5536,11 +5538,26 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         };
     }
     if (self.isAdaptableFloat(bop.rhs)) self.target_type = float_operands.rhs;
+    const rhs_adopted = self.untypedOperandType(bop.op, bop.rhs, bop.lhs) orelse (if (shift) null else untyped_ty) orelse untypedBesideTyped(self, comparison, bop.rhs, lhs_ty);
+    if (rhs_adopted) |ty| self.target_type = ty;
     var rhs = self.lowerExpr(bop.rhs);
     const rhs_ref_pointee = self.refCapturePointee(bop.rhs);
     if (rhs_ref_pointee) |p| rhs = self.builder.load(rhs, p);
     self.target_type = saved_tt;
+    const rhs_ty = blk: {
+        if (rhs_ref_pointee) |p| break :blk p;
+        if (rhs_adopted) |ty| break :blk ty;
+        if (self.isAdaptableFloat(bop.rhs)) break :blk self.builder.getRefType(rhs);
+        const it = self.inferExprType(bop.rhs);
+        break :blk if (it == .unresolved) self.builder.getRefType(rhs) else it;
+    };
+    return lowerBinaryValues(self, bop.op, lhs, lhs_ty, bop.lhs.span, rhs, rhs_ty, bop.rhs.span);
+}
 
+/// `lhs op rhs` over operands already lowered.
+fn lowerBinaryValues(self: *Lowering, op: ast.BinaryOp.Op, lhs_value: Ref, lhs_ty: TypeId, lhs_span: ast.Span, rhs_value: Ref, rhs_ty: TypeId, rhs_span: ast.Span) Ref {
+    var lhs = lhs_value;
+    var rhs = rhs_value;
     // Optional value-equality: `?T == ?T` — equal iff both
     // null or both present with equal payloads — and the mixed `?T == T`,
     // where a null optional is simply unequal. Equality never reads a
@@ -5549,74 +5566,59 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     // optionals still reject below. Presence tests (`x == null`) returned
     // earlier. A guard-narrowed optional operand takes this path too — the
     // presence branch just folds to the payload compare.
-    if (bop.op == .eq or bop.op == .neq) {
+    if (op == .eq or op == .neq) {
         const l_actual = if (lhs_ty == .unresolved) self.builder.getRefType(lhs) else lhs_ty;
-        const r_actual = blk: {
-            if (self.isAdaptableFloat(bop.rhs)) break :blk self.builder.getRefType(rhs);
-            const it = rhs_ref_pointee orelse self.inferExprType(bop.rhs);
-            break :blk if (it == .unresolved) self.builder.getRefType(rhs) else it;
-        };
         const l_opt: ?TypeId = if (!l_actual.isBuiltin() and self.module.types.get(l_actual) == .optional)
             self.module.types.get(l_actual).optional.child
         else
             null;
-        const r_opt: ?TypeId = if (!r_actual.isBuiltin() and self.module.types.get(r_actual) == .optional)
-            self.module.types.get(r_actual).optional.child
+        const r_opt: ?TypeId = if (!rhs_ty.isBuiltin() and self.module.types.get(rhs_ty) == .optional)
+            self.module.types.get(rhs_ty).optional.child
         else
             null;
         if (l_opt != null and r_opt != null) {
-            if (l_actual != r_actual) {
-                if (self.diagnostics) |d| d.addFmt(.err, bop.rhs.span, "cannot compare values of distinct types '{s}' and '{s}'", .{
-                    self.formatTypeName(l_actual), self.formatTypeName(r_actual),
+            if (l_actual != rhs_ty) {
+                if (self.diagnostics) |d| d.addFmt(.err, rhs_span, "cannot compare values of distinct types '{s}' and '{s}'", .{
+                    self.formatTypeName(l_actual), self.formatTypeName(rhs_ty),
                 });
                 return self.emitPlaceholder("distinct-optional-equality");
             }
-            const eq = self.lowerOptionalEquality(lhs, rhs, l_opt.?, bop.lhs.span);
-            return if (bop.op == .neq) self.builder.emit(.{ .bool_not = .{ .operand = eq } }, .bool) else eq;
+            const eq = self.lowerOptionalEquality(lhs, rhs, l_opt.?, lhs_span);
+            return if (op == .neq) self.builder.emit(.{ .bool_not = .{ .operand = eq } }, .bool) else eq;
         }
         if (l_opt != null or r_opt != null) {
             const inner = l_opt orelse r_opt.?;
             const opt_ref = if (l_opt != null) lhs else rhs;
             var conc = if (l_opt != null) rhs else lhs;
-            const conc_ty = if (l_opt != null) r_actual else l_actual;
+            const conc_ty = if (l_opt != null) rhs_ty else l_actual;
             if (conc_ty != inner) conc = self.coerceToType(conc, conc_ty, inner);
-            const eq = self.lowerOptionalMixedEquality(opt_ref, conc, inner, bop.lhs.span);
-            return if (bop.op == .neq) self.builder.emit(.{ .bool_not = .{ .operand = eq } }, .bool) else eq;
+            const eq = self.lowerOptionalMixedEquality(opt_ref, conc, inner, lhs_span);
+            return if (op == .neq) self.builder.emit(.{ .bool_not = .{ .operand = eq } }, .bool) else eq;
         }
     }
 
-    // Result type follows the shared promotion rule: an int LHS with a
-    // float RHS promotes to the float (`i64 * f32` → `f32`); vectors /
-    // structs keep the LHS type. `inferExprType` reuses the same helper
-    // so static typing agrees with the value produced here.
-    const rhs_ty = blk: {
-        if (rhs_ref_pointee) |p| break :blk p;
-        if (self.isAdaptableFloat(bop.rhs)) break :blk self.builder.getRefType(rhs);
-        const it = self.inferExprType(bop.rhs);
-        break :blk if (it == .unresolved) self.builder.getRefType(rhs) else it;
-    };
-    var ty = self.arithResultType(lhs_ty, rhs_ty);
+    var ty = lhs_ty;
 
-    if (self.unwrapOptionalOperand(lhs, ty, bop.lhs.span)) |payload| {
+    if (self.unwrapOptionalOperand(lhs, ty, lhs_span)) |payload| {
         lhs = payload;
         ty = self.builder.getRefType(payload);
     }
-    if (self.unwrapOptionalOperand(rhs, rhs_ty, bop.rhs.span)) |payload| rhs = payload;
+    if (self.unwrapOptionalOperand(rhs, rhs_ty, rhs_span)) |payload| rhs = payload;
 
     // Sequence value equality: `[N]T`, `[N:X]T`, `[]T`, `[:X]T` and `string`
     // compare CONTENT. The operands need one element type; an array meets the
     // slice, and the lengths answer at run time. A sequence has no comparison
     // with a non-sequence peer.
-    if (bop.op == .eq or bop.op == .neq) {
+    if (op == .eq or op == .neq) {
         const l_ty = refTypeOr(self, lhs, ty);
         const r_ty = refTypeOr(self, rhs, rhs_ty);
         const l_elem = sequenceElement(self, l_ty);
         const r_elem = sequenceElement(self, r_ty);
         if (l_elem != null and r_elem != null and self.module.types.sameType(l_elem.?, r_elem.?)) {
-            return lowerSequenceEquality(self, lhs, rhs, l_elem.?, bop.op == .eq, bop.lhs.span);
+            return lowerSequenceEquality(self, lhs, rhs, l_elem.?, op == .eq, lhs_span);
         }
         if (l_elem != null or r_elem != null) {
-            if (self.diagnostics) |d| d.addFmt(.err, bop.rhs.span, "cannot compare values of distinct types '{s}' and '{s}'", .{
+            if (self.diagnostics) |d| d.addFmt(.err, rhs_span, "cannot compare values of distinct types '{s}' and '{s}'", .{
                 self.formatTypeName(l_ty), self.formatTypeName(r_ty),
             });
             return self.emitPlaceholder("distinct-sequence-equality");
@@ -5627,13 +5629,13 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     // no value-equality: a byte-wise `icmp` over its `[N x i8]` storage is both
     // wrong and rejected by the LLVM verifier. Reject at lower time, where the
     // span and the named type are available.
-    if ((bop.op == .eq or bop.op == .neq) and !ty.isBuiltin()) {
+    if ((op == .eq or op == .neq) and !ty.isBuiltin()) {
         if (self.module.types.get(ty) == .@"union") {
             if (self.diagnostics) |d| {
-                const pid = d.addFmtId(.err, bop.lhs.span, "cannot compare '{s}' values with '{s}'", .{
-                    self.formatTypeName(ty), binOpSymbol(bop.op),
+                const pid = d.addFmtId(.err, lhs_span, "cannot compare '{s}' values with '{s}'", .{
+                    self.formatTypeName(ty), binOpSymbol(op),
                 });
-                d.addNote(pid, bop.lhs.span, "compare a specific variant field (e.g. `a.field == b.field`)");
+                d.addNote(pid, lhs_span, "compare a specific variant field (e.g. `a.field == b.field`)");
             }
             return self.emitPlaceholder("uncomparable-aggregate-eq");
         }
@@ -5654,53 +5656,52 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     // `{tag,payload}` reductions it is written for.
     // Non-comparable sub-fields (union, fixed array) are rejected with
     // a located diagnostic, consistent with rejecting those shapes bare.
-    if ((bop.op == .eq or bop.op == .neq) and !ty.isBuiltin()) {
+    if ((op == .eq or op == .neq) and !ty.isBuiltin()) {
         const eq_info = self.module.types.get(ty);
         if (eq_info == .@"struct" and !eq_info.@"struct".is_protocol) {
             const other_ty = if (rhs_ty == .unresolved) self.builder.getRefType(rhs) else rhs_ty;
             if (!self.module.types.sameType(other_ty, ty)) {
-                if (self.diagnostics) |d| d.addFmt(.err, bop.rhs.span, "cannot compare values of distinct types '{s}' and '{s}'", .{
+                if (self.diagnostics) |d| d.addFmt(.err, rhs_span, "cannot compare values of distinct types '{s}' and '{s}'", .{
                     self.formatTypeName(ty), self.formatTypeName(other_ty),
                 });
                 return self.emitPlaceholder("distinct-struct-equality");
             }
-            return self.lowerStructEquality(bop, lhs, rhs, ty);
+            return self.lowerStructEquality(op, lhs, rhs, ty, lhs_span);
         }
     }
 
-    if (self.diagOperandTypes(bop.op, ty, self.operandType(rhs_ty), bop.lhs.span)) return self.emitPlaceholder("operand-type-mismatch");
+    if (self.diagOperandTypes(op, ty, self.operandType(rhs_ty), lhs_span)) return self.emitPlaceholder("operand-type-mismatch");
 
-    switch (bop.op) {
+    switch (op) {
         .eq, .neq, .lt, .lte, .gt, .gte => {
-            const span = ast.Span{ .start = bop.lhs.span.start, .end = bop.rhs.span.end };
-            const lhs_ir = self.builder.getRefType(lhs);
-            const rhs_ir = self.builder.getRefType(rhs);
-            if (meetCompareOperands(self, lhs, rhs, lhs_ir, rhs_ir, span)) |met| {
-                lhs = met.lhs;
-                rhs = met.rhs;
-            } else {
-                return self.emitPlaceholder("compare-meet");
-            }
+            const span = ast.Span{ .start = lhs_span.start, .end = rhs_span.end };
+            return lowerComparison(self, op, lhs, rhs, span) orelse self.emitPlaceholder("compare-meet");
         },
-        else => {},
+        else => {
+            const span: ast.Span = .{ .start = lhs_span.start, .end = rhs_span.end };
+            const met = meetArithOperands(self, op, lhs, ty, rhs, self.operandType(rhs_ty), span) orelse return self.emitPlaceholder("arith-meet");
+            lhs = met.lhs;
+            rhs = met.rhs;
+            ty = met.ty;
+        },
     }
 
     // LLVM's shifts are poison at or past the operand's width, and that poison
     // folds to a different constant in each context that reaches it.
-    switch (bop.op) {
+    switch (op) {
         .shl, .shr => {
             if (self.module.types.integerLayout(ty)) |layout| {
                 if (constIntOf(self, rhs)) |amount| {
                     const width: i64 = @intCast(layout.width);
                     if (amount < 0 or amount >= width) {
                         if (self.diagnostics) |diags| {
-                            const id = diags.addFmtId(.err, bop.rhs.span, "shift amount {d} is out of range for '{s}': valid amounts are 0 to {d}", .{
+                            const id = diags.addFmtId(.err, rhs_span, "shift amount {d} is out of range for '{s}': valid amounts are 0 to {d}", .{
                                 amount, self.formatTypeName(ty), width - 1,
                             });
                             if (amount < 0) {
-                                diags.addHelp(id, bop.rhs.span, "a shift amount is never negative", null);
+                                diags.addHelp(id, rhs_span, "a shift amount is never negative", null);
                             } else {
-                                diags.addHelpFmt(id, bop.rhs.span, null, "widen the operand to at least {d} bits before shifting", .{amount + 1});
+                                diags.addHelpFmt(id, rhs_span, null, "widen the operand to at least {d} bits before shifting", .{amount + 1});
                             }
                         }
                         return self.emitPlaceholder("shift-amount-out-of-range");
@@ -5711,18 +5712,13 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         else => {},
     }
 
-    return switch (bop.op) {
+    return switch (op) {
         .add => self.builder.add(lhs, rhs, ty),
         .sub => self.builder.sub(lhs, rhs, ty),
         .mul => self.builder.mul(lhs, rhs, ty),
         .div => self.builder.div(lhs, rhs, ty),
         .mod => self.builder.emit(.{ .mod = .{ .lhs = lhs, .rhs = rhs } }, ty),
-        .eq => self.builder.cmpEq(lhs, rhs),
-        .neq => self.builder.emit(.{ .cmp_ne = .{ .lhs = lhs, .rhs = rhs } }, .bool),
-        .lt => self.builder.cmpLt(lhs, rhs),
-        .lte => self.builder.emit(.{ .cmp_le = .{ .lhs = lhs, .rhs = rhs } }, .bool),
-        .gt => self.builder.cmpGt(lhs, rhs),
-        .gte => self.builder.emit(.{ .cmp_ge = .{ .lhs = lhs, .rhs = rhs } }, .bool),
+        .eq, .neq, .lt, .lte, .gt, .gte => unreachable, // returned by lowerComparison
         .and_op => self.builder.emit(.{ .bool_and = .{ .lhs = lhs, .rhs = rhs } }, .bool),
         .or_op => self.builder.emit(.{ .bool_or = .{ .lhs = lhs, .rhs = rhs } }, .bool),
         .bit_and => self.builder.emit(.{ .bit_and = .{ .lhs = lhs, .rhs = rhs } }, ty),
@@ -5730,7 +5726,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         .bit_xor => self.builder.emit(.{ .bit_xor = .{ .lhs = lhs, .rhs = rhs } }, ty),
         .shl => self.builder.emit(.{ .shl = .{ .lhs = lhs, .rhs = rhs } }, ty),
         .shr => self.builder.emit(.{ .shr = .{ .lhs = lhs, .rhs = rhs } }, ty),
-        .in_op => self.emitError("in_op", bop.lhs.span),
+        .in_op => self.emitError("in_op", lhs_span),
         .is_op => unreachable, // intercepted at the head of lowerBinaryOp
     };
 }
@@ -5746,20 +5742,20 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
 /// located diagnostic, mirroring how that shape is rejected as a bare `==`
 /// operand. Every field comparison that DOES get built has its own valid
 /// lowering, so `emit_llvm`'s narrow struct arm never sees a user struct.
-pub fn lowerStructEquality(self: *Lowering, bop: *const ast.BinaryOp, lhs: Ref, rhs: Ref, ty: TypeId) Ref {
+pub fn lowerStructEquality(self: *Lowering, op: ast.BinaryOp.Op, lhs: Ref, rhs: Ref, ty: TypeId, span: ast.Span) Ref {
     const info = self.module.types.get(ty);
     const fields = info.@"struct".fields;
 
     // A zero-field struct compares equal to itself (vacuously — no fields to
     // differ). `==` → true, `!=` → false.
-    if (fields.len == 0) return self.builder.constBool(bop.op == .eq);
+    if (fields.len == 0) return self.builder.constBool(op == .eq);
 
     var result: ?Ref = null;
     var rejected = false;
     for (fields, 0..) |f, i| {
         const lf = self.builder.structGet(lhs, @intCast(i), f.ty);
         const rf = self.builder.structGet(rhs, @intCast(i), f.ty);
-        const field_eq = self.lowerFieldEquality(lf, rf, f.ty, bop.lhs.span) orelse {
+        const field_eq = self.lowerFieldEquality(lf, rf, f.ty, span) orelse {
             rejected = true;
             continue; // keep scanning so every bad field is reported at once
         };
@@ -5773,7 +5769,7 @@ pub fn lowerStructEquality(self: *Lowering, bop: *const ast.BinaryOp, lhs: Ref, 
     if (rejected) return self.emitPlaceholder("uncomparable-struct-field-eq");
 
     const eq_all = result.?; // fields.len > 0 and no rejection ⇒ result is set
-    return if (bop.op == .neq)
+    return if (op == .neq)
         self.builder.emit(.{ .bool_not = .{ .operand = eq_all } }, .bool)
     else
         eq_all;
@@ -5829,9 +5825,8 @@ fn refTypeOr(self: *Lowering, r: Ref, fallback: TypeId) TypeId {
 }
 
 /// The element type of a sequence whose `==` compares content — `[N]T`,
-/// `[N:X]T`, `[]T`, `[:X]T`, `string` — or null for every other type.
+/// `[N:X]T`, `[]T`, `[:X]T` — or null for every other type.
 fn sequenceElement(self: *Lowering, ty: TypeId) ?TypeId {
-    if (ty == .string) return .u8;
     return switch (self.module.types.get(ty)) {
         .array => |a| a.element,
         .slice => |sl| sl.element,
@@ -5976,7 +5971,9 @@ pub fn lowerChainedComparison(self: *Lowering, cc: *const ast.ChainedComparison)
     var refs = std.ArrayList(Ref).empty;
     defer refs.deinit(self.alloc);
     for (cc.operands, 0..) |op, i| {
-        if (self.inferExprType(op) == .unresolved) {
+        if (isUntypedInteger(self, op)) {
+            if (untypedChainPeer(self, cc.operands, i)) |p| self.target_type = p;
+        } else if (self.inferExprType(op) == .unresolved) {
             var peer: ?TypeId = null;
             if (i > 0) {
                 const prev = self.inferExprType(cc.operands[i - 1]);
@@ -5997,38 +5994,54 @@ pub fn lowerChainedComparison(self: *Lowering, cc: *const ast.ChainedComparison)
             }
             if (peer) |p| self.target_type = p;
         }
-        refs.append(self.alloc, self.lowerExpr(op)) catch unreachable;
+        var ref = self.lowerExpr(op);
+        if (self.refCapturePointee(op)) |p| ref = self.builder.load(ref, p);
+        refs.append(self.alloc, ref) catch unreachable;
         self.target_type = null;
     }
 
-    const first_span = ast.Span{ .start = cc.operands[0].span.start, .end = cc.operands[1].span.end };
-    var result = self.emitCmp(refs.items[0], refs.items[1], cc.ops[0], first_span);
-
-    var i: usize = 1;
-    while (i < cc.ops.len) : (i += 1) {
-        const pair_span = ast.Span{ .start = cc.operands[i].span.start, .end = cc.operands[i + 1].span.end };
-        const next_cmp = self.emitCmp(refs.items[i], refs.items[i + 1], cc.ops[i], pair_span);
-        result = self.builder.emit(.{ .bool_and = .{ .lhs = result, .rhs = next_cmp } }, .bool);
+    var result: ?Ref = null;
+    for (cc.ops, 0..) |cmp_op, i| {
+        const lhs = refs.items[i];
+        const rhs = refs.items[i + 1];
+        const cmp = lowerBinaryValues(self, cmp_op, lhs, self.builder.getRefType(lhs), cc.operands[i].span, rhs, self.builder.getRefType(rhs), cc.operands[i + 1].span);
+        result = if (result) |acc| self.builder.emit(.{ .bool_and = .{ .lhs = acc, .rhs = cmp } }, .bool) else cmp;
     }
-
-    return result;
+    return result.?;
 }
 
-fn isComptimeIntExpr(node: *const Node) bool {
-    return switch (node.data) {
-        .int_literal, .char_literal => true,
-        .unary_op => |u| u.op == .negate and isComptimeIntExpr(u.operand),
-        else => false,
-    };
+fn isUntypedInteger(self: *Lowering, node: *const Node) bool {
+    const kind = program_index_mod.untypedConst(node, self) orelse return false;
+    return kind == .integer;
 }
 
-fn isCompareNumericPeer(self: *Lowering, ty: TypeId) bool {
-    if (self.isIntEx(ty) or Lowering.isFloat(ty)) return true;
-    if (ty.isBuiltin()) return false;
-    return switch (self.module.types.get(ty)) {
-        .pointer, .many_pointer, .function => true,
-        else => false,
+/// The type an untyped integer operand of a chain takes: a typed neighbor's,
+/// the left one first.
+fn untypedChainPeer(self: *Lowering, operands: []const *Node, i: usize) ?TypeId {
+    const neighbors = [_]?*const Node{
+        if (i > 0) operands[i - 1] else null,
+        if (i + 1 < operands.len) operands[i + 1] else null,
     };
+    for (neighbors) |neighbor| {
+        const n = neighbor orelse continue;
+        if (isUntypedInteger(self, n)) continue;
+        if (comparePeerType(self, self.inferExprType(n))) |ty| return ty;
+    }
+    return null;
+}
+
+/// The type an untyped integer compared with a peer of `peer_ty` takes: the
+/// peer's numeric type, seen through `?` — `n == 0` with `n: ?usize` is a
+/// usize compare, not signed-vs-unsigned.
+fn comparePeerType(self: *Lowering, peer_ty: TypeId) ?TypeId {
+    return self.integerContext(peer_ty) orelse self.floatContext(peer_ty);
+}
+
+/// The type an untyped integer `operand` takes beside a typed peer of
+/// `peer_ty` that does not adopt it: compared, the peer's; otherwise `i64`.
+fn untypedBesideTyped(self: *Lowering, comparison: bool, operand: *const Node, peer_ty: TypeId) ?TypeId {
+    if (!isUntypedInteger(self, operand)) return null;
+    return if (comparison) comparePeerType(self, peer_ty) else .i64;
 }
 
 fn constIntOf(self: *Lowering, val: Ref) ?i64 {
@@ -6043,23 +6056,15 @@ fn constIntOf(self: *Lowering, val: Ref) ?i64 {
     };
 }
 
-const CompareOperands = struct { lhs: Ref, rhs: Ref };
-
-/// Convert both sides of a comparison to the comparison type, or diagnose.
-fn meetCompareOperands(
-    self: *Lowering,
-    lhs: Ref,
-    rhs: Ref,
-    lhs_ty: TypeId,
-    rhs_ty: TypeId,
-    span: ast.Span,
-) ?CompareOperands {
+/// `lhs op rhs` for a comparison `op`, or null once refused at `span`.
+fn lowerComparison(self: *Lowering, op: ast.BinaryOp.Op, lhs: Ref, rhs: Ref, span: ast.Span) ?Ref {
+    const lhs_ty = self.builder.getRefType(lhs);
+    const rhs_ty = self.builder.getRefType(rhs);
     switch (self.coercionResolver().classifyCompare(lhs_ty, rhs_ty)) {
         .type => |meet_ty| {
-            return .{
-                .lhs = coerceCompareOperand(self, lhs, lhs_ty, meet_ty),
-                .rhs = coerceCompareOperand(self, rhs, rhs_ty, meet_ty),
-            };
+            const l = coerceCompareOperand(self, lhs, lhs_ty, meet_ty);
+            const r = coerceCompareOperand(self, rhs, rhs_ty, meet_ty);
+            return compareValues(self, op, l, r);
         },
         .incompatible => {
             if (self.diagnostics) |d| {
@@ -6068,21 +6073,14 @@ fn meetCompareOperands(
             return null;
         },
         .signedness => {
-            if (constIntOf(self, lhs)) |n| {
-                if (self.isIntEx(rhs_ty)) {
-                    self.checkIntLiteralMagnitudeFits(n, rhs_ty, span);
-                    return .{ .lhs = self.builder.constInt(n, rhs_ty), .rhs = rhs };
-                }
-            }
-            if (constIntOf(self, rhs)) |n| {
-                if (self.isIntEx(lhs_ty)) {
-                    self.checkIntLiteralMagnitudeFits(n, lhs_ty, span);
-                    return .{ .lhs = lhs, .rhs = self.builder.constInt(n, lhs_ty) };
-                }
-            }
+            if (self.foldedInt(lhs)) |n| return compareWithConstant(self, op, n, lhs_ty, rhs, rhs_ty, true);
+            if (self.foldedInt(rhs)) |n| return compareWithConstant(self, op, n, rhs_ty, lhs, lhs_ty, false);
+            return compareOppositeSignedness(self, op, lhs, lhs_ty, rhs, rhs_ty);
+        },
+        .bool_number => {
             if (self.diagnostics) |d| {
-                d.addFmt(.err, span, "cannot compare signed and unsigned values of type '{s}' and '{s}'; write an explicit cast on one side (e.g. `a.(u64) < b`)", .{
-                    self.formatTypeName(lhs_ty), self.formatTypeName(rhs_ty),
+                d.addFmt(.err, span, "cannot compare values of type '{s}' and '{s}'; use an explicit cast (`.({s})`)", .{
+                    self.formatTypeName(lhs_ty), self.formatTypeName(rhs_ty), self.formatTypeName(if (lhs_ty == .bool) rhs_ty else lhs_ty),
                 });
             }
             return null;
@@ -6097,27 +6095,108 @@ fn meetCompareOperands(
                 }
                 return null;
             }
-            return .{ .lhs = lhs, .rhs = rhs };
+            return compareValues(self, op, lhs, rhs);
         },
     }
+}
+
+fn compareValues(self: *Lowering, op: ast.BinaryOp.Op, lhs: Ref, rhs: Ref) Ref {
+    return switch (op) {
+        .eq => self.builder.cmpEq(lhs, rhs),
+        .neq => self.builder.emit(.{ .cmp_ne = .{ .lhs = lhs, .rhs = rhs } }, .bool),
+        .lt => self.builder.cmpLt(lhs, rhs),
+        .lte => self.builder.emit(.{ .cmp_le = .{ .lhs = lhs, .rhs = rhs } }, .bool),
+        .gt => self.builder.cmpGt(lhs, rhs),
+        .gte => self.builder.emit(.{ .cmp_ge = .{ .lhs = lhs, .rhs = rhs } }, .bool),
+        else => unreachable,
+    };
+}
+
+/// `lhs op rhs` for operands known to differ, `lhs_less` telling which is less.
+fn unequalAnswer(op: ast.BinaryOp.Op, lhs_less: bool) bool {
+    return switch (op) {
+        .eq => false,
+        .neq => true,
+        .lt, .lte => lhs_less,
+        .gt, .gte => !lhs_less,
+        else => unreachable,
+    };
+}
+
+/// Integers of opposite signedness with no common type compare exactly: a
+/// negative signed operand is less than every unsigned value, and otherwise
+/// both compare as the unsigned type, which is at least as wide.
+fn compareOppositeSignedness(self: *Lowering, op: ast.BinaryOp.Op, lhs: Ref, lhs_ty: TypeId, rhs: Ref, rhs_ty: TypeId) Ref {
+    const signed_left = !self.module.types.isUnsignedInt(lhs_ty);
+    const signed = if (signed_left) lhs else rhs;
+    const signed_ty = if (signed_left) lhs_ty else rhs_ty;
+    const as_unsigned = self.coerceExplicit(signed, signed_ty, if (signed_left) rhs_ty else lhs_ty);
+    const unsigned_cmp = if (signed_left) compareValues(self, op, as_unsigned, rhs) else compareValues(self, op, lhs, as_unsigned);
+    const zero = self.builder.constInt(0, signed_ty);
+    if (unequalAnswer(op, signed_left)) {
+        const negative = self.builder.cmpLt(signed, zero);
+        return self.builder.emit(.{ .bool_or = .{ .lhs = negative, .rhs = unsigned_cmp } }, .bool);
+    }
+    const non_negative = self.builder.emit(.{ .cmp_ge = .{ .lhs = signed, .rhs = zero } }, .bool);
+    return self.builder.emit(.{ .bool_and = .{ .lhs = non_negative, .rhs = unsigned_cmp } }, .bool);
+}
+
+/// `compareOppositeSignedness` with the constant `n` of type `n_ty` on one
+/// side: inside the range of `other_ty` it compares as an `other_ty`, and
+/// outside it lies below or above every `other_ty` value.
+fn compareWithConstant(self: *Lowering, op: ast.BinaryOp.Op, n: i64, n_ty: TypeId, other: Ref, other_ty: TypeId, constant_left: bool) Ref {
+    const value = self.intConstantValue(n, n_ty);
+    const range = self.intLiteralRange(other_ty).?;
+    if (value < range.min or value > range.max) {
+        return self.builder.constBool(unequalAnswer(op, constant_left == (value < range.min)));
+    }
+    const constant = self.builder.constInt(n, other_ty);
+    return if (constant_left) compareValues(self, op, constant, other) else compareValues(self, op, other, constant);
+}
+
+pub const ArithOperands = struct { lhs: Ref, rhs: Ref, ty: TypeId };
+
+/// The operands of `lhs op rhs` converted to their common type, or null once
+/// refused at `span`. A shift converts only its left operand.
+pub fn meetArithOperands(self: *Lowering, op: ast.BinaryOp.Op, lhs: Ref, lhs_ty: TypeId, rhs: Ref, rhs_ty: TypeId, span: ast.Span) ?ArithOperands {
+    const ty = switch (self.arithResultType(op, lhs_ty, rhs_ty)) {
+        .type => |result_ty| result_ty,
+        .signedness => {
+            if (self.diagnostics) |d| d.addFmt(.err, span, "cannot apply '{s}' to signed and unsigned values of type '{s}' and '{s}'; write an explicit cast on one side", .{
+                binOpSymbol(op), self.formatTypeName(lhs_ty), self.formatTypeName(rhs_ty),
+            });
+            return null;
+        },
+        .lane => {
+            if (self.diagnostics) |d| d.addFmt(.err, span, "cannot apply '{s}' to '{s}' and '{s}': the scalar does not convert implicitly to the vector's lane type; write an explicit cast", .{
+                binOpSymbol(op), self.formatTypeName(lhs_ty), self.formatTypeName(rhs_ty),
+            });
+            return null;
+        },
+    };
+    const shift = op == .shl or op == .shr;
+    return .{ .lhs = convertArithOperand(self, lhs, ty), .rhs = if (shift) rhs else convertArithOperand(self, rhs, ty), .ty = ty };
+}
+
+/// The type an untyped integer operation computes in: an integer destination's
+/// type, else `i64`.
+fn untypedOperationType(self: *Lowering, bop: *const ast.BinaryOp) ?TypeId {
+    const kind = program_index_mod.untypedBinary(bop.*, self) orelse return null;
+    if (kind != .integer) return null;
+    return self.integerContext(self.target_type) orelse .i64;
+}
+
+/// A numeric scalar operand converts to its operation's type, or beside a
+/// vector to the lane type, which emission splats.
+fn convertArithOperand(self: *Lowering, val: Ref, ty: TypeId) Ref {
+    const src_ty = self.builder.getRefType(val);
+    const dst_ty = if (self.isVectorType(ty)) self.module.types.get(ty).vector.element else ty;
+    const coercions = self.coercionResolver();
+    if (src_ty == dst_ty or !coercions.isNumericScalar(src_ty) or !coercions.isNumericScalar(dst_ty)) return val;
+    return self.coerceToType(val, src_ty, dst_ty);
 }
 
 fn coerceCompareOperand(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId) Ref {
     if (src_ty == dst_ty) return val;
     return self.coerceToType(val, src_ty, dst_ty);
-}
-
-pub fn emitCmp(self: *Lowering, lhs: Ref, rhs: Ref, op: ast.BinaryOp.Op, span: ast.Span) Ref {
-    const met = meetCompareOperands(self, lhs, rhs, self.builder.getRefType(lhs), self.builder.getRefType(rhs), span) orelse {
-        return self.emitPlaceholder("compare-meet");
-    };
-    return switch (op) {
-        .eq => self.builder.cmpEq(met.lhs, met.rhs),
-        .neq => self.builder.emit(.{ .cmp_ne = .{ .lhs = met.lhs, .rhs = met.rhs } }, .bool),
-        .lt => self.builder.cmpLt(met.lhs, met.rhs),
-        .lte => self.builder.emit(.{ .cmp_le = .{ .lhs = met.lhs, .rhs = met.rhs } }, .bool),
-        .gt => self.builder.cmpGt(met.lhs, met.rhs),
-        .gte => self.builder.emit(.{ .cmp_ge = .{ .lhs = met.lhs, .rhs = met.rhs } }, .bool),
-        else => self.builder.constBool(false),
-    };
 }

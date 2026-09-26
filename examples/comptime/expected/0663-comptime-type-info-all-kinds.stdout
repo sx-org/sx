@@ -8,5 +8,5 @@ vector len=3 elem=f32
 slice elem=i64
 pointer pointee=Padded
 optional inner=i32
-string
+slice elem=u8
 bool

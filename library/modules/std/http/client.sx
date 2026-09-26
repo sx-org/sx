@@ -352,7 +352,7 @@ private startsWith :: (s: string, prefix: string) -> bool {
 // caller's problem (the path view carries everything after the authority).
 private parseUrl :: (url: string) -> (Url, bool) {
     u : Url = .{};
-    rest : string = "";
+    rest := "";
     if startsWith(url, "http://") {
         u.https = false;
         u.port = 80;
@@ -695,7 +695,7 @@ private recvEncodedBody :: (c: *ClientConn, buf: [*]u8, cap: i64, headEnd: i64,
             if contentLen >= 0 and take > fixedLeft { take = fixedLeft; }
             if decoderDone and take > 0 { raise .Recv; }
             while take > 0 {
-                output : string = "";
+                output := "";
                 if outputAt < outputCap {
                     output = string{ ptr = *buf[headEnd + outputAt], len = outputCap - outputAt };
                 }
@@ -723,7 +723,7 @@ private recvEncodedBody :: (c: *ClientConn, buf: [*]u8, cap: i64, headEnd: i64,
             take := if available < chunkLeft then available else chunkLeft;
             if decoderDone and take > 0 { raise .Recv; }
             while take > 0 {
-                output : string = "";
+                output := "";
                 if outputAt < outputCap {
                     output = string{ ptr = *buf[headEnd + outputAt], len = outputCap - outputAt };
                 }
@@ -821,7 +821,7 @@ private recvEncodedBody :: (c: *ClientConn, buf: [*]u8, cap: i64, headEnd: i64,
     }
 
     while !decoderDone {
-        output : string = "";
+        output := "";
         if outputAt < outputCap {
             output = string{ ptr = *buf[headEnd + outputAt], len = outputCap - outputAt };
         }
@@ -873,7 +873,7 @@ private recvOn :: (c: *ClientConn, buf: [*]u8, cap: i64) -> (ClientResponse, !Cl
     decodedFrom : ?ContentCoding = null;
     normalizedHeadersLen : i64 = -1;
     finalStatus: i64 = 0;
-    finalReason: string = "";
+    finalReason := "";
     requestWasHead := c.requestWasHead;
     c.requestWasHead = false;
     sawInformational := false;

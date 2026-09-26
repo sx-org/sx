@@ -1,0 +1,2 @@
+error: comptime init of 'A' failed: 1e30 is out of range for 'i32'
+error: comptime init of 'B' failed: nan is out of range for 'i32'

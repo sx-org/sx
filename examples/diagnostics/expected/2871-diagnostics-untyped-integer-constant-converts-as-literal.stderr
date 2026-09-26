@@ -1,0 +1,11 @@
+error: cannot implicitly convert 'i64' to 'bool'; use an explicit cast (`.(bool)`)
+  --> examples/diagnostics/2871-diagnostics-untyped-integer-constant-converts-as-literal.sx:8:20
+   |
+ 8 | CS : S : .{ flag = K, n = 1 };
+   |                    ^
+
+error: cannot initialize 'GA' of type '[2]u8' with a value of type 'i64'
+  --> examples/diagnostics/2871-diagnostics-untyped-integer-constant-converts-as-literal.sx:9:14
+   |
+ 9 | GA : [2]u8 = K;
+   |              ^

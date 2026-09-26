@@ -21,7 +21,6 @@ pub const Type = union(enum) {
     void_type,
     boolean,
     string_type,
-    cstring_type,
     enum_type: []const u8,
     struct_type: []const u8,
     struct_instance: *const StructInstance,
@@ -152,7 +151,6 @@ pub const Type = union(enum) {
         }
         return switch (name[0]) {
             's' => if (std.mem.eql(u8, name, "string")) .string_type else null,
-            'c' => if (std.mem.eql(u8, name, "cstring")) .cstring_type else null,
             'u' => if (std.mem.eql(u8, name, "usize")) .usize_type else null,
             'i' => if (std.mem.eql(u8, name, "isize")) .isize_type else null,
             'b' => if (std.mem.eql(u8, name, "bool")) .boolean else null,
@@ -218,7 +216,6 @@ pub const Type = union(enum) {
             .f64 => "f64",
             .boolean => "bool",
             .string_type => "string",
-            .cstring_type => "cstring",
             .void_type => "void",
             .usize_type => "usize",
             .isize_type => "isize",
@@ -311,7 +308,6 @@ pub const Type = union(enum) {
             .f64 => "f64",
             .boolean => "bool",
             .string_type => "string",
-            .cstring_type => "cstring",
             .void_type => "void",
             .any_type => "any",
             .usize_type => "usize",

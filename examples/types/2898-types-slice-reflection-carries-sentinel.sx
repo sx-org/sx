@@ -1,0 +1,26 @@
+// `string` reflects as the `.slice` of `u8` with no terminator. `.slice`,
+// `.array` and `.manyPointer` carry the terminator of `[:X]T`, `[N:X]T` and
+// `[*:X]T` as `sentinel`, read the same from a runtime `Type` and under `@run`.
+@import "modules/std.sx";
+
+describe :: (T: Type) -> string {
+    match @typeInfo(T) {
+        case .slice: |si| { return format("slice elem={} sentinel={}", @typeName(si.elem), si.sentinel); }
+        case .array: |ai| { return format("array elem={} len={} sentinel={}", @typeName(ai.elem), ai.len, ai.sentinel); }
+        case .manyPointer: |pi| { return format("manyPointer elem={} sentinel={}", @typeName(pi.pointee), pi.sentinel); }
+        else: { return "other"; }
+    }
+    return "?";
+}
+
+RUN_STRING :: @run describe(string);
+RUN_Z      :: @run describe([:0]u8);
+RUN_ARRAY  :: @run describe([2:7]i64);
+RUN_MANY   :: @run describe([*:0]u8);
+
+main :: () -> i32 {
+    types : [4]Type = .[string, [:0]u8, [2:7]i64, [*:0]u8];
+    for t in types { print("{}\n", describe(t)); }
+    print("{}\n{}\n{}\n{}\n", RUN_STRING, RUN_Z, RUN_ARRAY, RUN_MANY);
+    0
+}

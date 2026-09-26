@@ -1,6 +1,6 @@
 []
 [i64]
-[i64, cstring]
-[bool, f64, cstring, i64]
+[i64, string]
+[bool, f64, string, i64]
 --- build done ---
 rt

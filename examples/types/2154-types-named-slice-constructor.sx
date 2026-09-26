@@ -26,7 +26,7 @@ head :: (b: Bytes) -> Bytes { b[0..2] }
 
 four :: () -> [4]u8 {
     a : [4]u8 = ---;
-    a[0] = 1; a[1] = 2; a[2] = 3; a[3] = 4;
+    a[0] = '1'; a[1] = '2'; a[2] = '3'; a[3] = '4';
     a
 }
 
@@ -61,7 +61,7 @@ main :: () -> i32 {
     print("distinct={} bytes={}\n", @typeEq(Bytes, []u8), @typeName(Bytes));
 
     a : [4]u8 = ---;
-    a[0] = 1; a[1] = 2; a[2] = 3; a[3] = 4;
+    a[0] = '1'; a[1] = '2'; a[2] = '3'; a[3] = '4';
 
     b : Bytes = a[0..];
     print("len={} lenty={} b0={} b3={}\n", b.len, @typeName(@typeOf(b.len)), b[0], b[3]);
@@ -76,7 +76,7 @@ main :: () -> i32 {
     hold : Holder = Holder{ data = b };
     print("field={} size={}\n", hold.data[2], @sizeOf(Holder));
 
-    s : string = "ab";
+    s := "ab";
     print("string={} slice={}\n", s.len, @typeName(@typeOf(a[0..])));
     print("comptime={}\n", COMPTIME_SUM);
 

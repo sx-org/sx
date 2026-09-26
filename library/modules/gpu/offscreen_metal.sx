@@ -25,7 +25,7 @@ MetalOffscreen :: struct {
     // metrics the render uses. The font is machine-pinned by design: the
     // reference shows what THIS machine renders.
     open :: (self: *MetalOffscreen, w: i32, h: i32,
-             fontPath: [:0]u8 = "/System/Library/Fonts/Supplemental/Arial.ttf",
+             fontPath: string = "/System/Library/Fonts/Supplemental/Arial.ttf",
              fontSize: f32 = 14.0) -> bool {
         self.w = w;
         self.h = h;

@@ -10,7 +10,7 @@
 @import "modules/std.sx";
 @import "modules/ffi/objc_block.sx";
 
-gS: string = "";
+gS := "";
 
 main :: () -> i32 {
   keep :: (s: string) { gS = s; }

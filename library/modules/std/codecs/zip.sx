@@ -120,7 +120,7 @@ Reader :: struct {
         EntryReader{ state = state }
     }
 
-    extractFile :: (self: *Reader, index: i64, path: [:0]u8, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !Error) {
+    extractFile :: (self: *Reader, index: i64, path: string, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !Error) {
         stdZipReaderExtractFile(*self.state, index, path, maxOutput, alloc)
     }
 
@@ -165,7 +165,7 @@ openSource :: (source: Source, options: OpenOptions = .{}, alloc: Allocator = co
     Reader{ state = state }
 }
 
-openFile :: (path: [:0]u8, options: OpenFileOptions = .{}, alloc: Allocator = context.allocator) -> (Reader, !Error) {
+openFile :: (path: string, options: OpenFileOptions = .{}, alloc: Allocator = context.allocator) -> (Reader, !Error) {
     if options.start < 0 { raise .InvalidOptions; }
     if size := options.size {
         if size < 0 { raise .InvalidOptions; }
@@ -191,7 +191,7 @@ Writer :: struct {
         Writer{ state = state }
     }
 
-    initFile :: (path: [:0]u8, options: FileWriterOptions = .{}, alloc: Allocator = context.allocator) -> (Writer, !Error) {
+    initFile :: (path: string, options: FileWriterOptions = .{}, alloc: Allocator = context.allocator) -> (Writer, !Error) {
         if options.reserve < 0 { raise .InvalidOptions; }
         state := try stdZipWriterFile(path, options.reserve, options.zip64, alloc);
         Writer{ state = state }
@@ -206,7 +206,7 @@ Writer :: struct {
 
     // Opens an existing archive for in-place append, or creates it when absent.
     // A null finish comment preserves an existing archive comment.
-    appendFile :: (path: [:0]u8, options: AppendOptions = .{}, alloc: Allocator = context.allocator) -> (Writer, !Error) {
+    appendFile :: (path: string, options: AppendOptions = .{}, alloc: Allocator = context.allocator) -> (Writer, !Error) {
         state := try stdZipWriterAppendFile(path, options.forceZip64, options.maxMetadata, alloc);
         Writer{ state = state }
     }
@@ -233,7 +233,7 @@ Writer :: struct {
         stdZipWriterAddSource(*self.state, name, source, options)
     }
 
-    addFile :: (self: *Writer, name: string, path: [:0]u8, options: EntryOptions = .{}) -> !Error {
+    addFile :: (self: *Writer, name: string, path: string, options: EntryOptions = .{}) -> !Error {
         stdZipWriterAddFile(*self.state, name, path, options)
     }
 
@@ -285,7 +285,7 @@ create :: (inputs: []Input, options: WriterOptions = .{}, comment: string = "", 
     writer.take()
 }
 
-createFile :: (path: [:0]u8, inputs: []Input, options: FileWriterOptions = .{}, comment: string = "", alloc: Allocator = context.allocator) -> !Error {
+createFile :: (path: string, inputs: []Input, options: FileWriterOptions = .{}, comment: string = "", alloc: Allocator = context.allocator) -> !Error {
     writer := try Writer.initFile(path, options, alloc);
     defer writer.deinit();
     i := 0;

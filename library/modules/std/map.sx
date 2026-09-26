@@ -14,7 +14,7 @@
 //                          plus a separate hash `index` that only
 //                          accelerates lookup. (Defined lower in file.)
 //
-// Keys are hashed STRUCTURALLY with FNV-1a, consistent with `==`: a `string`
+// Keys are hashed STRUCTURALLY with FNV-1a, consistent with `==`: a slice
 // key (or field) is content-hashed; a struct/tuple key is folded field-by-
 // field (recursing into nested aggregates) so interior/trailing PADDING is
 // skipped — two field-equal keys hash equally even if their padding holds
@@ -66,8 +66,8 @@ mapCapacityFor :: (n: i64) -> i64 {
 
 // Hash any key STRUCTURALLY, consistent with `==` (the table invariant
 // `a == b ⇒ hash(a) == hash(b)`):
-//   • string  → CONTENT hash of the bytes it points at (never the {ptr,len}
-//               identity), matching `string`'s content-based `==`.
+//   • slice   → its ELEMENTS in order (never the {ptr,len} identity), matching
+//               the element-wise `==` of every slice, terminated or not.
 //   • struct / tuple → fold each FIELD in turn (recursing into nested
 //               aggregates), SKIPPING inter-field / trailing padding. A struct
 //               literal only writes its declared fields, leaving padding
@@ -81,16 +81,25 @@ mapHashKey :: (key: $K) -> u64 {
     return mapHashInto(key, FNV_OFFSET_BASIS);
 }
 
-// Fold value `v` into running FNV state `h`. The string arm reads fields off a
-// `*string` REINTERPRET of `@v`, never off a `T`-typed value, so it compiles
-// for every `T` regardless of dead-branch pruning. The `inline if T is struct`
-// branch is comptime-elided for non-struct `T` (so the `.struct` member walk
-// never resolves on an enum/scalar); struct/tuple `T` recurses per field. Enums,
-// bools, pointers and integers are non-struct, so they take the raw-byte leaf.
+// Fold value `v` into running FNV state `h`. The `inline if` branches are
+// comptime-elided for the other kinds, so the `.slice` / `.struct` walks never
+// resolve on a scalar. A slice of integers folds its buffer as one byte run,
+// which is the byte sequence its per-element leaves would fold; any other
+// element type recurses. Enums, bools, pointers and integers take the raw-byte
+// leaf.
 mapHashInto :: (v: $T, h: u64) -> u64 {
-    inline if @typeEq(T, string) {
-        sv : *string = (*v).(*string);
-        return fnv1aFold(h, sv.ptr, sv.len);
+    inline if T is slice {
+        E :: @typeInfo(T).slice.elem;
+        inline if E is int {
+            return fnv1aFold(h, @reinterpret([*]u8, v.ptr), v.len.(i64) * @sizeOf(E));
+        }
+        hh := h;
+        i := 0;
+        while i < v.len {
+            hh = mapHashInto(v[i], hh);
+            i += 1;
+        }
+        return hh;
     }
     inline if T is struct {
         hh := h;

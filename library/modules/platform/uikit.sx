@@ -342,7 +342,7 @@ KeyboardSpring :: struct {
 }
 
 impl Platform for UIKitPlatform {
-    init :: (self: *UIKitPlatform, title: [:0]u8, w: i32, h: i32) -> bool {
+    init :: (self: *UIKitPlatform, title: string, w: i32, h: i32) -> bool {
         self.dpiScale = 1.0;
         self.deltaTime = 0.016;
         self.hasFrameClosure = false;
@@ -913,7 +913,7 @@ impl Platform for UIKitPlatform {
 
     insertText :: (self: *UIKitPlatform, text: *NSString) {
         if session := self.session {
-            session.insert(fromCstring(text.UTF8String()));
+            session.insert(text.UTF8String()[0..]);
         }
     }
 
@@ -927,8 +927,8 @@ impl Platform for UIKitPlatform {
     // the session indexes it in UTF-8 bytes. A nil `text` is the abandon.
     setMarkedText :: (self: *UIKitPlatform, text: ?*NSString, selectedRange: _NSRange) {
         if session := self.session {
-            run : string = "";
-            if t := text { run = fromCstring(t.UTF8String()); }
+            run := "";
+            if t := text { run = t.UTF8String()[0..]; }
             selStart := utf16OffsetToBytes(run, selectedRange.location.(i64));
             selEnd := utf16OffsetToBytes(run, (selectedRange.location + selectedRange.length).(i64));
             session.setMarked(run, selStart, selEnd);

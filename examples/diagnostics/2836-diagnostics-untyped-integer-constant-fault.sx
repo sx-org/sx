@@ -1,0 +1,8 @@
+// Untyped integer constant arithmetic folds exactly in 128 bits: a division by
+// zero, or a value outside 128 bits along the way, is refused where it folds.
+
+main :: () -> i32 {
+    e := 7 / 0;
+    g := (1 << 100) * (1 << 100) >> 190;
+    0
+}

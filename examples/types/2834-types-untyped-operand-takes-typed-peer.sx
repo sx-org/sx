@@ -1,0 +1,16 @@
+// An untyped operand takes its typed peer's type on either side.
+
+@import "modules/std.sx";
+
+N :: 2;
+
+main :: () -> i32 {
+    x : i32 = 4;
+    a := 1 + x;
+    b := x + 1;
+    c := 2 * 3 + x;
+    d := N * x;
+    print("{} {} {} {}\n", @typeName(@typeOf(a)), @typeName(@typeOf(b)), @typeName(@typeOf(c)), @typeName(@typeOf(d)));
+    print("{} {} {} {}\n", a, b, c, d);
+    0
+}

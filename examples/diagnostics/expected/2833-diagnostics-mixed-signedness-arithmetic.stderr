@@ -1,0 +1,5 @@
+error: cannot apply '+' to signed and unsigned values of type 'i32' and 'u32'; write an explicit cast on one side
+  --> examples/diagnostics/2833-diagnostics-mixed-signedness-arithmetic.sx:6:10
+   |
+ 6 |     t := x + n;
+   |          ^^^^^

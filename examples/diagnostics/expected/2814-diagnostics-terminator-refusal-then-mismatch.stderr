@@ -1,0 +1,11 @@
+error: a value of type '[3:0]u8' does not coerce to '[4:0]u8': no conversion adds a terminator
+  --> examples/diagnostics/2814-diagnostics-terminator-refusal-then-mismatch.sx:5:5
+   |
+ 5 |     b : [4:0]u8 = "lit";
+   |     ^^^^^^^^^^^^^^^^^^^^
+
+error: cannot initialize 'c' of type 'i64' with a value of type 'string'
+  --> examples/diagnostics/2814-diagnostics-terminator-refusal-then-mismatch.sx:6:15
+   |
+ 6 |     c : i64 = "lit";
+   |               ^^^^^

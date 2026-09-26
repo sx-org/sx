@@ -1,0 +1,16 @@
+// Integer operands of different widths meet at the wider type in either
+// order, and an unsigned operand widens into a wider signed one.
+
+@import "modules/std.sx";
+
+main :: () -> i32 {
+    x : i32 = -4;
+    w : i64 = 5000000000;
+    b : u8 = 200;
+    t := x + w;
+    u := w + x;
+    s := b + x;
+    print("{} {} {} {}\n", t, @typeName(@typeOf(t)), u, @typeName(@typeOf(u)));
+    print("{} {}\n", s, @typeName(@typeOf(s)));
+    0
+}

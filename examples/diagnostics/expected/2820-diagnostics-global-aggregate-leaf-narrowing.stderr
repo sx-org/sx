@@ -1,0 +1,17 @@
+error: integer literal 256 does not fit in u8 (range 0..255) — use an explicit `.(u8)` to truncate
+  --> examples/diagnostics/2820-diagnostics-global-aggregate-leaf-narrowing.sx:9:18
+   |
+ 9 | K : [2]u8 : .[1, 256];
+   |                  ^^^
+
+error: integer literal 300 does not fit in u8 (range 0..255) — use an explicit `.(u8)` to truncate
+  --> examples/diagnostics/2820-diagnostics-global-aggregate-leaf-narrowing.sx:8:16
+   |
+ 8 | G : D = .{ b = 300, m = C.n };
+   |                ^^^
+
+error: cannot implicitly convert 'i64' to 'i32'; use an explicit cast (`.(i32)`)
+  --> examples/diagnostics/2820-diagnostics-global-aggregate-leaf-narrowing.sx:8:25
+   |
+ 8 | G : D = .{ b = 300, m = C.n };
+   |                         ^^^

@@ -43,7 +43,6 @@ pub const TypeResolver = struct {
         .{ .name = "f64", .id = .f64 },
         .{ .name = "bool", .id = .bool },
         .{ .name = "string", .id = .string },
-        .{ .name = "cstring", .id = .cstring },
         .{ .name = "void", .id = .void },
         .{ .name = "any", .id = .any },
         // A `Type` value is its own 8-byte builtin handle (`.type_value`),

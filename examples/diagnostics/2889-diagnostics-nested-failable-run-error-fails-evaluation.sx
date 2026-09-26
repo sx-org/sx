@@ -1,0 +1,14 @@
+E :: error { Bad };
+
+bad :: () -> (i64, !E) { raise E.Bad; }
+
+nested :: () -> i64 {
+    x := @run bad();
+    x
+}
+
+N :: @run nested();
+
+main :: () -> i64 {
+    N
+}

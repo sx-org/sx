@@ -1,0 +1,7 @@
+neg :: () -> i64 { -1 }
+
+K : u64 : @run neg();
+
+main :: () {
+    x : u64 = @run neg();
+}

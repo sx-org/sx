@@ -13,7 +13,7 @@
 // argument `{Point=dd}`.
 //
 // The encoding string is not observable here (it ends up in a private
-// OBJC_METH_VAR_TYPE_ cstring in the linked binary) — but the compiler
+// OBJC_METH_VAR_TYPE_ C string in the linked binary) — but the compiler
 // bails LOUDLY on unsupported types per the project's REJECTED PATTERNS
 // rule, so a successful build is the encoding going through cleanly.
 

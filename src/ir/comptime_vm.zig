@@ -456,15 +456,31 @@ pub fn runBuildCallback(gpa: std.mem.Allocator, module: *const Module, func_id: 
 // Walks the SSA IR over comptime frames: each SSA result is a `Reg` word
 // (immediate scalar bits, or an `Addr`). Integer math is 64-bit wrapping (`+%`,
 // truncating `/` and `%` keyed on the result type's signedness, signed compares
-// — a scalar `.int` is i64 regardless of the declared width), float math is
-// f64. Alloca/load/store, aggregate init and projection, and calls execute over
-// comptime memory; an op with no arm bails loudly (`error.Unsupported` +
-// `detail`), never silently.
+// — a scalar `.int` is i64 regardless of the declared width). A float register
+// holds f64 bits, and an `f32` result is rounded to `f32`. Alloca/load/store,
+// aggregate init and projection, and calls execute over comptime memory; an op
+// with no arm bails loudly (`error.Unsupported` + `detail`), never silently.
 
 pub const Error = error{ DivisionByZero, TypeError, Unsupported, OutOfBounds };
 
 fn isFloat(ty: TypeId) bool {
     return ty == .f32 or ty == .f64;
+}
+
+/// The register word of `value` rounded to the float type `ty`.
+fn floatWord(ty: TypeId, value: f64) Reg {
+    return @bitCast(if (ty == .f32) @as(f64, @as(f32, @floatCast(value))) else value);
+}
+
+fn floatArith(comptime F: type, tag: OpTag, l: F, r: F) F {
+    return switch (tag) {
+        .add => l + r,
+        .sub => l - r,
+        .mul => l * r,
+        .div => l / r,
+        .mod => @rem(l, r),
+        else => unreachable,
+    };
 }
 
 /// The nominal identity (`name` + stable `nominal_id`) of a `declare_type`'d slot —
@@ -695,7 +711,7 @@ pub const Vm = struct {
             }
         }
         const r: Reg = if (global.comptime_func) |fid|
-            try self.runEntry(fid)
+            try self.runSuccess(module, module.getFunction(fid).ret, global.name, try self.runEntry(fid))
         else if (global.init_val) |iv|
             try self.constToReg(iv, global.ty)
         else
@@ -939,6 +955,7 @@ pub const Vm = struct {
             .widen, .narrow, .bitcast => |c| {
                 const table = try self.requireTable();
                 const raw = frame.get(c.operand.index());
+                if (isFloat(c.from) and isFloat(c.to)) return .{ .value = floatWord(c.to, @bitCast(raw)) };
                 if (table.integerLayout(c.from)) |from| {
                     if (table.integerLayout(c.to)) |to| return .{ .value = to.normalize(from.normalize(raw)) };
                 }
@@ -946,15 +963,15 @@ pub const Vm = struct {
             },
             .int_to_float => |c| {
                 const from = try self.intLayout(c.from);
-                const raw = from.normalize(frame.get(c.operand.index()));
-                const value: f64 = if (from.signed) @floatFromInt(@as(i64, @bitCast(raw))) else @floatFromInt(raw);
+                const value = types.floatFromInt(from.int(from.normalize(frame.get(c.operand.index()))), c.to);
                 return .{ .value = @bitCast(value) };
             },
             .float_to_int => |c| {
                 const to = try self.intLayout(c.to);
                 const value: f64 = @bitCast(frame.get(c.operand.index()));
-                const raw: Reg = if (to.signed) @bitCast(@as(i64, @intFromFloat(value))) else @intFromFloat(value);
-                return .{ .value = to.normalize(raw) };
+                const raw = to.truncFloat(value) orelse
+                    return self.failFmt("{f} is out of range for '{s}'", .{ types.FloatText{ .value = value }, (try self.requireTable()).typeName(c.to) });
+                return .{ .value = raw };
             },
 
             // ── Memory + structs (flat layout, target-aware) ────
@@ -1066,12 +1083,11 @@ pub const Vm = struct {
             .struct_init => |agg| {
                 const table = try self.requireTable();
                 const sty = ins.ty;
-                // `string`/`cstring`/`any` are builtin TWO-WORD aggregates
-                // (`{ptr@0, len@8}` / `{tag@0, value@8}`) — a literal like
-                // `cstring{ ptr = p, len = n }` (e.g. `fromCstring`) struct_inits
-                // one. Lay each operand as an 8-byte word; the other builtins have
-                // no aggregate literal form.
-                if (sty == .string or sty == .cstring or sty == .any) {
+                // A slice and `any` are TWO-WORD aggregates (`{ptr@0, len@8}` /
+                // `{tag@0, value@8}`) — a literal like `.{ ptr = p, len = n }`
+                // struct_inits one. Lay each operand as an 8-byte word; the
+                // other builtins have no aggregate literal form.
+                if (sty == .any or table.sliceInfoOf(sty) != null) {
                     const a = self.machine.allocBytes(16, 8);
                     for (agg.fields, 0..) |fr, i| {
                         if (i >= 2) break;
@@ -1139,7 +1155,7 @@ pub const Vm = struct {
                 const oty = (try self.refTy(ref_types, u.operand));
                 switch (table.get(oty)) {
                     .array => |a| return .{ .value = a.length },
-                    .string, .slice => return .{ .value = try self.sliceLen(table, oty, frame.get(u.operand.index())) },
+                    .slice => return .{ .value = try self.sliceLen(table, oty, frame.get(u.operand.index())) },
                     else => {},
                 }
                 self.detail = "comptime VM: length() on a non-array/slice/string operand";
@@ -1161,7 +1177,7 @@ pub const Vm = struct {
                 const table = try self.requireTable();
                 const oty = (try self.refTy(ref_types, u.operand));
                 switch (table.get(oty)) {
-                    .string, .slice => return .{ .value = try self.sliceData(table, frame.get(u.operand.index())) },
+                    .slice => return .{ .value = try self.sliceData(table, frame.get(u.operand.index())) },
                     // An array value IS the address of its storage.
                     .array => return .{ .value = frame.get(u.operand.index()) },
                     else => {},
@@ -1188,7 +1204,6 @@ pub const Vm = struct {
                 var elem: TypeId = .u8;
                 var data: Addr = base;
                 switch (table.get(bty)) {
-                    .string => data = try self.sliceData(table, base),
                     .array => |a| elem = a.element,
                     // `[*]T` (a List's `items` field) / `*T`: the base IS the
                     // data pointer; subslicing yields `{ base + lo, hi - lo }`.
@@ -1199,7 +1214,7 @@ pub const Vm = struct {
                         data = try self.sliceData(table, base);
                     },
                     else => {
-                        self.detail = "comptime VM: subslice on a non-array/slice/string base";
+                        self.detail = "comptime VM: subslice on a non-array/slice base";
                         return error.Unsupported;
                     },
                 }
@@ -1626,14 +1641,7 @@ pub const Vm = struct {
         if (isFloat(ty)) {
             const lf: f64 = @bitCast(l);
             const rf: f64 = @bitCast(r);
-            const res: f64 = switch (tag) {
-                .add => lf + rf,
-                .sub => lf - rf,
-                .mul => lf * rf,
-                .div => lf / rf,
-                .mod => @rem(lf, rf),
-                else => unreachable,
-            };
+            const res: f64 = if (ty == .f32) floatArith(f32, tag, @floatCast(lf), @floatCast(rf)) else floatArith(f64, tag, lf, rf);
             return @bitCast(res);
         }
         const layout = try self.intLayout(ty);
@@ -1805,7 +1813,45 @@ pub const Vm = struct {
         }
         self.call_stack.append(self.gpa, fid) catch @panic("comptime VM: out of memory (call stack)");
         defer _ = self.call_stack.pop();
-        return self.run(callee, argbuf);
+        const result = try self.run(callee, argbuf);
+        if (callee.comptime_role == .run_wrapper) try self.checkRunEscape(module, callee.ret, callee.comptime_display_name orelse callee.name, result);
+        return result;
+    }
+
+    /// Fail the evaluation when a failable `@run` wrapper returns an error,
+    /// which no `@run` lets escape.
+    fn checkRunEscape(self: *Vm, module: *const Module, ret: TypeId, name: types.StringId, result: Reg) Error!void {
+        if (ret.isBuiltin()) return;
+        const table = try self.requireTable();
+        const tag = switch (table.get(ret)) {
+            .@"error" => result,
+            .failable => |f| try self.readField(table, result + fieldOffset(table, ret, @intCast(table.failableValueSlotCount(f))), f.err),
+            else => return,
+        };
+        if (tag == 0) return;
+        return self.failFmt("`@run` ({s}) raised an unhandled error: {s}", .{ module.types.getString(name), module.types.tags.getName(@intCast(tag)) });
+    }
+
+    /// The value of a `@run` wrapper's `result` of type `ret`: a failable
+    /// result's success value, failing the evaluation on an escaping error.
+    fn runSuccess(self: *Vm, module: *const Module, ret: TypeId, name: types.StringId, result: Reg) Error!Reg {
+        try self.checkRunEscape(module, ret, name, result);
+        if (ret.isBuiltin()) return result;
+        const table = try self.requireTable();
+        const f = switch (table.get(ret)) {
+            .@"error" => return 0,
+            .failable => |f| f,
+            else => return result,
+        };
+        const n = table.failableValueSlotCount(f);
+        if (n == 0) return 0;
+        if (n == 1) return self.readField(table, result + fieldOffset(table, ret, 0), f.value);
+        const addr = self.machine.allocBytes(table.typeSizeBytes(f.value), table.typeAlignBytes(f.value));
+        for (0..n) |i| {
+            const slot = table.failableValueSlotType(f, i);
+            try self.writeField(table, addr + fieldOffset(table, f.value, @intCast(i)), slot, try self.readField(table, result + fieldOffset(table, ret, @intCast(i)), slot));
+        }
+        return addr;
     }
 
     /// The measurement of a type an open set's layout decides, or null while it
@@ -1934,7 +1980,7 @@ pub const Vm = struct {
                 // Only a string/slice `{ptr, len}` fat pointer marshals (→ a
                 // NUL-terminated `char*`); any other aggregate bails.
                 switch (table.get(aty)) {
-                    .string, .slice => {},
+                    .slice => {},
                     else => return self.failMsg("comptime extern call: non-string/slice aggregate arg not marshaled on the VM"),
                 }
                 const n: usize = @intCast(try self.sliceLen(table, aty, reg));
@@ -2440,7 +2486,7 @@ pub const Vm = struct {
                     .floor => @floor(x),
                     else => unreachable,
                 };
-                return @bitCast(y);
+                return floatWord(ins_ty, y);
             },
             else => return null, // not modeled on the VM yet → caller bails
         }
@@ -2482,8 +2528,10 @@ pub const Vm = struct {
             none,
             int: struct { bits: i64, signed: bool },
             float: struct { bits: i64 },
-            elem_len: struct { elem: TypeId, len: i64 }, // array/vector
-            one_type: TypeId, // slice/pointer/many_pointer/optional
+            elem_len: struct { elem: TypeId, len: i64 }, // vector
+            array: struct { elem: TypeId, len: i64, sentinel: ?i64 },
+            terminated: struct { elem: TypeId, sentinel: ?i64 }, // slice/pointer/many_pointer
+            one_type: TypeId, // optional
             rows: []const []const Word, // one element struct per member
             variants: struct { rows: []const []const Word, tag: TypeId }, // an enum: its variants, then `tag`/`tagOffset`
         };
@@ -2517,7 +2565,6 @@ pub const Vm = struct {
             },
             .bool => vname = "bool",
             .void => vname = "void",
-            .string => vname = "string",
             .any => vname = "any",
             .noreturn => vname = "noreturn",
             .type_value, .unresolved => vname = "typeValue",
@@ -2562,7 +2609,7 @@ pub const Vm = struct {
             .failable => vname = "void",
             .array => |a| {
                 vname = "array";
-                payload = .{ .elem_len = .{ .elem = a.element, .len = @intCast(a.length) } };
+                payload = .{ .array = .{ .elem = a.element, .len = @intCast(a.length), .sentinel = a.sentinel } };
             },
             .vector => |v| {
                 vname = "vector";
@@ -2570,15 +2617,15 @@ pub const Vm = struct {
             },
             .slice => |sl| {
                 vname = "slice";
-                payload = .{ .one_type = sl.element };
+                payload = .{ .terminated = .{ .elem = sl.element, .sentinel = sl.sentinel } };
             },
             .pointer => |p| {
                 vname = "pointer";
-                payload = .{ .one_type = p.pointee };
+                payload = .{ .terminated = .{ .elem = p.pointee, .sentinel = null } };
             },
             .many_pointer => |mp| {
                 vname = "manyPointer";
-                payload = .{ .one_type = mp.element };
+                payload = .{ .terminated = .{ .elem = mp.element, .sentinel = mp.sentinel } };
             },
             .optional => |o| {
                 vname = "optional";
@@ -2618,6 +2665,17 @@ pub const Vm = struct {
                 try self.writePayloadField(table, payload_ty, pinfo, 0, @as(Reg, el.elem.index()));
                 try self.writePayloadField(table, payload_ty, pinfo, 1, @as(Reg, @bitCast(el.len)));
             },
+            .array => |a| {
+                pinfo = try self.allocZeroed(table, payload_ty);
+                try self.writePayloadField(table, payload_ty, pinfo, 0, @as(Reg, a.elem.index()));
+                try self.writePayloadField(table, payload_ty, pinfo, 1, @as(Reg, @bitCast(a.len)));
+                try self.writePayloadSentinel(table, payload_ty, pinfo, 2, a.sentinel);
+            },
+            .terminated => |t| {
+                pinfo = try self.allocZeroed(table, payload_ty);
+                try self.writePayloadField(table, payload_ty, pinfo, 0, @as(Reg, t.elem.index()));
+                try self.writePayloadSentinel(table, payload_ty, pinfo, 1, t.sentinel);
+            },
             .one_type => |t| {
                 pinfo = try self.allocZeroed(table, payload_ty);
                 try self.writePayloadField(table, payload_ty, pinfo, 0, @as(Reg, t.index()));
@@ -2650,6 +2708,21 @@ pub const Vm = struct {
             return self.failMsg("comptime @typeInfo: payload shape mismatch (the prelude TypeInfo drifted from the record builder)");
         const fty = table.get(payload_ty).@"struct".fields[idx].ty;
         try self.writeField(table, base + fieldOffset(table, payload_ty, idx), fty, val);
+    }
+
+    /// Write a terminator into the `?i64` field `idx` of a zeroed info payload;
+    /// the zeroed field already reads as null.
+    fn writePayloadSentinel(self: *Vm, table: *const types.TypeTable, payload_ty: TypeId, base: Addr, idx: u32, sentinel: ?i64) Error!void {
+        const x = sentinel orelse return;
+        if (payload_ty.isBuiltin() or table.get(payload_ty) != .@"struct" or table.get(payload_ty).@"struct".fields.len <= idx)
+            return self.failMsg("comptime @typeInfo: payload shape mismatch (the prelude TypeInfo drifted from the record builder)");
+        const fty = table.get(payload_ty).@"struct".fields[idx].ty;
+        if (fty.isBuiltin() or table.get(fty) != .optional)
+            return self.failMsg("comptime @typeInfo: sentinel field is not an optional (the prelude TypeInfo drifted from the record builder)");
+        const child = table.get(fty).optional.child;
+        const at = base + fieldOffset(table, payload_ty, idx);
+        try self.writeField(table, at, child, @bitCast(x));
+        try self.machine.writeWord(at + table.typeSizeBytes(child), 1, 1);
     }
 
     /// Build a `{ <slice> }` info payload from one word row per member. A row
@@ -2745,7 +2818,7 @@ pub const Vm = struct {
                 return .{ .int = @bitCast(normalizeWord(table, ty, reg)) };
             },
             .aggregate => {
-                if (ty == .string or ty == .cstring) {
+                if (ty == .string or ty == .string_z) {
                     const src = try self.machine.bytes(try self.sliceData(table, reg), @intCast(try self.sliceLen(table, ty, reg)));
                     return .{ .string = alloc.dupe(u8, src) catch return self.failMsg("reg→value: out of memory (string)") };
                 }
@@ -2943,11 +3016,9 @@ pub const Vm = struct {
             // A comptime `Type` value is an 8-byte handle (a `TypeId` in a word) —
             // distinct from the 16-byte boxed `.any`. It rides as a word.
             .type_value => return .word,
-            .string, .cstring => return .aggregate, // {ptr,len} fat pointer (16B), by-address
             .any => return .aggregate, // boxed { type_tag, value } (16B), by-address
             else => {},
         }
-        if (ty.isBuiltin()) return .unsupported; // void, noreturn, unresolved
         return switch (table.get(ty)) {
             .pointer, .many_pointer, .function => .word,
             // A payload-free enum's word IS its tag; a payload-carrying enum is a
@@ -3087,7 +3158,7 @@ pub const Vm = struct {
         // share the same two-8-byte-field layout.
         if (sty == .any) return if (idx == 0) 0 else 8;
         switch (table.get(sty)) {
-            .string, .slice => return if (idx == 0) 0 else 8,
+            .slice => return if (idx == 0) 0 else 8,
             .optional => |o| return if (idx == 0) 0 else table.typeSizeBytes(o.child),
             .failable => |f| {
                 const n = table.failableValueSlotCount(f);
@@ -3157,7 +3228,7 @@ pub const Vm = struct {
         const data: Addr = blk: {
             break :blk switch (table.get(base_ty)) {
                 .array, .pointer, .many_pointer => base,
-                .string, .slice => try self.machine.readWord(base, table.pointer_size),
+                .slice => try self.machine.readWord(base, table.pointer_size),
                 else => {
                     self.detail = "comptime VM: indexing a non-array/pointer/slice base";
                     return error.Unsupported;

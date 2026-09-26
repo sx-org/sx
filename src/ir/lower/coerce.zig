@@ -223,16 +223,64 @@ pub fn coerceConstant(self: *Lowering, value: inst_mod.ConstantValue, src: TypeI
         else
             value,
         .int_to_float => if (value == .int)
-            .{ .float = if (self.module.types.integerLayout(src).?.signed)
-                @floatFromInt(value.int)
-            else
-                @floatFromInt(@as(u64, @bitCast(value.int))) }
+            .{ .float = types.floatFromInt(self.module.types.integerLayout(src).?.int(@bitCast(value.int)), dst) }
         else if (value == .zeroinit)
             .{ .float = 0 }
         else
             null,
         else => null,
     };
+}
+
+/// `value`, a constant of type `src`, converted to `dst` by the explicit cast.
+/// Null when the conversion has no constant result or is refused at `span`.
+pub fn castConstant(self: *Lowering, value: inst_mod.ConstantValue, src: TypeId, dst: TypeId, span: ast.Span) ?inst_mod.ConstantValue {
+    const tt = &self.module.types;
+    if (value == .zeroinit) if (scalarZero(self, src)) |zero| return castConstant(self, zero, src, dst, span);
+    switch (self.coercionResolver().classify(src, dst)) {
+        .no_op => return value,
+        .integer_retype, .widen, .narrow => {
+            if (value == .float and Lowering.isFloat(src) and Lowering.isFloat(dst))
+                return .{ .float = if (src == .f32 or dst == .f32) @as(f32, @floatCast(value.float)) else value.float };
+            const from = tt.integerLayout(src) orelse return null;
+            const to = tt.integerLayout(dst) orelse return null;
+            if (value != .int) return null;
+            return .{ .int = @bitCast(to.normalize(from.normalize(@bitCast(value.int)))) };
+        },
+        .int_to_float => {
+            if (value != .int) return null;
+            const from = tt.integerLayout(src).?;
+            return .{ .float = types.floatFromInt(from.int(from.normalize(@bitCast(value.int))), dst) };
+        },
+        .float_to_int => {
+            if (value != .float) return null;
+            return .{ .int = @bitCast(constFloatToInt(self, value.float, dst, span) orelse return null) };
+        },
+        .bool_to_number => {
+            if (value != .boolean) return null;
+            return castConstant(self, .{ .int = @intFromBool(value.boolean) }, .u8, dst, span);
+        },
+        .number_to_bool => return switch (value) {
+            .int => |n| .{ .boolean = n != 0 },
+            .float => |f| .{ .boolean = f != 0 },
+            else => null,
+        },
+        .int_to_enum => return castConstant(self, value, src, self.enumBackingType(dst).?, span),
+        .enum_to_int => return castConstant(self, value, self.enumBackingType(src).?, dst, span),
+        .optional_wrap => {
+            const child = tt.get(dst).optional.child;
+            return self.someConstant(child, castConstant(self, value, src, child, span) orelse return null);
+        },
+        else => return null,
+    }
+}
+
+/// The zero of the scalar `ty` in the constant form its other values take.
+fn scalarZero(self: *Lowering, ty: TypeId) ?inst_mod.ConstantValue {
+    if (ty == .bool) return .{ .boolean = false };
+    if (Lowering.isFloat(ty)) return .{ .float = 0 };
+    if (self.module.types.integerLayout(ty) != null) return .{ .int = 0 };
+    return null;
 }
 
 fn isGlyphFreeImplicit(plan: @import("../conversions.zig").CoercionResolver.CoercionPlan) bool {
@@ -555,7 +603,7 @@ pub fn refStorageAddress(self: *Lowering, ref: Ref) ?Ref {
             const base_ty = self.builder.getRefType(b.lhs);
             var base = b.lhs;
             switch (self.module.types.get(base_ty)) {
-                .string, .slice, .pointer, .many_pointer => {},
+                .slice, .pointer, .many_pointer => {},
                 .array => base = self.refStorageAddress(b.lhs) orelse return null,
                 else => return null,
             }
@@ -1105,6 +1153,26 @@ pub fn diagNonIntegralNarrow(self: *Lowering, span: ast.Span, value: f64, dst_ty
         d.addFmt(.err, span, "cannot implicitly narrow non-integral float '{d}' to '{s}'; use an explicit cast (`.({s})`)", .{ value, self.formatTypeName(dst_ty), self.formatTypeName(dst_ty) });
 }
 
+/// The integer word an implicit compile-time float `value` folds to at the
+/// integer type `dst_ty`, or null once a non-integral float or one outside
+/// `dst_ty` is refused at `span`.
+pub fn foldIntegralFloat(self: *Lowering, value: f64, dst_ty: TypeId, span: ast.Span) ?i64 {
+    if (!program_index_mod.isIntegralFloat(value)) {
+        diagNonIntegralNarrow(self, span, value, dst_ty);
+        return null;
+    }
+    return @bitCast(constFloatToInt(self, value, dst_ty, span) orelse return null);
+}
+
+/// The integer word the compile-time float `value` truncates to at `dst_ty`,
+/// or null once a NaN or a truncation outside `dst_ty` is refused at `span`.
+fn constFloatToInt(self: *Lowering, value: f64, dst_ty: TypeId, span: ast.Span) ?u64 {
+    return self.module.types.integerLayout(dst_ty).?.truncFloat(value) orelse {
+        if (self.diagnostics) |d| d.addFmt(.err, span, "{f} is out of range for '{s}'", .{ types.FloatText{ .value = value }, self.formatTypeName(dst_ty) });
+        return null;
+    };
+}
+
 /// Lower a struct field default `default_expr`, coerced to the field type
 /// `field_ty`. A compile-time float default narrowing into an integer field
 /// follows the unified rule via `foldComptimeFloatInit`; everything else
@@ -1173,8 +1241,12 @@ pub const CheckedCoercion = struct {
 /// caller that must react to one reads a single answer rather than re-deriving
 /// the ladder's arms.
 pub fn coerceChecked(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId) CheckedCoercion {
+    return coerceModeChecked(self, val, src_ty, dst_ty, .implicit);
+}
+
+fn coerceModeChecked(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mode: CoerceMode) CheckedCoercion {
     const before: usize = if (self.diagnostics) |d| d.errorCount() else 0;
-    const converted = self.coerceToType(val, src_ty, dst_ty);
+    const converted = self.coerceMode(val, src_ty, dst_ty, mode);
     const after: usize = if (self.diagnostics) |d| d.errorCount() else 0;
     return .{ .ref = converted, .refused = after != before };
 }
@@ -1264,6 +1336,7 @@ fn checkAssignableWith(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: as
     // Lowering owns the specific refusal diagnostics for these pairs.
     const plan = self.coercionResolver().classify(src_ty, dst_ty);
     if (plan.refuses() or plan == .unbox_any) return true;
+    if (refuseBoolNumber(self, src_ty, dst_ty, span)) return false;
     if (!src_ty.isBuiltin() and !dst_ty.isBuiltin() and
         self.module.types.get(src_ty) == .@"error" and self.module.types.get(dst_ty) == .@"error") return true;
     if (self.diagnostics) |d| {
@@ -1333,20 +1406,78 @@ pub fn bareFnNameSignature(self: *Lowering, node: *const Node) ?TypeId {
     return functionSignatureType(self, fid);
 }
 
+pub const LiteralLocalHelp = struct {
+    primary: usize,
+    source_file: ?[]const u8,
+    local: lower.LiteralLocal,
+};
+
+/// `src_ty` reaching the terminated `dst_ty`, which no conversion fills. `local`
+/// is the literal-bound local the value was read from.
+pub fn refuseAddedTerminator(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: ast.Span, local: ?lower.LiteralLocal) void {
+    const d = self.diagnostics orelse return;
+    const fix = if (src_ty == .string and !self.coercionResolver().classify(.string_z, dst_ty).refuses())
+        " — materialize one with mem.cloneZ(s)"
+    else
+        "";
+    const id = d.addFmtId(.err, span, "a value of type '{s}' does not coerce to '{s}': no conversion adds a terminator{s}", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty), fix });
+    self.assignability_error_count += 1;
+    if (local) |l| self.literal_local_helps.append(self.alloc, .{ .primary = id, .source_file = d.current_source_file, .local = l }) catch @panic("out of memory");
+}
+
+/// The `::` fix-it holds only for a local nothing writes.
+pub fn emitLiteralLocalHelps(self: *Lowering) void {
+    const d = self.diagnostics orelse return;
+    const saved = d.current_source_file;
+    defer d.current_source_file = saved;
+    for (self.literal_local_helps.items) |h| {
+        if (self.written_bindings.contains(h.local.binding)) continue;
+        d.current_source_file = h.source_file;
+        d.addHelpFmt(h.primary, h.local.init.span, null, "declare '{s}' with '::': a constant keeps the literal's terminator", .{h.local.name});
+    }
+}
+
 fn diagnoseUnmodeledCoercion(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, mode: CoerceMode) void {
-    {
-        const cs = self.builder.current_span;
-        if (refuseSetWeld(self, src_ty, dst_ty, .{ .start = cs.start, .end = cs.end })) return;
-    }
+    const cs = self.builder.current_span;
+    const span: ast.Span = .{ .start = cs.start, .end = cs.end };
+    if (refuseSetWeld(self, src_ty, dst_ty, span)) return;
     if (recoveringConversion(self, src_ty, dst_ty)) return;
-    if (self.diagnostics) |d| {
-        const cs = self.builder.current_span;
-        switch (mode) {
-            .implicit => d.addFmt(.err, .{ .start = cs.start, .end = cs.end }, "cannot coerce a value of type '{s}' to '{s}': no implicit conversion applies", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty) }),
-            .explicit => d.addFmt(.err, .{ .start = cs.start, .end = cs.end }, "no conversion from '{s}' to '{s}'", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty) }),
-        }
-        self.assignability_error_count += 1;
+    refuseConversion(self, src_ty, dst_ty, mode, span);
+}
+
+fn refuseConversion(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, mode: CoerceMode, span: ast.Span) void {
+    const d = self.diagnostics orelse return;
+    switch (mode) {
+        .implicit => d.addFmt(.err, span, "cannot coerce a value of type '{s}' to '{s}': no implicit conversion applies", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty) }),
+        .explicit => d.addFmt(.err, span, "no conversion from '{s}' to '{s}'", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty) }),
     }
+    self.assignability_error_count += 1;
+}
+
+/// A literal of type `src_ty` at the constant leaf `dst_ty`: true when an implicit
+/// conversion reaches it, else refused at `span` as the lowered leaf's coercion is.
+pub fn checkConstantLeaf(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: ast.Span) bool {
+    if (src_ty == dst_ty or dst_ty == .unresolved) return true;
+    if (refuseSetWeld(self, src_ty, dst_ty, span)) return false;
+    if (self.conversionAvailable(src_ty, dst_ty, .implicit)) return true;
+    if (refuseBoolNumber(self, src_ty, dst_ty, span)) return false;
+    switch (self.coercionResolver().classify(src_ty, dst_ty)) {
+        .optional_wrap => return checkConstantLeaf(self, src_ty, self.module.types.get(dst_ty).optional.child, span),
+        .adds_terminator_reject => self.refuseAddedTerminator(src_ty, dst_ty, span, null),
+        else => refuseConversion(self, src_ty, dst_ty, .implicit, span),
+    }
+    return false;
+}
+
+/// Refuses an implicit bool/number pair at `span` with the explicit-cast fix-it; false for any other pair.
+fn refuseBoolNumber(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: ast.Span) bool {
+    switch (self.coercionResolver().classify(src_ty, dst_ty)) {
+        .bool_to_number, .number_to_bool => {},
+        .optional_wrap => return refuseBoolNumber(self, src_ty, self.module.types.get(dst_ty).optional.child, span),
+        else => return false,
+    }
+    diagImplicitNumericConversion(self, src_ty, dst_ty, span);
+    return true;
 }
 
 /// Return-path variant of the guard, with a return-specific message and the
@@ -1358,6 +1489,7 @@ fn diagnoseUnmodeledCoercion(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, mo
 pub fn checkReturnable(self: *Lowering, _: Ref, src_ty: TypeId, dst_ty: TypeId, span: ast.Span) bool {
     if (refuseSetWeld(self, src_ty, dst_ty, span)) return false;
     if (recoveringConversion(self, src_ty, dst_ty) or self.conversionAvailable(src_ty, dst_ty, .implicit)) return true;
+    if (refuseBoolNumber(self, src_ty, dst_ty, span)) return false;
     if (self.diagnostics) |d| {
         d.addFmt(.err, span, "cannot return a value of type '{s}' where '{s}' is expected", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty) });
         self.assignability_error_count += 1;
@@ -1380,7 +1512,7 @@ pub fn conversionAvailable(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, mode
     const plan = self.coercionResolver().classify(src_ty, dst_ty);
     if (plan == .none or plan.refuses()) return false;
     return switch (plan) {
-        .error_to_int, .single_to_many, .void_to_c_function, .unbox_any => mode == .explicit,
+        .error_to_int, .single_to_many, .void_to_c_function, .unbox_any, .bool_to_number, .number_to_bool => mode == .explicit,
         .optional_wrap => self.conversionAvailable(src_ty, self.module.types.get(dst_ty).optional.child, mode),
         .optional_to_optional => self.conversionAvailable(self.module.types.get(src_ty).optional.child, self.module.types.get(dst_ty).optional.child, mode),
         else => true,
@@ -1404,13 +1536,33 @@ pub fn isPointerValueKind(self: *Lowering, ty: TypeId) bool {
 
 fn refuseImplicitNumericConversion(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) Ref {
     if (!self.externalErrorsExist()) {
-        if (self.diagnostics) |d| {
-            const cs = self.builder.current_span;
-            d.addFmt(.err, .{ .start = cs.start, .end = cs.end }, "cannot implicitly convert '{s}' to '{s}'; use an explicit cast (`.({s})`)", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty), self.formatTypeName(dst_ty) });
-            self.assignability_error_count += 1;
-        }
+        const cs = self.builder.current_span;
+        diagImplicitNumericConversion(self, src_ty, dst_ty, .{ .start = cs.start, .end = cs.end });
     }
     return self.builder.constUndef(dst_ty);
+}
+
+fn diagImplicitNumericConversion(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: ast.Span) void {
+    const d = self.diagnostics orelse return;
+    d.addFmt(.err, span, "cannot implicitly convert '{s}' to '{s}'; use an explicit cast (`.({s})`)", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty), self.formatTypeName(dst_ty) });
+    self.assignability_error_count += 1;
+}
+
+/// A typed numeric read of `src_ty` at the constant leaf `dst_ty`: true when
+/// `src_ty` widens to `dst_ty`, else refused at `span` as a local's read is.
+pub fn checkConstantWidens(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: ast.Span) bool {
+    if (implicitNumericConversion(self, src_ty, dst_ty) orelse true) return true;
+    diagImplicitNumericConversion(self, src_ty, dst_ty, span);
+    return false;
+}
+
+fn implicitNumericConversion(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) ?bool {
+    if (implicitIntegerConversion(self, src_ty, dst_ty)) |widens| return widens;
+    return switch (self.coercionResolver().classify(src_ty, dst_ty)) {
+        .float_to_int, .bool_to_number, .number_to_bool => false,
+        .narrow => if (Lowering.isFloat(src_ty) and Lowering.isFloat(dst_ty)) false else null,
+        else => null,
+    };
 }
 
 pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mode: CoerceMode) Ref {
@@ -1422,7 +1574,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
                 if (self.externalErrorsExist()) return self.builder.constUndef(dst_ty);
                 if (self.builder.getRefOp(val)) |op| {
                     if (op == .const_int) {
-                        self.checkIntLiteralFits(op.const_int, dst_ty, span);
+                        self.checkIntLiteralFits(self.intConstantValue(op.const_int, src_ty), dst_ty, span);
                         return self.builder.constInt(op.const_int, dst_ty);
                     }
                 }
@@ -1600,14 +1752,8 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             return val;
         },
         .adds_terminator_reject => {
-            if (self.diagnostics) |d| {
-                const cs = self.builder.current_span;
-                const fix = if (src_ty == .string and !self.coercionResolver().classify(.cstring, dst_ty).refuses())
-                    " — materialize one with toCstring(s)"
-                else
-                    "";
-                d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "a value of type '{s}' does not coerce to '{s}': no conversion adds a terminator{s}", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty), fix });
-            }
+            const cs = self.builder.current_span;
+            self.refuseAddedTerminator(src_ty, dst_ty, .{ .start = cs.start, .end = cs.end }, self.literal_local_refs.get(val));
             return val;
         },
         // void → Optional: produce null (void is the type of null_literal)
@@ -1648,7 +1794,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         // Concrete → Optional wrapping (coerce to the inner type first)
         .optional_wrap => {
             const child_ty = self.module.types.get(dst_ty).optional.child;
-            const coerced = self.coerceMode(val, src_ty, child_ty, mode);
+            const coerced = coerceModeChecked(self, val, src_ty, child_ty, mode);
             // The inner coercion may classify as `.none` (no built-in applies)
             // and pass `val` through UNCHANGED — e.g. wrapping a `?i64` value
             // into a `?(?i64)` whose payload is the 1-tuple `(?i64)`. Building
@@ -1657,18 +1803,20 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             // If the coerced operand's type does not match the optional's child
             // type, the wrap is invalid — diagnose loudly instead of emitting a
             // corrupt InsertValue. (`hasErrors()` then aborts the build.)
-            const coerced_ty = self.builder.getRefType(coerced);
+            const coerced_ty = self.builder.getRefType(coerced.ref);
             if (coerced_ty != child_ty) {
                 if (self.diagnostics) |d| {
-                    const cs = self.builder.current_span;
-                    // Only mention the `(T)`-is-a-1-tuple gotcha when the payload
-                    // actually IS a tuple (the `?(?T)` typo); for any other
-                    // mismatch the parens note would be misleading.
-                    d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "cannot wrap a value of type '{s}' into optional '{s}': its payload type is '{s}'", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty), self.formatTypeName(child_ty) });
+                    if (!coerced.refused) {
+                        const cs = self.builder.current_span;
+                        // Only mention the `(T)`-is-a-1-tuple gotcha when the payload
+                        // actually IS a tuple (the `?(?T)` typo); for any other
+                        // mismatch the parens note would be misleading.
+                        d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "cannot wrap a value of type '{s}' into optional '{s}': its payload type is '{s}'", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty), self.formatTypeName(child_ty) });
+                    }
                 }
                 return val;
             }
-            return self.builder.emit(.{ .optional_wrap = .{ .operand = coerced } }, dst_ty);
+            return self.builder.emit(.{ .optional_wrap = .{ .operand = coerced.ref } }, dst_ty);
         },
         // Concrete → Protocol (auto type erasure)
         .erase_protocol => {
@@ -1694,15 +1842,27 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         .float_to_int => {
             if (mode == .implicit) {
                 if (self.builder.constFloatInfo(val)) |info| {
-                    if (program_index_mod.floatToIntExact(info.value)) |iv| {
-                        return self.builder.constInt(iv, dst_ty);
-                    }
-                    self.diagNonIntegralNarrow(.{ .start = info.span.start, .end = info.span.end }, info.value, dst_ty);
-                    return self.builder.constUndef(dst_ty);
+                    const iv = foldIntegralFloat(self, info.value, dst_ty, .{ .start = info.span.start, .end = info.span.end }) orelse return self.builder.constUndef(dst_ty);
+                    return self.builder.constInt(iv, dst_ty);
                 }
                 return refuseImplicitNumericConversion(self, src_ty, dst_ty);
             }
+            if (self.builder.constFloatInfo(val)) |info| {
+                const cs = self.builder.current_span;
+                const word = constFloatToInt(self, info.value, dst_ty, .{ .start = cs.start, .end = cs.end }) orelse return self.builder.constUndef(dst_ty);
+                return self.builder.constInt(@bitCast(word), dst_ty);
+            }
             return self.builder.emit(.{ .float_to_int = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty);
+        },
+        .bool_to_number => {
+            if (mode == .implicit) return refuseImplicitNumericConversion(self, src_ty, dst_ty);
+            const bit = self.builder.emit(.{ .widen = .{ .operand = val, .from = .bool, .to = .u8 } }, .u8);
+            return self.coerceMode(bit, .u8, dst_ty, mode);
+        },
+        .number_to_bool => {
+            if (mode == .implicit) return refuseImplicitNumericConversion(self, src_ty, dst_ty);
+            const zero = if (Lowering.isFloat(src_ty)) self.builder.constFloat(0, src_ty) else self.builder.constInt(0, src_ty);
+            return self.builder.emit(.{ .cmp_ne = .{ .lhs = val, .rhs = zero } }, .bool);
         },
         // Int ↔ payload-less enum: run the integer ladder to/from the enum's
         // backing type, then retype the word to the other side. The retype is

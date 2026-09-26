@@ -1,0 +1,8 @@
+// `cstring` names no type: terminated bytes are `[:0]u8`, `[*:0]u8` or `[N:0]u8`.
+@import "modules/std.sx";
+
+main :: () -> i32 {
+    c : cstring = "hi";
+    print("{}\n", c);
+    0
+}

@@ -1,0 +1,14 @@
+// A leaf of a global or constant aggregate is refused where a local's leaf
+// narrows: a literal that does not fit, or a typed read that does not widen.
+
+S :: struct { n: i64; }
+D :: struct { b: u8; m: i32; }
+
+C : S : .{ n = 5 };
+G : D = .{ b = 300, m = C.n };
+K : [2]u8 : .[1, 256];
+
+main :: () -> i32 {
+    k := K;
+    G.m
+}

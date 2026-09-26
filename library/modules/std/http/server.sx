@@ -159,25 +159,12 @@ HttpErr :: error {
              // reusePort — see each field's doc)
 }
 
-// unlink an AF_UNIX listener's socket file (init's stale-file removal
-// and the close()/stop() teardown). Stack-NUL-copies the path for the
-// syscall; sun_path bounds the length, so an over-long path is a no-op
-// (init already rejected it).
-private unlinkPath :: (path: string) {
-    if path.len == 0 or path.len > 110 { return; }
-    pb : [112]u8 = ---;
-    clib.c.memcpy(*pb[0], path.ptr, path.len);
-    pb[path.len] = 0;
-    p : cstring = .{ ptr = *pb[0], len = path.len };
-    fs.deleteFile(p);
-}
-
 // tear down a bound-but-unusable listener on an init
 // error path — a failed construction never reaches close()/stop(), so the
 // AF_UNIX socket file the bind just created must be removed HERE.
 private closeListener :: (lfd: i32, unixPath: string) {
     socket.close(lfd);
-    if unixPath.len > 0 { unlinkPath(unixPath); }
+    if unixPath.len > 0 { fs.deleteFile(unixPath); }
 }
 
 // The kind of event handed to Config.onEvent. The hook
@@ -1008,7 +995,7 @@ private runHandlerJob :: (arg: usize) {
     // the response's generation time, not its start time (RFC 9110: "as
     // close as practical to generating the message").
     db : [32]u8 = ---;
-    date : string = "";
+    date := "";
     // keep may be DOWNGRADED post-handler — a response over a body
     // the reader never drained cannot keep the connection (the wire still
     // carries request bytes), so the serialized header must say close.
@@ -1457,7 +1444,7 @@ Server :: struct {
             // The path belongs to the server (documented contract): a
             // stale socket file from a previous run would fail the bind —
             // remove it. A path we cannot unlink fails at bind, loud.
-            unlinkPath(cfg.unixPath);
+            fs.deleteFile(cfg.unixPath);
             if socket.bindTo(lfd, *ua) != 0 { socket.close(lfd); raise .Bind; }
             if socket.listen(lfd, cfg.backlog) != 0 { socket.close(lfd); raise .Bind; }
             if !socket.setNonblocking(lfd) { socket.close(lfd); raise .Bind; }
@@ -1694,7 +1681,7 @@ Server :: struct {
         self.lfd = -1;
         // an AF_UNIX listener's socket file is removed at teardown
         // (idempotent — stop() may have unlinked it already).
-        if self.cfg.unixPath.len > 0 { unlinkPath(self.cfg.unixPath); }
+        if self.cfg.unixPath.len > 0 { fs.deleteFile(self.cfg.unixPath); }
         self.loop.close();
     }
 
@@ -2078,7 +2065,7 @@ Server :: struct {
             self.lfdRemoved = true;
             // stop() means "accept no more" — remove the AF_UNIX
             // socket file with the listener so new dials fail fast.
-            if self.cfg.unixPath.len > 0 { unlinkPath(self.cfg.unixPath); }
+            if self.cfg.unixPath.len > 0 { fs.deleteFile(self.cfg.unixPath); }
         }
         i : i64 = 0;
         while i < self.cfg.maxConn {

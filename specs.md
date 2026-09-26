@@ -16,8 +16,8 @@ Line comments start with `//` and extend to end of line.
 #### Reserved type names
 
 A spelling that names a builtin type — the eight integer aliases `i8` / `i16` /
-`i32` / `i64` / `u8` / `u16` / `u32` / `u64`, plus `bool`, `string`, `cstring`,
-`void`, `f32`, `f64`, `usize`, `isize`, `any` —
+`i32` / `i64` / `u8` / `u16` / `u32` / `u64`, plus `bool`, `string`, `void`,
+`f32`, `f64`, `usize`, `isize`, `any` —
 is reserved: bare, it is not a value or declaration name. A value spelled as a
 type parses as a *type*, not a value, so its address-of / autoref paths would
 mis-lower; a declaration spelled as a builtin would shadow the builtin. The
@@ -112,8 +112,8 @@ writer and `@isComptime`. So is the postfix assertion's spelled form, `@cast`
 `$fmt` is a comptime string in the same `{}` vocabulary `print` takes — `{}`
 consumes the next argument, `{{` and `}}` write a brace — and the compiler
 expands the call into one write per segment and per argument, in source order.
-An argument is a `string`, a `bool`, an integer or a float; any other type is a
-compile error, because rendering it takes the allocating formatter, `print`.
+An argument is a slice of `u8`, a `bool`, an integer or a float; any other type
+is a compile error, because rendering it takes the allocating formatter, `print`.
 
 `@panic(msg: string, site: @SourceSite = @caller) -> noreturn` writes
 `file:line: msg` to stderr and stops the program; a site with `line == 0`
@@ -200,26 +200,30 @@ hand-written sx code.
 |-----------|---------------------|---------|
 | Integer   | `0`, `42`, `0xFF`, `0o755`, `0b1010` | `i64`   |
 | Float     | `0.3`, `1e10`, `1.5e-3` | inferred; defaults to `f64` |
-| String    | `"Hello"`, `"z: {z}"` | `[N:0]u8` (may span multiple lines) |
-| Heredoc String | `@string END`...`END` | `[N:0]u8` |
-| Line String | `\\raw line` | `[N:0]u8` |
+| String    | `"Hello"`, `"z: {z}"` | inferred; defaults to `string` (may span multiple lines) |
+| Heredoc String | `@string END`...`END` | inferred; defaults to `string` |
+| Line String | `\\raw line` | inferred; defaults to `string` |
 | Boolean   | `true`, `false`     | `bool`  |
 | Enum      | `.variant1`         | inferred from context |
 | Undefined | `---`               | context-dependent |
 
-**String literals.** A string literal is `[N:0]u8` — its bytes plus the
-terminator, by value. It keeps that array where the destination names a shape
-only a terminated value reaches, and decays to the `[:0]u8` view everywhere
-else:
+**String literals.** A string literal is an untyped constant. It takes the
+shape its destination names — `string`, the `[:0]u8` view, a `[*:0]u8`
+pointer, or the `[N:0]u8` / `[N]u8` array, through `?` as well — and is
+`string` wherever no shape is named: a `:=` variable, a `$T` only literals
+bind, an `any`. A `::` constant bound to a literal stays untyped: `@typeOf`
+reports `string`, and each use takes the shape of its own destination.
 ```sx
 b : [3:0]u8 = "abc";   // a writable 4-byte copy; b.len is 3, b[3] is 0
-s := "abc";            // cstring — a view of the constant bytes
-X :: "abc";            // [3:0]u8
-y := X;                // a copy of the array
-f(X);                  // decays where `f` takes a string
+s := "abc";            // string — a view of the constant bytes
+X :: "abc";            // untyped; @typeOf(X) is string
+puts(X);               // the terminated bytes reach a C [*:0]u8
+t := X[1..];           // string "bc", a view
 ```
-A literal view owns nothing: writing through it is undefined behavior. Copies
-are explicit (`b : [3:0]u8 = "abc"`, `clone`).
+A `:=` variable is a `string`, which no conversion terminates, so
+`s := "abc"; puts(s)` is refused; `s :: "abc"` keeps the literal. A literal
+view owns nothing: writing through it is undefined behavior. Copies are
+explicit (`b : [3:0]u8 = "abc"`, `clone`).
 
 **Integer bases.** Integers are written in four bases: decimal (`1000`), hex
 `0x`/`0X` (`0xFF`), octal `0o`/`0O` (`0o755` == 493), and binary `0b`/`0B`
@@ -515,7 +519,7 @@ c := vstack(1.0) {
 - `f32` — 32-bit floating point
 - `f64` — 64-bit floating point
 - `bool` — boolean (`true` / `false`)
-- `string` — string of characters
+- `string` — the text type: `[]u8`, under its name (§Slice Types)
 - `any` — type-erased BORROW, represented as `{ data: pointer, typeId: i64 }` — the data word (word 0) is the ADDRESS of the value, the typeId word (word 1) its runtime type tag (Odin `Raw_Any` `{data, id}`, same order; the `{pointer, typeId}` prefix is shared with interface handles — see Constraints and Interfaces), never a copy of its bits. Used for variadic arguments, runtime type dispatch, and reflection views. Boxing an addressable lvalue points at its storage (zero copy — mutations of the source stay visible through a live view); boxing an rvalue materializes a temporary scoped to the enclosing frame. An `any` is valid only while the referenced value lives: do not store an `any` beyond its referent. Unboxing via `xx` is an UNCHECKED typed load through the view — the target must be the boxed type (`data` covers exactly `@sizeOf(tag)` bytes; a wider target overreads); the checked forms are the postfix assertions (`av.(T)` / `try av.(T)` / `av.(?T)`). `==`/`!=` are NOT defined on `any` (compile error): unbox first, or compare `@typeOf(av)`.
 - `Type` — compile-time type value. At runtime, represented as an `i64` type tag (same tag space as `any`).
 
@@ -560,10 +564,8 @@ n      := u64.max;                // 18446744073709551615 (all-ones)
 - **Value.** Pure `(width, signedness)` arithmetic — never a per-name table:
   signed `N` has `min = -(2^(N-1))`, `max = 2^(N-1) - 1`; unsigned `N` has
   `min = 0`, `max = 2^N - 1`.
-- **`u64.max`** exceeds the signed `i64` range of integer constants: it is
-  stored as the exact all-ones bit pattern carrying the `u64` type and cannot be
-  written as a decimal literal. The default integer formatter is
-  signedness-aware, so `print("{}", u64.max)` renders `18446744073709551615`.
+- The default integer formatter is signedness-aware, so
+  `print("{}", u64.max)` renders `18446744073709551615`.
 - `.min` / `.max` on a non-numeric type (`bool`, `string`, a pointer, a
   `struct`, `void`, an `enum`) is a compile error.
 
@@ -1784,12 +1786,16 @@ a[0..3] == b[0..2] // false — lengths differ
 ```
 
 A `.[ … ]` literal takes its element type from the annotation or target
-(`x : [3]i16 = .[1, 2, 3]`), or infers it from the elements when bare
-(`.[1, 2, 3]` is `[3]i64`). A type prefix on the literal names the
-**aggregate** type — `@Vector(3, f32).[…]`, `([2]?i64).[…]`, or an alias
-of an array type — never the element type: a prefix that resolves to a
-non-array/vector/slice type (`i16.[…]`, `Point.[…]`) is a compile error
-pointing at the annotated form.
+(`x : [3]i16 = .[1, 2, 3]`). A bare literal's elements bind it as arguments
+bind one binder ([Generic Functions](#generic-functions-monomorphization)):
+`.[1, 2, 3]` is `[3]i64`, and with `x : i32`, `.[1, x]` and `.[x, 1]` are both
+`[2]i32`. A bare `.[]` with no target is `[0]void`. A bare literal with no
+target whose elements give no type (`.[null, null]`) is a compile error asking
+for the annotation. A type prefix on the literal names the **aggregate** type
+— `@Vector(3, f32).[…]`, `([2]?i64).[…]`, or an alias of an array type —
+never the element type: a prefix that resolves to a non-array/vector/slice
+type (`i16.[…]`, `Point.[…]`) is a compile error pointing at the annotated
+form.
 
 `@Array(N, T)` is the named form of the same type, written wherever `[N]T` is:
 ```sx
@@ -1825,18 +1831,20 @@ accepts any compile-time **integer**, including a negative one: `inline for
 iterations rather than being an error.
 
 ### Slice Types
-A slice `[]T` is a fat pointer `{ptr, i64}` referencing a contiguous sequence of `T` elements. Same runtime layout as `string`.
+A slice `[]T` is a fat pointer `{ptr, i64}` referencing a contiguous sequence of `T` elements. `string` is `[]u8`: one type, which `@typeName` and `@typeInfo` report as `string` and `.slice`.
 
 `[:X]T` is a **terminated** slice: the same `{ptr, i64}` fat pointer, whose
-element one past `.len` is `X`. `[:0]u8` is `cstring`; every other terminated
-slice is a type of its own, distinct from `[]T`.
+element one past `.len` is `X`, and a type of its own, distinct from `[]T`. A
+`[:X]T` comes from a string literal (`[:0]u8`), a terminated array, an
+open-ended subslice of a terminated value (§Subslicing), or a `.{ptr, len}`
+literal, whose author asserts `ptr[len] == X` unchecked.
 ```sx
-@typeName([:1]u8)  // "[:1]u8"
 @typeName([]u8)    // "string"
-@typeName([:0]u8)  // "cstring"
+@typeName([:0]u8)  // "[:0]u8"
 ```
 
-`==` on two slices compares content (§Array Types).
+`==` on two slices compares content (§Array Types), and a `HashMap` slice key
+hashes its elements to agree with it.
 ```sx
 // Arrays implicitly coerce to slices at call sites
 arr : [5]i32 = .[3, 1, 4, 1, 5];
@@ -1848,6 +1856,13 @@ items[i] = val;    // write element at index
 items.len          // length (i64)
 items.ptr          // raw pointer
 ```
+
+`{}` prints a slice of `u8`, whatever its terminator or length word, and a
+terminated `[N:X]u8` array as text. A plain `[N]u8`, and a sequence of any
+other element type, prints as a list of its elements.
+
+`.len` and `.ptr` name the fat pointer's own slots, and are places like struct
+fields.
 
 A `.{ … }` literal against a slice target reads its field names: `ptr` and
 `len` write the fat pointer's own slots, and any other field list is a list of
@@ -1874,7 +1889,7 @@ the length word (`@Slice(T, u32)` → `[]T`) is implicit; implicit narrowing of
 a non-constant length is not.
 
 ### Subslicing
-Arrays, slices, and strings support subslice syntax to create zero-copy views:
+Arrays, slices, strings and many-pointers support subslice syntax to create zero-copy views:
 ```sx
 arr : [5]i32 = .[3, 1, 4, 1, 5];
 sub := arr[1..4];    // []i32 → [1, 4, 1]
@@ -1888,8 +1903,20 @@ word := msg[6..11];  // string → "world"
 - `expr[start..]` — elements from `start` to end
 - `expr[..end]` — elements from beginning to `end`
 - `expr[..]` — the whole collection as a slice
-- Result type: `[]T` for arrays/slices, `string` for strings
+- Result type: `[]T` for arrays, slices and many-pointers, `string` for strings
 - No memory allocation — the result points into the original backing storage
+
+An open-ended `expr[start..]` of a terminated `[N:X]T`, `[:X]T` or `[*:X]T`
+runs to its terminator and keeps it: the result is `[:X]T`. A `[*:X]T` has no
+length, so its end is the first `X` at or after `start`, found by a scan. An
+unterminated `[*]T` has neither, and slices only with an explicit `end`.
+```sx
+c : [:0]u8 = "hello";
+c[1..]         // [:0]u8 → "ello"
+c[1..3]        // string → "el"
+p : [*:0]u8 = "world";
+p[2..]         // [:0]u8 → "rld", length 3
+```
 
 Slicing an array is a **zero-copy view**: for an *addressable* array (a
 local, a global, a struct field, or a `*[N]T` dereference) the slice
@@ -1991,7 +2018,7 @@ literal and any `*T` may hold it. The compiler does not police it: like
 writes, null-ness is unchecked — dereferencing a null pointer is a runtime
 crash, never a compile error. Nullability **checking is opt-in** via the
 optional spelling `?*T`: same bare-pointer representation (see Optional
-Types), but use-sites must prove presence (`!`, `??`, `if v := p`,
+Types), but use-sites must prove presence (`?!`, `??`, `if v := p`,
 flow-sensitive narrowing) before touching the payload. Pick `*T` when null is
 a normal, locally handled sentinel; pick `?*T` when the type should force
 every consumer to handle absence.
@@ -2002,6 +2029,8 @@ op : ?*Vec2 = null;    // same layout; deref demands proof of presence
 
 **Many-pointer**: `[*]T` supports indexing for buffers of unknown size. An
 index is the only way to step a pointer — `+` / `-` have no pointer form.
+`mp[lo..hi]` views `hi - lo` elements as a slice; a `[*:X]T` also slices
+open-ended (§Subslicing).
 ```sx
 arr : [5]i32 = .[10, 20, 30, 40, 50];
 mp : [*]i32 = *arr[0];
@@ -2036,17 +2065,18 @@ chain is rooted at a constant is rejected (see
 [Constant-Write Rejection](#constant-write-rejection)); a dereference in
 the chain leaves the checked zone.
 
-**Fat pointer layout**: `string`, `cstring`, `[]T` and `[:X]T` are `{ptr, i64}` structs. The raw pointer is always the first field at offset 0.
+**Fat pointer layout**: `string`, `[]T` and `[:X]T` are `{ptr, i64}` structs. The raw pointer is always the first field at offset 0.
 
-### cstring
+### C strings and terminated bytes
 
-`cstring` is `[:0]u8`: the `{ptr, i64}` slice whose bytes end in a
-terminator. `.len` counts the bytes before it, indexing, iteration and
-content `==` are the slice's own (§Slice Types, §Array Types), and
-`?cstring` is the slice's 16 bytes with a null `ptr` meaning absent.
+`[:0]u8` is the `{ptr, i64}` slice whose bytes end in a terminator. `.len`
+counts the bytes before it, indexing, iteration and content `==` are the
+slice's own (§Slice Types, §Array Types), and `?[:0]u8` is the slice's 16
+bytes with a null `ptr` meaning absent. A fixed buffer is `[N:0]u8`
+(§Array Types).
 
 C's `char *` is `[*:0]u8`: ONE pointer to a null-terminated u8 buffer,
-carrying no length (`cstringLen` walks to the terminator, O(n)) and
+carrying no length (`p[0..]` walks to the terminator, O(n)) and
 crossing `extern` boundaries verbatim in BOTH directions. `?[*:0]u8` is
 the nullable case and lowers to the same bare pointer (null = absent) —
 the type for `getenv`-style returns and optional `char *` parameters.
@@ -2054,20 +2084,20 @@ the type for `getenv`-style returns and optional `char *` parameters.
 
 Conversion discipline:
 
-- The terminator is the TYPE's, so a terminated value reaches `cstring`
-  and `[*:0]u8` on its own — a string literal is `[N:0]u8` and passes
-  straight through.
+- The terminator is the TYPE's, so a terminated value reaches `[:0]u8`
+  and `[*:0]u8` on its own — a string literal, and a `::` constant bound
+  to one, takes either shape.
 - A value whose type carries no terminator does NOT coerce to either,
   whatever its bytes hold — a `string` window, a plain `[N]T`, a `[*]T`.
-  Materialize an owned, terminated copy with `toCstring(s)`.
-- Dropping the guarantee is implicit: `cstring` → `string` is the
-  `[:X]T` → `[]T` arm, so `string` methods take a `cstring` receiver.
-- `[*:0]u8` does not coerce to `cstring` implicitly — the length is an
-  O(n) strlen the code must ask for. `fromCstring(c)` is the zero-copy
+  `mem.cloneZ(s, a = context.allocator)` makes an owned `[:0]T` copy,
+  which `mem.free` releases. Library APIs take `string` and terminate at
+  their own C calls: `z := mem.cloneZ(s); defer mem.free(z);`.
+- Dropping the guarantee is implicit: `[:0]u8` → `string` is the
+  `[:X]T` → `[]T` arm, so `string` methods take a `[:0]u8` receiver.
+- `[*:0]u8` does not coerce to `[:0]u8` implicitly — the length is an
+  O(n) strlen the code must ask for. `p[0..]` is the zero-copy
   view (shares C's buffer); a copy must be made for it to outlive C's
   buffer.
-- `xx` bit-casts `[*:0]u8` ↔ `*u8` / `[*]u8` / integer-pointer values
-  for low-level interop.
 
 ### Optional Types
 
@@ -2224,7 +2254,7 @@ n := Node{value = 10 };    // n.next is null
 `print("{}", opt)` prints the payload value if present, or `"null"`.
 
 #### Comptime
-Optionals work in `@run` blocks — `??`, `!`, `if val :=`, null checks all supported.
+Optionals work in `@run` blocks — `??`, `?!`, `if val :=`, null checks all supported.
 
 ### C Interop
 
@@ -2274,7 +2304,7 @@ SxFoo     :: @ObjcClass("SxFoo")    export { counter: i32; bump :: (self: *Self)
 | C type | sx type | Notes |
 |--------|---------|-------|
 | `const char*` (input) | `[*:0]u8` | the pointer, verbatim; a terminated value reaches it |
-| `const char*` (return) | `[*:0]u8` | the pointer, verbatim; `fromCstring` to view |
+| `const char*` (return) | `[*:0]u8` | the pointer, verbatim; `p[0..]` to view |
 | nullable `const char*` (both directions) | `?[*:0]u8` | null pointer = `null` |
 | `char*` (output buffer) | `[*]u8` | raw buffer, no length |
 | `int*` (single out) | `*i32` | |
@@ -2401,10 +2431,11 @@ sum :: (a: $T, b: T) -> T {
   sum(40, 2)       // T = i64
   sum(1.5, 2.5)    // T = f64
   ```
-- An integer, float or string literal argument carries no type of its own: the
-  arguments that do bind the binder first, whichever order they are written in,
-  and the literal fits itself to what they bound. A binder only literals speak
-  for takes their defaults — `i64`, `f64`, `[:0]u8`.
+- An untyped argument carries no type of its own: a literal, an unannotated
+  `::` constant, arithmetic over them, or a bare `.[…]` of them. The arguments
+  that do have a type bind the binder first, whichever order they are written
+  in, and the untyped argument fits itself to what they bound. A binder only
+  untyped arguments speak for takes their defaults — `i64`, `f64`, `string`.
   ```sx
   x : i32 = 7;
   sum(1, x)        // T = i32
@@ -2922,6 +2953,21 @@ isReady : ValueListenable(bool) = map(
 - `:=` bindings infer type from the right-hand side
 - Explicit annotation overrides inference: `NAME : f64 : 0.9;`
 - Integer literals default to `i64`
+- Untyped integer expressions — integer literals, unannotated integer
+  constants, and every integer operator over them (`+ - * / %`, unary `-`,
+  `& | ^ ~`, and `<< >>` with an untyped left operand) — fold exactly at
+  compile time, in 128-bit arithmetic. Only the folded value takes a type, and
+  it must fit it: its destination's type, through `?` as well, or its typed
+  peer's type, and `i64` without either. An explicit cast (`.(T)`, `xx`)
+  converts it, truncating.
+  `f : u64 = 0xFFFF_FFFF_FFFF_FFFF / 2` is `9223372036854775807`,
+  `d : i8 = 100 + 100` is refused because `200` does not fit `i8`, and
+  `m : u8 = ~0` is refused because `-1` does not fit `u8`. A value outside 128
+  bits and a division by zero are located compile errors. An untyped shift by
+  a runtime amount does not fold and computes in the type it takes (see
+  [Arithmetic](#arithmetic)).
+- String literals, and `::` constants bound to them, take the shape their
+  destination names and default to `string` (see [Literals](#literals))
 - Untyped float expressions comprise numeric literals, unannotated numeric
   constants and their aliases, unary negation, and `+ - * / %`, with at least
   one float-producing component. They evaluate in `f64`, preserving integer
@@ -2977,8 +3023,15 @@ without `xx` / `.(T)`:
 - Signed to unsigned (`i32` → `u32`)
 - Float to narrower float (`f64` → `f32`)
 - Float to any integer (`f64` → `u16`) — always **truncates**, integral or not
-  (`y : i64 = xx 1.5` → 1); this is the escape hatch from the implicit rule above
+  (`y : i64 = xx 1.5` → 1); this is the escape hatch from the implicit rule above.
+  A NaN, or a value whose truncation is outside the integer type, is a compile
+  error where the conversion is evaluated at compile time (`1e30.(i32)`, or
+  inside a `@run`); at run time the language does not define its result
 - Unsigned to signed of same or narrower width (`u8` → `i8`)
+
+`bool` is not numeric: it converts to and from integers and floats only
+explicitly. `b.(T)` is `1` for `true` and `0` for `false`; `n.(bool)` is
+`n != 0`, so `2.(bool)` is `true`.
 
 Function values carry their parameter types, return type, calling convention and
 C-variadic tail. A matching function slot takes the value unchanged. Raw function
@@ -3026,7 +3079,7 @@ are not written onward.
 | Pair | Comparison type |
 |---|---|
 | Both numeric, same signedness or int↔float | the arithmetic common type (widen; int+float → float) |
-| Signed vs unsigned, same width | error — write `a.(u64) < b` |
+| Signed vs unsigned with no common type | none — exact ([§Arithmetic](#arithmetic)) |
 | Two sequences of one element type (`[N]T`, `[N:X]T`, `[]T`, `[:X]T`, `string`) | their content (§Array Types); an array meets the slice |
 | Two pointers, any pointees (`*T`, `*void`, `[*]T`, `[*:X]T`, fn-ptr) | address bits / address order |
 | Pointer vs integer | error; compare an address read with `@reinterpret(isize, p)` or compare the pointer with `null` |
@@ -3086,6 +3139,9 @@ x.(u8).(i64)            // postfix chains left to right
 The target is exactly one **compile-time** type (a runtime-`Type` target
 would make the expression untypeable). `56.(i8)` lexes as a cast (never a
 float); `0..(5)` stays a range.
+
+A cast of a compile-time constant is a compile-time constant with the value
+the run-time cast computes, so `G : u8 = K.(u8);` initializes a global.
 
 **Interface and boxed views.** `p.(@Interface)` retrieves `{ctx, typeId}`
 field-wise from a handle; `av.(@Any)` retrieves `{data, typeId}` from a box.
@@ -3181,7 +3237,7 @@ and is not reserved — it is an ordinary identifier.
 Examples:
 ```sx
 SOME_INT    :: 0;           // i64
-SOME_STR    :: "Hello";     // [5:0]u8
+SOME_STR    :: "Hello";     // string
 SOME_FLOAT  :: 0.3;         // f64
 SOME_DOUBLE : f64 : 0.9;   // f64 (explicit)
 SOME_FUNC   :: () => 42;    // () -> i64
@@ -3198,10 +3254,10 @@ diagnoses at the use site.
 With an explicit annotation, the initializer must be compatible with the
 annotated type, or the declaration is a compile-time `type mismatch` error: an
 integer fits any integer or float type (`W : f32 : 800`), a float a float type, a
-boolean `bool`, a string literal `string`, `cstring` or a terminated byte
-array, `null` a pointer or optional, and `---` any type. The check is
-type-based: `N : string : M + 2` (with `M :: 2`) is rejected at the
-declaration and registers no usable constant. A constant expression's
+boolean `bool`, a string literal or a constant bound to one any shape the
+literal takes (`T : [:0]u8 : X`), `null` a pointer or optional, and `---` any
+type. The check is type-based: `N : string : M + 2` (with `M :: 2`) is
+rejected at the declaration and registers no usable constant. A constant expression's
 type is its promoted result type (see [Arithmetic](#arithmetic)): `C : i64 : M +
 0.5` is rejected and `F : f64 : M + 0.5` folds to `2.5`.
 
@@ -3224,16 +3280,12 @@ f(K);           // by-value param — copy at the call
 p := *K;        // *[4]i64 — address of the const storage (reads)
 ```
 
-Untyped inference unifies the element types: all ints → `i64`; any float
-present promotes the whole element type to `f64` (int elements convert
-exactly, mirroring "an integer fits any integer or float"); all floats →
-`f64`; `bool` / `string` elements must be homogeneous. Element shapes may
-nest (array-of-structs, array-of-arrays, struct-containing-array). The
-length comes from the element count.
+An untyped array constant has the type its literal has written inline
+([Array Types](#array-types)): with `A : i32 : 5`, `.[1, A]` is `[2]i32`.
+Element shapes may nest (array-of-structs, array-of-arrays,
+struct-containing-array). The length comes from the element count.
 
 Diagnostics (each rejects the declaration):
-- A non-numeric element mix (string + int, bool + int):
-  `constant 'X' mixes incompatible element types — annotate the array type`.
 - A runtime element (a call, a variable read):
   `constant 'X' must be initialized by compile-time constant elements`.
 - A typed declaration whose length disagrees with the initializer:
@@ -4384,6 +4436,26 @@ typed binding `x : f64 = n + 0.5` is exact (not truncated). A mixed-numeric
 expression therefore does not satisfy an integer annotation — `C : i64 : n + 0.5`
 is a `type mismatch` in either operand order.
 
+**Common type.** The operands of an arithmetic or bitwise operator meet at a
+common type. Two integers of one signedness meet at the wider, and an unsigned
+integer meets a strictly wider signed one at the signed type: with `x : i32`
+and `w : i64`, `x + w` and `w + x` are both `i64`. Integers of opposite
+signedness with no common type (`i32` and `u32`) are refused; an explicit cast
+on one side chooses. An untyped operand takes its typed peer's type, so
+`1 + x` is `i32`. A scalar meets a vector at the vector when it converts
+implicitly to the lane type, and is refused otherwise: `x` enters `i64` lanes,
+`w` does not enter `i32` lanes. An untyped operand beside a vector takes the
+lane type. A shift keeps its left operand's type. A shift whose left operand is
+untyped is itself untyped: it takes a typed peer's type, an integer
+destination's type or an explicit cast's type (`.(T)`, `xx`), and is `i64`
+otherwise. With `n : u8`, `z : u16 = (1 << n) + 1` shifts in `u16`, and
+`((1 << n) >> 2).(u8)` in `u8`.
+
+**Opposite signedness.** A comparison of integers of opposite signedness with
+no common type is exact: a negative signed operand is less than every unsigned
+value, and otherwise both compare as unsigned. With `a : i64 = -1` and
+`b : u64 = 0`, `a < b` is `true`.
+
 ### Chained Comparisons
 Comparison operators can be chained. Each operand is evaluated exactly once.
 ```sx
@@ -5285,9 +5357,10 @@ falls through to ufcs functions only for non-members
 handle as its first parameter).
 
 UFCS works with pointer receivers (auto-deref, and auto address-of when
-the first param is `*T` and the receiver is a value) and with **generic**
-functions — the receiver participates in `$T` binding and the call
-monomorphizes exactly like the direct spelling:
+the first param is `*T` and the receiver is a value; a receiver rooted at a
+`::` constant is refused there) and with **generic** functions — the receiver
+participates in `$T` binding and the call monomorphizes exactly like the
+direct spelling:
 
 ```sx
 firstOf :: ufcs (xs: []$T) -> T { xs[0] }
@@ -5331,7 +5404,7 @@ at its `}` instead, and the last expression or declaration before a `}` may drop
 its terminator.
 
 - **Declaration**: `name :: value;` / `name := value;`
-- **Assignment**: `name = value;` / `name += value;` (and other compound assignments). Also supports field targets: `obj.field = value;`
+- **Assignment**: `name = value;` / `name += value;` (and other compound assignments). Also supports field targets: `obj.field = value;`. A compound assignment `x op= v` converts `v` to `x`'s type as `x = v` does, a scalar `v` to a vector `x`'s lane type, then applies `op`: with `x : i64`, `x += 2.0` adds `2` and `x += 2.5` is refused.
 - **Multi-target assignment**: `a, b = b, a;` — all RHS values are evaluated before any stores, enabling swaps without temporaries. Target count must equal value count. Only plain `=` is supported (no compound operators). Each target must be a valid lvalue (variable, field, index, dereference).
 - **Expression statement**: `expr;` — evaluates the expression (last in a block = return value)
 - **Return**: `return expr;` — returns from the enclosing function with the given value. `return;` returns void.
@@ -5567,6 +5640,7 @@ error: 'intern' runs only at compile time — it cannot be called from the
 - `@typeName($T: Type) -> string` — returns the name of type `T` as a string (e.g., `"Point"`)
 - `@typeInfo(T).struct.fields` / `@typeInfo(T).enum.fields` — a type's reflected members. `.struct` lists a struct's, tuple's, or union's fields as the prelude's `FieldInfo` (`.name` — `""` for a positional tuple element —, `.type`, `.offset`, `.index`); `.enum` lists an enum's variants as `VariantInfo` (`.name`, `.payload`, `.value`). The projected variant must be the one `@typeInfo` reflects `T` into. `.len` is the member count, and over a spelled type it is a compile-time integer.
 - `@typeInfo(T).struct.fields[i].type` / `@typeInfo(T).enum.fields[i].payload` — the reflected member's type, itself a type (`@typeInfo(@pointeeType(@typeInfo(T).struct.fields[i].type))`). A tagless variant's payload is `void`.
+- `@typeInfo(T).slice.sentinel` / `.array.sentinel` / `.manyPointer.sentinel` — the terminator `X` of `[:X]T`, `[N:X]T` and `[*:X]T` as a `?i64`, null for an unterminated shape; a single pointer's `.pointer.sentinel` is null.
 - `@typeInfo(tp)` accepts a **runtime `Type` value**: it loads the type's constant record from `__sx_type_infos` (one record per type, bytes matching the `TypeInfo` layout), so kind-first dispatch (`match @typeInfo(tp) { case .struct: |si| { … } }`) and every member read answer identically on compile-time and runtime `Type`s.
 - `@anyElement(elem: Type, av: any, idx: i64) -> any` — element view into an array/vector held by `av`: pure stride math, `{elem, @rawAnyData(av) + idx * @sizeOf(elem)}`. `elem` may be a compile-time type (the size folds to a constant) or a runtime `Type` (the size reads the runtime table). Bounds are the caller's responsibility (same OOB rule as the member views); vector lanes are packed, so the same stride walks both arrays and vectors.
 - `@rawAnyData(av: any) -> *void` / `@rawMakeAny(tp: Type, data: *void) -> any` — the raw layer over the `any` view's two words. The `{tag, data}` layout itself stays private; these are the stable contract, and `av.(@Any)` retrieves both words as one `{data, typeId}` pair (see Raw-view retrieval, §Postfix Cast). `@rawMakeAny` is UNCHECKED at runtime — the caller asserts `data` points at a live, aligned value of `tp` covering `@sizeOf(tp)` bytes — but a non-pointer `data` argument is a compile error. Three sharp edges: **tags are per-build values** (a serializer writes type names and re-resolves on load — never raw tags); **byte copies through the data pointer are shallow** (interior pointers — string/slice data, nested views — are not followed; a deep copy walks `@typeInfo`); **a view carries no lifetime** (assembling or copying a view never transfers or extends ownership of the referent).
@@ -6246,9 +6320,12 @@ locally-unwrapped optionals).
 
 | Function | Purpose |
 |----------|---------|
-| `process.run(cmd: [:0]u8) -> ?process.ProcessResult` | `popen` shell command, capture stdout + exit |
-| `process.env(name: [:0]u8) -> ?string` | `getenv` (null if unset) |
+| `process.run(cmd: string) -> ?process.ProcessResult` | `popen` shell command, capture stdout + exit |
+| `process.env(name: string) -> ?string` | `getenv` (null if unset) |
 | `process.findExecutable(name) -> ?string` | `command -v <name>` via shell |
+
+Every path, command and name is a `string`, and only a returned `string`
+(`readFile`, `stdout`) is the caller's to free.
 
 `process.ProcessResult` is `{ exitCode: i32, stdout: string }`. The post-link
 bundler invokes `codesign`, `plutil`, `security`, `aapt2`, `javac`,
