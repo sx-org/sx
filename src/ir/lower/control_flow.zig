@@ -291,11 +291,29 @@ fn lowerCondition(self: *Lowering, node: *const Node, has_binding: bool) Lowered
     return .{ .value = value, .test_bit = test_bit, .ty = ty };
 }
 
+/// What an `if v := cond` / `while v := cond` binding holds for a condition of
+/// type `cond_ty`.
+fn conditionPayloadType(self: *Lowering, cond_ty: TypeId) TypeId {
+    if (cond_ty.isBuiltin()) return cond_ty;
+    const info = self.module.types.get(cond_ty);
+    return if (info == .optional) info.optional.child else cond_ty;
+}
+
+/// The then-branch's type, with the `if` binding (if any) in scope, bound by
+/// type only.
+pub fn thenBranchType(self: *Lowering, ie: *const ast.IfExpr, cond_ty: TypeId) TypeId {
+    const name = ie.binding_name orelse return self.inferExprType(ie.then_branch);
+    var scope = Scope.init(self.alloc, self.scope, &self.next_binding_id);
+    defer scope.deinit();
+    scope.put(name, .{ .ref = Ref.none, .ty = conditionPayloadType(self, cond_ty), .is_alloca = false });
+    const saved_scope = self.scope;
+    defer self.scope = saved_scope;
+    self.scope = &scope;
+    return self.inferExprType(ie.then_branch);
+}
+
 fn bindConditionPayload(self: *Lowering, cond: LoweredCondition, name: []const u8) void {
-    const inner_ty = if (!cond.ty.isBuiltin()) blk: {
-        const info = self.module.types.get(cond.ty);
-        break :blk if (info == .optional) info.optional.child else cond.ty;
-    } else cond.ty;
+    const inner_ty = conditionPayloadType(self, cond.ty);
     const unwrapped = self.builder.emit(.{ .optional_unwrap = .{ .operand = cond.value } }, inner_ty);
     const slot = self.builder.alloca(inner_ty);
     self.builder.store(slot, unwrapped);
@@ -407,7 +425,7 @@ pub fn lowerIfExpr(self: *Lowering, node: *const Node, demand: lower_stmt.TailDe
     // arm's ACTUAL lowered value below and the merge phi patched to match.
     var result_type: TypeId = if (is_value) blk: {
         var t: TypeId = .unresolved;
-        if (!then_div) t = self.inferExprType(ie.then_branch);
+        if (!then_div) t = thenBranchType(self, ie, cond_lowered.ty);
         if ((t == .void or t == .unresolved or t == .noreturn) and has_else and !else_div) {
             const et = self.inferExprType(ie.else_branch.?);
             if (et != .void and et != .noreturn) t = et;

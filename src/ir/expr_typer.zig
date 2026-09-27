@@ -189,7 +189,7 @@ pub const ExprTyper = struct {
                 // `continue`) unifies away, so the expression takes the other
                 // branch's type; both diverging → `noreturn`.
                 if (ie.else_branch) |eb| {
-                    const then_ty = self.l.inferExprType(ie.then_branch);
+                    const then_ty = self.l.thenBranchType(&ie, self.l.inferExprType(ie.condition));
                     if (then_ty == .noreturn) return self.l.inferExprType(eb);
                     const else_ty = self.l.inferExprType(eb);
                     if (else_ty == .noreturn) return then_ty;
