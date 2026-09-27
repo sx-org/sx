@@ -29,7 +29,7 @@ Three things to know up front:
 1. **The body is a brace block of comma-separated parts:** the template
    string first, then operands, then an optional `clobbers(.…)` clause.
 2. **Each operand is tagged by role**, not by position: `-> Type` is a
-   value output, `= expr` is an input, `-> @place` writes through to
+   value output, `= expr` is an input, `-> *place` writes through to
    existing storage. The list is flat and order-independent — there are
    no positional `:` sections.
 3. **The outputs decide the result.** Zero outputs → `void` (and the
@@ -207,10 +207,10 @@ and `.cc` means "the condition flags are modified."
 
 ---
 
-## Writing through memory — `-> @place`
+## Writing through memory — `-> *place`
 
 Sometimes the asm should write into existing storage (a local, a struct
-field) rather than *return* a value. `-> @place` does that: the place
+field) rather than *return* a value. `-> *place` does that: the place
 output does **not** join the result. There are three forms,
 distinguished by the constraint.
 
@@ -228,7 +228,7 @@ compute :: () -> i64 {
         mov %[o], #37
 ASM,
         [m] "=r" -> i64,        // value output → returned into mainVal
-        [o] "=r" -> @other,     // place output → stored through @other
+        [o] "=r" -> *other,     // place output → stored through other
     };
     return mainVal + other;     // 5 + 37 = 42
 }
@@ -246,7 +246,7 @@ in, the asm updates it in place, and the result is stored back.
 // increment-in-place: x is loaded, the asm adds 1, the result is stored back
 bump :: () -> i64 {
     x : i64 = 41;
-    asm volatile { "add %[v], %[v], #1", [v] "+r" -> @x };
+    asm volatile { "add %[v], %[v], #1", [v] "+r" -> *x };
     return x;   // 42
 }
 ```
@@ -265,7 +265,7 @@ poke :: () -> i64 {
         mov x9, #42
         str x9, %[out]
 ASM,
-        [out] "=*m" -> @x,
+        [out] "=*m" -> *x,
         clobbers(.x9),
     };
     return x;   // 42
@@ -274,11 +274,11 @@ ASM,
 
 **The place must be mutable storage.** Taking the address of a scalar
 `::` constant has no meaning — a scalar constant folds to its value and
-has no storage — so `-> @SOME_CONST` is a compile error:
+has no storage — so `-> *SOME_CONST` is a compile error:
 
 ```
 cannot take the address of constant 'SOME_CONST' — a scalar '::'
-constant has no storage (use a '=' variable or a local copy)
+constant has no storage (use a '=' variable or a local copy for mutable data)
 ```
 
 ---
@@ -415,7 +415,7 @@ q, r := divmod(17, 5);              // (3, 2)
   AT&T.
 - **List everything you trash** in `clobbers(.…)` — scratch registers,
   `.cc`, and `.memory` if the asm touches memory the compiler can't see.
-- **`-> @place` writes storage; pick the form:** `=` (compute then
+- **`-> *place` writes storage; pick the form:** `=` (compute then
   store), `+` (read-modify-write), `=*m` (write through the address).
   The place must be mutable — not a scalar `::` constant.
 - **Global `asm { … }`** defines symbols; import them with a lib-less
@@ -430,7 +430,7 @@ q, r := divmod(17, 5);              // (3, 2)
 - [inline-asm-design.md](../design/inline-asm-design.md) — the design rationale and
   LLVM mapping.
 - `examples/16xx-platform-asm-*` — the full, runnable example matrix
-  (basic in/out, multi-return, the three `-> @place` forms, global asm, the
+  (basic in/out, multi-return, the three `-> *place` forms, global asm, the
   x86_64 syscall, and the comptime-boundary guard).
 - The "Inline Assembly" section of [readme.md](../readme.md) for a
   one-screen overview.
