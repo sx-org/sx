@@ -1403,7 +1403,7 @@ pub fn registerConstAliases(self: *Lowering, decls: []const *const Node) void {
 pub fn registerTypedModuleConst(self: *Lowering, cd: *const ast.ConstDecl) void {
     const ta = cd.type_annotation orelse return;
     switch (cd.value.data) {
-        .int_literal, .float_literal, .bool_literal, .string_literal, .char_literal, .undef_literal, .null_literal, .binary_op, .unary_op, .struct_literal, .postfix_cast, .identifier, .field_access => {},
+        .int_literal, .float_literal, .bool_literal, .string_literal, .char_literal, .undef_literal, .null_literal, .binary_op, .unary_op, .struct_literal, .postfix_cast, .identifier, .field_access, .index_expr => {},
         .call => if (Lowering.layoutQuery(cd.value) == null) return,
         else => return,
     }
