@@ -16,7 +16,7 @@ error: cannot initialize 'C' of type '?*u8' with a value of type 'string'
  5 | C : ?*u8 = "lit";
    |            ^^^^^
 
-error: a value of type '[3:0]u8' does not coerce to '[4:0]u8': no conversion adds a terminator
+error: cannot initialize 'D' of type '[4:0]u8' with a value of type '[3:0]u8'
   --> examples/diagnostics/2812-diagnostics-string-literal-global-mismatch.sx:6:15
    |
  6 | D : [4:0]u8 = "lit";

@@ -338,8 +338,10 @@ pub const CoercionResolver = struct {
                 self.l.module.types.sameType(src.failable.value, dst.failable.value) and
                 lower_error.errorSetValueRetypeIsLegal(self.l, src.failable.err, dst.failable.err)) return .failable_retype;
         }
-        if (self.l.module.types.sentinelOf(dst_ty) != null and
-            src_ty != .void and src_ty != .noreturn and src_ty != .unresolved) return .adds_terminator_reject;
+        if (self.l.module.types.sentinelOf(dst_ty)) |want| {
+            const holds = if (self.l.module.types.sentinelOf(src_ty)) |have| have == want else false;
+            if (!holds and src_ty != .void and src_ty != .noreturn and src_ty != .unresolved) return .adds_terminator_reject;
+        }
         return .none;
     }
 
