@@ -1,0 +1,12 @@
+// An optional key hashes its payload as the payload hashes, so an equal key in
+// another buffer finds the entry, and a null key finds its own.
+
+@import "modules/std.sx";
+
+main :: () -> i32 {
+    m : HashMap(?string, i64) = .{};
+    m.put(concat("o", "p"), 1);
+    m.put(null, 2);
+    print("{} {}\n", m.get("op") ?? -1, m.get(null) ?? -1);
+    0
+}
