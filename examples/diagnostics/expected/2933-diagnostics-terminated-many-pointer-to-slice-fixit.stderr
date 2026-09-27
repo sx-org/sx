@@ -1,0 +1,5 @@
+error: a '[*:0]u8' does not coerce to '[:0]u8' implicitly (it carries no length) — scan it to its terminator: p[0..]
+  --> examples/diagnostics/2933-diagnostics-terminated-many-pointer-to-slice-fixit.sx:6:5
+   |
+ 6 |     d : [:0]u8 = p;
+   |     ^^^^^^^^^^^^^^^
