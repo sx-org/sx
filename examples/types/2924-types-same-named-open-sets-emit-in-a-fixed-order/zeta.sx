@@ -1,0 +1,10 @@
+View :: @OpenSet(.{ max = 8 }) {
+    size :: (self: *Self) -> i64;
+}
+
+M1 :: @OpenVariant(View) {
+    n: i64 = 1;
+    size :: (self: *M1) -> i64 => self.n;
+}
+
+kind :: (v: View) -> Type => @typeOf(v);
