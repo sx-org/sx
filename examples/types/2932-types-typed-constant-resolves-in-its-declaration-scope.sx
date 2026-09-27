@@ -1,0 +1,12 @@
+// A typed constant's initializer resolves its names where the constant is
+// declared, not where it is read.
+
+@import "modules/std.sx";
+
+K :: 3;
+KU : u8 : K + 1;
+
+main :: () -> i32 {
+    inline for K in 0..2 { print("{}\n", KU); }
+    0
+}
