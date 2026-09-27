@@ -1,0 +1,12 @@
+// A value `match` whose arms end in block-local constants takes its type from
+// the arms' values; under a cast it converts from that type.
+
+@import "modules/std.sx";
+
+main :: () -> i32 {
+    x := 1;
+    y := match x { case 1: { K :: 300; K } else: { J :: 1; J } };
+    z := (match x { case 1: { K :: 300; K } else: { J :: 1; J } }).(u8);
+    print("{} {} {} {}\n", y, @typeName(@typeOf(y)), z, @typeName(@typeOf(z)));
+    0
+}

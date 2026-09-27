@@ -1471,9 +1471,10 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     // value-position match (`force_block_value`) needs a concrete result —
     // use the contextually expected type. A statement match with non-value
     // arms is a side-effect (void); don't let a leaked `target_type` turn
-    // it into a value match.
+    // it into a value match. A cast's destination is no context for it.
     if (inferred_result == .unresolved) {
-        inferred_result = if (self.force_block_value) (self.target_type orelse .unresolved) else .void;
+        const context = if (self.cast_operand == null) self.target_type else null;
+        inferred_result = if (self.force_block_value) (context orelse .unresolved) else .void;
     }
     // Optional lift (match analog): a value-position `match` whose
     // only value-bearing arms are `null` — all arms `null`, or `null` + arms
@@ -1527,7 +1528,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
         }
     }
     const is_value = if (error_only) false else if (is_type_match) self.force_block_value else (self.force_block_value or (inferred_result != .void and inferred_result != .unresolved));
-    const result_type: TypeId = if (is_value) contextualArmType(self, inferred_result) else .void;
+    var result_type: TypeId = if (is_value) contextualArmType(self, inferred_result) else .void;
     // A fully-diverging match (`result_type == .noreturn` — every arm
     // `return`s / `raise`s / etc.) produces no value, so it builds no
     // merge phi; its arms terminate and the merge block is unreachable.
@@ -2095,7 +2096,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             // (and negated literals) in the arm pick the right width — the
             // phi operands must all match `result_type`.
             const saved_arm_target = self.target_type;
-            self.target_type = result_type;
+            self.target_type = if (result_type == .unresolved) null else result_type;
             const maybe_v = self.lowerBlockValue(arm.body);
             self.target_type = saved_arm_target;
             self.current_match_tags = saved_match_tags;
@@ -2111,6 +2112,12 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                 else
                     self.builder.constInt(0, result_type);
                 const v_ty = self.builder.getRefType(v);
+                // An arm whose type could not be inferred statically (a tail
+                // reading a block-local) resolves the merge with its value.
+                if (result_type == .unresolved and v_ty != .void and v_ty != .unresolved and v_ty != .noreturn) {
+                    result_type = v_ty;
+                    self.setMergeParamType(merge_bb, result_type);
+                }
                 v = self.coerceToType(v, v_ty, result_type);
                 const coerced_ty = self.builder.getRefType(v);
                 if (coerced_ty != result_type and !self.conversionAvailable(coerced_ty, result_type, .implicit)) {
