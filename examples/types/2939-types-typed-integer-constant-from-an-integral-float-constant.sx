@@ -1,0 +1,13 @@
+// A typed integer constant bound to an untyped integral float constant holds
+// its integer, as a literal initializer does.
+
+@import "modules/std.sx";
+
+M :: 4.0;
+K : u8 : M;
+
+main :: () -> i32 {
+    x := K;
+    print("{} {}\n", x, @typeName(@typeOf(x)));
+    0
+}
