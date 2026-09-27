@@ -10,7 +10,7 @@ error: cannot coerce a value of type 'string' to 'i64': no implicit conversion a
 11 | L : Foo : .{ x = "ab" };
    |                  ^^^^
 
-error: a value of type '[3:0]u8' does not coerce to '[4:0]u8': no conversion adds a terminator
+error: cannot coerce a value of type '[3:0]u8' to '[4:0]u8': no implicit conversion applies
   --> examples/diagnostics/2816-diagnostics-constant-leaf-mismatch.sx:6:20
    |
  6 | A : [2][4:0]u8 = .["abc", "def"];
