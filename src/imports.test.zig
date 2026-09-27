@@ -541,6 +541,33 @@ test "canonicalizePath: absolute paths under CWD return one caller-owned allocat
     try std.testing.expectEqualStrings("a.sx", canonical);
 }
 
+extern "c" fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int;
+extern "c" fn unsetenv(name: [*:0]const u8) c_int;
+
+test "canonicalizePath: a $PWD other than the real cwd respells nothing" {
+    const alloc = std.testing.allocator;
+    const cwd = imports.processCwd(alloc) orelse return error.MissingCwd;
+    defer alloc.free(cwd);
+    const parent = std.fs.path.dirname(cwd) orelse return error.SkipZigTest;
+
+    const saved: ?[:0]u8 = if (std.c.getenv("PWD")) |p| try alloc.dupeZ(u8, std.mem.span(p)) else null;
+    defer if (saved) |p| {
+        _ = setenv("PWD", p, 1);
+        alloc.free(p);
+    } else {
+        _ = unsetenv("PWD");
+    };
+    const parent_z = try alloc.dupeZ(u8, parent);
+    defer alloc.free(parent_z);
+    _ = setenv("PWD", parent_z, 1);
+
+    const outside = try std.fmt.allocPrint(alloc, "{s}/elsewhere/lib", .{parent});
+    defer alloc.free(outside);
+    const canonical = try imports.canonicalizePath(alloc, outside);
+    defer alloc.free(canonical);
+    try std.testing.expectEqualStrings(outside, canonical);
+}
+
 test "sameFileIdentity: distinct spellings of one file match; distinct and unstattable files do not" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
