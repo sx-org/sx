@@ -892,7 +892,7 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
                     const ref_ty = self.builder.getRefType(ref);
                     if (!ref_ty.isBuiltin()) {
                         const ref_info = self.module.types.get(ref_ty);
-                        if (ref_info == .array) {
+                        if (ref_info == .array and !self.coercionResolver().classify(ref_ty, ty).refuses()) {
                             ref = self.arrayToSliceView(ref, ref_ty, ty) orelse
                                 self.builder.emit(.{ .array_to_slice = .{ .operand = ref } }, ty);
                         }

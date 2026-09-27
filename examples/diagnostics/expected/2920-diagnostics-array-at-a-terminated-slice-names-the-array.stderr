@@ -1,0 +1,5 @@
+error: a value of type '[3]u8' does not coerce to '[:1]u8': no conversion adds a terminator
+  --> examples/diagnostics/2920-diagnostics-array-at-a-terminated-slice-names-the-array.sx:6:5
+   |
+ 6 |     t : [:1]u8 = plain;
+   |     ^^^^^^^^^^^^^^^^^^^
