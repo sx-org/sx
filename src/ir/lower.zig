@@ -2954,13 +2954,15 @@ pub const Lowering = struct {
     /// write would be dropped; every other container carries its pointer in the
     /// value itself.
     pub fn indexBase(self: *Lowering, node: *const ast.Node, obj_ty: TypeId, narrowed_child: ?TypeId) Ref {
-        const is_array = !obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .array;
-        if (narrowed_child) |child| {
-            if (is_array) return self.narrowedContainerPtr(node, child);
-            return self.derefPtrToSliceIndexBase(self.lowerNarrowedContainer(node, child), obj_ty);
-        }
-        if (is_array) return self.getExprAlloca(node) orelse self.lowerExprAsPtr(node);
+        if (!obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .array) return self.containerStorage(node, narrowed_child);
+        if (narrowed_child) |child| return self.derefPtrToSliceIndexBase(self.lowerNarrowedContainer(node, child), obj_ty);
         return self.derefPtrToSliceIndexBase(self.lowerExpr(node), obj_ty);
+    }
+
+    /// The address of container `node`'s own storage.
+    pub fn containerStorage(self: *Lowering, node: *const ast.Node, narrowed_child: ?TypeId) Ref {
+        if (narrowed_child) |child| return self.narrowedContainerPtr(node, child);
+        return self.getExprAlloca(node) orelse self.lowerExprAsPtr(node);
     }
 
     /// Load the slice value behind a `*[]T` index base. Other indexable bases

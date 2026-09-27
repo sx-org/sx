@@ -1,0 +1,18 @@
+// A vector lane write changes only that lane, whatever the lane width.
+
+@import "modules/std.sx";
+
+I7 :: @int(7, .signed);
+
+main :: () -> i32 {
+    v : @Vector(4, i8) = .[1, 2, 3, 4];
+    v[1] = -64;
+    print("{}\n", v);
+
+    w : @Vector(4, I7) = .[1, 2, 3, 4];
+    i := 2;
+    w[i] = -60;
+    w.w = 9;
+    print("{} {} {} {}\n", w[0], w[1], w[2], w[3]);
+    0
+}
