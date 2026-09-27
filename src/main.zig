@@ -267,7 +267,7 @@ pub fn main(init: std.process.Init) !void {
     } else if (std.mem.eql(u8, command, "ir")) {
         emitIR(allocator, io, path, target_config, stdlib_paths) catch std.process.exit(1);
     } else if (std.mem.eql(u8, command, "ir-dump")) {
-        dumpSxIR(allocator, io, path, stdlib_paths) catch std.process.exit(1);
+        dumpSxIR(allocator, io, path, target_config, stdlib_paths) catch std.process.exit(1);
     } else if (std.mem.eql(u8, command, "asm")) {
         emitAsm(allocator, io, path, target_config, stdlib_paths) catch std.process.exit(1);
     } else if (std.mem.eql(u8, command, "run")) {
@@ -600,9 +600,9 @@ fn compilePipeline(allocator: std.mem.Allocator, io: std.Io, input_path: []const
     return comp;
 }
 
-fn dumpSxIR(allocator: std.mem.Allocator, io: std.Io, input_path: []const u8, stdlib_paths: []const []const u8) !void {
+fn dumpSxIR(allocator: std.mem.Allocator, io: std.Io, input_path: []const u8, target_config: sx.target.TargetConfig, stdlib_paths: []const []const u8) !void {
     const source = try readSource(allocator, io, input_path);
-    var comp = sx.core.Compilation.init(allocator, io, input_path, source, .{}, stdlib_paths);
+    var comp = sx.core.Compilation.init(allocator, io, input_path, source, target_config, stdlib_paths);
     defer comp.deinit();
 
     comp.parse() catch {
