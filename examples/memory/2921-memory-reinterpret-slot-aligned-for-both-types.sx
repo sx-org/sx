@@ -1,0 +1,7 @@
+// `@reinterpret` loads its result from a slot aligned for both the value's type
+// and the result's.
+
+main :: () -> i32 {
+    bytes : [4]u8 = .[1, 0, 0, 0];
+    @reinterpret(i32, bytes)
+}

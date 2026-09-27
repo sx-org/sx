@@ -4048,9 +4048,18 @@ fn lowerReinterpretIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
         if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "@reinterpret needs two types of the same, non-zero size: '{s}' is {d} bytes, the value's '{s}' is {d}", .{ self.formatTypeName(dst), dst_size, self.formatTypeName(src), src_size });
         return self.builder.constUndef(dst);
     }
-    const slot = self.builder.alloca(src);
-    self.builder.store(slot, val);
-    return self.builder.load(slot, dst);
+    // The slot is typed by the more strictly aligned of the two, so both the
+    // store and the load are aligned.
+    const slot_ty = if (self.typeAlignBytes(dst) > self.typeAlignBytes(src)) dst else src;
+    const slot = self.builder.alloca(slot_ty);
+    self.builder.store(retypeSlot(self, slot, slot_ty, src), val);
+    return self.builder.load(retypeSlot(self, slot, slot_ty, dst), dst);
+}
+
+fn retypeSlot(self: *Lowering, slot: Ref, slot_ty: TypeId, ty: TypeId) Ref {
+    if (slot_ty == ty) return slot;
+    const ptr_ty = self.module.types.ptrTo(ty);
+    return self.builder.emit(.{ .bitcast = .{ .operand = slot, .from = self.module.types.ptrTo(slot_ty), .to = ptr_ty } }, ptr_ty);
 }
 
 pub fn intCastErrorSet(self: *Lowering) ?TypeId {

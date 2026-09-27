@@ -2388,6 +2388,8 @@ pub const Ops = struct {
         } else {
             // Union [N x i8] — alloca, store, reinterpret-load
             const tmp = self.e.buildEntryAlloca(base_ty, "ug.tmp");
+            const dl = c.LLVMGetModuleDataLayout(self.e.llvm_module);
+            c.LLVMSetAlignment(tmp, @max(c.LLVMABIAlignmentOfType(dl, base_ty), c.LLVMABIAlignmentOfType(dl, result_ty)));
             _ = c.LLVMBuildStore(self.e.builder, base, tmp);
             self.e.mapRef(c.LLVMBuildLoad2(self.e.builder, result_ty, tmp, "ug.val"));
         }
