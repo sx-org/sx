@@ -34,7 +34,7 @@ main :: () -> i32 {
     print("{}\n", describe(1.5));
     print("static {}\n", STATIC);
 
-    // Two static operands fold; the `describe` calls compare tags at runtime.
+    // Two static operands fold; the `describe` calls compare at runtime.
     print("identity {} {}\n", @typeEq(Point, @typeOf(p)), @typeEq(i64, i32));
     return 0;
 }

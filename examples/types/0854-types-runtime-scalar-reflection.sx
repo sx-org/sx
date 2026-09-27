@@ -1,7 +1,8 @@
 // The scalar reflection family accepts RUNTIME `Type` values: @sizeOf /
-// @alignOf / @isFlags read tag-indexed tables; @typeEq compares tags. Includes
-// the parity pins: for each shape the RUNTIME answer equals the COMPTIME fold
-// (padded, nested, union — the layouts most likely to diverge).
+// @alignOf / @isFlags read tag-indexed tables; @typeEq compares the canonical
+// types the tags name. Includes the parity pins: for each shape the RUNTIME
+// answer equals the COMPTIME fold (padded, nested, union — the layouts most
+// likely to diverge).
 @import "modules/std.sx";
 
 Padded  :: struct { a: u8; b: i64; c: u16; }        // tail+interior padding
