@@ -1,0 +1,10 @@
+// A guard-narrowed optional compares by `==` as its payload, as it does by `<`.
+
+@import "modules/std.sx";
+
+eq :: (o: ?i32, want: i64) -> bool { if o == null { return false; } o == want }
+
+main :: () -> i32 {
+    print("{} {} {}\n", eq(3, 3), eq(3, 4), eq(null, 3));
+    0
+}

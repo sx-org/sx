@@ -5563,6 +5563,14 @@ pub fn lowerBinaryOp(self: *Lowering, node: *const Node) Ref {
     return lowerBinaryValues(self, bop.op, lhs, lhs_ty, bop.lhs.span, rhs, rhs_ty, bop.rhs.span);
 }
 
+/// A guard-narrowed optional operand's payload: it compares as its payload.
+fn narrowedPayload(self: *Lowering, operand: Ref, ty: TypeId) ?struct { ref: Ref, ty: TypeId } {
+    if (ty.isBuiltin() or !self.narrowed_refs.contains(operand)) return null;
+    const info = self.module.types.get(ty);
+    if (info != .optional) return null;
+    return .{ .ref = self.builder.emit(.{ .optional_unwrap = .{ .operand = operand } }, info.optional.child), .ty = info.optional.child };
+}
+
 /// `lhs op rhs` over operands already lowered.
 fn lowerBinaryValues(self: *Lowering, op: ast.BinaryOp.Op, lhs_value: Ref, lhs_ty: TypeId, lhs_span: ast.Span, rhs_value: Ref, rhs_ty: TypeId, rhs_span: ast.Span) Ref {
     var lhs = lhs_value;
@@ -5573,10 +5581,11 @@ fn lowerBinaryValues(self: *Lowering, op: ast.BinaryOp.Op, lhs_value: Ref, lhs_t
     // payload without a presence guard, so the no-implicit-unwrap doctrine
     // (0179/0185) is untouched: arithmetic and ordering on un-narrowed
     // optionals still reject below. Presence tests (`x == null`) returned
-    // earlier. A guard-narrowed optional operand takes this path too — the
-    // presence branch just folds to the payload compare.
+    // earlier.
     if (op == .eq or op == .neq) {
         const l_actual = if (lhs_ty == .unresolved) self.builder.getRefType(lhs) else lhs_ty;
+        if (narrowedPayload(self, lhs, l_actual)) |p| return lowerBinaryValues(self, op, p.ref, p.ty, lhs_span, rhs, rhs_ty, rhs_span);
+        if (narrowedPayload(self, rhs, rhs_ty)) |p| return lowerBinaryValues(self, op, lhs, lhs_ty, lhs_span, p.ref, p.ty, rhs_span);
         const l_opt: ?TypeId = if (!l_actual.isBuiltin() and self.module.types.get(l_actual) == .optional)
             self.module.types.get(l_actual).optional.child
         else
