@@ -228,6 +228,12 @@ pub fn coerceConstant(self: *Lowering, value: inst_mod.ConstantValue, src: TypeI
             .{ .float = 0 }
         else
             null,
+        .optional_to_optional => blk: {
+            const payload = self.constantPayload(value, src) orelse break :blk self.nullConstant(dst);
+            const dst_child = self.module.types.get(dst).optional.child;
+            const converted = coerceConstant(self, payload, self.module.types.get(src).optional.child, dst_child) orelse break :blk null;
+            break :blk self.someConstant(dst_child, converted);
+        },
         else => null,
     };
 }

@@ -1,0 +1,14 @@
+// A global initialized by an optional of another payload type holds the
+// converted payload, over a flagged and a spare-bit optional alike.
+
+@import "modules/std.sx";
+
+I7 :: @int(7, .signed);
+
+G : ?i64 = 5.(?i32);
+H : ?i64 = (-3).(?I7);
+
+main :: () -> i32 {
+    print("{} {}\n", G ?? -1, H ?? -100);
+    0
+}
