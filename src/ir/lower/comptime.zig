@@ -2392,7 +2392,7 @@ pub fn foldSourceConstInt(self: *Lowering, name: []const u8, frame: ?*const Cons
             if (sel.info.ty == .f32) return program_index_mod.floatToIntExact(program_index_mod.evalConstFloatInit(sel.info.value, ctx, sel.info.ty) orelse return null);
             return program_index_mod.evalConstIntExpr(sel.info.value, ctx);
         },
-        .own_opaque, .ambiguous, .none => null,
+        .own_opaque, .not_a_const, .ambiguous, .none => null,
     };
 }
 
@@ -2511,7 +2511,7 @@ pub fn foldSourceConstFloat(self: *Lowering, name: []const u8, frame: ?*const Co
             defer restore.unpin();
             return program_index_mod.evalConstFloatInit(sel.info.value, SourceConstCtx{ .lowering = self, .frame = &f }, sel.info.ty);
         },
-        .own_opaque, .ambiguous, .none => null,
+        .own_opaque, .not_a_const, .ambiguous, .none => null,
     };
 }
 
@@ -2527,7 +2527,7 @@ pub fn sourceConstIsFloatTyped(self: *Lowering, name: []const u8, frame: ?*const
             defer restore.unpin();
             return program_index_mod.isFloatValuedExpr(sel.info.value, SourceConstCtx{ .lowering = self, .frame = &f });
         },
-        .own_opaque, .ambiguous, .none => false,
+        .own_opaque, .not_a_const, .ambiguous, .none => false,
     };
 }
 
@@ -2550,6 +2550,10 @@ const ConstAuthor = union(enum) {
     /// const). The own author owns the name: the read must NOT borrow another
     /// module's same-named const, so callers treat it as unresolvable.
     own_opaque,
+    /// The reader's OWN module authors `name` as something other than a const
+    /// — a type, a function, a global, a namespace. That author hides every
+    /// flat import's same-named const, so no const answers for the name.
+    not_a_const,
     ambiguous,
     none,
 };
@@ -2560,7 +2564,8 @@ const ConstAuthor = union(enum) {
 /// collector and reads the value from the SELECTED author's per-source cache
 /// (`module_consts_by_source`), never the global last-wins `module_const_map`:
 ///
-/// - **own-wins**: the querying module's OWN const author is selected outright.
+/// - **own-wins**: the querying module's OWN author is selected outright; one
+///   of another kind → `.not_a_const`.
 /// - else the FLAT-import-reachable const authors: exactly one → it; ≥2 distinct
 /// → `.ambiguous` (never a silent first-/last-wins pick).
 /// - none visible → `.none` (a namespaced-only const must be qualified `ns.X`;
@@ -2585,6 +2590,7 @@ pub fn selectModuleConst(self: *Lowering, name: []const u8) ConstAuthor {
         // name blocks borrowing a flat import's / the global registration's
         // same-named const.
         if (o.raw == .const_decl) return .own_opaque;
+        return .not_a_const;
     }
     var the_one: ?SelectedConst = null;
     var count: usize = 0;
@@ -2617,7 +2623,7 @@ fn selectShapedConst(self: *Lowering, name: []const u8) ?SelectedConst {
     while (hops < 64) : (hops += 1) {
         const sel = switch (self.selectModuleConst(current)) {
             .resolved => |s| s,
-            .own_opaque, .ambiguous, .none => return null,
+            .own_opaque, .not_a_const, .ambiguous, .none => return null,
         };
         if (sel.info.value.data != .identifier) return sel;
         const id = sel.info.value.data.identifier;

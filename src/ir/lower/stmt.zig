@@ -1555,7 +1555,7 @@ pub fn rootIsConstant(self: *Lowering, root: []const u8) bool {
     }
     return switch (self.selectModuleConst(root)) {
         .resolved, .own_opaque => true,
-        .ambiguous, .none => false,
+        .not_a_const, .ambiguous, .none => false,
     };
 }
 

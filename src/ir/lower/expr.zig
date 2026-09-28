@@ -2953,7 +2953,7 @@ pub fn resolveArrayLiteralType(self: *Lowering, te: *const Node) TypeId {
             // with the leaf / 0755); a single source-keyed author resolves to
             // ITS TypeId instead of a global `findByName` first-/last-wins pick.
             switch (self.headTypeGate(id.name, te.span)) {
-                .ambiguous, .not_visible => return .unresolved,
+                .ambiguous, .not_visible, .not_a_type => return .unresolved,
                 .resolved => |tid| return tid,
                 .proceed => {},
             }
@@ -3996,6 +3996,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                     // shape, e.g. an array const) — fall through; the tail of
                     // identifier lowering diagnoses it as unresolved.
                     .own_opaque => {},
+                    .not_a_const => {},
                     .ambiguous => {
                         if (self.diagnostics) |d|
                             d.addFmt(.err, node.span, "'{s}' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import", .{id.name});
@@ -4173,7 +4174,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
             // param / undeclared name → `.proceed`, falling through below.
             const ty = blk_ty: {
                 switch (self.headTypeGate(id.name, node.span)) {
-                    .ambiguous, .not_visible => break :blk self.emitPlaceholder(id.name),
+                    .ambiguous, .not_visible, .not_a_type => break :blk self.emitPlaceholder(id.name),
                     .resolved => |tid| break :blk_ty tid,
                     .proceed => {},
                 }
@@ -4273,7 +4274,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                 // not a storage-backed array/struct const — those resolve above).
                 // Same defect as the local case: without storage, `@FORTY` would
                 // become `inttoptr (i64 <value> to ptr)`. Diagnose.
-                if (self.program_index.lookup(.module_const, id_name) != null) {
+                if (self.program_index.lookup(.module_const, id_name) != null and self.selectModuleConst(id_name) != .not_a_const) {
                     if (self.diagnostics) |d|
                         d.addFmt(.err, node.span, "cannot take the address of constant '{s}' — a scalar '::' constant has no storage (use a '=' variable or a local copy for mutable data)", .{id_name});
                     break :blk self.emitPlaceholder("addr_of_const");

@@ -1,0 +1,2 @@
+N :: struct { a: i64; }
+M :: struct { b: i64; }

@@ -3282,7 +3282,7 @@ pub const Lowering = struct {
         if (self.program_index.lookup(.module_const, name) != null) {
             switch (self.selectModuleConst(name)) {
                 .resolved, .own_opaque => return true,
-                .ambiguous, .none => {},
+                .not_a_const, .ambiguous, .none => {},
             }
         }
         return false;

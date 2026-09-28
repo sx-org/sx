@@ -1,0 +1,19 @@
+// A file's own declaration hides a flat import's same-named declaration of
+// another kind: `K` is the own struct, `F` and `*F` the own function, and
+// `Box(i64)` instantiates the own generic struct instead of calling the
+// imported `Box`.
+@import "modules/std.sx";
+@import "own-declaration-hides-flat-import-of-another-kind/dep.sx";
+
+K :: struct { x: i64; }
+F :: () -> i64 { 42 }
+Box :: struct($T: Type) { v: T; }
+
+main :: () -> i32 {
+    v := K;
+    f := F;
+    g := *F;
+    b := Box(i64);
+    print("{} {} {} {}\n", v, f(), g(), b == Box(i64));
+    0
+}

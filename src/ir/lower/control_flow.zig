@@ -1743,7 +1743,7 @@ pub fn lowerMatch(self: *Lowering, node: *const Node, demand: lower_stmt.TailDem
                 }
                 if (name.len > 0) {
                     switch (self.headTypeGate(name, pat.span)) {
-                        .ambiguous, .not_visible => {
+                        .ambiguous, .not_visible, .not_a_type => {
                             arm_tag_values.append(self.alloc, &.{}) catch unreachable;
                             continue;
                         },

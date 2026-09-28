@@ -1,0 +1,11 @@
+error: 'N' names this module's own declaration, which is not a type
+  --> examples/modules/own-non-type-declaration-hides-flat-imported-type.sx:10:9
+   |
+10 |     x : N = ---;
+   |         ^
+
+error: 'M' names this module's own declaration, which is not a type
+  --> examples/modules/own-non-type-declaration-hides-flat-imported-type.sx:11:18
+   |
+11 |     s := @sizeOf(M);
+   |                  ^

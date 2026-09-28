@@ -578,7 +578,7 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
             // anywhere → `.proceed`, falling to the "unresolved type"
             // diagnostic below.
             switch (self.headTypeGate(id.name, node.span)) {
-                .ambiguous, .not_visible => return .unresolved,
+                .ambiguous, .not_visible, .not_a_type => return .unresolved,
                 .resolved => |tid| return tid,
                 .proceed => {},
             }
@@ -614,7 +614,7 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
                 if (self.qualifiedNominalTypeArg(te.name, node.span)) |tid| return tid;
             }
             switch (self.headTypeGate(te.name, node.span)) {
-                .ambiguous, .not_visible => return .unresolved,
+                .ambiguous, .not_visible, .not_a_type => return .unresolved,
                 .resolved => |tid| if (plain) return tid,
                 .proceed => {},
             }
@@ -1633,7 +1633,7 @@ pub fn headTypeLeak(self: *Lowering, name: []const u8, span: ?ast.Span) bool {
     // already emitted by `headTypeGate`) poison; `.resolved` / `.proceed`
     // proceed to instantiation.
     return switch (self.headTypeGate(name, span)) {
-        .ambiguous, .not_visible => true,
+        .ambiguous, .not_visible, .not_a_type => true,
         .proceed, .resolved => false,
     };
 }
@@ -1767,6 +1767,9 @@ const HeadTypeGate = union(enum) {
     resolved: TypeId,
     ambiguous,
     not_visible,
+    /// The querying source's own author of `name` is not a type and hides a
+    /// type of that name authored in another module.
+    not_a_type,
 };
 pub fn headTypeGate(self: *Lowering, name: []const u8, span: ?ast.Span) HeadTypeGate {
     if (self.emitting_default_context) return .proceed;
@@ -1834,6 +1837,11 @@ pub fn headTypeGate(self: *Lowering, name: []const u8, span: ?ast.Span) HeadType
 
     if (self.localTypeInSource(from, name)) return .proceed;
     if (!self.nameAuthoredAsTypeAnywhere(name)) return .proceed;
+    if (author_set.own != null) {
+        if (self.diagnostics) |d|
+            d.addFmt(.err, span, "'{s}' names this module's own declaration, which is not a type", .{name});
+        return .not_a_type;
+    }
     if (self.diagnostics) |d|
         d.addFmt(.err, span, "type '{s}' is not visible; @import the module that declares it", .{name});
     return .not_visible;
