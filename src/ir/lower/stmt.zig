@@ -2706,8 +2706,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                 // struct member / tuple element / vector lane) via the shared
                 // lvalue resolver — the same one the address-of and
                 // multi-target store paths use — so the three never resolve a
-                // field to a different slot or default field 0 (two-resolver
-                // defect class).
+                // field to a different slot or default field 0.
                 .resolved => |res| {
                     const place = fieldPlace(self, obj_ptr, obj_ty, res) orelse {
                         _ = self.emitFieldError(obj_ty, fa.field, asgn.target.span);
