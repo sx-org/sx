@@ -1,0 +1,5 @@
+E :: error { Bad };
+
+first :: (..$args) -> (i64, !E) {
+    raise .Bad;
+}

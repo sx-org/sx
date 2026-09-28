@@ -1,0 +1,8 @@
+error: unhandled error reached main: E.Bad
+error return trace (most recent call last):
+  first__pack_i64_i64 at lib.sx:4:5
+        raise .Bad;
+        ^
+  main at 2926-errors-trace-names-a-pack-instance-by-its-source.sx:4:10
+        v := try first(3, 4);
+             ^
