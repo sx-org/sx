@@ -1,0 +1,11 @@
+// A value constant reached through a namespace names no type: both downcast
+// temperaments refuse `m.LIMIT` at compile time, at the reference.
+@import "modules/std.sx";
+m :: @import "dotted-value-constant-refused-as-a-downcast-target/m.sx";
+
+main :: () -> i32 {
+    x : any = m.Thing{ v = 3 };
+    if p := x.(?m.LIMIT) { print("soft matched\n"); } else { print("soft missed\n"); }
+    y := x.(m.LIMIT);
+    0
+}

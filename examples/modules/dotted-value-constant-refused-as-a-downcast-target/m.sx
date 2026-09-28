@@ -1,0 +1,2 @@
+LIMIT :: 7;
+Thing :: struct { v: i64; }

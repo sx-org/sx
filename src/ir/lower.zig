@@ -2082,13 +2082,19 @@ pub const Lowering = struct {
         return self.qualifiedConstNodeIsFloatTyped(node, null);
     }
 
-    /// The type a proved namespace selection names, resolved in the TARGET
-    /// module's own visibility context so the leaf is judged by that module.
-    fn selectedMemberType(self: *Lowering, sel: QualifiedMember, is_raw: bool, span: ?ast.Span) TypeId {
+    /// The type a proved namespace selection names, selected in the TARGET
+    /// module's own visibility context so the leaf is judged by that module. A
+    /// refusal is reported at `span`, which belongs to the referencing source.
+    pub fn selectedMemberType(self: *Lowering, sel: QualifiedMember, is_raw: bool, span: ?ast.Span) TypeId {
         const saved = self.lexicalContext();
         self.setAuthorContext(sel.author.id);
-        defer self.restoreLexicalContext(saved);
-        return self.resolveNominalLeaf(sel.member, is_raw, span);
+        const from = self.current_source_file orelse {
+            defer self.restoreLexicalContext(saved);
+            return self.typeResolver().resolveName(sel.member, is_raw);
+        };
+        const leaf = self.selectNominalLeaf(sel.member, self.environmentForSource(from).?, is_raw);
+        self.restoreLexicalContext(saved);
+        return self.nominalLeafType(sel.member, leaf, from, span);
     }
 
     /// The type a namespaced spelling (`ns.Leaf`) names, selected without
@@ -3963,6 +3969,7 @@ pub const Lowering = struct {
     pub const lowerRetainedSameNameAuthors = lower_decl.lowerRetainedSameNameAuthors;
     pub const selectCallableAuthor = lower_decl.selectCallableAuthor;
     pub const callableAuthorFn = lower_decl.callableAuthorFn;
+    pub const authorNamesNoType = lower_decl.authorNamesNoType;
     pub const CallableKinds = lower_decl.CallableKinds;
     pub const selectNominalLeaf = lower_decl.selectNominalLeaf;
     pub const typeNodeLeavesReady = lower_decl.typeNodeLeavesReady;
@@ -3973,6 +3980,7 @@ pub const Lowering = struct {
     pub const localTypeInSource = lower_decl.localTypeInSource;
     pub const localTypeInAnySource = lower_decl.localTypeInAnySource;
     pub const resolveNominalLeaf = lower_decl.resolveNominalLeaf;
+    pub const nominalLeafType = lower_decl.nominalLeafType;
     pub const fnDeclOfRaw = lower_decl.fnDeclOfRaw;
     pub const structDeclOfRaw = lower_decl.structDeclOfRaw;
     pub const structMethodFn = lower_decl.structMethodFn;

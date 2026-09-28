@@ -1,0 +1,9 @@
+// A namespace-reached value constant in object position is a value:
+// `m.NAME.len` reads the string's length.
+@import "modules/std.sx";
+m :: @import "dotted-string-constant-length-reads-as-a-value/m.sx";
+
+main :: () -> i32 {
+    print("{}\n", m.NAME.len);
+    0
+}

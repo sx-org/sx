@@ -2639,7 +2639,11 @@ pub fn callableAuthorFn(self: *Lowering, author: resolver_mod.RawAuthor) ?Select
 /// spellings in call position.
 fn valueAuthor(self: *Lowering, author: resolver_mod.RawAuthor) bool {
     const terminal = self.followAliasChain(author) orelse return false;
-    return switch (terminal.raw) {
+    return valueTerminal(terminal.raw);
+}
+
+fn valueTerminal(raw: resolver_mod.RawDeclRef) bool {
+    return switch (raw) {
         .var_decl => true,
         .const_decl => |cd| switch (cd.value.data) {
             .int_literal, .float_literal, .string_literal, .bool_literal, .char_literal, .array_literal, .struct_literal, .tuple_literal, .binary_op, .unary_op, .postfix_cast => true,
@@ -2647,6 +2651,13 @@ fn valueAuthor(self: *Lowering, author: resolver_mod.RawAuthor) bool {
         },
         else => false,
     };
+}
+
+/// TRUE when an author's alias chain terminates at a value or a function: the
+/// spelling names no type, so it is never a pending type alias.
+pub fn authorNamesNoType(self: *Lowering, author: resolver_mod.RawAuthor) bool {
+    const terminal = self.followAliasChain(author) orelse return false;
+    return valueTerminal(terminal.raw) or fnDeclOfRaw(terminal.raw) != null;
 }
 
 fn selectableFn(fd: *const ast.FnDecl, kinds: CallableKinds) bool {
@@ -2876,15 +2887,16 @@ pub fn selectNominalLeaf(self: *Lowering, name: []const u8, environment: imports
             // raw chain now so params, returns, fields and wrappers all intern
             // the same canonical protocol TypeId (issue 0323).
             if (resolvePendingAliasType(self, own, name)) |tid| return .{ .resolved = tid };
-            // Own const_decl not yet resolved: pending (own takes priority
-            // over any flat author — prevents flat-preemption).
-            return .pending;
+            // Own alias not yet resolved: pending (own takes priority over any
+            // flat author — prevents flat-preemption).
+            if (!authorNamesNoType(self, own)) return .pending;
         },
         else => if (isNamedTypeKind(own.raw)) {
             if (self.namedRefTid(own.raw, name)) |tid| return .{ .resolved = tid };
             return .forward; // named type exists but slot not yet interned
         },
-        // fn_decl / namespace_decl: not a type author, fall to flat walk
+        // fn_decl / namespace_decl / a const naming no type: not a type
+        // author, fall to flat walk
     };
 
     // 1b. Flat type authors (named types and resolved aliases only; pending
@@ -2929,7 +2941,7 @@ pub fn selectNominalLeaf(self: *Lowering, name: []const u8, environment: imports
         if (fa.raw == .const_decl) {
             if (self.program_index.get(.type_alias, fa.id)) |tid| return .{ .resolved = tid };
             if (resolvePendingAliasType(self, fa, name)) |tid| return .{ .resolved = tid };
-            return .pending;
+            if (!authorNamesNoType(self, fa)) return .pending;
         }
     }
 
@@ -3095,7 +3107,13 @@ pub fn localTypeInAnySource(self: *Lowering, name: []const u8) bool {
 pub fn resolveNominalLeaf(self: *Lowering, name: []const u8, raw: bool, span: ?ast.Span) TypeId {
     const from = self.current_source_file orelse
         return self.typeResolver().resolveName(name, raw);
-    return switch (self.selectNominalLeaf(name, self.environmentForSource(from).?, raw)) {
+    return nominalLeafType(self, name, self.selectNominalLeaf(name, self.environmentForSource(from).?, raw), from, span);
+}
+
+/// The `TypeId` of the leaf `selectNominalLeaf` chose as seen from `from`.
+/// Diagnostics report at `span` in the current source, which need not be `from`.
+pub fn nominalLeafType(self: *Lowering, name: []const u8, leaf: TypeHeadResolution, from: []const u8, span: ?ast.Span) TypeId {
+    return switch (leaf) {
         .resolved => |t| t,
         // A forward alias (`.pending`) or a forward / not-yet-interned named
         // author (`.forward`) — keep the empty-struct stub the type adopts
