@@ -109,6 +109,9 @@ pub const Compilation = struct {
             &self.import_graph,
             &self.flat_import_graph,
         ) catch return error.CompileError;
+        // Core's imports can reach the entry file itself: that import is this
+        // module, not a second copy of its declarations.
+        cache.modules.put(imports.canonicalizePath(self.allocator, self.file_path) catch self.file_path, mod) catch {};
         imports.loadCoreModule(
             self.allocator,
             self.io,
