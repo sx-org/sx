@@ -1,0 +1,8 @@
+// An array without the terminator refused at a terminated-slice local is named
+// by its own type.
+
+main :: () -> i32 {
+    plain : [3]u8 = .[1, 2, 3];
+    t : [:1]u8 = plain;
+    0
+}
