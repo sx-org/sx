@@ -1,15 +1,6 @@
-// Writing a `@Vector` lane — `v.x = …` (and `.y`/`.z`/`.w`, plus the colour
-// aliases `.r`/`.g`/`.b`/`.a`) — stores through a pointer to that lane and
-// reads back the written value. Covers a `.[…]`-init write, a `= ---`
-// (undefined) init write, writes to every lane of a 4-lane vector, the colour
-// aliases, and a compound lane assignment (`+= / *=`).
-//
-// A lane STORE path that falls through to struct-field
-// lookup matches no field for a vector lane, leaving the lane pointer's pointee
-// as the `.unresolved` sentinel — which panics at LLVM emission ("unresolved
-// type reached LLVM emission"). The store path resolves the lane index via the
-// same shared `vectorLaneIndex` resolver the read path uses and GEPs a typed
-// pointer to the lane, so the two paths cannot diverge.
+// Writing a `@Vector` lane by letter — `.x`/`.y`/`.z`/`.w` and the colour
+// aliases `.r`/`.g`/`.b` — reads back the written value.
+
 @import "modules/std.sx";
 
 main :: () {
