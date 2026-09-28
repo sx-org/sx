@@ -2427,8 +2427,8 @@ test "a guard-narrowed method receiver addresses the optional payload with its d
             try std.testing.expectEqual(@as(u32, 0), address.struct_gep.field_index);
             const storage = lowering.builder.getRefOp(address.struct_gep.base).?;
             try std.testing.expect(storage == .alloca);
-            try std.testing.expectEqual(storage.alloca, address.struct_gep.base_type.?);
-            try std.testing.expect(module.types.get(storage.alloca) == .optional);
+            try std.testing.expectEqual(storage.alloca.ty, address.struct_gep.base_type.?);
+            try std.testing.expect(module.types.get(storage.alloca.ty) == .optional);
             found = true;
         }
     }

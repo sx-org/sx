@@ -979,9 +979,9 @@ pub const Vm = struct {
             },
 
             // ── Memory + structs (flat layout, target-aware) ────
-            .alloca => |t| {
+            .alloca => |allocation| {
                 const table = try self.requireTable();
-                return .{ .value = self.machine.allocBytes(table.typeSizeBytes(t), table.typeAlignBytes(t)) };
+                return .{ .value = self.machine.allocBytes(table.typeSizeBytes(allocation.ty), allocation.alignment) };
             },
             .load => |u| {
                 const table = try self.requireTable();

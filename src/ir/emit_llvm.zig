@@ -1968,7 +1968,7 @@ pub const LLVMEmitter = struct {
             .bool_not => |un| self.ops().emitBoolNot(un),
 
             // ── Memory ────────────────────────────────────────────
-            .alloca => |elem_ty| self.ops().emitAlloca(elem_ty),
+            .alloca => |allocation| self.ops().emitAlloca(allocation),
             .load => |un| self.ops().emitLoad(instruction, un),
             .store => |st| self.ops().emitStore(st),
             .volatile_load => |un| self.ops().emitVolatileLoad(instruction, un),
