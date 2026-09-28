@@ -69,6 +69,12 @@ pub const ErrorAnalysis = struct {
         switch (callee.data) {
             .identifier => |id| return self.l.edgeCalleeDecl(id.name, self.l.current_source_file),
             .field_access => |fa| {
+                if (!self.headIsBinding(enclosing_fd, fa.object)) switch (self.l.staticStructHead(fa.object)) {
+                    .resolved => |owner_ty| if (self.l.hasPlainStructAuthor(owner_ty))
+                        return if (self.l.plainStructMethod(owner_ty, fa.field)) |method| method.fd else null,
+                    .ambiguous, .not_visible => return null,
+                    .none => {},
+                };
                 if (fa.object.data == .identifier) {
                     const obj = fa.object.data.identifier.name;
                     if (self.bindingType(enclosing_fd, obj)) |ty| return self.receiverMethod(ty, fa.field);
@@ -79,6 +85,18 @@ pub const ErrorAnalysis = struct {
             },
             else => return null,
         }
+    }
+
+    /// A head rooted at a local binding is a value, never a type or namespace.
+    fn headIsBinding(self: ErrorAnalysis, fd: ?*const ast.FnDecl, head: *const Node) bool {
+        var root = head;
+        while (root.data == .field_access) root = root.data.field_access.object;
+        const name = switch (root.data) {
+            .identifier => |id| id.name,
+            .type_expr => |te| te.name,
+            else => return false,
+        };
+        return self.bindingType(fd, name) != null;
     }
 
     /// The escape a `try`ed or `return`ed call contributes: an EDGE naming the

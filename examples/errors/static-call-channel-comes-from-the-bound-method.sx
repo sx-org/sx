@@ -1,0 +1,29 @@
+@import "modules/std.sx";
+p :: @import "static-call-channel-comes-from-the-bound-method/pool.sx";
+AppErr :: error { Busy; }
+LocalErr :: error { Empty; }
+create :: ufcs (a: i64, b: i64) -> i64 { a + b }
+Pool :: struct {
+    create :: (n: i64) -> (Pool, !) {
+        if n < 1 { raise LocalErr.Empty; }
+        Pool{}
+    }
+}
+
+viaNamespace :: (n: i64) -> ! {
+    pool := try p.Pool.create(n);
+    if pool.n != n { raise AppErr.Busy; }
+}
+
+viaOwnType :: (n: i64) -> ! {
+    try Pool.create(n);
+    if n > 9 { raise AppErr.Busy; }
+}
+
+main :: () -> i32 {
+    a := viaNamespace(0);
+    b := viaOwnType(0);
+    print("namespace={} setup={}\nown={} empty={}\n", a, a == .Setup, b, b == .Empty);
+    if a == .Setup and b == .Empty { return 0; }
+    1
+}
