@@ -156,7 +156,11 @@ pub fn diagInfiniteSize(self: *Lowering, ty: TypeId) void {
 /// Matches a bare `Type` type-expr return only.
 fn fnReturnsTypeValue(fd: *const ast.FnDecl) bool {
     const rt = fd.return_type orelse return false;
-    return rt.data == .type_expr and std.mem.eql(u8, rt.data.type_expr.name, "Type");
+    return isTypeKeyword(rt);
+}
+
+fn isTypeKeyword(node: *const Node) bool {
+    return node.data == .type_expr and std.mem.eql(u8, node.data.type_expr.name, "Type");
 }
 
 /// True when `tid` transitively carries the `.unresolved` sentinel through any
@@ -1898,7 +1902,8 @@ fn resolveErrorCompositionAliases(self: *Lowering, decls: []const *const Node) v
         for (decls) |decl| {
             if (decl.data != .const_decl) continue;
             const cd = decl.data.const_decl;
-            if (cd.value.data != .binary_op or cd.value.data.binary_op.op != .bit_or) continue;
+            const src = decl.source_file orelse self.main_file orelse continue;
+            if (cd.value.data != .binary_op or !mayBeErrorSet(self, cd.value, src)) continue;
             if (aliasResolved(self, &decl.data.const_decl)) continue;
             self.setDeclarationContext(decl);
             const channel = self.composedChannel(cd.value, cd.name) orelse continue;
@@ -2649,6 +2654,80 @@ fn valueAuthor(self: *Lowering, author: resolver_mod.RawAuthor) bool {
     };
 }
 
+/// TRUE when an author denotes nothing the scan binds as a type: a const
+/// annotated with a value type, or an alias chain ending at a `var`, a
+/// function, or a const whose value is no type. Such a spelling is never a
+/// pending type alias.
+pub fn authorNamesNoType(self: *Lowering, author: resolver_mod.RawAuthor) bool {
+    if (typedValueConst(author.raw)) return true;
+    const terminal = self.followAliasChain(author) orelse return false;
+    return switch (terminal.raw) {
+        .var_decl, .fn_decl => true,
+        .const_decl => |cd| typedValueConst(terminal.raw) or !valueMayBindType(self, cd.value, terminal.source),
+        else => false,
+    };
+}
+
+fn typedValueConst(raw: resolver_mod.RawDeclRef) bool {
+    if (raw != .const_decl) return false;
+    const annotation = raw.const_decl.type_annotation orelse return false;
+    return !isTypeKeyword(annotation);
+}
+
+/// TRUE when a const value written in `source` has a shape the scan may bind
+/// as a type: a type expression, an error-set composition, or a call whose
+/// callee is not a function returning a value.
+fn valueMayBindType(self: *Lowering, value: *const Node, source: []const u8) bool {
+    return switch (value.data) {
+        .type_expr, .parameterized_type_expr, .struct_decl, .enum_decl, .union_decl, .error_set_decl => true,
+        .binary_op => mayBeErrorSet(self, value, source),
+        .call => |call| if (calleeFn(self, call.callee, source)) |fd| fnReturnsTypeValue(fd) else true,
+        else => isCompositeAliasRhs(value.data) or addrOfAliasRhs(value),
+    };
+}
+
+/// The function a callee spelling names from `source`. A registered `@`
+/// contract is its one program-wide declaration.
+fn calleeFn(self: *Lowering, callee: *const Node, source: []const u8) ?*const ast.FnDecl {
+    if (callee.data == .identifier) {
+        const name = callee.data.identifier.name;
+        if (contracts.isAtName(name) and contracts.find(name) != null) return self.program_index.lookup(.function, name);
+    }
+    const author = self.nameAuthor(callee, source) orelse return null;
+    return (self.callableAuthorFn(author) orelse return null).decl;
+}
+
+/// TRUE when a `|` composition operand written in `source` may be an error
+/// set: every leaf it reaches is an error set or a name that does not resolve.
+fn mayBeErrorSet(self: *Lowering, operand: *const Node, source: []const u8) bool {
+    var visiting: std.ArrayList(*const ast.ConstDecl) = .empty;
+    defer visiting.deinit(self.alloc);
+    return operandMayBeErrorSet(self, operand, source, &visiting);
+}
+
+/// A composition reached again through `visiting` is a cycle the binder
+/// diagnoses, so it counts as a candidate.
+fn operandMayBeErrorSet(self: *Lowering, operand: *const Node, source: []const u8, visiting: *std.ArrayList(*const ast.ConstDecl)) bool {
+    switch (operand.data) {
+        .error_set_decl => return true,
+        .binary_op => |op| return op.op == .bit_or and
+            operandMayBeErrorSet(self, op.lhs, source, visiting) and
+            operandMayBeErrorSet(self, op.rhs, source, visiting),
+        .identifier, .field_access => {},
+        else => return false,
+    }
+    const author = self.nameAuthor(operand, source) orelse return true;
+    const terminal = self.followAliasChain(author) orelse return true;
+    const cd = switch (terminal.raw) {
+        .error_set_decl => return true,
+        .const_decl => |cd| cd,
+        else => return false,
+    };
+    for (visiting.items) |seen| if (seen == cd) return true;
+    visiting.append(self.alloc, cd) catch @panic("out of memory");
+    return operandMayBeErrorSet(self, cd.value, terminal.source, visiting);
+}
+
 fn selectableFn(fd: *const ast.FnDecl, kinds: CallableKinds) bool {
     if (fd.body.data == .intrinsic_expr) return false;
     return switch (kinds) {
@@ -2876,15 +2955,16 @@ pub fn selectNominalLeaf(self: *Lowering, name: []const u8, environment: imports
             // raw chain now so params, returns, fields and wrappers all intern
             // the same canonical protocol TypeId (issue 0323).
             if (resolvePendingAliasType(self, own, name)) |tid| return .{ .resolved = tid };
-            // Own const_decl not yet resolved: pending (own takes priority
-            // over any flat author — prevents flat-preemption).
-            return .pending;
+            // Own alias not yet resolved: pending (own takes priority over any
+            // flat author — prevents flat-preemption).
+            if (!authorNamesNoType(self, own)) return .pending;
         },
         else => if (isNamedTypeKind(own.raw)) {
             if (self.namedRefTid(own.raw, name)) |tid| return .{ .resolved = tid };
             return .forward; // named type exists but slot not yet interned
         },
-        // fn_decl / namespace_decl: not a type author, fall to flat walk
+        // fn_decl / namespace_decl / a const naming no type: not a type
+        // author, fall to flat walk
     };
 
     // 1b. Flat type authors (named types and resolved aliases only; pending
@@ -2929,7 +3009,7 @@ pub fn selectNominalLeaf(self: *Lowering, name: []const u8, environment: imports
         if (fa.raw == .const_decl) {
             if (self.program_index.get(.type_alias, fa.id)) |tid| return .{ .resolved = tid };
             if (resolvePendingAliasType(self, fa, name)) |tid| return .{ .resolved = tid };
-            return .pending;
+            if (!authorNamesNoType(self, fa)) return .pending;
         }
     }
 
@@ -3095,7 +3175,13 @@ pub fn localTypeInAnySource(self: *Lowering, name: []const u8) bool {
 pub fn resolveNominalLeaf(self: *Lowering, name: []const u8, raw: bool, span: ?ast.Span) TypeId {
     const from = self.current_source_file orelse
         return self.typeResolver().resolveName(name, raw);
-    return switch (self.selectNominalLeaf(name, self.environmentForSource(from).?, raw)) {
+    return nominalLeafType(self, name, self.selectNominalLeaf(name, self.environmentForSource(from).?, raw), from, span);
+}
+
+/// The `TypeId` of the leaf `selectNominalLeaf` chose as seen from `from`.
+/// Diagnostics report at `span` in the current source, which need not be `from`.
+pub fn nominalLeafType(self: *Lowering, name: []const u8, leaf: TypeHeadResolution, from: []const u8, span: ?ast.Span) TypeId {
+    return switch (leaf) {
         .resolved => |t| t,
         // A forward alias (`.pending`) or a forward / not-yet-interned named
         // author (`.forward`) — keep the empty-struct stub the type adopts

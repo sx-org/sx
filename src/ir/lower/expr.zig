@@ -1472,13 +1472,8 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
                         return self.lowerFieldAccessOnType(value, gi.ty, fa.field, span);
                     }
 
-                    const saved_src = self.lexicalContext();
-                    self.setAuthorContext(sel.author.id);
-                    const ty = self.resolveNominalLeaf(sel.member, false, span);
-                    self.restoreLexicalContext(saved_src);
-                    if (ty != .unresolved and !ty.isBuiltin()) {
-                        const info = self.module.types.get(ty);
-                        if (info == .@"enum") {
+                    if (self.namespacedLeafType(object_path)) |ty| {
+                        if (self.module.types.get(ty) == .@"enum") {
                             const synth = self.alloc.create(Node) catch null;
                             if (synth) |n| {
                                 n.* = .{ .span = span, .data = .{ .enum_literal = .{ .name = fa.field } } };

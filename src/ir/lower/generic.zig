@@ -314,6 +314,10 @@ pub fn isStaticTypeArg(self: *Lowering, node: *const Node) bool {
     switch (node.data) {
         .type_expr => |te| {
             if (self.aliasedFieldAccess(node)) |aliased| return self.isStaticTypeArg(aliased);
+            switch (self.qualifiedMemberVerdict(te.name)) {
+                .selected => |sel| if (self.authorNamesNoType(sel.author)) return false,
+                .not_qualified, .missing, .ambiguous => {},
+            }
             return staticTypeName(self, te.name);
         },
         .identifier => |id| return staticTypeName(self, id.name),
@@ -721,10 +725,7 @@ pub fn qualifiedNominalTypeArg(self: *Lowering, path: []const u8, span: ast.Span
         .selected => |s| s,
         .not_qualified, .missing, .ambiguous => return null,
     };
-    const saved_src = self.lexicalContext();
-    self.setAuthorContext(sel.author.id);
-    const ty = self.resolveNominalLeaf(sel.member, false, span);
-    self.restoreLexicalContext(saved_src);
+    const ty = self.selectedMemberType(sel, false, span);
     return if (ty == .unresolved) null else ty;
 }
 

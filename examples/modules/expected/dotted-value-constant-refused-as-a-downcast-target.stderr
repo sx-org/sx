@@ -1,0 +1,11 @@
+error: unknown type 'LIMIT'
+  --> examples/modules/dotted-value-constant-refused-as-a-downcast-target.sx:8:17
+   |
+ 8 |     if p := x.(?m.LIMIT) { print("soft matched\n"); } else { print("soft missed\n"); }
+   |                 ^^^^^^^
+
+error: unknown type 'LIMIT'
+  --> examples/modules/dotted-value-constant-refused-as-a-downcast-target.sx:9:13
+   |
+ 9 |     y := x.(m.LIMIT);
+   |             ^^^^^^^

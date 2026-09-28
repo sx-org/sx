@@ -1,0 +1,12 @@
+// A namespace-reached constant names a type only when its value can be one:
+// a call to a `Type` function binds `m.Word`, while a call returning a value
+// and a constant annotated with a value type name no type.
+@import "modules/std.sx";
+m :: @import "dotted-constant-names-a-type-only-when-its-value-is-one/m.sx";
+
+main :: () -> i32 {
+    w : m.Word = 3;
+    s : m.SIZE = 4;
+    g : m.GREEN = 5;
+    0
+}

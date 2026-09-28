@@ -1,0 +1,9 @@
+// A `|` of value constants in an imported module is a value, not an error-set
+// composition.
+@import "modules/std.sx";
+m :: @import "dotted-bit-or-constant-reads-as-a-value/m.sx";
+
+main :: () -> i32 {
+    print("{}\n", m.MODE);
+    0
+}
