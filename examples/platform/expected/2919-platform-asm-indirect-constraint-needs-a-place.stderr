@@ -1,0 +1,5 @@
+error: asm constraint "=*m" is indirect: its operand is a place output, `-> *place`
+  --> examples/platform/2919-platform-asm-indirect-constraint-needs-a-place.sx:5:64
+   |
+ 5 |     return asm { "mov x9, #42\nstr x9, %[out]", [out] "=*m" -> i64, clobbers(.x9) };
+   |                                                                ^^^

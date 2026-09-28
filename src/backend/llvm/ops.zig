@@ -437,9 +437,11 @@ pub const Ops = struct {
         return c.LLVMBuildStore(self.e.builder, c.LLVMBuildZExt(self.e.builder, val, word_ty, "word"), ptr);
     }
 
-    pub fn emitAlloca(self: Ops, elem_ty: TypeId) void {
-        const llvm_ty = self.e.toLLVMType(elem_ty);
+    pub fn emitAlloca(self: Ops, allocation: ir_inst.Alloca) void {
+        const llvm_ty = self.e.toLLVMType(allocation.ty);
         const result = self.e.buildEntryAlloca(llvm_ty, "alloca");
+        if (allocation.alignment > c.LLVMGetAlignment(result))
+            c.LLVMSetAlignment(result, @intCast(allocation.alignment));
         self.e.mapRef(result);
     }
 
@@ -1744,8 +1746,8 @@ pub const Ops = struct {
                         continue;
                     }
                     var llvm_pty = raw_struct;
-                    if (c.LLVMGetTypeKind(raw_struct) == c.LLVMArrayTypeKind) {
-                        // Array params in fn-ptr calls decay to pointers (C ABI)
+                    if (fp_is_c_abi and c.LLVMGetTypeKind(raw_struct) == c.LLVMArrayTypeKind) {
+                        // C array parameters decay to pointers.
                         llvm_pty = self.e.cached_ptr;
                     } else if (fp_is_c_abi) {
                         // Mirror declareFunction's C-ABI classification for an
@@ -2388,6 +2390,8 @@ pub const Ops = struct {
         } else {
             // Union [N x i8] — alloca, store, reinterpret-load
             const tmp = self.e.buildEntryAlloca(base_ty, "ug.tmp");
+            const dl = c.LLVMGetModuleDataLayout(self.e.llvm_module);
+            c.LLVMSetAlignment(tmp, @max(c.LLVMABIAlignmentOfType(dl, base_ty), c.LLVMABIAlignmentOfType(dl, result_ty)));
             _ = c.LLVMBuildStore(self.e.builder, base, tmp);
             self.e.mapRef(c.LLVMBuildLoad2(self.e.builder, result_ty, tmp, "ug.val"));
         }

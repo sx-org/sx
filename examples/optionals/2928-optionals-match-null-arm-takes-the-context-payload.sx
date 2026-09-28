@@ -1,0 +1,14 @@
+// A value `match` with a `null` arm types its untyped arms at the optional
+// context's payload.
+
+@import "modules/std.sx";
+
+pick :: (k: i64) -> ?i32 {
+    r : ?i32 = match k { case 0: null; else: 3 };
+    return r;
+}
+
+main :: () -> i32 {
+    print("{} {}\n", pick(1) ?? 0, pick(0) ?? -1);
+    return 0;
+}

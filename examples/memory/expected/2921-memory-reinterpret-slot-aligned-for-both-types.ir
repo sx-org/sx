@@ -1,0 +1,68 @@
+
+@kDefaultContext = internal constant {} zeroinitializer
+
+; Function Attrs: nounwind
+define internal [8 x i8] @makeWord(ptr %0, i64 %1) #0 {
+entry:
+  %alloca = alloca i64, align 8
+  store i64 %1, ptr %alloca, align 8
+  %allocaN = alloca [8 x i8], align 8
+  store [8 x i8] undef, ptr %allocaN, align 1
+  %load = load i64, ptr %alloca, align 8
+  store i64 %load, ptr %allocaN, align 8
+  %loadN = load [8 x i8], ptr %allocaN, align 1
+  ret [8 x i8] %loadN
+}
+
+; Function Attrs: nounwind
+define i32 @main() #0 {
+entry:
+  %alloca = alloca [4 x i8], align 1
+  store [4 x i8] c"\01\00\00\00", ptr %alloca, align 1
+  %load = load [4 x i8], ptr %alloca, align 1
+  %allocaN = alloca [4 x i8], align 4
+  store [4 x i8] %load, ptr %allocaN, align 1
+  %loadN = load i32, ptr %allocaN, align 4
+  %allocaN = alloca i32, align 4
+  store i32 %loadN, ptr %allocaN, align 4
+  %call = call [8 x i8] @makeWord(ptr @kDefaultContext, i64 7)
+  %allocaN = alloca [8 x i8], align 8
+  store [8 x i8] %call, ptr %allocaN, align 1
+  %loadN = load [8 x i8], ptr %allocaN, align 1
+  %allocaN = alloca [8 x i8], align 8
+  store [8 x i8] %loadN, ptr %allocaN, align 1
+  %loadN = load i64, ptr %allocaN, align 8
+  %allocaN = alloca i64, align 8
+  store i64 %loadN, ptr %allocaN, align 8
+  %callN = call [8 x i8] @makeWord(ptr @kDefaultContext, i64 9)
+  %ug.tmp = alloca [8 x i8], align 8
+  store [8 x i8] %callN, ptr %ug.tmp, align 1
+  %ug.val = load i64, ptr %ug.tmp, align 8
+  %allocaN = alloca i64, align 8
+  store i64 %ug.val, ptr %allocaN, align 8
+  %loadN = load i32, ptr %allocaN, align 4
+  %icmp = icmp ne i32 %loadN, 1
+  br i1 %icmp, label %if.then.0, label %if.merge.1
+
+if.then.0:                                        ; preds = %entry
+  ret i32 1
+
+if.merge.1:                                       ; preds = %entry
+  %loadN = load i64, ptr %allocaN, align 8
+  %icmpN = icmp ne i64 %loadN, 7
+  br i1 %icmpN, label %if.then.2, label %if.merge.3
+
+if.then.2:                                        ; preds = %if.merge.1
+  ret i32 2
+
+if.merge.3:                                       ; preds = %if.merge.1
+  %loadN = load i64, ptr %allocaN, align 8
+  %icmpN = icmp ne i64 %loadN, 9
+  br i1 %icmpN, label %if.then.4, label %if.merge.5
+
+if.then.4:                                        ; preds = %if.merge.3
+  ret i32 3
+
+if.merge.5:                                       ; preds = %if.merge.3
+  ret i32 0
+}

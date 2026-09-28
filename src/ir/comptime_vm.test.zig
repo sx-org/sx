@@ -308,7 +308,7 @@ test "comptime_vm exec: alloca + struct_gep + store + load" {
     var fb = Fb.init(alloc, &.{}, .i64);
     defer fb.deinit();
     const b0 = fb.block(&.{});
-    const p = fb.add(b0, inst(.{ .alloca = point }, pptr));
+    const p = fb.add(b0, inst(.{ .alloca = .{ .ty = point, .alignment = table.typeAlignBytes(point) } }, pptr));
     const gx = fb.add(b0, inst(.{ .struct_gep = .{ .base = ref(p), .field_index = 0, .base_type = point } }, pptr));
     const c5 = fb.add(b0, inst(.{ .const_int = 5 }, .i64));
     _ = fb.add(b0, inst(.{ .store = .{ .ptr = ref(gx), .val = ref(c5), .val_ty = .i64 } }, .void));
@@ -409,7 +409,7 @@ test "comptime_vm exec: array index_gep/store + index_get sum, and length" {
     var fb = Fb.init(alloc, &.{}, .i64);
     defer fb.deinit();
     const b0 = fb.block(&.{});
-    const a = fb.add(b0, inst(.{ .alloca = arr }, aptr));
+    const a = fb.add(b0, inst(.{ .alloca = .{ .ty = arr, .alignment = table.typeAlignBytes(arr) } }, aptr));
     const vals = [_]i64{ 10, 20, 12 };
     var gep: [3]u32 = undefined;
     inline for (0..3) |k| {
@@ -437,7 +437,7 @@ test "comptime_vm exec: array index_gep/store + index_get sum, and length" {
     var fb2 = Fb.init(alloc, &.{}, .i64);
     defer fb2.deinit();
     const c0 = fb2.block(&.{});
-    const a2 = fb2.add(c0, inst(.{ .alloca = arr }, aptr));
+    const a2 = fb2.add(c0, inst(.{ .alloca = .{ .ty = arr, .alignment = table.typeAlignBytes(arr) } }, aptr));
     const av = fb2.add(c0, inst(.{ .load = .{ .operand = ref(a2) } }, arr));
     const len = fb2.add(c0, inst(.{ .length = .{ .operand = ref(av) } }, .i64));
     _ = fb2.add(c0, inst(.{ .ret = .{ .operand = ref(len) } }, .void));
@@ -537,7 +537,7 @@ test "comptime_vm exec: array_to_slice + index through slice + slice length" {
     var fb = Fb.init(alloc, &.{}, .i64);
     defer fb.deinit();
     const b0 = fb.block(&.{});
-    const a = fb.add(b0, inst(.{ .alloca = arr }, aptr));
+    const a = fb.add(b0, inst(.{ .alloca = .{ .ty = arr, .alignment = table.typeAlignBytes(arr) } }, aptr));
     const vals = [_]i64{ 10, 20, 12 };
     inline for (0..3) |k| {
         const ik = fb.add(b0, inst(.{ .const_int = @intCast(k) }, .i64));
@@ -572,7 +572,7 @@ test "comptime_vm exec: subslice of an array" {
     var fb = Fb.init(alloc, &.{}, .i64);
     defer fb.deinit();
     const b0 = fb.block(&.{});
-    const a = fb.add(b0, inst(.{ .alloca = arr }, aptr));
+    const a = fb.add(b0, inst(.{ .alloca = .{ .ty = arr, .alignment = table.typeAlignBytes(arr) } }, aptr));
     inline for (0..5) |k| {
         const ik = fb.add(b0, inst(.{ .const_int = @intCast(k) }, .i64));
         const g = fb.add(b0, inst(.{ .index_gep = .{ .lhs = ref(a), .rhs = ref(ik) } }, i64ptr));
@@ -612,7 +612,7 @@ test "comptime_vm exec: subslice of a many-pointer ([*]T) — base IS the data p
     var fb = Fb.init(alloc, &.{}, .i64);
     defer fb.deinit();
     const b0 = fb.block(&.{});
-    const a = fb.add(b0, inst(.{ .alloca = arr }, aptr));
+    const a = fb.add(b0, inst(.{ .alloca = .{ .ty = arr, .alignment = table.typeAlignBytes(arr) } }, aptr));
     inline for (0..5) |k| {
         const ik = fb.add(b0, inst(.{ .const_int = @intCast(k) }, .i64));
         const g = fb.add(b0, inst(.{ .index_gep = .{ .lhs = ref(a), .rhs = ref(ik) } }, i64ptr));
@@ -655,7 +655,7 @@ test "comptime_vm exec: struct_gep with an explicit pointer base_type derefs to 
     var fb = Fb.init(alloc, &.{}, .i64);
     defer fb.deinit();
     const b0 = fb.block(&.{});
-    const p = fb.add(b0, inst(.{ .alloca = s_ty }, sptr));
+    const p = fb.add(b0, inst(.{ .alloca = .{ .ty = s_ty, .alignment = table.typeAlignBytes(s_ty) } }, sptr));
     const g = fb.add(b0, inst(.{ .struct_gep = .{ .base = ref(p), .field_index = 1, .base_type = sptr } }, i64ptr));
     const v80 = fb.add(b0, inst(.{ .const_int = 80 }, .i64));
     _ = fb.add(b0, inst(.{ .store = .{ .ptr = ref(g), .val = ref(v80), .val_ty = .i64 } }, .void));
@@ -710,7 +710,7 @@ test "comptime_vm exec: a negative i32 stored and reloaded stays negative (sign-
     var fb = Fb.init(alloc, &.{}, .i64);
     defer fb.deinit();
     const b0 = fb.block(&.{});
-    const p = fb.add(b0, inst(.{ .alloca = .i32 }, i32ptr));
+    const p = fb.add(b0, inst(.{ .alloca = .{ .ty = .i32, .alignment = table.typeAlignBytes(.i32) } }, i32ptr));
     const neg1 = fb.add(b0, inst(.{ .const_int = -1 }, .i32));
     _ = fb.add(b0, inst(.{ .store = .{ .ptr = ref(p), .val = ref(neg1), .val_ty = .i32 } }, .void));
     const ld = fb.add(b0, inst(.{ .load = .{ .operand = ref(p) } }, .i32));
@@ -738,7 +738,7 @@ test "comptime_vm exec: storing a null non-pointer optional into a slot reads ba
     var fb = Fb.init(alloc, &.{}, .i64);
     defer fb.deinit();
     const b0 = fb.block(&.{});
-    const s = fb.add(b0, inst(.{ .alloca = opt_i64 }, opt_ptr));
+    const s = fb.add(b0, inst(.{ .alloca = .{ .ty = opt_i64, .alignment = table.typeAlignBytes(opt_i64) } }, opt_ptr));
     const n = fb.add(b0, inst(.const_null, opt_i64));
     _ = fb.add(b0, inst(.{ .store = .{ .ptr = ref(s), .val = ref(n), .val_ty = opt_i64 } }, .void));
     const ld = fb.add(b0, inst(.{ .load = .{ .operand = ref(s) } }, opt_i64));
@@ -764,7 +764,7 @@ test "comptime_vm exec: pointer optional (null == 0)" {
     var fb = Fb.init(alloc, &.{}, .i64);
     defer fb.deinit();
     const b0 = fb.block(&.{});
-    const p = fb.add(b0, inst(.{ .alloca = .i64 }, i64ptr));
+    const p = fb.add(b0, inst(.{ .alloca = .{ .ty = .i64, .alignment = table.typeAlignBytes(.i64) } }, i64ptr));
     const c = fb.add(b0, inst(.{ .const_int = 99 }, .i64));
     _ = fb.add(b0, inst(.{ .store = .{ .ptr = ref(p), .val = ref(c), .val_ty = .i64 } }, .void));
     const op = fb.add(b0, inst(.{ .optional_wrap = .{ .operand = ref(p) } }, opt_ptr));
@@ -846,7 +846,7 @@ test "comptime_vm exec: box_any/unbox_any round-trips a scalar through the {tag,
     defer fb.deinit();
     const b0 = fb.block(&.{});
     const c = fb.add(b0, inst(.{ .const_int = 42 }, .i64));
-    const slot = fb.add(b0, inst(.{ .alloca = .i64 }, .i64));
+    const slot = fb.add(b0, inst(.{ .alloca = .{ .ty = .i64, .alignment = table.typeAlignBytes(.i64) } }, .i64));
     _ = fb.add(b0, inst(.{ .store = .{ .ptr = ref(slot), .val = ref(c), .val_ty = .i64 } }, .void));
     const a = fb.add(b0, inst(.{ .box_any = .{ .operand = ref(slot), .source_type = .i64 } }, .any));
     const u = fb.add(b0, inst(.{ .unbox_any = .{ .operand = ref(a) } }, .i64));
@@ -898,7 +898,7 @@ test "comptime_vm exec: deref a pointer; addr_of passes through a struct address
     var fb = Fb.init(alloc, &.{}, .i64);
     defer fb.deinit();
     const b0 = fb.block(&.{});
-    const p = fb.add(b0, inst(.{ .alloca = .i64 }, i64ptr));
+    const p = fb.add(b0, inst(.{ .alloca = .{ .ty = .i64, .alignment = table.typeAlignBytes(.i64) } }, i64ptr));
     const c = fb.add(b0, inst(.{ .const_int = 77 }, .i64));
     _ = fb.add(b0, inst(.{ .store = .{ .ptr = ref(p), .val = ref(c), .val_ty = .i64 } }, .void));
     const v = fb.add(b0, inst(.{ .deref = .{ .operand = ref(p) } }, .i64));
@@ -930,7 +930,7 @@ test "comptime_vm exec: f32 store/load round-trips through 4-byte memory" {
     var fb = Fb.init(alloc, &.{}, .i64);
     defer fb.deinit();
     const b0 = fb.block(&.{});
-    const p = fb.add(b0, inst(.{ .alloca = .f32 }, f32ptr));
+    const p = fb.add(b0, inst(.{ .alloca = .{ .ty = .f32, .alignment = table.typeAlignBytes(.f32) } }, f32ptr));
     const c = fb.add(b0, inst(.{ .const_float = 1.0 }, .f32));
     _ = fb.add(b0, inst(.{ .store = .{ .ptr = ref(p), .val = ref(c), .val_ty = .f32 } }, .void));
     const l = fb.add(b0, inst(.{ .load = .{ .operand = ref(p) } }, .f32));
@@ -1662,7 +1662,7 @@ test "comptime_vm: an evaluation parks inside a nested invocation and resumes th
     // the parked instruction would show up as a doubled counter.
     var nb = Fb.init(alloc, &.{}, .i64);
     const nbb = nb.block(&.{});
-    const cell = nb.add(nbb, inst(.{ .alloca = .i64 }, i64_ptr));
+    const cell = nb.add(nbb, inst(.{ .alloca = .{ .ty = .i64, .alignment = module.types.typeAlignBytes(.i64) } }, i64_ptr));
     const before = nb.add(nbb, inst(.{ .load = .{ .operand = ref(cell) } }, .i64));
     const one = nb.add(nbb, inst(.{ .const_int = 1 }, .i64));
     const bumped = nb.add(nbb, inst(.{ .add = .{ .lhs = ref(before), .rhs = ref(one) } }, .i64));

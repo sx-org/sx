@@ -1,0 +1,8 @@
+// An indirect (`*`) asm constraint takes an address, so its operand is a
+// place output `-> *place`; a value output under it is refused.
+
+poke :: () -> i64 {
+    return asm { "mov x9, #42\nstr x9, %[out]", [out] "=*m" -> i64, clobbers(.x9) };
+}
+
+main :: () { x := poke(); }

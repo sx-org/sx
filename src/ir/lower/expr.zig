@@ -5077,6 +5077,14 @@ pub fn lowerAsmExpr(self: *Lowering, ae: *const ast.AsmExpr, span: ast.Span) Ref
         }
     }
 
+    // (5) An indirect (`*`) constraint hands the asm an address, which only a
+    // place output supplies.
+    for (ae.operands) |op| {
+        if (op.role == .out_place or std.mem.indexOfScalar(u8, op.constraint, '*') == null) continue;
+        diags.addFmt(.err, op.payload.span, "asm constraint \"{s}\" is indirect: its operand is a place output, `-> *place`", .{op.constraint});
+        return self.emitPlaceholder("inline_asm");
+    }
+
     // ── Build the IR op. Result type from the out_value operands (0→void,
     // 1→T, N→named tuple). N outputs → LLVM returns a struct {T1,…,Tn}, which
     // is exactly sx's tuple representation, so emit needs no special case. ──
@@ -5103,7 +5111,7 @@ pub fn lowerAsmExpr(self: *Lowering, ae: *const ast.AsmExpr, span: ast.Span) Ref
                 // it with the place's loaded value; indirect-memory (`=*m`)
                 // outputs pass the place address as a pointer arg and the asm
                 // writes through it — both handled in `emitInlineAsm`.
-                // `@place` lowers to its address (a pointer); the asm result is
+                // `*place` lowers to its address (a pointer); the asm result is
                 // stored through it. The stored type is the pointee.
                 operand_ref = self.lowerExpr(op.payload);
                 const pty = self.inferExprType(op.payload);
@@ -5112,7 +5120,7 @@ pub fn lowerAsmExpr(self: *Lowering, ae: *const ast.AsmExpr, span: ast.Span) Ref
                     break :blk if (info == .pointer) info.pointer.pointee else .unresolved;
                 } else .unresolved;
                 if (out_ty == .unresolved) {
-                    diags.addFmt(.err, span, "asm `-> @place` output target must be an addressable place", .{});
+                    diags.addFmt(.err, span, "asm `-> *place` output target must be an addressable place", .{});
                     return self.emitPlaceholder("inline_asm");
                 }
             },
@@ -5568,6 +5576,14 @@ fn isPlaceholder(self: *Lowering, ref: Ref) bool {
     return op == .placeholder;
 }
 
+/// A guard-narrowed optional operand's payload: it compares as its payload.
+fn narrowedPayload(self: *Lowering, operand: Ref, ty: TypeId) ?struct { ref: Ref, ty: TypeId } {
+    if (ty.isBuiltin() or !self.narrowed_refs.contains(operand)) return null;
+    const info = self.module.types.get(ty);
+    if (info != .optional) return null;
+    return .{ .ref = self.builder.emit(.{ .optional_unwrap = .{ .operand = operand } }, info.optional.child), .ty = info.optional.child };
+}
+
 /// `lhs op rhs` over operands already lowered.
 fn lowerBinaryValues(self: *Lowering, op: ast.BinaryOp.Op, lhs_value: Ref, lhs_ty: TypeId, lhs_span: ast.Span, rhs_value: Ref, rhs_ty: TypeId, rhs_span: ast.Span) Ref {
     // A refused operand already reported its error; the operation over it
@@ -5581,10 +5597,11 @@ fn lowerBinaryValues(self: *Lowering, op: ast.BinaryOp.Op, lhs_value: Ref, lhs_t
     // payload without a presence guard, so the no-implicit-unwrap doctrine
     // (0179/0185) is untouched: arithmetic and ordering on un-narrowed
     // optionals still reject below. Presence tests (`x == null`) returned
-    // earlier. A guard-narrowed optional operand takes this path too — the
-    // presence branch just folds to the payload compare.
+    // earlier.
     if (op == .eq or op == .neq) {
         const l_actual = if (lhs_ty == .unresolved) self.builder.getRefType(lhs) else lhs_ty;
+        if (narrowedPayload(self, lhs, l_actual)) |p| return lowerBinaryValues(self, op, p.ref, p.ty, lhs_span, rhs, rhs_ty, rhs_span);
+        if (narrowedPayload(self, rhs, rhs_ty)) |p| return lowerBinaryValues(self, op, lhs, lhs_ty, lhs_span, p.ref, p.ty, rhs_span);
         const l_opt: ?TypeId = if (!l_actual.isBuiltin() and self.module.types.get(l_actual) == .optional)
             self.module.types.get(l_actual).optional.child
         else

@@ -3269,14 +3269,15 @@ fn returnGenericLeaf(node: *const Node) ?[]const u8 {
 
 /// Declare a function as an extern stub (signature only, no body).
 /// The same C SYMBOL declared more than once (two modules binding the same
-/// libc function, or a rename colliding with an existing binding): an EQUAL
-/// signature shares the first registration; a CONFLICTING one is diagnosed —
+/// libc function, or a rename colliding with an existing binding) shares the
+/// first registration; a CONFLICTING signature is diagnosed —
 /// silently letting the first registration win mis-types every call through
 /// the later declaration (a `-> string` view of a symbol registered `-> *u8`
 /// reads the wrong shape). The C-variadic tail is part of that equality: a
 /// fixed prototype and a variadic one are different ABIs, and sharing the fixed
 /// registration would emit calls whose argument count its signature refuses.
-/// True = handled (shared or diagnosed), caller must not declare again.
+/// True = handled (shared, and diagnosed on a conflict), caller must not
+/// declare again.
 pub fn dedupeExternSymbol(self: *Lowering, fd: *const ast.FnDecl, sym_name: StringId, params: []const Function.Param, ret_ty: TypeId, is_c_variadic: bool) bool {
     for (self.module.functions.items, 0..) |*func, i| {
         if (func.name != sym_name or !func.is_extern) continue;
@@ -3289,12 +3290,10 @@ pub fn dedupeExternSymbol(self: *Lowering, fd: *const ast.FnDecl, sym_name: Stri
                 }
             }
         }
-        if (same) {
-            self.bindDeclFuncId(fd, FuncId.fromIndex(@intCast(i)));
-            return true;
-        }
-        if (self.diagnostics) |d| {
-            d.addFmt(.err, fd.body.span, "extern symbol '{s}' is already bound with a different signature; two views of one C symbol must declare identical types", .{self.module.types.getString(sym_name)});
+        self.bindDeclFuncId(fd, FuncId.fromIndex(@intCast(i)));
+        if (!same) {
+            if (self.diagnostics) |d|
+                d.addFmt(.err, fd.body.span, "extern symbol '{s}' is already bound with a different signature; two views of one C symbol must declare identical types", .{self.module.types.getString(sym_name)});
         }
         return true;
     }

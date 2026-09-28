@@ -1,0 +1,8 @@
+error: unhandled error reached main: E.Bad
+error return trace (most recent call last):
+  pick__i64 at lib.sx:4:5
+        raise .Bad;
+        ^
+  main at 2925-errors-trace-names-a-generic-instance-by-its-source.sx:6:10
+        v := try pick(3);
+             ^

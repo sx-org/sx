@@ -1,0 +1,14 @@
+// A global bound to a `@run` of a void function or of a pure failable holds
+// no value; the call still runs at compile time.
+
+@import "modules/std.sx";
+
+E :: error { Bad };
+
+announce :: () { print("announced\n"); }
+check :: () -> !E { print("checked\n"); }
+
+A :: @run announce();
+C :: @run check();
+
+main :: () { print("main\n"); }

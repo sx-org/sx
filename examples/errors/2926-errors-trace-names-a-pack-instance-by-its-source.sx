@@ -1,0 +1,5 @@
+@import "2926-errors-trace-names-a-pack-instance-by-its-source/lib.sx";
+
+main :: () -> !E {
+    v := try first(3, 4);
+}

@@ -1,0 +1,23 @@
+// An interface method call passes a small aggregate argument the way the
+// direct call does.
+
+@import "modules/std.sx";
+
+Box :: struct { m: i32; }
+Holder :: struct { n: i32; }
+
+Provider :: interface {
+    sumo :: (self: *Self, o: ?Box) -> i32;
+}
+
+impl Provider for Holder {
+    sumo :: (self: *Holder, o: ?Box) -> i32 { if v := o { v.m + self.n } else { -1 } }
+}
+
+main :: () -> i32 {
+    h : Holder = .{ n = 10 };
+    p := h.(Provider);
+    one : Box = .{ m = 1 };
+    print("{} {}\n", p.sumo(one), h.sumo(one));
+    0
+}

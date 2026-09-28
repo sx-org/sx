@@ -1441,6 +1441,7 @@ pub fn monomorphizePackFn(
     const saved_source = self.lexicalContext();
     defer self.restoreLexicalContext(saved_source);
     self.setFunctionContext(fd);
+    self.builder.currentFunc().source_file = self.current_source_file;
 
     // Delegate to the shared body owner (mirrors the decl + generic paths) so
     // this pack-fn instance can't drift from them.

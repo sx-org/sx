@@ -233,10 +233,10 @@ fn printInst(instruction: *const Inst, ref_idx: u32, tt: *const TypeTable, write
         },
 
         // ── Memory ──────────────────────────────────────────────
-        .alloca => |aty| {
+        .alloca => |allocation| {
             try writer.writeAll("alloca ");
-            try writeType(aty, tt, writer);
-            try writer.writeAll(" : ");
+            try writeType(allocation.ty, tt, writer);
+            try writer.print(", align {d} : ", .{allocation.alignment});
         },
         .load => |u| try writer.print("load %{d} : ", .{u.operand.index()}),
         .store => |s| {

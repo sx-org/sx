@@ -1,0 +1,5 @@
+error: cannot initialize 's' of type '[]i64' with a value of type '[3]i32'
+  --> examples/diagnostics/2921-diagnostics-array-at-an-element-mismatched-slice-names-the-array.sx:3:17
+   |
+ 3 |     s : []i64 = plain;
+   |                 ^^^^^

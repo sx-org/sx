@@ -892,7 +892,7 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
                     const ref_ty = self.builder.getRefType(ref);
                     if (!ref_ty.isBuiltin()) {
                         const ref_info = self.module.types.get(ref_ty);
-                        if (ref_info == .array) {
+                        if (ref_info == .array and self.coercionResolver().classify(ref_ty, ty) == .array_to_slice) {
                             ref = self.arrayToSliceView(ref, ref_ty, ty) orelse
                                 self.builder.emit(.{ .array_to_slice = .{ .operand = ref } }, ty);
                         }
@@ -2700,24 +2700,25 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
 
             if (self.storeSwizzle(obj_ptr, obj_ty, fa.field, val, asgn.op, asgn.target.span, asgn.value.span)) {
                 // Multi-letter shuffle store (and diagnosed swizzle errors).
-            } else switch (self.fieldLvalueMention(obj_ptr, obj_ty, fa.field, asgn.target.span)) {
+            } else switch (self.fieldLvalueMention(obj_ty, fa.field, asgn.target.span)) {
                 .diagnosed => {},
                 // Resolve the target field (struct / union direct / promoted
                 // struct member / tuple element / vector lane) via the shared
                 // lvalue resolver — the same one the address-of and
                 // multi-target store paths use — so the three never resolve a
-                // field to a different slot or default field 0 (two-resolver
-                // defect class). fl.ptr is *field_ty (the store handler
-                // unwraps one pointer level); fl.ty is the value type to
-                // coerce the rhs to.
-                .ptr => |fl| {
+                // field to a different slot or default field 0.
+                .resolved => |res| {
+                    const place = fieldPlace(self, obj_ptr, obj_ty, res) orelse {
+                        _ = self.emitFieldError(obj_ty, fa.field, asgn.target.span);
+                        return;
+                    };
                     const src_ty = self.builder.getRefType(val);
                     // Guard a width-mismatched `.none` store into the field slot
                     // (`w.s = "hi"` for a struct field `s`) — it would overrun the
                     // slot and corrupt neighbors. Plain `=` only;
                     // compound ops load-op-store through the field type.
-                    if (asgn.op == .assign and !self.checkAssignable(src_ty, fl.ty, asgn.value.span, "assign", fa.field)) return;
-                    self.storeOrCompound(fl.ptr, val, asgn.op, fl.ty);
+                    if (asgn.op == .assign and !self.checkAssignable(src_ty, placeType(place), asgn.value.span, "assign", fa.field)) return;
+                    assignPlace(self, place, val, asgn.op);
                 },
                 // No struct / union / tuple / vector field matches the
                 // assignment target. Emit the same field-not-found
@@ -2741,14 +2742,11 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                 self.diagNonIndexable(obj_ty, ie.object.span);
                 return; // hasErrors() aborts before codegen
             }
-            const ptr_ty = self.module.types.ptrTo(elem_ty);
             // Guard a width-mismatched `.none` store into an element slot
             // (`arr[0] = "hi"` for an i32 array) — it would overrun the element
             // and corrupt neighbors. Plain `=` only.
             if (asgn.op == .assign and !self.checkAssignable(self.builder.getRefType(val), elem_ty, asgn.value.span, "assign", "element")) return;
-            const base = self.indexBase(ie.object, obj_ty, narrowed_child);
-            const gep = self.builder.emit(.{ .index_gep = .{ .lhs = base, .rhs = idx } }, ptr_ty);
-            self.storeOrCompound(gep, val, asgn.op, elem_ty);
+            assignPlace(self, indexPlace(self, ie.object, obj_ty, narrowed_child, idx, elem_ty), val, asgn.op);
         },
         .deref_expr => |de| {
             const ptr = self.lowerExpr(de.operand);
@@ -2865,8 +2863,7 @@ pub fn resolveMutablePlace(self: *Lowering, target: *const Node) ?Place {
             const obj = fieldObject(self, fa.object);
             if (isPayloadVariantField(self, obj.ty, fa.field)) return null;
 
-            const fl = self.fieldLvaluePtr(obj.ptr, obj.ty, fa.field) orelse return null;
-            return .{ .slot = .{ .ptr = fl.ptr, .ty = fl.ty } };
+            return fieldPlace(self, obj.ptr, obj.ty, self.fieldLvalueResolve(obj.ty, fa.field) orelse return null);
         },
         .index_expr => |ie| {
             const narrowed_child = self.narrowedContainerChild(ie.object);
@@ -2875,11 +2872,7 @@ pub fn resolveMutablePlace(self: *Lowering, target: *const Node) ?Place {
             const idx = self.lowerIndexOperand(ie.index);
             const elem_ty = self.ptrToArrayElem(obj_ty) orelse self.ptrToSliceElem(obj_ty) orelse self.getElementType(obj_ty);
             if (elem_ty == .unresolved) return null;
-            const ptr_ty = self.module.types.ptrTo(elem_ty);
-
-            const base = self.indexBase(ie.object, obj_ty, narrowed_child);
-            const gep = self.builder.emit(.{ .index_gep = .{ .lhs = base, .rhs = idx } }, ptr_ty);
-            return .{ .slot = .{ .ptr = gep, .ty = elem_ty } };
+            return indexPlace(self, ie.object, obj_ty, narrowed_child, idx, elem_ty);
         },
         .deref_expr => |de| {
             const ptr = self.lowerExpr(de.operand);
@@ -2895,6 +2888,12 @@ pub fn resolveMutablePlace(self: *Lowering, target: *const Node) ?Place {
         },
         else => return null,
     }
+}
+
+fn swizzleLanePlace(self: *Lowering, obj_ptr: Ref, obj_ty: TypeId, recv: lower_expr.SwizzleRecv, lane: u8, elem_ty: TypeId) Place {
+    if (recv == .vector)
+        return .{ .lane = .{ .vec_ptr = obj_ptr, .vec_ty = obj_ty, .idx = self.builder.constInt(lane, .i64), .ty = elem_ty } };
+    return .{ .slot = .{ .ptr = swizzleLanePtr(self, obj_ptr, obj_ty, recv, lane, elem_ty), .ty = elem_ty } };
 }
 
 fn swizzleLanePtr(self: *Lowering, obj_ptr: Ref, obj_ty: TypeId, recv: lower_expr.SwizzleRecv, lane: u8, elem_ty: TypeId) Ref {
@@ -2944,9 +2943,8 @@ pub fn storeSwizzle(
                 return true;
             const coerced = self.coerceToType(val, src_ty, result_ty);
             for (sw.lanes[0..sw.len], 0..) |lane, i| {
-                const dest = swizzleLanePtr(self, obj_ptr, obj_ty, recv, lane, elem_ty);
                 const piece = self.builder.structGet(coerced, @intCast(i), elem_ty);
-                self.storeOrCompound(dest, piece, op, elem_ty);
+                assignPlace(self, swizzleLanePlace(self, obj_ptr, obj_ty, recv, lane, elem_ty), piece, op);
             }
             return true;
         },
@@ -3145,7 +3143,7 @@ pub fn fieldLvaluePtr(self: *Lowering, obj_ptr: Ref, obj_ty: TypeId, field: []co
 /// the name — the aggregate itself for a plain struct field, the variant
 /// payload for a promoted member — so a private field is refused on the write
 /// path exactly where it is refused on the read path.
-pub fn fieldLvalueMention(self: *Lowering, obj_ptr: Ref, obj_ty: TypeId, field: []const u8, span: ast.Span) FieldLvalueMention {
+pub fn fieldLvalueMention(self: *Lowering, obj_ty: TypeId, field: []const u8, span: ast.Span) FieldLvalueMention {
     switch (self.module.types.get(obj_ty)) {
         .array, .vector => if (std.mem.eql(u8, field, "len") or std.mem.eql(u8, field, "ptr")) {
             if (self.diagnostics) |d|
@@ -3163,7 +3161,7 @@ pub fn fieldLvalueMention(self: *Lowering, obj_ptr: Ref, obj_ty: TypeId, field: 
     if (owner) |o| {
         if (self.mentionField(o, field, span) == .private) return .diagnosed;
     }
-    return .{ .ptr = fieldLvaluePtrFrom(self, obj_ptr, obj_ty, res) orelse return .missing };
+    return .{ .resolved = res };
 }
 
 /// `.diagnosed` is already reported — the caller stops without adding a
@@ -3171,8 +3169,18 @@ pub fn fieldLvalueMention(self: *Lowering, obj_ptr: Ref, obj_ty: TypeId, field: 
 pub const FieldLvalueMention = union(enum) {
     missing,
     diagnosed,
-    ptr: FieldLvalue,
+    resolved: FieldResolution,
 };
+
+/// The place a write to `obj.field` lands in; null for a multi-letter swizzle.
+fn fieldPlace(self: *Lowering, obj_ptr: Ref, obj_ty: TypeId, res: FieldResolution) ?Place {
+    switch (res) {
+        .swizzle => |s| if (s.len == 1) return swizzleLanePlace(self, obj_ptr, obj_ty, s.recv, s.lanes[0], s.elem_ty),
+        else => {},
+    }
+    const fl = fieldLvaluePtrFrom(self, obj_ptr, obj_ty, res) orelse return null;
+    return .{ .slot = .{ .ptr = fl.ptr, .ty = fl.ty } };
+}
 
 fn fieldLvaluePtrFrom(self: *Lowering, obj_ptr: Ref, obj_ty: TypeId, res: FieldResolution) ?FieldLvalue {
     switch (res) {
@@ -3193,16 +3201,7 @@ fn fieldLvaluePtrFrom(self: *Lowering, obj_ptr: Ref, obj_ty: TypeId, res: FieldR
             // A multi-letter shuffle has no single address. A one-letter
             // shuffle is a scalar lane/element pointer.
             if (s.len != 1) return null;
-            const lane: u32 = s.lanes[0];
-            const ptr = switch (s.recv) {
-                .vector, .array => self.builder.structGepTyped(obj_ptr, lane, self.module.types.ptrTo(s.elem_ty), obj_ty),
-                .slice => blk: {
-                    const slice = self.builder.load(obj_ptr, obj_ty);
-                    const idx = self.builder.constInt(lane, .i64);
-                    break :blk self.builder.emit(.{ .index_gep = .{ .lhs = slice, .rhs = idx } }, self.module.types.ptrTo(s.elem_ty));
-                },
-            };
-            return .{ .ptr = ptr, .ty = s.elem_ty };
+            return .{ .ptr = swizzleLanePtr(self, obj_ptr, obj_ty, s.recv, s.lanes[0], s.elem_ty), .ty = s.elem_ty };
         },
     }
 }
@@ -3428,11 +3427,12 @@ pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
                     },
                 }
             }
-            switch (self.fieldLvalueMention(obj_ptr, obj_ty, fa.field, node.span)) {
+            switch (self.fieldLvalueMention(obj_ty, fa.field, node.span)) {
                 .diagnosed => return self.emitPlaceholder(fa.field),
-                .ptr => |r| return r.ptr,
-                .missing => return self.emitFieldError(obj_ty, fa.field, node.span),
+                .resolved => |res| if (fieldLvaluePtrFrom(self, obj_ptr, obj_ty, res)) |fl| return fl.ptr,
+                .missing => {},
             }
+            return self.emitFieldError(obj_ty, fa.field, node.span);
         },
         .index_expr => |ie| {
             const narrowed_child = self.narrowedContainerChild(ie.object);
@@ -3465,12 +3465,16 @@ pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
 pub const Place = union(enum) {
     slot: struct { ptr: Ref, ty: TypeId },
     global: program_index_mod.GlobalInfo,
+    /// A vector lane has no address: lanes narrower than a byte pack. It is
+    /// read and written through the whole vector at `vec_ptr`.
+    lane: struct { vec_ptr: Ref, vec_ty: TypeId, idx: Ref, ty: TypeId },
 };
 
 pub fn placeType(p: Place) TypeId {
     return switch (p) {
         .slot => |s| s.ty,
         .global => |g| g.ty,
+        .lane => |l| l.ty,
     };
 }
 
@@ -3478,6 +3482,7 @@ pub fn loadPlace(self: *Lowering, p: Place) Ref {
     return switch (p) {
         .slot => |s| self.builder.load(s.ptr, s.ty),
         .global => |g| self.builder.emit(.{ .global_get = g.id }, g.ty),
+        .lane => |l| self.builder.emit(.{ .vec_extract = .{ .lhs = self.builder.load(l.vec_ptr, l.vec_ty), .rhs = l.idx } }, l.ty),
     };
 }
 
@@ -3485,7 +3490,31 @@ pub fn storePlace(self: *Lowering, p: Place, val: Ref) void {
     switch (p) {
         .slot => |s| self.builder.store(s.ptr, val),
         .global => |g| self.builder.emitVoid(.{ .global_set = .{ .global = g.id, .value = val } }, .void),
+        .lane => |l| {
+            const vec = self.builder.load(l.vec_ptr, l.vec_ty);
+            self.builder.store(l.vec_ptr, self.builder.emit(.{ .vec_insert = .{ .a = vec, .b = l.idx, .c = val } }, l.vec_ty));
+        },
     }
+}
+
+/// The place `obj[idx]` names, `obj_ty` already peeled to `narrowed_child`
+/// where one applies.
+pub fn indexPlace(self: *Lowering, obj: *const Node, obj_ty: TypeId, narrowed_child: ?TypeId, idx: Ref, elem_ty: TypeId) Place {
+    if (self.isVectorType(obj_ty))
+        return .{ .lane = .{ .vec_ptr = self.containerStorage(obj, narrowed_child), .vec_ty = obj_ty, .idx = idx, .ty = elem_ty } };
+    const base = self.indexBase(obj, obj_ty, narrowed_child);
+    return .{ .slot = .{ .ptr = self.builder.emit(.{ .index_gep = .{ .lhs = base, .rhs = idx } }, self.module.types.ptrTo(elem_ty)), .ty = elem_ty } };
+}
+
+/// Store `val` to `p`, converted to the place's type, or apply the compound `op`.
+pub fn assignPlace(self: *Lowering, p: Place, val: Ref, op: ast.Assignment.Op) void {
+    if (op != .assign) {
+        _ = self.lowerPlaceRmw(p, op, val);
+        return;
+    }
+    const ty = placeType(p);
+    const val_ty = self.builder.getRefType(val);
+    self.storePlace(p, if (val_ty != ty and val_ty != .void and ty != .void) self.coerceToType(val, val_ty, ty) else val);
 }
 
 /// Load, apply `op` with `rhs`, store back; yields the STORED value, and reads
@@ -3500,16 +3529,7 @@ pub fn lowerPlaceRmw(self: *Lowering, p: Place, op: ast.Assignment.Op, rhs: Ref)
 
 /// Store a value to a GEP, handling both plain and compound assignment.
 pub fn storeOrCompound(self: *Lowering, gep: Ref, val: Ref, op: ast.Assignment.Op, ty: TypeId) void {
-    if (op == .assign) {
-        const val_ty = self.builder.getRefType(val);
-        const store_val = if (val_ty != ty and val_ty != .void and ty != .void)
-            self.coerceToType(val, val_ty, ty)
-        else
-            val;
-        self.builder.store(gep, store_val);
-    } else {
-        _ = self.lowerPlaceRmw(.{ .slot = .{ .ptr = gep, .ty = ty } }, op, val);
-    }
+    assignPlace(self, .{ .slot = .{ .ptr = gep, .ty = ty } }, val, op);
 }
 
 pub fn emitCompoundOp(self: *Lowering, lhs: Ref, rhs: Ref, op: ast.Assignment.Op, ty: TypeId) Ref {
@@ -3941,16 +3961,8 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                     self.diagNonIndexable(obj_ty, ie.object.span);
                     continue; // hasErrors() aborts before codegen
                 }
-                const ptr_ty = self.module.types.ptrTo(elem_ty);
-                const val_ty = self.builder.getRefType(val);
-                if (!self.checkAssignable(val_ty, elem_ty, ma.values[i].span, "assign", "element")) continue;
-                const store_val = if (val_ty != elem_ty and val_ty != .void and elem_ty != .void)
-                    self.coerceToType(val, val_ty, elem_ty)
-                else
-                    val;
-                const base = self.indexBase(ie.object, obj_ty, narrowed_child);
-                const gep = self.builder.emit(.{ .index_gep = .{ .lhs = base, .rhs = idx } }, ptr_ty);
-                self.builder.store(gep, store_val);
+                if (!self.checkAssignable(self.builder.getRefType(val), elem_ty, ma.values[i].span, "assign", "element")) continue;
+                assignPlace(self, indexPlace(self, ie.object, obj_ty, narrowed_child, idx, elem_ty), val, .assign);
             },
             .field_access => |fa| {
                 // `alias.member, a = v, w` — store into an imported module's
@@ -3976,16 +3988,15 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                 // diagnostic instead of defaulting to field 0 / field_ty
                 // .unresolved, which silently corrupts a neighbouring field
                 // (or panics at LLVM emission).
-                switch (self.fieldLvalueMention(obj_ptr, obj_ty, fa.field, target.span)) {
+                switch (self.fieldLvalueMention(obj_ty, fa.field, target.span)) {
                     .diagnosed => {},
-                    .ptr => |r| {
-                        const val_ty = self.builder.getRefType(val);
-                        if (!self.checkAssignable(val_ty, r.ty, ma.values[i].span, "assign", fa.field)) continue;
-                        const store_val = if (val_ty != r.ty and val_ty != .void and r.ty != .void)
-                            self.coerceToType(val, val_ty, r.ty)
-                        else
-                            val;
-                        self.builder.store(r.ptr, store_val);
+                    .resolved => |res| {
+                        const place = fieldPlace(self, obj_ptr, obj_ty, res) orelse {
+                            _ = self.emitFieldError(obj_ty, fa.field, target.span);
+                            continue;
+                        };
+                        if (!self.checkAssignable(self.builder.getRefType(val), placeType(place), ma.values[i].span, "assign", fa.field)) continue;
+                        assignPlace(self, place, val, .assign);
                     },
                     .missing => _ = self.emitFieldError(obj_ty, fa.field, target.span),
                 }

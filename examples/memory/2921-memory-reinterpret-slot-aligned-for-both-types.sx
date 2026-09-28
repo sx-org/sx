@@ -1,0 +1,22 @@
+Word :: union {
+    bits: u64;
+    bytes: [8]u8;
+}
+
+makeWord :: (bits: u64) -> Word {
+    word: Word = ---;
+    word.bits = bits;
+    word
+}
+
+main :: () -> i32 {
+    bytes : [4]u8 = .[1, 0, 0, 0];
+    fromBytes := @reinterpret(i32, bytes);
+    word := makeWord(7);
+    fromWord := @reinterpret(u64, word);
+    member := makeWord(9).bits;
+    if fromBytes != 1 { return 1; }
+    if fromWord != 7 { return 2; }
+    if member != 9 { return 3; }
+    0
+}

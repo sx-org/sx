@@ -4021,10 +4021,9 @@ fn lowerCoerceIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
     return self.lowerCoerce(val, c.args[1], src_ty, dst);
 }
 
-/// `@reinterpret(T, v)` — `v`'s bytes read as a `T`. The value spills to a slot
-/// typed by its own type and the result is that storage loaded as `T`, so
-/// neither side takes a conversion. Equal, non-zero sizes are the whole
-/// admission rule; anything else is a diagnostic.
+/// `@reinterpret(T, v)` reads `v`'s bytes as `T` without conversion, through
+/// a source-typed slot explicitly aligned for both types. Their sizes must
+/// be equal and non-zero.
 fn lowerReinterpretIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
     if (c.args.len != 2) {
         if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "@reinterpret takes 2 arguments, got {d}", .{c.args.len});
@@ -4048,7 +4047,8 @@ fn lowerReinterpretIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
         if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "@reinterpret needs two types of the same, non-zero size: '{s}' is {d} bytes, the value's '{s}' is {d}", .{ self.formatTypeName(dst), dst_size, self.formatTypeName(src), src_size });
         return self.builder.constUndef(dst);
     }
-    const slot = self.builder.alloca(src);
+    const alignment = @max(self.typeAlignBytes(src), self.typeAlignBytes(dst));
+    const slot = self.builder.allocaAligned(src, alignment);
     self.builder.store(slot, val);
     return self.builder.load(slot, dst);
 }

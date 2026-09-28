@@ -1,0 +1,117 @@
+
+@kDefaultContext = internal constant {} zeroinitializer
+@__sx_set_View_type_ids = internal constant [1 x i64] [i64 129]
+@__sx_set_View__d1_type_ids = internal constant [2 x i64] [i64 130, i64 131]
+@__sx_set_View__d2_type_ids = internal constant [3 x i64] [i64 132, i64 133, i64 134]
+@__sx_set_View__d3_type_ids = internal constant [4 x i64] [i64 135, i64 136, i64 137, i64 138]
+@__sx_type_sizes = private constant [209 x i64] [i64 8, i64 1, i64 1, i64 2, i64 4, i64 8, i64 1, i64 2, i64 4, i64 8, i64 4, i64 8, i64 16, i64 16, i64 8, i64 8, i64 8, i64 0, i64 16, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 4, i64 8, i64 40, i64 32, i64 24, i64 40, i64 32, i64 16, i64 16, i64 16, i64 16, i64 8, i64 32, i64 16, i64 24, i64 24, i64 8, i64 56, i64 16, i64 8, i64 0, i64 16, i64 16, i64 16, i64 16, i64 16, i64 56, i64 64, i64 48, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 4, i64 4, i64 4, i64 24, i64 8, i64 16, i64 16, i64 24, i64 16, i64 4, i64 8, i64 8, i64 16, i64 16, i64 16, i64 16, i64 40, i64 24, i64 16, i64 8, i64 24, i64 8, i64 4, i64 56, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 64, i64 48, i64 8, i64 8, i64 8, i64 8, i64 8, i64 0, i64 8, i64 16, i64 8, i64 16, i64 8, i64 8, i64 16, i64 8, i64 8, i64 8, i64 16, i64 8, i64 8, i64 8, i64 8, i64 8, i64 16, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 8, i64 32, i64 24, i64 16]
+
+; Function Attrs: nounwind
+define internal i64 @kind(ptr %0, { i64, [1 x i64] } %1) #0 {
+entry:
+  %alloca = alloca { i64, [1 x i64] }, align 8
+  store { i64, [1 x i64] } %1, ptr %alloca, align 8
+  %load = load { i64, [1 x i64] }, ptr %alloca, align 8
+  %gep = getelementptr inbounds nuw { i64, [1 x i64] }, ptr %alloca, i32 0, i32 0
+  %loadN = load i64, ptr %gep, align 8
+  %set.tid.slot = getelementptr inbounds i64, ptr @__sx_set_View_type_ids, i64 %loadN
+  %set.tid = load i64, ptr %set.tid.slot, align 8
+  ret i64 %set.tid
+}
+
+; Function Attrs: nounwind
+define internal i64 @kind.1(ptr %0, { i64, [1 x i64] } %1) #0 {
+entry:
+  %alloca = alloca { i64, [1 x i64] }, align 8
+  store { i64, [1 x i64] } %1, ptr %alloca, align 8
+  %load = load { i64, [1 x i64] }, ptr %alloca, align 8
+  %gep = getelementptr inbounds nuw { i64, [1 x i64] }, ptr %alloca, i32 0, i32 0
+  %loadN = load i64, ptr %gep, align 8
+  %set.tid.slot = getelementptr inbounds i64, ptr @__sx_set_View__d1_type_ids, i64 %loadN
+  %set.tid = load i64, ptr %set.tid.slot, align 8
+  ret i64 %set.tid
+}
+
+; Function Attrs: nounwind
+define internal i64 @kind.2(ptr %0, { i64, [1 x i64] } %1) #0 {
+entry:
+  %alloca = alloca { i64, [1 x i64] }, align 8
+  store { i64, [1 x i64] } %1, ptr %alloca, align 8
+  %load = load { i64, [1 x i64] }, ptr %alloca, align 8
+  %gep = getelementptr inbounds nuw { i64, [1 x i64] }, ptr %alloca, i32 0, i32 0
+  %loadN = load i64, ptr %gep, align 8
+  %set.tid.slot = getelementptr inbounds i64, ptr @__sx_set_View__d2_type_ids, i64 %loadN
+  %set.tid = load i64, ptr %set.tid.slot, align 8
+  ret i64 %set.tid
+}
+
+; Function Attrs: nounwind
+define internal i64 @kind.3(ptr %0, { i64, [1 x i64] } %1) #0 {
+entry:
+  %alloca = alloca { i64, [1 x i64] }, align 8
+  store { i64, [1 x i64] } %1, ptr %alloca, align 8
+  %load = load { i64, [1 x i64] }, ptr %alloca, align 8
+  %gep = getelementptr inbounds nuw { i64, [1 x i64] }, ptr %alloca, i32 0, i32 0
+  %loadN = load i64, ptr %gep, align 8
+  %set.tid.slot = getelementptr inbounds i64, ptr @__sx_set_View__d3_type_ids, i64 %loadN
+  %set.tid = load i64, ptr %set.tid.slot, align 8
+  ret i64 %set.tid
+}
+
+; Function Attrs: nounwind
+define i32 @main() #0 {
+entry:
+  %alloca = alloca { i64, [1 x i64] }, align 8
+  %gep = getelementptr inbounds nuw { i64, [1 x i64] }, ptr %alloca, i32 0, i32 0
+  store i64 0, ptr %gep, align 8
+  %gepN = getelementptr inbounds nuw { i64, [1 x i64] }, ptr %alloca, i32 0, i32 1
+  store { i64 } { i64 1 }, ptr %gepN, align 8
+  %load = load { i64, [1 x i64] }, ptr %alloca, align 8
+  %call = call i64 @kind(ptr @kDefaultContext, { i64, [1 x i64] } %load)
+  %allocaN = alloca i64, align 8
+  store i64 %call, ptr %allocaN, align 8
+  %allocaN = alloca { i64, [1 x i64] }, align 8
+  %gepN = getelementptr inbounds nuw { i64, [1 x i64] }, ptr %allocaN, i32 0, i32 0
+  store i64 1, ptr %gepN, align 8
+  %gepN = getelementptr inbounds nuw { i64, [1 x i64] }, ptr %allocaN, i32 0, i32 1
+  store { i64 } { i64 2 }, ptr %gepN, align 8
+  %loadN = load { i64, [1 x i64] }, ptr %allocaN, align 8
+  %callN = call i64 @kind.1(ptr @kDefaultContext, { i64, [1 x i64] } %loadN)
+  %allocaN = alloca i64, align 8
+  store i64 %callN, ptr %allocaN, align 8
+  %allocaN = alloca { i64, [1 x i64] }, align 8
+  %gepN = getelementptr inbounds nuw { i64, [1 x i64] }, ptr %allocaN, i32 0, i32 0
+  store i64 2, ptr %gepN, align 8
+  %gepN = getelementptr inbounds nuw { i64, [1 x i64] }, ptr %allocaN, i32 0, i32 1
+  store { i64 } { i64 3 }, ptr %gepN, align 8
+  %loadN = load { i64, [1 x i64] }, ptr %allocaN, align 8
+  %callN = call i64 @kind.2(ptr @kDefaultContext, { i64, [1 x i64] } %loadN)
+  %allocaN = alloca i64, align 8
+  store i64 %callN, ptr %allocaN, align 8
+  %allocaN = alloca { i64, [1 x i64] }, align 8
+  %gepN = getelementptr inbounds nuw { i64, [1 x i64] }, ptr %allocaN, i32 0, i32 0
+  store i64 3, ptr %gepN, align 8
+  %gepN = getelementptr inbounds nuw { i64, [1 x i64] }, ptr %allocaN, i32 0, i32 1
+  store { i64 } { i64 4 }, ptr %gepN, align 8
+  %loadN = load { i64, [1 x i64] }, ptr %allocaN, align 8
+  %callN = call i64 @kind.3(ptr @kDefaultContext, { i64, [1 x i64] } %loadN)
+  %allocaN = alloca i64, align 8
+  store i64 %callN, ptr %allocaN, align 8
+  %loadN = load i64, ptr %allocaN, align 8
+  %rts.gep = getelementptr inbounds [209 x i64], ptr @__sx_type_sizes, i64 0, i64 %loadN
+  %rts.load = load i64, ptr %rts.gep, align 8
+  %loadN = load i64, ptr %allocaN, align 8
+  %rts.gep23 = getelementptr inbounds [209 x i64], ptr @__sx_type_sizes, i64 0, i64 %loadN
+  %rts.load24 = load i64, ptr %rts.gep23, align 8
+  %add = add i64 %rts.load, %rts.load24
+  %loadN = load i64, ptr %allocaN, align 8
+  %rts.gep26 = getelementptr inbounds [209 x i64], ptr @__sx_type_sizes, i64 0, i64 %loadN
+  %rts.load27 = load i64, ptr %rts.gep26, align 8
+  %addN = add i64 %add, %rts.load27
+  %loadN = load i64, ptr %allocaN, align 8
+  %rts.gep30 = getelementptr inbounds [209 x i64], ptr @__sx_type_sizes, i64 0, i64 %loadN
+  %rts.load31 = load i64, ptr %rts.gep30, align 8
+  %addN = add i64 %addN, %rts.load31
+  %trunc = trunc i64 %addN to i32
+  ret i32 %trunc
+}

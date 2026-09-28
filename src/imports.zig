@@ -82,7 +82,7 @@ pub fn canonicalizePath(allocator: std.mem.Allocator, path: []const u8) ![]const
     if (c_getenv("PWD")) |pwd_z| {
         const pwd = try lexicalNormalize(allocator, std.mem.span(pwd_z));
         defer allocator.free(pwd);
-        if (pwd.len > 0 and pwd[0] == '/') {
+        if (pwd.len > 0 and pwd[0] == '/' and namesCwd(std.mem.span(pwd_z))) {
             if (relativeTo(norm, pwd)) |rel| {
                 const result = try allocator.dupe(u8, rel);
                 allocator.free(norm);
@@ -91,6 +91,13 @@ pub fn canonicalizePath(allocator: std.mem.Allocator, path: []const u8) ![]const
         }
     }
     return norm;
+}
+
+/// Whether `dir` is the real cwd; an inherited `$PWD` can name another directory.
+fn namesCwd(dir: [:0]const u8) bool {
+    const a = fileIdentity(dir) orelse return false;
+    const b = fileIdentity(".") orelse return false;
+    return std.meta.eql(a, b);
 }
 
 /// Resolve an import path. Tries (in order):

@@ -49,6 +49,7 @@ run_check "tests + corpus (quiet on success)" ./tests/no_build_noise.sh
 run_check "shim compile carries the target"   ./tests/shim_target_flags.sh
 run_check "resolver-target xfail set"         ./tests/resolver-target/run_resolver_target.sh
 run_check "wasm32 function values"            ./tests/wasm_function_values.sh
+run_check "ir-dump honours --target"          ./tests/ir_dump_target.sh
 
 if [[ $QUICK -eq 0 ]]; then
     # Rebuilds in every optimize mode. Debug-only testing is how both the
