@@ -5571,6 +5571,11 @@ pub fn lowerBinaryOp(self: *Lowering, node: *const Node) Ref {
     return lowerBinaryValues(self, bop.op, lhs, lhs_ty, bop.lhs.span, rhs, rhs_ty, bop.rhs.span);
 }
 
+fn isPlaceholder(self: *Lowering, ref: Ref) bool {
+    const op = self.builder.getRefOp(ref) orelse return false;
+    return op == .placeholder;
+}
+
 /// A guard-narrowed optional operand's payload: it compares as its payload.
 fn narrowedPayload(self: *Lowering, operand: Ref, ty: TypeId) ?struct { ref: Ref, ty: TypeId } {
     if (ty.isBuiltin() or !self.narrowed_refs.contains(operand)) return null;
@@ -5581,6 +5586,9 @@ fn narrowedPayload(self: *Lowering, operand: Ref, ty: TypeId) ?struct { ref: Ref
 
 /// `lhs op rhs` over operands already lowered.
 fn lowerBinaryValues(self: *Lowering, op: ast.BinaryOp.Op, lhs_value: Ref, lhs_ty: TypeId, lhs_span: ast.Span, rhs_value: Ref, rhs_ty: TypeId, rhs_span: ast.Span) Ref {
+    // A refused operand already reported its error; the operation over it
+    // reports nothing further.
+    if (isPlaceholder(self, lhs_value) or isPlaceholder(self, rhs_value)) return self.emitPlaceholder("refused-operand");
     var lhs = lhs_value;
     var rhs = rhs_value;
     // Optional value-equality: `?T == ?T` — equal iff both

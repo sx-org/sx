@@ -1,0 +1,10 @@
+// An operation over an operand that was refused reports nothing further.
+
+main :: () -> i32 {
+    v : @Vector(2, i32) = .[1, 2];
+    w : i64 = 5000000000;
+    x : i32 = 1; u : u32 = 2; g : u64 = 3;
+    a := (w + v) + v;
+    b := (x + u) + g;
+    0
+}

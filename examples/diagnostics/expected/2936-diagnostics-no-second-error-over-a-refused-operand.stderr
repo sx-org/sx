@@ -1,0 +1,11 @@
+error: cannot apply '+' to 'i64' and '@Vector(2,i32)': the scalar does not convert implicitly to the vector's lane type; write an explicit cast
+  --> examples/diagnostics/2936-diagnostics-no-second-error-over-a-refused-operand.sx:7:11
+   |
+ 7 |     a := (w + v) + v;
+   |           ^^^^^
+
+error: cannot apply '+' to signed and unsigned values of type 'i32' and 'u32'; write an explicit cast on one side
+  --> examples/diagnostics/2936-diagnostics-no-second-error-over-a-refused-operand.sx:8:11
+   |
+ 8 |     b := (x + u) + g;
+   |           ^^^^^
