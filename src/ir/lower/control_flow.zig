@@ -1295,7 +1295,8 @@ fn claimCase(
     }) catch unreachable;
 }
 
-pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.TailDemand) Ref {
+pub fn lowerMatch(self: *Lowering, node: *const Node, demand: lower_stmt.TailDemand) Ref {
+    const me = &node.data.match_expr;
     // A PURE-failable body's tail `match` yields nothing — see `lowerIfExpr`.
     const error_only = demand == .error_only;
     // inline if match: evaluate at compile time, only lower the matching arm
@@ -1473,7 +1474,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     // arms is a side-effect (void); don't let a leaked `target_type` turn
     // it into a value match. A cast's destination is no context for it.
     if (inferred_result == .unresolved) {
-        const context = if (self.cast_operand == null) self.target_type else null;
+        const context = if (self.cast_reached != node) self.target_type else null;
         inferred_result = if (self.force_block_value) (context orelse .unresolved) else .void;
     }
     // Optional lift (match analog): a value-position `match` whose

@@ -224,8 +224,8 @@ fn lowerErrorOnlyTail(self: *Lowering, tail: *const Node, ret_ty: TypeId) BodyTa
             _ = self.lowerIfExpr(tail, demand);
             return if (self.currentBlockHasTerminator()) .{ .terminated = .noreturn } else .no_value;
         },
-        .match_expr => |me| {
-            _ = self.lowerMatch(&me, demand);
+        .match_expr => {
+            _ = self.lowerMatch(tail, demand);
             return if (self.currentBlockHasTerminator()) .{ .terminated = .noreturn } else .no_value;
         },
         else => {},
