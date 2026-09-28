@@ -36,6 +36,7 @@ pub const ErrorAnalysis = struct {
         loop: ?*const ast.ForExpr = null,
         payload: ?struct { name: []const u8, condition: *const Node } = null,
         arm: ?struct { capture: []const u8, pattern: ?*const Node, subject: *const Node } = null,
+        lambda: ?*const ast.Lambda = null,
         parent: ?*const LocalScope,
     };
 
@@ -87,7 +88,7 @@ pub const ErrorAnalysis = struct {
         }
     }
 
-    /// A head rooted at a local binding is a value, never a type or namespace.
+    /// A head rooted at a bound value is never a type or namespace.
     fn headIsBinding(self: ErrorAnalysis, fd: ?*const ast.FnDecl, head: *const Node) bool {
         var root = head;
         while (root.data == .field_access) root = root.data.field_access.object;
@@ -265,7 +266,8 @@ pub const ErrorAnalysis = struct {
             while (i > 0) {
                 i -= 1;
                 const node = current.preceding[i];
-                const preceding = LocalScope{ .preceding = current.preceding[0..i], .parent = current.parent, .loop = current.loop, .payload = current.payload, .arm = current.arm };
+                var preceding = current.*;
+                preceding.preceding = current.preceding[0..i];
                 var initializer = self;
                 initializer.locals = &preceding;
                 if (node.data == .destructure_decl) {
@@ -305,6 +307,15 @@ pub const ErrorAnalysis = struct {
                     return self.l.matchCaptureType(outer.receiverType(fd, arm.subject), arm.pattern) orelse .unresolved;
                 }
             }
+            if (current.lambda) |lambda| {
+                for (lambda.params) |p| {
+                    if (std.mem.eql(u8, p.name, name)) return self.l.resolveType(p.type_expr);
+                }
+                // An env field's value reads the enclosing body, whose bindings this scope does not see.
+                for (lambda.env) |field| {
+                    if (std.mem.eql(u8, field.name, name)) return .unresolved;
+                }
+            }
             if (current.loop) |loop| {
                 for (loop.captures, 0..) |capture, index| {
                     if (!std.mem.eql(u8, capture.name, name)) continue;
@@ -321,11 +332,15 @@ pub const ErrorAnalysis = struct {
                 }
             }
         }
-        const decl = fd orelse return null;
-        for (decl.params) |p| {
+        if (fd) |decl| for (decl.params) |p| {
             if (std.mem.eql(u8, p.name, name)) return self.l.resolveType(p.type_expr);
-        }
-        return null;
+        };
+        // Past these scopes a name reads as lowering reads it: a live lowering scope's binding, else a module-level value.
+        const read = Node{ .span = .{ .start = 0, .end = 0 }, .data = .{ .identifier = .{ .name = name } } };
+        return switch (self.l.inferExprType(&read)) {
+            .unresolved, .type_value => null,
+            else => |ty| ty,
+        };
     }
 
     fn armScope(arm: ast.MatchArm, subject: *const Node, parent: ?*const LocalScope) LocalScope {
@@ -575,6 +590,14 @@ pub const ErrorAnalysis = struct {
     pub fn collectEscapes(self: ErrorAnalysis, body: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList(*const ast.FnDecl), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
         self.collectErrorSites(body, tags, edges, dyn, enclosing_fd);
         self.contributeTailCall(body, tags, edges, dyn, enclosing_fd);
+    }
+
+    /// Every escape of a closure literal's body, which binds its params and env.
+    pub fn collectClosureEscapes(self: ErrorAnalysis, lambda: *const ast.Lambda, tags: *std.ArrayList(u32), edges: *std.ArrayList(*const ast.FnDecl), dyn: *bool) void {
+        const scope = LocalScope{ .lambda = lambda, .parent = self.locals };
+        var nested = self;
+        nested.locals = &scope;
+        nested.collectEscapes(lambda.body, tags, edges, dyn, null);
     }
 
     /// Whole-program fix-point that converges each bare-`!` function's inferred
