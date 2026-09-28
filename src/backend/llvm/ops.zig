@@ -437,9 +437,11 @@ pub const Ops = struct {
         return c.LLVMBuildStore(self.e.builder, c.LLVMBuildZExt(self.e.builder, val, word_ty, "word"), ptr);
     }
 
-    pub fn emitAlloca(self: Ops, elem_ty: TypeId) void {
-        const llvm_ty = self.e.toLLVMType(elem_ty);
+    pub fn emitAlloca(self: Ops, allocation: ir_inst.Alloca) void {
+        const llvm_ty = self.e.toLLVMType(allocation.ty);
         const result = self.e.buildEntryAlloca(llvm_ty, "alloca");
+        if (allocation.alignment > c.LLVMGetAlignment(result))
+            c.LLVMSetAlignment(result, @intCast(allocation.alignment));
         self.e.mapRef(result);
     }
 

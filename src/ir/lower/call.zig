@@ -4021,10 +4021,9 @@ fn lowerCoerceIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
     return self.lowerCoerce(val, c.args[1], src_ty, dst);
 }
 
-/// `@reinterpret(T, v)` — `v`'s bytes read as a `T`. The value spills to a slot
-/// typed by its own type and the result is that storage loaded as `T`, so
-/// neither side takes a conversion. Equal, non-zero sizes are the whole
-/// admission rule; anything else is a diagnostic.
+/// `@reinterpret(T, v)` reads `v`'s bytes as `T` without conversion, through
+/// a source-typed slot explicitly aligned for both types. Their sizes must
+/// be equal and non-zero.
 fn lowerReinterpretIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
     if (c.args.len != 2) {
         if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "@reinterpret takes 2 arguments, got {d}", .{c.args.len});
@@ -4048,18 +4047,10 @@ fn lowerReinterpretIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
         if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "@reinterpret needs two types of the same, non-zero size: '{s}' is {d} bytes, the value's '{s}' is {d}", .{ self.formatTypeName(dst), dst_size, self.formatTypeName(src), src_size });
         return self.builder.constUndef(dst);
     }
-    // The slot is typed by the more strictly aligned of the two, so both the
-    // store and the load are aligned.
-    const slot_ty = if (self.typeAlignBytes(dst) > self.typeAlignBytes(src)) dst else src;
-    const slot = self.builder.alloca(slot_ty);
-    self.builder.store(retypeSlot(self, slot, slot_ty, src), val);
-    return self.builder.load(retypeSlot(self, slot, slot_ty, dst), dst);
-}
-
-fn retypeSlot(self: *Lowering, slot: Ref, slot_ty: TypeId, ty: TypeId) Ref {
-    if (slot_ty == ty) return slot;
-    const ptr_ty = self.module.types.ptrTo(ty);
-    return self.builder.emit(.{ .bitcast = .{ .operand = slot, .from = self.module.types.ptrTo(slot_ty), .to = ptr_ty } }, ptr_ty);
+    const alignment = @max(self.typeAlignBytes(src), self.typeAlignBytes(dst));
+    const slot = self.builder.allocaAligned(src, alignment);
+    self.builder.store(slot, val);
+    return self.builder.load(slot, dst);
 }
 
 pub fn intCastErrorSet(self: *Lowering) ?TypeId {

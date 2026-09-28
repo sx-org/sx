@@ -180,7 +180,7 @@ pub const Op = union(enum) {
     float_to_int: Conversion,
 
     // ── Memory ──────────────────────────────────────────────────────
-    alloca: TypeId, // stack allocation, result is *T
+    alloca: Alloca, // stack allocation, result is *T
     load: UnaryOp, // load from pointer
     store: Store, // store value to pointer
 
@@ -376,6 +376,11 @@ pub const TriOp = struct {
     a: Ref,
     b: Ref,
     c: Ref,
+};
+
+pub const Alloca = struct {
+    ty: TypeId,
+    alignment: usize,
 };
 
 pub const Store = struct {

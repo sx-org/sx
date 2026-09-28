@@ -565,8 +565,12 @@ pub const Builder = struct {
     // ── Memory ──────────────────────────────────────────────────────
 
     pub fn alloca(self: *Builder, ty: TypeId) Ref {
+        return self.allocaAligned(ty, self.module.types.typeAlignBytes(ty));
+    }
+
+    pub fn allocaAligned(self: *Builder, ty: TypeId, alignment: usize) Ref {
         const ptr_ty = self.module.types.ptrTo(ty);
-        return self.emit(.{ .alloca = ty }, ptr_ty);
+        return self.emit(.{ .alloca = .{ .ty = ty, .alignment = alignment } }, ptr_ty);
     }
 
     pub fn load(self: *Builder, ptr: Ref, ty: TypeId) Ref {
