@@ -4361,7 +4361,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
         },
 
         .if_expr => self.lowerIfExpr(node, .value),
-        .match_expr => |me| self.lowerMatch(&me, .value),
+        .match_expr => self.lowerMatch(node, .value),
         .while_expr => |we| self.lowerWhile(&we),
         .for_expr => |fe| self.lowerFor(&fe),
         .break_expr => self.lowerBreak(node.span),
