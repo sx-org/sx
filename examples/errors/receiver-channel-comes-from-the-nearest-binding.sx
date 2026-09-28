@@ -1,0 +1,38 @@
+@import "modules/std.sx";
+GrowErr :: error { Bad; }
+OtherErr :: error { Bad; }
+Thing :: struct {
+    n: i64;
+    grow :: (self: *Thing, k: i64) -> (i64, !) {
+        if k < 1 { raise GrowErr.Bad; }
+        self.n + k
+    }
+}
+Other :: struct {
+    n: i64;
+    grow :: (self: *Other, k: i64) -> (i64, !) {
+        if k < 1 { raise OtherErr.Bad; }
+        self.n + k
+    }
+}
+g : Thing = Thing{ n = 1 };
+
+viaModuleValue :: (k: i64) -> ! {
+    v := try g.grow(k);
+    print("{}\n", v);
+}
+
+viaParam :: (h: Closure(*Other) -> (i64, !), o: *Other) -> (i64, !OtherErr) { return try h(o); }
+viaEnv :: (h: Closure(i64) -> (i64, !), k: i64) -> (i64, !OtherErr) { return try h(k); }
+
+main :: () -> i32 {
+    e := viaModuleValue(0);
+    g := Other{ n = 2 };
+    block := try { try g.grow(0) } catch |c| { if c == .Bad { -1 } else { -2 } };
+    param := viaParam(|g: *Other| -> (i64, !) { try g.grow(0) }, *g) catch { -1 };
+    f := |k: i64|_{ g = *g } -> (i64, !) { try g.grow(k) };
+    env := viaEnv(*f, 0) catch { -1 };
+    print("module={} bad={} block={} param={} env={}\n", e, e == .Bad, block, param, env);
+    if e == .Bad and block == -1 { return 0; }
+    1
+}
