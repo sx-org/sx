@@ -3879,6 +3879,7 @@ pub const Lowering = struct {
 
     // --- lower/control_flow.zig (lower_control_flow) ---
     pub const lowerIfExpr = lower_control_flow.lowerIfExpr;
+    pub const thenBranchType = lower_control_flow.thenBranchType;
     pub const armStaticallyDiverges = lower_control_flow.armStaticallyDiverges;
     pub const armYieldsVoid = lower_control_flow.armYieldsVoid;
     pub const armContributesNull = lower_control_flow.armContributesNull;

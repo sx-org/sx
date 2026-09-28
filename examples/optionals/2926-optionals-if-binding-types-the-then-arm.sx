@@ -1,0 +1,12 @@
+// An `if v := opt` binding is in scope when the `if`'s type is joined from its
+// arms.
+
+@import "modules/std.sx";
+
+main :: () -> i32 {
+    o : ?i32 = 3;
+    w : u8 = 1;
+    x := if m := o { m } else { w };
+    print("{} {}\n", x, @typeName(@typeOf(x)));
+    0
+}
