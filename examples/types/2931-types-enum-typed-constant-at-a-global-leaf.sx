@@ -1,0 +1,15 @@
+// An enum-typed constant serializes into a global, alone or as an aggregate
+// leaf, as the variant it names.
+
+@import "modules/std.sx";
+
+Color :: enum { red; green; }
+
+KC : Color : .green;
+G : [1]Color = .[KC];
+H : Color = KC;
+
+main :: () -> i32 {
+    print("{} {}\n", G[0], H);
+    0
+}
