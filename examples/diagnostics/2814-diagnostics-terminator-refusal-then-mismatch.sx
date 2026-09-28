@@ -2,7 +2,9 @@
 // reported too.
 
 main :: () -> i32 {
-    b : [4:0]u8 = "lit";
+    s : string = "lit";
+    b : [:0]u8 = s;
     c : i64 = "lit";
+    d : [4:0]u8 = s;
     0
 }

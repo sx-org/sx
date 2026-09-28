@@ -1,11 +1,17 @@
-error: a value of type '[3:0]u8' does not coerce to '[4:0]u8': no conversion adds a terminator
-  --> examples/diagnostics/2814-diagnostics-terminator-refusal-then-mismatch.sx:5:5
+error: a value of type 'string' does not coerce to '[:0]u8': no conversion adds a terminator — materialize one with mem.cloneZ(s)
+  --> examples/diagnostics/2814-diagnostics-terminator-refusal-then-mismatch.sx:6:5
    |
- 5 |     b : [4:0]u8 = "lit";
-   |     ^^^^^^^^^^^^^^^^^^^^
+ 6 |     b : [:0]u8 = s;
+   |     ^^^^^^^^^^^^^^^
 
 error: cannot initialize 'c' of type 'i64' with a value of type 'string'
-  --> examples/diagnostics/2814-diagnostics-terminator-refusal-then-mismatch.sx:6:15
+  --> examples/diagnostics/2814-diagnostics-terminator-refusal-then-mismatch.sx:7:15
    |
- 6 |     c : i64 = "lit";
+ 7 |     c : i64 = "lit";
    |               ^^^^^
+
+error: a value of type 'string' does not coerce to '[4:0]u8': no conversion adds a terminator
+  --> examples/diagnostics/2814-diagnostics-terminator-refusal-then-mismatch.sx:8:5
+   |
+ 8 |     d : [4:0]u8 = s;
+   |     ^^^^^^^^^^^^^^^^
