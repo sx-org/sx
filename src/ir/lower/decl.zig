@@ -1319,6 +1319,55 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
     // here closes over those. Idempotent — the fixpoint skips a name already
     // registered — so aliases resolved in pass 0a' keep their exact binding.
     registerConstAliases(self, decls);
+    // Indexed constants validate their operands after aggregate and alias registration.
+    for (decls) |decl| {
+        if (decl.data != .const_decl) continue;
+        const cd = &decl.data.const_decl;
+        if (cd.type_annotation == null or cd.value.data != .index_expr) continue;
+        self.setDeclarationContext(decl);
+        const id = self.declId(.{ .const_decl = cd }, decl.source_file);
+        const info = self.program_index.get(.module_const, id) orelse continue;
+        if (!validateTypedConstInit(self, cd, info.ty)) continue;
+        const errors_before = errorCount(self);
+        _ = self.numericConstValue(info, .{ .lowering = self, .frame = null });
+        if (constantIndexOperand(self, cd.value, null)) continue;
+        if (errorCount(self) == errors_before) {
+            if (self.diagnostics) |d|
+                d.addFmt(.err, cd.value.span, "constant '{s}' must be initialized by a compile-time constant", .{cd.name});
+        }
+    }
+}
+
+fn constantIndexOperand(self: *Lowering, node: *const Node, frame: ?*const lower.ConstFoldFrame) bool {
+    return switch (node.data) {
+        .array_literal, .struct_literal, .string_literal => true,
+        .identifier => |id| switch (self.selectModuleConst(id.name)) {
+            .resolved => |sel| constantIndexAuthor(self, id.name, sel, frame),
+            .own_opaque, .ambiguous, .none => false,
+        },
+        .field_access => |fa| blk: {
+            if (self.qualifiedTypeName(fa.object)) |name| {
+                defer self.alloc.free(name);
+                if (self.selectQualifiedConst(name, fa.field)) |sel|
+                    break :blk constantIndexAuthor(self, fa.field, sel, frame);
+            }
+            break :blk constantIndexOperand(self, fa.object, frame);
+        },
+        .index_expr => |ie| blk: {
+            const ctx = lower.SourceConstCtx{ .lowering = self, .frame = frame };
+            const index = program_index_mod.foldConstInt(ie.index, ctx) catch break :blk false;
+            break :blk index != null and constantIndexOperand(self, ie.object, frame);
+        },
+        else => false,
+    };
+}
+
+fn constantIndexAuthor(self: *Lowering, name: []const u8, sel: SelectedConst, parent: ?*const lower.ConstFoldFrame) bool {
+    if (lower.constFoldFrameContains(parent, name, sel.environment)) return false;
+    const frame = lower.ConstFoldFrame{ .name = name, .environment = sel.environment, .parent = parent };
+    const pin = self.pinConstValue(sel.info.value, sel.environment);
+    defer pin.unpin();
+    return constantIndexOperand(self, sel.info.value, &frame);
 }
 
 fn refreshNumericConstTypes(self: *Lowering, decls: []const *const Node) void {
@@ -1403,7 +1452,7 @@ pub fn registerConstAliases(self: *Lowering, decls: []const *const Node) void {
 pub fn registerTypedModuleConst(self: *Lowering, cd: *const ast.ConstDecl) void {
     const ta = cd.type_annotation orelse return;
     switch (cd.value.data) {
-        .int_literal, .float_literal, .bool_literal, .string_literal, .char_literal, .undef_literal, .null_literal, .binary_op, .unary_op, .struct_literal, .postfix_cast, .identifier, .field_access => {},
+        .int_literal, .float_literal, .bool_literal, .string_literal, .char_literal, .undef_literal, .null_literal, .binary_op, .unary_op, .struct_literal, .postfix_cast, .identifier, .field_access, .index_expr => {},
         .call => if (Lowering.layoutQuery(cd.value) == null) return,
         else => return,
     }
@@ -1415,41 +1464,29 @@ pub fn registerTypedModuleConst(self: *Lowering, cd: *const ast.ConstDecl) void 
         self.dropModuleConst(self.declId(.{ .const_decl = cd }, self.current_source_file));
         return;
     }
-    // Validate the initializer against the explicit annotation BY TYPE, so a
-    // const-EXPRESSION initializer (`N : string : M + 2`) is checked exactly
-    // like a literal rather than skipped. A mismatch is a type error, not a
-    // silently-accepted const — registering it would let `emitModuleConst`
-    // stamp the value with the wrong IR type (an int emitted as a `string`
-    // const → a bogus pointer that segfaults at the use site) and let the
-    // count path fold it (`[N]i64` → 4).
-    if (!self.typedConstInitFits(cd.value, ty)) {
-        // A non-integral compile-time float into an integer const is the
-        // same implicit-narrowing failure as a typed local/field/param —
-        // report it with the unified wording (an integral float FOLDS here).
-        // Every other mismatch takes the generic wording.
-        if (self.isIntEx(ty) and isFloat(self.inferExprType(cd.value))) {
-            if (program_index_mod.evalConstFloatExpr(cd.value, self)) |fv| {
-                self.diagNonIntegralNarrow(cd.value.span, fv, ty);
-                self.dropModuleConst(self.declId(.{ .const_decl = cd }, self.current_source_file));
-                return;
-            }
-        }
-        if (self.diagnostics) |d| {
-            d.addFmt(.err, cd.value.span, "type mismatch: constant '{s}' is declared '{s}' but its initializer is {s}", .{
-                cd.name, self.formatTypeName(ty), self.initializerDescription(cd.value),
-            });
-        }
-        // Evict the pass-0 placeholder (`N : string : 4` and
-        // `N : string : M + 2` are both pre-registered as `.i64` in scanDecls
-        // pass 0); leaving it would let a count use still fold `N`.
-        self.dropModuleConst(self.declId(.{ .const_decl = cd }, self.current_source_file));
-        return;
-    }
+    if (!validateTypedConstInit(self, cd, ty)) return;
     // Reconcile the registration with the resolved annotation (pass 0 stored
     // a literal/expression placeholder type), so the const folds and emits at
     // its declared type — the same `put` the literal path always did.
     const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = ty, .declared_type = ty };
     self.putModuleConst(self.declId(.{ .const_decl = cd }, self.current_source_file), cd.name, info);
+}
+
+fn validateTypedConstInit(self: *Lowering, cd: *const ast.ConstDecl, ty: TypeId) bool {
+    if (self.typedConstInitFits(cd.value, ty)) return true;
+    const float_value = if (self.isIntEx(ty) and isFloat(self.inferExprType(cd.value)))
+        program_index_mod.evalConstFloatExpr(cd.value, self)
+    else
+        null;
+    if (float_value) |fv| {
+        self.diagNonIntegralNarrow(cd.value.span, fv, ty);
+    } else if (self.diagnostics) |d| {
+        d.addFmt(.err, cd.value.span, "type mismatch: constant '{s}' is declared '{s}' but its initializer is {s}", .{
+            cd.name, self.formatTypeName(ty), self.initializerDescription(cd.value),
+        });
+    }
+    self.dropModuleConst(self.declId(.{ .const_decl = cd }, self.current_source_file));
+    return false;
 }
 
 /// True iff a literal initializer of `value`'s kind is faithfully

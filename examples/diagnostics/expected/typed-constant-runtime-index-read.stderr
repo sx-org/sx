@@ -1,0 +1,5 @@
+error: constant 'KX' must be initialized by a compile-time constant
+  --> examples/diagnostics/typed-constant-runtime-index-read.sx:2:12
+   |
+ 2 | KX : i64 : A[1];
+   |            ^^^^

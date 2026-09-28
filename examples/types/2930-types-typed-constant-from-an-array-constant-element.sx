@@ -1,0 +1,11 @@
+@import "modules/std.sx";
+
+KX : u8 : A[1];
+A : [2]i64 : .[3, 4];
+G : u8 = KX;
+
+main :: () -> i32 {
+    x : u8 = KX;
+    print("{} {} {}\n", x, G, @typeName(@typeOf(KX)));
+    0
+}

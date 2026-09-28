@@ -1,0 +1,5 @@
+error: type mismatch: constant 'X' is declared 'bool' but its initializer is an integer expression
+  --> examples/diagnostics/typed-constant-index-type-mismatch.sx:2:12
+   |
+ 2 | X : bool : A[1];
+   |            ^^^^
