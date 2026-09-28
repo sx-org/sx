@@ -1413,9 +1413,10 @@ pub const LiteralLocalHelp = struct {
     local: lower.LiteralLocal,
 };
 
-/// Whether `p[0..]` over a terminated many-pointer `src_ty` yields a slice that
-/// reaches `dst_ty`: an unterminated one, or one with the same terminator.
 fn scansToSlice(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool {
+    const src = self.module.types.get(src_ty).many_pointer;
+    const dst = self.module.types.sliceInfoOf(dst_ty).?;
+    if (!self.module.types.sameType(src.element, dst.element)) return false;
     const have = self.module.types.sentinelOf(src_ty) orelse return false;
     const want = self.module.types.sentinelOf(dst_ty) orelse return true;
     return have == want;
