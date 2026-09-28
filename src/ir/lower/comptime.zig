@@ -183,6 +183,26 @@ pub fn someConstant(self: *Lowering, child: TypeId, payload: inst_mod.ConstantVa
     return .{ .aggregate = fields };
 }
 
+/// The payload of `value`, a constant of optional type `opt_ty`; null when the
+/// constant is absent.
+pub fn constantPayload(self: *Lowering, value: inst_mod.ConstantValue, opt_ty: TypeId) ?inst_mod.ConstantValue {
+    const child = self.module.types.get(opt_ty).optional.child;
+    return switch (self.module.types.optionalShape(child)) {
+        .pointer_word => if (value == .null_val) null else value,
+        .high_bit => switch (value) {
+            .int => |word| if (@as(u64, @bitCast(word)) == self.module.types.optionalNullWord(child))
+                null
+            else
+                .{ .int = @bitCast(self.module.types.integerLayout(child).?.normalize(@bitCast(word))) },
+            else => .{ .int = 0 },
+        },
+        .flag => switch (value) {
+            .aggregate => |fields| if (fields[1] == .boolean and fields[1].boolean) fields[0] else null,
+            else => null,
+        },
+    };
+}
+
 /// The null constant of `opt_ty`. A `.null_val` emits as zeroed storage, which
 /// a high-bit optional reads as a present 0.
 pub fn nullConstant(self: *Lowering, opt_ty: TypeId) inst_mod.ConstantValue {
