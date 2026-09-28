@@ -1,0 +1,8 @@
+PoolErr :: error { Setup; }
+Pool :: struct {
+    n: i64 = 0;
+    create :: (n: i64) -> (Pool, !) {
+        if n < 1 { raise PoolErr.Setup; }
+        Pool{ n = n }
+    }
+}
