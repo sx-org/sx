@@ -1,10 +1,7 @@
-// A typed constant initialized by an element of an array constant holds that
-// element at its declared type.
-
 @import "modules/std.sx";
 
-A : [2]i64 : .[3, 4];
 KX : u8 : A[1];
+A : [2]i64 : .[3, 4];
 G : u8 = KX;
 
 main :: () -> i32 {

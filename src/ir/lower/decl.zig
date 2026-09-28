@@ -1319,6 +1319,21 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
     // here closes over those. Idempotent — the fixpoint skips a name already
     // registered — so aliases resolved in pass 0a' keep their exact binding.
     registerConstAliases(self, decls);
+    // Indexed constants fold after aggregate and alias registration.
+    for (decls) |decl| {
+        if (decl.data != .const_decl) continue;
+        const cd = &decl.data.const_decl;
+        if (cd.type_annotation == null or cd.value.data != .index_expr) continue;
+        self.setDeclarationContext(decl);
+        const id = self.declId(.{ .const_decl = cd }, decl.source_file);
+        const info = self.program_index.get(.module_const, id) orelse continue;
+        const errors_before = errorCount(self);
+        if (self.numericConstValue(info, .{ .lowering = self, .frame = null }) != null) continue;
+        if (errorCount(self) == errors_before) {
+            if (self.diagnostics) |d|
+                d.addFmt(.err, cd.value.span, "constant '{s}' must be initialized by a compile-time constant", .{cd.name});
+        }
+    }
 }
 
 fn refreshNumericConstTypes(self: *Lowering, decls: []const *const Node) void {
