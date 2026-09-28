@@ -1327,6 +1327,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
         self.setDeclarationContext(decl);
         const id = self.declId(.{ .const_decl = cd }, decl.source_file);
         const info = self.program_index.get(.module_const, id) orelse continue;
+        if (!validateTypedConstInit(self, cd, info.ty)) continue;
         const errors_before = errorCount(self);
         _ = self.numericConstValue(info, .{ .lowering = self, .frame = null });
         if (constantIndexOperand(self, cd.value, null)) continue;
@@ -1463,41 +1464,29 @@ pub fn registerTypedModuleConst(self: *Lowering, cd: *const ast.ConstDecl) void 
         self.dropModuleConst(self.declId(.{ .const_decl = cd }, self.current_source_file));
         return;
     }
-    // Validate the initializer against the explicit annotation BY TYPE, so a
-    // const-EXPRESSION initializer (`N : string : M + 2`) is checked exactly
-    // like a literal rather than skipped. A mismatch is a type error, not a
-    // silently-accepted const — registering it would let `emitModuleConst`
-    // stamp the value with the wrong IR type (an int emitted as a `string`
-    // const → a bogus pointer that segfaults at the use site) and let the
-    // count path fold it (`[N]i64` → 4).
-    if (!self.typedConstInitFits(cd.value, ty)) {
-        // A non-integral compile-time float into an integer const is the
-        // same implicit-narrowing failure as a typed local/field/param —
-        // report it with the unified wording (an integral float FOLDS here).
-        // Every other mismatch takes the generic wording.
-        if (self.isIntEx(ty) and isFloat(self.inferExprType(cd.value))) {
-            if (program_index_mod.evalConstFloatExpr(cd.value, self)) |fv| {
-                self.diagNonIntegralNarrow(cd.value.span, fv, ty);
-                self.dropModuleConst(self.declId(.{ .const_decl = cd }, self.current_source_file));
-                return;
-            }
-        }
-        if (self.diagnostics) |d| {
-            d.addFmt(.err, cd.value.span, "type mismatch: constant '{s}' is declared '{s}' but its initializer is {s}", .{
-                cd.name, self.formatTypeName(ty), self.initializerDescription(cd.value),
-            });
-        }
-        // Evict the pass-0 placeholder (`N : string : 4` and
-        // `N : string : M + 2` are both pre-registered as `.i64` in scanDecls
-        // pass 0); leaving it would let a count use still fold `N`.
-        self.dropModuleConst(self.declId(.{ .const_decl = cd }, self.current_source_file));
-        return;
-    }
+    if (!validateTypedConstInit(self, cd, ty)) return;
     // Reconcile the registration with the resolved annotation (pass 0 stored
     // a literal/expression placeholder type), so the const folds and emits at
     // its declared type — the same `put` the literal path always did.
     const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = ty, .declared_type = ty };
     self.putModuleConst(self.declId(.{ .const_decl = cd }, self.current_source_file), cd.name, info);
+}
+
+fn validateTypedConstInit(self: *Lowering, cd: *const ast.ConstDecl, ty: TypeId) bool {
+    if (self.typedConstInitFits(cd.value, ty)) return true;
+    const float_value = if (self.isIntEx(ty) and isFloat(self.inferExprType(cd.value)))
+        program_index_mod.evalConstFloatExpr(cd.value, self)
+    else
+        null;
+    if (float_value) |fv| {
+        self.diagNonIntegralNarrow(cd.value.span, fv, ty);
+    } else if (self.diagnostics) |d| {
+        d.addFmt(.err, cd.value.span, "type mismatch: constant '{s}' is declared '{s}' but its initializer is {s}", .{
+            cd.name, self.formatTypeName(ty), self.initializerDescription(cd.value),
+        });
+    }
+    self.dropModuleConst(self.declId(.{ .const_decl = cd }, self.current_source_file));
+    return false;
 }
 
 /// True iff a literal initializer of `value`'s kind is faithfully
