@@ -81,6 +81,7 @@ mapCapacityFor :: (n: i64) -> i64 {
 //               hash must too — otherwise two field-equal keys built with
 //               different stack garbage in the padding hash differently and a
 //               lookup on a present, logically-equal key misses.
+//   • optional → its presence, then the payload as the payload hashes.
 //   • scalar / enum / bool / pointer leaf → raw `@sizeOf` bytes (these have a
 //               unique byte representation — no padding to skip).
 mapHashKey :: (key: $K) -> u64 {
@@ -112,6 +113,12 @@ mapHashInto :: (v: $T, h: u64) -> u64 {
         inline for field in @typeInfo(T).struct.fields {
             hh = mapHashInto(@field(v, field.index).(field.type), hh);
         }
+        return hh;
+    }
+    inline if T is optional {
+        present := v != null;
+        hh := fnv1aFold(h, @reinterpret([*]u8, *present), 1);
+        if p := v { return mapHashInto(p, hh); }
         return hh;
     }
     return fnv1aFold(h, @reinterpret([*]u8, *v), @sizeOf(T));
