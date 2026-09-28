@@ -1,0 +1,5 @@
+E :: error { Bad };
+
+pick :: (x: $T) -> (T, !E) {
+    raise .Bad;
+}

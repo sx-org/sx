@@ -1,0 +1,7 @@
+// An error trace frame of a generic instance names the file that declares it.
+
+@import "2925-errors-trace-names-a-generic-instance-by-its-source/lib.sx";
+
+main :: () -> !E {
+    v := try pick(3);
+}

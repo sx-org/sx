@@ -147,6 +147,7 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
     const name_id = self.module.types.internString(owned_name);
     const func_id = self.builder.beginFunction(name_id, params.items, ret_ty);
     self.function_instances.put(instances.ownKey(self.alloc, key), func_id) catch @panic("out of memory");
+    self.builder.currentFunc().source_file = self.current_source_file;
     self.builder.currentFunc().has_implicit_ctx = wants_ctx;
     self.builder.currentFunc().is_naked = (fd.abi == .naked);
     self.builder.currentFunc().is_get = fd.is_get;
