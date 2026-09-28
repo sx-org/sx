@@ -1146,6 +1146,9 @@ pub const LLVMEmitter = struct {
         }
         for (self.ir_mod.globals.items, 0..) |global, i| {
             if (global.comptime_func == null and !used.contains(@intCast(i))) continue;
+            const comptime_value: ?Value = if (global.comptime_func) |func_id| self.evalComptimeGlobal(global.name, func_id) else null;
+            // A void global holds no value; its `@run` still ran above.
+            if (global.ty == .void) continue;
             const name = self.ir_mod.types.getString(global.name);
             const llvm_ty = self.toLLVMType(global.ty);
             const name_z = self.alloc.dupeZ(u8, name) catch continue;
@@ -1167,46 +1170,20 @@ pub const LLVMEmitter = struct {
                 c.LLVMSetThreadLocal(llvm_global, 1);
             }
 
-            // Evaluate comptime initializer if present
-            if (global.comptime_func) |func_id| {
-                // The comptime VM is the SOLE evaluator. A bail is ALWAYS a
-                // build-gating error naming the reason; its result Value is
-                // materialized by `valueToLLVMConst`.
-                sx_trace_clear();
-                const evaluation = comptime_vm.tryEval(self.alloc, self.ir_mod, func_id, &self.build_config, self.import_sources, null);
-                defer evaluation.destroy();
-                const result = evaluation.completed() orelse {
-                    // Surface the bail loudly instead of silently filling the
-                    // const with zero. Leave the global undef; comptime_failed
-                    // halts the build before it ships.
-                    const gname = self.ir_mod.types.getString(global.name);
-                    std.debug.print("error: comptime init of '{s}' failed: {s}\n", .{ gname, comptime_vm.last_bail_reason orelse "<unknown>" });
-                    self.comptime_failed = true;
+            if (global.comptime_func != null) {
+                // A failed evaluation leaves the global undef; comptime_failed
+                // halts the build before it ships.
+                const value = comptime_value orelse {
                     c.LLVMSetInitializer(llvm_global, c.LLVMGetUndef(llvm_ty));
                     self.global_map.put(@intCast(i), llvm_global) catch {};
                     continue;
                 };
-                // A bare failable `NAME :: @run f();`: the comptime function
-                // returns the failable tuple; split it. Escaping error →
-                // diagnostic + halt (leave the global undef); success → the
-                // value part materializes into the global's success type.
-                const cf_ret = self.ir_mod.getFunction(func_id).ret;
-                var init_value = result;
-                if (self.comptimeErrChannel(cf_ret) != null) {
-                    if (self.checkComptimeFailable(result, cf_ret, self.ir_mod.types.getString(global.name))) |succ| {
-                        init_value = succ;
-                    } else {
-                        c.LLVMSetInitializer(llvm_global, c.LLVMGetUndef(llvm_ty));
-                        self.global_map.put(@intCast(i), llvm_global) catch {};
-                        continue;
-                    }
-                }
                 // Serialized in Pass 1.6: an escaped value resolves to symbols
                 // that are not declared yet.
                 c.LLVMSetInitializer(llvm_global, c.LLVMConstNull(llvm_ty));
                 self.pending_comptime_inits.append(self.alloc, .{
                     .global_index = @intCast(i),
-                    .value = init_value,
+                    .value = value,
                     .ty = global.ty,
                     .name = self.ir_mod.types.getString(global.name),
                 }) catch {};
@@ -1237,6 +1214,29 @@ pub const LLVMEmitter = struct {
 
             self.global_map.put(@intCast(i), llvm_global) catch {};
         }
+    }
+
+    /// Evaluate a global's `@run` initializer: its value (a failable's
+    /// success part), or null after a bail or an escaping error is reported
+    /// and the build flagged failed.
+    fn evalComptimeGlobal(self: *LLVMEmitter, global_name: StringId, func_id: FuncId) ?Value {
+        // The comptime VM is the SOLE evaluator. A bail is ALWAYS a
+        // build-gating error naming the reason.
+        sx_trace_clear();
+        const evaluation = comptime_vm.tryEval(self.alloc, self.ir_mod, func_id, &self.build_config, self.import_sources, null);
+        defer evaluation.destroy();
+        const gname = self.ir_mod.types.getString(global_name);
+        const result = evaluation.completed() orelse {
+            std.debug.print("error: comptime init of '{s}' failed: {s}\n", .{ gname, comptime_vm.last_bail_reason orelse "<unknown>" });
+            self.comptime_failed = true;
+            return null;
+        };
+        // A bare failable `NAME :: @run f();`: the comptime function returns
+        // the failable tuple; an escaping error is reported, the success part
+        // is the value.
+        const cf_ret = self.ir_mod.getFunction(func_id).ret;
+        if (self.comptimeErrChannel(cf_ret) == null) return result;
+        return self.checkComptimeFailable(result, cf_ret, gname);
     }
 
     fn markConstGlobalRefs(cv: ir_inst.ConstantValue, used: *std.AutoHashMap(u32, void)) void {
