@@ -1,0 +1,11 @@
+// A C symbol declared again under its own name with another signature is
+// refused at the later declaration.
+
+@import "modules/std.sx";
+
+getenv :: (name: [*:0]u8) -> [*:0]u8 extern libc;
+
+main :: () -> i32 {
+    getenv("HOME");
+    0
+}

@@ -1,0 +1,5 @@
+error: extern symbol 'getenv' is already bound with a different signature; two views of one C symbol must declare identical types
+  --> examples/diagnostics/2917-diagnostics-extern-redeclared-with-another-signature.sx:6:49
+   |
+ 6 | getenv :: (name: [*:0]u8) -> [*:0]u8 extern libc;
+   |                                                 ^
