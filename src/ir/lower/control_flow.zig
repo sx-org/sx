@@ -326,6 +326,12 @@ fn contextualArmType(self: *Lowering, inferred: TypeId) TypeId {
     // A cast converts the merged value; its operand keeps its inferred type.
     if (self.cast_operand != null) return inferred;
     const target = self.target_type orelse return inferred;
+    // A `null` arm lifted the join to `?T`; the context decides `T`.
+    if (!inferred.isBuiltin() and self.module.types.get(inferred) == .optional) {
+        const child = self.module.types.get(inferred).optional.child;
+        const decided = contextualArmType(self, child);
+        return if (decided == child) inferred else self.module.types.optionalOf(decided);
+    }
     if (self.isIntEx(inferred)) if (self.integerContext(target)) |ty| return ty;
     if (Lowering.isFloat(inferred)) if (self.floatContext(target)) |ty| return ty;
     if (inferred == .string and self.literalShape(target) != .string) return target;
