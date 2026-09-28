@@ -1419,6 +1419,15 @@ pub const LiteralLocalHelp = struct {
     local: lower.LiteralLocal,
 };
 
+fn scansToSlice(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool {
+    const src = self.module.types.get(src_ty).many_pointer;
+    const dst = self.module.types.sliceInfoOf(dst_ty).?;
+    if (!self.module.types.sameType(src.element, dst.element)) return false;
+    const have = self.module.types.sentinelOf(src_ty) orelse return false;
+    const want = self.module.types.sentinelOf(dst_ty) orelse return true;
+    return have == want;
+}
+
 /// `src_ty` reaching the terminated `dst_ty`, which no conversion fills. `local`
 /// is the literal-bound local the value was read from.
 pub fn refuseAddedTerminator(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: ast.Span, local: ?lower.LiteralLocal) void {
@@ -1979,7 +1988,11 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         .many_to_slice_reject => {
             if (self.diagnostics) |d| {
                 const cs = self.builder.current_span;
-                d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "a many-pointer '[*]T' does not coerce to a slice '[]T' implicitly (it carries no length) — slice it with a length: ptr[0..len]", .{});
+                const span = ast.Span{ .start = cs.start, .end = cs.end };
+                if (scansToSlice(self, src_ty, dst_ty))
+                    d.addFmt(.err, span, "a '{s}' does not coerce to '{s}' implicitly (it carries no length) — scan it to its terminator: p[0..]", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty) })
+                else
+                    d.addFmt(.err, span, "a many-pointer '[*]T' does not coerce to a slice '[]T' implicitly (it carries no length) — slice it with a length: ptr[0..len]", .{});
             }
             return val;
         },

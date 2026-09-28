@@ -1,0 +1,10 @@
+// A terminated many-pointer refused at a slice is named by its written types,
+// and the refusal offers the scan to its terminator.
+
+main :: () -> i32 {
+    p : [*:0]u8 = "x";
+    d : [:0]u8 = p;
+    t : [:0]u16 = p;
+    u : []i32 = p;
+    0
+}

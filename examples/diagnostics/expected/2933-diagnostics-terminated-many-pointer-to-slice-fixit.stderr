@@ -1,0 +1,17 @@
+error: a '[*:0]u8' does not coerce to '[:0]u8' implicitly (it carries no length) — scan it to its terminator: p[0..]
+  --> examples/diagnostics/2933-diagnostics-terminated-many-pointer-to-slice-fixit.sx:6:5
+   |
+ 6 |     d : [:0]u8 = p;
+   |     ^^^^^^^^^^^^^^^
+
+error: a many-pointer '[*]T' does not coerce to a slice '[]T' implicitly (it carries no length) — slice it with a length: ptr[0..len]
+  --> examples/diagnostics/2933-diagnostics-terminated-many-pointer-to-slice-fixit.sx:7:5
+   |
+ 7 |     t : [:0]u16 = p;
+   |     ^^^^^^^^^^^^^^^^
+
+error: a many-pointer '[*]T' does not coerce to a slice '[]T' implicitly (it carries no length) — slice it with a length: ptr[0..len]
+  --> examples/diagnostics/2933-diagnostics-terminated-many-pointer-to-slice-fixit.sx:8:5
+   |
+ 8 |     u : []i32 = p;
+   |     ^^^^^^^^^^^^^^
