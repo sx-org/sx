@@ -5077,6 +5077,14 @@ pub fn lowerAsmExpr(self: *Lowering, ae: *const ast.AsmExpr, span: ast.Span) Ref
         }
     }
 
+    // (5) An indirect (`*`) constraint hands the asm an address, which only a
+    // place output supplies.
+    for (ae.operands) |op| {
+        if (op.role == .out_place or std.mem.indexOfScalar(u8, op.constraint, '*') == null) continue;
+        diags.addFmt(.err, op.payload.span, "asm constraint \"{s}\" is indirect: its operand is a place output, `-> *place`", .{op.constraint});
+        return self.emitPlaceholder("inline_asm");
+    }
+
     // ── Build the IR op. Result type from the out_value operands (0→void,
     // 1→T, N→named tuple). N outputs → LLVM returns a struct {T1,…,Tn}, which
     // is exactly sx's tuple representation, so emit needs no special case. ──
@@ -5103,7 +5111,7 @@ pub fn lowerAsmExpr(self: *Lowering, ae: *const ast.AsmExpr, span: ast.Span) Ref
                 // it with the place's loaded value; indirect-memory (`=*m`)
                 // outputs pass the place address as a pointer arg and the asm
                 // writes through it — both handled in `emitInlineAsm`.
-                // `@place` lowers to its address (a pointer); the asm result is
+                // `*place` lowers to its address (a pointer); the asm result is
                 // stored through it. The stored type is the pointee.
                 operand_ref = self.lowerExpr(op.payload);
                 const pty = self.inferExprType(op.payload);
@@ -5112,7 +5120,7 @@ pub fn lowerAsmExpr(self: *Lowering, ae: *const ast.AsmExpr, span: ast.Span) Ref
                     break :blk if (info == .pointer) info.pointer.pointee else .unresolved;
                 } else .unresolved;
                 if (out_ty == .unresolved) {
-                    diags.addFmt(.err, span, "asm `-> @place` output target must be an addressable place", .{});
+                    diags.addFmt(.err, span, "asm `-> *place` output target must be an addressable place", .{});
                     return self.emitPlaceholder("inline_asm");
                 }
             },
