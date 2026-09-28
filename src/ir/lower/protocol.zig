@@ -1685,7 +1685,13 @@ pub fn emitProtocolDispatch(self: *Lowering, receiver: Ref, proto_info: Protocol
     const vtable_ptr = self.builder.structGet(receiver, 2, void_ptr);
     const vtable_ty = self.protocol_vtable_type_map.get(proto_info.name) orelse return self.emitError("vtable", null);
     const vtable = self.builder.emit(.{ .deref = .{ .operand = vtable_ptr } }, vtable_ty);
-    const fn_ptr = self.builder.structGet(vtable, @intCast(midx), void_ptr);
+    // The slot holds the thunk: the receiver's ctx, then the method's params.
+    // Typing it so lets the indirect call pass each argument as the thunk is
+    // declared to take it.
+    const thunk_params = self.alloc.alloc(TypeId, mi.param_types.len + 1) catch unreachable;
+    thunk_params[0] = void_ptr;
+    @memcpy(thunk_params[1..], mi.param_types);
+    const fn_ptr = self.builder.structGet(vtable, @intCast(midx), self.module.types.functionType(thunk_params, mi.ret_type));
 
     // Build call args: [__sx_ctx]? + receiver_ctx + user args.
     // Protocol thunks are sx-side, so they carry the implicit __sx_ctx
