@@ -1,0 +1,3 @@
+READ :: 1;
+WRITE :: 2;
+MODE :: READ | WRITE;

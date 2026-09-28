@@ -1,0 +1,11 @@
+error: unknown type 'SIZE'
+  --> examples/modules/dotted-constant-names-a-type-only-when-its-value-is-one.sx:9:9
+   |
+ 9 |     s : m.SIZE = 4;
+   |         ^^^^^^
+
+error: unknown type 'GREEN'
+  --> examples/modules/dotted-constant-names-a-type-only-when-its-value-is-one.sx:10:9
+   |
+10 |     g : m.GREEN = 5;
+   |         ^^^^^^^

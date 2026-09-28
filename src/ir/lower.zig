@@ -4016,6 +4016,7 @@ pub const Lowering = struct {
     pub const plainStructMethodSource = lower_nominal.plainStructMethodSource;
     pub const ensurePlainStructMethodLowered = lower_nominal.ensurePlainStructMethodLowered;
     pub const followAliasChain = lower_nominal.followAliasChain;
+    pub const nameAuthor = lower_nominal.nameAuthor;
     pub const registerEnumDecl = lower_nominal.registerEnumDecl;
     pub const refuseIllegalElseMember = lower_nominal.refuseIllegalElseMember;
     pub const refuseIllegalTags = lower_nominal.refuseIllegalTags;

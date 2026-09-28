@@ -744,20 +744,26 @@ pub fn followAliasChain(self: *Lowering, author: resolver_mod.RawAuthor) ?resolv
             }
         }
         visited.append(self.alloc, cd) catch @panic("out of memory");
-        const next: ?resolver_mod.RawAuthor = switch (cd.value.data) {
-            .identifier => |id| singleVisibleAuthor(self, id.name, cur.source),
-            .field_access => blk: {
-                const path = self.qualifiedTypeName(cd.value) orelse break :blk null;
-                defer self.alloc.free(path);
-                break :blk switch (self.qualifiedMemberVerdictFrom(path, cur.source)) {
-                    .selected => |sel| sel.author,
-                    .not_qualified, .missing, .ambiguous => null,
-                };
-            },
-            else => null,
-        };
-        cur = next orelse return null;
+        cur = nameAuthor(self, cd.value, cur.source) orelse return null;
     }
+}
+
+/// The single author a name spelling denotes from `source`: a bare identifier
+/// via the visible-author walk, `ns.X` through `source`'s namespace edge into
+/// the target module's own member. Null when it selects no single author.
+pub fn nameAuthor(self: *Lowering, node: *const Node, source: []const u8) ?resolver_mod.RawAuthor {
+    return switch (node.data) {
+        .identifier => |id| singleVisibleAuthor(self, id.name, source),
+        .field_access => blk: {
+            const path = self.qualifiedTypeName(node) orelse break :blk null;
+            defer self.alloc.free(path);
+            break :blk switch (self.qualifiedMemberVerdictFrom(path, source)) {
+                .selected => |sel| sel.author,
+                .not_qualified, .missing, .ambiguous => null,
+            };
+        },
+        else => null,
+    };
 }
 
 /// Where an alias declaration is written: the file the `DeclTable` stamped as

@@ -1,0 +1,5 @@
+Color :: enum { red; green; }
+word :: () -> Type { i64 }
+Word :: word();
+SIZE :: @sizeOf(i64);
+GREEN : Color : Color.green;
