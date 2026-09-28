@@ -1,0 +1,15 @@
+// Modules that each declare an open set named `View` get their type tables in
+// the same order on every build.
+
+a :: @import "2924-types-same-named-open-sets-emit-in-a-fixed-order/zeta.sx";
+b :: @import "2924-types-same-named-open-sets-emit-in-a-fixed-order/yota.sx";
+c :: @import "2924-types-same-named-open-sets-emit-in-a-fixed-order/xi.sx";
+d :: @import "2924-types-same-named-open-sets-emit-in-a-fixed-order/psi.sx";
+
+main :: () -> i32 {
+    ta := a.kind(a.M1{});
+    tb := b.kind(b.M2{});
+    tc := c.kind(c.M3{});
+    td := d.kind(d.M4{});
+    (@sizeOf(ta) + @sizeOf(tb) + @sizeOf(tc) + @sizeOf(td)).(i32)
+}

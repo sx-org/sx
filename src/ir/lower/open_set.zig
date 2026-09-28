@@ -979,15 +979,20 @@ pub fn freezeSets(self: *Lowering) void {
     emitDispatchBodies(self);
 }
 
-/// The declared sets, ordered by name, so the tables emit in an order the
-/// program's text decides rather than a hash's.
+/// The declared sets, ordered by name, then by declaring file and position for
+/// sets of one name, so the tables emit in an order the program's text decides
+/// rather than a hash's.
 fn setsByName(self: *Lowering) []const *Set {
     var out = std.ArrayList(*Set).empty;
     var it = self.open_sets.valueIterator();
     while (it.next()) |set| out.append(self.alloc, set) catch {};
     const Ctx = struct {
         fn lt(_: void, a: *Set, b: *Set) bool {
-            return std.mem.order(u8, a.decl.name, b.decl.name) == .lt;
+            const by_name = std.mem.order(u8, a.decl.name, b.decl.name);
+            if (by_name != .eq) return by_name == .lt;
+            const by_file = std.mem.order(u8, a.source_file orelse "", b.source_file orelse "");
+            if (by_file != .eq) return by_file == .lt;
+            return a.span.start < b.span.start;
         }
     };
     std.mem.sort(*Set, out.items, {}, Ctx.lt);
