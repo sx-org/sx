@@ -1,0 +1,14 @@
+@import "modules/std.sx";
+
+data :: @import "tests/fixtures/typed_constant_index_reexport.sx";
+X : f64 : data.values.F[1];
+
+Words :: struct { values: [2]string; }
+GROUPS : [1]Words : .[.{ values = .["ab", "cd"] }];
+WORD : string : GROUPS[0].values[1];
+BYTE : u8 : WORD[1];
+
+main :: () -> i32 {
+    print("{} {} {}\n", X, WORD, BYTE);
+    0
+}

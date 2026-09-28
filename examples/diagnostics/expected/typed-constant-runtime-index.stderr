@@ -1,0 +1,5 @@
+error: constant 'X' must be initialized by a compile-time constant
+  --> examples/diagnostics/typed-constant-runtime-index.sx:3:11
+   |
+ 3 | X : f64 : F[I];
+   |           ^^^^
