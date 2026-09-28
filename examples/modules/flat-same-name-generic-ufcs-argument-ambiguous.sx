@@ -1,0 +1,10 @@
+@import "modules/std.sx";
+@import "flat-same-name-generic-ufcs-argument-ambiguous/a.sx";
+@import "flat-same-name-generic-ufcs-argument-ambiguous/b.sx";
+
+Box :: struct { v: i64; }
+
+main :: () -> i32 {
+    print("{}\n", pick(Box{ v = 1 }));
+    0
+}

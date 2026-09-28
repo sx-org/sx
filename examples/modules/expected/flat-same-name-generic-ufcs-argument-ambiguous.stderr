@@ -1,0 +1,5 @@
+error: 'pick' is ambiguous; declared by multiple imported modules — qualify the call
+  --> examples/modules/flat-same-name-generic-ufcs-argument-ambiguous.sx:8:19
+   |
+ 8 |     print("{}\n", pick(Box{ v = 1 }));
+   |                   ^^^^

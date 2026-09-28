@@ -950,7 +950,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         // name, so only the first-wins map lookup needs the gate.)
         const early_fd: ?*const ast.FnDecl = if (sel_author) |sf|
             sf.decl
-        else if (author_not_callable or callableLocalShadow(self, c.callee.data.identifier.name))
+        else if (author_declines or callableLocalShadow(self, c.callee.data.identifier.name))
             null
         else
             self.program_index.lookup(.function, early_name);
