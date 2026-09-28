@@ -1744,8 +1744,8 @@ pub const Ops = struct {
                         continue;
                     }
                     var llvm_pty = raw_struct;
-                    if (c.LLVMGetTypeKind(raw_struct) == c.LLVMArrayTypeKind) {
-                        // Array params in fn-ptr calls decay to pointers (C ABI)
+                    if (fp_is_c_abi and c.LLVMGetTypeKind(raw_struct) == c.LLVMArrayTypeKind) {
+                        // C array parameters decay to pointers.
                         llvm_pty = self.e.cached_ptr;
                     } else if (fp_is_c_abi) {
                         // Mirror declareFunction's C-ABI classification for an
