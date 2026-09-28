@@ -9,3 +9,9 @@ error: cannot initialize 'c' of type 'i64' with a value of type 'string'
    |
  7 |     c : i64 = "lit";
    |               ^^^^^
+
+error: a value of type 'string' does not coerce to '[4:0]u8': no conversion adds a terminator
+  --> examples/diagnostics/2814-diagnostics-terminator-refusal-then-mismatch.sx:8:5
+   |
+ 8 |     d : [4:0]u8 = s;
+   |     ^^^^^^^^^^^^^^^^
