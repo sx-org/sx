@@ -23,13 +23,13 @@ main :: () {
     a.c = 8;
     print("a 1 : {}\n", a);
 
-    large: f64 = 5989.5;
+    real: f64 = 101.5;
     b : Foo = ---; // EVERY field undefined — `= ---` skips all defaults
     // Assign each field explicitly; nothing here may be read before it is
     // written, since `= ---` left the whole struct undefined.
     b.a = 1;
     b.b = SPECIAL_VALUE;      // re-supply the default `= ---` skipped
-    b.c = xx large;           // converts f64 to u8 (5989.5 -> 101)
+    b.c = xx real;            // converts f64 to u8 (101.5 -> 101)
     b.d = xx resolve(5);      // converts i32 to u8 (17)
     print("b: {}", b);
     print("\n");
