@@ -1,0 +1,14 @@
+@import "modules/std.sx";
+
+M :: 4.0;
+K : u8 : M;
+F : f64 : 4.0;
+L : u8 : F;
+
+main :: () -> i32 {
+    x := K;
+    print("{} {}\n", x, @typeName(@typeOf(x)));
+    y := L;
+    print("{} {}\n", y, @typeName(@typeOf(y)));
+    0
+}

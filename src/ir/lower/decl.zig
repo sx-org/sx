@@ -1472,13 +1472,8 @@ pub fn typedConstInitFits(self: *Lowering, value: *const Node, dst_ty: TypeId) b
     // checks its range. A non-integral one (`F + 0.25`) falls through to the
     // rejecting checks below.
     if (self.isIntEx(dst_ty)) {
-        switch (value.data) {
-            .float_literal, .binary_op, .unary_op => {
-                if (program_index_mod.evalConstFloatExpr(value, self)) |fv| {
-                    if (program_index_mod.isIntegralFloat(fv)) return true;
-                }
-            },
-            else => {},
+        if (program_index_mod.evalConstFloatExpr(value, self)) |fv| {
+            if (program_index_mod.isIntegralFloat(fv)) return true;
         }
     }
     return switch (value.data) {
