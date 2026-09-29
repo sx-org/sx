@@ -339,9 +339,10 @@ pub fn build(b: *std.Build) void {
     // exists — and so the sibling library/ tree the binary loads is in place.
     corpus_opts.addOption([]const u8, "sx_exe", b.getInstallPath(.bin, "sx"));
     // `zig build test -Dupdate-goldens` flips src/corpus_run.test.zig from
-    // verify mode to regenerate mode: it overwrites each example's expected
-    // .exit/.stdout/.stderr (+ .ir where one exists) with freshly-normalized
-    // output instead of asserting against it.
+    // verify mode to regenerate mode: instead of asserting against an
+    // example's expected .exit/.stdout/.stderr (+ .ir where one exists), it
+    // rewrites each one that is missing or differs from the freshly-normalized
+    // output. A matching snapshot keeps its bytes.
     const update_goldens = b.option(
         bool,
         "update-goldens",
@@ -352,7 +353,8 @@ pub fn build(b: *std.Build) void {
     // the corpus runner to ONLY the named example(s) — full repo-relative `.sx`
     // paths, comma-separated. Empty = run every example. Use it to verify or
     // regenerate (-Dupdate-goldens) a specific example without re-running (or
-    // clobbering the snapshots of) the rest of the corpus. Because the value is
+    // clobbering the snapshots of) the rest of the corpus; a named example with
+    // no snapshots yet has them recorded by -Dupdate-goldens. Because the value is
     // baked into the corpus options module, changing it also busts the cached
     // test-run result (the runner enumerates .sx/expected files at RUNTIME, so a
     // bare snapshot edit alone would otherwise be served from cache).

@@ -582,6 +582,8 @@ const Item = struct {
     cfg_error: ?[]const u8,
 };
 
+const Mode = enum { verify, update };
+
 /// A worker's entire report for one item. Every string is allocated from the
 /// thread-safe results allocator and owned by the sweep. Slots are written by
 /// exactly one worker and read only after the pool joins.
@@ -628,11 +630,13 @@ fn splitTimedStderr(raw: []const u8) TimedStderr {
     return .{ .body = raw[0..idx], .jit_ns = jit_ns };
 }
 
-/// Collect every marker under `<source_dir>/expected` into `items`. Strings
-/// are duped into `arena` (sweep lifetime). The `.build` sidecar is parsed
-/// here — cheap, and it lets the sweep partition serial items before the pool
-/// starts.
-fn collectExpectedDir(
+/// Collect one category's examples into `items`. Unfiltered, an example is an
+/// `expected/<name>.exit` marker: a category also holds `.sx` modules that are
+/// not examples. `-Dname` names examples by source path, so a named `<name>.sx`
+/// is collected whether or not its snapshots exist yet. Strings are duped into
+/// `arena` (sweep lifetime). The `.build` sidecar is parsed here — cheap, and
+/// it lets the sweep partition serial items before the pool starts.
+fn collectCategory(
     arena: std.mem.Allocator,
     io: std.Io,
     source_dir: []const u8,
@@ -641,18 +645,18 @@ fn collectExpectedDir(
     items: *std.ArrayList(Item),
 ) !void {
     const exp_dir = try std.fs.path.join(arena, &.{ source_dir, "expected" });
-    var dir = std.Io.Dir.openDirAbsolute(io, exp_dir, .{ .iterate = true }) catch return;
+    const scan_dir, const ext = if (filter.len > 0) .{ source_dir, ".sx" } else .{ exp_dir, ".exit" };
+    var dir = std.Io.Dir.openDirAbsolute(io, scan_dir, .{ .iterate = true }) catch return;
     defer dir.close(io);
 
     var it = dir.iterate();
     while (try it.next(io)) |entry| {
         if (entry.kind == .directory) continue; // accept .file and .unknown d_type
-        if (!std.mem.endsWith(u8, entry.name, ".exit")) continue;
-        const name = try arena.dupe(u8, entry.name[0 .. entry.name.len - ".exit".len]);
+        if (!std.mem.endsWith(u8, entry.name, ext)) continue;
+        const name = try arena.dupe(u8, entry.name[0 .. entry.name.len - ext.len]);
 
-        // `-Dname=<paths>` filter: when set, run ONLY the named example(s) (full
-        // repo-relative `.sx` paths, comma-separated). A non-matching example is
-        // dropped silently — not counted as ran or skipped.
+        // A non-matching example is dropped silently — not counted as ran or
+        // skipped.
         if (filter.len > 0) {
             const this_rel = try std.fmt.allocPrint(arena, "{s}/{s}.sx", .{ rel_prefix, name });
             if (!nameMatchesFilter(filter, this_rel)) continue;
@@ -679,10 +683,10 @@ fn collectExpectedDir(
     }
 }
 
-/// Discover every runnable item under a corpus root: a
-/// `<root>/<cat>/expected/<name>.exit` marker with its `<root>/<cat>/<name>.sx`.
-/// Category directories are visited in sorted order so item order (and
-/// therefore all reporting) is stable across filesystems.
+/// Discover every runnable item under a corpus root's `<root>/<cat>/`
+/// directories (see `collectCategory`). Category directories are visited in
+/// sorted order so item order (and therefore all reporting) is stable across
+/// filesystems.
 fn collectRoot(
     arena: std.mem.Allocator,
     io: std.Io,
@@ -708,10 +712,8 @@ fn collectRoot(
     }.lt);
     for (child_names.items) |child| {
         const child_dir = try std.fs.path.join(arena, &.{ root_dir, child });
-        const child_expected = try std.fs.path.join(arena, &.{ child_dir, "expected" });
-        std.Io.Dir.access(.cwd(), io, child_expected, .{}) catch continue;
         const rel_prefix = try std.fmt.allocPrint(arena, "{s}/{s}", .{ root_base, child });
-        try collectExpectedDir(arena, io, child_dir, rel_prefix, filter, items);
+        try collectCategory(arena, io, child_dir, rel_prefix, filter, items);
     }
 }
 
@@ -722,6 +724,7 @@ fn runOne(
     results_gpa: std.mem.Allocator,
     io: std.Io,
     repo_root: []const u8,
+    mode: Mode,
     item: *const Item,
     out: *Outcome,
 ) !void {
@@ -757,9 +760,9 @@ fn runOne(
     }
 
     const rel_path = try std.fmt.allocPrint(a, "{s}/{s}.sx", .{ item.rel_prefix, name });
-    const exit_raw = readOptional(io, a, try std.fmt.allocPrint(a, "{s}/{s}.exit", .{ exp_dir, name })) orelse "";
-    const out_raw = readOptional(io, a, try std.fmt.allocPrint(a, "{s}/{s}.stdout", .{ exp_dir, name })) orelse "";
-    const err_raw = readOptional(io, a, try std.fmt.allocPrint(a, "{s}/{s}.stderr", .{ exp_dir, name })) orelse "";
+    const exit_raw = readOptional(io, a, try std.fmt.allocPrint(a, "{s}/{s}.exit", .{ exp_dir, name }));
+    const out_raw = readOptional(io, a, try std.fmt.allocPrint(a, "{s}/{s}.stdout", .{ exp_dir, name }));
+    const err_raw = readOptional(io, a, try std.fmt.allocPrint(a, "{s}/{s}.stderr", .{ exp_dir, name }));
     const ir_raw = readOptional(io, a, try std.fmt.allocPrint(a, "{s}/{s}.ir", .{ exp_dir, name }));
 
     // A bundle smoke test (`.app`/codesign) only makes sense on a macOS host —
@@ -1035,36 +1038,49 @@ fn runOne(
         act_ir = trimNl(try normalizeIr(a, merged));
     }
 
-    // --- update mode: overwrite snapshots with freshly-normalized output ---
-    if (corpus_paths.update_goldens) {
-        try writeGolden(io, a, exp_dir, name, "exit", try std.fmt.allocPrint(a, "{d}", .{act_exit}));
-        if (!ir_only) try writeGolden(io, a, exp_dir, name, "stdout", act_out);
-        try writeGolden(io, a, exp_dir, name, "stderr", act_err);
-        if (act_ir) |ir| try writeGolden(io, a, exp_dir, name, "ir", ir);
-        out.updated = true;
+    const exit_text: ?[]const u8 = if (exit_raw) |raw| std.mem.trim(u8, raw, " \t\r\n") else null;
+    const exp_exit: ?u32 = if (exit_text) |t| std.fmt.parseInt(u32, t, 10) catch null else null;
+    const exp_out = trimNl(try normalizeStd(a, out_raw orelse ""));
+    const exp_err = trimNl(try normalizeStd(a, err_raw orelse ""));
+    const exp_ir: ?[]const u8 = if (ir_raw) |raw| trimNl(try normalizeIr(a, raw)) else null;
+    const out_differs = !ir_only and !std.mem.eql(u8, act_out, exp_out);
+    const err_differs = !std.mem.eql(u8, act_err, exp_err);
+    const ir_differs = if (exp_ir) |e| !std.mem.eql(u8, act_ir.?, e) else false;
+
+    // --- update mode: rewrite only the snapshots that are missing or differ,
+    // so a matching one keeps its bytes ---
+    if (mode == .update) {
+        const write_exit = exp_exit != act_exit;
+        const write_out = out_differs or (!ir_only and out_raw == null);
+        const write_err = err_differs or err_raw == null;
+        out.updated = write_exit or write_out or write_err or ir_differs;
+        if (!out.updated) return;
+        try std.Io.Dir.createDirPath(.cwd(), io, exp_dir);
+        if (write_exit) try writeGolden(io, a, exp_dir, name, "exit", try std.fmt.allocPrint(a, "{d}", .{act_exit}));
+        if (write_out) try writeGolden(io, a, exp_dir, name, "stdout", act_out);
+        if (write_err) try writeGolden(io, a, exp_dir, name, "stderr", act_err);
+        if (ir_differs) try writeGolden(io, a, exp_dir, name, "ir", act_ir.?);
         return;
     }
 
     // --- verify against stored snapshot ---
-    const exp_exit = std.fmt.parseInt(u32, std.mem.trim(u8, exit_raw, " \t\r\n"), 10) catch {
-        out.failure = try std.fmt.allocPrint(results_gpa, "{s}: unparseable expected exit '{s}'", .{ name, std.mem.trim(u8, exit_raw, " \t\r\n") });
+    const want_exit = exp_exit orelse {
+        out.failure = if (exit_text) |t|
+            try std.fmt.allocPrint(results_gpa, "{s}: unparseable expected exit '{s}'", .{ name, t })
+        else
+            try std.fmt.allocPrint(results_gpa, "{s}: no {s}/expected/{s}.exit — record its snapshots with `zig build test -Dupdate-goldens -Dname={s}`", .{ name, item.rel_prefix, name, rel_path });
         return;
     };
-    const exp_out = trimNl(try normalizeStd(a, out_raw));
-    const exp_err = trimNl(try normalizeStd(a, err_raw));
 
     var diag: std.ArrayList(u8) = .empty;
-    if (act_exit != exp_exit)
-        try diag.appendSlice(a, try std.fmt.allocPrint(a, "  exit: expected={d} actual={d}\n", .{ exp_exit, act_exit }));
-    if (!ir_only and !std.mem.eql(u8, act_out, exp_out))
+    if (act_exit != want_exit)
+        try diag.appendSlice(a, try std.fmt.allocPrint(a, "  exit: expected={d} actual={d}\n", .{ want_exit, act_exit }));
+    if (out_differs)
         try appendDiff(a, &diag, "stdout", exp_out, act_out);
-    if (!std.mem.eql(u8, act_err, exp_err))
+    if (err_differs)
         try appendDiff(a, &diag, "stderr", exp_err, act_err);
-    if (ir_raw) |ir_expected_raw| {
-        const exp_ir = trimNl(try normalizeIr(a, ir_expected_raw));
-        if (!std.mem.eql(u8, act_ir.?, exp_ir))
-            try appendDiff(a, &diag, "IR", exp_ir, act_ir.?);
-    }
+    if (ir_differs)
+        try appendDiff(a, &diag, "IR", exp_ir.?, act_ir.?);
 
     if (diag.items.len > 0)
         out.failure = try std.fmt.allocPrint(results_gpa, "{s}:\n{s}", .{ name, diag.items });
@@ -1076,10 +1092,11 @@ fn runOneCaught(
     results_gpa: std.mem.Allocator,
     io: std.Io,
     repo_root: []const u8,
+    mode: Mode,
     item: *const Item,
     out: *Outcome,
 ) void {
-    runOne(results_gpa, io, repo_root, item, out) catch |err| {
+    runOne(results_gpa, io, repo_root, mode, item, out) catch |err| {
         out.ran = true;
         out.failure = std.fmt.allocPrint(results_gpa, "{s}: internal runner error ({s})", .{ item.name, @errorName(err) }) catch
             "internal runner error (allocation failed formatting it)";
@@ -1101,6 +1118,7 @@ fn workerCount() usize {
 const WorkerCtx = struct {
     results_gpa: std.mem.Allocator,
     repo_root: []const u8,
+    mode: Mode,
     items: []const Item,
     outcomes: []Outcome,
     queue: []const usize, // indices into items/outcomes
@@ -1117,7 +1135,7 @@ fn workerMain(ctx: *const WorkerCtx) void {
         const qi = ctx.next.fetchAdd(1, .monotonic);
         if (qi >= ctx.queue.len) return;
         const i = ctx.queue[qi];
-        runOneCaught(ctx.results_gpa, io, ctx.repo_root, &ctx.items[i], &ctx.outcomes[i]);
+        runOneCaught(ctx.results_gpa, io, ctx.repo_root, ctx.mode, &ctx.items[i], &ctx.outcomes[i]);
     }
 }
 
@@ -1194,11 +1212,11 @@ fn writeTimingReport(
         std.debug.print("[corpus-run] {s}: {d} example(s) OVER the 1s run budget — see {s}\n", .{ label, over, path });
 }
 
-/// One sweep's tally: `selected` markers passed the `-Dname` filter, and `ran`
-/// of those executed — a host gate or a missing `.sx` skips a selected marker.
+/// One sweep's tally: `selected` examples were collected, and `ran` of those
+/// executed — a host gate or a marker without its `.sx` skips a selected one.
 const Sweep = struct { selected: usize, ran: usize };
 
-/// Run every `<root>/expected/*.exit` test `filter` selects: collect, run on the
+/// Run every example `filter` selects under `root_dir`: collect, run on the
 /// pool (serial items afterwards), then report in collection order. Appends a
 /// formatted diagnostic to `failures` (owned by `fail_gpa`) for each failing
 /// example.
@@ -1207,6 +1225,7 @@ fn sweepRoot(
     io: std.Io,
     root_dir: []const u8,
     filter: []const u8,
+    mode: Mode,
     failures: *std.ArrayList([]const u8),
 ) !Sweep {
     // Repo root (parent of examples/) is the child's cwd: relative source
@@ -1258,6 +1277,7 @@ fn sweepRoot(
     var ctx = WorkerCtx{
         .results_gpa = fail_gpa,
         .repo_root = repo_root,
+        .mode = mode,
         .items = items.items,
         .outcomes = outcomes,
         .queue = parallel_q.items,
@@ -1277,7 +1297,7 @@ fn sweepRoot(
 
     // Wall-clock-sensitive examples run alone on the quiesced machine.
     for (serial_q.items) |i| {
-        runOneCaught(fail_gpa, io, repo_root, &items.items[i], &outcomes[i]);
+        runOneCaught(fail_gpa, io, repo_root, mode, &items.items[i], &outcomes[i]);
     }
 
     // Report strictly in collection order — deterministic regardless of the
@@ -1302,7 +1322,7 @@ fn sweepRoot(
     }
     if (skipped > 0)
         try notes.append(a, try std.fmt.allocPrint(a, "{s}: {d} marker(s) skipped", .{ root_base, skipped }));
-    if (corpus_paths.update_goldens)
+    if (mode == .update)
         try notes.append(a, try std.fmt.allocPrint(a, "{s}: {d} snapshot(s) regenerated", .{ root_base, updated }));
     if (corpusVerbose()) for (notes.items) |n| std.debug.print("[corpus-run] {s}\n", .{n});
 
@@ -1370,7 +1390,7 @@ test "examples corpus: every examples/*.sx runs and matches its snapshot" {
     var failures: std.ArrayList([]const u8) = .empty;
     defer failures.deinit(std.testing.allocator);
 
-    const sweep = try sweepRoot(std.testing.allocator, io, corpus_paths.examples_dir, corpus_paths.name, &failures);
+    const sweep = try sweepRoot(std.testing.allocator, io, corpus_paths.examples_dir, corpus_paths.name, if (corpus_paths.update_goldens) .update else .verify, &failures);
     defer for (failures.items) |f| std.testing.allocator.free(f);
     try std.testing.expect(sweep.selected > 0);
     try reportFailures("examples", sweep.ran, failures.items);
@@ -1408,13 +1428,67 @@ test "sweepRoot: a selected example that skips on this host stays selected; an u
     var failures: std.ArrayList([]const u8) = .empty;
     defer failures.deinit(std.testing.allocator);
 
-    const matched = try sweepRoot(std.testing.allocator, io, corpus_abs, "corpus/gated/elsewhere.sx", &failures);
+    const matched = try sweepRoot(std.testing.allocator, io, corpus_abs, "corpus/gated/elsewhere.sx", .verify, &failures);
     try std.testing.expectEqual(@as(usize, 1), matched.selected);
     try std.testing.expectEqual(@as(usize, 0), matched.ran);
     try std.testing.expect(failures.items.len == 0);
 
-    const unmatched = try sweepRoot(std.testing.allocator, io, corpus_abs, "corpus/gated/absent.sx", &failures);
+    const unmatched = try sweepRoot(std.testing.allocator, io, corpus_abs, "corpus/gated/absent.sx", .verify, &failures);
     try std.testing.expectEqual(@as(usize, 0), unmatched.selected);
+}
+
+test "sweepRoot update: a named example with no snapshots records them; a matching snapshot keeps its bytes" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const io = test_io();
+
+    const repo_root = std.fs.path.dirname(corpus_paths.examples_dir) orelse ".";
+    const root = try SandboxPath.own(a, "corpus-update-root", .{});
+    const root_abs = try root.abs(a, repo_root);
+    defer root.remove(a, io, repo_root);
+
+    const corpus_abs = try std.fmt.allocPrint(a, "{s}/corpus", .{root_abs});
+    const pinned_exp = try std.fmt.allocPrint(a, "{s}/pinned/expected", .{corpus_abs});
+    const fresh_dir = try std.fmt.allocPrint(a, "{s}/fresh", .{corpus_abs});
+    try std.Io.Dir.createDirPath(.cwd(), io, pinned_exp);
+    try std.Io.Dir.createDirPath(.cwd(), io, fresh_dir);
+    const files = [_][2][]const u8{
+        .{ "pinned/stale.sx", "main :: () -> i32 { 1 }\n" },
+        .{ "pinned/expected/stale.exit", "0\n" },
+        .{ "pinned/expected/stale.stdout", "" },
+        .{ "pinned/expected/stale.stderr", "" },
+        .{ "fresh/new.sx", "main :: () -> i32 { 3 }\n" },
+    };
+    for (files) |f| try std.Io.Dir.writeFile(.cwd(), io, .{
+        .sub_path = try std.fmt.allocPrint(a, "{s}/{s}", .{ corpus_abs, f[0] }),
+        .data = f[1],
+    });
+
+    var failures: std.ArrayList([]const u8) = .empty;
+    defer failures.deinit(std.testing.allocator);
+    defer for (failures.items) |f| std.testing.allocator.free(f);
+
+    const updated = try sweepRoot(std.testing.allocator, io, corpus_abs, "corpus/pinned/stale.sx,corpus/fresh/new.sx", .update, &failures);
+    try std.testing.expectEqual(@as(usize, 2), updated.ran);
+    try std.testing.expect(failures.items.len == 0);
+
+    const snapshots = [_][2][]const u8{
+        .{ "pinned/expected/stale.exit", "1\n" },
+        .{ "pinned/expected/stale.stdout", "" },
+        .{ "pinned/expected/stale.stderr", "" },
+        .{ "fresh/expected/new.exit", "3\n" },
+        .{ "fresh/expected/new.stdout", "\n" },
+        .{ "fresh/expected/new.stderr", "\n" },
+    };
+    for (snapshots) |s| {
+        const path = try std.fmt.allocPrint(a, "{s}/{s}", .{ corpus_abs, s[0] });
+        try std.testing.expectEqualStrings(s[1], try std.Io.Dir.readFileAlloc(.cwd(), io, path, a, .limited(MAX_OUTPUT)));
+    }
+
+    const verified = try sweepRoot(std.testing.allocator, io, corpus_abs, "", .verify, &failures);
+    try std.testing.expectEqual(@as(usize, 2), verified.ran);
+    try std.testing.expect(failures.items.len == 0);
 }
 
 test "sandbox: a declared output outside .sx-tmp is refused and never deleted" {
