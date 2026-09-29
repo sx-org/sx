@@ -1727,6 +1727,49 @@ test "concurrent builds in one directory each link their own program" {
     }
 }
 
+test "an --emit-obj build leaves only the output and its object in the output directory" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const io = test_io();
+
+    const repo_root = std.fs.path.dirname(corpus_paths.examples_dir) orelse ".";
+    const src = try SandboxPath.own(a, "emit-obj-wasm.sx", .{});
+    const stub_emcc = try SandboxPath.own(a, "emit-obj-wasm-emcc", .{});
+    const out_dir = try SandboxPath.own(a, "emit-obj-wasm", .{});
+    defer for ([_]SandboxPath{ src, stub_emcc, out_dir }) |p| p.remove(a, io, repo_root);
+
+    try std.Io.Dir.writeFile(.cwd(), io, .{
+        .sub_path = try src.abs(a, repo_root),
+        .data = "main :: () -> i32 { return 0; }\n",
+    });
+    try std.Io.Dir.writeFile(.cwd(), io, .{
+        .sub_path = try stub_emcc.abs(a, repo_root),
+        .data = "#!/bin/sh\nwhile [ \"$1\" != -o ]; do shift; done\n: > \"$2\"\n",
+        .flags = .{ .permissions = .executable_file },
+    });
+
+    const out = try std.fmt.allocPrint(a, "{s}/index.html", .{out_dir.rel});
+    const built = try std.process.run(a, io, .{
+        .argv = &.{ corpus_paths.sx_exe, "build", "--target", "wasm", "--emit-obj", "--linker", try stub_emcc.abs(a, repo_root), src.rel, "-o", out },
+        .cwd = .{ .path = repo_root },
+        .timeout = deadline(io),
+    });
+    try std.testing.expectEqual(@as(u32, 0), termCode(built.term));
+
+    var dir = try std.Io.Dir.openDirAbsolute(io, try out_dir.abs(a, repo_root), .{ .iterate = true });
+    defer dir.close(io);
+    var names: std.ArrayList([]const u8) = .empty;
+    var it = dir.iterate();
+    while (try it.next(io)) |entry| try names.append(a, try a.dupe(u8, entry.name));
+    std.mem.sort([]const u8, names.items, {}, struct {
+        fn lt(_: void, x: []const u8, y: []const u8) bool {
+            return std.mem.order(u8, x, y) == .lt;
+        }
+    }.lt);
+    try std.testing.expectEqualDeep(@as([]const []const u8, &.{ "index.html", "index.html.o" }), names.items);
+}
+
 test "object cache: second identical run hits, source edit invalidates" {
     const io = test_io();
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);

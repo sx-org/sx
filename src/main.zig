@@ -663,6 +663,7 @@ fn compile(allocator: std.mem.Allocator, io: std.Io, input_path: []const u8, out
 const BuildHooksCtx = struct {
     comp: *sx.core.Compilation,
     obj_path: [:0]const u8,
+    tmp_dir: []const u8,
     allocator: std.mem.Allocator,
     io: std.Io,
     base_config: sx.target.TargetConfig,
@@ -693,7 +694,7 @@ const BuildHooksCtx = struct {
         // The passed `flags` are already the full merged set (`@buildFlags()` returns
         // the merged CLI + `@run` flags), so use them as-is rather than re-unioning.
         cfg.extra_link_flags = flags;
-        try sx.target.link(self.allocator, self.io, objects[0], objects[1..], output, libraries, frameworks, cfg, self.has_jni_main);
+        try sx.target.link(self.allocator, self.io, objects[0], objects[1..], output, libraries, frameworks, cfg, self.has_jni_main, self.tmp_dir);
     }
 };
 
@@ -829,6 +830,7 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
     var build_ctx = BuildHooksCtx{
         .comp = &comp,
         .obj_path = obj_path,
+        .tmp_dir = tmp_dir,
         .allocator = allocator,
         .io = io,
         .base_config = merged_config,

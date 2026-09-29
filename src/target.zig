@@ -687,7 +687,7 @@ fn resolveArchDir(allocator: std.mem.Allocator, io: std.Io, lib_dir: []const u8,
     return error.LinkError;
 }
 
-pub fn link(allocator: std.mem.Allocator, io: std.Io, output_obj: []const u8, extra_objects: []const []const u8, output_bin: []const u8, libraries: []const []const u8, frameworks: []const []const u8, target_config: TargetConfig, has_jni_main: bool) !void {
+pub fn link(allocator: std.mem.Allocator, io: std.Io, output_obj: []const u8, extra_objects: []const []const u8, output_bin: []const u8, libraries: []const []const u8, frameworks: []const []const u8, target_config: TargetConfig, has_jni_main: bool, tmp_dir: []const u8) !void {
     var argv = std.ArrayList([]const u8).empty;
 
     if (try selectZigLinker(allocator, target_config)) |zig_path| {
@@ -773,7 +773,7 @@ pub fn link(allocator: std.mem.Allocator, io: std.Io, output_obj: []const u8, ex
 
         const glue_obj_opt: ?[]const u8 = if (has_jni_main) null else blk: {
             const glue_src = try std.fmt.allocPrint(allocator, "{s}/sources/android/native_app_glue/android_native_app_glue.c", .{ndk_root});
-            const glue_obj = try std.fmt.allocPrint(allocator, "{s}.glue.o", .{output_obj});
+            const glue_obj = try std.fmt.allocPrint(allocator, "{s}/android_native_app_glue.o", .{tmp_dir});
             var glue_argv = std.ArrayList([]const u8).empty;
             try glue_argv.appendSlice(allocator, &.{ clang, "-c", "-fPIC" });
             if (target_config.triple) |t| {
@@ -843,7 +843,7 @@ pub fn link(allocator: std.mem.Allocator, io: std.Io, output_obj: []const u8, ex
                 try argv.appendSlice(allocator, &.{ "--shell-file", custom_shell });
             } else {
                 const shell_html = @embedFile("wasm_shell.html");
-                const shell_path = try std.fmt.allocPrint(allocator, "{s}.shell.html", .{output_obj});
+                const shell_path = try std.fmt.allocPrint(allocator, "{s}/shell.html", .{tmp_dir});
                 std.Io.Dir.writeFile(.cwd(), io, .{ .sub_path = shell_path, .data = shell_html }) catch {};
                 try argv.appendSlice(allocator, &.{ "--shell-file", shell_path });
             }
