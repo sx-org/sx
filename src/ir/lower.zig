@@ -4325,6 +4325,7 @@ pub const Lowering = struct {
     pub const headTypeLeak = lower_generic.headTypeLeak;
     pub const headNameOfCallee = lower_generic.headNameOfCallee;
     pub const headTypeGate = lower_generic.headTypeGate;
+    pub const selectHeadType = lower_generic.selectHeadType;
     pub const headFnLeak = lower_generic.headFnLeak;
     pub const flatFnAuthorAmbiguous = lower_generic.flatFnAuthorAmbiguous;
     pub const flatFnAuthorVisible = lower_generic.flatFnAuthorVisible;

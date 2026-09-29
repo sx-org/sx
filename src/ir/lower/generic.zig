@@ -411,6 +411,7 @@ pub fn isStaticTypeRef(self: *Lowering, node: *const Node) bool {
             if (self.scope) |scope| {
                 if (scope.lookup(id.name) != null) return false;
             }
+            if (self.selectHeadType(id.name) == .not_a_type) return false;
             return self.isKnownTypeName(id.name) or
                 self.module.types.findByName(self.module.types.internString(id.name)) != null or
                 self.program_index.lookup(.type_alias, id.name) != null;
@@ -1772,6 +1773,19 @@ const HeadTypeGate = union(enum) {
     not_a_type,
 };
 pub fn headTypeGate(self: *Lowering, name: []const u8, span: ?ast.Span) HeadTypeGate {
+    const gate = self.selectHeadType(name);
+    if (self.diagnostics) |d| switch (gate) {
+        .ambiguous => d.addFmt(.err, span, "type '{s}' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import", .{name}),
+        .not_visible => d.addFmt(.err, span, "type '{s}' is not visible; @import the module that declares it", .{name}),
+        .not_a_type => d.addFmt(.err, span, "'{s}' names this module's own declaration, which is not a type", .{name}),
+        .proceed, .resolved => {},
+    };
+    return gate;
+}
+
+/// `headTypeGate`'s outcome without its diagnostics, for a position that
+/// reads the name as a type only when it denotes one.
+pub fn selectHeadType(self: *Lowering, name: []const u8) HeadTypeGate {
     if (self.emitting_default_context) return .proceed;
     // A compiler-maintained `@` contract type has exactly one canonical
     // declaration, so it resolves program-wide and no author set gates it.
@@ -1790,7 +1804,7 @@ pub fn headTypeGate(self: *Lowering, name: []const u8, span: ?ast.Span) HeadType
     if (author_set.own) |own| switch (own.raw) {
         .const_decl => {
             if (self.program_index.get(.type_alias, own.id)) |tid| return .{ .resolved = tid };
-            return .proceed;
+            if (!self.authorNamesNoType(own)) return .proceed;
         },
         else => if (isNamedTypeKind(own.raw)) {
             if (self.namedRefTid(own.raw, name)) |tid| return .{ .resolved = tid };
@@ -1816,34 +1830,20 @@ pub fn headTypeGate(self: *Lowering, name: []const u8, span: ?ast.Span) HeadType
         if (fa_tid) |t| {
             flat_tid_count += 1;
             if (found_tid) |f| {
-                if (t != f) {
-                    if (self.diagnostics) |d|
-                        d.addFmt(.err, span, "type '{s}' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import", .{name});
-                    return .ambiguous;
-                }
+                if (t != f) return .ambiguous;
             } else found_tid = t;
         }
     }
     if (flat_type_count > 0) {
         // ≥2 authors but not all resolved to one TypeId → ambiguous
-        if (flat_type_count >= 2 and !(flat_tid_count == flat_type_count and found_tid != null)) {
-            if (self.diagnostics) |d|
-                d.addFmt(.err, span, "type '{s}' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import", .{name});
-            return .ambiguous;
-        }
+        if (flat_type_count >= 2 and !(flat_tid_count == flat_type_count and found_tid != null)) return .ambiguous;
         if (found_tid) |t| return .{ .resolved = t };
         return .proceed; // single author exists but TypeId not registered
     }
 
     if (self.localTypeInSource(from, name)) return .proceed;
     if (!self.nameAuthoredAsTypeAnywhere(name)) return .proceed;
-    if (author_set.own != null) {
-        if (self.diagnostics) |d|
-            d.addFmt(.err, span, "'{s}' names this module's own declaration, which is not a type", .{name});
-        return .not_a_type;
-    }
-    if (self.diagnostics) |d|
-        d.addFmt(.err, span, "type '{s}' is not visible; @import the module that declares it", .{name});
+    if (author_set.own != null) return .not_a_type;
     return .not_visible;
 }
 

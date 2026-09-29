@@ -1,0 +1,13 @@
+// A const chain an `inline if` folds reads each link in the module that
+// declares it: the library's `A :: B` reaches the library's `B`, not this
+// file's.
+@import "modules/std.sx";
+@import "inline-if-const-chain-folds-in-its-declaring-module/lib.sx";
+
+B :: false;
+
+main :: () -> i32 {
+    inline if B { print("main true, "); } else { print("main false, "); }
+    print("{}\n", check());
+    0
+}

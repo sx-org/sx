@@ -1,11 +1,17 @@
 error: 'N' names this module's own declaration, which is not a type
-  --> examples/modules/own-non-type-declaration-hides-flat-imported-type.sx:10:9
+  --> examples/modules/own-non-type-declaration-hides-flat-imported-type.sx:12:9
    |
-10 |     x : N = ---;
+12 |     x : N = ---;
    |         ^
 
 error: 'M' names this module's own declaration, which is not a type
-  --> examples/modules/own-non-type-declaration-hides-flat-imported-type.sx:11:18
+  --> examples/modules/own-non-type-declaration-hides-flat-imported-type.sx:13:18
    |
-11 |     s := @sizeOf(M);
+13 |     s := @sizeOf(M);
+   |                  ^
+
+error: 'P' names this module's own declaration, which is not a type
+  --> examples/modules/own-non-type-declaration-hides-flat-imported-type.sx:14:18
+   |
+14 |     t := @sizeOf(P);
    |                  ^

@@ -2865,9 +2865,10 @@ fn literalAggregate(self: *Lowering, ty: TypeId, length: u32) ?TypeId {
 /// `*<operand>` where the operand denotes a TYPE resolves to the pointer
 /// type's Type value (`*i64` → the TypeId of `*i64`). Returns null when the
 /// operand is a value — the caller falls through to ordinary address-of.
-/// A scope local or a module global wins over a same-named type: taking a
-/// value's address must never silently become a type. Nested address_of
-/// recurses so `**T` / `***T` resolve inside-out.
+/// A scope local, a module global, or this module's own non-type declaration
+/// wins over a same-named type: taking a value's address must never silently
+/// become a type. Nested address_of recurses so `**T` / `***T` resolve
+/// inside-out.
 fn addrOfTypeOperand(self: *Lowering, node: *const Node) ?TypeId {
     switch (node.data) {
         .identifier => |id| {
@@ -2875,6 +2876,7 @@ fn addrOfTypeOperand(self: *Lowering, node: *const Node) ?TypeId {
                 if (sc.lookup(id.name) != null) return null;
             }
             if (self.program_index.contains(.global, id.name)) return null;
+            if (self.selectHeadType(id.name) == .not_a_type) return null;
             const tid = self.resolveArrayLiteralType(node);
             if (tid == .unresolved) return null;
             return self.module.types.ptrTo(tid);
@@ -4170,8 +4172,10 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
             // diagnostic, 0755/0767). A single source-keyed author — including
             // the querying source's OWN author over a same-name flat import
             // (own-wins, 0754) — resolves to ITS TypeId, NOT whichever same-name
-            // author a global `findByName` would pick. A value name / generic
-            // param / undeclared name → `.proceed`, falling through below.
+            // author a global `findByName` would pick. An own non-type author
+            // that hides a type authored elsewhere is refused as that
+            // declaration; any other value name / generic param / undeclared
+            // name → `.proceed`, falling through below.
             const ty = blk_ty: {
                 switch (self.headTypeGate(id.name, node.span)) {
                     .ambiguous, .not_visible, .not_a_type => break :blk self.emitPlaceholder(id.name),
@@ -4274,10 +4278,15 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                 // not a storage-backed array/struct const — those resolve above).
                 // Same defect as the local case: without storage, `@FORTY` would
                 // become `inttoptr (i64 <value> to ptr)`. Diagnose.
-                if (self.program_index.lookup(.module_const, id_name) != null and self.selectModuleConst(id_name) != .not_a_const) {
-                    if (self.diagnostics) |d|
-                        d.addFmt(.err, node.span, "cannot take the address of constant '{s}' — a scalar '::' constant has no storage (use a '=' variable or a local copy for mutable data)", .{id_name});
-                    break :blk self.emitPlaceholder("addr_of_const");
+                if (self.program_index.lookup(.module_const, id_name) != null) {
+                    switch (self.selectModuleConst(id_name)) {
+                        .resolved, .ambiguous, .none => {
+                            if (self.diagnostics) |d|
+                                d.addFmt(.err, node.span, "cannot take the address of constant '{s}' — a scalar '::' constant has no storage (use a '=' variable or a local copy for mutable data)", .{id_name});
+                            break :blk self.emitPlaceholder("addr_of_const");
+                        },
+                        .own_opaque, .not_a_const => {},
+                    }
                 }
             }
             // A dest-typed float literal is that dest width; the negated form

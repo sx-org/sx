@@ -625,9 +625,17 @@ fn evalComptimeConditionDepth(self: *Lowering, node: *const Node, depth: u32) ?b
         // A bare identifier naming a module const folds through the const's
         // value expression (`ENABLED :: false`, chains, `F :: @host.os == .ios`).
         // Only a bool-shaped fold counts; anything else stays runtime.
-        .identifier => |id| {
-            const info = self.program_index.lookup(.module_const, id.name) orelse return null;
-            return evalComptimeConditionDepth(self, info.value, depth + 1);
+        .identifier => |id| switch (self.selectModuleConst(id.name)) {
+            .resolved => |sel| {
+                const restore = self.pinConstValue(sel.info.value, sel.environment);
+                defer restore.unpin();
+                return evalComptimeConditionDepth(self, sel.info.value, depth + 1);
+            },
+            .none => {
+                const info = self.program_index.lookup(.module_const, id.name) orelse return null;
+                return evalComptimeConditionDepth(self, info.value, depth + 1);
+            },
+            .own_opaque, .not_a_const, .ambiguous => return null,
         },
         .binary_op => {},
         else => return null,
