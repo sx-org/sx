@@ -1432,7 +1432,8 @@ pub fn substituteComptimeNodes(self: *Lowering, node: *const Node, cpn: std.Stri
 /// Lower a call to a function with comptime params by inlining its body.
 /// Comptime params are substituted, `@insert` expressions are evaluated.
 pub fn lowerComptimeCall(self: *Lowering, fd: *const ast.FnDecl, call_node: *const ast.Call) Ref {
-    return lowerComptimeCallArgsMode(self, fd, call_node.args, 0, false, false, .none, call_node.callee.span);
+    const body_bindings: BodyBindings = if (self.body_local_fns.contains(fd)) .ambient else .none;
+    return lowerComptimeCallArgsMode(self, fd, call_node.args, 0, false, false, body_bindings, call_node.callee.span);
 }
 
 /// Core of `lowerComptimeCall`, parameterized over the EFFECTIVE call-site arg
@@ -1443,7 +1444,7 @@ pub fn lowerComptimeCall(self: *Lowering, fd: *const ast.FnDecl, call_node: *con
 /// (e.g. `type_bindings` for a generic struct's `T`) before invoking this — the
 /// body lowers with whatever bindings are active.
 pub fn lowerComptimeCallArgs(self: *Lowering, fd: *const ast.FnDecl, call_args: []const *Node) Ref {
-    return lowerComptimeCallArgsMode(self, fd, call_args, 0, false, false, .installed, fd.body.span);
+    return lowerComptimeCallArgsMode(self, fd, call_args, 0, false, false, .ambient, fd.body.span);
 }
 
 /// Inline a selected comptime METHOD with a hygienic call frame. `call_args`
@@ -1463,7 +1464,7 @@ pub fn lowerComptimeMethodCallArgs(
     first_arg_is_receiver: bool,
     call_span: ast.Span,
 ) Ref {
-    return lowerComptimeCallArgsMode(self, fd, call_args, 0, true, first_arg_is_receiver, .installed, call_span);
+    return lowerComptimeCallArgsMode(self, fd, call_args, 0, true, first_arg_is_receiver, .ambient, call_span);
 }
 
 /// Generalization of `lowerComptimeCallArgs` that skips the FIRST `skip_params`
@@ -1474,14 +1475,15 @@ pub fn lowerComptimeMethodCallArgs(
 /// `fd.params[skip_params..]`. With `skip_params == 0` this is
 /// `lowerComptimeCallArgs`.
 pub fn lowerComptimeCallArgsSkip(self: *Lowering, fd: *const ast.FnDecl, call_args: []const *Node, skip_params: usize) Ref {
-    return lowerComptimeCallArgsMode(self, fd, call_args, skip_params, false, false, .installed, fd.body.span);
+    return lowerComptimeCallArgsMode(self, fd, call_args, skip_params, false, false, .ambient, fd.body.span);
 }
 
 /// The type substitution an inlined comptime body lowers under.
 const BodyBindings = enum {
-    /// The entry installed the callee's own bindings around the call.
-    installed,
-    /// A free comptime function binds no type parameter of its own.
+    /// The one in effect at the call: the callee's own bindings the method
+    /// entry installs, or the enclosing body's for a function declared inside it.
+    ambient,
+    /// A module-level free comptime function binds no type parameter of its own.
     none,
 };
 
@@ -2822,27 +2824,18 @@ fn anyRawAuthor(self: *Lowering, name: []const u8) bool {
 const ConstEnvironmentPin = struct {
     lowering: *Lowering,
     saved: Lowering.LexicalContext,
-    type_bindings: ?std.StringHashMap(TypeId),
-    comptime_value_bindings: ?std.StringHashMap(i64),
+    substitution: Lowering.SubstitutionPin,
 
     pub fn unpin(self: ConstEnvironmentPin) void {
         self.lowering.restoreLexicalContext(self.saved);
-        self.lowering.type_bindings = self.type_bindings;
-        self.lowering.comptime_value_bindings = self.comptime_value_bindings;
+        self.substitution.restore();
     }
 };
 
 pub fn pinConstEnvironment(self: *Lowering, environment: ?@import("../../imports.zig").EnvironmentId) ConstEnvironmentPin {
-    const pin = ConstEnvironmentPin{
-        .lowering = self,
-        .saved = self.lexicalContext(),
-        .type_bindings = self.type_bindings,
-        .comptime_value_bindings = self.comptime_value_bindings,
-    };
+    const saved = self.lexicalContext();
     if (environment) |env| self.setCurrentEnvironment(env);
-    self.type_bindings = null;
-    self.comptime_value_bindings = null;
-    return pin;
+    return .{ .lowering = self, .saved = saved, .substitution = .enter(self, .{ .own = null }) };
 }
 
 pub fn pinConstValue(self: *Lowering, node: *const Node, environment: ?@import("../../imports.zig").EnvironmentId) ConstEnvironmentPin {
@@ -2858,6 +2851,8 @@ pub fn foldComptimeFloatInit(self: *Lowering, node: *const Node, dst: TypeId) ?R
     if (!self.isIntEx(dst)) return null;
     const author = Lowering.AuthorScope.enter(self, node);
     defer author.leave();
+    const default_substitution: ?Lowering.SubstitutionPin = if (self.authored_call_defaults.get(node)) |dflt| .enter(self, dflt.substitution) else null;
+    defer if (default_substitution) |pin| pin.restore();
     // PURE & side-effect-free, so it runs FIRST: a runtime / non-comptime /
     // non-numeric node — incl. a `$pack[i]` index expression — folds to null
     // and is left to the normal path untouched. (Calling `inferExprType` on

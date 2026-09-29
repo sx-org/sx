@@ -1,0 +1,23 @@
+// A comptime function, a parameter default and a struct's field and method
+// defaults declared inside `g($V)` read its `$V` over the file's `V`.
+@import "modules/std.sx";
+
+Shade :: enum { a; b; }
+V :: struct { a: i64; b: i64; }
+
+g :: ($V: Type) -> void {
+    sized :: ($s: Shade) -> i64 { @sizeOf(V) }
+    defaulted :: (n: i64 = @sizeOf(V)) -> i64 { n }
+    S :: struct {
+        n: i64 = @sizeOf(V);
+        m :: (self: *S, k: i64 = @sizeOf(V)) -> i64 { k }
+    }
+    item := S{};
+    print("{} {} {} {}\n", sized(.a), defaulted(), item.n, item.m());
+}
+
+main :: () -> i32 {
+    g(i64);
+    g(u8);
+    0
+}

@@ -1093,13 +1093,13 @@ pub fn buildDefaultValue(self: *Lowering, ty: TypeId) Ref {
     if (info != .@"struct") return self.zeroValue(ty);
     const field_defaults = self.struct_defaults_by_tid.get(ty) orelse return self.zeroValue(ty);
     const fields = info.@"struct".fields;
-    const bindings = self.struct_instance_bindings.get(self.module.types.getString(info.@"struct".name));
+    const substitution = fieldDefaultSubstitution(self, ty);
     var field_vals = std.ArrayList(Ref).empty;
     defer field_vals.deinit(self.alloc);
     for (fields, 0..) |f, i| {
         if (i < field_defaults.len) {
             if (field_defaults[i]) |default_expr| {
-                field_vals.append(self.alloc, self.lowerDefaultWithBindings(default_expr, f.ty, bindings)) catch unreachable;
+                field_vals.append(self.alloc, self.lowerDefaultWithBindings(default_expr, f.ty, substitution)) catch unreachable;
             } else {
                 field_vals.append(self.alloc, self.zeroValue(f.ty)) catch unreachable;
             }
@@ -1194,27 +1194,33 @@ pub fn lowerCoercedDefault(self: *Lowering, default_expr: *const Node, field_ty:
     return self.coerceToType(raw, self.builder.getRefType(raw), field_ty);
 }
 
-/// Lower a struct field's default expression under the struct's own
-/// substitution, never the ambient one: `bindings` is the generic instance's
-/// type bindings — spelled directly (`Box(i64)`) or through an alias
+/// The substitution `ty`'s field defaults lower under. A generic instance's
+/// are its own bindings — spelled directly (`Box(i64)`) or through an alias
 /// (`BI :: Box(i64)`; the alias name carries mirrored bindings) — so a default
 /// that references a type param, e.g. `sz: i64 = @sizeOf(T)`, monomorphizes to
-/// THIS instantiation's concrete arg. It is null exactly for a non-generic
-/// struct, whose defaults lower under no substitution at all.
+/// THIS instantiation's concrete arg. A struct declared inside a function body
+/// reads that body's; any other binds none.
+pub fn fieldDefaultSubstitution(self: *Lowering, ty: TypeId) lower.DeclSubstitution {
+    if (ty.isBuiltin()) return .{ .own = null };
+    const info = self.module.types.get(ty);
+    if (info != .@"struct") return .{ .own = null };
+    if (self.struct_instance_bindings.get(self.module.types.getString(info.@"struct".name))) |bindings| return .{ .own = bindings };
+    if (self.plain_struct_authors.get(ty)) |author| {
+        if (self.body_local_structs.contains(author.decl)) return .ambient;
+    }
+    return .{ .own = null };
+}
+
+/// Lower a struct field's default expression under its struct's substitution
+/// (`fieldDefaultSubstitution`), never the reader's.
 pub fn lowerDefaultWithBindings(
     self: *Lowering,
     default_expr: *const Node,
     field_ty: TypeId,
-    bindings: ?std.StringHashMap(TypeId),
+    substitution: lower.DeclSubstitution,
 ) Ref {
-    const saved_tb = self.type_bindings;
-    const saved_vb = self.comptime_value_bindings;
-    self.type_bindings = bindings;
-    self.comptime_value_bindings = null;
-    defer {
-        self.type_bindings = saved_tb;
-        self.comptime_value_bindings = saved_vb;
-    }
+    const pin = Lowering.SubstitutionPin.enter(self, substitution);
+    defer pin.restore();
     return self.lowerCoercedDefault(default_expr, field_ty);
 }
 

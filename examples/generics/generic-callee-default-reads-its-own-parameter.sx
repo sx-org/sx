@@ -1,0 +1,25 @@
+// A generic callee's parameter default reads the callee's `T` and its file's
+// `V`, not its caller's.
+@import "modules/std.sx";
+
+V :: struct { a: i64; b: i64; }
+
+measure :: ufcs (x: $T, k: i64 = 0, n: i64 = @sizeOf(T), t: Type = V) -> void { print("{} {}\n", k + n, t == i64); }
+
+Box :: struct($T: Type) {
+    v: T;
+    measure :: (self: *Box(T), n: i64 = @sizeOf(T), t: Type = V) -> void { print("{} {}\n", n, t == i64); }
+}
+
+g :: ($V: Type) -> void {
+    x : u16 = 1;
+    b := Box(u16){ v = 1 };
+    measure(x);
+    x.measure(k = 10);
+    b.measure();
+}
+
+main :: () -> i32 {
+    g(i64);
+    0
+}

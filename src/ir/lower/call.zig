@@ -418,7 +418,7 @@ fn callNominal(
     defer call_args.deinit(self.alloc);
     call_args.append(self.alloc, recv) catch unreachable;
     call_args.appendSlice(self.alloc, args) catch unreachable;
-    self.appendDefaultArgs(cn.fd, &call_args, c.callee);
+    self.appendDefaultArgs(cn.fd, &call_args, c.callee, null);
     const func = &self.module.functions.items[@intFromEnum(fid)];
     const ret_ty = func.ret;
     const params = func.params;
@@ -1704,7 +1704,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         if (self.genericInstanceMethod(inst_name, fa.field)) |gm| {
                             if (self.ensureGenericInstanceMethodLowered(gm)) |fid| {
                                 const func = &self.module.functions.items[@intFromEnum(fid)];
-                                self.appendDefaultArgs(gm.fd, &args, c.callee);
+                                self.appendDefaultArgs(gm.fd, &args, c.callee, gm.bindings.*);
                                 const final_args = self.prependCtxIfNeeded(func, args.items);
                                 self.coerceCallArgs(final_args, func.params);
                                 return self.builder.call(fid, final_args, func.ret);
@@ -1814,7 +1814,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                                 return lowerComptimePlainStructMethod(self, method, null, c.args, c.callee.span);
                             if (fd.type_params.len > 0) return self.lowerGenericCall(fd, dispatch_name, c, args.items);
                             if (self.checkCallArity(fd, dispatch_name, args.items.len, false, c.callee.span)) return Ref.none;
-                            self.appendDefaultArgs(fd, &args, c.callee);
+                            self.appendDefaultArgs(fd, &args, c.callee, null);
                             const fid = self.ensurePlainStructMethodLowered(method);
                             const func = &self.module.functions.items[@intFromEnum(fid)];
                             const ret_ty = func.ret;
@@ -2164,7 +2164,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         if (self.monomorphizeFunction(gm.fd, gmangled, &gbindings)) |fid| {
                             const func = &self.module.functions.items[@intFromEnum(fid)];
                             self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty, null);
-                            self.appendDefaultArgs(gm.fd, &method_args, c.callee);
+                            self.appendDefaultArgs(gm.fd, &method_args, c.callee, gbindings);
                             const final_args = self.prependCtxIfNeeded(func, method_args.items);
                             self.coerceCallArgs(final_args, func.params);
                             return self.builder.call(fid, final_args, func.ret);
@@ -2175,7 +2175,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         const ret_ty = func.ret;
                         const params = func.params;
                         self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty, null);
-                        self.appendDefaultArgs(gm.fd, &method_args, c.callee);
+                        self.appendDefaultArgs(gm.fd, &method_args, c.callee, gm.bindings.*);
                         const final_args = self.prependCtxIfNeeded(func, method_args.items);
                         self.coerceCallArgs(final_args, params);
                         return self.builder.call(fid, final_args, ret_ty);
@@ -2224,7 +2224,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                                 if (arg_idx < method_args.items.len) {
                                     gvalue_args.append(self.alloc, method_args.items[arg_idx]) catch unreachable;
                                 } else {
-                                    const dv = self.lowerDefaultArg(gen_fd, pi, c.callee) orelse break;
+                                    const dv = self.lowerDefaultArg(gen_fd, pi, c.callee, gbindings) orelse break;
                                     gvalue_args.append(self.alloc, dv) catch unreachable;
                                 }
                                 arg_idx += 1;
@@ -2251,7 +2251,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     const params = func.params;
                     const has_ctx = func.has_implicit_ctx;
                     self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty, null);
-                    self.appendDefaultArgs(fd, &method_args, c.callee);
+                    self.appendDefaultArgs(fd, &method_args, c.callee, null);
                     const final_args = blk: {
                         if (!has_ctx) break :blk method_args.items;
                         const new_args = self.alloc.alloc(Ref, method_args.items.len + 1) catch break :blk method_args.items;
@@ -2278,7 +2278,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         const params = func.params;
                         const has_ctx = func.has_implicit_ctx;
                         self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty, null);
-                        if (plain_method_fd) |fd| self.appendDefaultArgs(fd, &method_args, c.callee);
+                        if (plain_method_fd) |fd| self.appendDefaultArgs(fd, &method_args, c.callee, null);
                         // coerceCallArgs can trigger protocol thunk creation
                         // (module.addFunction), invalidating func pointer.
                         // Use pre-extracted params/ret_ty (+ has_ctx) instead of
@@ -2390,7 +2390,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                                 if (arg_idx < method_args.items.len) {
                                     gvalue_args.append(self.alloc, method_args.items[arg_idx]) catch unreachable;
                                 } else {
-                                    const dv = self.lowerDefaultArg(fd, pi, c.callee) orelse break;
+                                    const dv = self.lowerDefaultArg(fd, pi, c.callee, gbindings) orelse break;
                                     gvalue_args.append(self.alloc, dv) catch unreachable;
                                 }
                                 arg_idx += 1;
@@ -2429,7 +2429,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     // free function's first param is `*T` and the receiver is a
                     // value `T`, pass its address instead of a by-value copy
                     self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty, null);
-                    if (ufcs_arity_fd) |fd| self.appendDefaultArgs(fd, &method_args, c.callee);
+                    if (ufcs_arity_fd) |fd| self.appendDefaultArgs(fd, &method_args, c.callee, null);
                     const final_args = self.prependCtxIfNeeded(func, method_args.items);
                     self.coerceCallArgs(final_args, params);
                     return self.builder.call(fid, final_args, ret_ty);
@@ -2462,7 +2462,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                             const dispatch_name = self.plainStructMethodName(method);
                             if (fd.type_params.len > 0) return self.lowerGenericCall(fd, dispatch_name, c, args.items);
                             if (self.checkCallArity(fd, dispatch_name, args.items.len, false, c.callee.span)) return Ref.none;
-                            self.appendDefaultArgs(fd, &args, c.callee);
+                            self.appendDefaultArgs(fd, &args, c.callee, null);
                             const fid = self.ensurePlainStructMethodLowered(method);
                             const func = &self.module.functions.items[@intFromEnum(fid)];
                             const ret_ty = func.ret;
@@ -4775,12 +4775,18 @@ pub fn reflectionErrorSentinel(self: *Lowering, name: []const u8) Ref {
 ///
 /// Either way the call-site provenance is retained, because a `@caller` nested
 /// inside a larger default has no other route to the caller's identity.
+///
+/// The default lowers under `fd`'s substitution: the enclosing body's for a
+/// function declared inside one, else `own`, what this call binds `fd`'s type
+/// parameters to.
 fn defaultArgAtCall(
     self: *Lowering,
+    fd: *const ast.FnDecl,
     dflt: *const Node,
-    author_environment: ?@import("../../imports.zig").EnvironmentId,
     call_site: *const Node,
+    own: ?std.StringHashMap(TypeId),
 ) ?*Node {
+    const author_environment = self.functionEnvironment(fd);
     const n = self.alloc.create(Node) catch return null;
     n.* = dflt.*;
     const caller_site = lower.DefaultCallSite{
@@ -4798,6 +4804,7 @@ fn defaultArgAtCall(
     self.authored_call_defaults.put(n, .{
         .site = caller_site,
         .environment = if (dflt.data == .caller_site) self.current_environment else author_environment,
+        .substitution = if (self.body_local_fns.contains(fd)) .ambient else .{ .own = own },
     }) catch return null;
     return n;
 }
@@ -4808,11 +4815,12 @@ fn defaultArgAtCall(
 /// sites whose callee is a field_access (so `expandCallDefaults` can't
 /// handle them up front). Defaults resolve under the declaration author's
 /// source; caller bindings do not implicitly capture into a callee signature.
-pub fn appendDefaultArgs(self: *Lowering, fd: *const ast.FnDecl, args: *std.ArrayList(Ref), call_site: *const Node) void {
+/// `own` is what this call binds `fd`'s type parameters to.
+pub fn appendDefaultArgs(self: *Lowering, fd: *const ast.FnDecl, args: *std.ArrayList(Ref), call_site: *const Node, own: ?std.StringHashMap(TypeId)) void {
     if (args.items.len >= fd.params.len) return;
     var i: usize = args.items.len;
     while (i < fd.params.len) : (i += 1) {
-        const v = self.lowerDefaultArg(fd, i, call_site) orelse break;
+        const v = self.lowerDefaultArg(fd, i, call_site, own) orelse break;
         args.append(self.alloc, v) catch unreachable;
     }
 }
@@ -4821,7 +4829,7 @@ pub fn appendDefaultArgs(self: *Lowering, fd: *const ast.FnDecl, args: *std.Arra
 /// the param has no default. Generic dot-dispatch cannot use
 /// `appendDefaultArgs`: its value-arg list skips type-decl slots, so a param
 /// index is not an arg index — it fills each omitted slot by index instead.
-pub fn lowerDefaultArg(self: *Lowering, fd: *const ast.FnDecl, idx: usize, call_site: *const Node) ?Ref {
+pub fn lowerDefaultArg(self: *Lowering, fd: *const ast.FnDecl, idx: usize, call_site: *const Node, own: ?std.StringHashMap(TypeId)) ?Ref {
     const dflt = fd.params[idx].default_expr orelse return null;
 
     // Defaults are argument expressions too: give aggregate/enum/null
@@ -4832,7 +4840,7 @@ pub fn lowerDefaultArg(self: *Lowering, fd: *const ast.FnDecl, idx: usize, call_
     // `context.allocator` resolve through the implicit context channel.
     var dem = self.enterDemand(lower_bound.paramDemand(self, fd, idx));
     defer dem.restore();
-    const authored = defaultArgAtCall(self, dflt, self.functionEnvironment(fd), call_site) orelse return null;
+    const authored = defaultArgAtCall(self, fd, dflt, call_site, own) orelse return null;
     return self.lowerExpr(authored);
 }
 
@@ -5473,7 +5481,7 @@ pub fn mapNamedArgs(
         if (slots[i] != null) continue;
         if (p.is_variadic or p.is_pack) continue; // an empty tail is legal
         if (p.default_expr) |def| {
-            slots[i] = defaultArgAtCall(self, def, self.functionEnvironment(fd), c.callee) orelse return stripNamedArgs(self, c);
+            slots[i] = defaultArgAtCall(self, fd, def, c.callee, null) orelse return stripNamedArgs(self, c);
         } else {
             missing.append(self.alloc, p.name) catch {};
             const undef = self.alloc.create(Node) catch unreachable;
@@ -5504,7 +5512,27 @@ pub fn mapNamedArgs(
     for (tail.items) |a| new_args.append(self.alloc, a) catch {};
     const new_call = self.alloc.create(ast.Call) catch return stripNamedArgs(self, c);
     new_call.* = .{ .callee = c.callee, .args = new_args.toOwnedSlice(self.alloc) catch return stripNamedArgs(self, c) };
+    if (off == 0) {
+        bindSplicedDefaults(self, fd, new_call.args);
+    } else if (c.callee.data == .field_access) {
+        var bound = std.ArrayList(*const Node).empty;
+        defer bound.deinit(self.alloc);
+        bound.append(self.alloc, c.callee.data.field_access.object) catch unreachable;
+        bound.appendSlice(self.alloc, new_call.args) catch unreachable;
+        bindSplicedDefaults(self, fd, bound.items);
+    }
     return new_call;
+}
+
+/// A generic callee's spliced defaults lower under what the call binds its
+/// type parameters to. `args` are the call's arguments in parameter order.
+fn bindSplicedDefaults(self: *Lowering, fd: *const ast.FnDecl, args: []const *const Node) void {
+    if (fd.type_params.len == 0) return;
+    const bindings = self.genericResolver().buildTypeBindings(fd, args);
+    for (args) |a| {
+        const entry = self.authored_call_defaults.getPtr(a) orelse continue;
+        if (entry.substitution == .own) entry.substitution = .{ .own = bindings };
+    }
 }
 
 pub fn expandCallDefaults(
@@ -5617,10 +5645,11 @@ pub fn expandCallDefaults(
     var i: usize = 0;
     while (i < fill) : (i += 1) {
         const def = fd.params[supplied + i].default_expr.?;
-        new_args[c.args.len + i] = defaultArgAtCall(self, def, self.functionEnvironment(fd), c.callee) orelse return null;
+        new_args[c.args.len + i] = defaultArgAtCall(self, fd, def, c.callee, null) orelse return null;
     }
     const new_call = self.alloc.create(ast.Call) catch return null;
     new_call.* = .{ .callee = c.callee, .args = new_args };
+    bindSplicedDefaults(self, fd, new_args);
     return new_call;
 }
 

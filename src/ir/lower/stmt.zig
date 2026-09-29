@@ -697,9 +697,10 @@ pub fn lowerStmt(self: *Lowering, node: *const Node) void {
             _ = self.builder.emit(.{ .call = .{ .callee = fids.set, .args = restore_args } }, .void);
         },
         // Block-local type declarations
-        .struct_decl => |sd| {
+        .struct_decl => |*sd| {
+            recordBodyLocalStruct(self, sd);
             self.recordLocalTypeName(sd.name);
-            self.registerStructDecl(&node.data.struct_decl, node.source_file orelse self.current_source_file);
+            self.registerStructDecl(sd, node.source_file orelse self.current_source_file);
         },
         .enum_decl => {
             if (node.data.declName()) |dn| self.recordLocalTypeName(dn);
@@ -1067,9 +1068,17 @@ fn bindVoidPlaceholder(self: *Lowering, name: []const u8) void {
     scope.put(name, .{ .ref = self.emitPlaceholder(name), .ty = .unresolved, .is_alloca = false });
 }
 
+fn recordBodyLocalStruct(self: *Lowering, sd: *const ast.StructDecl) void {
+    self.body_local_structs.put(sd, {}) catch @panic("out of memory");
+    for (sd.methods) |method| {
+        if (method.data == .fn_decl) self.body_local_fns.put(&method.data.fn_decl, {}) catch @panic("out of memory");
+    }
+}
+
 /// Handle a bare fn_decl node as a local function declaration.
 /// The parser produces `fn_decl` (not `const_decl`) for `name :: (params) -> T { body }`.
 pub fn lowerLocalFnDecl(self: *Lowering, fd: *const ast.FnDecl) void {
+    self.body_local_fns.put(fd, {}) catch @panic("out of memory");
     // Use mangled name for local functions to support block-scoped shadowing
     const name = if (self.scope) |scope| blk: {
         const mangled = std.fmt.allocPrint(self.alloc, "{s}__{d}", .{ fd.name, self.local_fn_counter }) catch fd.name;
@@ -1085,6 +1094,7 @@ pub fn lowerConstDecl(self: *Lowering, cd: *const ast.ConstDecl) void {
     // Handle local function declarations: fx :: (s: i64) -> i64 { ... }
     if (cd.value.data == .fn_decl) {
         const fd = &cd.value.data.fn_decl;
+        self.body_local_fns.put(fd, {}) catch @panic("out of memory");
         // Use mangled name for local functions to support block-scoped shadowing
         const name = if (self.scope != null) blk: {
             const mangled = std.fmt.allocPrint(self.alloc, "{s}__{d}", .{ cd.name, self.local_fn_counter }) catch cd.name;
@@ -1103,8 +1113,10 @@ pub fn lowerConstDecl(self: *Lowering, cd: *const ast.ConstDecl) void {
 
     // Handle local type declarations: MyType :: struct/union/enum { ... }
     if (cd.value.data == .struct_decl) {
+        const sd = &cd.value.data.struct_decl;
+        recordBodyLocalStruct(self, sd);
         self.recordLocalTypeName(cd.name);
-        self.registerStructDecl(&cd.value.data.struct_decl, self.current_source_file);
+        self.registerStructDecl(sd, self.current_source_file);
         return;
     }
     if (cd.value.data == .enum_decl) {

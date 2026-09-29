@@ -789,23 +789,8 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     // Get struct field types for coercion and ordering
     const struct_fields = self.getStructFields(ty);
 
-    // Generic bindings use the resolved instance name, including through aliases.
-    const instance_name: ?[]const u8 = if (ty.isBuiltin()) null else blk: {
-        const ti = self.module.types.get(ty);
-        break :blk if (ti == .@"struct") self.module.types.getString(ti.@"struct".name) else null;
-    };
     const field_defaults: []const ?*const Node = self.struct_defaults_by_tid.get(ty) orelse &.{};
-
-    // A generic instance's defaults may REFERENCE its type params — `sz: i64 =
-    // @sizeOf(T)` (dependent defaults). Those default AST nodes are
-    // monomorphized here: lowering a missing field's default temporarily
-    // installs this instance's captured `type_bindings` (stamped by
-    // `instantiateGenericStruct` into `struct_instance_bindings` under the
-    // instance's mangled struct name) so `T` resolves to the concrete arg for
-    // THIS instantiation. A non-generic struct has no entry and its defaults
-    // lower under no bindings.
-    const default_bindings: ?std.StringHashMap(TypeId) =
-        if (instance_name) |sn| self.struct_instance_bindings.get(sn) else null;
+    const default_substitution = self.fieldDefaultSubstitution(ty);
 
     if (self.module.types.get(ty) == .@"struct") {
         const selected = self.alloc.alloc(?Ref, struct_fields.len) catch unreachable;
@@ -846,7 +831,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
             const val = value orelse blk: {
                 if (i < field_defaults.len) {
                     if (field_defaults[i]) |default_expr| {
-                        break :blk self.lowerDefaultWithBindings(default_expr, sf.ty, default_bindings);
+                        break :blk self.lowerDefaultWithBindings(default_expr, sf.ty, default_substitution);
                     }
                 }
                 break :blk self.zeroValue(sf.ty);
@@ -932,7 +917,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         for (struct_fields[fields.items.len..], fields.items.len..) |sf, fi| {
             if (fi < field_defaults.len) {
                 if (field_defaults[fi]) |default_expr| {
-                    fields.append(self.alloc, self.lowerDefaultWithBindings(default_expr, sf.ty, default_bindings)) catch unreachable;
+                    fields.append(self.alloc, self.lowerDefaultWithBindings(default_expr, sf.ty, default_substitution)) catch unreachable;
                     continue;
                 }
             }
@@ -3703,28 +3688,24 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
         if (self.precomputed_args.get(node)) |pre| return pre;
     }
     // A synthetic declared-default root evaluates with the callee declaration's
-    // lexical authority, not the caller's local scope or generic substitution.
+    // lexical authority and substitution, not the caller's local scope.
     // Keep this override for the entire recursive lowering of the default
     // expression. Caller-provided comptime substitutions also carry
     // `source_file` but are deliberately not in this identity map, so they
     // retain caller bindings.
     const authored_default = self.authored_call_defaults.get(node);
     const saved_scope_for_default = self.scope;
-    const saved_type_bindings_for_default = self.type_bindings;
-    const saved_value_bindings_for_default = self.comptime_value_bindings;
     const saved_default_call_site = self.active_default_call_site;
     const saved_default_context = self.lexicalContext();
+    const default_substitution: ?Lowering.SubstitutionPin = if (authored_default) |dflt| .enter(self, dflt.substitution) else null;
+    defer if (default_substitution) |pin| pin.restore();
     if (authored_default) |dflt| {
         self.scope = null;
-        self.type_bindings = null;
-        self.comptime_value_bindings = null;
         self.active_default_call_site = dflt.site;
         self.setCurrentEnvironment(dflt.environment);
     }
     defer if (authored_default != null) {
         self.scope = saved_scope_for_default;
-        self.type_bindings = saved_type_bindings_for_default;
-        self.comptime_value_bindings = saved_value_bindings_for_default;
         self.active_default_call_site = saved_default_call_site;
         self.restoreLexicalContext(saved_default_context);
     };
