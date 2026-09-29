@@ -1,0 +1,16 @@
+// A file's own value `N`, function `M` and function alias `P` hide a flat
+// import's types `N`, `M` and `P`, so each is refused as that own declaration
+// where a type is expected.
+@import "modules/std.sx";
+@import "own-non-type-declaration-hides-flat-imported-type/dep.sx";
+
+N :: 5;
+M :: () -> i64 { 1 }
+P :: M;
+
+main :: () -> i32 {
+    x : N = ---;
+    s := @sizeOf(M);
+    t := @sizeOf(P);
+    0
+}

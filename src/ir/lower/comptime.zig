@@ -625,9 +625,17 @@ fn evalComptimeConditionDepth(self: *Lowering, node: *const Node, depth: u32) ?b
         // A bare identifier naming a module const folds through the const's
         // value expression (`ENABLED :: false`, chains, `F :: @host.os == .ios`).
         // Only a bool-shaped fold counts; anything else stays runtime.
-        .identifier => |id| {
-            const info = self.program_index.lookup(.module_const, id.name) orelse return null;
-            return evalComptimeConditionDepth(self, info.value, depth + 1);
+        .identifier => |id| switch (self.selectModuleConst(id.name)) {
+            .resolved => |sel| {
+                const restore = self.pinConstValue(sel.info.value, sel.environment);
+                defer restore.unpin();
+                return evalComptimeConditionDepth(self, sel.info.value, depth + 1);
+            },
+            .none => {
+                const info = self.program_index.lookup(.module_const, id.name) orelse return null;
+                return evalComptimeConditionDepth(self, info.value, depth + 1);
+            },
+            .own_opaque, .not_a_const, .ambiguous => return null,
         },
         .binary_op => {},
         else => return null,
@@ -1424,7 +1432,8 @@ pub fn substituteComptimeNodes(self: *Lowering, node: *const Node, cpn: std.Stri
 /// Lower a call to a function with comptime params by inlining its body.
 /// Comptime params are substituted, `@insert` expressions are evaluated.
 pub fn lowerComptimeCall(self: *Lowering, fd: *const ast.FnDecl, call_node: *const ast.Call) Ref {
-    return lowerComptimeCallArgsMode(self, fd, call_node.args, 0, false, false, call_node.callee.span);
+    const body_bindings: BodyBindings = if (self.body_local_fns.contains(fd)) .ambient else .none;
+    return lowerComptimeCallArgsMode(self, fd, call_node.args, 0, false, false, body_bindings, call_node.callee.span);
 }
 
 /// Core of `lowerComptimeCall`, parameterized over the EFFECTIVE call-site arg
@@ -1435,7 +1444,7 @@ pub fn lowerComptimeCall(self: *Lowering, fd: *const ast.FnDecl, call_node: *con
 /// (e.g. `type_bindings` for a generic struct's `T`) before invoking this — the
 /// body lowers with whatever bindings are active.
 pub fn lowerComptimeCallArgs(self: *Lowering, fd: *const ast.FnDecl, call_args: []const *Node) Ref {
-    return lowerComptimeCallArgsMode(self, fd, call_args, 0, false, false, fd.body.span);
+    return lowerComptimeCallArgsMode(self, fd, call_args, 0, false, false, .ambient, fd.body.span);
 }
 
 /// Inline a selected comptime METHOD with a hygienic call frame. `call_args`
@@ -1455,7 +1464,7 @@ pub fn lowerComptimeMethodCallArgs(
     first_arg_is_receiver: bool,
     call_span: ast.Span,
 ) Ref {
-    return lowerComptimeCallArgsMode(self, fd, call_args, 0, true, first_arg_is_receiver, call_span);
+    return lowerComptimeCallArgsMode(self, fd, call_args, 0, true, first_arg_is_receiver, .ambient, call_span);
 }
 
 /// Generalization of `lowerComptimeCallArgs` that skips the FIRST `skip_params`
@@ -1463,11 +1472,20 @@ pub fn lowerComptimeMethodCallArgs(
 /// invoking (the generic-struct-method path binds `self` via the normal
 /// receiver-fixup so a `self: *Box(T)` pointer param is correct, then routes the
 /// method's `$o`/comptime params through here). `call_args` corresponds to
-/// `fd.params[skip_params..]`. With `skip_params == 0` this is the ordinary
-/// free-call inline.
+/// `fd.params[skip_params..]`. With `skip_params == 0` this is
+/// `lowerComptimeCallArgs`.
 pub fn lowerComptimeCallArgsSkip(self: *Lowering, fd: *const ast.FnDecl, call_args: []const *Node, skip_params: usize) Ref {
-    return lowerComptimeCallArgsMode(self, fd, call_args, skip_params, false, false, fd.body.span);
+    return lowerComptimeCallArgsMode(self, fd, call_args, skip_params, false, false, .ambient, fd.body.span);
 }
+
+/// The type substitution an inlined comptime body lowers under.
+const BodyBindings = enum {
+    /// The one in effect at the call: the callee's own bindings the method
+    /// entry installs, or the enclosing body's for a function declared inside it.
+    ambient,
+    /// A module-level free comptime function binds no type parameter of its own.
+    none,
+};
 
 const StagedRuntimeArg = struct {
     name: []const u8,
@@ -1667,6 +1685,7 @@ fn lowerComptimeCallArgsMode(
     skip_params: usize,
     isolate_callee: bool,
     first_arg_is_receiver: bool,
+    body_bindings: BodyBindings,
     call_span: ast.Span,
 ) Ref {
     if (checkComptimeCallArity(self, fd, call_args.len, skip_params, first_arg_is_receiver, call_span))
@@ -1869,6 +1888,9 @@ fn lowerComptimeCallArgsMode(
     const saved_source = self.lexicalContext();
     defer self.restoreLexicalContext(saved_source);
     self.setFunctionContext(fd);
+    const saved_type_bindings = self.type_bindings;
+    defer self.type_bindings = saved_type_bindings;
+    if (body_bindings == .none) self.type_bindings = null;
 
     // An inlined comptime body is still a function boundary for cleanup. Its
     // explicit `return` may emit defers declared inside the body, but must not
@@ -2392,7 +2414,7 @@ pub fn foldSourceConstInt(self: *Lowering, name: []const u8, frame: ?*const Cons
             if (sel.info.ty == .f32) return program_index_mod.floatToIntExact(program_index_mod.evalConstFloatInit(sel.info.value, ctx, sel.info.ty) orelse return null);
             return program_index_mod.evalConstIntExpr(sel.info.value, ctx);
         },
-        .own_opaque, .ambiguous, .none => null,
+        .own_opaque, .not_a_const, .ambiguous, .none => null,
     };
 }
 
@@ -2511,7 +2533,7 @@ pub fn foldSourceConstFloat(self: *Lowering, name: []const u8, frame: ?*const Co
             defer restore.unpin();
             return program_index_mod.evalConstFloatInit(sel.info.value, SourceConstCtx{ .lowering = self, .frame = &f }, sel.info.ty);
         },
-        .own_opaque, .ambiguous, .none => null,
+        .own_opaque, .not_a_const, .ambiguous, .none => null,
     };
 }
 
@@ -2527,7 +2549,7 @@ pub fn sourceConstIsFloatTyped(self: *Lowering, name: []const u8, frame: ?*const
             defer restore.unpin();
             return program_index_mod.isFloatValuedExpr(sel.info.value, SourceConstCtx{ .lowering = self, .frame = &f });
         },
-        .own_opaque, .ambiguous, .none => false,
+        .own_opaque, .not_a_const, .ambiguous, .none => false,
     };
 }
 
@@ -2550,6 +2572,10 @@ const ConstAuthor = union(enum) {
     /// const). The own author owns the name: the read must NOT borrow another
     /// module's same-named const, so callers treat it as unresolvable.
     own_opaque,
+    /// The reader's OWN module authors `name` as something other than a const
+    /// — a type, a function, a global, a namespace. That author hides every
+    /// flat import's same-named const, so no const answers for the name.
+    not_a_const,
     ambiguous,
     none,
 };
@@ -2560,7 +2586,8 @@ const ConstAuthor = union(enum) {
 /// collector and reads the value from the SELECTED author's per-source cache
 /// (`module_consts_by_source`), never the global last-wins `module_const_map`:
 ///
-/// - **own-wins**: the querying module's OWN const author is selected outright.
+/// - **own-wins**: the querying module's OWN author is selected outright; one
+///   of another kind → `.not_a_const`.
 /// - else the FLAT-import-reachable const authors: exactly one → it; ≥2 distinct
 /// → `.ambiguous` (never a silent first-/last-wins pick).
 /// - none visible → `.none` (a namespaced-only const must be qualified `ns.X`;
@@ -2585,6 +2612,7 @@ pub fn selectModuleConst(self: *Lowering, name: []const u8) ConstAuthor {
         // name blocks borrowing a flat import's / the global registration's
         // same-named const.
         if (o.raw == .const_decl) return .own_opaque;
+        return .not_a_const;
     }
     var the_one: ?SelectedConst = null;
     var count: usize = 0;
@@ -2617,7 +2645,7 @@ fn selectShapedConst(self: *Lowering, name: []const u8) ?SelectedConst {
     while (hops < 64) : (hops += 1) {
         const sel = switch (self.selectModuleConst(current)) {
             .resolved => |s| s,
-            .own_opaque, .ambiguous, .none => return null,
+            .own_opaque, .not_a_const, .ambiguous, .none => return null,
         };
         if (sel.info.value.data != .identifier) return sel;
         const id = sel.info.value.data.identifier;
@@ -2791,19 +2819,23 @@ fn anyRawAuthor(self: *Lowering, name: []const u8) bool {
     return false;
 }
 
+/// A const's value is its declaration's own code: it resolves in the author's
+/// environment and under no generic substitution of the reader's.
 const ConstEnvironmentPin = struct {
     lowering: *Lowering,
     saved: Lowering.LexicalContext,
+    substitution: Lowering.SubstitutionPin,
 
     pub fn unpin(self: ConstEnvironmentPin) void {
         self.lowering.restoreLexicalContext(self.saved);
+        self.substitution.restore();
     }
 };
 
 pub fn pinConstEnvironment(self: *Lowering, environment: ?@import("../../imports.zig").EnvironmentId) ConstEnvironmentPin {
-    const pin = ConstEnvironmentPin{ .lowering = self, .saved = self.lexicalContext() };
+    const saved = self.lexicalContext();
     if (environment) |env| self.setCurrentEnvironment(env);
-    return pin;
+    return .{ .lowering = self, .saved = saved, .substitution = .enter(self, .{ .own = null }) };
 }
 
 pub fn pinConstValue(self: *Lowering, node: *const Node, environment: ?@import("../../imports.zig").EnvironmentId) ConstEnvironmentPin {
@@ -2819,6 +2851,8 @@ pub fn foldComptimeFloatInit(self: *Lowering, node: *const Node, dst: TypeId) ?R
     if (!self.isIntEx(dst)) return null;
     const author = Lowering.AuthorScope.enter(self, node);
     defer author.leave();
+    const default_substitution: ?Lowering.SubstitutionPin = if (self.authored_call_defaults.get(node)) |dflt| .enter(self, dflt.substitution) else null;
+    defer if (default_substitution) |pin| pin.restore();
     // PURE & side-effect-free, so it runs FIRST: a runtime / non-comptime /
     // non-numeric node — incl. a `$pack[i]` index expression — folds to null
     // and is left to the normal path untouched. (Calling `inferExprType` on

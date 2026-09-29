@@ -1,0 +1,19 @@
+// A function called from a generic reads its file's `V`; a function nested in
+// the generic reads the generic's `$V`.
+@import "modules/std.sx";
+
+V :: struct { a: i64; b: i64; }
+
+declared :: () -> bool { x : Type = V; x == i64 }
+
+g :: ($V: Type) -> void {
+    nested :: () -> bool { x : Type = V; x == i64 }
+    print("{} {}\n", declared(), nested());
+}
+
+main :: () -> i32 {
+    g(i64);
+    g(f64);
+    print("{}\n", declared());
+    0
+}

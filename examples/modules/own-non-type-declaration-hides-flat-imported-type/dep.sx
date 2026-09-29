@@ -1,0 +1,3 @@
+N :: struct { a: i64; }
+M :: struct { b: i64; }
+P :: struct { c: i64; }

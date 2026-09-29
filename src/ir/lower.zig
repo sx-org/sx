@@ -73,6 +73,17 @@ const Builder = mod_mod.Builder;
 pub const AuthoredDefault = struct {
     site: DefaultCallSite,
     environment: ?imports_mod.EnvironmentId,
+    substitution: DeclSubstitution,
+};
+
+/// The generic substitution a declaration's own code lowers under at a use
+/// site written elsewhere.
+pub const DeclSubstitution = union(enum) {
+    /// The declaration sits inside a function body, so the substitution at its
+    /// use site is that body's.
+    ambient,
+    /// The declaration's own type bindings; null when it binds none.
+    own: ?std.StringHashMap(TypeId),
 };
 
 /// Call-site provenance retained while a declaration-authored default AST is
@@ -845,6 +856,10 @@ pub const Lowering = struct {
     /// resolution (run in the template's source context) must NOT bind a
     /// name the CALLER declared block-local.
     local_type_names: std.StringHashMap(std.StringHashMap(void)),
+    /// Functions and structs declared inside a function body, methods of such
+    /// structs included.
+    body_local_fns: std.AutoHashMap(*const ast.FnDecl, void),
+    body_local_structs: std.AutoHashMap(*const ast.StructDecl, void),
     /// Construction-handle defaults follow the flattened layout; spread fields have none.
     struct_defaults_by_tid: std.AutoHashMap(TypeId, []const ?*const Node),
     /// (concrete TypeId, const name) → struct-level constant. TypeId-keyed
@@ -1142,6 +1157,8 @@ pub const Lowering = struct {
         force_block_value: bool,
         context: LexicalContext,
         module_const_frame: ?*const ConstFoldFrame,
+        type_bindings: ?std.StringHashMap(TypeId),
+        comptime_value_bindings: ?std.StringHashMap(i64),
         jni_env_base: usize,
         pack_arg_nodes: ?std.StringHashMap([]const *const Node),
         pack_param_count: ?std.StringHashMap(u32),
@@ -1168,6 +1185,8 @@ pub const Lowering = struct {
                 .force_block_value = l.force_block_value,
                 .context = l.lexicalContext(),
                 .module_const_frame = l.module_const_frame,
+                .type_bindings = l.type_bindings,
+                .comptime_value_bindings = l.comptime_value_bindings,
                 .jni_env_base = l.jni_env_stack_base,
                 .pack_arg_nodes = l.pack_arg_nodes,
                 .pack_param_count = l.pack_param_count,
@@ -1212,10 +1231,21 @@ pub const Lowering = struct {
             return g;
         }
 
+        /// A declared body is lowered once and shared by every caller, so no
+        /// caller's generic substitution reaches it.
+        pub fn enterCached(l: *Lowering) FnBodyReentry {
+            const g = enter(l);
+            l.type_bindings = null;
+            l.comptime_value_bindings = null;
+            return g;
+        }
+
         pub fn restore(g: FnBodyReentry) void {
             const l = g.l;
             l.restoreLexicalContext(g.context);
             l.module_const_frame = g.module_const_frame;
+            l.type_bindings = g.type_bindings;
+            l.comptime_value_bindings = g.comptime_value_bindings;
             l.scope = g.scope;
             l.func_defer_base = g.defer_base;
             l.block_terminated = g.block_terminated;
@@ -1278,6 +1308,8 @@ pub const Lowering = struct {
         fixed_callable_ret: ?TypeId,
         lambda_sig_target: ?lower_closure.CallableSig,
         module_const_frame: ?*const ConstFoldFrame,
+        type_bindings: ?std.StringHashMap(TypeId),
+        comptime_value_bindings: ?std.StringHashMap(i64),
 
         pub fn enter(l: *Lowering) NestedBodyGuard {
             const g = NestedBodyGuard{
@@ -1286,6 +1318,8 @@ pub const Lowering = struct {
                 .fixed_callable_ret = l.fixed_callable_ret,
                 .lambda_sig_target = l.lambda_sig_target,
                 .module_const_frame = l.module_const_frame,
+                .type_bindings = l.type_bindings,
+                .comptime_value_bindings = l.comptime_value_bindings,
                 .narrowed = l.narrowed,
                 .narrowed_refs = l.narrowed_refs,
                 .literal_local_refs = l.literal_local_refs,
@@ -1316,6 +1350,8 @@ pub const Lowering = struct {
         pub fn enterCached(l: *Lowering) NestedBodyGuard {
             const g = enter(l);
             l.module_const_frame = null;
+            l.type_bindings = null;
+            l.comptime_value_bindings = null;
             return g;
         }
 
@@ -1338,6 +1374,31 @@ pub const Lowering = struct {
             g.l.fixed_callable_ret = g.fixed_callable_ret;
             g.l.lambda_sig_target = g.lambda_sig_target;
             g.l.module_const_frame = g.module_const_frame;
+            g.l.type_bindings = g.type_bindings;
+            g.l.comptime_value_bindings = g.comptime_value_bindings;
+        }
+    };
+
+    pub const SubstitutionPin = struct {
+        l: *Lowering,
+        type_bindings: ?std.StringHashMap(TypeId),
+        comptime_value_bindings: ?std.StringHashMap(i64),
+
+        pub fn enter(l: *Lowering, substitution: DeclSubstitution) SubstitutionPin {
+            const pin = SubstitutionPin{ .l = l, .type_bindings = l.type_bindings, .comptime_value_bindings = l.comptime_value_bindings };
+            switch (substitution) {
+                .ambient => {},
+                .own => |bindings| {
+                    l.type_bindings = bindings;
+                    l.comptime_value_bindings = null;
+                },
+            }
+            return pin;
+        }
+
+        pub fn restore(pin: SubstitutionPin) void {
+            pin.l.type_bindings = pin.type_bindings;
+            pin.l.comptime_value_bindings = pin.comptime_value_bindings;
         }
     };
 
@@ -1466,6 +1527,8 @@ pub const Lowering = struct {
             .protocol_ast_by_type = std.AutoHashMap(TypeId, *const ast.ProtocolDecl).init(module.alloc),
             .scanned_decls = std.AutoHashMap(*const ast.Node, void).init(module.alloc),
             .local_type_names = std.StringHashMap(std.StringHashMap(void)).init(module.alloc),
+            .body_local_fns = std.AutoHashMap(*const ast.FnDecl, void).init(module.alloc),
+            .body_local_structs = std.AutoHashMap(*const ast.StructDecl, void).init(module.alloc),
             .struct_defaults_by_tid = std.AutoHashMap(TypeId, []const ?*const Node).init(module.alloc),
             .struct_const_by_tid = std.AutoHashMap(StructConstTidKey, StructConstInfo).init(module.alloc),
             .unique_lambdas = std.AutoHashMap(TypeId, lower_closure.UniqueLambda).init(module.alloc),
@@ -2479,6 +2542,8 @@ pub const Lowering = struct {
         const authored_default = self.authored_call_defaults.get(node);
         const saved_scope = self.scope;
         const saved_source = self.lexicalContext();
+        const substitution: ?SubstitutionPin = if (authored_default) |dflt| .enter(self, dflt.substitution) else null;
+        defer if (substitution) |pin| pin.restore();
         if (authored_default) |dflt| {
             self.scope = null;
             self.setCurrentEnvironment(dflt.environment);
@@ -3282,7 +3347,7 @@ pub const Lowering = struct {
         if (self.program_index.lookup(.module_const, name) != null) {
             switch (self.selectModuleConst(name)) {
                 .resolved, .own_opaque => return true,
-                .ambiguous, .none => {},
+                .not_a_const, .ambiguous, .none => {},
             }
         }
         return false;
@@ -4125,6 +4190,7 @@ pub const Lowering = struct {
     pub const zeroValue = lower_coerce.zeroValue;
     pub const lowerCoercedDefault = lower_coerce.lowerCoercedDefault;
     pub const lowerDefaultWithBindings = lower_coerce.lowerDefaultWithBindings;
+    pub const fieldDefaultSubstitution = lower_coerce.fieldDefaultSubstitution;
     pub const declSignatureType = lower_coerce.declSignatureType;
     pub const functionSignatureType = lower_coerce.functionSignatureType;
     pub const bareFnNameSignature = lower_coerce.bareFnNameSignature;
@@ -4325,6 +4391,7 @@ pub const Lowering = struct {
     pub const headTypeLeak = lower_generic.headTypeLeak;
     pub const headNameOfCallee = lower_generic.headNameOfCallee;
     pub const headTypeGate = lower_generic.headTypeGate;
+    pub const selectHeadType = lower_generic.selectHeadType;
     pub const headFnLeak = lower_generic.headFnLeak;
     pub const flatFnAuthorAmbiguous = lower_generic.flatFnAuthorAmbiguous;
     pub const flatFnAuthorVisible = lower_generic.flatFnAuthorVisible;

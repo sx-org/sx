@@ -1,0 +1,6 @@
+K :: 7;
+F :: 13;
+G :: 13;
+H :: struct { a: i64; }
+Box :: (x: i64) -> i64 { x }
+DEBUG :: true;

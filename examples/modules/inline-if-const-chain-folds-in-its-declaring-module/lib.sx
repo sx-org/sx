@@ -1,0 +1,6 @@
+A :: B;
+B :: true;
+check :: () -> string {
+    inline if A { return "lib true"; }
+    return "lib false";
+}

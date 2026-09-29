@@ -789,23 +789,8 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     // Get struct field types for coercion and ordering
     const struct_fields = self.getStructFields(ty);
 
-    // Generic bindings use the resolved instance name, including through aliases.
-    const instance_name: ?[]const u8 = if (ty.isBuiltin()) null else blk: {
-        const ti = self.module.types.get(ty);
-        break :blk if (ti == .@"struct") self.module.types.getString(ti.@"struct".name) else null;
-    };
     const field_defaults: []const ?*const Node = self.struct_defaults_by_tid.get(ty) orelse &.{};
-
-    // A generic instance's defaults may REFERENCE its type params — `sz: i64 =
-    // @sizeOf(T)` (dependent defaults). Those default AST nodes are
-    // monomorphized here: lowering a missing field's default temporarily
-    // installs this instance's captured `type_bindings` (stamped by
-    // `instantiateGenericStruct` into `struct_instance_bindings` under the
-    // instance's mangled struct name) so `T` resolves to the concrete arg for
-    // THIS instantiation. A non-generic struct has no entry and its defaults
-    // lower in the ambient binding context.
-    const default_bindings: ?std.StringHashMap(TypeId) =
-        if (instance_name) |sn| self.struct_instance_bindings.get(sn) else null;
+    const default_substitution = self.fieldDefaultSubstitution(ty);
 
     if (self.module.types.get(ty) == .@"struct") {
         const selected = self.alloc.alloc(?Ref, struct_fields.len) catch unreachable;
@@ -846,7 +831,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
             const val = value orelse blk: {
                 if (i < field_defaults.len) {
                     if (field_defaults[i]) |default_expr| {
-                        break :blk self.lowerDefaultWithBindings(default_expr, sf.ty, default_bindings);
+                        break :blk self.lowerDefaultWithBindings(default_expr, sf.ty, default_substitution);
                     }
                 }
                 break :blk self.zeroValue(sf.ty);
@@ -932,7 +917,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         for (struct_fields[fields.items.len..], fields.items.len..) |sf, fi| {
             if (fi < field_defaults.len) {
                 if (field_defaults[fi]) |default_expr| {
-                    fields.append(self.alloc, self.lowerDefaultWithBindings(default_expr, sf.ty, default_bindings)) catch unreachable;
+                    fields.append(self.alloc, self.lowerDefaultWithBindings(default_expr, sf.ty, default_substitution)) catch unreachable;
                     continue;
                 }
             }
@@ -2865,9 +2850,10 @@ fn literalAggregate(self: *Lowering, ty: TypeId, length: u32) ?TypeId {
 /// `*<operand>` where the operand denotes a TYPE resolves to the pointer
 /// type's Type value (`*i64` → the TypeId of `*i64`). Returns null when the
 /// operand is a value — the caller falls through to ordinary address-of.
-/// A scope local or a module global wins over a same-named type: taking a
-/// value's address must never silently become a type. Nested address_of
-/// recurses so `**T` / `***T` resolve inside-out.
+/// A scope local, a module global, or this module's own non-type declaration
+/// wins over a same-named type: taking a value's address must never silently
+/// become a type. Nested address_of recurses so `**T` / `***T` resolve
+/// inside-out.
 fn addrOfTypeOperand(self: *Lowering, node: *const Node) ?TypeId {
     switch (node.data) {
         .identifier => |id| {
@@ -2875,6 +2861,7 @@ fn addrOfTypeOperand(self: *Lowering, node: *const Node) ?TypeId {
                 if (sc.lookup(id.name) != null) return null;
             }
             if (self.program_index.contains(.global, id.name)) return null;
+            if (self.selectHeadType(id.name) == .not_a_type) return null;
             const tid = self.resolveArrayLiteralType(node);
             if (tid == .unresolved) return null;
             return self.module.types.ptrTo(tid);
@@ -2953,7 +2940,7 @@ pub fn resolveArrayLiteralType(self: *Lowering, te: *const Node) TypeId {
             // with the leaf / 0755); a single source-keyed author resolves to
             // ITS TypeId instead of a global `findByName` first-/last-wins pick.
             switch (self.headTypeGate(id.name, te.span)) {
-                .ambiguous, .not_visible => return .unresolved,
+                .ambiguous, .not_visible, .not_a_type => return .unresolved,
                 .resolved => |tid| return tid,
                 .proceed => {},
             }
@@ -3701,14 +3688,17 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
         if (self.precomputed_args.get(node)) |pre| return pre;
     }
     // A synthetic declared-default root evaluates with the callee declaration's
-    // lexical authority, not the caller's local scope. Keep this override for
-    // the entire recursive lowering of the default expression. Caller-provided
-    // comptime substitutions also carry `source_file` but are deliberately not
-    // in this identity map, so they retain caller bindings.
+    // lexical authority and substitution, not the caller's local scope.
+    // Keep this override for the entire recursive lowering of the default
+    // expression. Caller-provided comptime substitutions also carry
+    // `source_file` but are deliberately not in this identity map, so they
+    // retain caller bindings.
     const authored_default = self.authored_call_defaults.get(node);
     const saved_scope_for_default = self.scope;
     const saved_default_call_site = self.active_default_call_site;
     const saved_default_context = self.lexicalContext();
+    const default_substitution: ?Lowering.SubstitutionPin = if (authored_default) |dflt| .enter(self, dflt.substitution) else null;
+    defer if (default_substitution) |pin| pin.restore();
     if (authored_default) |dflt| {
         self.scope = null;
         self.active_default_call_site = dflt.site;
@@ -3996,6 +3986,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                     // shape, e.g. an array const) — fall through; the tail of
                     // identifier lowering diagnoses it as unresolved.
                     .own_opaque => {},
+                    .not_a_const => {},
                     .ambiguous => {
                         if (self.diagnostics) |d|
                             d.addFmt(.err, node.span, "'{s}' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import", .{id.name});
@@ -4169,11 +4160,13 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
             // diagnostic, 0755/0767). A single source-keyed author — including
             // the querying source's OWN author over a same-name flat import
             // (own-wins, 0754) — resolves to ITS TypeId, NOT whichever same-name
-            // author a global `findByName` would pick. A value name / generic
-            // param / undeclared name → `.proceed`, falling through below.
+            // author a global `findByName` would pick. An own non-type author
+            // that hides a type authored elsewhere is refused as that
+            // declaration; any other value name / generic param / undeclared
+            // name → `.proceed`, falling through below.
             const ty = blk_ty: {
                 switch (self.headTypeGate(id.name, node.span)) {
-                    .ambiguous, .not_visible => break :blk self.emitPlaceholder(id.name),
+                    .ambiguous, .not_visible, .not_a_type => break :blk self.emitPlaceholder(id.name),
                     .resolved => |tid| break :blk_ty tid,
                     .proceed => {},
                 }
@@ -4274,9 +4267,14 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                 // Same defect as the local case: without storage, `@FORTY` would
                 // become `inttoptr (i64 <value> to ptr)`. Diagnose.
                 if (self.program_index.lookup(.module_const, id_name) != null) {
-                    if (self.diagnostics) |d|
-                        d.addFmt(.err, node.span, "cannot take the address of constant '{s}' — a scalar '::' constant has no storage (use a '=' variable or a local copy for mutable data)", .{id_name});
-                    break :blk self.emitPlaceholder("addr_of_const");
+                    switch (self.selectModuleConst(id_name)) {
+                        .resolved, .ambiguous, .none => {
+                            if (self.diagnostics) |d|
+                                d.addFmt(.err, node.span, "cannot take the address of constant '{s}' — a scalar '::' constant has no storage (use a '=' variable or a local copy for mutable data)", .{id_name});
+                            break :blk self.emitPlaceholder("addr_of_const");
+                        },
+                        .own_opaque, .not_a_const => {},
+                    }
                 }
             }
             // A dest-typed float literal is that dest width; the negated form

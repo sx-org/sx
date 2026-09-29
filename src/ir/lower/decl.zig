@@ -987,7 +987,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                                 // `.ambiguous` (same-name RHS authored by ≥2 flat
                                 // imports) leaves A unwritten like `.not_visible`;
                                 // the loud diagnostic fires where A is USED.
-                                .pending, .forward, .undeclared, .not_visible, .private_elsewhere, .ambiguous => {},
+                                .pending, .forward, .undeclared, .not_visible, .private_elsewhere, .not_a_type, .ambiguous => {},
                             }
                         }
                     } else if (cd.value.data == .field_access) {
@@ -1014,7 +1014,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                                         self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, .{ .value = cd.value, .ty = target.ty });
                                     } else switch (self.selectNominalLeaf(sel.member, self.program_index.declaration(sel.author.id).environment.?, false)) {
                                         .resolved => |tid| self.putTypeAlias(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, tid),
-                                        .pending, .forward, .undeclared, .not_visible, .private_elsewhere, .ambiguous => {},
+                                        .pending, .forward, .undeclared, .not_visible, .private_elsewhere, .not_a_type, .ambiguous => {},
                                     }
                                 },
                                 .missing => |m| if (!self.namespaceMissWaits(m)) {
@@ -1311,7 +1311,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
         const recv = obj.data.identifier.name;
         const recv_is_agg = switch (self.selectModuleConst(recv)) {
             .resolved => |sel| sel.info.value.data == .array_literal or sel.info.value.data == .struct_literal,
-            .own_opaque, .ambiguous, .none => if (self.comptime_constants.get(recv)) |cv| cv == .struct_val else false,
+            .own_opaque, .not_a_const, .ambiguous, .none => if (self.comptime_constants.get(recv)) |cv| cv == .struct_val else false,
         };
         if (!recv_is_agg) continue;
         self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, .{ .value = cd.value, .ty = .i64 });
@@ -1347,7 +1347,7 @@ fn constantIndexOperand(self: *Lowering, node: *const Node, frame: ?*const lower
         .array_literal, .struct_literal, .string_literal => true,
         .identifier => |id| switch (self.selectModuleConst(id.name)) {
             .resolved => |sel| constantIndexAuthor(self, id.name, sel, frame),
-            .own_opaque, .ambiguous, .none => false,
+            .own_opaque, .not_a_const, .ambiguous, .none => false,
         },
         .field_access => |fa| blk: {
             if (self.qualifiedTypeName(fa.object)) |name| {
@@ -1788,7 +1788,7 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
             if (self.program_index.contains(.module_const, id.name)) {
                 switch (self.selectModuleConst(id.name)) {
                     .resolved, .none => {},
-                    .own_opaque => {
+                    .own_opaque, .not_a_const => {
                         if (self.diagnostics) |d|
                             d.addFmt(.err, v.span, "global '{s}' must be initialized by a compile-time constant; '{s}' is not a usable constant here", .{ vd.name, id.name });
                         break :blk null;
@@ -1993,7 +1993,7 @@ pub fn resolveForwardIdentifierAliases(self: *Lowering, decls: []const *const No
                 // ambiguous same-name shadow (≥2 flat authors). Leave A
                 // unwritten — no global last-wins leak; the ambiguity surfaces
                 // where A is used.
-                .pending, .forward, .undeclared, .not_visible, .private_elsewhere, .ambiguous => {},
+                .pending, .forward, .undeclared, .not_visible, .private_elsewhere, .not_a_type, .ambiguous => {},
             }
         }
     }
@@ -2165,7 +2165,7 @@ fn bareTypeLeafReadyBehindPtr(self: *Lowering, name: []const u8, src: []const u8
     if (std.mem.indexOfScalar(u8, name, '.') != null) return true;
     return switch (self.selectNominalLeaf(name, self.environmentForSource(src).?, raw)) {
         .resolved, .forward => true,
-        .pending, .undeclared, .not_visible, .private_elsewhere, .ambiguous => false,
+        .pending, .undeclared, .not_visible, .private_elsewhere, .not_a_type, .ambiguous => false,
     };
 }
 
@@ -2182,7 +2182,7 @@ fn bareTypeLeafReady(self: *Lowering, name: []const u8, src: []const u8, raw: bo
     if (std.mem.indexOfScalar(u8, name, '.') != null) return true;
     return switch (self.selectNominalLeaf(name, self.environmentForSource(src).?, raw)) {
         .resolved => true,
-        .pending, .forward, .undeclared, .not_visible, .private_elsewhere, .ambiguous => false,
+        .pending, .forward, .undeclared, .not_visible, .private_elsewhere, .not_a_type, .ambiguous => false,
     };
 }
 
@@ -2540,11 +2540,12 @@ pub const BareCallee = union(enum) {
     /// ≥2 distinct flat authors are reachable from the caller and none is
     /// the caller's own — the bare call can't pick one; require a qualifier.
     ambiguous,
-    /// The visible author of the name denotes a VALUE, not a function — a
-    /// `var`, a literal const, or an alias chain terminating at one. The
+    /// The visible author of the name is not a function — the caller's own
+    /// declaration of any other kind, or a single flat author denoting a VALUE
+    /// (a `var`, a literal const, or an alias chain terminating at one). The
     /// spelling means that declaration here, so the name-keyed function map
     /// must not answer for it; the reference resolves (or fails) through the
-    /// ordinary value path.
+    /// ordinary value and type paths.
     not_callable,
     /// 0 or 1 reachable author, or the resolved author IS the existing
     /// bare-name winner — defer to the existing path, byte-for-byte.
@@ -2617,6 +2618,11 @@ pub const TypeHeadResolution = union(enum) {
     /// leak), with wording that does not suggest an `@import` that would not
     /// help.
     private_elsewhere,
+    /// The querying source's OWN author of `name` is not a type, and it hides
+    /// a type of that name authored in another module. `resolveNominalLeaf`
+    /// names the own declaration in its diagnostic and returns the
+    /// `.unresolved` poison sentinel.
+    not_a_type,
     /// ≥2 DISTINCT same-name type authors are flat-visible from the querying
     /// source and none is its own. The selection is genuinely
     /// ambiguous: `resolveNominalLeaf` emits a loud diagnostic and returns the
@@ -2743,12 +2749,10 @@ pub fn selectCallableAuthor(self: *Lowering, name: []const u8, environment: impo
     defer if (set.flat.len > 0) self.alloc.free(set.flat);
 
     if (set.own) |own_author| {
-        if (self.callableAuthorFn(own_author)) |own| {
-            if (winner != null and winner.? == own.decl) return .none;
-            if (!selectableFn(own.decl, kinds)) return .none;
-            return .{ .func = own };
-        }
-        if (valueAuthor(self, own_author)) return .not_callable;
+        const own = self.callableAuthorFn(own_author) orelse return .not_callable;
+        if (winner != null and winner.? == own.decl) return .none;
+        if (!selectableFn(own.decl, kinds)) return .none;
+        return .{ .func = own };
     }
 
     var the_one: ?SelectedFunc = null;
@@ -3027,6 +3031,10 @@ pub fn selectNominalLeaf(self: *Lowering, name: []const u8, environment: imports
         return .undeclared; // local in another source; no pending alias possible here
     }
 
+    // 2b. An own author that is not a type hides every other module's type of
+    //     the name.
+    if (author_set.own != null and (self.nameAuthoredAsTypeAnywhere(name) or nameAuthoredAsTypeOnlyPrivatelyElsewhere(self, name, from))) return .not_a_type;
+
     // 3. Authored as a TYPE (named OR alias) in some module, but NOT flat-
     //    import-reachable from `from` → reachable only over a namespace edge.
     if (self.nameAuthoredAsTypeAnywhere(name)) return .not_visible;
@@ -3224,6 +3232,11 @@ pub fn nominalLeafType(self: *Lowering, name: []const u8, leaf: TypeHeadResoluti
         .private_elsewhere => {
             if (self.diagnostics) |d|
                 d.addFmt(.err, span, "type '{s}' is private to its declaring module", .{name});
+            return .unresolved;
+        },
+        .not_a_type => {
+            if (self.diagnostics) |d|
+                d.addFmt(.err, span, "'{s}' names this module's own declaration, which is not a type", .{name});
             return .unresolved;
         },
         // ≥2 distinct same-name type authors flat-visible, none own: a
@@ -3772,7 +3785,7 @@ pub fn lowerFunctionBodyInto(self: *Lowering, fd: *const ast.FnDecl, fid: FuncId
         self.current_runtime_class = fcd;
     }
 
-    var reentry = FnBodyReentry.enter(self);
+    var reentry = FnBodyReentry.enterCached(self);
     defer reentry.restore();
 
     const saved_fn_decl = self.current_fn_decl;

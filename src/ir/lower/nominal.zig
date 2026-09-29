@@ -50,7 +50,7 @@ fn staticHeadInSource(self: *Lowering, name: []const u8, source: ?[]const u8) St
         // A privately-authored-elsewhere head is exactly as unreachable as a
         // namespaced-only one for static-call purposes.
         .not_visible, .private_elsewhere => .not_visible,
-        .pending, .forward, .undeclared => .none,
+        .pending, .forward, .undeclared, .not_a_type => .none,
     };
 }
 

@@ -408,11 +408,12 @@ pub const ExprTyper = struct {
                 // global type), and an ambiguous bare reference yields `.unresolved`
                 // (the emission path diagnoses the ambiguity loudly).
                 if (self.l.program_index.lookup(.module_const, id.name)) |ci_global| {
-                    return switch (self.l.selectModuleConst(id.name)) {
-                        .resolved => |sel| sel.info.ty,
-                        .none => ci_global.ty,
-                        .own_opaque, .ambiguous => .unresolved,
-                    };
+                    switch (self.l.selectModuleConst(id.name)) {
+                        .resolved => |sel| return sel.info.ty,
+                        .none => return ci_global.ty,
+                        .own_opaque, .ambiguous => return .unresolved,
+                        .not_a_const => {},
+                    }
                 }
                 // A bare type name (alias like `Vec4`, struct name, or
                 // builtin primitive) referenced in expression position

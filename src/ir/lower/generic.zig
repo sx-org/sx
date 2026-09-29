@@ -411,6 +411,7 @@ pub fn isStaticTypeRef(self: *Lowering, node: *const Node) bool {
             if (self.scope) |scope| {
                 if (scope.lookup(id.name) != null) return false;
             }
+            if (self.selectHeadType(id.name) == .not_a_type) return false;
             return self.isKnownTypeName(id.name) or
                 self.module.types.findByName(self.module.types.internString(id.name)) != null or
                 self.program_index.lookup(.type_alias, id.name) != null;
@@ -578,7 +579,7 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
             // anywhere → `.proceed`, falling to the "unresolved type"
             // diagnostic below.
             switch (self.headTypeGate(id.name, node.span)) {
-                .ambiguous, .not_visible => return .unresolved,
+                .ambiguous, .not_visible, .not_a_type => return .unresolved,
                 .resolved => |tid| return tid,
                 .proceed => {},
             }
@@ -614,7 +615,7 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
                 if (self.qualifiedNominalTypeArg(te.name, node.span)) |tid| return tid;
             }
             switch (self.headTypeGate(te.name, node.span)) {
-                .ambiguous, .not_visible => return .unresolved,
+                .ambiguous, .not_visible, .not_a_type => return .unresolved,
                 .resolved => |tid| if (plain) return tid,
                 .proceed => {},
             }
@@ -1633,7 +1634,7 @@ pub fn headTypeLeak(self: *Lowering, name: []const u8, span: ?ast.Span) bool {
     // already emitted by `headTypeGate`) poison; `.resolved` / `.proceed`
     // proceed to instantiation.
     return switch (self.headTypeGate(name, span)) {
-        .ambiguous, .not_visible => true,
+        .ambiguous, .not_visible, .not_a_type => true,
         .proceed, .resolved => false,
     };
 }
@@ -1754,7 +1755,8 @@ pub fn headNameOfCallee(callee: *const Node) ?HeadName {
 /// direct flat author resolves to ITS source-keyed TypeId. Falls open
 /// (`.proceed`) when import facts are unwired, the source context is absent,
 /// the default-Context emitter is running (built-in infrastructure resolves
-/// independent of the user's import style), the querying source is the OWN
+/// independent of the user's import style), `name` is a type parameter of the
+/// generic body being lowered, the querying source is the OWN
 /// author, a single flat author is not registered yet (a forward / extern /
 /// generic template — the caller instantiates it), or `name` is a block-local
 /// of this source / no type author at all. Library-internal heads stay visible
@@ -1767,9 +1769,28 @@ const HeadTypeGate = union(enum) {
     resolved: TypeId,
     ambiguous,
     not_visible,
+    /// The querying source's own author of `name` is not a type and hides a
+    /// type of that name authored in another module.
+    not_a_type,
 };
 pub fn headTypeGate(self: *Lowering, name: []const u8, span: ?ast.Span) HeadTypeGate {
+    const gate = self.selectHeadType(name);
+    if (self.diagnostics) |d| switch (gate) {
+        .ambiguous => d.addFmt(.err, span, "type '{s}' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import", .{name}),
+        .not_visible => d.addFmt(.err, span, "type '{s}' is not visible; @import the module that declares it", .{name}),
+        .not_a_type => d.addFmt(.err, span, "'{s}' names this module's own declaration, which is not a type", .{name}),
+        .proceed, .resolved => {},
+    };
+    return gate;
+}
+
+/// `headTypeGate`'s outcome without its diagnostics, for a position that
+/// reads the name as a type only when it denotes one.
+pub fn selectHeadType(self: *Lowering, name: []const u8) HeadTypeGate {
     if (self.emitting_default_context) return .proceed;
+    if (self.type_bindings) |tb| {
+        if (tb.contains(name)) return .proceed;
+    }
     // A compiler-maintained `@` contract type has exactly one canonical
     // declaration, so it resolves program-wide and no author set gates it.
     if (contracts.isAtName(name) and contracts.find(name) != null) {
@@ -1787,7 +1808,7 @@ pub fn headTypeGate(self: *Lowering, name: []const u8, span: ?ast.Span) HeadType
     if (author_set.own) |own| switch (own.raw) {
         .const_decl => {
             if (self.program_index.get(.type_alias, own.id)) |tid| return .{ .resolved = tid };
-            return .proceed;
+            if (!self.authorNamesNoType(own)) return .proceed;
         },
         else => if (isNamedTypeKind(own.raw)) {
             if (self.namedRefTid(own.raw, name)) |tid| return .{ .resolved = tid };
@@ -1813,29 +1834,20 @@ pub fn headTypeGate(self: *Lowering, name: []const u8, span: ?ast.Span) HeadType
         if (fa_tid) |t| {
             flat_tid_count += 1;
             if (found_tid) |f| {
-                if (t != f) {
-                    if (self.diagnostics) |d|
-                        d.addFmt(.err, span, "type '{s}' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import", .{name});
-                    return .ambiguous;
-                }
+                if (t != f) return .ambiguous;
             } else found_tid = t;
         }
     }
     if (flat_type_count > 0) {
         // ≥2 authors but not all resolved to one TypeId → ambiguous
-        if (flat_type_count >= 2 and !(flat_tid_count == flat_type_count and found_tid != null)) {
-            if (self.diagnostics) |d|
-                d.addFmt(.err, span, "type '{s}' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import", .{name});
-            return .ambiguous;
-        }
+        if (flat_type_count >= 2 and !(flat_tid_count == flat_type_count and found_tid != null)) return .ambiguous;
         if (found_tid) |t| return .{ .resolved = t };
         return .proceed; // single author exists but TypeId not registered
     }
 
     if (self.localTypeInSource(from, name)) return .proceed;
     if (!self.nameAuthoredAsTypeAnywhere(name)) return .proceed;
-    if (self.diagnostics) |d|
-        d.addFmt(.err, span, "type '{s}' is not visible; @import the module that declares it", .{name});
+    if (author_set.own != null) return .not_a_type;
     return .not_visible;
 }
 
