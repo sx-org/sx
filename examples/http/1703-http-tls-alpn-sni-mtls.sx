@@ -32,8 +32,6 @@ mbedtls :: @import "vendors/mbedtls/mbedtls.sx";
 @import "modules/std/http.sx";
 tlsp    :: @import "modules/std/http/tls_mbedtls.sx";
 
-PORT :: 19018;
-
 handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     _ := req;
     _ := ctx;
@@ -189,10 +187,10 @@ clientFree :: (c: *TlsClient) {
     mbedtls.mbedtls_pk_free(*c.pk);
 }
 
-dial :: () -> i32 {
+dial :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
-    addr := socket.sockaddrIn(PORT, 0x0100007F);   // 127.0.0.1
+    addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
     if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
     if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
     return fd;
@@ -271,13 +269,13 @@ run :: () -> i32 {
                               "examples/http/1703-http-tls-alpn-sni-mtls/alt-key.pem") { return 4; }
     if !ts.requireClientCertFiles("examples/http/1703-http-tls-alpn-sni-mtls/client-cert.pem") { return 5; }
 
-    cfg : http.Config = .{ port = PORT, timeoutRequestMs = 3000, maxConn = 8 };
+    cfg : http.Config = .{ port = 0, timeoutRequestMs = 3000, maxConn = 8 };
     cfg.tls = xx *ts;
     srv, se := http.Server.init(cfg, handler, 0);
     if se { return 6; }
 
     // ── C. ALPN mismatch: only "bogus/9" offered → handshake must fail ──
-    fdC := dial();
+    fdC := dial(srv.cfg.port);
     if fdC < 0 { srv.close(); ts.deinit(); return 10; }
     clC : TlsClient = .{};
     if !clientInit(*clC, fdC, .{ hostname = "default.test",
@@ -293,7 +291,7 @@ run :: () -> i32 {
     // the server's certificate-required rejection lands), so the refusal is
     // asserted where it is guaranteed to surface: the server must NEVER
     // serve the request — the first app-data exchange errors out. ──
-    fdD := dial();
+    fdD := dial(srv.cfg.port);
     if fdD < 0 { srv.close(); ts.deinit(); return 13; }
     clD : TlsClient = .{};
     if !clientInit(*clD, fdD, .{ hostname = "default.test",
@@ -307,7 +305,7 @@ run :: () -> i32 {
     if !refused { srv.close(); ts.deinit(); return 15; }
 
     // ── A. default fallback + ALPN negotiation + mTLS accept + 200 ──
-    fdA := dial();
+    fdA := dial(srv.cfg.port);
     if fdA < 0 { srv.close(); ts.deinit(); return 16; }
     clA : TlsClient = .{};
     if !clientInit(*clA, fdA, .{ hostname = "default.test",
@@ -330,7 +328,7 @@ run :: () -> i32 {
     if ga != 0 { srv.close(); ts.deinit(); return 20; }
 
     // ── B. SNI: hostname alt.test, trusting ONLY the alt cert ──
-    fdB := dial();
+    fdB := dial(srv.cfg.port);
     if fdB < 0 { srv.close(); ts.deinit(); return 21; }
     clB : TlsClient = .{};
     if !clientInit(*clB, fdB, .{ hostname = "alt.test",

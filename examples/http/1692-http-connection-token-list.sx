@@ -17,8 +17,6 @@
 @import "modules/std.sx";
 @import "modules/std/http.sx";
 
-PORT :: 19006;
-
 route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     resp.body = "served";
 }
@@ -60,7 +58,7 @@ countOccurrences :: (hay: string, needle: string) -> i64 {
 // Write the blob, read until EOF or stall. eof reports whether the
 // server closed the connection.
 exchange :: (srv: *http.Server, req: string, buf: [*]u8, cap: i64, eof: *bool) -> string {
-    fd := dialPort(PORT);
+    fd := dialPort(srv.cfg.port);
     if fd < 0 { eof.* = false; return ""; }
     socket.write(fd, req.ptr, req.len);
     total : i64 = 0;
@@ -122,7 +120,7 @@ main :: () -> i32 {
         cap : i64 = 16384;
         rbuf : [*]u8 = context.allocator.allocBytes(cap);
 
-        cfg : http.Config = .{ port = PORT, maxConn = 4, requestCount = 10 };
+        cfg : http.Config = .{ port = 0, maxConn = 4, requestCount = 10 };
         srv, se := http.Server.init(cfg, route, 0);
         if se { print("init failed\n"); return 1; }
 

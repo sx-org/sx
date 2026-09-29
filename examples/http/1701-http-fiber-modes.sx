@@ -16,7 +16,6 @@
 @import "modules/std/http.sx";
 fs :: @import "modules/std/http/fiber_sched.sx";
 
-PORT :: 19016;
 SUM_LEN :: 50000;
 CHUNKY_LEN :: 100000;
 
@@ -220,7 +219,7 @@ main :: () -> i32 {
 
         runner := fs.SchedRunner.init();
         cfg : http.Config = .{
-            port = PORT,
+            port = 0,
             timeoutRequestMs = 5000,
             timeoutKeepaliveMs = 5000,
             requestCount = 50,
@@ -239,7 +238,7 @@ main :: () -> i32 {
             sum = (sum * 31 + body[i]) % 1000000007;
             i += 1;
         }
-        c1 := dialPort(PORT);
+        c1 := dialPort(srv.cfg.port);
         if c1 < 0 { print("dial c1 failed\n"); srv.close(); return 1; }
         sendAll(*srv, c1, "POST /sum HTTP/1.1\r\nHost: t\r\nContent-Length: 50000\r\n\r\n");
         sendAll(*srv, c1, string{ ptr = body, len = SUM_LEN });

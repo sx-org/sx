@@ -8,9 +8,6 @@
 fiberSched :: @import "modules/std/http/fiber_sched.sx";
 @import "modules/std/mem.sx";
 
-PORT_INLINE :: 19121;
-PORT_POOL :: 19122;
-PORT_FIBER :: 19123;
 BODY_LEN :: 32768;
 HUGE_CALLS :: 1000000;
 
@@ -302,10 +299,10 @@ fairnessCase :: (app: *App, port: i64, storage: [*]u8, cap: i64) -> bool {
     ok
 }
 
-runMode :: (app: *App, mode: i64, port: i64) -> bool {
+runMode :: (app: *App, mode: i64) -> bool {
     runner := fiberSched.SchedRunner.init();
     cfg : http.Config = .{
-        port = port,
+        port = 0,
         maxConn = 16,
         requestCount = 64,
         timeoutRequestMs = 5000,
@@ -317,6 +314,7 @@ runMode :: (app: *App, mode: i64, port: i64) -> bool {
     if mode == 2 { cfg.fibers = runner; }
     srv, se := http.Server.init(cfg, route, @reinterpret(usize, app));
     if se { runner.deinit(); return false; }
+    port := srv.cfg.port;
     t, te := thread.Thread.spawn(serverEntry, *srv);
     if te { srv.close(); runner.deinit(); return false; }
 
@@ -377,9 +375,9 @@ main :: () -> i32 {
             hugeCalls = Atomic(i64).init(0),
             pingSeen = Atomic(i64).init(-1),
         };
-        ok = runMode(*app, 0, PORT_INLINE);
-        if ok { ok = runMode(*app, 1, PORT_POOL); }
-        if ok { ok = runMode(*app, 2, PORT_FIBER); }
+        ok = runMode(*app, 0);
+        if ok { ok = runMode(*app, 1); }
+        if ok { ok = runMode(*app, 2); }
         context.allocator.deallocBytes(zl.ptr);
         context.allocator.deallocBytes(gz.ptr);
         context.allocator.deallocBytes(raw);

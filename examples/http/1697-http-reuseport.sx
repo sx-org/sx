@@ -17,8 +17,6 @@
 @import "modules/std.sx";
 @import "modules/std/http.sx";
 
-PORT :: 19012;
-
 routeOne :: (req: *http.Request, resp: *http.Response, ctx: usize) { resp.body = "one"; }
 routeTwo :: (req: *http.Request, resp: *http.Response, ctx: usize) { resp.body = "two"; }
 
@@ -46,7 +44,7 @@ contains :: (hay: string, needle: string) -> bool {
 
 // One connection against the PAIR: send, tick both servers, read to EOF.
 roundtrip2 :: (s1: *http.Server, s2: *http.Server, req: string, buf: [*]u8, cap: i64) -> string {
-    fd := dialPort(PORT);
+    fd := dialPort(s1.cfg.port);
     if fd < 0 { return ""; }
     socket.write(fd, req.ptr, req.len);
     total : i64 = 0;
@@ -77,17 +75,17 @@ main :: () -> i32 {
         cap : i64 = 16384;
         rbuf : [*]u8 = context.allocator.allocBytes(cap);
 
-        cfg1 : http.Config = .{ port = PORT, maxConn = 8, reusePort = true };
+        cfg1 : http.Config = .{ port = 0, maxConn = 8, reusePort = true };
         srv1, e1 := http.Server.init(cfg1, routeOne, 0);
         if e1 { print("srv1 init failed\n"); return 1; }
 
-        cfg2 : http.Config = .{ port = PORT, maxConn = 8, reusePort = true };
+        cfg2 : http.Config = .{ port = srv1.cfg.port, maxConn = 8, reusePort = true };
         srv2, e2 := http.Server.init(cfg2, routeTwo, 0);
         if e2 { print("srv2 init: expected shared bind via reusePort\n"); failed = 1; }
 
         // Control: WITHOUT the knob the same port must refuse to bind —
         // reusePort sharing is strictly opt-in.
-        cfg3 : http.Config = .{ port = PORT, maxConn = 8 };
+        cfg3 : http.Config = .{ port = srv1.cfg.port, maxConn = 8 };
         srv3, e3 := http.Server.init(cfg3, routeOne, 0);
         if !e3 {
             print("plain bind on a reusePort port: expected Bind error\n");

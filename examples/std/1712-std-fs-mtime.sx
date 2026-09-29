@@ -34,7 +34,8 @@ inline if @host.os != .windows {
 main :: () -> i32 {
     inline if @host.os == .windows { return 0; }
     else {
-        path :: "/tmp/sx_std_fs_mtime_test";
+        path :: ".sx-tmp/sx_std_fs_mtime_test";
+        fs.createDirAll(".sx-tmp");
         fs.deleteFile(path);
         if !fs.writeFile(path, "mtime") { return 1; }
 
@@ -67,7 +68,7 @@ main :: () -> i32 {
         if modified != targetModified { return 7; }
         if !closeOk or !deleteOk { return 8; }
 
-        missing :: "/tmp/sx_std_fs_mtime_missing";
+        missing :: ".sx-tmp/sx_std_fs_mtime_missing";
         fs.deleteFile(missing);
         if fs.setModifiedSeconds(missing, targetModified) { return 9; }
         return 0;

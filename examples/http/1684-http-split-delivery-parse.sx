@@ -23,7 +23,6 @@
 @import "modules/std/mem.sx";
 @import "modules/std/http.sx";
 
-PORT :: 18995;
 N_CHUNKS :: 32;
 CHUNK_DATA :: 100;
 
@@ -147,7 +146,7 @@ main :: () -> i32 {
         reqArena := mem.Arena.init(gpa, 65536);
 
         cfg : http.Config = .{
-            port = PORT,
+            port = 0,
             timeoutRequestMs = 8000,
             timeoutKeepaliveMs = 8000,
             requestCount = 50,
@@ -156,7 +155,7 @@ main :: () -> i32 {
         srv, se := http.Server.init(cfg, route, 0);
         if se { print("init failed\n"); return 1; }
 
-        ca := dialPort(PORT);
+        ca := dialPort(srv.cfg.port);
         if ca < 0 { print("dial failed\n"); srv.close(); return 1; }
 
         // ── 1. header block split 7 bytes at a time ───────────────────

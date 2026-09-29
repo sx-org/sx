@@ -23,9 +23,6 @@
 @import "modules/std.sx";
 @import "modules/std/http.sx";
 
-PORT_A :: 19002;
-PORT_B :: 19003;
-
 streamCalls : i64 = 0;   // bumped by the producer — must stay 0 for HEAD
 
 producer :: (ctx: usize, offset: i64, dst: [*]u8, dstCap: i64) -> i64 {
@@ -111,8 +108,8 @@ countOccurrences :: (hay: string, needle: string) -> i64 {
 
 // Write the whole request blob, read to EOF (every exchange here ends in
 // Connection: close).
-roundtrip :: (srv: *http.Server, port: i64, req: string, buf: [*]u8, cap: i64) -> string {
-    fd := dialPort(port);
+roundtrip :: (srv: *http.Server, req: string, buf: [*]u8, cap: i64) -> string {
+    fd := dialPort(srv.cfg.port);
     if fd < 0 { return ""; }
     socket.write(fd, req.ptr, req.len);
     total : i64 = 0;
@@ -156,12 +153,12 @@ main :: () -> i32 {
         cap : i64 = 16384;
         rbuf : [*]u8 = context.allocator.allocBytes(cap);
 
-        cfg : http.Config = .{ port = PORT_A, maxConn = 4, requestCount = 10 };
+        cfg : http.Config = .{ port = 0, maxConn = 4, requestCount = 10 };
         srv, se := http.Server.init(cfg, route, @reinterpret(usize, *streamCalls));
         if se { print("init failed\n"); return 1; }
 
         // (a) GET control: full body with its length
-        r := roundtrip(*srv, PORT_A, "GET /data HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        r := roundtrip(*srv, "GET /data HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
         check(r, "HTTP/1.1 200 OK", "GET status", *failed);
         check(r, "Content-Length: 11", "GET length", *failed);
         check(r, "hello world", "GET body", *failed);
@@ -170,7 +167,7 @@ main :: () -> i32 {
         // carries the GET's Content-Length but no body — its blank line is
         // immediately followed by the GET's status line, and only ONE body
         // is on the wire.
-        r = roundtrip(*srv, PORT_A,
+        r = roundtrip(*srv,
             "HEAD /data HTTP/1.1\r\nHost: t\r\n\r\nGET /data HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n",
             rbuf, cap);
         check(r, "Content-Length: 11", "HEAD length", *failed);
@@ -189,26 +186,26 @@ main :: () -> i32 {
         }
 
         // (c) 204: handler-set body suppressed, no Content-Length at all
-        r = roundtrip(*srv, PORT_A, "GET /nc HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        r = roundtrip(*srv, "GET /nc HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
         check(r, "HTTP/1.1 204 No Content", "204 status", *failed);
         checkAbsent(r, "junk", "204 body", *failed);
         checkAbsent(r, "Content-Length", "204 length", *failed);
 
         // (d) 304: same suppression
-        r = roundtrip(*srv, PORT_A, "GET /nm HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        r = roundtrip(*srv, "GET /nm HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
         check(r, "HTTP/1.1 304 Not Modified", "304 status", *failed);
         checkAbsent(r, "junk", "304 body", *failed);
         checkAbsent(r, "Content-Length", "304 length", *failed);
 
         // (e) HEAD of a 204 — both rules at once
-        r = roundtrip(*srv, PORT_A, "HEAD /nc HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        r = roundtrip(*srv, "HEAD /nc HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
         check(r, "HTTP/1.1 204 No Content", "HEAD 204 status", *failed);
         checkAbsent(r, "junk", "HEAD 204 body", *failed);
 
         // (f) HEAD of a STREAMED response: the chunked head alone — the
         // producer is never pulled, no chunk, no terminator
         streamCalls = 0;
-        r = roundtrip(*srv, PORT_A, "HEAD /stream HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        r = roundtrip(*srv, "HEAD /stream HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
         check(r, "HTTP/1.1 200 OK", "HEAD stream status", *failed);
         check(r, "Transfer-Encoding: chunked", "HEAD stream TE", *failed);
         checkAbsent(r, "streamdata", "HEAD stream body", *failed);
@@ -220,7 +217,7 @@ main :: () -> i32 {
 
         // (g) GET of the same streamed route still streams (control)
         streamCalls = 0;
-        r = roundtrip(*srv, PORT_A, "GET /stream HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        r = roundtrip(*srv, "GET /stream HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
         check(r, "streamdata", "GET stream body", *failed);
         check(r, "0\r\n\r\n", "GET stream terminator", *failed);
         if streamCalls == 0 {
@@ -231,11 +228,11 @@ main :: () -> i32 {
         srv.close();
 
         // (h) pooled HEAD: the worker-side serialization must suppress too
-        cfgp : http.Config = .{ port = PORT_B, maxConn = 4, requestCount = 10,
+        cfgp : http.Config = .{ port = 0, maxConn = 4, requestCount = 10,
                                 threadPoolCount = 1, handlerTimeoutMs = 30 };
         srvp, spe := http.Server.init(cfgp, route, @reinterpret(usize, *streamCalls));
         if spe { print("pool init failed\n"); return 1; }
-        r = roundtrip(*srvp, PORT_B, "HEAD /data HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        r = roundtrip(*srvp, "HEAD /data HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
         check(r, "HTTP/1.1 200 OK", "pooled HEAD status", *failed);
         check(r, "Content-Length: 11", "pooled HEAD length", *failed);
         checkAbsent(r, "hello world", "pooled HEAD body", *failed);
@@ -243,7 +240,7 @@ main :: () -> i32 {
         // (i) pooled HEAD of a STREAMED response — the worker's middle
         // branch (chunked head alone, Completion.streamed stays false)
         streamCalls = 0;
-        r = roundtrip(*srvp, PORT_B, "HEAD /stream HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        r = roundtrip(*srvp, "HEAD /stream HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
         check(r, "Transfer-Encoding: chunked", "pooled HEAD stream TE", *failed);
         checkAbsent(r, "streamdata", "pooled HEAD stream body", *failed);
         checkAbsent(r, "0\r\n\r\n", "pooled HEAD stream terminator", *failed);
@@ -253,7 +250,7 @@ main :: () -> i32 {
         }
 
         // (j) pooled 204: noBody computed on the worker
-        r = roundtrip(*srvp, PORT_B, "GET /nc HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        r = roundtrip(*srvp, "GET /nc HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
         check(r, "HTTP/1.1 204 No Content", "pooled 204 status", *failed);
         checkAbsent(r, "junk", "pooled 204 body", *failed);
         checkAbsent(r, "Content-Length", "pooled 204 length", *failed);
@@ -262,7 +259,7 @@ main :: () -> i32 {
         // BODY-LESS 504: "Gateway Timeout" must appear only in the status
         // line, never as a body (LAST case — the stalled worker drains at
         // srvp.close()).
-        r = roundtrip(*srvp, PORT_B, "HEAD /hang HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        r = roundtrip(*srvp, "HEAD /hang HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
         check(r, "HTTP/1.1 504 Gateway Timeout", "hung HEAD status", *failed);
         if countOccurrences(r, "Gateway Timeout") != 1 {
             print("hung HEAD: 504 body must be suppressed for HEAD\n");

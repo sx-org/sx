@@ -10,7 +10,6 @@
 // Any nonzero i64 starts the xorshift; a fixed one keeps the byte stream —
 // and so the golden output — the same on every run.
 SEED   :: 0x2545F4914F6CDD1D;
-PORT   :: 18977;
 
 // Sized so the run phase fits the corpus 1s post-compile budget.
 ITERATIONS :: 400;
@@ -198,7 +197,7 @@ mutate :: (rng: *Rng, src: string, dst: [*]u8, cap: i64) -> i64 {
 // 1 = a hang (budget exhausted with no response and no close), 2 = garbage
 // response (responded but not "HTTP/1.1 <ddd>").
 fuzzOnce :: (rng: *Rng, srv: *http.Server, bytes: [*]u8, blen: i64, scratch: [*]u8, scap: i64) -> i64 {
-    fd := dialPort(PORT);
+    fd := dialPort(srv.cfg.port);
     if fd < 0 { return 0; }   // couldn't dial (e.g. transient) — not a parser fault
 
     sent : i64 = 0;
@@ -251,7 +250,7 @@ fuzzOnce :: (rng: *Rng, srv: *http.Server, bytes: [*]u8, blen: i64, scratch: [*]
 // A clean GET on its own connection — must round-trip 200 "ok". This is the
 // LIVENESS check interleaved through the fuzz noise.
 livenessOk :: (srv: *http.Server, scratch: [*]u8, scap: i64) -> bool {
-    fd := dialPort(PORT);
+    fd := dialPort(srv.cfg.port);
     if fd < 0 { return false; }
     req := "GET /ok HTTP/1.1\r\nHost: t\r\n\r\n";
     socket.write(fd, req.ptr, req.len);
@@ -289,7 +288,7 @@ main :: () -> i32 {
         // small deadline keeps each such iteration fast so the whole bounded
         // run stays well under the corpus timeout.
         cfg : http.Config = .{
-            port = PORT,
+            port = 0,
             timeoutRequestMs = 2,
             timeoutKeepaliveMs = 2,
             requestCount = 1000,

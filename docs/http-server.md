@@ -357,6 +357,8 @@ changing any of them is a behavior break:
 
 The listener is configured entirely from `Config`:
 
+- **`port`** — `0` binds a port the kernel chooses; `init` records the
+  bound port in the server's `cfg.port`.
 - **`bindAddr`** — a NUMERIC address literal; the family follows it.
   `""` (default) binds IPv4 `INADDR_ANY`; `"127.0.0.1"` restricts to v4
   loopback; `"::"` makes an IPv6 listener that ALSO serves v4 by default

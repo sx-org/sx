@@ -33,7 +33,6 @@
 clib :: @library "c";
 pthread_self :: () -> usize extern clib;
 
-PORT :: 19014;
 STREAM_TOTAL :: 1000000;
 BIG_TOTAL :: 4194304;
 
@@ -244,7 +243,7 @@ main :: () -> i32 {
         rbuf : [*]u8 = context.allocator.allocBytes(cap);
 
         cfg : http.Config = .{
-            port = PORT,
+            port = 0,
             timeoutRequestMs = 5000,
             timeoutKeepaliveMs = 5000,
             requestCount = 50,
@@ -258,7 +257,7 @@ main :: () -> i32 {
 
         // ── case 1: 1 MB worker-fed chunked stream, arena-owned ctx ───
         seed := checksum("seed-abc");
-        c1 := dialPort(PORT);
+        c1 := dialPort(srv.cfg.port);
         if c1 < 0 { print("dial c1 failed\n"); srv.close(); return 1; }
         sendAll(*srv, c1, "POST /stream HTTP/1.1\r\nHost: t\r\nContent-Length: 8\r\n\r\nseed-abc");
         r1 := readChunked(*srv, c1, rbuf, cap);
@@ -285,7 +284,7 @@ main :: () -> i32 {
         socket.close(c1);
 
         // ── case 3: mid-stream disconnect aborts the feeder ───────────
-        c2 := dialPort(PORT);
+        c2 := dialPort(srv.cfg.port);
         if c2 < 0 { print("dial c2 failed\n"); srv.close(); return 1; }
         sendAll(*srv, c2, "GET /big HTTP/1.1\r\nHost: t\r\n\r\n");
         got : i64 = 0;
@@ -305,7 +304,7 @@ main :: () -> i32 {
         }
 
         // ── case 4: the single worker survived the aborted stream ─────
-        c3 := dialPort(PORT);
+        c3 := dialPort(srv.cfg.port);
         if c3 < 0 { print("dial c3 failed\n"); srv.close(); return 1; }
         sendAll(*srv, c3, "GET /ping HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n");
         r4 := readResponse(*srv, c3, rbuf, cap);
@@ -320,7 +319,7 @@ main :: () -> i32 {
         // closing flag makes the late registration abort the pump; close()
         // must return, never join a feeder blocked forever on a full
         // channel.
-        c5 := dialPort(PORT);
+        c5 := dialPort(srv.cfg.port);
         if c5 < 0 { print("dial c5 failed\n"); srv.close(); return 1; }
         sendAll(*srv, c5, "GET /slowbig HTTP/1.1\r\nHost: t\r\n\r\n");
         t = 0;

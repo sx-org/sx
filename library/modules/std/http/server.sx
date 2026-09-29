@@ -212,6 +212,8 @@ Stats :: struct {
 
 // httpz-mirroring knobs (single-worker subset).
 Config :: struct {
+    // 0 binds a port the kernel chooses; init records the bound port in
+    // the server's `cfg.port`.
     port: i64 = 8080;
     backlog: i32 = 128;
     maxConn: i64 = 256;             // workers.maxConn
@@ -1482,6 +1484,9 @@ Server :: struct {
                 }
             }
             if socket.bindTo(lfd, *ba) != 0 { socket.close(lfd); raise .Bind; }
+            bound := socket.localPort(lfd);
+            if bound == null { socket.close(lfd); raise .Bind; }
+            cfg.port = bound;
             if socket.listen(lfd, cfg.backlog) != 0 { socket.close(lfd); raise .Bind; }
             if !socket.setNonblocking(lfd) { socket.close(lfd); raise .Bind; }
         }

@@ -33,7 +33,6 @@ fs :: @import "modules/std/http/fiber_sched.sx";
 clib :: @library "c";
 pthread_self :: () -> usize extern clib;
 
-PORT :: 19015;
 SUM_LEN :: 200000;
 
 Obs :: struct {
@@ -177,7 +176,7 @@ main :: () -> i32 {
 
         runner := fs.SchedRunner.init();
         cfg : http.Config = .{
-            port = PORT,
+            port = 0,
             timeoutRequestMs = 400,    // the stall bound case 4 exercises;
                                          // wide vs. self-driven loopback
                                          // round-trips, small vs. the 1s
@@ -193,7 +192,7 @@ main :: () -> i32 {
         if se { print("init failed\n"); return 1; }
 
         // ── case 1: bodyless fiber dispatch ───────────────────────────
-        c1 := dialPort(PORT);
+        c1 := dialPort(srv.cfg.port);
         if c1 < 0 { print("dial c1 failed\n"); srv.close(); return 1; }
         sendAll(*srv, c1, "GET /ping HTTP/1.1\r\nHost: t\r\n\r\n");
         r1 := readResponse(*srv, c1, rbuf, cap);
@@ -219,7 +218,7 @@ main :: () -> i32 {
         pongs : i64 = 0;
         ptrials : i64 = 0;
         while ptrials < 10 {
-            cp := dialPort(PORT);
+            cp := dialPort(srv.cfg.port);
             if cp < 0 { print("dial cp failed\n"); srv.close(); return 1; }
             // let the server ACCEPT first (the fresh conn's read watch is
             // registered mid-tick; its data event surfaces from the next wait)
@@ -307,7 +306,7 @@ main :: () -> i32 {
         socket.close(c1);
 
         // ── case 4: stalled body → eviction wakes the parked fiber ────
-        c4 := dialPort(PORT);
+        c4 := dialPort(srv.cfg.port);
         if c4 < 0 { print("dial c4 failed\n"); srv.close(); return 1; }
         sendAll(*srv, c4, "POST /stall HTTP/1.1\r\nHost: t\r\nContent-Length: 100000\r\n\r\n");
         sendAll(*srv, c4, string{ ptr = body, len = 1024 });
@@ -323,7 +322,7 @@ main :: () -> i32 {
         if obs.stallGot != 1024 { print("case4: got {} (want 1024)\n", obs.stallGot); failed = 1; }
 
         // ── case 5: server healthy after the eviction ─────────────────
-        c5 := dialPort(PORT);
+        c5 := dialPort(srv.cfg.port);
         if c5 < 0 { print("dial c5 failed\n"); srv.close(); return 1; }
         sendAll(*srv, c5, "GET /ping HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n");
         r5 := readResponse(*srv, c5, rbuf, cap);
@@ -332,7 +331,7 @@ main :: () -> i32 {
         socket.close(c5);
 
         // ── case 6: close() with a fiber parked mid-body must return ──
-        c6 := dialPort(PORT);
+        c6 := dialPort(srv.cfg.port);
         if c6 < 0 { print("dial c6 failed\n"); srv.close(); return 1; }
         sendAll(*srv, c6, "POST /sum HTTP/1.1\r\nHost: t\r\nContent-Length: 100000\r\n\r\n");
         sendAll(*srv, c6, string{ ptr = body, len = 2048 });

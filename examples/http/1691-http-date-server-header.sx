@@ -23,9 +23,6 @@
 @import "modules/std.sx";
 @import "modules/std/http.sx";
 
-PORT_A :: 19004;
-PORT_B :: 19005;
-
 producer :: (ctx: usize, offset: i64, dst: [*]u8, dstCap: i64) -> i64 {
     if offset >= 4 { return 0; }
     src := "data";
@@ -68,8 +65,8 @@ contains :: (hay: string, needle: string) -> bool {
     return false;
 }
 
-roundtrip :: (srv: *http.Server, port: i64, req: string, buf: [*]u8, cap: i64) -> string {
-    fd := dialPort(port);
+roundtrip :: (srv: *http.Server, req: string, buf: [*]u8, cap: i64) -> string {
+    fd := dialPort(srv.cfg.port);
     if fd < 0 { return ""; }
     socket.write(fd, req.ptr, req.len);
     total : i64 = 0;
@@ -197,20 +194,20 @@ main :: () -> i32 {
         cap : i64 = 16384;
         rbuf : [*]u8 = context.allocator.allocBytes(cap);
 
-        cfg : http.Config = .{ port = PORT_A, maxConn = 4, requestCount = 10 };
+        cfg : http.Config = .{ port = 0, maxConn = 4, requestCount = 10 };
         srv, se := http.Server.init(cfg, route, 0);
         if se { print("init failed\n"); return 1; }
 
         // (a) a normal 200 carries a valid, current Date
         before := time.nowSecs();
-        r := roundtrip(*srv, PORT_A, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        r := roundtrip(*srv, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
         after := time.nowSecs();
         check(r, "HTTP/1.1 200 OK", "basic status", *failed);
         checkDate(r, before, after, "basic Date", *failed);
 
         // (a2) a streamed (chunked) response carries Date too
         before = time.nowSecs();
-        r2 := roundtrip(*srv, PORT_A, "GET /stream HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        r2 := roundtrip(*srv, "GET /stream HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
         after = time.nowSecs();
         check(r2, "Transfer-Encoding: chunked", "stream TE", *failed);
         checkDate(r2, before, after, "stream Date", *failed);
@@ -223,7 +220,7 @@ main :: () -> i32 {
 
         // (c) an error response carries Date too
         before = time.nowSecs();
-        r = roundtrip(*srv, PORT_A, "BAD\r\n\r\n", rbuf, cap);
+        r = roundtrip(*srv, "BAD\r\n\r\n", rbuf, cap);
         after = time.nowSecs();
         check(r, "HTTP/1.1 400", "error status", *failed);
         checkDate(r, before, after, "error Date", *failed);
@@ -232,12 +229,12 @@ main :: () -> i32 {
 
         // (d) pooled server with serverName: worker-side serialization
         // stamps Date and the configured Server: header
-        cfgp : http.Config = .{ port = PORT_B, maxConn = 4, requestCount = 10,
+        cfgp : http.Config = .{ port = 0, maxConn = 4, requestCount = 10,
                                 threadPoolCount = 1, serverName = "sx-test/1" };
         srvp, spe := http.Server.init(cfgp, route, 0);
         if spe { print("pool init failed\n"); return 1; }
         before = time.nowSecs();
-        r = roundtrip(*srvp, PORT_B, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        r = roundtrip(*srvp, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
         after = time.nowSecs();
         check(r, "HTTP/1.1 200 OK", "pooled status", *failed);
         check(r, "\r\nServer: sx-test/1\r\n", "pooled Server header", *failed);

@@ -358,7 +358,7 @@ testTimestamps :: (alloc: Allocator) -> bool {
     specified.deinit();
     specifiedSink.out.deinit();
 
-    path :: "/tmp/sx_zip_old_timestamp";
+    path :: ".sx-tmp/sx_zip_old_timestamp";
     fs.deleteFile(path);
     if !fs.writeFile(path, "x") { return false; }
     if !fs.setModifiedSeconds(path, 0) { fs.deleteFile(path); return false; }
@@ -370,13 +370,14 @@ testTimestamps :: (alloc: Allocator) -> bool {
     fromFileSink.out.deinit();
     fs.deleteFile(path);
 
-    missing :: "/tmp/sx_zip_missing_mtime_target";
+    missing :: ".sx-tmp/sx_zip_missing_mtime_target";
     fs.deleteFile(missing);
     restoreFailureVisible := !zip.zipSetFileTime(missing, 1700000000);
     specifiedFailed and specifiedUntouched and fileFailed and restoreFailureVisible
 }
 
 main :: () -> i32 {
+    fs.createDirAll(".sx-tmp");
     alloc := mem.GPA.init();
     if !testBoundedValidation(alloc) { print("bounded validation failed\n"); return 1; }
     if !testValidationModes(alloc) { print("validation modes failed\n"); return 2; }

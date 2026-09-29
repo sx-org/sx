@@ -20,8 +20,6 @@
 @import "modules/std.sx";
 @import "modules/std/http.sx";
 
-PORT :: 18974;
-
 BODY_LEN :: 200000;   // 200 KB — far larger than any single server buffer
 
 // The streamed body is the deterministic byte pattern b[i] = (i*31+7) & 0xFF.
@@ -157,7 +155,7 @@ main :: () -> i32 {
 
     push .{ allocator = gpa } {
         cfg : http.Config = .{
-            port = PORT,
+            port = 0,
             timeoutRequestMs = 4000,
             timeoutKeepaliveMs = 4000,
             requestCount = 50,
@@ -172,7 +170,7 @@ main :: () -> i32 {
             dbuf : [*]u8 = context.allocator.allocBytes(BODY_LEN + 16);
 
             // ── 1. large chunked body, byte-exact reassembly ──────────
-            c1 := dialPort(PORT);
+            c1 := dialPort(srv.cfg.port);
             if c1 < 0 { print("dial failed\n"); rc = 1; }
             if rc == 0 {
                 req := "GET /big HTTP/1.1\r\nHost: t\r\n\r\n";
@@ -211,7 +209,7 @@ main :: () -> i32 {
 
             // ── 2. fixed-body fast path still works ───────────────────
             if rc == 0 {
-                c2 := dialPort(PORT);
+                c2 := dialPort(srv.cfg.port);
                 if c2 < 0 { print("dial2 failed\n"); rc = 1; }
                 if rc == 0 {
                     req := "GET /small HTTP/1.1\r\nHost: t\r\n\r\n";
@@ -239,7 +237,7 @@ main :: () -> i32 {
 
             // ── 3. keep-alive: chunked then a second request, same conn ──
             if rc == 0 {
-                c3 := dialPort(PORT);
+                c3 := dialPort(srv.cfg.port);
                 if c3 < 0 { print("dial3 failed\n"); rc = 1; }
                 if rc == 0 {
                     // first: chunked /big

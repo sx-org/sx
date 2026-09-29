@@ -34,6 +34,7 @@ accept     :: (fd: i32, addr: *SockAddr, addrlen: *u32) -> i32 extern libc;
 connect    :: (fd: i32, addr: *SockAddr, addrlen: u32) -> i32 extern libc;
 shutdown   :: (fd: i32, how: i32) -> i32 extern libc;
 socketpair :: (domain: i32, kind: i32, protocol: i32, fds: *i32) -> i32 extern libc;
+getsockname :: (fd: i32, addr: *SockAddr, addrlen: *u32) -> i32 extern libc;
 
 // OS-neutral constants (same numeric value on darwin + linux).
 AF_UNSPEC    :i32: 0;
@@ -76,6 +77,18 @@ bindTo :: (fd: i32, a: *Addr) -> i32 {
 
 connectTo :: (fd: i32, a: *Addr) -> i32 {
     return connect(fd, @reinterpret(*SockAddr, *a.buf[0]), a.len);
+}
+
+// The port an inet socket is bound to — after a port-0 bind, the one the
+// kernel chose. Null when `fd` is not a bound AF_INET/AF_INET6 socket.
+localPort :: (fd: i32) -> ?i64 {
+    a : Addr = .{};
+    a.len = 128;
+    if getsockname(fd, @reinterpret(*SockAddr, *a.buf[0]), *a.len) != 0 { return null; }
+    fam := addrFamily(*a);
+    if fam != AF_INET and fam != AF_INET6 { return null; }
+    // sin_port and sin6_port sit at bytes 2..3 in network order on every OS.
+    return (a.buf[2].(i64) << 8) | a.buf[3].(i64);
 }
 
 // Leaf-module byte copy (socket.sx imports nothing but libc; addresses are

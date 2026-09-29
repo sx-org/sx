@@ -20,7 +20,6 @@
 @import "modules/std.sx";
 @import "modules/std/http.sx";
 
-PORT :: 18972;
 NCONN :: 8;
 
 handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
@@ -96,8 +95,6 @@ dialPort :: (port: i64) -> i32 {
     return fd;
 }
 
-dial :: () -> i32 { return dialPort(PORT); }
-
 respComplete :: (buf: [*]u8, len: i64) -> bool {
     s := string{ ptr = buf, len = len };
     he := -1;
@@ -147,7 +144,7 @@ main :: () -> i32 {
     elog : EventLog = .{};
 
     cfg : http.Config = .{
-        port = PORT,
+        port = 0,
         timeoutRequestMs = 150,
         timeoutKeepaliveMs = 400,
         requestCount = 50,
@@ -161,7 +158,7 @@ main :: () -> i32 {
     buf : [4096]u8 = ---;
 
     // ── 1. three successful requests (200) over one keep-alive conn ────
-    c1 := dial();
+    c1 := dialPort(srv.cfg.port);
     if c1 < 0 { print("dial failed\n"); return 1; }
     r1 := roundtrip(*srv, c1, "GET /hello HTTP/1.1\r\nHost: t\r\n\r\n", *buf[0]);
     if !contains(r1, "HTTP/1.1 200 OK") { print("case1: bad status\n"); return 1; }
@@ -171,7 +168,7 @@ main :: () -> i32 {
     // ── 2. parser error: a malformed version token → 400 ───────────────
     // (a well-formed unsupported version like HTTP/9.9 is 505 —
     // a garbage token keeps this case a 400 PARSE_ERROR for the counters)
-    c2 := dial();
+    c2 := dialPort(srv.cfg.port);
     if c2 < 0 { print("dial2 failed\n"); return 1; }
     r3 := roundtrip(*srv, c2, "GET /hello FOO/9.9\r\nHost: t\r\n\r\n", *buf[0]);
     if !contains(r3, "HTTP/1.1 400 Bad Request") { print("case3: expected 400\n"); return 1; }
@@ -228,7 +225,7 @@ main :: () -> i32 {
     // concurrent requests that submit() refuses one → 503 + REJECTED_503.
     plog : EventLog = .{};
     pcfg : http.Config = .{
-        port = PORT + 1,
+        port = 0,
         timeoutRequestMs = 2000,
         timeoutKeepaliveMs = 2000,
         requestCount = 50,
@@ -247,7 +244,7 @@ main :: () -> i32 {
     fds : [NCONN]i32 = ---;
     ci := 0;
     while ci < NCONN {
-        fds[ci] = dialPort(PORT + 1);
+        fds[ci] = dialPort(psrv.cfg.port);
         if fds[ci] < 0 { print("pooled dial failed\n"); return 1; }
         req := "GET /slow HTTP/1.1\r\nHost: t\r\n\r\n";
         socket.write(fds[ci], req.ptr, req.len);

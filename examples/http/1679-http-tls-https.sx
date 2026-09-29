@@ -22,8 +22,6 @@ mbedtls :: @import "vendors/mbedtls/mbedtls.sx";
 @import "modules/std/http.sx";
 tlsp    :: @import "modules/std/http/tls_mbedtls.sx";
 
-PORT :: 18973;
-
 // Static body — the measured region must allocate nothing the framework
 // doesn't own (a `concat` body would leak via context.allocator), so the
 // net-zero GPA gate stays honest.
@@ -95,10 +93,10 @@ clientFree :: (c: *TlsClient) {
 }
 
 // Blocking connect to the loopback server, then nonblocking.
-dial :: () -> i32 {
+dial :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
-    addr := socket.sockaddrIn(PORT, 0x0100007F);   // 127.0.0.1
+    addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
     if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
     if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
     return fd;
@@ -132,7 +130,7 @@ run :: () -> i32 {
     if !ts.setupFiles("examples/http/1679-http-tls-https/cert.pem", "examples/http/1679-http-tls-https/key.pem", context.allocator) {
         return 2;
     }
-    cfg : http.Config = .{ port = PORT, timeoutRequestMs = 3000, maxConn = 8 };
+    cfg : http.Config = .{ port = 0, timeoutRequestMs = 3000, maxConn = 8 };
     cfg.tls = xx *ts;
     srv, se := http.Server.init(cfg, handler, 0);
     if se { return 3; }
@@ -140,7 +138,7 @@ run :: () -> i32 {
     // ── C. handshake failure: a PLAINTEXT client speaks garbage to the TLS
     //      port. The server's handshake parses it as a bad ClientHello → drops
     //      the slot. We drive a few ticks so the server processes + closes it. ──
-    badFd := dial();
+    badFd := dial(srv.cfg.port);
     if badFd < 0 { return 4; }
     socket.write(badFd, "GET / HTTP/1.1\r\n\r\n".ptr, 18);
     t : i64 = 0;
@@ -150,7 +148,7 @@ run :: () -> i32 {
     while t < 20 { srv.tick(5) catch {}; t += 1; }
 
     // ── A. successful HTTPS request → 200 ──
-    fd := dial();
+    fd := dial(srv.cfg.port);
     if fd < 0 { return 5; }
     cl : TlsClient = .{};
     if !clientInit(*cl, fd) { return 6; }

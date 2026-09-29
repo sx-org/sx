@@ -11,8 +11,6 @@
 @import "modules/std.sx";
 @import "modules/std/http.sx";
 
-PORT :: 18998;
-
 route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     resp.body = "served";
 }
@@ -42,7 +40,7 @@ contains :: (hay: string, needle: string) -> bool {
 // One connection, one request, read to EOF (all cases close: errors close,
 // the 200 cases send Connection: close / are 1.0).
 roundtrip :: (srv: *http.Server, req: string, buf: [*]u8, cap: i64) -> string {
-    fd := dialPort(PORT);
+    fd := dialPort(srv.cfg.port);
     if fd < 0 { return ""; }
     socket.write(fd, req.ptr, req.len);
     total : i64 = 0;
@@ -72,7 +70,7 @@ main :: () -> i32 {
         cap : i64 = 16384;
         rbuf : [*]u8 = context.allocator.allocBytes(cap);
 
-        cfg : http.Config = .{ port = PORT, maxConn = 4, requestCount = 10 };
+        cfg : http.Config = .{ port = 0, maxConn = 4, requestCount = 10 };
         srv, se := http.Server.init(cfg, route, 0);
         if se { print("init failed\n"); return 1; }
 

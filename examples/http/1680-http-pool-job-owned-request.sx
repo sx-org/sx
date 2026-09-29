@@ -28,7 +28,6 @@
 @import "modules/std.sx";
 @import "modules/std/http.sx";
 
-PORT :: 18991;
 HANDLER_TIMEOUT_MS :: 40;
 SLOW_SLEEP_US :: 200000;    // 200 ms — well past the 40 ms handler deadline
 A_BODY_LEN :: 512;          // connection A's body (pattern: i * 7 % 251)
@@ -115,7 +114,7 @@ main :: () -> i32 {
         rbuf : [*]u8 = context.allocator.allocBytes(cap);
 
         cfg : http.Config = .{
-            port = PORT,
+            port = 0,
             timeoutRequestMs = 5000,
             timeoutKeepaliveMs = 5000,
             requestCount = 50,
@@ -134,7 +133,7 @@ main :: () -> i32 {
         aBodyS := string{ ptr = aBody, len = A_BODY_LEN };
         aExpectSum = checksum(aBodyS);
 
-        ca := dialPort(PORT);
+        ca := dialPort(srv.cfg.port);
         if ca < 0 { print("dial A failed\n"); srv.close(); return 1; }
         // Content-Length literals match A_BODY_LEN / B_BODY_LEN (no concat —
         // it would allocate under the GPA leak gate).
@@ -166,7 +165,7 @@ main :: () -> i32 {
         i = 0;
         while i < B_BODY_LEN { bBody[i] = xx (255 - (i % 199)); i += 1; }
 
-        cb := dialPort(PORT);
+        cb := dialPort(srv.cfg.port);
         if cb < 0 { print("dial B failed\n"); srv.close(); return 1; }
         bHead := "POST /b HTTP/1.1\r\nHost: t\r\nConnection: close\r\nContent-Length: 24576\r\n\r\n";
         sendAll(*srv, cb, bHead);

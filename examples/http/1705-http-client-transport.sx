@@ -35,10 +35,6 @@ fs     :: @import "modules/std/fs.sx";
 @import "modules/std/http.sx";
 tlsp   :: @import "modules/std/http/tls_mbedtls.sx";
 
-PORT_MAIN :: 19023;   // plaintext main server (cases A, C)
-PORT_HOLD :: 19024;   // full-backlog listener, never accepted (case E)
-PORT_MUTE :: 19025;   // accepts, never responds (case F)
-PORT_TLS  :: 19026;   // TLS server (case D)
 SOCK_PATH :: ".sx-tmp/1705-http.sock";
 CHUNK_TOTAL :: 100000;
 
@@ -110,7 +106,7 @@ main :: () -> i32 {
 run :: () -> i32 {
     // ── main plaintext server (A, C) — dual-stack so localhost's answer
     // works whichever family the resolver returns ──
-    cfg : http.Config = .{ port = PORT_MAIN, bindAddr = "::", timeoutRequestMs = 5000, maxConn = 16 };
+    cfg : http.Config = .{ port = 0, bindAddr = "::", timeoutRequestMs = 5000, maxConn = 16 };
     srv, se := http.Server.init(cfg, handler, 0);
     if se { return 2; }
     t, te := thread.Thread.spawn(srvEntry, *srv);
@@ -118,7 +114,7 @@ run :: () -> i32 {
 
     // ── A. resolver dialing ──
     optsPlain : http.ClientOpts = .{ connectTimeoutMs = 2000, ioTimeoutMs = 3000 };
-    connA, ea := http.Client.open("localhost", PORT_MAIN, optsPlain);
+    connA, ea := http.Client.open("localhost", srv.cfg.port, optsPlain);
     if ea { srv.stop(); t.join(); return 10; }
     ba : [4096]u8 = ---;
     sa := http.Client.sendOn(*connA, "GET", "/", "t", "", "");
@@ -132,7 +128,7 @@ run :: () -> i32 {
 
     // ── C. chunked response, then keep-alive reuse on the same conn ──
     bc : [*]u8 = context.allocator.allocBytes(CHUNK_TOTAL + 8192);
-    connC, ec := http.Client.open("127.0.0.1", PORT_MAIN, optsPlain);
+    connC, ec := http.Client.open("127.0.0.1", srv.cfg.port, optsPlain);
     if ec { context.allocator.deallocBytes(bc); srv.stop(); t.join(); return 13; }
     sc := http.Client.sendOn(*connC, "GET", "/chunky", "t", "", "");
     if sc { http.Client.closeConn(*connC); context.allocator.deallocBytes(bc); srv.stop(); t.join(); return 14; }
@@ -154,7 +150,7 @@ run :: () -> i32 {
     // The same chunked response into a buffer that cannot
     // hold it must be `ClientErr.TooLarge` — the grow-and-retry signal — never
     // "malformed framing".
-    connC2, ec2 := http.Client.open("127.0.0.1", PORT_MAIN, optsPlain);
+    connC2, ec2 := http.Client.open("127.0.0.1", srv.cfg.port, optsPlain);
     if ec2 { context.allocator.deallocBytes(bc); srv.stop(); t.join(); return 18; }
     sc3 := http.Client.sendOn(*connC2, "GET", "/chunky", "t", "", "");
     if sc3 { http.Client.closeConn(*connC2); context.allocator.deallocBytes(bc); srv.stop(); t.join(); return 18; }
@@ -190,7 +186,7 @@ run :: () -> i32 {
     if !ts.setupFiles("examples/http/1705-http-client-transport/cert.pem",
                        "examples/http/1705-http-client-transport/key.pem",
                        context.allocator) { srv.stop(); t.join(); return 30; }
-    tcfg : http.Config = .{ port = PORT_TLS, timeoutRequestMs = 5000, maxConn = 8 };
+    tcfg : http.Config = .{ port = 0, timeoutRequestMs = 5000, maxConn = 8 };
     tcfg.tls = xx *ts;
     tsrv, tse := http.Server.init(tcfg, handler, 0);
     if tse { srv.stop(); t.join(); return 31; }
@@ -203,7 +199,7 @@ run :: () -> i32 {
     }
     optsTls : http.ClientOpts = .{ connectTimeoutMs = 2000, ioTimeoutMs = 5000,
                                     tls = xx *tcc, tlsHost = "client-transport.test" };
-    connT, et := http.Client.open("127.0.0.1", PORT_TLS, optsTls);
+    connT, et := http.Client.open("127.0.0.1", tsrv.cfg.port, optsTls);
     if et { tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 34; }
     bt : [4096]u8 = ---;
     st := http.Client.sendOn(*connT, "GET", "/", "t", "", "");
@@ -221,14 +217,14 @@ run :: () -> i32 {
     }
     optsBad : http.ClientOpts = .{ connectTimeoutMs = 2000, ioTimeoutMs = 5000,
                                     tls = xx *wcc, tlsHost = "client-transport.test" };
-    connW, ew := http.Client.open("127.0.0.1", PORT_TLS, optsBad);
+    connW, ew := http.Client.open("127.0.0.1", tsrv.cfg.port, optsBad);
     if !ew { http.Client.closeConn(*connW); wcc.deinit(); tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 37; }
     // insecure() accepts whatever cert is presented.
     icc : tlsp.TlsClientConfig = .{};
     icc.insecure();
     optsIns : http.ClientOpts = .{ connectTimeoutMs = 2000, ioTimeoutMs = 5000,
                                     tls = xx *icc, tlsHost = "whatever.test" };
-    connI, ei := http.Client.open("127.0.0.1", PORT_TLS, optsIns);
+    connI, ei := http.Client.open("127.0.0.1", tsrv.cfg.port, optsIns);
     if ei { icc.deinit(); wcc.deinit(); tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 38; }
     si := http.Client.sendOn(*connI, "GET", "/", "t", "", "");
     ri, rie := http.Client.recvOn(*connI, *bt[0], 4096);
@@ -247,22 +243,24 @@ run :: () -> i32 {
     // ── E. connect timeout: a full, never-accepted listen queue ──
     holdL := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if holdL < 0 { srv.stop(); t.join(); return 40; }
-    haddr := socket.sockaddrIn(PORT_HOLD, 0x0100007F);
+    haddr := socket.sockaddrIn(0, 0x0100007F);
     if socket.bind(holdL, *haddr, 16) != 0 { socket.close(holdL); srv.stop(); t.join(); return 41; }
     if socket.listen(holdL, 1) != 0 { socket.close(holdL); srv.stop(); t.join(); return 42; }
+    holdPort := socket.localPort(holdL);
+    if holdPort == null { socket.close(holdL); srv.stop(); t.join(); return 43; }
     // saturate the queue with pending, never-accepted connects
     pend : [24]i32 = ---;
     pi_ : i64 = 0;
     while pi_ < 24 {
         pfd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
         socket.setNonblocking(pfd);
-        pa := socket.sockaddrIn(PORT_HOLD, 0x0100007F);
+        pa := socket.sockaddrIn(holdPort, 0x0100007F);
         socket.connect(pfd, *pa, 16);   // EINPROGRESS / queued — never accepted
         pend[pi_] = pfd;
         pi_ += 1;
     }
     optsCt : http.ClientOpts = .{ connectTimeoutMs = 500, ioTimeoutMs = 1000 };
-    connE, ee := http.Client.open("127.0.0.1", PORT_HOLD, optsCt);
+    connE, ee := http.Client.open("127.0.0.1", holdPort, optsCt);
     if !ee { http.Client.closeConn(*connE); }   // connected anyway — kernel fudge; not a failure of the TIMEOUT machinery
     // Either way the call RETURNED (the corpus timeout is the hang
     // backstop). Clean up the saturation sockets.
@@ -273,14 +271,16 @@ run :: () -> i32 {
     // ── F. io timeout: accepted but mute ──
     muteL := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if muteL < 0 { srv.stop(); t.join(); return 50; }
-    maddr := socket.sockaddrIn(PORT_MUTE, 0x0100007F);
+    maddr := socket.sockaddrIn(0, 0x0100007F);
     if socket.bind(muteL, *maddr, 16) != 0 { socket.close(muteL); srv.stop(); t.join(); return 51; }
     if socket.listen(muteL, 4) != 0 { socket.close(muteL); srv.stop(); t.join(); return 52; }
+    mutePort := socket.localPort(muteL);
+    if mutePort == null { socket.close(muteL); srv.stop(); t.join(); return 57; }
     muteBox := muteL;
     mt, mte := thread.Thread.spawn(muteEntry, *muteBox);
     if mte { socket.close(muteL); srv.stop(); t.join(); return 53; }
     optsIo : http.ClientOpts = .{ connectTimeoutMs = 2000, ioTimeoutMs = 500 };
-    connF, ef := http.Client.open("127.0.0.1", PORT_MUTE, optsIo);
+    connF, ef := http.Client.open("127.0.0.1", mutePort, optsIo);
     // On an open failure the holder thread is still blocked in
     // accept(), which close(muteL) does NOT reliably wake — skip the join
     // on this failure path (process exit reaps it) rather than deadlock.
