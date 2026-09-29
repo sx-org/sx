@@ -1,0 +1,59 @@
+// A server configured with `port = 0` listens on a port the kernel chooses and
+// records it in `cfg.port`, so two such servers run at once and a client
+// reaches each on its own port. `socket.localPort` reads an inet socket's
+// bound port and is null on an AF_UNIX one.
+@import "modules/std.sx";
+@import "modules/std/http.sx";
+socket :: @import "modules/std/socket.sx";
+
+handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    resp.body = if ctx == 1 then "one" else "two";
+}
+
+srvEntry :: (arg: *void) -> *void abi(.c) {
+    srv : *http.Server = arg;
+    gpa := GPA.init();
+    push .{ allocator = gpa } {
+        srv.run();
+    }
+    return null;
+}
+
+LOOPBACK :u32: 0x0100007F;   // 127.0.0.1 in sockaddrIn order
+
+get :: (port: i64) {
+    buf : [4096]u8 = ---;
+    r, e := http.Client.request(LOOPBACK, port, "GET", "/", "t", "", "", *buf[0], 4096);
+    if e { print("request failed\n"); return; }
+    print("served: {}\n", r.body);
+}
+
+main :: () -> i32 {
+    cfg : http.Config = .{ port = 0 };
+    one, e1 := http.Server.init(cfg, handler, 1);
+    if e1 { print("first init failed\n"); return 1; }
+    two, e2 := http.Server.init(cfg, handler, 2);
+    if e2 { print("second init failed\n"); one.close(); return 1; }
+    print("kernel-chosen: {}, distinct: {}\n", one.cfg.port != 0 and two.cfg.port != 0, one.cfg.port != two.cfg.port);
+    print("localPort is cfg.port: {}\n", socket.localPort(one.lfd) == one.cfg.port);
+
+    t1, te1 := thread.Thread.spawn(srvEntry, *one);
+    if te1 { print("spawn failed\n"); return 1; }
+    t2, te2 := thread.Thread.spawn(srvEntry, *two);
+    if te2 { print("spawn failed\n"); one.stop(); t1.join(); return 1; }
+    get(one.cfg.port);
+    get(two.cfg.port);
+    one.stop();
+    t1.join();
+    two.stop();
+    t2.join();
+    one.close();
+    two.close();
+
+    fds : [2]i32 = ---;
+    if socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM, 0, *fds[0]) != 0 { print("socketpair failed\n"); return 1; }
+    print("AF_UNIX localPort: {}\n", socket.localPort(fds[0]));
+    socket.close(fds[0]);
+    socket.close(fds[1]);
+    0
+}
