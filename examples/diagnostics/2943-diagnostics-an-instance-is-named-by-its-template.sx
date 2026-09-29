@@ -8,6 +8,7 @@ Grid :: struct($N: i64, $T: Type) { cells: [N]T; }
 
 main :: () {
     s : b.Series(i64) = a.series();
+    p : b.Pair(i64) = a.pair();
     g := Grid(2, i64){ cells = .[1, 2] };
     _ = g + 1;
 }

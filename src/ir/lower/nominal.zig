@@ -544,12 +544,20 @@ pub fn declIdentityName(self: *Lowering, name: []const u8, decl: *const anyopaqu
 }
 
 pub fn nameHasMultipleTypeAuthors(self: *Lowering, name: []const u8) bool {
+    return nameHasMultipleAuthors(self, name, namesType);
+}
+
+fn namesType(ref: resolver_mod.RawDeclRef) bool {
+    return rawNamedTypePtr(ref) != null;
+}
+
+pub fn nameHasMultipleAuthors(self: *Lowering, name: []const u8, comptime counts: fn (resolver_mod.RawDeclRef) bool) bool {
     const table = self.program_index.decl_table orelse return false;
     var first: ?@import("../../imports.zig").DeclId = null;
     for (table.environments.items) |env| {
         const id = env.names.get(name) orelse continue;
         const ref = table.get(id).ref orelse continue;
-        if (rawNamedTypePtr(ref) == null) continue;
+        if (!counts(ref)) continue;
         if (first) |previous| {
             if (previous != id) return true;
         } else first = id;

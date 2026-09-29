@@ -1,1 +1,2 @@
 Series :: struct($T: Type) { tail: T; }
+Pair :: ($T: Type) -> Type { return struct { y: T; }; }

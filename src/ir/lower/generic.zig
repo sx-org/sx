@@ -746,7 +746,7 @@ pub fn formatTypeName(self: *Lowering, ty: TypeId) []const u8 {
 fn sourceLeaf(ctx: *anyopaque, ty: TypeId) ?[]const u8 {
     const self: *Lowering = @ptrCast(@alignCast(ctx));
     if (self.module.types.get(ty) == .@"error") return self.module.types.errorSetDiagnosticName(self.alloc, ty);
-    if (instanceKeyOf(&self.struct_instances, ty) orelse instanceKeyOf(&self.protocol_instances, ty)) |key| {
+    if (instanceKeyOf(&self.struct_instances, ty) orelse instanceKeyOf(&self.protocol_instances, ty) orelse self.type_function_mints.get(ty)) |key| {
         const decl = self.program_index.declaration(key.declaration);
         return placedSpelling(self, instanceSpelling(self, decl.name, key.arguments), decl);
     }
@@ -788,9 +788,18 @@ fn instanceSpelling(self: *Lowering, name: []const u8, arguments: []const instan
 }
 
 fn placedSpelling(self: *Lowering, spelled: []const u8, decl: imports.DeclInfo) []const u8 {
-    if (!self.nameHasMultipleTypeAuthors(decl.name)) return spelled;
+    if (!self.nameHasMultipleAuthors(decl.name, authorsTypeName)) return spelled;
     const src = decl.source orelse return spelled;
     return std.fmt.allocPrint(self.alloc, "{s} ({s})", .{ spelled, src }) catch spelled;
+}
+
+fn authorsTypeName(ref: resolver_mod.RawDeclRef) bool {
+    const fd = switch (ref) {
+        .fn_decl => |fd| fd,
+        else => return Lowering.rawNamedTypePtr(ref) != null,
+    };
+    const rt = fd.return_type orelse return false;
+    return fd.type_params.len > 0 and rt.data == .type_expr and std.mem.eql(u8, rt.data.type_expr.name, "Type");
 }
 
 /// Format a type name for function name mangling (identifier-safe).
@@ -2812,16 +2821,16 @@ pub fn instantiateTypeFunction(self: *Lowering, alias_name: []const u8, template
             self.recordStructDefaults(alias_id, layout.defaults);
             self.struct_instance_bindings.put(table.getString(alias_name_id), tb) catch @panic("out of memory");
 
-            return rememberTypeFunction(self, key, alias_id);
+            return rememberTypeFunction(self, key, alias_id, false);
         }
 
-        return rememberTypeFunction(self, key, mangled_id);
+        return rememberTypeFunction(self, key, mangled_id, true);
     }
 
     // Try payload enum/union
     if (findUnionInBody(fd.body)) |enum_decl| {
         const ty = self.instantiateTypeUnion(if (has_alias) self.instanceName(alias_name) else mangled_name, mangled_name, &enum_decl) orelse return null;
-        return rememberTypeFunction(self, key, ty);
+        return rememberTypeFunction(self, key, ty, !has_alias);
     }
 
     if (findReturnTypeExpr(fd.body)) |ret_node| {
@@ -2842,7 +2851,7 @@ pub fn instantiateTypeFunction(self: *Lowering, alias_name: []const u8, template
             else
                 self.evalComptimeType(ret_node)) orelse return .unresolved;
             self.renameNominalType(tid, if (has_alias) self.instanceName(alias_name) else mangled_name);
-            return rememberTypeFunction(self, key, tid);
+            return rememberTypeFunction(self, key, tid, !has_alias);
         }
     }
 
@@ -2856,14 +2865,16 @@ pub fn instantiateTypeFunction(self: *Lowering, alias_name: []const u8, template
     // the caller's fallback rather than fabricating a type.
     if (findReturnTypeExpr(fd.body)) |ret_node| {
         const ty = self.resolveTypeWithBindings(ret_node);
-        if (ty != .unresolved) return rememberTypeFunction(self, key, ty);
+        if (ty != .unresolved) return rememberTypeFunction(self, key, ty, false);
     }
 
     return null;
 }
 
-fn rememberTypeFunction(self: *Lowering, key: instances.Key, ty: TypeId) TypeId {
-    self.type_function_instances.put(instances.ownKey(self.alloc, key), ty) catch @panic("out of memory");
+fn rememberTypeFunction(self: *Lowering, key: instances.Key, ty: TypeId, minted: bool) TypeId {
+    const owned = instances.ownKey(self.alloc, key);
+    self.type_function_instances.put(owned, ty) catch @panic("out of memory");
+    if (minted) self.type_function_mints.put(ty, owned) catch @panic("out of memory");
     return ty;
 }
 

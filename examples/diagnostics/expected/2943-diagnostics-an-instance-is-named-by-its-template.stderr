@@ -4,8 +4,14 @@ error: cannot initialize 's' of type 'Series(i64) (examples/diagnostics/2943-dia
 10 |     s : b.Series(i64) = a.series();
    |                         ^^^^^^^^^^
 
-error: cannot apply '+' to operands of type 'Grid(2, i64)' and 'i64'
-  --> examples/diagnostics/2943-diagnostics-an-instance-is-named-by-its-template.sx:12:9
+error: cannot initialize 'p' of type 'Pair(i64) (examples/diagnostics/2943-diagnostics-an-instance-is-named-by-its-template/b.sx)' with a value of type 'Pair(i64) (examples/diagnostics/2943-diagnostics-an-instance-is-named-by-its-template/a.sx)'
+  --> examples/diagnostics/2943-diagnostics-an-instance-is-named-by-its-template.sx:11:23
    |
-12 |     _ = g + 1;
+11 |     p : b.Pair(i64) = a.pair();
+   |                       ^^^^^^^^
+
+error: cannot apply '+' to operands of type 'Grid(2, i64)' and 'i64'
+  --> examples/diagnostics/2943-diagnostics-an-instance-is-named-by-its-template.sx:13:9
+   |
+13 |     _ = g + 1;
    |         ^

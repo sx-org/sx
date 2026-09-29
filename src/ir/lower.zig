@@ -658,6 +658,9 @@ pub const Lowering = struct {
     next_decl_identity: u32 = 0,
     struct_instances: instances.Cache(TypeId),
     type_function_instances: instances.Cache(TypeId),
+    /// A type-function instance's key, by the TypeId it mints under its instance
+    /// name; an aliased or structural (`return T`) result is absent.
+    type_function_mints: std.AutoHashMap(TypeId, instances.Key),
     function_instances: instances.Cache(FuncId),
     pack_instances: instances.Cache(FuncId),
     protocol_instances: instances.Cache(TypeId),
@@ -1507,6 +1510,7 @@ pub const Lowering = struct {
             .nominal_name_authors = std.AutoHashMap(types.StringId, []const u8).init(module.alloc),
             .struct_instances = instances.Cache(TypeId).init(module.alloc),
             .type_function_instances = instances.Cache(TypeId).init(module.alloc),
+            .type_function_mints = std.AutoHashMap(TypeId, instances.Key).init(module.alloc),
             .function_instances = instances.Cache(FuncId).init(module.alloc),
             .pack_instances = instances.Cache(FuncId).init(module.alloc),
             .protocol_instances = instances.Cache(TypeId).init(module.alloc),
@@ -4101,6 +4105,7 @@ pub const Lowering = struct {
     pub const shadowNominalId = lower_nominal.shadowNominalId;
     pub const declIdentityName = lower_nominal.declIdentityName;
     pub const nameHasMultipleTypeAuthors = lower_nominal.nameHasMultipleTypeAuthors;
+    pub const nameHasMultipleAuthors = lower_nominal.nameHasMultipleAuthors;
     pub const rawNamedTypePtr = lower_nominal.rawNamedTypePtr;
     pub const buildGenericStructTemplate = lower_nominal.buildGenericStructTemplate;
     pub const qualifiedStructTemplate = lower_nominal.qualifiedStructTemplate;

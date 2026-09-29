@@ -1,2 +1,4 @@
 Series :: struct($T: Type) { head: T; }
 series :: () -> Series(i64) { .{ head = 1 } }
+Pair :: ($T: Type) -> Type { return struct { x: T; }; }
+pair :: () -> Pair(i64) { .{ x = 1 } }
