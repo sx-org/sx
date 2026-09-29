@@ -141,7 +141,7 @@ pub fn poisonAggregateField(self: *Lowering, tid: TypeId, k: usize) void {
 
 pub fn diagInfiniteSize(self: *Lowering, ty: TypeId) void {
     if (self.diagnostics) |d| {
-        const nm = self.module.types.typeName(ty);
+        const nm = self.formatTypeName(ty);
         d.addFmt(.err, null, "type '{s}' is infinitely sized (it contains itself by value); use a pointer ('*{s}') to break the cycle", .{ nm, nm });
     }
 }

@@ -1425,7 +1425,7 @@ pub const ProtocolResolver = struct {
         {
             const si = table.get(src_ty);
             if (!src_ty.isBuiltin() and si == .@"struct") {
-                const src_name = self.l.formatTypeName(src_ty);
+                const src_name = self.l.module.types.formatTypeName(self.l.alloc, src_ty, null);
                 const instance_name = self.paramProtocolInstanceName(pd, arg_tys.items);
                 // A generic-struct source (`impl VL($R) for Combined($R, ..$Ts)`)
                 // registers each method as a TEMPLATE only: its signature

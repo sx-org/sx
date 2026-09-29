@@ -4,7 +4,7 @@ error: expansion deadlock — nothing can run: every compile-time unit still wai
 22 | inline if !HAS {
    |           ^^^^
 
-note: this `inline if` awaits 'Serialize' impls to be final before 'GPA' is judged a non-conformer
+note: this `inline if` awaits 'Serialize' impls to be final before 'GPA (examples/diagnostics/1988-diagnostics-expansion-deadlock-run-probe.sx)' is judged a non-conformer
   --> examples/diagnostics/1988-diagnostics-expansion-deadlock-run-probe.sx:22:11
    |
 22 | inline if !HAS {

@@ -189,7 +189,7 @@ pub fn lowerJniCall(self: *Lowering, fic: *const ast.FfiIntrinsicCall, span: ast
     const ret_ty = self.resolveType(fic.return_type);
     if (!jni_descriptor.isJniReturnTypeSupported(&self.module.types, ret_ty)) {
         if (self.diagnostics) |d| {
-            d.addFmt(.err, span, "JNI call returns '{s}', which has no Call<T>Method — JNI scalars are void/bool/i8/u8/i16/u16/i32/i64/f32/f64 and pointers", .{self.module.types.typeName(ret_ty)});
+            d.addFmt(.err, span, "JNI call returns '{s}', which has no Call<T>Method — JNI scalars are void/bool/i8/u8/i16/u16/i32/i64/f32/f64 and pointers", .{self.formatTypeName(ret_ty)});
         }
         return Ref.none;
     }
@@ -311,7 +311,7 @@ pub fn lowerRuntimeMethodCall(
     const ret_ty = if (method.return_type) |rt| self.resolveType(rt) else .void;
     if (!jni_descriptor.isJniReturnTypeSupported(&self.module.types, ret_ty)) {
         if (self.diagnostics) |d| {
-            d.addFmt(.err, span, "JNI method '{s}.{s}' returns '{s}', which has no Call<T>Method — JNI scalars are void/bool/i8/u8/i16/u16/i32/i64/f32/f64 and pointers", .{ fcd.name, method.name, self.module.types.typeName(ret_ty) });
+            d.addFmt(.err, span, "JNI method '{s}.{s}' returns '{s}', which has no Call<T>Method — JNI scalars are void/bool/i8/u8/i16/u16/i32/i64/f32/f64 and pointers", .{ fcd.name, method.name, self.formatTypeName(ret_ty) });
         }
         return Ref.none;
     }

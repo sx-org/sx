@@ -20,18 +20,18 @@ help: declare `expression :: (self: *Wrong, value: $I/@Init($V/Drawable))` on it
 41 |     content.run(*sink);
    |                 ^^^^^
 
-error: 'Sink(Other)' cannot receive this block: it does not implement '@BuildSink(Drawable)'
+error: 'Sink(Other) (library/modules/fluent.sx)' cannot receive this block: it does not implement '@BuildSink(Drawable)'
   --> examples/diagnostics/2031-diagnostics-sink-nonconforming.sx:47:17
    |
 47 |     content.run(*sink);
    |                 ^^^^^
 
-help: declare `expression :: (self: *Sink(Other), value: $I/@Init($V/Drawable))` on it, or write an 'impl @BuildSink(Drawable) for Sink(Other)'
+help: declare `expression :: (self: *Sink(Other) (library/modules/fluent.sx), value: $I/@Init($V/Drawable))` on it, or write an 'impl @BuildSink(Drawable) for Sink(Other) (library/modules/fluent.sx)'
    |
 47 |     content.run(*sink);
    |                 ^^^^^
 
-error: 'run' needs a pointer to the sink, but this is 'Sink(Drawable)'
+error: 'run' needs a pointer to the sink, but this is 'Sink(Drawable) (library/modules/fluent.sx)'
   --> examples/diagnostics/2031-diagnostics-sink-nonconforming.sx:52:17
    |
 52 |     content.run(sink);

@@ -1448,7 +1448,7 @@ fn runTypeList(ex: *Expansion, node: *const Node, expr: *const Node, src: ?[]con
         const element = self.alloc.create(Node) catch return null;
         element.* = .{
             .span = expr.span,
-            .data = .{ .identifier = .{ .name = self.formatTypeName(tid) } },
+            .data = .{ .identifier = .{ .name = self.module.types.formatTypeName(self.alloc, tid, null) } },
         };
         elements.append(self.alloc, element) catch return null;
     }

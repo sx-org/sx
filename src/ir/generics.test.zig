@@ -234,8 +234,8 @@ test "generic layouts and method bodies follow declaration identity despite equa
     try std.testing.expectEqual(ia, l.instantiateGenericStructBound(&ta, try bindings.clone(), values, packs, "another label", a.span));
     try std.testing.expectEqualStrings("value", module.types.getString(module.types.get(ia).@"struct".fields[0].name));
     try std.testing.expectEqualStrings("other", module.types.getString(module.types.get(ib).@"struct".fields[0].name));
-    const ma = l.genericInstanceMethod(l.formatTypeName(ia), "tag").?;
-    const mb = l.genericInstanceMethod(l.formatTypeName(ib), "tag").?;
+    const ma = l.genericInstanceMethod(module.types.typeName(ia), "tag").?;
+    const mb = l.genericInstanceMethod(module.types.typeName(ib), "tag").?;
     try std.testing.expectEqual(&a.data.struct_decl.methods[0].data.fn_decl, ma.fd);
     try std.testing.expectEqual(&b.data.struct_decl.methods[0].data.fn_decl, mb.fd);
     const fa = l.ensureGenericInstanceMethodLowered(ma).?;

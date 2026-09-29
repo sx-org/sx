@@ -4,7 +4,7 @@ error: 'Buffer(f32)' does not satisfy the bound 'Series(i64)' on '$B'
 18 | tally :: (b: $B/Series(i64)) -> i64 { 1 }
    |                 ^^^^^^^^^^^
 
-help: no 'impl Series(i64) for Buffer__f32' is visible here
+help: no 'impl Series(i64) for Buffer(f32)' is visible here
    |
 18 | tally :: (b: $B/Series(i64)) -> i64 { 1 }
    |                 ^^^^^^^^^^^
@@ -15,7 +15,7 @@ error: 'Other(i64)' does not satisfy the bound 'Series(i64)' on '$B'
 18 | tally :: (b: $B/Series(i64)) -> i64 { 1 }
    |                 ^^^^^^^^^^^
 
-help: no 'impl Series(i64) for Other__i64' is visible here
+help: no 'impl Series(i64) for Other(i64)' is visible here
    |
 18 | tally :: (b: $B/Series(i64)) -> i64 { 1 }
    |                 ^^^^^^^^^^^
