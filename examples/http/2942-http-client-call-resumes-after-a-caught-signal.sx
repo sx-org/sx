@@ -1,0 +1,124 @@
+// A signal caught by a handler interrupts the blocking client's syscall with
+// EINTR, and the client resumes the call. In each case a helper thread
+// signals the main thread while it blocks in one client call, then lets that
+// call complete: a connect into a full listen queue (timed and unbounded),
+// a send into a full socket buffer, and a receive before the response exists.
+@import "modules/std.sx";
+@import "modules/std/http.sx";
+@import "modules/std/mem.sx";
+@import "modules/std/atomic.sx";
+socket :: @import "modules/std/socket.sx";
+
+clib :: @library "c";
+siginterrupt :: (sig: i32, flag: i32) -> i32 extern clib;
+pthread_self :: () -> usize extern clib;
+pthread_kill :: (thread: usize, sig: i32) -> i32 extern clib;
+
+LOOPBACK :u32: 0x0100007F;
+BODY_LEN :: 1 << 20;
+
+onSignal :: (sig: i32) abi(.c) {
+    _ := sig;
+}
+
+Release :: enum { drainListener; drainPeer; respond; }
+
+Helper :: struct {
+    target: usize;
+    fd: i32;
+    release: Release;
+    done: Atomic(bool);
+}
+
+helperEntry :: (arg: *void) -> *void abi(.c) {
+    h : *Helper = arg;
+    i := 0;
+    while i < 20 {
+        pthread_kill(h.target, process.SIGPIPE);
+        c.usleep(2000);
+        i += 1;
+    }
+    if h.release == .drainListener {
+        while !h.done.load(.acquire) {
+            fd := socket.accept(h.fd, null, null);
+            if fd >= 0 { socket.close(fd); } else { c.usleep(1000); }
+        }
+    } else if h.release == .drainPeer {
+        sink : [65536]u8 = ---;
+        while socket.read(h.fd, *sink[0], 65536) > 0 {}
+    } else {
+        resp := "HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\npong";
+        socket.write(h.fd, resp.ptr, resp.len);
+    }
+    return null;
+}
+
+connectCase :: (label: string, opts: http.ClientOpts) {
+    l := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+    la := socket.sockaddrIn(0, LOOPBACK);
+    if socket.bind(l, *la, 16) != 0 or socket.listen(l, 1) != 0 { print("{}: listener failed\n", label); return; }
+    port := socket.localPort(l);
+    if port == null { print("{}: no port\n", label); return; }
+    pend : [24]i32 = ---;
+    i := 0;
+    while i < 24 {
+        pend[i] = socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+        socket.setNonblocking(pend[i]);
+        pa := socket.sockaddrIn(port, LOOPBACK);
+        socket.connect(pend[i], *pa, 16);
+        i += 1;
+    }
+    socket.setNonblocking(l);
+    h : Helper = .{ target = pthread_self(), fd = l, release = .drainListener, done = Atomic(bool).init(false) };
+    t, te := thread.Thread.spawn(helperEntry, *h);
+    if te { print("{}: spawn failed\n", label); return; }
+    a, _ := socket.parseAddr("127.0.0.1", port);
+    conn, e := http.Client.openAddr(*a, opts);
+    h.done.store(true, .release);
+    t.join();
+    if e { print("{}: {}\n", label, e); } else { print("{}: connected\n", label); http.Client.closeConn(*conn); }
+    i = 0;
+    while i < 24 { socket.close(pend[i]); i += 1; }
+    socket.close(l);
+}
+
+sendCase :: () {
+    pair : [2]i32 = ---;
+    if socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM, 0, *pair[0]) != 0 { print("send: socketpair failed\n"); return; }
+    body : [*]u8 = mem.alloc(context.allocator, u8, BODY_LEN).ptr;
+    i := 0;
+    while i < BODY_LEN { body[i] = 'x'; i += 1; }
+    h : Helper = .{ target = pthread_self(), fd = pair[1], release = .drainPeer, done = Atomic(bool).init(false) };
+    t, te := thread.Thread.spawn(helperEntry, *h);
+    if te { print("send: spawn failed\n"); return; }
+    e := http.Client.send(pair[0], "POST", "/", "t", "", string{ ptr = body, len = BODY_LEN });
+    socket.close(pair[0]);
+    t.join();
+    socket.close(pair[1]);
+    context.allocator.deallocBytes(body);
+    if e { print("send: {}\n", e); } else { print("send: sent {} body bytes\n", BODY_LEN); }
+}
+
+recvCase :: () {
+    pair : [2]i32 = ---;
+    if socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM, 0, *pair[0]) != 0 { print("recv: socketpair failed\n"); return; }
+    h : Helper = .{ target = pthread_self(), fd = pair[1], release = .respond, done = Atomic(bool).init(false) };
+    t, te := thread.Thread.spawn(helperEntry, *h);
+    if te { print("recv: spawn failed\n"); return; }
+    buf : [4096]u8 = ---;
+    r, e := http.Client.recv(pair[0], *buf[0], 4096);
+    t.join();
+    socket.close(pair[0]);
+    socket.close(pair[1]);
+    if e { print("recv: {}\n", e); } else { print("recv: {} {}\n", r.status, r.body); }
+}
+
+main :: () -> i32 {
+    siginterrupt(process.SIGPIPE, 1);
+    c.signal(process.SIGPIPE, @reinterpret(usize, onSignal));
+    connectCase("timed connect", .{ connectTimeoutMs = 60000 });
+    connectCase("unbounded connect", .{});
+    sendCase();
+    recvCase();
+    0
+}

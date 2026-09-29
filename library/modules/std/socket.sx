@@ -15,6 +15,7 @@
 
 clib  :: @import "modules/std/c.sx";     // namespace `clib` (not `c` — `c` is a local fd var throughout)
 posix :: @import "modules/std/posix.sx";
+private time :: @import "modules/std/time.sx";
 libc  :: clib.c.libc;
 // errno constants live in std/posix.sx — consumers reference `posix.EAGAIN` etc.
 // directly (a cross-module value-const can't be re-aliased at module scope).
@@ -91,7 +92,7 @@ localPort :: (fd: i32) -> ?i64 {
     return (a.buf[2].(i64) << 8) | a.buf[3].(i64);
 }
 
-// Leaf-module byte copy (socket.sx imports nothing but libc; addresses are
+// Leaf-module byte copy (socket.sx imports only libc wrappers; addresses are
 // ≤ 128 bytes, a loop is fine).
 copyBytes :: (dst: [*]u8, src: [*]u8, n: i64) {
     i : i64 = 0;
@@ -140,23 +141,44 @@ setIoTimeout :: (fd: i32, ms: i64) -> bool {
 // the fd is left in an undefined connection state and must be closed.
 connectTimed :: (fd: i32, a: *Addr, timeoutMs: i64) -> bool {
     if !setNonblocking(fd) { return false; }
-    r := connectTo(fd, a);
-    if r != 0 {
-        e := errno();
-        if e != posix.EINPROGRESS { return false; }
-        pfd: PollFd = .{ fd = fd, events = POLLOUT };
-        // poll takes an i32 — clamp instead of truncating (an i64 ≥ 2^31
-        // would go negative = INFINITE poll; ≥ 2^32 would wrap to ~instant).
-        tmo: i32 = if timeoutMs > 2147483647 then 2147483647 else timeoutMs.(i32);
-        pr := poll(*pfd, 1, tmo);
-        if pr <= 0 { return false; }                       // timeout (0) or poll fault
-        if (pfd.revents & (POLLERR | POLLHUP)) != 0 { return false; }
-        soerr : i32 = 0;
-        solen : u32 = 4;
-        if getsockopt(fd, SOL_SOCKET, SO_ERROR, *soerr, *solen) != 0 { return false; }
-        if soerr != 0 { return false; }                    // refused / unreachable
+    if connectTo(fd, a) != 0 {
+        if errno() != posix.EINPROGRESS { return false; }
+        if !awaitConnect(fd, timeoutMs) { return false; }
     }
     return setBlocking(fd);
+}
+
+// Blocking connect. A connect() that a caught signal interrupts carries on in
+// the kernel, so it is awaited rather than failed.
+connectBlocking :: (fd: i32, a: *Addr) -> bool {
+    if connectTo(fd, a) == 0 { return true; }
+    return errno() == posix.EINTR and awaitConnect(fd, null);
+}
+
+// Wait for the connect in flight on `fd` — for at most `timeoutMs` when it is
+// non-null — and report whether it connected. A caught signal resumes the
+// wait for the time left.
+private awaitConnect :: (fd: i32, timeoutMs: ?i64) -> bool {
+    pfd: PollFd = .{ fd = fd, events = POLLOUT };
+    start := time.monoMs();
+    while true {
+        wait : i32 = -1;
+        if limit := timeoutMs {
+            left := limit - (time.monoMs() - start);
+            if left <= 0 { return false; }
+            // poll takes an i32 — clamp instead of truncating (an i64 ≥ 2^31
+            // would go negative = INFINITE poll; ≥ 2^32 would wrap to ~instant).
+            wait = if left > 2147483647 then 2147483647 else left.(i32);
+        }
+        pr := poll(*pfd, 1, wait);
+        if pr > 0 { break; }
+        if pr == 0 or errno() != posix.EINTR { return false; }
+    }
+    if (pfd.revents & (POLLERR | POLLHUP)) != 0 { return false; }
+    soerr : i32 = 0;
+    solen : u32 = 4;
+    if getsockopt(fd, SOL_SOCKET, SO_ERROR, *soerr, *solen) != 0 { return false; }
+    return soerr == 0;
 }
 
 // Presentation → network address (numeric only, no DNS). Same signature on
