@@ -1,0 +1,8 @@
+A.idx     40 2
+A.named   10 20
+A.one     42
+A.local   40
+B.field   7 9
+C.ret     2 1
+C.pass    11
+C.eq      true
