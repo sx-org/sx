@@ -11,7 +11,7 @@ note: this `inline if` awaits 'SELF' to be declared
    |           ^^^^
 
 note: this `inline if` awaits 'S2' to be declared
-  --> examples/diagnostics/2769-diagnostics-expansion-deadlock-cross-file-cfg.sx:1:11
+  --> examples/diagnostics/2769-diagnostics-expansion-deadlock-cross-file/cfg.sx:1:11
    |
  1 | inline if S2 {
    |           ^^

@@ -8,8 +8,8 @@
 // stay distinct either way.
 @import "modules/std.sx";
 
-c :: @import "examples/ui/compose.sx";
-e :: @import "examples/ui/emit.sx";
+c :: @import "examples/ui/compose/package.sx";
+e :: @import "examples/ui/emit/package.sx";
 @import "modules/ui/fluent.sx";
 
 main :: () -> i32 {

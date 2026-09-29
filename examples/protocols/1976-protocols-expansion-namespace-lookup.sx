@@ -11,7 +11,7 @@
 // the name is written by the driver below the one reading it. Neither
 // condition is evaluated until the driver that could write it retired.
 @import "modules/std.sx";
-cfg :: @import "./1976-protocols-expansion-namespace-cfg.sx";
+cfg :: @import "./1976-protocols-expansion-namespace-lookup/cfg.sx";
 
 inline if cfg.WIDE { A :: 1; } else { A :: 0; }
 

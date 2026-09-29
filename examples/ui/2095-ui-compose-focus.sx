@@ -8,7 +8,7 @@
 // being focused.
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
-@import "examples/ui/compose.sx";
+@import "examples/ui/compose/package.sx";
 @import "modules/ui/input.sx";
 ui :: @import "modules/ui/types.sx";
 

@@ -3,7 +3,7 @@
 // qualified name parses as a field-access expression; resolveTypeArg
 // reconstructs the dotted name and resolves it through the alias map.
 @import "modules/std.sx";
-sel :: @import "0192-types-size-of-qualified-alias-mod.sx";
+sel :: @import "0192-types-size-of-qualified-alias/mod.sx";
 
 main :: () -> i32 {
     // Qualified through the module alias, in a type-arg slot.

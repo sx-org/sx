@@ -1,5 +1,7 @@
-// Manual allocation sweep: `sx run examples/http/1729-http-content-encoding-allocation.sx`.
-// The optimized build exceeds the corpus compile-time budget.
+// An allocation failure in std.http's content-encoding paths unwinds with
+// nothing leaked: each allocation of the gzip and deflate encoded producers and
+// of the out channel, and the first of response serialization and of the
+// client decoder.
 @import "modules/std.sx";
 @import "modules/std/http.sx";
 wire :: @import "modules/std/http/wire.sx";

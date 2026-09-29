@@ -2,10 +2,10 @@ const std = @import("std");
 const builtin = @import("builtin");
 const corpus_paths = @import("corpus_paths");
 
-// End-to-end example regression runner. For every
-// `<root>/expected/<name>.exit` marker under examples/, spawn the
-// installed `sx` binary on `<name>.sx`, capture stdout/stderr/exit, normalize,
-// and diff against the stored snapshot. Optional `<name>.ir` snapshots
+// End-to-end example regression runner. For every example
+// `<root>/<cat>/<name>.sx` under examples/, spawn the installed `sx` binary on
+// it, capture stdout/stderr/exit, normalize, and diff against the snapshot
+// stored in `<root>/<cat>/expected/`. Optional `<name>.ir` snapshots
 // additionally diff `sx ir` output; a `<name>.build` sidecar carries
 // per-example directives (AOT, cross-target, bundle/apk smoke tests, ...).
 //
@@ -576,6 +576,8 @@ const Item = struct {
     rel_prefix: []const u8, // repo-relative dir (e.g. `examples/http`)
     exp_dir: []const u8, // abs `<source_dir>/expected`
     name: []const u8,
+    /// Selected by `-Dname`: only a named example records its first snapshots.
+    named: bool,
     cfg: BuildConfig,
     /// Set when the `.build` sidecar failed to parse — reported as a failure
     /// by the worker (the item still occupies its slot for determinism).
@@ -630,12 +632,11 @@ fn splitTimedStderr(raw: []const u8) TimedStderr {
     return .{ .body = raw[0..idx], .jit_ns = jit_ns };
 }
 
-/// Collect one category's examples into `items`. Unfiltered, an example is an
-/// `expected/<name>.exit` marker: a category also holds `.sx` modules that are
-/// not examples. `-Dname` names examples by source path, so a named `<name>.sx`
-/// is collected whether or not its snapshots exist yet. Strings are duped into
-/// `arena` (sweep lifetime). The `.build` sidecar is parsed here — cheap, and
-/// it lets the sweep partition serial items before the pool starts.
+/// Collect one category's examples into `items`: every `<name>.sx` directly in
+/// the category directory is an example, and the modules examples import live
+/// in its subdirectories. Strings are duped into `arena` (sweep lifetime). The
+/// `.build` sidecar is parsed here — cheap, and it lets the sweep partition
+/// serial items before the pool starts.
 fn collectCategory(
     arena: std.mem.Allocator,
     io: std.Io,
@@ -645,15 +646,14 @@ fn collectCategory(
     items: *std.ArrayList(Item),
 ) !void {
     const exp_dir = try std.fs.path.join(arena, &.{ source_dir, "expected" });
-    const scan_dir, const ext = if (filter.len > 0) .{ source_dir, ".sx" } else .{ exp_dir, ".exit" };
-    var dir = std.Io.Dir.openDirAbsolute(io, scan_dir, .{ .iterate = true }) catch return;
+    var dir = std.Io.Dir.openDirAbsolute(io, source_dir, .{ .iterate = true }) catch return;
     defer dir.close(io);
 
     var it = dir.iterate();
     while (try it.next(io)) |entry| {
         if (entry.kind == .directory) continue; // accept .file and .unknown d_type
-        if (!std.mem.endsWith(u8, entry.name, ext)) continue;
-        const name = try arena.dupe(u8, entry.name[0 .. entry.name.len - ext.len]);
+        if (!std.mem.endsWith(u8, entry.name, ".sx")) continue;
+        const name = try arena.dupe(u8, entry.name[0 .. entry.name.len - ".sx".len]);
 
         // A non-matching example is dropped silently — not counted as ran or
         // skipped.
@@ -677,6 +677,7 @@ fn collectCategory(
             .rel_prefix = rel_prefix,
             .exp_dir = exp_dir,
             .name = name,
+            .named = filter.len > 0,
             .cfg = cfg,
             .cfg_error = cfg_error,
         });
@@ -737,11 +738,6 @@ fn runOne(
     const started = nowNs(io);
     defer out.total_ns = elapsedNs(started, nowNs(io));
 
-    const sx_abs = try std.fs.path.join(a, &.{ item.source_dir, try std.fmt.allocPrint(a, "{s}.sx", .{name}) });
-    std.Io.Dir.access(.cwd(), io, sx_abs, .{}) catch { // marker without source
-        out.skip_note = try std.fmt.allocPrint(results_gpa, "skip {s} (no {s}.sx)", .{ name, name });
-        return;
-    };
     out.ran = true;
 
     if (item.cfg_error) |err_name| {
@@ -761,6 +757,10 @@ fn runOne(
 
     const rel_path = try std.fmt.allocPrint(a, "{s}/{s}.sx", .{ item.rel_prefix, name });
     const exit_raw = readOptional(io, a, try std.fmt.allocPrint(a, "{s}/{s}.exit", .{ exp_dir, name }));
+    if (exit_raw == null and (mode == .verify or !item.named)) {
+        out.failure = try std.fmt.allocPrint(results_gpa, "{s}: {s} has no snapshots — record them with `zig build test -Dupdate-goldens -Dname={s}` or delete it; a module an example imports lives in a subdirectory", .{ name, rel_path, rel_path });
+        return;
+    }
     const out_raw = readOptional(io, a, try std.fmt.allocPrint(a, "{s}/{s}.stdout", .{ exp_dir, name }));
     const err_raw = readOptional(io, a, try std.fmt.allocPrint(a, "{s}/{s}.stderr", .{ exp_dir, name }));
     const ir_raw = readOptional(io, a, try std.fmt.allocPrint(a, "{s}/{s}.ir", .{ exp_dir, name }));
@@ -1065,10 +1065,7 @@ fn runOne(
 
     // --- verify against stored snapshot ---
     const want_exit = exp_exit orelse {
-        out.failure = if (exit_text) |t|
-            try std.fmt.allocPrint(results_gpa, "{s}: unparseable expected exit '{s}'", .{ name, t })
-        else
-            try std.fmt.allocPrint(results_gpa, "{s}: no {s}/expected/{s}.exit — record its snapshots with `zig build test -Dupdate-goldens -Dname={s}`", .{ name, item.rel_prefix, name, rel_path });
+        out.failure = try std.fmt.allocPrint(results_gpa, "{s}: unparseable expected exit '{s}'", .{ name, exit_text.? });
         return;
     };
 
@@ -1213,7 +1210,7 @@ fn writeTimingReport(
 }
 
 /// One sweep's tally: `selected` examples were collected, and `ran` of those
-/// executed — a host gate or a marker without its `.sx` skips a selected one.
+/// executed — a host gate skips a selected one.
 const Sweep = struct { selected: usize, ran: usize };
 
 /// Run every example `filter` selects under `root_dir`: collect, run on the
@@ -1321,7 +1318,7 @@ fn sweepRoot(
         }
     }
     if (skipped > 0)
-        try notes.append(a, try std.fmt.allocPrint(a, "{s}: {d} marker(s) skipped", .{ root_base, skipped }));
+        try notes.append(a, try std.fmt.allocPrint(a, "{s}: {d} example(s) skipped", .{ root_base, skipped }));
     if (mode == .update)
         try notes.append(a, try std.fmt.allocPrint(a, "{s}: {d} snapshot(s) regenerated", .{ root_base, updated }));
     if (corpusVerbose()) for (notes.items) |n| std.debug.print("[corpus-run] {s}\n", .{n});
@@ -1435,6 +1432,46 @@ test "sweepRoot: a selected example that skips on this host stays selected; an u
 
     const unmatched = try sweepRoot(std.testing.allocator, io, corpus_abs, "corpus/gated/absent.sx", .verify, &failures);
     try std.testing.expectEqual(@as(usize, 0), unmatched.selected);
+}
+
+test "sweepRoot: an example with no snapshots fails a verify and an unnamed update sweep; a module in a subdirectory is not an example" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const io = test_io();
+
+    const repo_root = std.fs.path.dirname(corpus_paths.examples_dir) orelse ".";
+    const root = try SandboxPath.own(a, "corpus-goldenless-root", .{});
+    const root_abs = try root.abs(a, repo_root);
+    defer root.remove(a, io, repo_root);
+
+    const corpus_abs = try std.fmt.allocPrint(a, "{s}/corpus", .{root_abs});
+    try std.Io.Dir.createDirPath(.cwd(), io, try std.fmt.allocPrint(a, "{s}/cat/expected", .{corpus_abs}));
+    try std.Io.Dir.createDirPath(.cwd(), io, try std.fmt.allocPrint(a, "{s}/cat/bare", .{corpus_abs}));
+    const files = [_][2][]const u8{
+        .{ "cat/pinned.sx", "main :: () -> i32 { 0 }\n" },
+        .{ "cat/expected/pinned.exit", "0\n" },
+        .{ "cat/expected/pinned.stdout", "" },
+        .{ "cat/expected/pinned.stderr", "" },
+        .{ "cat/bare.sx", "main :: () -> i32 { 0 }\n" },
+        .{ "cat/bare/helper.sx", "helper :: () -> i32 { 0 }\n" },
+    };
+    for (files) |f| try std.Io.Dir.writeFile(.cwd(), io, .{
+        .sub_path = try std.fmt.allocPrint(a, "{s}/{s}", .{ corpus_abs, f[0] }),
+        .data = f[1],
+    });
+
+    for ([_]Mode{ .verify, .update }) |mode| {
+        var failures: std.ArrayList([]const u8) = .empty;
+        defer failures.deinit(std.testing.allocator);
+        defer for (failures.items) |f| std.testing.allocator.free(f);
+
+        const sweep = try sweepRoot(std.testing.allocator, io, corpus_abs, "", mode, &failures);
+        try std.testing.expectEqual(@as(usize, 2), sweep.selected);
+        try std.testing.expectEqual(@as(usize, 1), failures.items.len);
+        try std.testing.expectEqualStrings("bare: corpus/cat/bare.sx has no snapshots — record them with `zig build test -Dupdate-goldens -Dname=corpus/cat/bare.sx` or delete it; a module an example imports lives in a subdirectory", failures.items[0]);
+    }
+    try std.testing.expectError(error.FileNotFound, std.Io.Dir.access(.cwd(), io, try std.fmt.allocPrint(a, "{s}/cat/expected/bare.exit", .{corpus_abs}), .{}));
 }
 
 test "sweepRoot update: a named example with no snapshots records them; a matching snapshot keeps its bytes" {

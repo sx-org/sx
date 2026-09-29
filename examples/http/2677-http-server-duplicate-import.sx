@@ -2,7 +2,7 @@
 // imports the server module.
 @import "modules/std.sx";
 @import "modules/std/http.sx";
-side :: @import "2677-http-server-duplicate-import-side.sx";
+side :: @import "2677-http-server-duplicate-import/side.sx";
 
 PORT :: 19131;
 

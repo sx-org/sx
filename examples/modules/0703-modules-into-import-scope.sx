@@ -4,7 +4,7 @@
 // transitively imports the impl's defining module.
 
 @import "modules/std.sx";
-@import "./0703-modules-into-impl-helper.sx";
+@import "./0703-modules-into-import-scope/impl-helper.sx";
 
 main :: () -> i32 {
   w : Wrap = xx 3;

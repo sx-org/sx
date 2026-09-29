@@ -6,10 +6,10 @@
 // straight through the spliced impl. Both agree, because both answer about the
 // same decided program.
 @import "modules/std.sx";
-@import "./1990-protocols-expansion-branch-import-shapes.sx";
+@import "./1990-protocols-expansion-branch-import-impl-set/shapes.sx";
 
 inline if @host.pointerSize == 8 {
-    @import "./1990-protocols-expansion-branch-import-impl.sx";
+    @import "./1990-protocols-expansion-branch-import-impl-set/impl.sx";
 } else {
     NARROW :: 1;
 }

@@ -7,10 +7,10 @@
 // it in: it folds later, when the alias's views expand, and until then it is
 // what the reader below waits on.
 @import "modules/std.sx";
-@import "./1999-protocols-expansion-branch-import-alias-kinds.sx";
+@import "./1999-protocols-expansion-branch-import-alias/kinds.sx";
 
 inline if @host.pointerSize == 8 {
-    alias :: @import "./1999-protocols-expansion-branch-import-alias-mod.sx";
+    alias :: @import "./1999-protocols-expansion-branch-import-alias/mod.sx";
 } else {
     NARROW :: 1;
 }

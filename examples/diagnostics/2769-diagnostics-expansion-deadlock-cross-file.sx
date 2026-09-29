@@ -1,5 +1,5 @@
 @import "modules/std.sx";
-cfg :: @import "./2769-diagnostics-expansion-deadlock-cross-file-cfg.sx";
+cfg :: @import "./2769-diagnostics-expansion-deadlock-cross-file/cfg.sx";
 
 inline if SELF {
     A :: 1;

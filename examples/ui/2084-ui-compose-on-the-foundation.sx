@@ -8,7 +8,7 @@
 // What stays the package's own is the set and the collection style:
 // `compose.View` is this package's set, and a container still TAKES the block.
 @import "modules/std.sx";
-@import "examples/ui/compose.sx";
+@import "examples/ui/compose/package.sx";
 
 ui :: @import "modules/ui/types.sx";
 foundation :: @import "modules/ui/render.sx";

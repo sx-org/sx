@@ -5,7 +5,7 @@
 // collection call at the call site. Interception is a property of the
 // container's own `$B/@BuildBlock(View)` parameter.
 @import "modules/std.sx";
-@import "examples/ui/compose.sx";
+@import "examples/ui/compose/package.sx";
 
 main :: () -> i32 {
     stack := vstack(2.0) {

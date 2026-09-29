@@ -43,22 +43,8 @@ for exit_file in "$EXP_DIR"/*.exit; do
     [[ -e "$exit_file" ]] || continue
     name=$(basename "$exit_file" .exit)
 
-    # Source tree: harvested 08xx live under examples/ — flat before the corpus
-    # was reorganized into category subdirs (examples/<cat>/<name>.sx), so look
-    # in both. e6br5 lives under cases/.
-    sx_file=""
-    if [[ -f "$ROOT_DIR/examples/${name}.sx" ]]; then
-        sx_file="$ROOT_DIR/examples/${name}.sx"
-    elif [[ -f "$SCRIPT_DIR/cases/${name}.sx" ]]; then
-        sx_file="$SCRIPT_DIR/cases/${name}.sx"
-    else
-        for cand in "$ROOT_DIR"/examples/*/"${name}.sx"; do
-            [[ -f "$cand" ]] || continue
-            sx_file="$cand"
-            break
-        done
-    fi
-    if [[ -z "$sx_file" ]]; then
+    sx_file="$SCRIPT_DIR/cases/${name}.sx"
+    if [[ ! -f "$sx_file" ]]; then
         printf '  %-55s MISSING-SOURCE\n' "$name"
         MISSING=$((MISSING + 1))
         continue
