@@ -38,7 +38,7 @@ EOF
 # an unattended run has nothing to answer it with.
 if ! DevToolsSecurity -status 2>/dev/null | grep -q "currently enabled"; then
     echo "SKIP: developer mode disabled, lldb cannot launch (sudo DevToolsSecurity -enable)"
-    rm -f "$SRC" "$BIN" "$TMP/main.o"
+    rm -f "$SRC" "$BIN" "$BIN.o"
     exit 0
 fi
 
@@ -62,7 +62,7 @@ sim_booted=$(xcrun simctl list devices booted 2>/dev/null | grep -c Booted || tr
 if [[ "${sim_booted:-0}" -gt 0 ]] && xcrun --sdk iphonesimulator --show-sdk-path >/dev/null 2>&1; then
     "$SX" build --target ios-sim --emit-obj "$SRC" -o "$BIN" >/dev/null 2>&1 || { echo "FAIL[ios-sim]: build"; fail=1; }
     dsymutil "$BIN" -o "$BIN.dSYM" >/dev/null 2>&1   # the .app ships a .dSYM, not the .o
-    rm -f "$TMP/main.o"                               # force resolution via the .dSYM
+    rm -f "$BIN.o"                                    # force resolution via the .dSYM
     sout=$(cd "$ROOT_DIR" && timeout 120 lldb --batch \
         -o "breakpoint set --file dbg_smoke.sx --line 3" \
         -o "run" -o "bt" -o "quit" "$BIN" 2>&1)
@@ -79,6 +79,6 @@ fi
 
 # Rung 3 (iOS device) is a documented manual checklist — see docs/debugger.md.
 
-rm -f "$SRC" "$BIN" "$TMP/main.o"
+rm -f "$SRC" "$BIN" "$BIN.o"
 [[ $fail -eq 0 ]] && exit 0
 exit 1

@@ -663,6 +663,7 @@ fn compile(allocator: std.mem.Allocator, io: std.Io, input_path: []const u8, out
 const BuildHooksCtx = struct {
     comp: *sx.core.Compilation,
     obj_path: [:0]const u8,
+    tmp_dir: []const u8,
     allocator: std.mem.Allocator,
     io: std.Io,
     base_config: sx.target.TargetConfig,
@@ -693,7 +694,7 @@ const BuildHooksCtx = struct {
         // The passed `flags` are already the full merged set (`@buildFlags()` returns
         // the merged CLI + `@run` flags), so use them as-is rather than re-unioning.
         cfg.extra_link_flags = flags;
-        try sx.target.link(self.allocator, self.io, objects[0], objects[1..], output, libraries, frameworks, cfg, self.has_jni_main);
+        try sx.target.link(self.allocator, self.io, objects[0], objects[1..], output, libraries, frameworks, cfg, self.has_jni_main, self.tmp_dir);
     }
 };
 
@@ -740,11 +741,17 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
     const libs = try extractLibraries(allocator, root);
     var fws = try extractFrameworks(allocator, root);
 
-    // Create temp directory for build artifacts
-    const tmp_dir: []const u8 = ".sx-tmp";
-    std.Io.Dir.createDirPath(.cwd(), io, tmp_dir) catch {};
-
-    const obj_path = try std.fmt.allocPrintSentinel(allocator, "{s}/main.o", .{tmp_dir}, 0);
+    // Build artifacts live in a directory no other invocation writes, so
+    // concurrent builds from one cwd each link their own objects.
+    const tmp_root = ".sx-tmp";
+    var build_id: u64 = undefined;
+    io.random(std.mem.asBytes(&build_id));
+    const tmp_dir = try std.fmt.allocPrint(allocator, tmp_root ++ "/build-{x:0>16}", .{build_id});
+    try std.Io.Dir.createDirPath(.cwd(), io, tmp_dir);
+    defer {
+        std.Io.Dir.deleteTree(.cwd(), io, tmp_dir) catch {};
+        std.Io.Dir.deleteDir(.cwd(), io, tmp_root) catch {};
+    }
 
     // Codegen only. There is NO auto-emit / auto-link: the build is driven
     // entirely by the sx `defaultPipeline` (or a user `@run @onBuild(...)`
@@ -810,12 +817,20 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
         }
     }
 
+    // A kept --emit-obj object must outlive the build directory: the binary's
+    // debug map resolves to its link-time path.
+    const obj_path = if (target_config.emit_obj)
+        try std.fmt.allocPrintSentinel(allocator, "{s}.o", .{final_output}, 0)
+    else
+        try std.fmt.allocPrintSentinel(allocator, "{s}/main.o", .{tmp_dir}, 0);
+
     // NO auto-link here — the sx `defaultPipeline` (or a user `@onBuild`
     // override) calls `@link` (and `@emitObject`) as actions through these hooks.
     // The ctx lives on this stack frame so it outlives the callback below.
     var build_ctx = BuildHooksCtx{
         .comp = &comp,
         .obj_path = obj_path,
+        .tmp_dir = tmp_dir,
         .allocator = allocator,
         .io = io,
         .base_config = merged_config,
@@ -931,20 +946,8 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
     }
 
     std.debug.print("compiled: {s}\n", .{final_output});
-
-    // Clean up temp directory and all build artifacts. Under --emit-obj, keep
-    // the object (DWARF for lldb/gdb) at its link-time path — the binary's
-    // debug map resolves to it — and skip removing the temp dir.
-    const shell_tmp = std.fmt.allocPrint(allocator, "{s}.shell.html", .{obj_path}) catch null;
-    if (shell_tmp) |sp| std.Io.Dir.deleteFile(.cwd(), io, sp) catch {};
-    for (c_obj_paths) |cop| {
-        std.Io.Dir.deleteFile(.cwd(), io, cop) catch {};
-    }
     if (target_config.emit_obj) {
         std.debug.print("debug object kept: {s} (DWARF; run lldb/gdb from the project root)\n", .{obj_path});
-    } else {
-        std.Io.Dir.deleteFile(.cwd(), io, obj_path) catch {};
-        std.Io.Dir.deleteDir(.cwd(), io, tmp_dir) catch {};
     }
 }
 

@@ -154,8 +154,7 @@ fn currentEnviron() std.process.Environ {
 /// that never reproduce solo. Two lanes stagger them without serializing
 /// the whole category.
 /// (Io.Semaphore futexes on shared addresses, so it synchronizes across the
-/// workers' separate Io.Threaded instances — same reasoning as
-/// g_build_mutex below.)
+/// workers' separate Io.Threaded instances.)
 var g_http_slots: std.Io.Semaphore = .{ .permits = 2 };
 
 /// The run-slot semaphore for a category, or null when unbounded.
@@ -164,16 +163,6 @@ fn categoryRunSlots(rel_prefix: []const u8) ?*std.Io.Semaphore {
     if (std.mem.eql(u8, base, "http")) return &g_http_slots;
     return null;
 }
-
-/// `sx build` writes fixed-path intermediates under the shared repo cwd —
-/// `.sx-tmp/main.o` (kept there for lldb's debug map) and `.sx-tmp/sx_c_<i>.o`
-/// — so two concurrent builds clobber each other. All build-pipeline
-/// invocations (aot, apk) serialize on this mutex; the JIT majority (pid-unique
-/// `/tmp` scratch, content-keyed cache) keeps the pool busy meanwhile. Executing
-/// the built binary happens OUTSIDE the lock — its path is per-example.
-/// (`std.Io.Mutex` futexes on a shared address, so it synchronizes across the
-/// workers' separate `Io.Threaded` instances.)
-var g_build_mutex: std.Io.Mutex = .init;
 
 var g_test_threaded: ?std.Io.Threaded = null;
 fn test_io() std.Io {
@@ -809,22 +798,18 @@ fn runOne(
         // Android requires the shared-lib basename to start with `lib`.
         const so_path = try SandboxPath.own(a, "libsxapk_{s}.so", .{name});
         const so_abs = try so_path.abs(a, repo_root);
-        const build_res = blk: {
-            g_build_mutex.lockUncancelable(io);
-            defer g_build_mutex.unlock(io);
-            break :blk std.process.run(a, io, .{
-                .argv = &.{
-                    corpus_paths.sx_exe, "build",
-                    "--target",          "android",
-                    "--apk",             out_abs,
-                    "--bundle-id",       ac.bundle_id,
-                    "-o",                so_abs,
-                    rel_path,
-                },
-                .cwd = .{ .path = repo_root },
-                .timeout = deadline(io),
-            });
-        } catch |err| {
+        const build_res = std.process.run(a, io, .{
+            .argv = &.{
+                corpus_paths.sx_exe, "build",
+                "--target",          "android",
+                "--apk",             out_abs,
+                "--bundle-id",       ac.bundle_id,
+                "-o",                so_abs,
+                rel_path,
+            },
+            .cwd = .{ .path = repo_root },
+            .timeout = deadline(io),
+        }) catch |err| {
             out.failure = try std.fmt.allocPrint(results_gpa, "{s}: `sx build --target android` {s}{s}", .{
                 name, @errorName(err), if (err == error.Timeout) " (>10s)" else "",
             });
@@ -906,15 +891,11 @@ fn runOne(
         // unresolved exported symbol) surfaces as a non-zero exit with the
         // linker error on stderr.
         const bin_path = try (try SandboxPath.own(a, "aot_{s}", .{name})).abs(a, repo_root);
-        const build_res = blk: {
-            g_build_mutex.lockUncancelable(io);
-            defer g_build_mutex.unlock(io);
-            break :blk std.process.run(a, io, .{
-                .argv = try withTarget(a, &.{ corpus_paths.sx_exe, "build", rel_path, "-o", bin_path }, cfg.target),
-                .cwd = .{ .path = repo_root },
-                .timeout = deadline(io),
-            });
-        } catch |err| {
+        const build_res = std.process.run(a, io, .{
+            .argv = try withTarget(a, &.{ corpus_paths.sx_exe, "build", rel_path, "-o", bin_path }, cfg.target),
+            .cwd = .{ .path = repo_root },
+            .timeout = deadline(io),
+        }) catch |err| {
             out.failure = try std.fmt.allocPrint(results_gpa, "{s}: `sx build` {s}{s}", .{
                 name, @errorName(err), if (err == error.Timeout) " (>10s)" else "",
             });
@@ -1705,6 +1686,88 @@ test "an http example passes beside a concurrent run of itself" {
     var terms: [2]std.process.Child.Term = undefined;
     for (&runs, &terms) |*r, *t| t.* = try r.wait(io);
     for (terms) |t| try std.testing.expectEqual(@as(u32, 0), termCode(t));
+}
+
+test "concurrent builds in one directory each link their own program" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const io = test_io();
+
+    const repo_root = std.fs.path.dirname(corpus_paths.examples_dir) orelse ".";
+    var srcs: [2]SandboxPath = undefined;
+    var bins: [2]SandboxPath = undefined;
+    for (&srcs, &bins, 1..) |*s, *b, i| {
+        s.* = try SandboxPath.own(a, "concurrent-build-{d}.sx", .{i});
+        b.* = try SandboxPath.own(a, "concurrent-build-{d}", .{i});
+    }
+    defer for (srcs ++ bins) |p| p.remove(a, io, repo_root);
+
+    for (srcs, 1..) |s, i| try std.Io.Dir.writeFile(.cwd(), io, .{
+        .sub_path = try s.abs(a, repo_root),
+        .data = try std.fmt.allocPrint(a, "main :: () -> i32 {{ return {d}; }}\n", .{i}),
+    });
+
+    var builds: [2]std.process.Child = undefined;
+    for (&builds, srcs, bins) |*c, s, b| c.* = try std.process.spawn(io, .{
+        .argv = &.{ corpus_paths.sx_exe, "build", s.rel, "-o", b.rel },
+        .cwd = .{ .path = repo_root },
+        .stdin = .ignore,
+        .stdout = .ignore,
+        .stderr = .ignore,
+    });
+    for (&builds) |*c| try std.testing.expectEqual(@as(u32, 0), termCode(try c.wait(io)));
+
+    for (bins, 1..) |b, i| {
+        const ran = try std.process.run(a, io, .{
+            .argv = &.{try b.abs(a, repo_root)},
+            .timeout = deadline(io),
+        });
+        try std.testing.expectEqual(@as(u32, @intCast(i)), termCode(ran.term));
+    }
+}
+
+test "an --emit-obj build leaves only the output and its object in the output directory" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const io = test_io();
+
+    const repo_root = std.fs.path.dirname(corpus_paths.examples_dir) orelse ".";
+    const src = try SandboxPath.own(a, "emit-obj-wasm.sx", .{});
+    const stub_emcc = try SandboxPath.own(a, "emit-obj-wasm-emcc", .{});
+    const out_dir = try SandboxPath.own(a, "emit-obj-wasm", .{});
+    defer for ([_]SandboxPath{ src, stub_emcc, out_dir }) |p| p.remove(a, io, repo_root);
+
+    try std.Io.Dir.writeFile(.cwd(), io, .{
+        .sub_path = try src.abs(a, repo_root),
+        .data = "main :: () -> i32 { return 0; }\n",
+    });
+    try std.Io.Dir.writeFile(.cwd(), io, .{
+        .sub_path = try stub_emcc.abs(a, repo_root),
+        .data = "#!/bin/sh\nwhile [ \"$1\" != -o ]; do shift; done\n: > \"$2\"\n",
+        .flags = .{ .permissions = .executable_file },
+    });
+
+    const out = try std.fmt.allocPrint(a, "{s}/index.html", .{out_dir.rel});
+    const built = try std.process.run(a, io, .{
+        .argv = &.{ corpus_paths.sx_exe, "build", "--target", "wasm", "--emit-obj", "--linker", try stub_emcc.abs(a, repo_root), src.rel, "-o", out },
+        .cwd = .{ .path = repo_root },
+        .timeout = deadline(io),
+    });
+    try std.testing.expectEqual(@as(u32, 0), termCode(built.term));
+
+    var dir = try std.Io.Dir.openDirAbsolute(io, try out_dir.abs(a, repo_root), .{ .iterate = true });
+    defer dir.close(io);
+    var names: std.ArrayList([]const u8) = .empty;
+    var it = dir.iterate();
+    while (try it.next(io)) |entry| try names.append(a, try a.dupe(u8, entry.name));
+    std.mem.sort([]const u8, names.items, {}, struct {
+        fn lt(_: void, x: []const u8, y: []const u8) bool {
+            return std.mem.order(u8, x, y) == .lt;
+        }
+    }.lt);
+    try std.testing.expectEqualDeep(@as([]const []const u8, &.{ "index.html", "index.html.o" }), names.items);
 }
 
 test "object cache: second identical run hits, source edit invalidates" {
