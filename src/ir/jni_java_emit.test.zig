@@ -146,13 +146,15 @@ test "declaration-only methods are skipped" {
         .return_type = null,
         .body = body,
     } };
-    const decl_only: ast.RuntimeClassMember = .{ .method = .{
-        .name = "finish",
-        .params = &.{self_ty},
-        .param_names = &.{"self"},
-        .return_type = null,
-        .body = null, // sx-side just *calls* this; Java's NativeActivity.finish() provides it
-    } };
+    const decl_only: ast.RuntimeClassMember = .{
+        .method = .{
+            .name = "finish",
+            .params = &.{self_ty},
+            .param_names = &.{"self"},
+            .return_type = null,
+            .body = null, // sx-side just *calls* this; Java's NativeActivity.finish() provides it
+        },
+    };
 
     const fcd: ast.RuntimeClassDecl = .{
         .name = "Sx",

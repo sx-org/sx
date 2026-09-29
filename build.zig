@@ -412,6 +412,10 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
     test_step.dependOn(&imports_linux_check.step);
+    test_step.dependOn(&b.addFmt(.{
+        .paths = &.{ "build.zig", "build.zig.zon", "bench", "src", "tools" },
+        .check = true,
+    }).step);
 
     // The comptime-evaluation suspension substrate switches stacks under a full
     // register clobber, so its correctness is a CODEGEN property: a Debug build
