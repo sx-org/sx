@@ -2817,18 +2817,31 @@ fn anyRawAuthor(self: *Lowering, name: []const u8) bool {
     return false;
 }
 
+/// A const's value is its declaration's own code: it resolves in the author's
+/// environment and under no generic substitution of the reader's.
 const ConstEnvironmentPin = struct {
     lowering: *Lowering,
     saved: Lowering.LexicalContext,
+    type_bindings: ?std.StringHashMap(TypeId),
+    comptime_value_bindings: ?std.StringHashMap(i64),
 
     pub fn unpin(self: ConstEnvironmentPin) void {
         self.lowering.restoreLexicalContext(self.saved);
+        self.lowering.type_bindings = self.type_bindings;
+        self.lowering.comptime_value_bindings = self.comptime_value_bindings;
     }
 };
 
 pub fn pinConstEnvironment(self: *Lowering, environment: ?@import("../../imports.zig").EnvironmentId) ConstEnvironmentPin {
-    const pin = ConstEnvironmentPin{ .lowering = self, .saved = self.lexicalContext() };
+    const pin = ConstEnvironmentPin{
+        .lowering = self,
+        .saved = self.lexicalContext(),
+        .type_bindings = self.type_bindings,
+        .comptime_value_bindings = self.comptime_value_bindings,
+    };
     if (environment) |env| self.setCurrentEnvironment(env);
+    self.type_bindings = null;
+    self.comptime_value_bindings = null;
     return pin;
 }
 

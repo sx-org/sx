@@ -2502,13 +2502,19 @@ pub const Lowering = struct {
         const authored_default = self.authored_call_defaults.get(node);
         const saved_scope = self.scope;
         const saved_source = self.lexicalContext();
+        const saved_type_bindings = self.type_bindings;
+        const saved_value_bindings = self.comptime_value_bindings;
         if (authored_default) |dflt| {
             self.scope = null;
+            self.type_bindings = null;
+            self.comptime_value_bindings = null;
             self.setCurrentEnvironment(dflt.environment);
             if (node.lexical_block != null) self.setDeclarationContext(node);
         }
         defer if (authored_default != null) {
             self.scope = saved_scope;
+            self.type_bindings = saved_type_bindings;
+            self.comptime_value_bindings = saved_value_bindings;
             self.restoreLexicalContext(saved_source);
         };
         return switch (node.data) {

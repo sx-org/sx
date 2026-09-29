@@ -1,0 +1,22 @@
+// A parameter default, a struct field default and a module const read inside
+// a generic resolve their file's `V`.
+@import "modules/std.sx";
+
+V :: struct { a: i64; b: i64; }
+
+helper :: (n: i64 = @sizeOf(V)) -> i64 { n }
+S :: struct { n: i64 = @sizeOf(V); }
+K :: @sizeOf(V);
+
+g :: ($V: Type) -> void {
+    s := S{};
+    print("{} {} {}\n", helper(), s.n, K);
+}
+
+main :: () -> i32 {
+    g(i64);
+    g(u8);
+    s := S{};
+    print("{} {} {}\n", helper(), s.n, K);
+    0
+}

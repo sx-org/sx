@@ -1093,12 +1093,13 @@ pub fn buildDefaultValue(self: *Lowering, ty: TypeId) Ref {
     if (info != .@"struct") return self.zeroValue(ty);
     const field_defaults = self.struct_defaults_by_tid.get(ty) orelse return self.zeroValue(ty);
     const fields = info.@"struct".fields;
+    const bindings = self.struct_instance_bindings.get(self.module.types.getString(info.@"struct".name));
     var field_vals = std.ArrayList(Ref).empty;
     defer field_vals.deinit(self.alloc);
     for (fields, 0..) |f, i| {
         if (i < field_defaults.len) {
             if (field_defaults[i]) |default_expr| {
-                field_vals.append(self.alloc, self.lowerCoercedDefault(default_expr, f.ty)) catch unreachable;
+                field_vals.append(self.alloc, self.lowerDefaultWithBindings(default_expr, f.ty, bindings)) catch unreachable;
             } else {
                 field_vals.append(self.alloc, self.zeroValue(f.ty)) catch unreachable;
             }
@@ -1193,27 +1194,27 @@ pub fn lowerCoercedDefault(self: *Lowering, default_expr: *const Node, field_ty:
     return self.coerceToType(raw, self.builder.getRefType(raw), field_ty);
 }
 
-/// Lower a struct field's default expression with an OPTIONAL generic-instance
-/// type-binding context installed. When `bindings` is non-null
-/// (the field belongs to a generic struct instance), `self.type_bindings` is
-/// temporarily set to it so a default that references a type param — e.g.
-/// `sz: i64 = @sizeOf(T)` — monomorphizes to THIS instantiation's concrete
-/// arg before delegating to `lowerCoercedDefault`. `bindings` is non-null for
-/// any generic instance — spelled directly (`Box(i64)`) or through an alias
-/// (`BI :: Box(i64)`; the alias name carries mirrored bindings) — whether or
-/// not its defaults actually reference a param. It is null exactly for a
-/// non-generic struct, where this is `lowerCoercedDefault` verbatim — no
-/// ambient binding change.
+/// Lower a struct field's default expression under the struct's own
+/// substitution, never the ambient one: `bindings` is the generic instance's
+/// type bindings — spelled directly (`Box(i64)`) or through an alias
+/// (`BI :: Box(i64)`; the alias name carries mirrored bindings) — so a default
+/// that references a type param, e.g. `sz: i64 = @sizeOf(T)`, monomorphizes to
+/// THIS instantiation's concrete arg. It is null exactly for a non-generic
+/// struct, whose defaults lower under no substitution at all.
 pub fn lowerDefaultWithBindings(
     self: *Lowering,
     default_expr: *const Node,
     field_ty: TypeId,
     bindings: ?std.StringHashMap(TypeId),
 ) Ref {
-    const b = bindings orelse return self.lowerCoercedDefault(default_expr, field_ty);
     const saved_tb = self.type_bindings;
-    self.type_bindings = b;
-    defer self.type_bindings = saved_tb;
+    const saved_vb = self.comptime_value_bindings;
+    self.type_bindings = bindings;
+    self.comptime_value_bindings = null;
+    defer {
+        self.type_bindings = saved_tb;
+        self.comptime_value_bindings = saved_vb;
+    }
     return self.lowerCoercedDefault(default_expr, field_ty);
 }
 
