@@ -101,7 +101,8 @@ fn writeJsonValue(buf: *std.ArrayList(u8), allocator: std.mem.Allocator, value: 
 
 /// Build the initialize result JSON.
 pub fn initializeResultJson(allocator: std.mem.Allocator) ![]const u8 {
-    return std.fmt.allocPrint(allocator,
+    return std.fmt.allocPrint(
+        allocator,
         "{{\"capabilities\":{{\"textDocumentSync\":{{\"openClose\":true,\"change\":1,\"save\":true}},\"definitionProvider\":true,\"referencesProvider\":true,\"hoverProvider\":true,\"documentSymbolProvider\":true," ++
             "\"completionProvider\":{{\"triggerCharacters\":[\".\"]}}," ++
             "\"signatureHelpProvider\":{{\"triggerCharacters\":[\"(\",\",\"]}}," ++
@@ -180,12 +181,13 @@ pub fn documentSymbolsJson(allocator: std.mem.Allocator, symbols: []const Docume
     for (symbols, 0..) |sym, idx| {
         if (idx > 0) try buf.append(allocator, ',');
         const name_escaped = try jsonString(allocator, sym.name);
-        const item = try std.fmt.allocPrint(allocator,
+        const item = try std.fmt.allocPrint(
+            allocator,
             "{{\"name\":{s},\"kind\":{d},\"range\":{{\"start\":{{\"line\":{d},\"character\":{d}}},\"end\":{{\"line\":{d},\"character\":{d}}}}},\"selectionRange\":{{\"start\":{{\"line\":{d},\"character\":{d}}},\"end\":{{\"line\":{d},\"character\":{d}}}}}}}",
             .{
-                name_escaped,                                          sym.kind,
-                sym.range.start.line,      sym.range.start.character,
-                sym.range.end.line,        sym.range.end.character,
+                name_escaped,                   sym.kind,
+                sym.range.start.line,           sym.range.start.character,
+                sym.range.end.line,             sym.range.end.character,
                 sym.selection_range.start.line, sym.selection_range.start.character,
                 sym.selection_range.end.line,   sym.selection_range.end.character,
             },
@@ -223,13 +225,15 @@ fn completionItemsJsonInner(allocator: std.mem.Allocator, items: []const Complet
         const label_escaped = try jsonString(allocator, item.label);
         const detail_escaped = if (item.detail) |d| try jsonString(allocator, d) else null;
         if (detail_escaped) |de| {
-            const json = try std.fmt.allocPrint(allocator,
+            const json = try std.fmt.allocPrint(
+                allocator,
                 "{{\"label\":{s},\"kind\":{d},\"detail\":{s}}}",
                 .{ label_escaped, item.kind, de },
             );
             try buf.appendSlice(allocator, json);
         } else {
-            const json = try std.fmt.allocPrint(allocator,
+            const json = try std.fmt.allocPrint(
+                allocator,
                 "{{\"label\":{s},\"kind\":{d}}}",
                 .{ label_escaped, item.kind },
             );
@@ -250,7 +254,8 @@ pub const CompletionItem = struct {
 /// Build a Location JSON response (for go-to-definition).
 pub fn locationJson(allocator: std.mem.Allocator, uri: []const u8, range: Range) ![]const u8 {
     const uri_escaped = try jsonString(allocator, uri);
-    return std.fmt.allocPrint(allocator,
+    return std.fmt.allocPrint(
+        allocator,
         "{{\"uri\":{s},\"range\":{{\"start\":{{\"line\":{d},\"character\":{d}}},\"end\":{{\"line\":{d},\"character\":{d}}}}}}}",
         .{ uri_escaped, range.start.line, range.start.character, range.end.line, range.end.character },
     );
@@ -259,16 +264,26 @@ pub fn locationJson(allocator: std.mem.Allocator, uri: []const u8, range: Range)
 /// Build a LocationLink JSON response (for go-to-definition with origin range).
 pub fn locationLinkJson(allocator: std.mem.Allocator, target_uri: []const u8, target_range: Range, origin_range: Range) ![]const u8 {
     const uri_escaped = try jsonString(allocator, target_uri);
-    return std.fmt.allocPrint(allocator,
+    return std.fmt.allocPrint(
+        allocator,
         "[{{\"originSelectionRange\":{{\"start\":{{\"line\":{d},\"character\":{d}}},\"end\":{{\"line\":{d},\"character\":{d}}}}}," ++
             "\"targetUri\":{s}," ++
             "\"targetRange\":{{\"start\":{{\"line\":{d},\"character\":{d}}},\"end\":{{\"line\":{d},\"character\":{d}}}}}," ++
             "\"targetSelectionRange\":{{\"start\":{{\"line\":{d},\"character\":{d}}},\"end\":{{\"line\":{d},\"character\":{d}}}}}}}]",
         .{
-            origin_range.start.line, origin_range.start.character, origin_range.end.line, origin_range.end.character,
+            origin_range.start.line,
+            origin_range.start.character,
+            origin_range.end.line,
+            origin_range.end.character,
             uri_escaped,
-            target_range.start.line, target_range.start.character, target_range.end.line, target_range.end.character,
-            target_range.start.line, target_range.start.character, target_range.end.line, target_range.end.character,
+            target_range.start.line,
+            target_range.start.character,
+            target_range.end.line,
+            target_range.end.character,
+            target_range.start.line,
+            target_range.start.character,
+            target_range.end.line,
+            target_range.end.character,
         },
     );
 }
@@ -276,7 +291,8 @@ pub fn locationLinkJson(allocator: std.mem.Allocator, target_uri: []const u8, ta
 /// Build a Hover JSON response.
 pub fn hoverJson(allocator: std.mem.Allocator, contents: []const u8) ![]const u8 {
     const escaped = try jsonString(allocator, contents);
-    return std.fmt.allocPrint(allocator,
+    return std.fmt.allocPrint(
+        allocator,
         "{{\"contents\":{{\"kind\":\"markdown\",\"value\":{s}}}}}",
         .{escaped},
     );
@@ -350,7 +366,8 @@ pub fn publishDiagnosticsJson(allocator: std.mem.Allocator, uri: []const u8, dia
         if (idx > 0) try buf.append(allocator, ',');
         const msg_escaped = try jsonString(allocator, d.message);
         const src_escaped = try jsonString(allocator, d.source);
-        const diag_json = try std.fmt.allocPrint(allocator,
+        const diag_json = try std.fmt.allocPrint(
+            allocator,
             "{{\"range\":{{\"start\":{{\"line\":{d},\"character\":{d}}},\"end\":{{\"line\":{d},\"character\":{d}}}}},\"severity\":{d},\"message\":{s},\"source\":{s}}}",
             .{ d.range.start.line, d.range.start.character, d.range.end.line, d.range.end.character, d.severity, msg_escaped, src_escaped },
         );
@@ -377,7 +394,8 @@ pub fn inlayHintsJson(allocator: std.mem.Allocator, hints: []const InlayHint) ![
     for (hints, 0..) |hint, idx| {
         if (idx > 0) try buf.append(allocator, ',');
         const label_escaped = try jsonString(allocator, hint.label);
-        const json = try std.fmt.allocPrint(allocator,
+        const json = try std.fmt.allocPrint(
+            allocator,
             "{{\"position\":{{\"line\":{d},\"character\":{d}}},\"label\":{s},\"kind\":{d},\"paddingLeft\":{s},\"paddingRight\":{s}}}",
             .{ hint.line, hint.character, label_escaped, hint.kind, if (hint.padding_left) "true" else "false", if (hint.padding_right) "true" else "false" },
         );

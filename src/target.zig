@@ -457,7 +457,6 @@ pub fn runJITFromObject(obj_buf: c.LLVMMemoryBufferRef, priority_dylibs: []const
 // fires; programs that opt in via `@onBuild` reach the
 // sx bundler directly.
 
-
 /// Discover the Android NDK root. Honors $ANDROID_NDK_HOME / $ANDROID_NDK_ROOT,
 /// otherwise picks the highest-versioned NDK under $HOME/Library/Android/sdk/ndk
 /// (the SDK Manager default install location on macOS). Caller owns the slice.

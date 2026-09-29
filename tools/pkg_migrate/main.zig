@@ -887,7 +887,7 @@ fn cmdInventory(
             const is_raw = tl.flagsOf(ti).is_raw;
             const line_text = std.mem.trim(u8, idx.lineText(source, p.line), " \t");
             try w.print("{s}:{d}:{d}: {s} [{s}]{s} | {s}\n", .{
-                path,                              p.line, p.col, text, cat.label(),
+                path,                                p.line,    p.col, text, cat.label(),
                 if (is_raw) " (backticked)" else "", line_text,
             });
             per_word[wi] += 1;
