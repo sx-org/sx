@@ -1,8 +1,6 @@
-// The second `.warn` producer: a constraint whose type-arg and method share a
-// name is legal, and the warning tells the reader that `..pack.value`
-// resolves by position. Like every warning it must render on a clean
-// compile. This one carries no span, so it renders as a bare
-// header line with no source excerpt.
+// A constraint whose type-arg and method share a name is legal, and the
+// warning tells the reader that `..pack.value` resolves by position. Like
+// every warning it renders on a clean compile, located at the method's name.
 
 @import "modules/std.sx";
 

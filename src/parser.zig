@@ -1810,6 +1810,7 @@ pub const Parser = struct {
                 return self.failMemberDeclName("expected method name in the body");
             }
             const method_name = self.tokens.slice(self.tok);
+            const method_name_span: ast.Span = .{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) };
             self.advance();
             try self.expect(.colon_colon);
             try self.expect(.l_paren);
@@ -1900,6 +1901,7 @@ pub const Parser = struct {
 
             try methods.append(self.allocator, .{
                 .name = method_name,
+                .name_span = method_name_span,
                 .params = all_param_types[1..],
                 .param_names = all_param_names[1..],
                 .param_name_spans = all_param_name_spans[1..],

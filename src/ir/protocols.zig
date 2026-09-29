@@ -527,7 +527,7 @@ pub const ProtocolResolver = struct {
             for (pd.methods) |m| {
                 if (std.mem.eql(u8, tp.name, m.name)) {
                     if (self.l.diagnostics) |diags| {
-                        diags.addFmt(.warn, null, "'{s}' declares type-arg and method both named '{s}'; `..pack.{s}` resolves by position (type-arg in type position, method in value position)", .{ pd.name, tp.name, tp.name });
+                        diags.addFmt(.warn, m.name_span, "'{s}' declares type-arg and method both named '{s}'; `..pack.{s}` resolves by position (type-arg in type position, method in value position)", .{ pd.name, tp.name, tp.name });
                     }
                 }
             }

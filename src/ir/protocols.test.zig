@@ -15,7 +15,7 @@ const ProtocolResolver = ir_mod.ProtocolResolver;
 
 fn protoMethodReq(name: []const u8) ast.ProtocolMethodDecl {
     // A required (no default body) method, no params, void return.
-    return .{ .name = name, .params = &.{}, .param_names = &.{}, .return_type = null, .default_body = null };
+    return .{ .name = name, .name_span = .{ .start = 0, .end = 0 }, .params = &.{}, .param_names = &.{}, .return_type = null, .default_body = null };
 }
 
 fn mk(alloc: std.mem.Allocator, data: ast.Node.Data) *Node {
@@ -144,6 +144,7 @@ test "protocols: empty impl adoption is order-independent and excludes foreign d
 
     const default_methods = [_]ast.ProtocolMethodDecl{.{
         .name = "draw",
+        .name_span = .{ .start = 0, .end = 0 },
         .params = &.{},
         .param_names = &.{},
         .return_type = null,
