@@ -331,9 +331,10 @@ pub fn build(b: *std.Build) void {
     // binary path at configure time so the tests are CWD-independent; the
     // runner still ENUMERATES the directory contents at runtime, so new
     // examples are covered with no test edit.
+    const library_dir = b.path("library").getPath(b);
     const corpus_opts = b.addOptions();
     corpus_opts.addOption([]const u8, "examples_dir", b.path("examples").getPath(b));
-    corpus_opts.addOption([]const u8, "library_dir", b.path("library").getPath(b));
+    corpus_opts.addOption([]const u8, "library_dir", library_dir);
     // Absolute path to the installed `sx` binary the corpus runner spawns per
     // example. The runner test depends on the install step (below) so this
     // exists — and so the sibling library/ tree the binary loads is in place.
@@ -370,6 +371,7 @@ pub fn build(b: *std.Build) void {
         .root_module = mod,
     });
     const run_mod_tests = b.addRunArtifact(mod_tests);
+    run_mod_tests.setEnvironmentVariable("SX_STDLIB_PATH", library_dir);
     // src/corpus_run.test.zig spawns the installed `sx` binary per example, so
     // the mod test binary must not run until `zig-out/bin/sx` + `zig-out/library`
     // are installed. This is what folds the full example regression suite

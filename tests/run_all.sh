@@ -46,6 +46,7 @@ echo "  -> ok"
 # corpus + the LSP sweep all live in it. no_build_noise.sh runs it and also
 # asserts it stays silent on success.
 run_check "tests + corpus (quiet on success)" ./tests/no_build_noise.sh
+run_check "corpus ignores an ambient stdlib"  ./tests/stdlib_pairing.sh
 run_check "shim compile carries the target"   ./tests/shim_target_flags.sh
 run_check "std file as the entry"             ./tests/std_file_as_entry.sh
 run_check "resolver-target xfail set"         ./tests/resolver-target/run_resolver_target.sh
