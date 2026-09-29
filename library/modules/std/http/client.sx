@@ -19,6 +19,7 @@
 @import "modules/std/mem.sx";
 @import "modules/std/encoding.sx";     // hexValue
 private clib :: @import "modules/std/c.sx";
+private posix :: @import "modules/std/posix.sx";
 private socket :: @import "modules/std/socket.sx";
 @import "modules/std/compress.sx";     // shared codec Error/Progress contract
 
@@ -96,7 +97,7 @@ private openAddr :: (a: *socket.Addr, opts: ClientOpts) -> (ClientConn, !ClientE
             raise .Connect;
         }
     } else {
-        if socket.connectTo(fd, a) != 0 { socket.close(fd); raise .Connect; }
+        if !socket.connectBlocking(fd, a) { socket.close(fd); raise .Connect; }
     }
     if opts.ioTimeoutMs > 0 {
         if !socket.setIoTimeout(fd, opts.ioTimeoutMs) { socket.close(fd); raise .Connect; }
@@ -144,6 +145,7 @@ private connWriteStep :: (c: *ClientConn, buf: [*]u8, len: i64) -> i64 {
         return -1;
     }
     n := socket.write(c.fd, buf, len);
+    while n < 0 and socket.errno() == posix.EINTR { n = socket.write(c.fd, buf, len); }
     if n <= 0 { return -1; }
     return n;
 }
@@ -163,6 +165,7 @@ private connReadStep :: (c: *ClientConn, buf: [*]u8, cap: i64) -> i64 {
         return -1;   // Want (io timeout on a blocking fd) or Fatal
     }
     n := socket.read(c.fd, buf, cap);
+    while n < 0 and socket.errno() == posix.EINTR { n = socket.read(c.fd, buf, cap); }
     if n < 0 {
         // READ_RESET, not a generic fault: an idle keep-alive conn the peer
         // has closed answers the request we just wrote with an RST, and the
@@ -200,11 +203,11 @@ ClientResponse :: struct {
 // Open a blocking TCP connection to ip:port. `ip` is a packed IPv4 address in
 // the order socket.sockaddrIn wants (e.g. 0x0100007F for 127.0.0.1).
 private dial :: (ip: u32, port: i64) -> (i32, !ClientErr) {
-    fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
-    if fd < 0 { raise .Connect; }
-    addr := socket.sockaddrIn(port, ip);
-    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); raise .Connect; }
-    return fd;
+    sa := socket.sockaddrIn(port, ip);
+    a : socket.Addr = .{ len = 16 };
+    socket.copyBytes(*a.buf[0], @reinterpret([*]u8, *sa), 16);
+    c := try openAddr(*a, .{});
+    return c.fd;
 }
 
 // Send one HTTP/1.1 request on `fd`. `extraHeaders` is preformatted
@@ -228,9 +231,10 @@ private send :: (fd: i32, method: string, path: string, host: string, extraHeade
     req = concat(req, "\r\n");
     if body.len > 0 { req = concat(req, body); }
 
+    conn : ClientConn = .{ fd = fd };
     sent : i64 = 0;
     while sent < req.len {
-        n := socket.write(fd, *req.ptr[sent], (req.len - sent));
+        n := connWriteStep(*conn, *req.ptr[sent], (req.len - sent));
         if n <= 0 { raise .Send; }
         sent += n;
     }
