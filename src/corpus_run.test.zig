@@ -49,12 +49,12 @@ const corpus_paths = @import("corpus_paths");
 // Snapshots are regenerated in-build with `zig build test -Dupdate-goldens`
 // (see the update-mode branch below) — no shell script needed.
 
-/// Per-example wall-clock cap covering compile + run. Compile dominates:
-/// HTTP servers ~1.2s, HTTP clients ~5-6s (almost all LLVM emit of a ~14MB
-/// -O0 image); run is <0.6s. A Debug compiler and the suite's parallel load
-/// both inflate this. 30s is headroom against that variance while still
-/// catching a hang.
-const TIMEOUT_SECS = 30;
+/// Per-example wall-clock cap covering compile + run — a hang backstop, not a
+/// performance gate. A cold compile dominates: the costliest examples (http,
+/// std/zip) take 10-15s on an idle machine with the Debug compiler, and CPU
+/// contention stretches that in proportion (~100s at six busy threads per
+/// core). Their run phases take under a second.
+const TIMEOUT_SECS = 180;
 const MAX_OUTPUT = 16 * 1024 * 1024;
 
 /// An example's RUN phase (post-compile) must fit in 1s.
@@ -295,6 +295,10 @@ fn deadline(io: std.Io) std.Io.Timeout {
         .clock = .awake,
     };
     return .{ .deadline = std.Io.Clock.Timestamp.fromNow(io, dur) };
+}
+
+fn timeoutNote(err: anyerror) []const u8 {
+    return if (err == error.Timeout) std.fmt.comptimePrint(" (>{d}s)", .{TIMEOUT_SECS}) else "";
 }
 
 fn nowNs(io: std.Io) std.Io.Timestamp {
@@ -811,7 +815,7 @@ fn runOne(
             .timeout = deadline(io),
         }) catch |err| {
             out.failure = try std.fmt.allocPrint(results_gpa, "{s}: `sx build --target android` {s}{s}", .{
-                name, @errorName(err), if (err == error.Timeout) " (>10s)" else "",
+                name, @errorName(err), timeoutNote(err),
             });
             return;
         };
@@ -877,7 +881,7 @@ fn runOne(
             .cwd = .{ .path = repo_root },
             .timeout = deadline(io),
         }) catch |err| {
-            out.failure = try std.fmt.allocPrint(results_gpa, "{s}: `sx ir` {s}{s}", .{ name, @errorName(err), if (err == error.Timeout) " (>10s)" else "" });
+            out.failure = try std.fmt.allocPrint(results_gpa, "{s}: `sx ir` {s}{s}", .{ name, @errorName(err), timeoutNote(err) });
             return;
         };
         act_exit = termCode(ir_res.term);
@@ -897,7 +901,7 @@ fn runOne(
             .timeout = deadline(io),
         }) catch |err| {
             out.failure = try std.fmt.allocPrint(results_gpa, "{s}: `sx build` {s}{s}", .{
-                name, @errorName(err), if (err == error.Timeout) " (>10s)" else "",
+                name, @errorName(err), timeoutNote(err),
             });
             return;
         };
@@ -913,7 +917,7 @@ fn runOne(
                 .timeout = deadline(io),
             }) catch |err| {
                 out.failure = try std.fmt.allocPrint(results_gpa, "{s}: exec AOT binary {s}{s}", .{
-                    name, @errorName(err), if (err == error.Timeout) " (>10s)" else "",
+                    name, @errorName(err), timeoutNote(err),
                 });
                 return;
             };
@@ -990,7 +994,7 @@ fn runOne(
             out.failure = try std.fmt.allocPrint(results_gpa, "{s}: `sx run` {s}{s}", .{
                 name,
                 @errorName(err),
-                if (err == error.Timeout) " (>10s)" else "",
+                timeoutNote(err),
             });
             return;
         };
