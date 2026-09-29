@@ -6,12 +6,12 @@
 // program, so the contribution comes back in full and the negative the reader
 // asked is publishable. Waiting is not the answer; it is what precedes one.
 @import "modules/std.sx";
-@import "./1990-protocols-expansion-branch-import-shapes.sx";
+@import "./1990-protocols-expansion-branch-import-impl-set/shapes.sx";
 
 inline if Item is Show { ADMITTED :: 1; } else { ADMITTED :: 0; }
 
 inline if @host.pointerSize == 0 {
-    @import "./1990-protocols-expansion-branch-import-impl.sx";
+    @import "./1990-protocols-expansion-branch-import-impl-set/impl.sx";
 } else {
     NARROW :: 1;
 }

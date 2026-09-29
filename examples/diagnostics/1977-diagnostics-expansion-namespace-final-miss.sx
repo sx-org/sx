@@ -6,7 +6,7 @@
 // named module's scope final, `cfg.ABSENT` in ordinary code is the ordinary
 // namespace diagnostic, at the lookup site.
 @import "modules/std.sx";
-cfg :: @import "./1977-diagnostics-expansion-namespace-final-miss-cfg.sx";
+cfg :: @import "./1977-diagnostics-expansion-namespace-final-miss/cfg.sx";
 
 inline if ABSENT { A :: 1; } else { A :: 0; }
 

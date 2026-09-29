@@ -4,8 +4,8 @@
 // transitively import the impl's defining module.
 //
 // Setup:
-//   - 0410-protocols-impl-visibility-impl.sx declares an `impl Into(Wrap) for i64`.
-//   - 0410-protocols-impl-visibility-user.sx tries `xx 7 : Wrap` but only
+//   - 0410-protocols-impl-visibility/impl.sx declares an `impl Into(Wrap) for i64`.
+//   - 0410-protocols-impl-visibility/user.sx tries `xx 7 : Wrap` but only
 //     imports the shared types — NOT the impl module.
 //   - The xx at the user-file site produces a "no visible xx conversion"
 //     diagnostic rather than falling through to whatever was registered in
@@ -14,7 +14,7 @@
 // The diagnostic is the pinned result.
 
 @import "modules/std.sx";
-@import "./0410-protocols-impl-visibility-impl.sx";
-@import "./0410-protocols-impl-visibility-user.sx";
+@import "./0410-protocols-impl-visibility/impl.sx";
+@import "./0410-protocols-impl-visibility/user.sx";
 
 main :: () -> i32 { runUser() }

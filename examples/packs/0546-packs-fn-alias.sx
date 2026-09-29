@@ -5,7 +5,7 @@
 // -rich.sx authors the fns aliased here and via the namespace).
 @import "modules/std.sx";
 s :: @import "modules/std.sx";
-r :: @import "0546-packs-fn-alias-rich.sx";
+r :: @import "0546-packs-fn-alias/rich.sx";
 
 packSum :: (..$args) -> i64 {
     args[0] + args[1]

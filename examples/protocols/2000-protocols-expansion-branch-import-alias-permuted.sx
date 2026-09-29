@@ -5,12 +5,12 @@
 // it handed the module over. The wait is on a different ledger entry each
 // time, and the answer is the same one.
 @import "modules/std.sx";
-@import "./1999-protocols-expansion-branch-import-alias-kinds.sx";
+@import "./1999-protocols-expansion-branch-import-alias/kinds.sx";
 
 inline if Slot is Mark { ADMITTED :: 1; } else { ADMITTED :: 0; }
 
 inline if @host.pointerSize == 8 {
-    alias :: @import "./1999-protocols-expansion-branch-import-alias-mod.sx";
+    alias :: @import "./1999-protocols-expansion-branch-import-alias/mod.sx";
 } else {
     NARROW :: 1;
 }
