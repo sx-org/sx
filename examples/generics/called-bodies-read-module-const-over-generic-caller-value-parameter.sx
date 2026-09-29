@@ -1,0 +1,20 @@
+// A declared function and a generic instance called from `g($k)` read the
+// file's `k`.
+@import "modules/std.sx";
+
+Shade :: enum { a; b; c; }
+k :: 3;
+
+declared :: () -> i64 { a : [k]u8 = ---; a.len }
+instance :: ($T: Type) -> i64 { a : [k]T = ---; a.len }
+
+g :: ($k: Shade) -> void {
+    print("{} {}\n", declared(), instance(u8));
+}
+
+main :: () -> i32 {
+    g(.a);
+    g(.b);
+    print("{} {}\n", declared(), instance(u8));
+    0
+}

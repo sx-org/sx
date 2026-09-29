@@ -1142,6 +1142,8 @@ pub const Lowering = struct {
         force_block_value: bool,
         context: LexicalContext,
         module_const_frame: ?*const ConstFoldFrame,
+        type_bindings: ?std.StringHashMap(TypeId),
+        comptime_value_bindings: ?std.StringHashMap(i64),
         jni_env_base: usize,
         pack_arg_nodes: ?std.StringHashMap([]const *const Node),
         pack_param_count: ?std.StringHashMap(u32),
@@ -1168,6 +1170,8 @@ pub const Lowering = struct {
                 .force_block_value = l.force_block_value,
                 .context = l.lexicalContext(),
                 .module_const_frame = l.module_const_frame,
+                .type_bindings = l.type_bindings,
+                .comptime_value_bindings = l.comptime_value_bindings,
                 .jni_env_base = l.jni_env_stack_base,
                 .pack_arg_nodes = l.pack_arg_nodes,
                 .pack_param_count = l.pack_param_count,
@@ -1212,10 +1216,21 @@ pub const Lowering = struct {
             return g;
         }
 
+        /// A declared body is lowered once and shared by every caller, so no
+        /// caller's generic substitution reaches it.
+        pub fn enterCached(l: *Lowering) FnBodyReentry {
+            const g = enter(l);
+            l.type_bindings = null;
+            l.comptime_value_bindings = null;
+            return g;
+        }
+
         pub fn restore(g: FnBodyReentry) void {
             const l = g.l;
             l.restoreLexicalContext(g.context);
             l.module_const_frame = g.module_const_frame;
+            l.type_bindings = g.type_bindings;
+            l.comptime_value_bindings = g.comptime_value_bindings;
             l.scope = g.scope;
             l.func_defer_base = g.defer_base;
             l.block_terminated = g.block_terminated;
@@ -1278,6 +1293,8 @@ pub const Lowering = struct {
         fixed_callable_ret: ?TypeId,
         lambda_sig_target: ?lower_closure.CallableSig,
         module_const_frame: ?*const ConstFoldFrame,
+        type_bindings: ?std.StringHashMap(TypeId),
+        comptime_value_bindings: ?std.StringHashMap(i64),
 
         pub fn enter(l: *Lowering) NestedBodyGuard {
             const g = NestedBodyGuard{
@@ -1286,6 +1303,8 @@ pub const Lowering = struct {
                 .fixed_callable_ret = l.fixed_callable_ret,
                 .lambda_sig_target = l.lambda_sig_target,
                 .module_const_frame = l.module_const_frame,
+                .type_bindings = l.type_bindings,
+                .comptime_value_bindings = l.comptime_value_bindings,
                 .narrowed = l.narrowed,
                 .narrowed_refs = l.narrowed_refs,
                 .literal_local_refs = l.literal_local_refs,
@@ -1316,6 +1335,8 @@ pub const Lowering = struct {
         pub fn enterCached(l: *Lowering) NestedBodyGuard {
             const g = enter(l);
             l.module_const_frame = null;
+            l.type_bindings = null;
+            l.comptime_value_bindings = null;
             return g;
         }
 
@@ -1338,6 +1359,8 @@ pub const Lowering = struct {
             g.l.fixed_callable_ret = g.fixed_callable_ret;
             g.l.lambda_sig_target = g.lambda_sig_target;
             g.l.module_const_frame = g.module_const_frame;
+            g.l.type_bindings = g.type_bindings;
+            g.l.comptime_value_bindings = g.comptime_value_bindings;
         }
     };
 

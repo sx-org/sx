@@ -1,0 +1,14 @@
+// A comptime function inlined into a generic reads its file's `V`.
+@import "modules/std.sx";
+
+Shade :: enum { a; b; }
+V :: struct { a: i64; b: i64; }
+
+declared :: ($s: Shade) -> bool { x : Type = V; x == i64 }
+
+g :: ($V: Type) -> bool { declared(.a) }
+
+main :: () -> i32 {
+    print("{} {} {}\n", g(i64), g(u8), declared(.b));
+    0
+}

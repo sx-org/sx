@@ -3785,7 +3785,7 @@ pub fn lowerFunctionBodyInto(self: *Lowering, fd: *const ast.FnDecl, fid: FuncId
         self.current_runtime_class = fcd;
     }
 
-    var reentry = FnBodyReentry.enter(self);
+    var reentry = FnBodyReentry.enterCached(self);
     defer reentry.restore();
 
     const saved_fn_decl = self.current_fn_decl;

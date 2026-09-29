@@ -1432,7 +1432,7 @@ pub fn substituteComptimeNodes(self: *Lowering, node: *const Node, cpn: std.Stri
 /// Lower a call to a function with comptime params by inlining its body.
 /// Comptime params are substituted, `@insert` expressions are evaluated.
 pub fn lowerComptimeCall(self: *Lowering, fd: *const ast.FnDecl, call_node: *const ast.Call) Ref {
-    return lowerComptimeCallArgsMode(self, fd, call_node.args, 0, false, false, call_node.callee.span);
+    return lowerComptimeCallArgsMode(self, fd, call_node.args, 0, false, false, .none, call_node.callee.span);
 }
 
 /// Core of `lowerComptimeCall`, parameterized over the EFFECTIVE call-site arg
@@ -1443,7 +1443,7 @@ pub fn lowerComptimeCall(self: *Lowering, fd: *const ast.FnDecl, call_node: *con
 /// (e.g. `type_bindings` for a generic struct's `T`) before invoking this — the
 /// body lowers with whatever bindings are active.
 pub fn lowerComptimeCallArgs(self: *Lowering, fd: *const ast.FnDecl, call_args: []const *Node) Ref {
-    return lowerComptimeCallArgsMode(self, fd, call_args, 0, false, false, fd.body.span);
+    return lowerComptimeCallArgsMode(self, fd, call_args, 0, false, false, .installed, fd.body.span);
 }
 
 /// Inline a selected comptime METHOD with a hygienic call frame. `call_args`
@@ -1463,7 +1463,7 @@ pub fn lowerComptimeMethodCallArgs(
     first_arg_is_receiver: bool,
     call_span: ast.Span,
 ) Ref {
-    return lowerComptimeCallArgsMode(self, fd, call_args, 0, true, first_arg_is_receiver, call_span);
+    return lowerComptimeCallArgsMode(self, fd, call_args, 0, true, first_arg_is_receiver, .installed, call_span);
 }
 
 /// Generalization of `lowerComptimeCallArgs` that skips the FIRST `skip_params`
@@ -1471,11 +1471,19 @@ pub fn lowerComptimeMethodCallArgs(
 /// invoking (the generic-struct-method path binds `self` via the normal
 /// receiver-fixup so a `self: *Box(T)` pointer param is correct, then routes the
 /// method's `$o`/comptime params through here). `call_args` corresponds to
-/// `fd.params[skip_params..]`. With `skip_params == 0` this is the ordinary
-/// free-call inline.
+/// `fd.params[skip_params..]`. With `skip_params == 0` this is
+/// `lowerComptimeCallArgs`.
 pub fn lowerComptimeCallArgsSkip(self: *Lowering, fd: *const ast.FnDecl, call_args: []const *Node, skip_params: usize) Ref {
-    return lowerComptimeCallArgsMode(self, fd, call_args, skip_params, false, false, fd.body.span);
+    return lowerComptimeCallArgsMode(self, fd, call_args, skip_params, false, false, .installed, fd.body.span);
 }
+
+/// The type substitution an inlined comptime body lowers under.
+const BodyBindings = enum {
+    /// The entry installed the callee's own bindings around the call.
+    installed,
+    /// A free comptime function binds no type parameter of its own.
+    none,
+};
 
 const StagedRuntimeArg = struct {
     name: []const u8,
@@ -1675,6 +1683,7 @@ fn lowerComptimeCallArgsMode(
     skip_params: usize,
     isolate_callee: bool,
     first_arg_is_receiver: bool,
+    body_bindings: BodyBindings,
     call_span: ast.Span,
 ) Ref {
     if (checkComptimeCallArity(self, fd, call_args.len, skip_params, first_arg_is_receiver, call_span))
@@ -1877,6 +1886,9 @@ fn lowerComptimeCallArgsMode(
     const saved_source = self.lexicalContext();
     defer self.restoreLexicalContext(saved_source);
     self.setFunctionContext(fd);
+    const saved_type_bindings = self.type_bindings;
+    defer self.type_bindings = saved_type_bindings;
+    if (body_bindings == .none) self.type_bindings = null;
 
     // An inlined comptime body is still a function boundary for cleanup. Its
     // explicit `return` may emit defers declared inside the body, but must not
