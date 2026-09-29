@@ -1154,6 +1154,7 @@ pub const CImportDecl = struct {
 
 pub const ProtocolMethodDecl = struct {
     name: []const u8,
+    name_span: Span,
     params: []const *Node, // type_expr nodes for parameter types (excluding implicit self)
     param_names: []const []const u8, // parameter names (excluding implicit self)
     param_name_spans: []const Span = &.{}, // one per `param_names` entry; empty for synthesized methods

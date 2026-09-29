@@ -299,8 +299,8 @@ test "plan: protocol dispatch selects method index + prepends receiver" {
 
     // Drawable :: constraint { measure :: () -> i64; draw :: () -> bool; }
     const methods = [_]ast.ProtocolMethodDecl{
-        .{ .name = "measure", .params = &.{}, .param_names = &.{}, .return_type = typeExpr(alloc, "i64"), .default_body = null },
-        .{ .name = "draw", .params = &.{}, .param_names = &.{}, .return_type = typeExpr(alloc, "bool"), .default_body = null },
+        .{ .name = "measure", .name_span = .{ .start = 0, .end = 0 }, .params = &.{}, .param_names = &.{}, .return_type = typeExpr(alloc, "i64"), .default_body = null },
+        .{ .name = "draw", .name_span = .{ .start = 0, .end = 0 }, .params = &.{}, .param_names = &.{}, .return_type = typeExpr(alloc, "bool"), .default_body = null },
     };
     const pd = ast.ProtocolDecl{ .name = "Drawable", .methods = &methods };
     l.registerProtocolDecl(&pd);

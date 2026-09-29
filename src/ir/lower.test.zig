@@ -906,7 +906,7 @@ fn typeKeyword(alloc: std.mem.Allocator, name: []const u8) *Node {
 }
 
 fn protoMethod(name: []const u8) ast.ProtocolMethodDecl {
-    return .{ .name = name, .params = &.{}, .param_names = &.{}, .return_type = null, .default_body = null };
+    return .{ .name = name, .name_span = .{ .start = 0, .end = 0 }, .params = &.{}, .param_names = &.{}, .return_type = null, .default_body = null };
 }
 
 test "pack projection: type-arg vs method namespace lookups" {
@@ -1145,9 +1145,10 @@ test "protocols: registerProtocolDecl builds the dispatch method table" {
 
     // Shape :: constraint { area :: () -> f64; scaled :: (factor: f64) -> Self; }
     const methods = [_]ast.ProtocolMethodDecl{
-        .{ .name = "area", .params = &.{}, .param_names = &.{}, .return_type = typeKeyword(alloc, "f64"), .default_body = null },
+        .{ .name = "area", .name_span = .{ .start = 0, .end = 0 }, .params = &.{}, .param_names = &.{}, .return_type = typeKeyword(alloc, "f64"), .default_body = null },
         .{
             .name = "scaled",
+            .name_span = .{ .start = 0, .end = 0 },
             .params = &[_]*Node{typeKeyword(alloc, "f64")},
             .param_names = &[_][]const u8{"factor"},
             .return_type = typeKeyword(alloc, "Self"),

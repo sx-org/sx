@@ -15,7 +15,7 @@ const Plan = CoercionResolver.CoercionPlan;
 const XXPlan = CoercionResolver.XXPlan;
 
 fn protoMethodReq(name: []const u8) ast.ProtocolMethodDecl {
-    return .{ .name = name, .params = &.{}, .param_names = &.{}, .return_type = null, .default_body = null };
+    return .{ .name = name, .name_span = .{ .start = 0, .end = 0 }, .params = &.{}, .param_names = &.{}, .return_type = null, .default_body = null };
 }
 
 test "conversions: classify covers the built-in coercion ladder" {
