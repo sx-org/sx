@@ -2417,7 +2417,16 @@ pub const Parser = struct {
 
         if (protocol_type_args.items.len > 0 or protocol_fn_type != null) {
             // Parameterised protocol or function-type head — source is a
-            // general TypeExpr.
+            // general TypeExpr that mentions the arguments' binders bare
+            // (`Buffer(T)` after `Series($T)`).
+            var binder_names = std.ArrayList([]const u8).empty;
+            try binder_names.appendSlice(self.allocator, self.struct_type_params);
+            for (protocol_type_args.items) |arg| {
+                if (arg.data == .type_expr and arg.data.type_expr.is_generic) try binder_names.append(self.allocator, arg.data.type_expr.name);
+            }
+            const saved_struct_type_params = self.struct_type_params;
+            self.struct_type_params = binder_names.items;
+            defer self.struct_type_params = saved_struct_type_params;
             target_type_expr = try self.parseTypeExpr();
             // Synthesize a string view of the source for name-only consumers
             // (LSP hover, etc.). The semantic key for the impl map uses
