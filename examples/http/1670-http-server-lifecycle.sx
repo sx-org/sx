@@ -25,8 +25,6 @@
 @import "modules/std/http.sx";
 cstd :: @import "modules/std/c.sx";
 
-PORT :: 18970;
-
 handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     if req.path == "/echo" { resp.body = req.body; return; }
     resp.body = "ok";
@@ -107,11 +105,10 @@ roundtrip :: (srv: *http.Server, fd: i32, reqtext: string, scratch: [*]u8, cap: 
 }
 
 // One server lifetime: init, serve a small GET and a large POST (the
-// big body forces a read-buffer grow), then close. `port` is bumped per
-// round so a lingering TIME_WAIT socket never collides.
-serveOnce :: (port: i64, poolCount: i64, scratch: [*]u8, cap: i64) -> bool {
+// big body forces a read-buffer grow), then close.
+serveOnce :: (poolCount: i64, scratch: [*]u8, cap: i64) -> bool {
     cfg : http.Config = .{
-        port = port,
+        port = 0,
         timeoutRequestMs = 1000,
         timeoutKeepaliveMs = 1000,
         requestCount = 50,
@@ -122,7 +119,7 @@ serveOnce :: (port: i64, poolCount: i64, scratch: [*]u8, cap: i64) -> bool {
     srv, se := http.Server.init(cfg, handler, 0);
     if se { print("init failed (pool={})\n", poolCount); return false; }
 
-    c := dialPort(port);
+    c := dialPort(srv.cfg.port);
     if c < 0 { print("dial failed (pool={})\n", poolCount); srv.close(); return false; }
 
     // small GET
@@ -156,9 +153,9 @@ serveOnce :: (port: i64, poolCount: i64, scratch: [*]u8, cap: i64) -> bool {
 // CONN_HANDLING but no completion has drained, then close. close joins
 // the workers (they finish + queue completions) and must free every
 // in-flight completion's response bytes. Returns true on success.
-serveInflightClose :: (port: i64, n: i64) -> bool {
+serveInflightClose :: (n: i64) -> bool {
     cfg : http.Config = .{
-        port = port,
+        port = 0,
         timeoutRequestMs = 5000,
         timeoutKeepaliveMs = 5000,
         requestCount = 50,
@@ -172,7 +169,7 @@ serveInflightClose :: (port: i64, n: i64) -> bool {
     fds : [16]i32 = ---;
     i : i64 = 0;
     while i < n {
-        fds[i] = dialPort(port);
+        fds[i] = dialPort(srv.cfg.port);
         if fds[i] < 0 { print("inflight dial {} failed\n", i); srv.close(); return false; }
         i += 1;
     }
@@ -215,11 +212,11 @@ main :: () -> i32 {
         r := 0;
         while r < rounds {
             // inline server
-            if !serveOnce(PORT + r * 8, 0, scratch, cap) { return 1; }
+            if !serveOnce(0, scratch, cap) { return 1; }
             // pooled server
-            if !serveOnce(PORT + r * 8 + 2, 2, scratch, cap) { return 1; }
+            if !serveOnce(2, scratch, cap) { return 1; }
             // pooled server closed with requests still in-flight
-            if !serveInflightClose(PORT + r * 8 + 4, 12) { return 1; }
+            if !serveInflightClose(12) { return 1; }
             r += 1;
         }
 

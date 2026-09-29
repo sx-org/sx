@@ -25,9 +25,6 @@
 @import "modules/std/mem.sx";
 @import "modules/std/http.sx";
 
-PORT_A :: 19008;
-PORT_B :: 19009;
-
 route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     resp.body = concat("p:", req.path);
 }
@@ -54,8 +51,8 @@ contains :: (hay: string, needle: string) -> bool {
     return false;
 }
 
-roundtrip :: (srv: *http.Server, port: i64, req: string, buf: [*]u8, cap: i64) -> string {
-    fd := dialPort(port);
+roundtrip :: (srv: *http.Server, req: string, buf: [*]u8, cap: i64) -> string {
+    fd := dialPort(srv.cfg.port);
     if fd < 0 { return ""; }
     socket.write(fd, req.ptr, req.len);
     total : i64 = 0;
@@ -94,12 +91,12 @@ endsWith :: (hay: string, tail: string) -> bool {
     return true;
 }
 
-// One GET on PORT_A; the echoed canonical path is asserted BOTH-ANCHORED:
+// One GET on `srv`; the echoed canonical path is asserted BOTH-ANCHORED:
 // it must start right after the header terminator and run to EOF, so a
 // non-normalized "p:/a/.." can never satisfy a "p:/" expectation.
 expectPath :: (srv: *http.Server, target: string, want: string, label: string, buf: [*]u8, cap: i64, failed: *i64) {
     req := concat("GET ", concat(target, " HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n"));
-    r := roundtrip(srv, PORT_A, req, buf, cap);
+    r := roundtrip(srv, req, buf, cap);
     check(r, "HTTP/1.1 200 OK", label, failed);
     if !endsWith(r, concat("\r\n\r\np:", want)) {
         print("{}: body is not exactly \"p:{}\"\n", label, want);
@@ -109,7 +106,7 @@ expectPath :: (srv: *http.Server, target: string, want: string, label: string, b
 
 expect400 :: (srv: *http.Server, target: string, label: string, buf: [*]u8, cap: i64, failed: *i64) {
     req := concat("GET ", concat(target, " HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n"));
-    r := roundtrip(srv, PORT_A, req, buf, cap);
+    r := roundtrip(srv, req, buf, cap);
     check(r, "HTTP/1.1 400", label, failed);
 }
 
@@ -122,7 +119,7 @@ main :: () -> i32 {
         cap : i64 = 16384;
         rbuf : [*]u8 = context.allocator.allocBytes(cap);
 
-        cfg : http.Config = .{ port = PORT_A, maxConn = 4, requestCount = 10 };
+        cfg : http.Config = .{ port = 0, maxConn = 4, requestCount = 10 };
         srv, se := http.Server.init(cfg, route, 0);
         if se { print("init failed\n"); return 1; }
 
@@ -169,10 +166,10 @@ main :: () -> i32 {
 
         // (l) pooled: a path that SHRINKS (decode + pop) must rebuild
         // byte-exact over the job-owned copy
-        cfgp : http.Config = .{ port = PORT_B, maxConn = 4, requestCount = 10, threadPoolCount = 1 };
+        cfgp : http.Config = .{ port = 0, maxConn = 4, requestCount = 10, threadPoolCount = 1 };
         srvp, spe := http.Server.init(cfgp, route, 0);
         if spe { print("pool init failed\n"); return 1; }
-        r := roundtrip(*srvp, PORT_B, "GET /x/%41/../y?k=%20 HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        r := roundtrip(*srvp, "GET /x/%41/../y?k=%20 HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
         check(r, "HTTP/1.1 200 OK", "pooled status", *failed);
         // end-anchored: the rebuilt path carries the SHRUNKEN length, so
         // the echo has no stale tail after it
@@ -184,7 +181,7 @@ main :: () -> i32 {
         // (m) absolute-form + encoded/dot path: pathOff points into the
         // MIDDLE of the target; the rewrite must leave the authority (and
         // everything after the target) intact
-        r = roundtrip(*srvp, PORT_B, "GET http://h:8080/a%20b/./z/../c?q=%2F HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        r = roundtrip(*srvp, "GET http://h:8080/a%20b/./z/../c?q=%2F HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
         check(r, "HTTP/1.1 200 OK", "absolute-form status", *failed);
         if !endsWith(r, "\r\n\r\np:/a b/c?q=%2F") {
             print("absolute-form canonical path: body mismatch\n");

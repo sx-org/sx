@@ -1,8 +1,6 @@
 @import "modules/std.sx";
 @import "modules/std/http.sx";
 
-PORT :: 18980;
-
 // ── route handlers ───────────────────────────────────────────────────
 
 hRoot :: (rc: *http.RouteCtx) {
@@ -139,7 +137,7 @@ runSuite :: (scratch: [*]u8, cap: i64) -> bool {
     router.post("/echojson", hEchojson);
 
     cfg : http.Config = .{
-        port = PORT,
+        port = 0,
         timeoutRequestMs = 1000,
         timeoutKeepaliveMs = 1000,
         requestCount = 100,
@@ -148,7 +146,7 @@ runSuite :: (scratch: [*]u8, cap: i64) -> bool {
     srv, se := http.Server.init(cfg, http.dispatch, @reinterpret(usize, *router));
     if se { print("server init failed\n"); return false; }
 
-    c := dialPort(PORT);
+    c := dialPort(srv.cfg.port);
     if c < 0 { print("dial failed\n"); srv.close(); return false; }
 
     // 1. GET / and GET /hello → distinct 200s

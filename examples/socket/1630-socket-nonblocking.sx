@@ -5,8 +5,6 @@
 // backlog, a connection after a loopback connect).
 @import "modules/std.sx";
 
-PORT :: 18931;
-
 main :: () -> i32 {
     // ── socketpair: read/write algebra ────────────────────────────────
     pair : [2]i32 = ---;
@@ -54,9 +52,12 @@ main :: () -> i32 {
     socket.setsockopt(lfd, socket.SOL_SOCKET, socket.SO_REUSEADDR, *one, 4);
     // Per-OS sockaddrIn — the constructor hides the darwin
     // sinLen / linux layout split; addr is 127.0.0.1 in network order.
-    addr := socket.sockaddrIn(PORT, 0x0100007F);
+    addr := socket.sockaddrIn(0, 0x0100007F);
     if socket.bind(lfd, *addr, 16) != 0 { print("bind failed\n"); return 1; }
     if socket.listen(lfd, 4) != 0 { print("listen failed\n"); return 1; }
+    port := socket.localPort(lfd);
+    if port == null { print("getsockname failed\n"); return 1; }
+    addr = socket.sockaddrIn(port, 0x0100007F);
     if !socket.setNonblocking(lfd) { print("listener setNonblocking failed\n"); return 1; }
 
     afd, ae := socket.acceptNb(lfd);

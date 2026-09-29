@@ -23,7 +23,6 @@
 @import "modules/std.sx";
 @import "modules/std/http.sx";
 
-PORT :: 18993;
 BODY_LEN :: 8388608;    // 8 MB — beyond send-buffer autotune caps on both OSes
                         // (the client's receive window is clamped in dialPort,
                         // so the kernel cannot swallow the body: the server
@@ -72,7 +71,7 @@ main :: () -> i32 {
         rbuf : [*]u8 = context.allocator.allocBytes(cap);
 
         cfg : http.Config = .{
-            port = PORT,
+            port = 0,
             readBufCap = 8192,        // small: the flood crosses it fast
             timeoutRequestMs = 10000,
             timeoutKeepaliveMs = 10000,
@@ -82,7 +81,7 @@ main :: () -> i32 {
         srv, se := http.Server.init(cfg, route, 0);
         if se { print("init failed\n"); return 1; }
 
-        ca := dialPort(PORT);
+        ca := dialPort(srv.cfg.port);
         if ca < 0 { print("dial failed\n"); srv.close(); return 1; }
 
         req := "GET /big HTTP/1.1\r\nHost: t\r\n\r\n";

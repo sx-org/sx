@@ -14,8 +14,6 @@
 socket :: @import "modules/std/socket.sx";
 ClientResponse :: http.ClientResponse;
 
-PORT_INLINE :: 19119;
-PORT_POOL :: 19120;
 BODY_LEN :: 200000;
 FIXED_LEN :: 65536;
 TGS_JSON :: "{\"v\":\"5.7.4\",\"fr\":60,\"ip\":0,\"op\":120,\"layers\":[]}";
@@ -263,9 +261,9 @@ faultedStreamRejected :: (port: i64, path: string, headers: string,
     re == .Recv
 }
 
-runServerCases :: (app: *App, poolCount: i64, port: i64) -> bool {
+runServerCases :: (app: *App, poolCount: i64) -> bool {
     cfg : http.Config = .{
-        port = port,
+        port = 0,
         maxConn = 16,
         timeoutRequestMs = 5000,
         timeoutKeepaliveMs = 5000,
@@ -276,6 +274,7 @@ runServerCases :: (app: *App, poolCount: i64, port: i64) -> bool {
     };
     srv, se := http.Server.init(cfg, handler, @reinterpret(usize, app));
     if se { return false; }
+    port := srv.cfg.port;
     t, te := thread.Thread.spawn(serverEntry, *srv);
     if te { srv.close(); return false; }
 
@@ -506,8 +505,8 @@ main :: () -> i32 {
         bodyPacked := gzip.encode(body) catch { context.allocator.deallocBytes(raw); return 2; };
         app : App = .{ body = body, packed = bodyPacked };
 
-        ok := runServerCases(*app, 0, PORT_INLINE);
-        if ok { ok = runServerCases(*app, 2, PORT_POOL); }
+        ok := runServerCases(*app, 0);
+        if ok { ok = runServerCases(*app, 2); }
 
         if ok {
             ok = malformedResponseFails(

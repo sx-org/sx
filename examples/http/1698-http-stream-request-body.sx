@@ -32,7 +32,6 @@
 @import "modules/std.sx";
 @import "modules/std/http.sx";
 
-PORT :: 19013;
 CL_BODY_LEN :: 200000;   // cases 1 + 3
 CH1 :: 50000;            // case 2 chunk sizes
 CH2 :: 100;
@@ -199,7 +198,7 @@ main :: () -> i32 {
         rbuf : [*]u8 = context.allocator.allocBytes(cap);
 
         cfg : http.Config = .{
-            port = PORT,
+            port = 0,
             timeoutRequestMs = 5000,
             timeoutKeepaliveMs = 5000,
             requestCount = 50,
@@ -224,7 +223,7 @@ main :: () -> i32 {
         }
         bodyS := string{ ptr = body, len = CL_BODY_LEN };
 
-        c1 := dialPort(PORT);
+        c1 := dialPort(srv.cfg.port);
         if c1 < 0 { print("dial c1 failed\n"); srv.close(); return 1; }
         sendAll(*srv, c1, "POST /sum HTTP/1.1\r\nHost: t\r\nContent-Length: 200000\r\n\r\n");
         // three slices so body bytes straddle read cycles
@@ -266,7 +265,7 @@ main :: () -> i32 {
         socket.close(c1);
 
         // ── case 3: backpressure — worker sleeps, channel fills, park+wake ──
-        c3 := dialPort(PORT);
+        c3 := dialPort(srv.cfg.port);
         if c3 < 0 { print("dial c3 failed\n"); srv.close(); return 1; }
         sendAll(*srv, c3, "POST /slowsum HTTP/1.1\r\nHost: t\r\nContent-Length: 200000\r\n\r\n");
         sendAll(*srv, c3, bodyS);
@@ -278,7 +277,7 @@ main :: () -> i32 {
         socket.close(c3);
 
         // ── case 4: early response without draining → 413 + close ────
-        c4 := dialPort(PORT);
+        c4 := dialPort(srv.cfg.port);
         if c4 < 0 { print("dial c4 failed\n"); srv.close(); return 1; }
         sendAll(*srv, c4, "POST /reject HTTP/1.1\r\nHost: t\r\nContent-Length: 100000\r\n\r\n");
         sendAll(*srv, c4, string{ ptr = body, len = 8192 });   // partial body only
@@ -293,7 +292,7 @@ main :: () -> i32 {
         // line ends at its FIRST CR, which must be CRLF. The valid first
         // chunk's 3 bytes are delivered before the abort; the reader then
         // gets -1, and the worker's response ships with Connection: close.
-        c4b := dialPort(PORT);
+        c4b := dialPort(srv.cfg.port);
         if c4b < 0 { print("dial c4b failed\n"); srv.close(); return 1; }
         sendAll(*srv, c4b, "POST /countb HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n");
         sendAll(*srv, c4b, "3\r\nabc\r\n");
@@ -305,7 +304,7 @@ main :: () -> i32 {
         socket.close(c4b);
 
         // ── case 5: client disconnect mid-body → readBody faults ─────
-        c5 := dialPort(PORT);
+        c5 := dialPort(srv.cfg.port);
         if c5 < 0 { print("dial c5 failed\n"); srv.close(); return 1; }
         sendAll(*srv, c5, "POST /count HTTP/1.1\r\nHost: t\r\nContent-Length: 100000\r\n\r\n");
         sendAll(*srv, c5, string{ ptr = body, len = COUNT_SENT });
@@ -319,7 +318,7 @@ main :: () -> i32 {
         }
 
         // ── server still healthy ──────────────────────────────────────
-        c6 := dialPort(PORT);
+        c6 := dialPort(srv.cfg.port);
         if c6 < 0 { print("dial c6 failed\n"); srv.close(); return 1; }
         sendAll(*srv, c6, "GET /ping HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n");
         r6 := readResponse(*srv, c6, rbuf, cap);

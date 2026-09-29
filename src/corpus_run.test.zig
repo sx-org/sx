@@ -905,7 +905,7 @@ fn runOne(
         // program's streams are snapshotted. A build failure (e.g. an
         // unresolved exported symbol) surfaces as a non-zero exit with the
         // linker error on stderr.
-        const bin_path = try std.fmt.allocPrint(a, "/tmp/sx_aot_{s}", .{name});
+        const bin_path = try (try SandboxPath.own(a, "aot_{s}", .{name})).abs(a, repo_root);
         const build_res = blk: {
             g_build_mutex.lockUncancelable(io);
             defer g_build_mutex.unlock(io);
@@ -1674,6 +1674,36 @@ fn timedStageRecorded(stderr_raw: []const u8, stage: []const u8) bool {
         if (std.mem.eql(u8, name, stage)) return true;
     }
     return false;
+}
+
+test "an http example passes beside a concurrent run of itself" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const io = test_io();
+
+    const repo_root = std.fs.path.dirname(corpus_paths.examples_dir) orelse ".";
+    const bin = try SandboxPath.own(a, "concurrent-http", .{});
+    const bin_abs = try bin.abs(a, repo_root);
+    defer bin.remove(a, io, repo_root);
+
+    const built = try std.process.run(a, io, .{
+        .argv = &.{ corpus_paths.sx_exe, "build", "examples/http/1633-http-server.sx", "-o", bin_abs },
+        .cwd = .{ .path = repo_root },
+        .timeout = deadline(io),
+    });
+    try std.testing.expectEqual(@as(u32, 0), termCode(built.term));
+
+    var runs: [2]std.process.Child = undefined;
+    for (&runs) |*r| r.* = try std.process.spawn(io, .{
+        .argv = &.{bin_abs},
+        .stdin = .ignore,
+        .stdout = .ignore,
+        .stderr = .ignore,
+    });
+    var terms: [2]std.process.Child.Term = undefined;
+    for (&runs, &terms) |*r, *t| t.* = try r.wait(io);
+    for (terms) |t| try std.testing.expectEqual(@as(u32, 0), termCode(t));
 }
 
 test "object cache: second identical run hits, source edit invalidates" {

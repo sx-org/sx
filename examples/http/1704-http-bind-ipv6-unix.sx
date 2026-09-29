@@ -33,10 +33,6 @@ socket :: @import "modules/std/socket.sx";
 fs     :: @import "modules/std/fs.sx";
 @import "modules/std/http.sx";
 
-PORT_A :: 19019;
-PORT_B :: 19020;
-PORT_C :: 19021;
-PORT_D :: 19022;
 SOCK_PATH :: ".sx-tmp/1704-http.sock";
 
 handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
@@ -87,17 +83,19 @@ roundtrip :: (srv: *http.Server, fd: i32) -> bool {
     return contains(s, "HTTP/1.1 200 OK") and contains(s, "pong");
 }
 
-// Serve one client dialed at `a` on a fresh server built from `cfg`;
+// Serve one client dialed at `host` on a fresh server built from `cfg`;
 // then close the server. 0 ok, else the case-distinct code.
-serveOne :: (cfg: http.Config, a: *socket.Addr, code: i32) -> i32 {
+serveOne :: (cfg: http.Config, host: string, code: i32) -> i32 {
     srv, se := http.Server.init(cfg, handler, 0);
     if se { return code; }
-    fd := dialAddr(a);
-    if fd < 0 { srv.close(); return code + 1; }
+    a, aok := socket.parseAddr(host, srv.cfg.port);
+    if !aok { srv.close(); return code + 1; }
+    fd := dialAddr(*a);
+    if fd < 0 { srv.close(); return code + 2; }
     ok := roundtrip(*srv, fd);
     socket.close(fd);
     srv.close();
-    if !ok { return code + 2; }
+    if !ok { return code + 3; }
     return 0;
 }
 
@@ -114,30 +112,26 @@ main :: () -> i32 {
 
 run :: () -> i32 {
     // ── A. [::1]: v6 serves; v4 loopback is refused ──
-    a6, ok6 := socket.parseAddr("::1", PORT_A);
-    if !ok6 { return 10; }
-    cfgA : http.Config = .{ port = PORT_A, bindAddr = "::1", timeoutRequestMs = 3000, maxConn = 8 };
-    ra := serveOneWithV4Refusal(cfgA, *a6, PORT_A, 11);
+    cfgA : http.Config = .{ port = 0, bindAddr = "::1", timeoutRequestMs = 3000, maxConn = 8 };
+    ra := serveOneWithV4Refusal(cfgA, "::1", 10);
     if ra != 0 { return ra; }
 
     // ── B. 127.0.0.1 ──
-    a4, ok4 := socket.parseAddr("127.0.0.1", PORT_B);
-    if !ok4 { return 20; }
-    cfgB : http.Config = .{ port = PORT_B, bindAddr = "127.0.0.1", timeoutRequestMs = 3000, maxConn = 8 };
-    rb := serveOne(cfgB, *a4, 21);
+    cfgB : http.Config = .{ port = 0, bindAddr = "127.0.0.1", timeoutRequestMs = 3000, maxConn = 8 };
+    rb := serveOne(cfgB, "127.0.0.1", 20);
     if rb != 0 { return rb; }
 
     // ── C. dual-stack "::": BOTH families + resolve("localhost") ──
-    cfgC : http.Config = .{ port = PORT_C, bindAddr = "::", timeoutRequestMs = 3000, maxConn = 8 };
+    cfgC : http.Config = .{ port = 0, bindAddr = "::", timeoutRequestMs = 3000, maxConn = 8 };
     srvC, seC := http.Server.init(cfgC, handler, 0);
     if seC { return 30; }
-    c6, cok6 := socket.parseAddr("::1", PORT_C);
+    c6, cok6 := socket.parseAddr("::1", srvC.cfg.port);
     if !cok6 { srvC.close(); return 31; }
     fd6 := dialAddr(*c6);
     if fd6 < 0 { srvC.close(); return 32; }
     if !roundtrip(*srvC, fd6) { socket.close(fd6); srvC.close(); return 33; }
     socket.close(fd6);
-    c4, cok4 := socket.parseAddr("127.0.0.1", PORT_C);
+    c4, cok4 := socket.parseAddr("127.0.0.1", srvC.cfg.port);
     if !cok4 { srvC.close(); return 34; }
     fd4 := dialAddr(*c4);
     if fd4 < 0 { srvC.close(); return 35; }
@@ -145,7 +139,7 @@ run :: () -> i32 {
     socket.close(fd4);
     // resolve("localhost") → whichever family comes back, the dual-stack
     // listener answers.
-    lh, lok := socket.resolve("localhost", PORT_C);
+    lh, lok := socket.resolve("localhost", srvC.cfg.port);
     if !lok { srvC.close(); return 37; }
     fdl := dialAddr(*lh);
     if fdl < 0 { srvC.close(); return 38; }
@@ -154,10 +148,8 @@ run :: () -> i32 {
     srvC.close();
 
     // ── D. "::" with ipv6Only=true: v6 serves, v4 refused ──
-    d6, dok6 := socket.parseAddr("::1", PORT_D);
-    if !dok6 { return 40; }
-    cfgD : http.Config = .{ port = PORT_D, bindAddr = "::", ipv6Only = true, timeoutRequestMs = 3000, maxConn = 8 };
-    rd := serveOneWithV4Refusal(cfgD, *d6, PORT_D, 41);
+    cfgD : http.Config = .{ port = 0, bindAddr = "::", ipv6Only = true, timeoutRequestMs = 3000, maxConn = 8 };
+    rd := serveOneWithV4Refusal(cfgD, "::1", 40);
     if rd != 0 { return rd; }
 
     // ── E. Unix-domain socket: serve + unlink on close ──
@@ -182,7 +174,7 @@ run :: () -> i32 {
     cfgF2 : http.Config = .{ unixPath = SOCK_PATH, bindAddr = "127.0.0.1" };
     _, ef2 := http.Server.init(cfgF2, handler, 0);
     if ef2 != .Config { return 61; }
-    cfgF3 : http.Config = .{ port = PORT_B, bindAddr = "not-an-ip" };
+    cfgF3 : http.Config = .{ port = 0, bindAddr = "not-an-ip" };
     _, ef3 := http.Server.init(cfgF3, handler, 0);
     if ef3 != .Bind { return 62; }
     // an out-of-range port must be `HttpErr.Bind` — not a
@@ -194,25 +186,27 @@ run :: () -> i32 {
     return 0;
 }
 
-// A server that must SERVE `a` (v6) and REFUSE a plain v4 loopback
+// A server that must SERVE `host` (v6) and REFUSE a plain v4 loopback
 // connect on the same port — proves the bound family. `code` is this
 // case's error base.
-serveOneWithV4Refusal :: (cfg: http.Config, a: *socket.Addr, port: i64, code: i32) -> i32 {
+serveOneWithV4Refusal :: (cfg: http.Config, host: string, code: i32) -> i32 {
     srv, se := http.Server.init(cfg, handler, 0);
     if se { return code; }
-    fd := dialAddr(a);
-    if fd < 0 { srv.close(); return code + 1; }
+    a, aok := socket.parseAddr(host, srv.cfg.port);
+    if !aok { srv.close(); return code + 1; }
+    fd := dialAddr(*a);
+    if fd < 0 { srv.close(); return code + 2; }
     ok := roundtrip(*srv, fd);
     socket.close(fd);
-    if !ok { srv.close(); return code + 2; }
+    if !ok { srv.close(); return code + 3; }
     // v4 loopback must be REFUSED (nothing bound on the v4 side).
-    v4, vok := socket.parseAddr("127.0.0.1", port);
-    if !vok { srv.close(); return code + 3; }
+    v4, vok := socket.parseAddr("127.0.0.1", srv.cfg.port);
+    if !vok { srv.close(); return code + 4; }
     fdr := socket.socket(socket.addrFamily(*v4), socket.SOCK_STREAM, 0);
-    if fdr < 0 { srv.close(); return code + 4; }
+    if fdr < 0 { srv.close(); return code + 5; }
     refused := socket.connectTo(fdr, *v4) != 0;
     socket.close(fdr);
     srv.close();
-    if !refused { return code + 5; }
+    if !refused { return code + 6; }
     return 0;
 }

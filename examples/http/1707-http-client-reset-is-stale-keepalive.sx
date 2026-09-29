@@ -17,22 +17,22 @@
 @import "modules/std/http.sx";
 socket :: @import "modules/std/socket.sx";
 
-PORT :: 19030;
-
 main :: () -> i32 {
     // A plain listener — no http.Server: this test never wants the request read.
     lfd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if lfd < 0 { print("listener socket failed\n"); return 1; }
     one : i32 = 1;
     socket.setsockopt(lfd, socket.SOL_SOCKET, socket.SO_REUSEADDR, *one, 4);
-    addr := socket.sockaddrIn(PORT, 0x0100007F);
+    addr := socket.sockaddrIn(0, 0x0100007F);
     if socket.bind(lfd, *addr, 16) != 0 { print("bind failed\n"); return 1; }
     if socket.listen(lfd, 4) != 0 { print("listen failed\n"); return 1; }
+    port := socket.localPort(lfd);
+    if port == null { print("getsockname failed\n"); return 1; }
 
     // Blocking loopback connect completes against the listen queue with no
     // accept yet, so this stays single-threaded.
     opts : http.ClientOpts = .{ connectTimeoutMs = 2000, ioTimeoutMs = 2000 };
-    c, oe := http.Client.open("127.0.0.1", PORT, opts);
+    c, oe := http.Client.open("127.0.0.1", port, opts);
     if oe { print("open failed\n"); return 2; }
 
     afd := socket.accept(lfd, null, null);

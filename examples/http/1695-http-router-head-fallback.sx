@@ -14,8 +14,6 @@
 @import "modules/std.sx";
 @import "modules/std/http.sx";
 
-PORT :: 19010;
-
 hello :: (rc: *http.RouteCtx) {
     rc.resp.body = "hello world";   // 11 bytes
 }
@@ -83,7 +81,7 @@ countOccurrences :: (hay: string, needle: string) -> i64 {
 }
 
 roundtrip :: (srv: *http.Server, req: string, buf: [*]u8, cap: i64) -> string {
-    fd := dialPort(PORT);
+    fd := dialPort(srv.cfg.port);
     if fd < 0 { return ""; }
     socket.write(fd, req.ptr, req.len);
     total : i64 = 0;
@@ -128,7 +126,7 @@ main :: () -> i32 {
         router.route("HEAD", "/hd", hdHead);   // AFTER the GET — must still win
         router.setNotFound(nf);
 
-        cfg : http.Config = .{ port = PORT, maxConn = 4, requestCount = 10 };
+        cfg : http.Config = .{ port = 0, maxConn = 4, requestCount = 10 };
         srv, se := http.Server.init(cfg, http.dispatch, @reinterpret(usize, *router));
         if se { print("init failed\n"); return 1; }
 

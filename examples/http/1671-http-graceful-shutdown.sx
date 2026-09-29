@@ -23,8 +23,6 @@
 @import "modules/std.sx";
 @import "modules/std/http.sx";
 
-PORT :: 18981;
-
 handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     if req.path == "/echo" { resp.body = req.body; return; }
     resp.body = "ok";
@@ -120,7 +118,7 @@ main :: () -> i32 {
         scratch : [*]u8 = context.allocator.allocBytes(cap);
 
         cfg : http.Config = .{
-            port = PORT,
+            port = 0,
             timeoutRequestMs = 2000,
             timeoutKeepaliveMs = 2000,
             requestCount = 50,
@@ -132,10 +130,11 @@ main :: () -> i32 {
         srv, se := http.Server.init(cfg, handler, 0);
         if se { print("server1 init failed\n"); context.allocator.deallocBytes(scratch); rc = 1; }
         else {
+            cfg.port = srv.cfg.port;
             // An IDLE keep-alive connection: complete one request, then
             // leave the socket open (CONN_KEEPALIVE on the server). It
             // must be closed immediately on stop().
-            idle := dialPort(PORT);
+            idle := dialPort(srv.cfg.port);
             if idle < 0 { print("idle dial failed\n"); rc = 1; }
             if rc == 0 {
                 ri := roundtrip(*srv, idle, "GET /hello HTTP/1.1\r\nHost: t\r\n\r\n", scratch, cap);
@@ -148,7 +147,7 @@ main :: () -> i32 {
             // pending (genuinely in-flight, not idle), and stop() must
             // drain it rather than drop it. The body's tail arrives AFTER
             // stop, during the drain.
-            busy := dialPort(PORT);
+            busy := dialPort(srv.cfg.port);
             if rc == 0 and busy < 0 { print("busy dial failed\n"); rc = 1; }
             if rc == 0 {
                 head := "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 5\r\n\r\nho";
@@ -204,7 +203,7 @@ main :: () -> i32 {
             srv2, se2 := http.Server.init(cfg, handler, 0);
             if se2 { print("server2 init failed (port leaked?)\n"); rc = 1; }
             else {
-                c := dialPort(PORT);
+                c := dialPort(srv2.cfg.port);
                 if c < 0 { print("restart dial failed\n"); rc = 1; }
                 else {
                     r := roundtrip(*srv2, c, "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 7\r\n\r\nrestart", scratch, cap);

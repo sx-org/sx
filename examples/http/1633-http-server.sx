@@ -6,8 +6,6 @@
 @import "modules/std.sx";
 @import "modules/std/http.sx";
 
-PORT :: 18933;
-
 handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     if req.path == "/hello" {
         resp.body = concat("hello ", req.method);
@@ -47,10 +45,6 @@ dialPort :: (port: i64) -> i32 {
     if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
     if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
     return fd;
-}
-
-dial :: () -> i32 {
-    return dialPort(PORT);
 }
 
 // True when `buf[0..len]` holds a complete response (headers + body).
@@ -103,7 +97,7 @@ roundtrip :: (srv: *http.Server, fd: i32, reqtext: string, scratch: [*]u8) -> st
 
 main :: () -> i32 {
     cfg : http.Config = .{
-        port = PORT,
+        port = 0,
         timeoutRequestMs = 150,
         timeoutKeepaliveMs = 400,
         requestCount = 3,
@@ -115,7 +109,7 @@ main :: () -> i32 {
     buf : [4096]u8 = ---;
 
     // ── 1. GET, keep-alive default ────────────────────────────────────
-    c1 := dial();
+    c1 := dialPort(srv.cfg.port);
     if c1 < 0 { print("dial failed\n"); return 1; }
     r1 := roundtrip(*srv, c1, "GET /hello HTTP/1.1\r\nHost: t\r\n\r\n", *buf[0]);
     if !contains(r1, "HTTP/1.1 200 OK") { print("case1: bad status\n"); return 1; }
@@ -145,7 +139,7 @@ main :: () -> i32 {
     print("request cap: close + EOF\n");
 
     // ── 4. POST body echo ─────────────────────────────────────────────
-    c2 := dial();
+    c2 := dialPort(srv.cfg.port);
     if c2 < 0 { print("dial2 failed\n"); return 1; }
     r4 := roundtrip(*srv, c2, "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 9\r\n\r\nping-pong", *buf[0]);
     if !contains(r4, "ping-pong") { print("case4: body not echoed\n"); return 1; }
@@ -164,7 +158,7 @@ main :: () -> i32 {
     while f < bigN { payload[f] = 97.(u8) + (f % 26).(u8); f += 1; }
     breq := concat("POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: ", concat(intToString(bigN), "\r\n\r\n"));
     breq = concat(breq, string{ ptr = payload, len = bigN });
-    c2b := dial();
+    c2b := dialPort(srv.cfg.port);
     if c2b < 0 { print("dial2b failed\n"); return 1; }
     bigbuf : [*]u8 = (context.allocator.allocBytes((bigN + 4096))).([*]u8);
     socket.write(c2b, breq.ptr, breq.len);
@@ -187,13 +181,13 @@ main :: () -> i32 {
 
     // ── 6. half a header is evicted at the request deadline, while a
     //       healthy client keeps being served ──────────────────────────
-    c3 := dial();
+    c3 := dialPort(srv.cfg.port);
     if c3 < 0 { print("dial3 failed\n"); return 1; }
     half := "GET /hel";
     socket.write(c3, half.ptr, half.len);
     gone := event.deadlineIn(300);   // > timeoutRequestMs
     while !event.expired(gone) { srv.tick(5) catch {}; }
-    c4 := dial();
+    c4 := dialPort(srv.cfg.port);
     if c4 < 0 { print("dial4 failed\n"); return 1; }
     r6 := roundtrip(*srv, c4, "GET /hello HTTP/1.1\r\nHost: t\r\n\r\n", *buf[0]);
     if !contains(r6, "hello GET") { print("case6: healthy client starved\n"); return 1; }
@@ -218,7 +212,7 @@ main :: () -> i32 {
     // back through the loop's wake channel. Same assertions: routing,
     // body echo, keep-alive reuse — now crossing threads per request.
     pcfg : http.Config = .{
-        port = PORT + 1,
+        port = 0,
         timeoutRequestMs = 1000,
         timeoutKeepaliveMs = 1000,
         requestCount = 50,
@@ -229,7 +223,7 @@ main :: () -> i32 {
     psrv, pse := http.Server.init(pcfg, handler, 77);
     if pse { print("pooled server init failed\n"); return 1; }
 
-    c5 := dialPort(PORT + 1);
+    c5 := dialPort(psrv.cfg.port);
     if c5 < 0 { print("dial5 failed\n"); return 1; }
     r7 := roundtrip(*psrv, c5, "GET /hello HTTP/1.1\r\nHost: t\r\n\r\n", *buf[0]);
     if !contains(r7, "HTTP/1.1 200 OK") { print("pooled: bad status\n"); return 1; }

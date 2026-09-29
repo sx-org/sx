@@ -4,8 +4,6 @@
 @import "modules/std/http.sx";
 side :: @import "2677-http-server-duplicate-import/side.sx";
 
-PORT :: 19131;
-
 handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     resp.body = "served";
 }
@@ -26,21 +24,21 @@ contains :: (hay: string, needle: string) -> bool {
     return false;
 }
 
-dial :: () -> i32 {
+dial :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
-    addr := socket.sockaddrIn(PORT, 0x0100007F);
+    addr := socket.sockaddrIn(port, 0x0100007F);
     if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
     if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
 
 main :: () -> i32 {
-    cfg : http.Config = .{ port = PORT, bindAddr = "127.0.0.1", maxConn = 4 };
+    cfg : http.Config = .{ port = 0, bindAddr = "127.0.0.1", maxConn = 4 };
     srv, se := http.Server.init(cfg, handler, 0);
     if se { print("server init failed\n"); return 1; }
 
-    fd := dial();
+    fd := dial(srv.cfg.port);
     if fd < 0 { print("dial failed\n"); return 1; }
 
     req :: "GET /x HTTP/1.1\r\nHost: t\r\n\r\n";

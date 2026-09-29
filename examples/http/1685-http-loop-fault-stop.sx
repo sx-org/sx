@@ -16,8 +16,6 @@
 @import "modules/std.sx";
 @import "modules/std/http.sx";
 
-PORT :: 18996;
-
 Counter :: struct {
     listenErrors: i64 = 0;
     lastDetail: i64 = 0;
@@ -43,7 +41,7 @@ main :: () -> i32 {
     push .{ allocator = gpa } {
         counter : Counter = .{};
         cfg : http.Config = .{
-            port = PORT,
+            port = 0,
             maxConn = 4,
             onEvent = onEvent,
             onEventCtx = @reinterpret(usize, *counter),

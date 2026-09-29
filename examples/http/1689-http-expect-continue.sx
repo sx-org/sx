@@ -23,8 +23,6 @@
 @import "modules/std.sx";
 @import "modules/std/http.sx";
 
-PORT :: 19001;
-
 route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     resp.body = concat("got:", req.body);
 }
@@ -82,7 +80,7 @@ drain :: (srv: *http.Server, fd: i32, buf: [*]u8, cap: i64, total: *i64) -> bool
 // `third`; read to EOF. The whole wire exchange — interim + final
 // response — lands in buf. Empty pieces are skipped.
 staged :: (srv: *http.Server, first: string, second: string, third: string, waitFor: string, buf: [*]u8, cap: i64) -> string {
-    fd := dialPort(PORT);
+    fd := dialPort(srv.cfg.port);
     if fd < 0 { return ""; }
     socket.write(fd, first.ptr, first.len);
     total : i64 = 0;
@@ -149,7 +147,7 @@ main :: () -> i32 {
         cap : i64 = 16384;
         rbuf : [*]u8 = context.allocator.allocBytes(cap);
 
-        cfg : http.Config = .{ port = PORT, maxConn = 4, requestCount = 10, maxBody = 1024 };
+        cfg : http.Config = .{ port = 0, maxConn = 4, requestCount = 10, maxBody = 1024 };
         srv, se := http.Server.init(cfg, route, 0);
         if se { print("init failed\n"); return 1; }
 

@@ -23,8 +23,6 @@
 libc :: @library "c";
 getsockopt :: (fd: i32, level: i32, optname: i32, optval: *i32, optlen: *u32) -> i32 extern libc;
 
-PORT :: 19011;
-
 // Same numeric value on darwin + linux.
 IPPROTO_TCP :i32: 6;
 TCP_NODELAY :i32: 1;
@@ -66,13 +64,13 @@ main :: () -> i32 {
         cap : i64 = 16384;
         rbuf : [*]u8 = context.allocator.allocBytes(cap);
 
-        cfg : http.Config = .{ port = PORT, maxConn = 4, requestCount = 10 };
+        cfg : http.Config = .{ port = 0, maxConn = 4, requestCount = 10 };
         srv, se := http.Server.init(cfg, route, 0);
         if se { print("init failed\n"); return 1; }
 
         // Keep-alive request: the conn stays open (CONN_KEEPALIVE) after the
         // response, so its server-side fd can be inspected below.
-        fd := dialPort(PORT);
+        fd := dialPort(srv.cfg.port);
         if fd < 0 { print("dial failed\n"); return 1; }
         req := "GET / HTTP/1.1\r\nHost: t\r\n\r\n";
         socket.write(fd, req.ptr, req.len);

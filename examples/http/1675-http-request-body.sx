@@ -22,8 +22,6 @@
 @import "modules/std/mem.sx";
 @import "modules/std/http.sx";
 
-PORT :: 18975;
-
 // Handler: echo the decoded body back verbatim so the test can assert the
 // server decoded it EXACTLY. /len returns the body length as text.
 handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
@@ -92,7 +90,7 @@ respComplete :: (buf: [*]u8, len: i64) -> bool {
 // Send a whole request, tick until a complete fixed response arrives,
 // return the response text ("" = closed with no response).
 roundtrip :: (srv: *http.Server, reqtext: string, scratch: [*]u8) -> string {
-    fd := dialPort(PORT);
+    fd := dialPort(srv.cfg.port);
     if fd < 0 { return ""; }
     socket.write(fd, reqtext.ptr, reqtext.len);
     total : i64 = 0;
@@ -114,7 +112,7 @@ roundtrip :: (srv: *http.Server, reqtext: string, scratch: [*]u8) -> string {
 // decoder must resume across partial reads), then tick until a complete
 // fixed response arrives. Returns the response text.
 roundtripSplit :: (srv: *http.Server, reqtext: string, pieces: i64, scratch: [*]u8) -> string {
-    fd := dialPort(PORT);
+    fd := dialPort(srv.cfg.port);
     if fd < 0 { return ""; }
     sent : i64 = 0;
     piece := reqtext.len / pieces;
@@ -173,7 +171,7 @@ main :: () -> i32 {
 
     push .{ allocator = gpa } {
         cfg : http.Config = .{
-            port = PORT,
+            port = 0,
             timeoutRequestMs = 2000,
             timeoutKeepaliveMs = 2000,
             requestCount = 100,
@@ -290,7 +288,7 @@ main :: () -> i32 {
 
         // ── 10. mid-body disconnect → server closes cleanly, slot freed ──
         if rc == 0 {
-            fd := dialPort(PORT);
+            fd := dialPort(srv.cfg.port);
             if fd < 0 { print("dial mid-body failed\n"); rc = 1; }
             else {
                 // partial chunked body, then disconnect before completion

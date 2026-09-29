@@ -27,7 +27,6 @@
 @import "modules/std.sx";
 @import "modules/std/http.sx";
 
-PORT :: 18990;
 HANDLER_TIMEOUT_MS :: 40;
 SLOW_SLEEP_US :: 200000;   // 200 ms — well past the 40 ms handler deadline
 
@@ -113,7 +112,7 @@ main :: () -> i32 {
         fbuf : [*]u8 = context.allocator.allocBytes(cap);
 
         cfg : http.Config = .{
-            port = PORT,
+            port = 0,
             timeoutRequestMs = 5000,
             timeoutKeepaliveMs = 5000,
             requestCount = 50,
@@ -126,7 +125,7 @@ main :: () -> i32 {
         if se { print("init failed\n"); return 1; }
 
         // Connection A: the slow request. Occupies a worker for 200 ms.
-        ca := dialPort(PORT);
+        ca := dialPort(srv.cfg.port);
         if ca < 0 { print("dial A failed\n"); srv.close(); return 1; }
         slowReq := "GET /slow HTTP/1.1\r\nHost: t\r\n\r\n";
         socket.write(ca, slowReq.ptr, slowReq.len);
@@ -163,7 +162,7 @@ main :: () -> i32 {
         // connection — issued while the slow worker may still be busy —
         // returns a normal 200. (Pool has 2 workers, so a free one serves it
         // even if the slow worker is occupied; and the loop was never blocked.)
-        cb := dialPort(PORT);
+        cb := dialPort(srv.cfg.port);
         if cb < 0 { print("dial B failed\n"); srv.close(); return 1; }
         fastReq := "GET /fast HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n";
         socket.write(cb, fastReq.ptr, fastReq.len);

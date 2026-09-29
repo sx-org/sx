@@ -25,7 +25,6 @@
 @import "modules/std/http.sx";
 posix :: @import "modules/std/posix.sx";
 
-PORT :: 18994;
 JUNK_LEN :: 65536;
 
 route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
@@ -64,7 +63,7 @@ main :: () -> i32 {
         rbuf : [*]u8 = context.allocator.allocBytes(cap);
 
         cfg : http.Config = .{
-            port = PORT,
+            port = 0,
             readBufCap = 8192,
             timeoutRequestMs = 5000,
             timeoutKeepaliveMs = 5000,
@@ -78,7 +77,7 @@ main :: () -> i32 {
         junk : [*]u8 = context.allocator.allocBytes(JUNK_LEN);
         i : i64 = 0;
         while i < JUNK_LEN { junk[i] = 88; i += 1; }   // 'X': never a header end
-        ca := dialPort(PORT);
+        ca := dialPort(srv.cfg.port);
         if ca < 0 { print("dial failed\n"); srv.close(); return 1; }
         fsent : i64 = 0;
         t : i64 = 0;
@@ -150,7 +149,7 @@ main :: () -> i32 {
         }
 
         // ── server stays healthy ──────────────────────────────────────
-        cb := dialPort(PORT);
+        cb := dialPort(srv.cfg.port);
         if cb < 0 { print("dial B failed\n"); srv.close(); return 1; }
         req := "GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n";
         socket.write(cb, req.ptr, req.len);

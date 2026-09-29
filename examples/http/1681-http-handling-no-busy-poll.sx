@@ -19,7 +19,6 @@
 @import "modules/std.sx";
 @import "modules/std/http.sx";
 
-PORT :: 18992;
 SLOW_SLEEP_US :: 300000;   // 300 ms of worker runtime while bytes are pending
 MAX_TICKS :: 100;          // spin would burn thousands of iterations in 300 ms
 
@@ -64,7 +63,7 @@ main :: () -> i32 {
         rbuf : [*]u8 = context.allocator.allocBytes(cap);
 
         cfg : http.Config = .{
-            port = PORT,
+            port = 0,
             timeoutRequestMs = 5000,
             timeoutKeepaliveMs = 5000,
             requestCount = 50,
@@ -76,7 +75,7 @@ main :: () -> i32 {
         srv, se := http.Server.init(cfg, route, 0);
         if se { print("init failed\n"); return 1; }
 
-        ca := dialPort(PORT);
+        ca := dialPort(srv.cfg.port);
         if ca < 0 { print("dial failed\n"); srv.close(); return 1; }
 
         // Request 1: /slow — accepted, parsed, dispatched to a worker.
