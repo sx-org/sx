@@ -405,12 +405,13 @@ emit; sx provides the artifacts and a launch convenience, nothing more.
 
 ### Artifacts
 
-`sx build --emit-obj` keeps the DWARF-bearing object at its link-time path
-(`.sx-tmp/main.o`) instead of deleting it, and implies `-O0` (DWARF only emits
-at opt none/less). On **macOS** the linked binary's debug map resolves to that
-`.o`, so `lldb`/`gdb` run from the project root can step the binary directly; on
-**Linux** the DWARF is in the binary, so the `.o` isn't even needed. A portable
-`.dSYM` (via `dsymutil`) is only required for the on-device iOS rung (below).
+`sx build --emit-obj` keeps the DWARF-bearing object beside the binary
+(`<output>.o`, its link-time path) instead of deleting it, and implies `-O0`
+(DWARF only emits at opt none/less). On **macOS** the linked binary's debug
+map resolves to that `.o`, so `lldb`/`gdb` run from the project root can step
+the binary directly; on **Linux** the DWARF is in the binary, so the `.o` isn't
+even needed. A portable `.dSYM` (via `dsymutil`) is only required for the
+on-device iOS rung (below).
 
 ### Stepping, host by host
 

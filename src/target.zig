@@ -77,8 +77,8 @@ pub const TargetConfig = struct {
     /// debugger can step the binary: macOS resolves via the debug map → the
     /// `.o`; Linux carries DWARF in the binary directly. Implies `-O0` unless
     /// `--opt` is given explicitly (DWARF is only emitted at opt none/less).
-    /// The object is kept at `.sx-tmp/main.o` (its link-time path, so the
-    /// debug map resolves when lldb is run from the project root).
+    /// The object is kept beside the binary as `<output>.o`, the link-time
+    /// path its debug map resolves to.
     emit_obj: bool = false,
     /// Self-contained link backend (bundled `zig cc`). `.auto` uses it when a
     /// `zig` is discoverable, the target is Linux, and no explicit `--linker`

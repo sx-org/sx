@@ -740,11 +740,17 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
     const libs = try extractLibraries(allocator, root);
     var fws = try extractFrameworks(allocator, root);
 
-    // Create temp directory for build artifacts
-    const tmp_dir: []const u8 = ".sx-tmp";
-    std.Io.Dir.createDirPath(.cwd(), io, tmp_dir) catch {};
-
-    const obj_path = try std.fmt.allocPrintSentinel(allocator, "{s}/main.o", .{tmp_dir}, 0);
+    // Build artifacts live in a directory no other invocation writes, so
+    // concurrent builds from one cwd each link their own objects.
+    const tmp_root = ".sx-tmp";
+    var build_id: u64 = undefined;
+    io.random(std.mem.asBytes(&build_id));
+    const tmp_dir = try std.fmt.allocPrint(allocator, tmp_root ++ "/build-{x:0>16}", .{build_id});
+    try std.Io.Dir.createDirPath(.cwd(), io, tmp_dir);
+    defer {
+        std.Io.Dir.deleteTree(.cwd(), io, tmp_dir) catch {};
+        std.Io.Dir.deleteDir(.cwd(), io, tmp_root) catch {};
+    }
 
     // Codegen only. There is NO auto-emit / auto-link: the build is driven
     // entirely by the sx `defaultPipeline` (or a user `@run @onBuild(...)`
@@ -809,6 +815,13 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
             std.Io.Dir.createDirPath(.cwd(), io, final_output[0..sep]) catch {};
         }
     }
+
+    // A kept --emit-obj object must outlive the build directory: the binary's
+    // debug map resolves to its link-time path.
+    const obj_path = if (target_config.emit_obj)
+        try std.fmt.allocPrintSentinel(allocator, "{s}.o", .{final_output}, 0)
+    else
+        try std.fmt.allocPrintSentinel(allocator, "{s}/main.o", .{tmp_dir}, 0);
 
     // NO auto-link here — the sx `defaultPipeline` (or a user `@onBuild`
     // override) calls `@link` (and `@emitObject`) as actions through these hooks.
@@ -931,20 +944,8 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
     }
 
     std.debug.print("compiled: {s}\n", .{final_output});
-
-    // Clean up temp directory and all build artifacts. Under --emit-obj, keep
-    // the object (DWARF for lldb/gdb) at its link-time path — the binary's
-    // debug map resolves to it — and skip removing the temp dir.
-    const shell_tmp = std.fmt.allocPrint(allocator, "{s}.shell.html", .{obj_path}) catch null;
-    if (shell_tmp) |sp| std.Io.Dir.deleteFile(.cwd(), io, sp) catch {};
-    for (c_obj_paths) |cop| {
-        std.Io.Dir.deleteFile(.cwd(), io, cop) catch {};
-    }
     if (target_config.emit_obj) {
         std.debug.print("debug object kept: {s} (DWARF; run lldb/gdb from the project root)\n", .{obj_path});
-    } else {
-        std.Io.Dir.deleteFile(.cwd(), io, obj_path) catch {};
-        std.Io.Dir.deleteDir(.cwd(), io, tmp_dir) catch {};
     }
 }
 
