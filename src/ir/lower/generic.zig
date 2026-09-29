@@ -1755,7 +1755,8 @@ pub fn headNameOfCallee(callee: *const Node) ?HeadName {
 /// direct flat author resolves to ITS source-keyed TypeId. Falls open
 /// (`.proceed`) when import facts are unwired, the source context is absent,
 /// the default-Context emitter is running (built-in infrastructure resolves
-/// independent of the user's import style), the querying source is the OWN
+/// independent of the user's import style), `name` is a type parameter of the
+/// generic body being lowered, the querying source is the OWN
 /// author, a single flat author is not registered yet (a forward / extern /
 /// generic template — the caller instantiates it), or `name` is a block-local
 /// of this source / no type author at all. Library-internal heads stay visible
@@ -1787,6 +1788,9 @@ pub fn headTypeGate(self: *Lowering, name: []const u8, span: ?ast.Span) HeadType
 /// reads the name as a type only when it denotes one.
 pub fn selectHeadType(self: *Lowering, name: []const u8) HeadTypeGate {
     if (self.emitting_default_context) return .proceed;
+    if (self.type_bindings) |tb| {
+        if (tb.contains(name)) return .proceed;
+    }
     // A compiler-maintained `@` contract type has exactly one canonical
     // declaration, so it resolves program-wide and no author set gates it.
     if (contracts.isAtName(name) and contracts.find(name) != null) {

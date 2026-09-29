@@ -1,0 +1,12 @@
+// A generic's `$U` is the type it binds, although the file's own function `U`
+// hides the flat import's type `U`.
+@import "modules/std.sx";
+@import "generic-type-parameter-hides-own-declaration/dep.sx";
+
+U :: () -> i64 { 1 }
+same :: ($U: Type) -> bool { U == i64 }
+
+main :: () -> i32 {
+    print("{} {} {}\n", same(i64), same(f64), U());
+    0
+}
