@@ -582,7 +582,6 @@ const Item = struct {
     cfg_error: ?[]const u8,
 };
 
-/// What a sweep does with each example's stored snapshots.
 const Mode = enum { verify, update };
 
 /// A worker's entire report for one item. Every string is allocated from the
