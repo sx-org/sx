@@ -996,7 +996,8 @@ fn runOne(
         // run after a non-compiler change skips codegen for every unchanged
         // example — the difference between a ~2min and a sub-minute suite.
         // The key hashes the compiler binary itself, so a rebuilt compiler
-        // always recompiles; examples with top-level @run self-exempt.)
+        // always recompiles; examples whose compilation reaches the host
+        // self-exempt.)
         const slots = categoryRunSlots(item.rel_prefix);
         if (slots) |s| s.waitUncancelable(io);
         defer if (slots) |s| s.post(io);
@@ -1749,6 +1750,25 @@ test "object cache: second identical run hits, source edit invalidates" {
     const r3 = try runFixture(a, io, repo_root, fixture_rel);
     try std.testing.expectEqual(@as(u32, 42), termCode(r3.term));
     try std.testing.expect(timedStageRecorded(r3.stderr, "codegen"));
+}
+
+test "object cache: a compile that reaches the host is never served" {
+    const io = test_io();
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+
+    const repo_root = std.fs.path.dirname(corpus_paths.examples_dir) orelse ".";
+    for (0..2) |_| {
+        const r = try std.process.run(a, io, .{
+            .argv = &.{ corpus_paths.sx_exe, "run", "examples/comptime/2941-comptime-type-function-output-prints-on-every-run.sx", "--time", "--cache" },
+            .cwd = .{ .path = repo_root },
+            .timeout = deadline(io),
+        });
+        try std.testing.expectEqual(@as(u32, 0), termCode(r.term));
+        try std.testing.expectEqualStrings("building Boxed\n42\n", r.stdout);
+        try std.testing.expect(!timedStageRecorded(r.stderr, "cache"));
+    }
 }
 
 test "splitTimedStderr: table stripped, jit stage parsed, body preserved" {
