@@ -256,7 +256,7 @@ fn formationStore(self: *Lowering, val: Ref, val_ty: TypeId, target: TypeId, nod
 fn refuseFormationMembership(self: *Lowering, src_ty: TypeId, target: TypeId, member_candidate: TypeId, set_ty: TypeId, span: ast.Span) ?Ref {
     if (self.externalErrorsExist()) return null;
     if (self.diagnostics) |d| {
-        const id = d.addFmtId(.err, span, "'{s}' cannot form an initializer for '{s}': it is not a member of the set", .{ self.formatSourceTypeName(src_ty), self.formatSourceTypeName(target) });
+        const id = d.addFmtId(.err, span, "'{s}' cannot form an initializer for '{s}': it is not a member of the set", .{ self.formatTypeName(src_ty), self.formatTypeName(target) });
         self.openSetMembershipHelp(d, id, member_candidate, set_ty, span);
         self.noteOpenSetInstantiation(d, id);
         self.assignability_error_count += 1;
@@ -270,8 +270,8 @@ fn refuseFormationMembership(self: *Lowering, src_ty: TypeId, target: TypeId, me
 fn refuseFormationFromProtocol(self: *Lowering, src_ty: TypeId, target: TypeId, leaf: TypeId, span: ast.Span) ?Ref {
     if (self.externalErrorsExist()) return null;
     if (self.diagnostics) |d| {
-        const leaf_name = self.formatSourceTypeName(leaf);
-        const id = d.addFmtId(.err, span, "'{s}' cannot form an initializer for '{s}': a handle names its conformer, not the conformer", .{ self.formatSourceTypeName(src_ty), self.formatSourceTypeName(target) });
+        const leaf_name = self.formatTypeName(leaf);
+        const id = d.addFmtId(.err, span, "'{s}' cannot form an initializer for '{s}': a handle names its conformer, not the conformer", .{ self.formatTypeName(src_ty), self.formatTypeName(target) });
         d.addHelpFmt(id, span, null, "read the conformer out with a downcast first: '.({s})' panics on another type, '.(?{s})' answers null", .{ leaf_name, leaf_name });
         self.assignability_error_count += 1;
     }

@@ -854,7 +854,7 @@ fn refuseAbsentReerasure(self: *Lowering, present: Ref, dst_ty: TypeId) void {
     const owned = self.alloc.dupe(u8, nm) catch return;
     tmp.put(owned, .{ .ref = present, .ty = .bool, .is_alloca = false });
     const ok = self.synthNode(.{ .identifier = .{ .name = owned } }, span, src);
-    const text = std.fmt.allocPrint(self.alloc, "re-erasure to '{s}' failed", .{self.formatTypeName(dst_ty)}) catch return;
+    const text = std.fmt.allocPrint(self.alloc, "re-erasure to '{s}' failed", .{self.module.types.formatTypeName(self.alloc, dst_ty, null)}) catch return;
     const msg = self.synthNode(.{ .string_literal = .{ .raw = text } }, span, src);
     const callee = self.synthNode(.{ .identifier = .{ .name = "@assert" } }, span, src);
     const args = self.alloc.dupe(*Node, &.{ ok, msg }) catch return;
@@ -934,7 +934,7 @@ pub fn buildProtocolErasure(self: *Lowering, operand: Ref, operand_node: *const 
 
     if (concrete_type_name) |ctn| {
         if (is_rvalue) {
-            self.refuseRvalueInterfaceErasure(proto_name, operand_node.span);
+            self.refuseRvalueInterfaceErasure(dst_ty, operand_node.span);
             return self.builder.emit(.{ .placeholder = self.module.types.internString("protocol-erasure") }, dst_ty);
         }
         return self.buildProtocolValue(concrete_ptr, proto_name, ctn, dst_ty, concrete_ty);
@@ -944,9 +944,9 @@ pub fn buildProtocolErasure(self: *Lowering, operand: Ref, operand_node: *const 
 
 /// An interface-typed target never invents a temp: a concrete rvalue has no
 /// storage of its own to borrow.
-pub fn refuseRvalueInterfaceErasure(self: *Lowering, proto_name: []const u8, span: ast.Span) void {
+pub fn refuseRvalueInterfaceErasure(self: *Lowering, proto_ty: TypeId, span: ast.Span) void {
     if (self.diagnostics) |d| {
-        d.addFmt(.err, span, "cannot borrow a temporary into a '{s}' handle — bind the value where it lives, or write it through 'mem.make' and use the handle over that", .{proto_name});
+        d.addFmt(.err, span, "cannot borrow a temporary into a '{s}' handle — bind the value where it lives, or write it through 'mem.make' and use the handle over that", .{self.formatTypeName(proto_ty)});
     }
 }
 
@@ -1329,8 +1329,8 @@ fn checkAssignableWith(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: as
             // The value is named the way the program spells it, and the fact reads
             // as it does at every other set refusal (spec: Open Sets).
             const id = switch (diag) {
-                .formation => d.addFmtId(.err, span, "'{s}' cannot form an initializer for '{s}': it is not a member of the set", .{ self.formatSourceTypeName(src_ty), self.formatSourceTypeName(dst_ty) }),
-                .ordinary => |o| d.addFmtId(.err, span, "cannot {s} '{s}' of type '{s}' with a value of type '{s}'", .{ o.verb, o.name, self.formatSourceTypeName(dst_ty), self.formatSourceTypeName(src_ty) }),
+                .formation => d.addFmtId(.err, span, "'{s}' cannot form an initializer for '{s}': it is not a member of the set", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty) }),
+                .ordinary => |o| d.addFmtId(.err, span, "cannot {s} '{s}' of type '{s}' with a value of type '{s}'", .{ o.verb, o.name, self.formatTypeName(dst_ty), self.formatTypeName(src_ty) }),
             };
             self.openSetMembershipHelp(d, id, src_ty, dst_ty, span);
             self.noteOpenSetInstantiation(d, id);
@@ -1355,8 +1355,8 @@ fn checkAssignableWith(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: as
         self.module.types.get(src_ty) == .@"error" and self.module.types.get(dst_ty) == .@"error") return true;
     if (self.diagnostics) |d| {
         switch (diag) {
-            .formation => d.addFmt(.err, span, "'{s}' cannot form an initializer for '{s}': no conversion applies", .{ self.formatSourceTypeName(src_ty), self.formatSourceTypeName(dst_ty) }),
-            .ordinary => |o| d.addFmt(.err, span, "cannot {s} '{s}' of type '{s}' with a value of type '{s}'", .{ o.verb, o.name, self.formatSourceTypeName(dst_ty), self.formatSourceTypeName(src_ty) }),
+            .formation => d.addFmt(.err, span, "'{s}' cannot form an initializer for '{s}': no conversion applies", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty) }),
+            .ordinary => |o| d.addFmt(.err, span, "cannot {s} '{s}' of type '{s}' with a value of type '{s}'", .{ o.verb, o.name, self.formatTypeName(dst_ty), self.formatTypeName(src_ty) }),
         }
         self.assignability_error_count += 1;
     }
@@ -1699,7 +1699,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             if (self.diagnostics) |d| {
                 const cs = self.builder.current_span;
                 const span = ast.Span{ .start = cs.start, .end = cs.end };
-                d.addFmt(.err, span, "cannot convert '{s}' to '{s}': {s} signatures differ", .{ self.formatSourceTypeName(src_ty), self.formatSourceTypeName(dst_ty), if (isFunctionType(self, src_ty)) @as([]const u8, "function") else "closure" });
+                d.addFmt(.err, span, "cannot convert '{s}' to '{s}': {s} signatures differ", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty), if (isFunctionType(self, src_ty)) @as([]const u8, "function") else "closure" });
                 self.assignability_error_count += 1;
             }
             return val;
@@ -1856,7 +1856,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
                 // than the AST: a READ of named storage borrows that storage.
                 concrete_ptr = addr;
             } else {
-                self.refuseRvalueInterfaceErasure(proto_name, .{ .start = self.builder.current_span.start, .end = self.builder.current_span.end });
+                self.refuseRvalueInterfaceErasure(dst_ty, .{ .start = self.builder.current_span.start, .end = self.builder.current_span.end });
                 return self.builder.emit(.{ .placeholder = self.module.types.internString("protocol-erasure") }, dst_ty);
             }
             return self.buildProtocolValue(concrete_ptr, proto_name, ctn, dst_ty, concrete_ty);

@@ -1,4 +1,4 @@
-error: 'Buffer__i64' has both a concrete and a blanket 'impl Series' — which one applies is not stated by either
+error: 'Buffer(i64)' has both a concrete and a blanket 'impl Series' — which one applies is not stated by either
   --> examples/diagnostics/2030-diagnostics-impl-overlap.sx:13:1
    |
 13 | impl Series($T) for Buffer($T) {

@@ -1,0 +1,2 @@
+Series :: struct($T: Type) { head: T; }
+series :: () -> Series(i64) { .{ head = 1 } }

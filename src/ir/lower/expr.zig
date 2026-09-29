@@ -51,9 +51,17 @@ const LoweredLiteralInitializer = union(enum) {
 };
 const InferredLiteral = struct { ty: TypeId, initializers: []const LoweredLiteralInitializer };
 
-fn routeLiteralContribution(self: *Lowering, route: *literal_fields.Typed, name: ?[]const u8, origin: literal_fields.Origin, span: ast.Span, type_name: []const u8) ?usize {
+/// The type a literal's contributions route into, or — while its instance is
+/// still being inferred — the template it instantiates.
+const LiteralOwner = union(enum) { ty: TypeId, template: []const u8 };
+
+fn routeLiteralContribution(self: *Lowering, route: *literal_fields.Typed, name: ?[]const u8, origin: literal_fields.Origin, span: ast.Span, owner: LiteralOwner) ?usize {
     return route.contribute(name, origin) catch |err| {
         if ((err == error.UnknownField or err == error.TooManyValues) and self.externalErrorsExist()) return null;
+        const type_name = switch (owner) {
+            .ty => |ty| self.formatTypeName(ty),
+            .template => |template| template,
+        };
         if (self.diagnostics) |d| switch (err) {
             error.UnknownField => d.addFmt(.err, span, "field '{s}' not found on type '{s}'", .{ name.?, type_name }),
             error.TooManyValues => d.addFmt(.err, span, "positional initializer {d} exceeds the {d} fields of '{s}'", .{ route.position - 1, route.names.len, type_name }),
@@ -99,7 +107,7 @@ pub const StructLiteralIndices = struct {
     }
 
     fn contribute(self: *StructLiteralIndices, l: *Lowering, name: ?[]const u8, origin: literal_fields.Origin, span: ast.Span) ?u32 {
-        const index = routeLiteralContribution(l, &self.route, name, origin, span, l.formatTypeName(self.ty)) orelse return null;
+        const index = routeLiteralContribution(l, &self.route, name, origin, span, .{ .ty = self.ty }) orelse return null;
         if (name) |n| _ = l.mentionField(self.ty, n, span);
         return @intCast(index);
     }
@@ -276,14 +284,14 @@ fn inferGenericLiteral(self: *Lowering, sl: *const ast.StructLiteral, tmpl: *con
             const contributions = lowerLiteralSpread(self, fi.value) orelse return failed;
             initializers.append(self.alloc, .{ .spread = contributions }) catch unreachable;
             for (contributions) |contribution| {
-                const idx = routeLiteralContribution(self, &route, contribution.name, .spread, fi.value.span, tmpl.name) orelse return failed;
+                const idx = routeLiteralContribution(self, &route, contribution.name, .spread, fi.value.span, .{ .template = tmpl.name }) orelse return failed;
                 const arg_ty = self.builder.getRefType(contribution.value);
                 if (!bindGenericLiteralField(self, tmpl, idx, arg_ty, &tb, .{ .bound_by = &bound_by, .span = span })) ok = false;
             }
             continue;
         }
         const name = route.plainName(fi.name, fi.was_shorthand);
-        const idx = routeLiteralContribution(self, &route, name, .direct, fi.name_span orelse fi.value.span, tmpl.name) orelse return failed;
+        const idx = routeLiteralContribution(self, &route, name, .direct, fi.name_span orelse fi.value.span, .{ .template = tmpl.name }) orelse return failed;
         var target: ?TypeId = null;
         {
             const node = tmpl.field_type_nodes[idx];
@@ -778,11 +786,8 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         else => false,
     };
     if (!aggregate_ok) {
-        // TypeTable.formatTypeName (not Lowering's) — the latter falls back
-        // to `@tagName` for function / error-set / protocol types, leaking
-        // internal spellings ('function', 'error') into the message.
         if (self.diagnostics) |d|
-            d.addFmt(.err, span, "cannot build a struct literal for non-struct type '{s}'", .{self.module.types.formatTypeName(self.alloc, ty, null)});
+            d.addFmt(.err, span, "cannot build a struct literal for non-struct type '{s}'", .{self.formatTypeName(ty)});
         return self.zeroValue(ty);
     }
 
@@ -1936,7 +1941,7 @@ pub fn lowerOptionalChain(self: *Lowering, obj: Ref, fa: *const ast.FieldAccess,
     // that panics at LLVM emission. Lowering it now binds its type parameter so
     // both the type query and the some-branch call see the concrete signature.
     if (getter_recv != null) {
-        const tn = self.formatTypeName(deref_inner);
+        const tn = self.module.types.formatTypeName(self.alloc, deref_inner, null);
         if (self.genericInstanceMethod(tn, fa.field)) |gm| _ = self.ensureGenericInstanceMethodLowered(gm);
     }
 
@@ -2214,9 +2219,9 @@ pub fn getAccessorFor(self: *Lowering, ty: TypeId, field: []const u8) ?*const as
     // shadow stored data on the read path). If the struct genuinely declares the
     // field, this is not a property access.
     if (self.lookupField(ty, field) != .missing) return null;
-    // Generic instance: genericInstanceMethod is keyed by the instance name
-    // (e.g. "List(i64)"), which is what formatTypeName produces.
-    const tn = self.formatTypeName(ty);
+    // Generic instance: genericInstanceMethod is keyed by the instance's table
+    // name (e.g. "List__i64").
+    const tn = self.module.types.formatTypeName(self.alloc, ty, null);
     if (self.genericInstanceMethod(tn, field)) |m| {
         return if (m.fd.is_get) m.fd else null;
     }
@@ -2259,8 +2264,8 @@ pub fn getSetterFor(self: *Lowering, ty: TypeId, field: []const u8) ?*const ast.
     // shadow stored data on the write path).
     if (self.lookupField(ty, field) != .missing) return null;
     const eff = std.fmt.allocPrint(self.alloc, "{s}" ++ Lowering.setter_eff_suffix, .{field}) catch return null;
-    // Generic instance: keyed by the instance name (e.g. "List(i64)").
-    const tn = self.formatTypeName(ty);
+    // Generic instance: keyed by the instance's table name (e.g. "List__i64").
+    const tn = self.module.types.formatTypeName(self.alloc, ty, null);
     if (self.genericInstanceMethod(tn, eff)) |m| {
         return if (m.fd.is_set) m.fd else null;
     }
@@ -2811,7 +2816,7 @@ pub fn arrayLiteralType(self: *Lowering, al: *const ast.ArrayLiteral) error{ Not
         if (resolved != .unresolved) {
             if (literalAggregate(self, resolved, length)) |ty| return ty;
             if (self.diagnostics) |d| {
-                const name = self.module.types.formatTypeName(self.alloc, resolved, null);
+                const name = self.formatTypeName(resolved);
                 d.addFmt(.err, te.span, "a '.[ ]' literal's type prefix names the aggregate type, not the element type — '{s}' is not an array/vector/slice; annotate the binding instead: `x : [{d}]{s} = .[ … ]`", .{ name, al.elements.len, name });
             }
             return error.NotAggregatePrefix;

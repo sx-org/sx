@@ -10,6 +10,7 @@ const program_index_mod = @import("../program_index.zig");
 const resolver_mod = @import("../resolver.zig");
 const StructTemplate = program_index_mod.StructTemplate;
 const instances = @import("../instances.zig");
+const imports = @import("../../imports.zig");
 const generics_mod = @import("../generics.zig");
 const GenericResolver = generics_mod.GenericResolver;
 const init_plan = @import("init_plan.zig");
@@ -730,59 +731,66 @@ pub fn qualifiedNominalTypeArg(self: *Lowering, path: []const u8, span: ast.Span
     return if (ty == .unresolved) null else ty;
 }
 
-/// Format a type name for display (e.g. "*Point", "[]i32", "[3]f64").
+/// A type's source spelling, for diagnostics (e.g. "*Point", "[]i32",
+/// "Box(i64)"): every nominal leaf, at any depth, named by `sourceLeaf`. An
+/// instance lookup and `@typeName` read the table's own spelling instead.
 pub fn formatTypeName(self: *Lowering, ty: TypeId) []const u8 {
-    return self.module.types.formatTypeName(self.alloc, ty, null);
-}
-
-/// A type's SOURCE spelling, for diagnostics: `formatTypeName` with every
-/// nominal leaf, at any depth, named by `sourceLeaf`.
-pub fn formatSourceTypeName(self: *Lowering, ty: TypeId) []const u8 {
     return self.module.types.formatTypeName(self.alloc, ty, .{ .ctx = self, .name = sourceLeaf });
 }
 
 /// The source spelling of one nominal leaf, or null for the declared spelling.
-/// A generic instance is the template applied to its arguments (`Sink(i64)`),
-/// never the mangled instance name that keys it internally. A reader can only
-/// act on a name that says which declaration it means, so a spelling with more
-/// than one author carries the file that declares THIS one.
+/// An instance is its template applied to its arguments (`Sink(i64)`), never
+/// the mangled instance name that keys it internally. A reader can only act on
+/// a name that says which declaration it means, so a spelling with more than
+/// one author carries the file that declares THIS one.
 fn sourceLeaf(ctx: *anyopaque, ty: TypeId) ?[]const u8 {
     const self: *Lowering = @ptrCast(@alignCast(ctx));
-    if (self.openSetOf(ty)) |set| {
-        if (self.nameHasMultipleTypeAuthors(set.decl.name)) {
-            if (set.source_file) |src| {
-                return std.fmt.allocPrint(self.alloc, "{s} ({s})", .{ set.decl.name, src }) catch set.decl.name;
-            }
-        }
-        return set.decl.name;
-    }
     if (self.module.types.get(ty) == .@"error") return self.module.types.errorSetDiagnosticName(self.alloc, ty);
-    const inst = self.getStructTypeName(ty) orelse return null;
-    const template = self.struct_instance_template.get(inst) orelse {
-        if (self.plain_struct_authors.get(ty)) |author| {
-            if (self.nameHasMultipleTypeAuthors(author.decl.name)) {
-                if (author.source) |src| {
-                    return std.fmt.allocPrint(self.alloc, "{s} ({s})", .{ author.decl.name, src }) catch author.decl.name;
-                }
-            }
-        }
-        return null;
-    };
-    const author = self.struct_instance_author.get(inst) orelse return null;
-    const binds = self.struct_instance_bindings.getPtr(inst) orelse return null;
-    var out = std.ArrayList(u8).empty;
-    out.appendSlice(self.alloc, template) catch return null;
-    out.append(self.alloc, '(') catch return null;
-    var n: usize = 0;
-    for (author.type_params) |tp| {
-        const bound = binds.get(tp.name) orelse continue;
-        if (n > 0) out.appendSlice(self.alloc, ", ") catch return null;
-        out.appendSlice(self.alloc, self.formatSourceTypeName(bound)) catch return null;
-        n += 1;
+    if (instanceKeyOf(&self.struct_instances, ty) orelse instanceKeyOf(&self.protocol_instances, ty)) |key| {
+        const decl = self.program_index.declaration(key.declaration);
+        return placedSpelling(self, instanceSpelling(self, decl.name, key.arguments), decl);
     }
-    if (n == 0) return null;
-    out.append(self.alloc, ')') catch return null;
-    return out.items;
+    const author = nominalAuthor(self, ty) orelse return null;
+    const decl = self.program_index.declaration(author);
+    return placedSpelling(self, decl.name, decl);
+}
+
+fn instanceKeyOf(cache: *const instances.Cache(TypeId), ty: TypeId) ?instances.Key {
+    var it = cache.iterator();
+    while (it.next()) |entry| {
+        if (entry.value_ptr.* == ty) return entry.key_ptr.*;
+    }
+    return null;
+}
+
+fn nominalAuthor(self: *Lowering, ty: TypeId) ?imports.DeclId {
+    const table = self.program_index.decl_table orelse return null;
+    const name = self.module.types.typeName(ty);
+    for (table.environments.items) |env| {
+        const id = env.names.get(name) orelse continue;
+        const ptr = Lowering.rawNamedTypePtr(table.get(id).ref orelse continue) orelse continue;
+        if (self.module.types.type_decl_tids.get(ptr) == ty) return id;
+    }
+    return null;
+}
+
+/// `name(args)`, a pack argument spelled as its types in its place.
+fn instanceSpelling(self: *Lowering, name: []const u8, arguments: []const instances.Argument) []const u8 {
+    var parts = std.ArrayList([]const u8).empty;
+    for (arguments) |arg| switch (arg) {
+        .type_id => |t| parts.append(self.alloc, self.formatTypeName(t)) catch return name,
+        .pack => |pack| for (pack) |t| parts.append(self.alloc, self.formatTypeName(t)) catch return name,
+        .integer => |v| parts.append(self.alloc, std.fmt.allocPrint(self.alloc, "{d}", .{v}) catch return name) catch return name,
+        .character, .boolean, .float_bits, .string, .binding => unreachable,
+    };
+    const joined = std.mem.join(self.alloc, ", ", parts.items) catch return name;
+    return std.fmt.allocPrint(self.alloc, "{s}({s})", .{ name, joined }) catch name;
+}
+
+fn placedSpelling(self: *Lowering, spelled: []const u8, decl: imports.DeclInfo) []const u8 {
+    if (!self.nameHasMultipleTypeAuthors(decl.name)) return spelled;
+    const src = decl.source orelse return spelled;
+    return std.fmt.allocPrint(self.alloc, "{s} ({s})", .{ spelled, src }) catch spelled;
 }
 
 /// Format a type name for function name mangling (identifier-safe).
@@ -2374,7 +2382,7 @@ pub fn genericStaticHeadMethod(self: *Lowering, head: *const Node, method: []con
         };
     };
     const inst_ty = self.instantiateGenericStruct(&tmpl, hc.args);
-    return self.genericInstanceMethod(self.formatTypeName(inst_ty), method);
+    return self.genericInstanceMethod(self.module.types.formatTypeName(self.alloc, inst_ty, null), method);
 }
 
 pub fn ensureGenericInstanceMethodLowered(self: *Lowering, m: GenericStructMethod) ?FuncId {

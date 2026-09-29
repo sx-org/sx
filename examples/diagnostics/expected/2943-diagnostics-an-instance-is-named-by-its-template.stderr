@@ -1,0 +1,11 @@
+error: cannot initialize 's' of type 'Series(i64) (examples/diagnostics/2943-diagnostics-an-instance-is-named-by-its-template/b.sx)' with a value of type 'Series(i64) (examples/diagnostics/2943-diagnostics-an-instance-is-named-by-its-template/a.sx)'
+  --> examples/diagnostics/2943-diagnostics-an-instance-is-named-by-its-template.sx:10:25
+   |
+10 |     s : b.Series(i64) = a.series();
+   |                         ^^^^^^^^^^
+
+error: cannot apply '+' to operands of type 'Grid(2, i64)' and 'i64'
+  --> examples/diagnostics/2943-diagnostics-an-instance-is-named-by-its-template.sx:12:9
+   |
+12 |     _ = g + 1;
+   |         ^

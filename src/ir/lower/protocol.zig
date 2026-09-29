@@ -747,7 +747,7 @@ pub fn protocolErasureConst(self: *Lowering, operand: *const Node, proto_ty: Typ
     const pd = self.getProtocolInfo(proto_ty) orelse return null;
     if (pd.kind == .constraint) return null;
     const g = staticInterfaceGlobal(self, operand) orelse return null;
-    const concrete_name = self.formatTypeName(g.ty);
+    const concrete_name = self.module.types.formatTypeName(self.alloc, g.ty, null);
     const thunks = self.getOrCreateThunks(proto_ty, concrete_name, g.ty);
     if (thunks.len != dispatchableCount(pd.methods)) return null;
     const vt = getOrCreateVtableGlobal(self, proto_ty, pd.name, concrete_name, g.ty, thunks) orelse return null;
@@ -827,7 +827,7 @@ pub fn protocolGlobalInit(self: *Lowering, vd: *const ast.VarDecl, v: *const Nod
         return .refused;
     };
     if (staticInterfaceGlobal(self, operand)) |g| {
-        if (refuseNonConformer(self, proto_ty, self.formatTypeName(g.ty), g.ty, v.span)) return .refused;
+        if (refuseNonConformer(self, proto_ty, self.module.types.formatTypeName(self.alloc, g.ty, null), g.ty, v.span)) return .refused;
     }
     if (protocolErasureConst(self, operand, proto_ty)) |cv| return .{ .folded = cv };
     if (operand.data == .field_access) {
@@ -1588,11 +1588,13 @@ pub fn refuseNonConformer(self: *Lowering, proto_ty: TypeId, concrete_type_name:
     };
     if (firstUnimplementedMethod(self, proto_ty, concrete_type_name, concrete_ty)) |nc| {
         if (self.diagnostics) |d| {
+            const concrete = self.formatTypeName(concrete_ty);
+            const proto = self.formatTypeName(proto_ty);
             switch (nc.kind) {
-                .missing => d.addFmt(.err, span, "'{s}' does not implement interface '{s}': no `impl {s} for {s}` provides method '{s}' (handle coercion is impl-driven — a plain or `ufcs` free function with a matching receiver does not satisfy an interface)", .{ concrete_type_name, proto_name, proto_name, concrete_type_name, nc.method }),
-                .signature_mismatch => d.addFmt(.err, span, "'{s}' does not implement interface '{s}': method '{s}' has a mismatched signature — an interface-method impl must not introduce its own type parameters (e.g. `$T: Type`); it must match the interface's signature exactly", .{ concrete_type_name, proto_name, nc.method }),
-                .type_mismatch => d.addFmt(.err, span, "'{s}' does not implement interface '{s}': method '{s}' has a mismatched signature — {s} (an interface-method impl must match the interface's declared types exactly, with `Self` written as `{s}`)", .{ concrete_type_name, proto_name, nc.method, nc.detail, concrete_type_name }),
-                .arity_mismatch => d.addFmt(.err, span, "'{s}' does not implement interface '{s}': method '{s}' {s}", .{ concrete_type_name, proto_name, nc.method, nc.detail }),
+                .missing => d.addFmt(.err, span, "'{s}' does not implement interface '{s}': no `impl {s} for {s}` provides method '{s}' (handle coercion is impl-driven — a plain or `ufcs` free function with a matching receiver does not satisfy an interface)", .{ concrete, proto, proto, concrete, nc.method }),
+                .signature_mismatch => d.addFmt(.err, span, "'{s}' does not implement interface '{s}': method '{s}' has a mismatched signature — an interface-method impl must not introduce its own type parameters (e.g. `$T: Type`); it must match the interface's signature exactly", .{ concrete, proto, nc.method }),
+                .type_mismatch => d.addFmt(.err, span, "'{s}' does not implement interface '{s}': method '{s}' has a mismatched signature — {s} (an interface-method impl must match the interface's declared types exactly, with `Self` written as `{s}`)", .{ concrete, proto, nc.method, nc.detail, concrete }),
+                .arity_mismatch => d.addFmt(.err, span, "'{s}' does not implement interface '{s}': method '{s}' {s}", .{ concrete, proto, nc.method, nc.detail }),
             }
         } else {
             // Gap 2 — no diagnostics channel (e.g. a comptime sub-lowering that

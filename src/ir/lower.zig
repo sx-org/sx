@@ -4371,7 +4371,6 @@ pub const Lowering = struct {
     pub const refuseTypeInfoProjection = lower_generic.refuseTypeInfoProjection;
     pub const qualifiedNominalTypeArg = lower_generic.qualifiedNominalTypeArg;
     pub const formatTypeName = lower_generic.formatTypeName;
-    pub const formatSourceTypeName = lower_generic.formatSourceTypeName;
     pub const matchTypeParam = lower_generic.matchTypeParam;
     pub const matchTypeParamStatic = lower_generic.matchTypeParamStatic;
     pub const extractTypeParam = lower_generic.extractTypeParam;

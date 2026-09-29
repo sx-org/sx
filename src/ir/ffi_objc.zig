@@ -420,7 +420,7 @@ pub const ObjcLowering = struct {
         if (has_weak and !is_object_ptr) {
             if (self.l.diagnostics) |d| {
                 const span = ast.Span{ .start = 0, .end = 0 };
-                d.addFmt(.err, span, "@ObjcProperty(weak) on field '{s}' requires a pointer-to-Obj-C-class type; got '{s}'", .{ field.name, self.l.module.types.typeName(field_ty) });
+                d.addFmt(.err, span, "@ObjcProperty(weak) on field '{s}' requires a pointer-to-Obj-C-class type; got '{s}'", .{ field.name, self.l.formatTypeName(field_ty) });
             }
         }
 

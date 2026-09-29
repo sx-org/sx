@@ -152,7 +152,7 @@ fn refuseDestinationFirstDispatch(self: *Lowering, fd: *const ast.FnDecl, spelle
     if (fd.params.len == 0) return false;
     if (init_plan.boundTargetNode(fd.params[0].type_expr) == null) return false;
     if (self.diagnostics) |d| {
-        const id = d.addFmtId(.err, span, "'{s}' takes its first argument unevaluated, so it cannot be dispatched on a '{s}' value", .{ spelled, self.formatSourceTypeName(recv_ty) });
+        const id = d.addFmtId(.err, span, "'{s}' takes its first argument unevaluated, so it cannot be dispatched on a '{s}' value", .{ spelled, self.formatTypeName(recv_ty) });
         d.addHelpFmt(id, span, null, "spell it as a call ('{s}(receiver, …)') — the receiver IS that argument", .{spelled});
     }
     return true;
@@ -1700,7 +1700,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     .poisoned => return Ref.none,
                     .template => |t| {
                         const inst_ty = self.instantiateGenericStruct(&t, inner_call.args);
-                        const inst_name = self.formatTypeName(inst_ty);
+                        const inst_name = self.module.types.formatTypeName(self.alloc, inst_ty, null);
                         if (self.genericInstanceMethod(inst_name, fa.field)) |gm| {
                             if (self.ensureGenericInstanceMethodLowered(gm)) |fid| {
                                 const func = &self.module.functions.items[@intFromEnum(fid)];
@@ -4467,7 +4467,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         //     project's REJECTED PATTERNS forbid.
         if (self.isStaticTypeArg(c.args[0])) {
             const ty = self.resolveTypeArg(c.args[0]);
-            const tn_str = self.formatTypeName(ty);
+            const tn_str = self.module.types.formatTypeName(self.alloc, ty, null);
             const sid = self.module.types.internString(tn_str);
             return self.builder.constString(sid);
         }

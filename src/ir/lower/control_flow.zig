@@ -950,7 +950,7 @@ pub fn lowerFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
                     if (data_ty == .unresolved) {
                         d.addFmt(.err, it.expr.span, "cannot iterate this expression", .{});
                     } else {
-                        d.addFmt(.err, it.expr.span, "cannot iterate a value of type '{s}'", .{self.module.types.typeName(data_ty)});
+                        d.addFmt(.err, it.expr.span, "cannot iterate a value of type '{s}'", .{self.formatTypeName(data_ty)});
                     }
                 }
                 return self.builder.constInt(0, .void);

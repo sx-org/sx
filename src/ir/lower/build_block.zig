@@ -249,7 +249,7 @@ pub fn lowerRun(self: *Lowering, block: *const Node, block_ty: TypeId, args: []c
     // everything the sink recorded.
     if (sink_ty.isBuiltin() or self.module.types.get(sink_ty) != .pointer) {
         if (self.diagnostics) |d| {
-            const id = d.addFmtId(.err, args[0].span, "'run' needs a pointer to the sink, but this is '{s}'", .{self.formatSourceTypeName(sink_ty)});
+            const id = d.addFmtId(.err, args[0].span, "'run' needs a pointer to the sink, but this is '{s}'", .{self.formatTypeName(sink_ty)});
             d.addHelpFmt(id, args[0].span, null, "take its address with `*` so the sink records into your storage", .{});
         }
         return Ref.none;
@@ -259,15 +259,16 @@ pub fn lowerRun(self: *Lowering, block: *const Node, block_ty: TypeId, args: []c
     const slot = self.builder.alloca(sink_ty);
     self.builder.store(slot, sink_ref);
 
-    const proto_name = if (self.getProtocolInfo(record.protocol)) |pi| pi.name else self.formatTypeName(record.protocol);
+    const proto_name = if (self.getProtocolInfo(record.protocol)) |pi| pi.name else self.module.types.formatTypeName(self.alloc, record.protocol, null);
     // A sink that cannot answer a handshake is a static error at `run`, not a
     // per-expression cascade later.
     const pointee = self.module.types.get(sink_ty).pointer.pointee;
     if (!sinkAccepts(self, pointee, record.protocol)) {
         if (self.diagnostics) |d| {
-            const shown = self.formatSourceTypeName(pointee);
-            const id = d.addFmtId(.err, args[0].span, "'{s}' cannot receive this block: it does not implement '@BuildSink({s})'", .{ shown, proto_name });
-            d.addHelpFmt(id, args[0].span, null, "declare `{s} :: (self: *{s}, value: $I/@Init($V/{s}))` on it, or write an 'impl @BuildSink({s}) for {s}'", .{ sink_method, shown, proto_name, proto_name, shown });
+            const shown = self.formatTypeName(pointee);
+            const proto_shown = self.formatTypeName(record.protocol);
+            const id = d.addFmtId(.err, args[0].span, "'{s}' cannot receive this block: it does not implement '@BuildSink({s})'", .{ shown, proto_shown });
+            d.addHelpFmt(id, args[0].span, null, "declare `{s} :: (self: *{s}, value: $I/@Init($V/{s}))` on it, or write an 'impl @BuildSink({s}) for {s}'", .{ sink_method, shown, proto_shown, proto_shown, shown });
         }
         return Ref.none;
     }
@@ -491,7 +492,7 @@ fn analyzeShapeStmt(self: *Lowering, stmt: *const Node, protocol: TypeId, facts:
 fn countStaticExpression(self: *Lowering, node: *const Node, protocol: TypeId, facts: *ShapeFacts) void {
     const v = self.inferExprType(node);
     if (v == .unresolved or v == .void or v == .noreturn) return;
-    const proto_name = if (self.getProtocolInfo(protocol)) |pi| pi.name else self.formatTypeName(protocol);
+    const proto_name = if (self.getProtocolInfo(protocol)) |pi| pi.name else self.module.types.formatTypeName(self.alloc, protocol, null);
     if (!self.protocolResolver().packArgConformsTo(proto_name, v)) return;
     facts.static_expressions += 1;
     if (!facts.bytes_known) return;

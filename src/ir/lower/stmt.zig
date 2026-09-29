@@ -1409,7 +1409,7 @@ fn reportSecondCallableReturn(self: *Lowering, binder: *const Node, fixed: TypeI
     const d = self.diagnostics orelse return;
     const name = binder.data.type_expr.name;
     const id = d.addFmtId(.err, binder.span, "'${s}' is the callable this body hands back, and this body hands back two: '{s}' and '{s}'", .{
-        name, self.module.types.formatTypeName(self.alloc, fixed, null), self.module.types.formatTypeName(self.alloc, got, null),
+        name, self.formatTypeName(fixed), self.formatTypeName(got),
     });
     d.addHelpFmt(id, binder.span, null, "one literal on two paths is one type; two literals are two types — erase both with 'mem.closure(...)' to hand back one", .{});
 }
