@@ -84,6 +84,9 @@ pub const Module = struct {
     /// by emit_llvm to decide whether closure/fn-pointer call sites
     /// need `__sx_ctx` prepended to their LLVM args/types.
     has_implicit_ctx: bool = false,
+    /// A compile-time evaluation reached the host, so reusing this product
+    /// would skip that work.
+    comptime_host_effects: bool = false,
 
     /// One member of one open set — the key of the set's own tag space.
     pub const OpenSetMember = struct { set: TypeId, member: TypeId };

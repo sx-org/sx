@@ -302,7 +302,6 @@ pub fn main(init: std.process.Init) !void {
         timer.record("imports");
 
         // Cache check — use .o files (precompiled object, skip IR compilation in JIT)
-        // Disable caching for files with top-level @run (side effects lost on cache hit)
         const root = comp.resolved_root orelse comp.root orelse return;
 
         // Pre-JIT entry-point check. The ORC `main` lookup in
@@ -319,7 +318,7 @@ pub fn main(init: std.process.Init) !void {
         // A failed compiler self-hash disables the cache for this process
         // (slower, never stale) — the key must always carry the compiler's
         // identity.
-        const self_hash: ?u64 = if (enable_cache and !hasTopLevelRun(root)) compilerSelfHash(allocator, io) else null;
+        const self_hash: ?u64 = if (enable_cache) compilerSelfHash(allocator, io) else null;
         const use_cache = self_hash != null;
         const key = computeCacheKey(source, &comp.import_sources, target_config, self_hash orelse 0);
         const cache_obj = cachePath(allocator, key, "o") catch std.process.exit(1);
@@ -350,9 +349,9 @@ pub fn main(init: std.process.Init) !void {
             timer.record("emit");
 
             // Save .o to cache (extract data before JIT takes ownership).
-            // A compile that produced warnings is never cached: a later hit
-            // skips lowering, and the warnings would silently vanish.
-            if (use_cache and !comp.diagnostics.hasWarnings()) {
+            // A later hit skips lowering, so a compile whose warnings or
+            // compile-time host effects would vanish is never cached.
+            if (use_cache and !comp.diagnostics.hasWarnings() and !comp.ir_module.?.comptime_host_effects) {
                 saveObjectToCache(buf, io, cache_obj);
             }
 

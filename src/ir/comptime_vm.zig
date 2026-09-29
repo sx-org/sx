@@ -1379,6 +1379,7 @@ pub const Vm = struct {
             // straight to fd 1 (consistent with `out`'s now-direct libc `write`).
             .interp_print_frames => {
                 const module = self.module orelse return self.failMsg("comptime interp_print_frames: no module");
+                @constCast(module).comptime_host_effects = true;
                 const n = self.call_stack.items.len;
                 if (n <= 1) return .{ .value = null_addr };
                 var buf = std.ArrayList(u8).empty;
@@ -1817,6 +1818,7 @@ pub const Vm = struct {
             // host pointer, args pass as `usize` untouched (a scalar's bits OR a
             // pointer) and a pointer return comes back as a valid `Addr` — no
             // translation. Aggregate/float args+returns aren't marshaled yet (4D.2).
+            @constCast(module).comptime_host_effects = true;
             return self.callHostExtern(callee, name, args, frame, ref_types);
         }
         self.call_stack.append(self.gpa, fid) catch @panic("comptime VM: out of memory (call stack)");
