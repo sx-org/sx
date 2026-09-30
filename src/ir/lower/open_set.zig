@@ -1192,16 +1192,25 @@ pub fn noteInstantiation(self: *Lowering, d: *errors.DiagnosticList, id: usize) 
     d.current_source_file = saved;
 }
 
-/// Why a type is not a member, in the terms the declarations state it: a type that
-/// joined ANOTHER set is told it belongs to one, and any other type is shown the
-/// declaration that would make it a member.
+/// Why a type is not a member, in the terms the declarations state it: a set is
+/// never a member, a type that joined ANOTHER set belongs to that one, a struct the
+/// program declares is shown the declaration that would make it a member, and no
+/// declaration makes any other type one.
 pub fn membershipHelp(self: *Lowering, d: *errors.DiagnosticList, id: usize, member_ty: TypeId, set_ty: TypeId, span: ast.Span) void {
+    if (isOpenSet(self, member_ty)) {
+        d.addHelpFmt(id, span, null, "'{s}' is a set, and a set is never a member of one", .{self.formatTypeName(member_ty)});
+        return;
+    }
+    // `memberAuthor` reads through a pointer to its pointee's declaration.
+    const author = if (self.module.types.get(member_ty) == .@"struct") memberAuthor(self, member_ty) else null;
+    const decl = (author orelse {
+        d.addHelpFmt(id, span, null, "'{s}' cannot declare itself into a set — a member is a struct declared into it: 'YourType :: @OpenVariant({s}) {{ … }}'", .{ self.formatTypeName(member_ty), self.formatTypeName(set_ty) });
+        return;
+    }).decl;
     if (setOfMember(self, member_ty)) |other| {
         d.addHelpFmt(id, span, null, "'{s}' is a member of '{s}', and a type belongs to one set", .{ self.formatTypeName(member_ty), self.formatTypeName(other.ty) });
-    } else if (member_ty.isBuiltin() or self.getStructTypeName(member_ty) == null) {
-        // A builtin carries no declaration of its own, so there is no spelling
-        // that would make it a member — only a type the program declares can be.
-        d.addHelpFmt(id, span, null, "'{s}' is a builtin and cannot declare itself into a set — a member is a type the program declares: 'YourType :: @OpenVariant({s}) {{ … }}'", .{ self.formatTypeName(member_ty), self.formatTypeName(set_ty) });
+    } else if (decl.type_params.len > 0) {
+        d.addHelpFmt(id, span, null, "a generic type joins by declaring itself into the set: '{s} :: @OpenVariant({s}) (…) {{ … }}'", .{ decl.name, self.formatTypeName(set_ty) });
     } else {
         d.addHelpFmt(id, span, null, "a type joins by declaring itself into the set: '{s} :: @OpenVariant({s}) {{ … }}'", .{ self.formatTypeName(member_ty), self.formatTypeName(set_ty) });
     }

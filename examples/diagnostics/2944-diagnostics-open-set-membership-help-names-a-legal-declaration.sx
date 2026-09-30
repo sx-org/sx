@@ -1,0 +1,38 @@
+// A refused non-member is shown only a declaration it could write (spec: Open
+// Sets): a set is never a member, a pointer is not the struct it points at, and a
+// generic struct joins through its generic declaration.
+@import "modules/std.sx";
+
+View :: @OpenSet(.{ max = 64 }) {
+    render :: (self: *Self) -> string;
+}
+
+Elsewhere :: @OpenSet(.{ max = 64 }) {
+    render :: (self: *Self) -> string;
+}
+
+Label :: @OpenVariant(View) {
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+}
+
+Plain :: struct { n: i64 = 0; }
+
+Pair :: struct ($A: Type, $B: Type) {
+    a: $A = ---;
+    b: $B = ---;
+}
+
+main :: () -> i32 {
+    v: View = Label{ text = "a set value" };
+    e: Elsewhere = xx v;
+
+    p := Plain{};
+    pointed: View = xx *p;
+
+    paired: View = Pair(i64, string){};
+
+    _ = e;
+    print("{} {}\n", pointed.render(), paired.render());
+    0
+}

@@ -1,0 +1,32 @@
+error: 'View' cannot be converted to 'Elsewhere': it is not a member of it
+  --> examples/diagnostics/2944-diagnostics-open-set-membership-help-names-a-legal-declaration.sx:28:20
+   |
+28 |     e: Elsewhere = xx v;
+   |                    ^^^^
+
+help: 'View' is a set, and a set is never a member of one
+   |
+28 |     e: Elsewhere = xx v;
+   |                    ^^^^
+
+error: '*Plain' cannot be converted to 'View': it is not a member of it
+  --> examples/diagnostics/2944-diagnostics-open-set-membership-help-names-a-legal-declaration.sx:31:21
+   |
+31 |     pointed: View = xx *p;
+   |                     ^^^^^
+
+help: '*Plain' cannot declare itself into a set — a member is a struct declared into it: 'YourType :: @OpenVariant(View) { … }'
+   |
+31 |     pointed: View = xx *p;
+   |                     ^^^^^
+
+error: 'Pair(i64, string)' cannot be converted to 'View': it is not a member of it
+  --> examples/diagnostics/2944-diagnostics-open-set-membership-help-names-a-legal-declaration.sx:33:5
+   |
+33 |     paired: View = Pair(i64, string){};
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+help: a generic type joins by declaring itself into the set: 'Pair :: @OpenVariant(View) (…) { … }'
+   |
+33 |     paired: View = Pair(i64, string){};
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
