@@ -83,8 +83,8 @@ LLVMErrorRef sx_jit_add_c_objects(
     LLVMOrcLLJITRef jit, const LLVMMemoryBufferRef *objects, size_t count,
     SxJitCLifecycle **out);
 
-/* Runs the main JITDylib's platform initializers, then the recorded init
-   arrays. */
+/* Links every added C object, runs the main JITDylib's platform
+   initializers, then the recorded init arrays. */
 LLVMErrorRef sx_jit_run_initializers(LLVMOrcLLJITRef jit, SxJitCLifecycle *c_lifecycle);
 
 /* Runs the main JITDylib's atexit handlers, then the recorded fini arrays in

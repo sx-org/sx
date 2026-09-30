@@ -436,7 +436,9 @@ extern "C" void sx_clang_free_symbol_list(SxCSymbolList *list)
 
 #include <llvm/ExecutionEngine/JITLink/JITLink.h>
 #include <llvm/ExecutionEngine/Orc/LLJIT.h>
+#include <llvm/ExecutionEngine/Orc/ObjectFileInterface.h>
 #include <llvm/ExecutionEngine/Orc/ObjectLinkingLayer.h>
+#include <llvm/ExecutionEngine/Orc/ObjectTransformLayer.h>
 
 #include <algorithm>
 
@@ -548,7 +550,13 @@ extern "C" LLVMErrorRef sx_jit_add_c_objects(
         // `objectIndex` keys on it, so the names must differ.
         std::string name = "c-import-" + std::to_string(i) + ".o";
         lifecycle->objectIndex[name] = i;
-        if (auto err = J.addObjectFile(main, MemoryBuffer::getMemBufferCopy(object->getBuffer(), name)))
+        auto buffer = MemoryBuffer::getMemBufferCopy(object->getBuffer(), name);
+        auto interface = getObjectFileInterface(J.getExecutionSession(), buffer->getMemBufferRef());
+        if (!interface) return wrap(interface.takeError());
+        // `initialize` links only objects with an initializer symbol, and every
+        // object links whether or not anything references it.
+        if (!interface->InitSymbol) addInitSymbol(*interface, J.getExecutionSession(), name);
+        if (auto err = J.getObjTransformLayer().add(main, std::move(buffer), std::move(*interface)))
             return wrap(std::move(err));
     }
     *out = reinterpret_cast<SxJitCLifecycle *>(lifecycle.get());
