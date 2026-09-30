@@ -2214,7 +2214,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                             var gvalue_args = std.ArrayList(Ref).empty;
                             defer gvalue_args.deinit(self.alloc);
                             gvalue_args.append(self.alloc, method_args.items[0]) catch unreachable;
-                            const types_explicit = method_args.items.len == gen_fd.params.len;
+                            const types_explicit = self.genericResolver().typesPassedExplicitly(gen_fd, eff_args.items);
                             var arg_idx: usize = 1;
                             for (gen_fd.params[1..], 1..) |p, pi| {
                                 if (isTypeParamDecl(&p, gen_fd.type_params)) {
@@ -2380,7 +2380,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                             var gvalue_args = std.ArrayList(Ref).empty;
                             defer gvalue_args.deinit(self.alloc);
                             gvalue_args.append(self.alloc, method_args.items[0]) catch unreachable;
-                            const types_explicit = method_args.items.len == fd.params.len;
+                            const types_explicit = self.genericResolver().typesPassedExplicitly(fd, eff_args.items);
                             var arg_idx: usize = 1;
                             for (fd.params[1..], 1..) |p, pi| {
                                 if (isTypeParamDecl(&p, fd.type_params)) {

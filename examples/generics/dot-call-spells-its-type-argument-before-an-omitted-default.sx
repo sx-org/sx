@@ -1,0 +1,18 @@
+// A dot call that spells its type argument may omit the defaulted parameters
+// after it.
+@import "modules/std.sx";
+
+Box :: struct {
+    base: i64;
+
+    sized :: (self: *Box, $T: Type, n: i64 = 4) -> i64 { self.base + @sizeOf(T) * n }
+}
+
+scaled :: ufcs (base: i64, $T: Type, n: i64 = 4) -> i64 { base + @sizeOf(T) * n }
+
+main :: () {
+    k : i64 = 1;
+    print("{} {}\n", k.scaled(i32), k.scaled(i32, 4));
+    b := Box{ base = 1 };
+    print("{} {}\n", b.sized(i32), b.sized(i32, 4));
+}

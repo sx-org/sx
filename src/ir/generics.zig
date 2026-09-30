@@ -334,13 +334,20 @@ pub const GenericResolver = struct {
     /// expression). Strategy 2: infer from value params that use `T`
     /// (`a: $T`, `items: []$T`), picking the widest match.
     /// Whether a generic call spells its type arguments. Exact arity answers on
-    /// its own; a bare `..` tail keeps the arity open, so the answer comes from
-    /// what stands in the type-parameter positions. `args_ast` is parallel to
-    /// `fd.params` (dot-call callers prepend the receiver's node).
+    /// its own; a bare `..` tail or omitted defaulted trailing params keep the
+    /// arity open, so the answer comes from what stands in the type-parameter
+    /// positions. `args_ast` is parallel to `fd.params` (dot-call callers
+    /// prepend the receiver's node).
     pub fn typesPassedExplicitly(self: GenericResolver, fd: *const ast.FnDecl, args_ast: []const *const Node) bool {
-        if (!fd.is_c_variadic) return args_ast.len == fd.params.len;
-        if (args_ast.len < fd.params.len) return false;
+        if (!fd.is_c_variadic) {
+            if (args_ast.len == fd.params.len) return true;
+            if (args_ast.len > fd.params.len) return false;
+        }
         for (fd.params, 0..) |*param, pi| {
+            if (pi >= args_ast.len) {
+                if (param.default_expr == null) return false;
+                continue;
+            }
             if (!Lowering.isTypeParamDecl(param, fd.type_params)) continue;
             const node = args_ast[pi];
             if (!(type_bridge.isTypeShapedAstNode(node, &self.l.module.types) or
