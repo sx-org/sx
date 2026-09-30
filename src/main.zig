@@ -358,25 +358,21 @@ pub fn main(init: std.process.Init) !void {
             break :blk buf;
         };
 
-        // Compile C sources natively and dlopen before JIT
         timer.mark();
-        var c_handle = compileCForJIT(allocator, io, &comp) catch {
+        const c_objects = compileCForJIT(allocator, io, &comp) catch {
             comp.renderDiagnostics();
             std.process.exit(1);
         };
-        defer c_handle.unload(io);
         timer.record("c-import");
 
         comp.renderDiagnostics();
 
         // dlopen @library dependencies so JIT can resolve extern symbols.
-        // Program-owned dylibs (the @import c unit first, then @library
-        // deps in declaration order) also become PRIORITY search targets
-        // for the JIT, consulted before the process-wide fallback.
+        // They also become PRIORITY search targets for the JIT, in
+        // declaration order, consulted before the process-wide fallback.
         const libs = extractLibraries(allocator, root) catch std.process.exit(1);
         var lib_handles = std.ArrayList(*anyopaque).empty;
         var priority_dylibs = std.ArrayList([:0]const u8).empty;
-        if (c_handle.dylib_path) |cp| priority_dylibs.append(allocator, cp) catch {};
         defer {
             for (lib_handles.items) |h| _ = std.c.dlclose(h);
         }
@@ -409,7 +405,7 @@ pub fn main(init: std.process.Init) !void {
             const marker = "--- build done ---\n";
             _ = std.c.write(1, marker.ptr, marker.len);
         }
-        const exit_code = sx.target.runJITFromObject(obj_buf, priority_dylibs.items) catch {
+        const exit_code = sx.target.runJITFromObject(obj_buf, c_objects, priority_dylibs.items) catch {
             // JIT failed — fall back to AOT
             timer.record("jit-fail");
             runAOT(allocator, io, path, target_config, &timer, enable_cache, stdlib_paths) catch std.process.exit(1);
@@ -425,13 +421,11 @@ pub fn main(init: std.process.Init) !void {
     }
 }
 
-/// Compile C sources from @import c blocks and dlopen them for JIT.
-fn compileCForJIT(allocator: std.mem.Allocator, io: std.Io, comp: *sx.core.Compilation) !sx.c_import.CImportHandle {
+/// Compile C sources from @import c blocks to in-memory objects for the JIT.
+fn compileCForJIT(allocator: std.mem.Allocator, io: std.Io, comp: *sx.core.Compilation) ![]sx.llvm_api.c.LLVMMemoryBufferRef {
     const c_infos = try comp.collectCImportSources();
-    if (c_infos.len == 0) return .{ .allocator = allocator };
-
-    const obj_bufs = try sx.c_import.compileCToObjects(allocator, io, c_infos, comp.target_config, .host_jit);
-    return try sx.c_import.loadCObjectsForJIT(allocator, io, obj_bufs);
+    if (c_infos.len == 0) return &.{};
+    return try sx.c_import.compileCToObjects(allocator, io, c_infos, comp.target_config, .host_jit);
 }
 
 /// Compile C sources from @import c blocks to .o files for linking.

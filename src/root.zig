@@ -13,6 +13,7 @@ pub const types = @import("types.zig");
 pub const types_tests = @import("types.test.zig");
 pub const target = @import("target.zig");
 pub const target_tests = @import("target.test.zig");
+pub const jit_emutls_tests = @import("jit_emutls.test.zig");
 pub const builtins = @import("builtins.zig");
 pub const contracts = @import("contracts.zig");
 pub const source_site = @import("source_site.zig");

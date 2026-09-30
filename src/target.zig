@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 const llvm = @import("llvm_api.zig");
 const c = llvm.c;
 const zig_backend = @import("zig_backend.zig");
+const jit_emutls = @import("jit_emutls.zig");
 
 /// One `main = true @JniClass("...")` declaration's Java-source emission.
 /// Populated by lowering and surfaced to the sx Android bundler in
@@ -361,13 +362,15 @@ fn emitZigLinkArgv(
 }
 
 /// Execute a precompiled object file in-process using LLVM's ORC JIT.
-/// Takes ownership of obj_buf. Returns the exit code from main().
+/// Takes ownership of obj_buf and of every `c_objects` buffer: the
+/// `@import c` objects link into the program's JITDylib, so references
+/// resolve in both directions. Returns the exit code from main().
 /// `priority_dylibs` are consulted for symbols BEFORE the process-wide
-/// search, in order: dylibs that belong to the program (the `@import c`
-/// unit's linked objects, then `@library` deps in declaration order)
-/// must win over a same-named export of an image the host process
-/// happens to carry (libz via LLVM, libsqlite3 via CoreServices, ...).
-pub fn runJITFromObject(obj_buf: c.LLVMMemoryBufferRef, priority_dylibs: []const [:0]const u8) !u8 {
+/// search, in order: dylibs that belong to the program (`@library` deps
+/// in declaration order) must win over a same-named export of an image
+/// the host process happens to carry (libz via LLVM, libsqlite3 via
+/// CoreServices, ...).
+pub fn runJITFromObject(obj_buf: c.LLVMMemoryBufferRef, c_objects: []const c.LLVMMemoryBufferRef, priority_dylibs: []const [:0]const u8) !u8 {
     // Create LLJIT with default builder (no custom TM needed — .o is precompiled)
     var jit: c.LLVMOrcLLJITRef = null;
     var err = c.LLVMOrcCreateLLJIT(&jit, null);
@@ -408,14 +411,26 @@ pub fn runJITFromObject(obj_buf: c.LLVMMemoryBufferRef, priority_dylibs: []const
     }
     c.LLVMOrcJITDylibAddGenerator(jd, gen);
 
-    // Add precompiled object file (transfers ownership of obj_buf)
-    err = c.LLVMOrcLLJITAddObjectFile(jit, jd, obj_buf);
+    jit_emutls.init();
+    var emutls = c.LLVMOrcCSymbolMapPair{
+        .Name = c.LLVMOrcLLJITMangleAndIntern(jit, "__emutls_get_address"),
+        .Sym = .{
+            .Address = @intFromPtr(&jit_emutls.getAddress),
+            .Flags = .{ .GenericFlags = c.LLVMJITSymbolGenericFlagsExported | c.LLVMJITSymbolGenericFlagsCallable, .TargetFlags = 0 },
+        },
+    };
+    const emutls_mu = c.LLVMOrcAbsoluteSymbols(&emutls, 1);
+    err = c.LLVMOrcJITDylibDefine(jd, emutls_mu);
     if (err != null) {
+        c.LLVMOrcDisposeMaterializationUnit(emutls_mu);
         const msg = c.LLVMGetErrorMessage(err);
         defer c.LLVMDisposeErrorMessage(msg);
-        std.debug.print("JIT add object error: {s}\n", .{std.mem.span(msg)});
+        std.debug.print("JIT define error: {s}\n", .{std.mem.span(msg)});
         return error.CompileError;
     }
+
+    for (c_objects) |c_obj| try addJITObject(jit, jd, c_obj);
+    try addJITObject(jit, jd, obj_buf);
 
     // Look up the "main" function
     var main_addr: c.LLVMOrcExecutorAddress = 0;
@@ -445,6 +460,17 @@ pub fn runJITFromObject(obj_buf: c.LLVMMemoryBufferRef, priority_dylibs: []const
     const main_fn: *const fn () callconv(.c) i32 = @ptrFromInt(main_addr);
     const result = main_fn();
     return @truncate(@as(u32, @bitCast(result)));
+}
+
+/// Transfers ownership of `obj_buf` to the JIT.
+fn addJITObject(jit: c.LLVMOrcLLJITRef, jd: c.LLVMOrcJITDylibRef, obj_buf: c.LLVMMemoryBufferRef) !void {
+    const err = c.LLVMOrcLLJITAddObjectFile(jit, jd, obj_buf);
+    if (err != null) {
+        const msg = c.LLVMGetErrorMessage(err);
+        defer c.LLVMDisposeErrorMessage(msg);
+        std.debug.print("JIT add object error: {s}\n", .{std.mem.span(msg)});
+        return error.CompileError;
+    }
 }
 
 // Android APK bundling (createApk, compileJniMainSources,

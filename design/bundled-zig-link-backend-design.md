@@ -187,8 +187,8 @@ Rules:
 ## 5. Scope
 
 - The backend covers `sx build` for macOS, Linux and Windows targets.
-- `src/c_import.zig` shells the system `cc` for C imports in JIT mode; it does
-  not go through the backend.
+- C imports in JIT mode link in-process through ORC; they do not go through
+  the backend.
 - sx consumes the `zig cc` driver: it neither embeds lld nor builds libc from
   source, and it pins no glibc floor (`…-gnu.2.28`).
 - System `cc` stays the fallback linker, and in auto mode an explicit

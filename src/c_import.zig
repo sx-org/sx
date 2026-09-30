@@ -183,27 +183,6 @@ fn collectIncludeDepBytes(
     return try dep_bytes.toOwnedSlice(allocator);
 }
 
-/// Handle returned from loadCObjectsForJIT — caller must call unload() after JIT.
-pub const CImportHandle = struct {
-    dylib_handle: ?*anyopaque = null,
-    /// Where the unit's linked dylib lives for THIS run; the JIT adds it
-    /// as a priority symbol-search target ahead of the process images.
-    dylib_path: ?[:0]const u8 = null,
-    temp_paths: []const []const u8 = &.{},
-    allocator: std.mem.Allocator,
-
-    pub fn unload(self: *CImportHandle, io: std.Io) void {
-        // dlclose
-        if (self.dylib_handle) |h| {
-            _ = std.c.dlclose(h);
-        }
-        // Clean up temp files
-        for (self.temp_paths) |path| {
-            std.Io.Dir.deleteFile(.cwd(), io, path) catch {};
-        }
-    }
-};
-
 /// Parse C headers to extract function declarations as synthetic AST nodes.
 /// Called during import resolution (no LLVM context needed).
 pub fn processCImport(
@@ -477,6 +456,12 @@ pub fn compileCToObjects(
     const llvm_version = try std.fmt.allocPrint(allocator, "{d}.{d}.{d}", .{ ver_maj, ver_min, ver_pat });
     const configured_triple: ?[]const u8 = if (target_config.triple) |t| std.mem.span(t) else null;
     const opt_flag = target_config.opt_level.toClangFlag();
+    // `jit_emutls` serves the JIT's TLS. A linked build uses native TLS on
+    // every triple, including those whose Clang default is emulated.
+    const tls_flag: [:0]const u8 = switch (purpose) {
+        .host_jit => "-femulated-tls",
+        .linked_build => "-fno-emulated-tls",
+    };
     const libc = switch (purpose) {
         .host_jit => null,
         .linked_build => try @import("target.zig").linuxLibcIncludeDirs(allocator, io, target_config),
@@ -537,6 +522,7 @@ pub fn compileCToObjects(
             }
         }
         try args_list.append(allocator, opt_flag.ptr);
+        try args_list.append(allocator, tls_flag.ptr);
         var inc_dirs = std.ArrayList([]const u8).empty;
         for (info.includes) |inc| {
             const dir = dirName(inc);
@@ -554,6 +540,7 @@ pub fn compileCToObjects(
         // key. User flags follow it (and therefore may deliberately override it).
         var cache_flags = std.ArrayList([]const u8).empty;
         try cache_flags.append(allocator, opt_flag);
+        try cache_flags.append(allocator, tls_flag);
         try cache_flags.appendSlice(allocator, info.flags);
 
         const args_ptr: [*c][*c]const u8 = if (args_list.items.len > 0)
@@ -655,87 +642,6 @@ pub fn compileCToObjects(
     }
 
     return try obj_bufs.toOwnedSlice(allocator);
-}
-
-/// For JIT mode: write .o files to temp, link into a shared library, dlopen it.
-/// Returns a handle that must be unloaded after JIT execution.
-pub fn loadCObjectsForJIT(
-    allocator: std.mem.Allocator,
-    io: std.Io,
-    obj_bufs: []c.LLVMMemoryBufferRef,
-) !CImportHandle {
-    if (obj_bufs.len == 0) return .{ .allocator = allocator };
-
-    var temp_paths = std.ArrayList([]const u8).empty;
-
-    // Write each .o buffer to a temp file (per-pid names: concurrent
-    // `sx run` processes must not clobber each other's link inputs)
-    const pid = std.c.getpid();
-    var obj_paths = std.ArrayList([]const u8).empty;
-    for (obj_bufs, 0..) |buf, i| {
-        const path = try std.fmt.allocPrint(allocator, "/tmp/sx_c_{d}_{d}.o", .{ pid, i });
-        const start = c.LLVMGetBufferStart(buf);
-        const size = c.LLVMGetBufferSize(buf);
-        const data = @as([*]const u8, @ptrCast(start))[0..size];
-        std.Io.Dir.writeFile(.cwd(), io, .{ .sub_path = path, .data = data }) catch {
-            std.debug.print("failed to write temp object: {s}\n", .{path});
-            return error.CompileError;
-        };
-        try obj_paths.append(allocator, path);
-        try temp_paths.append(allocator, path);
-        c.LLVMDisposeMemoryBuffer(buf);
-    }
-
-    // Link into a shared library
-    const dylib_path = try std.fmt.allocPrintSentinel(allocator, "/tmp/sx_c_import_{d}.dylib", .{pid}, 0);
-    try temp_paths.append(allocator, dylib_path);
-
-    var argv = std.ArrayList([]const u8).empty;
-    try argv.append(allocator, "cc");
-    if (comptime builtin.os.tag == .macos) {
-        try argv.append(allocator, "-dynamiclib");
-    } else {
-        try argv.append(allocator, "-shared");
-    }
-    try argv.append(allocator, "-o");
-    try argv.append(allocator, dylib_path);
-    for (obj_paths.items) |op| {
-        try argv.append(allocator, op);
-    }
-
-    const argv_slice = try argv.toOwnedSlice(allocator);
-    var child = std.process.spawn(io, .{
-        .argv = argv_slice,
-    }) catch {
-        std.debug.print("failed to spawn linker for C import shared library\n", .{});
-        return error.CompileError;
-    };
-    const result = child.wait(io) catch {
-        std.debug.print("linker wait failed for C import shared library\n", .{});
-        return error.CompileError;
-    };
-    if (result != .exited or result.exited != 0) {
-        std.debug.print("linker failed for C import shared library (exit={})\n", .{result.exited});
-        return error.CompileError;
-    }
-
-    // dlopen the shared library
-    const dylib_z = try allocator.dupeZ(u8, dylib_path);
-    const handle = std.c.dlopen(dylib_z.ptr, .{ .NOW = true });
-    if (handle == null) {
-        const err = std.c.dlerror();
-        if (err) |e| {
-            std.debug.print("dlopen failed: {s}\n", .{std.mem.span(e)});
-        }
-        return error.CompileError;
-    }
-
-    return .{
-        .dylib_handle = handle,
-        .dylib_path = dylib_path,
-        .temp_paths = try temp_paths.toOwnedSlice(allocator),
-        .allocator = allocator,
-    };
 }
 
 /// Compile C sources using emcc for Emscripten/WASM targets.
