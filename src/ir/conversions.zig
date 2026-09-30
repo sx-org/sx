@@ -305,11 +305,9 @@ pub const CoercionResolver = struct {
 
         // Int ↔ payload-less enum. Such an enum IS an integer of its backing
         // type (§Enums), so the conversion is that integer conversion plus a
-        // retype. Modeled rather than left to the same-shaped passthrough,
-        // which keeps the SOURCE type and so answers `i64` for `n.(Zone)`
-        // (issue 0396). No range check: like every other `xx`/`.(T)`
-        // conversion this is well-defined, not value-preserving, and a flags
-        // enum makes non-variant bit patterns legal by construction.
+        // retype. No range check: like every other `xx`/`.(T)` conversion
+        // this is well-defined, not value-preserving, and a flags enum makes
+        // non-variant bit patterns legal by construction.
         if (src_int and self.l.enumBackingType(dst_ty) != null) return .int_to_enum;
         if (self.l.enumBackingType(src_ty) != null and dst_int) return .enum_to_int;
 
