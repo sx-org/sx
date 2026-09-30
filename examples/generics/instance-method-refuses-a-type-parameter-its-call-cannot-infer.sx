@@ -1,0 +1,27 @@
+// A generic instance's method is refused for the type parameter its call cannot
+// infer.
+@import "modules/std.sx";
+
+Tagged :: struct ($U: Type) {
+    u: $U = ---;
+}
+
+Plain :: struct {
+    text: string = "";
+}
+
+Box :: struct ($T: Type) {
+    v: T = ---;
+
+    stash :: (self: *Box(T), value: $I/@Init(Tagged($U))) -> U {
+        slot: Tagged(U) = ---;
+        value.write(*slot);
+        slot.u
+    }
+}
+
+main :: () -> i32 {
+    b := Box(i32){};
+    b.stash(Plain{ text = "unpinnable" });
+    0
+}

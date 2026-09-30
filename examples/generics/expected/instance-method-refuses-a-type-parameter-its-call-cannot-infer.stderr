@@ -1,0 +1,5 @@
+error: cannot infer generic type parameter 'U' for 'stash' from this call's arguments
+  --> examples/generics/instance-method-refuses-a-type-parameter-its-call-cannot-infer.sx:25:5
+   |
+25 |     b.stash(Plain{ text = "unpinnable" });
+   |     ^^^^^^^
