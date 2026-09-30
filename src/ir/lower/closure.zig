@@ -134,16 +134,15 @@ fn packIsBound(self: *Lowering, name: []const u8) bool {
     return false;
 }
 
-/// The `$` binder a lambda signature writes that nothing at this lowering can
-/// decide, or null when every binder it writes is bound. A lambda is a value,
-/// not a template, so no instantiation follows to bind one; the answer comes
-/// from the annotation AST because interning loses some of what was written
-/// (a pack collapses to a 0-arity closure, a phantom instance keeps no field).
+/// The `$` binder an annotation writes that nothing at this lowering can
+/// decide, or null when every binder it writes is bound. The answer comes from
+/// the annotation AST because interning loses some of what was written (a pack
+/// collapses to a 0-arity closure, a phantom instance keeps no field).
 ///
 /// `root` is the annotation itself: `$I/@Init(X)` there is a formation
 /// parameter, whose binder the argument decides, so only `X` is still open.
 /// The same spelling under a wrapper is an ordinary unbound binder.
-fn unboundSignatureBinder(self: *Lowering, node: *const Node, root: bool) ?[]const u8 {
+pub fn unboundSignatureBinder(self: *Lowering, node: *const Node, root: bool) ?[]const u8 {
     switch (node.data) {
         .type_expr => |te| {
             if (root) {

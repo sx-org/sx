@@ -1,17 +1,11 @@
-error: 'Plain' cannot form an initializer for 'Tagged(<unresolved>)': no conversion applies
-  --> examples/fluent/2055-fluent-init-ufcs-bind-parity.sx:31:5
-   |
-31 |     Plain{ text = "unpinnable" }.store();
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
 error: cannot infer generic type parameter 'U' for 'store' from this call's arguments
-  --> examples/fluent/2055-fluent-init-ufcs-bind-parity.sx:31:5
+  --> examples/fluent/2055-fluent-init-ufcs-bind-parity.sx:27:5
    |
-31 |     Plain{ text = "unpinnable" }.store();
+27 |     Plain{ text = "unpinnable" }.store();
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: cannot infer generic type parameter 'U' for 'store' from this call's arguments
-  --> examples/fluent/2055-fluent-init-ufcs-bind-parity.sx:32:5
+  --> examples/fluent/2055-fluent-init-ufcs-bind-parity.sx:28:5
    |
-32 |     store(Other{ n = 1 });
+28 |     store(Other{ n = 1 });
    |     ^^^^^

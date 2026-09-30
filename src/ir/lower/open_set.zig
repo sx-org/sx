@@ -582,7 +582,7 @@ fn nonConformance(self: *Lowering, set: *const Set, variant: TypeId) ?NonConform
     const inst = self.getStructTypeName(variant);
     for (set.decl.methods) |m| {
         if (m.default_body != null) continue;
-        var bindings: ?*const std.StringHashMap(TypeId) = null;
+        var bindings: ?std.StringHashMap(TypeId) = null;
         const impl: *const ast.FnDecl = blk: {
             if (self.plainStructMethod(variant, m.name)) |pm| break :blk pm.fd;
             if (inst) |name| {
@@ -609,7 +609,7 @@ fn signatureFault(
     declared: ast.ProtocolMethodDecl,
     impl: *const ast.FnDecl,
     variant: TypeId,
-    bindings: ?*const std.StringHashMap(TypeId),
+    bindings: ?std.StringHashMap(TypeId),
 ) ?NonConformance {
     // The receiver occupies params[0]; everything after it is what the set states.
     if (impl.params.len == 0) return null;
@@ -626,7 +626,7 @@ fn signatureFault(
     const impl_env = self.functionEnvironment(impl);
     const saved = self.type_bindings;
     defer self.type_bindings = saved;
-    if (bindings) |b| self.type_bindings = b.*;
+    if (bindings) |b| self.type_bindings = b;
     for (declared.params, extra) |want_node, got| {
         const want = self.resolveDeclaredTypeSubSelf(want_node, variant, set.source_file);
         const got_ty = resolveMemberTypeIn(self, impl_env, got.type_expr, bindings != null);

@@ -1704,7 +1704,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         if (self.genericInstanceMethod(inst_name, fa.field)) |gm| {
                             if (self.ensureGenericInstanceMethodLowered(gm)) |fid| {
                                 const func = &self.module.functions.items[@intFromEnum(fid)];
-                                self.appendDefaultArgs(gm.fd, &args, c.callee, gm.bindings.*);
+                                self.appendDefaultArgs(gm.fd, &args, c.callee, gm.bindings);
                                 const final_args = self.prependCtxIfNeeded(func, args.items);
                                 self.coerceCallArgs(final_args, func.params);
                                 return self.builder.call(fid, final_args, func.ret);
@@ -2152,12 +2152,12 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     if (instanceMethodNeedsArgBinding(gm)) {
                         const saved_seed = self.impl_binder_seed;
                         defer self.impl_binder_seed = saved_seed;
-                        self.impl_binder_seed = gm.bindings;
+                        self.impl_binder_seed = &gm.bindings;
                         var eff_args = std.ArrayList(*const Node).empty;
                         defer eff_args.deinit(self.alloc);
                         eff_args.append(self.alloc, effective_obj_node) catch unreachable;
                         for (c.args) |a| eff_args.append(self.alloc, a) catch unreachable;
-                        var gbindings = callBindings(self, gm.fd, eff_args.items, method_args.items);
+                        var gbindings = callBindings(self, gm.fd, fa.field, c.callee.span, eff_args.items, method_args.items) orelse return Ref.none;
                         defer gbindings.deinit();
                         const base = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ gm.inst_name, self.accessorEffName(gm.fd) }) catch fa.field;
                         const gmangled = self.genericResolver().mangleGenericName(base, gm.fd, &gbindings);
@@ -2175,7 +2175,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         const ret_ty = func.ret;
                         const params = func.params;
                         self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty, null);
-                        self.appendDefaultArgs(gm.fd, &method_args, c.callee, gm.bindings.*);
+                        self.appendDefaultArgs(gm.fd, &method_args, c.callee, gm.bindings);
                         const final_args = self.prependCtxIfNeeded(func, method_args.items);
                         self.coerceCallArgs(final_args, params);
                         return self.builder.call(fid, final_args, ret_ty);
@@ -2199,7 +2199,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         eff_args.append(self.alloc, effective_obj_node) catch unreachable;
                         for (c.args) |a| eff_args.append(self.alloc, a) catch unreachable;
 
-                        var gbindings = callBindings(self, gen_fd, eff_args.items, method_args.items);
+                        var gbindings = callBindings(self, gen_fd, fa.field, c.callee.span, eff_args.items, method_args.items) orelse return Ref.none;
                         defer gbindings.deinit();
 
                         const generic_base = if (nominal_method) |m| self.plainStructMethodName(m) else qualified;
@@ -2366,7 +2366,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         // Nothing more specific applies now: a receiver already
                         // lowered cannot reach a destination-first parameter.
                         if (refuseDestinationFirstDispatch(self, fd, fa.field, obj_ty, c.callee.span)) return Ref.none;
-                        var gbindings = callBindings(self, fd, eff_args.items, method_args.items);
+                        var gbindings = callBindings(self, fd, eff_field, c.callee.span, eff_args.items, method_args.items) orelse return Ref.none;
                         defer gbindings.deinit();
                         const gmangled = self.genericResolver().mangleGenericName(eff_field, fd, &gbindings);
                         if (self.monomorphizeFunction(fd, gmangled, &gbindings)) |gfid| {
@@ -2776,19 +2776,8 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
 /// Caller owns the returned map and must call `.deinit()`.
 /// Lower a call to a generic function by monomorphizing it with inferred type arguments.
 pub fn lowerGenericCall(self: *Lowering, fd: *const ast.FnDecl, base_name: []const u8, call_node: *const ast.Call, lowered_args: []Ref) Ref {
-    var bindings = callBindings(self, fd, call_node.args, lowered_args);
+    var bindings = callBindings(self, fd, base_name, call_node.callee.span, call_node.args, lowered_args) orelse return Ref.none;
     defer bindings.deinit();
-
-    // An uninferrable TYPE param must diagnose here: monomorphizing with
-    // it unbound stamps `.unresolved` through the body and trips the
-    // emitter's sentinel panic instead of surfacing a source error.
-    for (fd.type_params) |tp| {
-        if (!self.genericResolver().bindsTypeArgument(tp, fd.body.source_file)) continue;
-        if (bindings.contains(tp.name)) continue;
-        if (self.diagnostics) |d|
-            d.addFmt(.err, call_node.callee.span, "cannot infer generic type parameter '{s}' for '{s}' from this call's arguments", .{ tp.name, base_name });
-        return Ref.none;
-    }
 
     const types_passed_explicitly = self.genericResolver().typesPassedExplicitly(fd, call_node.args);
     const mangled_name = self.genericResolver().mangleGenericName(base_name, fd, &bindings);
@@ -2844,14 +2833,29 @@ pub fn lowerGenericCall(self: *Lowering, fd: *const ast.FnDecl, base_name: []con
 /// The bindings a call mangles and monomorphizes on: what the argument NODES
 /// say, then what the lowered callable arguments ARE. `args_ast` and `lowered`
 /// are parallel to `fd.params`; a dot-call prepends its receiver to both.
+///
+/// Null once a type argument the call cannot bind is diagnosed: monomorphizing
+/// with it unbound stamps `.unresolved` through the body. An `@Init` binder
+/// waits on the binders its target names, so those are named first.
 fn callBindings(
     self: *Lowering,
     fd: *const ast.FnDecl,
+    name: []const u8,
+    span: ast.Span,
     args_ast: []const *const Node,
     lowered: []Ref,
-) std.StringHashMap(TypeId) {
+) ?std.StringHashMap(TypeId) {
     var bindings = self.genericResolver().buildTypeBindings(fd, args_ast);
     bindCallableBinders(self, fd, args_ast, lowered, &bindings);
+    for ([2]bool{ false, true }) |init_round| for (fd.type_params) |tp| {
+        if (init_plan.isInitBinder(fd, tp.name) != init_round) continue;
+        if (!self.genericResolver().bindsTypeArgument(tp, fd.body.source_file)) continue;
+        if (bindings.contains(tp.name)) continue;
+        if (self.diagnostics) |d|
+            d.addFmt(.err, span, "cannot infer generic type parameter '{s}' for '{s}' from this call's arguments", .{ tp.name, name });
+        bindings.deinit();
+        return null;
+    };
     return bindings;
 }
 
@@ -5820,7 +5824,7 @@ pub fn resolveCallParamTypes(
             if (variantParamTypes(self, self.resolveTypeArg(fa.object), fa.field)) |params| return params;
         }
         if (self.genericStaticHeadMethod(fa.object, fa.field)) |method| {
-            var scope = generics_mod.installTypeBindings(self, method.bindings.*);
+            var scope = generics_mod.installTypeBindings(self, method.bindings);
             defer scope.exit();
             var demands = std.ArrayList(ParamDemand).empty;
             for (method.fd.params, 0..) |_, i| {
@@ -6002,7 +6006,7 @@ pub fn resolveCallParamTypes(
                     for (c.args, 0..) |a, i| eff_args[i + 1] = a;
                     const saved_seed = self.impl_binder_seed;
                     defer self.impl_binder_seed = saved_seed;
-                    self.impl_binder_seed = gm.bindings;
+                    self.impl_binder_seed = &gm.bindings;
                     const all = astCalleeParamTypes(self, gm.fd, eff_args);
                     return if (all.len > 0) all[1..] else &.{};
                 }
@@ -6059,7 +6063,7 @@ pub fn resolveCallParamTypes(
                 // follows the selected `fd` (its own `body.source_file`).
                 if (self.genericInstanceMethod(sname, fa.field)) |gm| {
                     if (gm.fd.params.len > 0) {
-                        var scope = generics_mod.installTypeBindings(self, gm.bindings.*);
+                        var scope = generics_mod.installTypeBindings(self, gm.bindings);
                         defer scope.exit();
                         var demands = std.ArrayList(ParamDemand).empty;
                         for (1..gm.fd.params.len) |i| {

@@ -1,0 +1,5 @@
+error: cannot infer generic type parameter 'U' for 'store' from this call's arguments
+  --> examples/fluent/init-target-binder-is-the-callees-own.sx:20:5
+   |
+20 |     store(Plain{ text = "unpinnable" });
+   |     ^^^^^

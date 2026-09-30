@@ -45,7 +45,7 @@ pub fn instanceName(self: *Lowering, preferred: []const u8) []const u8 {
     return owned;
 }
 
-pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name: []const u8, bindings: *std.StringHashMap(TypeId)) ?FuncId {
+pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name: []const u8, bindings: *const std.StringHashMap(TypeId)) ?FuncId {
     var arguments = std.ArrayList(instances.Argument).empty;
     defer arguments.deinit(self.alloc);
     instances.appendBindings(self.alloc, &arguments, bindings);
@@ -2321,7 +2321,9 @@ pub fn resolveParameterizedWithBindings(self: *Lowering, pt: *const ast.Paramete
 /// instance (mangled / alias) name the monomorphized function is keyed under.
 pub const GenericStructMethod = struct {
     fd: *const ast.FnDecl,
-    bindings: *std.StringHashMap(TypeId),
+    /// A copy: instantiating a generic grows `struct_instance_bindings`, which
+    /// moves its values.
+    bindings: std.StringHashMap(TypeId),
     inst_name: []const u8,
 };
 
@@ -2334,7 +2336,7 @@ pub const GenericStructMethod = struct {
 pub fn genericInstanceMethodReturnType(self: *Lowering, gm: GenericStructMethod) TypeId {
     const rt_node = gm.fd.return_type orelse return .void;
     const saved = self.type_bindings;
-    self.type_bindings = gm.bindings.*;
+    self.type_bindings = gm.bindings;
     defer self.type_bindings = saved;
     const saved_src = self.lexicalContext();
     defer self.restoreLexicalContext(saved_src);
@@ -2354,7 +2356,7 @@ pub fn genericInstanceMethodReturnType(self: *Lowering, gm: GenericStructMethod)
 /// a LOUD invariant failure — instantiation writes both together (CP-2).
 pub fn genericInstanceMethod(self: *Lowering, inst_name: []const u8, method: []const u8) ?GenericStructMethod {
     const author = self.struct_instance_author.get(inst_name) orelse return null;
-    const bindings = self.struct_instance_bindings.getPtr(inst_name) orelse
+    const bindings = self.struct_instance_bindings.get(inst_name) orelse
         std.debug.panic("generic struct instance '{s}' has an author but no bindings", .{inst_name});
     // INLINE struct method (`Box :: struct { make :: ... }`): selected via the
     // instance's STAMPED author, so the body is the one authored alongside the
@@ -2398,7 +2400,7 @@ pub fn ensureGenericInstanceMethodLowered(self: *Lowering, m: GenericStructMetho
     // A `@set` accessor mangles as `Inst.name$set` so its monomorph never
     // collides with the same-name `@get`'s `Inst.name` (coexistence).
     const mangled = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ m.inst_name, self.accessorEffName(m.fd) }) catch return null;
-    return self.monomorphizeFunction(m.fd, mangled, m.bindings);
+    return self.monomorphizeFunction(m.fd, mangled, &m.bindings);
 }
 
 /// Dispatch a generic-struct-instance method that declares COMPTIME params
