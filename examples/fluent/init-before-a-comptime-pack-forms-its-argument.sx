@@ -1,0 +1,27 @@
+// A destination-first parameter ahead of a comptime pack forms its argument into
+// an initializer, spelled as a call or as a dot-call.
+@import "modules/std.sx";
+
+traced :: (v: i64) -> i64 {
+    print("  argument runs\n");
+    v
+}
+
+fixed :: ufcs (value: $I/@Init(i64), ..$rest) {
+    print("fixed, {} trailing\n", rest.len);
+    slot: i64 = ---;
+    value.write(*slot);
+    print("  wrote {}\n", slot);
+}
+
+kept :: ufcs (value: $I/@Init($T), ..$rest) -> T {
+    slot: T = ---;
+    value.write(*slot);
+    slot
+}
+
+main :: () {
+    fixed(traced(41), "a", "b");
+    traced(42).fixed("c");
+    print("{}\n", kept("open", 1, 2));
+}
