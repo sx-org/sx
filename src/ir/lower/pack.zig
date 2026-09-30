@@ -6,6 +6,7 @@ const types = @import("../types.zig");
 const inst_mod = @import("../inst.zig");
 const generics_mod = @import("../generics.zig");
 const lower_bound = @import("bound.zig");
+const lower_init_plan = @import("init_plan.zig");
 
 const TypeId = types.TypeId;
 const Ref = inst_mod.Ref;
@@ -803,9 +804,13 @@ fn spreadIndexNodes(self: *Lowering, operand: *const Node, span: ast.Span, count
 /// lower their own AST (the pack element types must be known before contextual
 /// prefix types such as `Closure(..xs.T)` can resolve), so they cannot use the
 /// ordinary call loop. Keep the same important parameter semantics here:
-/// contextual typing, implicit address-of, protocol erasure/borrowing, and
-/// value-position lowering. Each successful branch lowers `arg` exactly once.
+/// initializer formation, contextual typing, implicit address-of, protocol
+/// erasure/borrowing, and value-position lowering. Each successful branch
+/// lowers `arg` exactly once.
 fn lowerPackPrefixArg(self: *Lowering, arg: *const Node, param_ty: TypeId, is_receiver: bool) Ref {
+    // A `$I/@Init(T)` parameter forms the argument into a recipe instead of
+    // evaluating it.
+    if (self.initTargetOf(param_ty)) |target| return self.formInitPlan(arg, target);
     if (self.foldComptimeFloatInit(arg, param_ty)) |folded| return folded;
 
     // Concrete lvalue T -> *T: borrow the caller's storage. Leaving this to
@@ -1059,12 +1064,18 @@ pub fn lowerPackFnCallNamed(
                 // is lowered AFTER, in the caller's context.
                 const demand = lower_bound.paramDemand(self, fd, param_idx);
                 var dem = self.enterDemand(demand);
-                const pty = demand.coerceType() orelse .unresolved;
+                const arg_node = call_node.args[ri];
+                const declared = demand.coerceType() orelse .unresolved;
+                // An open `@Init` target (`$I/@Init($T)`) is the argument's own
+                // type, so its binder is known only from the argument.
+                const pty = if (declared == .unresolved and lower_init_plan.boundTargetNode(p.type_expr) != null)
+                    self.initBinderType(p.type_expr, p.type_expr.data.type_expr.name, arg_node, self.inferExprType(arg_node)) orelse declared
+                else
+                    declared;
                 // Prefix arg is a value position (see the pack-arg
                 // loop above): force block-form if/match to yield its value.
                 const saved_prefix_fbv = self.force_block_value;
                 self.force_block_value = true;
-                const arg_node = call_node.args[ri];
                 const arg_ref = lowerPackPrefixArg(self, arg_node, pty, receiver_node != null and param_idx == 0);
                 args.append(self.alloc, arg_ref) catch return self.builder.constInt(0, .void);
                 self.force_block_value = saved_prefix_fbv;
