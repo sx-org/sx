@@ -1704,7 +1704,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         if (self.genericInstanceMethod(inst_name, fa.field)) |gm| {
                             if (self.ensureGenericInstanceMethodLowered(gm)) |fid| {
                                 const func = &self.module.functions.items[@intFromEnum(fid)];
-                                self.appendDefaultArgs(gm.fd, &args, c.callee, gm.bindings.*);
+                                self.appendDefaultArgs(gm.fd, &args, c.callee, gm.bindings);
                                 const final_args = self.prependCtxIfNeeded(func, args.items);
                                 self.coerceCallArgs(final_args, func.params);
                                 return self.builder.call(fid, final_args, func.ret);
@@ -2152,7 +2152,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     if (instanceMethodNeedsArgBinding(gm)) {
                         const saved_seed = self.impl_binder_seed;
                         defer self.impl_binder_seed = saved_seed;
-                        self.impl_binder_seed = gm.bindings;
+                        self.impl_binder_seed = &gm.bindings;
                         var eff_args = std.ArrayList(*const Node).empty;
                         defer eff_args.deinit(self.alloc);
                         eff_args.append(self.alloc, effective_obj_node) catch unreachable;
@@ -2175,7 +2175,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         const ret_ty = func.ret;
                         const params = func.params;
                         self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty, null);
-                        self.appendDefaultArgs(gm.fd, &method_args, c.callee, gm.bindings.*);
+                        self.appendDefaultArgs(gm.fd, &method_args, c.callee, gm.bindings);
                         const final_args = self.prependCtxIfNeeded(func, method_args.items);
                         self.coerceCallArgs(final_args, params);
                         return self.builder.call(fid, final_args, ret_ty);
@@ -5823,7 +5823,7 @@ pub fn resolveCallParamTypes(
             if (variantParamTypes(self, self.resolveTypeArg(fa.object), fa.field)) |params| return params;
         }
         if (self.genericStaticHeadMethod(fa.object, fa.field)) |method| {
-            var scope = generics_mod.installTypeBindings(self, method.bindings.*);
+            var scope = generics_mod.installTypeBindings(self, method.bindings);
             defer scope.exit();
             var demands = std.ArrayList(ParamDemand).empty;
             for (method.fd.params, 0..) |_, i| {
@@ -6005,7 +6005,7 @@ pub fn resolveCallParamTypes(
                     for (c.args, 0..) |a, i| eff_args[i + 1] = a;
                     const saved_seed = self.impl_binder_seed;
                     defer self.impl_binder_seed = saved_seed;
-                    self.impl_binder_seed = gm.bindings;
+                    self.impl_binder_seed = &gm.bindings;
                     const all = astCalleeParamTypes(self, gm.fd, eff_args);
                     return if (all.len > 0) all[1..] else &.{};
                 }
@@ -6062,7 +6062,7 @@ pub fn resolveCallParamTypes(
                 // follows the selected `fd` (its own `body.source_file`).
                 if (self.genericInstanceMethod(sname, fa.field)) |gm| {
                     if (gm.fd.params.len > 0) {
-                        var scope = generics_mod.installTypeBindings(self, gm.bindings.*);
+                        var scope = generics_mod.installTypeBindings(self, gm.bindings);
                         defer scope.exit();
                         var demands = std.ArrayList(ParamDemand).empty;
                         for (1..gm.fd.params.len) |i| {

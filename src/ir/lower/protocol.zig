@@ -990,7 +990,7 @@ pub fn createProtocolThunk(self: *Lowering, proto_ty: TypeId, proto_name: []cons
         // have matched `protocolDispatchMethod` by protocol-instance + TypeId;
         // consulting a flat `Type.method` name here would let a distinct
         // same-display-name nominal type borrow another type's impl.
-        break :blk self.monomorphizeFunction(gm.fd, qualified, gm.bindings);
+        break :blk self.monomorphizeFunction(gm.fd, qualified, &gm.bindings);
     } else null;
 
     // Call the concrete method: ConcreteType.method(__sx_ctx?, ctx, args...).

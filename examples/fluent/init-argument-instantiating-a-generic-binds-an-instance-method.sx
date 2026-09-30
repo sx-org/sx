@@ -1,0 +1,22 @@
+// An instance method's initializer binder binds while its argument instantiates
+// another generic struct.
+@import "modules/std.sx";
+
+Pair :: struct ($T: Type) {
+    a: T = ---;
+    b: T = ---;
+}
+
+Box :: struct ($T: Type) {
+    v: T = ---;
+
+    put :: (self: *Box(T), value: $I/@Init(T)) {
+        value.write(*self.v);
+    }
+}
+
+main :: () {
+    b := Box(i64){};
+    b.put(Pair(i64){ a = 5, b = 6 }.a);
+    print("{}\n", b.v);
+}
