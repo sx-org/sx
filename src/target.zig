@@ -364,7 +364,9 @@ fn emitZigLinkArgv(
 /// Execute a precompiled object file in-process using LLVM's ORC JIT.
 /// Takes ownership of obj_buf and of every `c_objects` buffer: the
 /// `@import c` objects link into the program's JITDylib, so references
-/// resolve in both directions. Returns the exit code from main().
+/// resolve in both directions. Their initializers run before main(); when
+/// main() returns or the program exits, the atexit handlers run, then their
+/// finalizers. Returns the exit code from main().
 /// `priority_dylibs` are consulted for symbols BEFORE the process-wide
 /// search, in order: dylibs that belong to the program (`@library` deps
 /// in declaration order) must win over a same-named export of an image
@@ -429,8 +431,23 @@ pub fn runJITFromObject(obj_buf: c.LLVMMemoryBufferRef, c_objects: []const c.LLV
         return error.CompileError;
     }
 
-    for (c_objects) |c_obj| try addJITObject(jit, jd, c_obj);
-    try addJITObject(jit, jd, obj_buf);
+    var c_lifecycle: ?*c.SxJitCLifecycle = null;
+    if (c_objects.len > 0) {
+        err = c.sx_jit_add_c_objects(jit, c_objects.ptr, c_objects.len, &c_lifecycle);
+        if (err != null) {
+            const msg = c.LLVMGetErrorMessage(err);
+            defer c.LLVMDisposeErrorMessage(msg);
+            std.debug.print("JIT add object error: {s}\n", .{std.mem.span(msg)});
+            return error.CompileError;
+        }
+    }
+    err = c.LLVMOrcLLJITAddObjectFile(jit, jd, obj_buf);
+    if (err != null) {
+        const msg = c.LLVMGetErrorMessage(err);
+        defer c.LLVMDisposeErrorMessage(msg);
+        std.debug.print("JIT add object error: {s}\n", .{std.mem.span(msg)});
+        return error.CompileError;
+    }
 
     // Look up the "main" function
     var main_addr: c.LLVMOrcExecutorAddress = 0;
@@ -452,6 +469,17 @@ pub fn runJITFromObject(obj_buf: c.LLVMMemoryBufferRef, c_objects: []const c.LLV
         return error.CompileError;
     }
 
+    _ = atexit(finalizeJIT);
+    unfinalized_jit = .{ .jit = jit, .c_lifecycle = c_lifecycle };
+    err = c.sx_jit_run_initializers(jit, c_lifecycle);
+    if (err != null) {
+        unfinalized_jit = null;
+        const msg = c.LLVMGetErrorMessage(err);
+        defer c.LLVMDisposeErrorMessage(msg);
+        std.debug.print("JIT initializer error: {s}\n", .{std.mem.span(msg)});
+        return error.CompileError;
+    }
+
     // Cast to function pointer and call. The exit code is main's integer
     // return truncated to u8 — matching the OS truncation an AOT binary's
     // exit status already gets, so JIT and AOT agree (e.g. 1105 -> 81,
@@ -459,17 +487,24 @@ pub fn runJITFromObject(obj_buf: c.LLVMMemoryBufferRef, c_objects: []const c.LLV
     // as two's-complement low byte rather than being clamped.
     const main_fn: *const fn () callconv(.c) i32 = @ptrFromInt(main_addr);
     const result = main_fn();
+    finalizeJIT();
     return @truncate(@as(u32, @bitCast(result)));
 }
 
-/// Transfers ownership of `obj_buf` to the JIT.
-fn addJITObject(jit: c.LLVMOrcLLJITRef, jd: c.LLVMOrcJITDylibRef, obj_buf: c.LLVMMemoryBufferRef) !void {
-    const err = c.LLVMOrcLLJITAddObjectFile(jit, jd, obj_buf);
+extern "c" fn atexit(func: *const fn () callconv(.c) void) c_int;
+
+/// The JIT whose finalizers are still owed. A program that calls exit()
+/// never returns from main(), so `finalizeJIT` also runs as an atexit handler.
+var unfinalized_jit: ?struct { jit: c.LLVMOrcLLJITRef, c_lifecycle: ?*c.SxJitCLifecycle } = null;
+
+fn finalizeJIT() callconv(.c) void {
+    const pending = unfinalized_jit orelse return;
+    unfinalized_jit = null;
+    const err = c.sx_jit_run_finalizers(pending.jit, pending.c_lifecycle);
     if (err != null) {
         const msg = c.LLVMGetErrorMessage(err);
         defer c.LLVMDisposeErrorMessage(msg);
-        std.debug.print("JIT add object error: {s}\n", .{std.mem.span(msg)});
-        return error.CompileError;
+        std.debug.print("JIT finalizer error: {s}\n", .{std.mem.span(msg)});
     }
 }
 

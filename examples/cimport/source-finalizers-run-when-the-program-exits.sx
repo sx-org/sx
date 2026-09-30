@@ -1,0 +1,13 @@
+@import "modules/std.sx";
+
+quitting :: @import c {
+    @source "source-finalizers-run-when-the-program-exits/quit.c";
+};
+
+quit :: (code: i32) extern quitting "quit";
+
+main :: () -> i32 {
+    print("main\n");
+    quit(3);
+    0
+}

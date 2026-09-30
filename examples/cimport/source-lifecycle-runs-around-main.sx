@@ -1,0 +1,16 @@
+// The `@source` objects' constructors run before `main` in link order; once
+// `main` returns, the atexit handlers run, then the destructors in reverse.
+@import "modules/std.sx";
+
+lifecycle :: @import c {
+    @source "source-lifecycle-runs-around-main/first.c";
+    @source "source-lifecycle-runs-around-main/second.c";
+};
+
+armSecond :: () extern lifecycle "arm_second";
+
+main :: () -> i32 {
+    armSecond();
+    print("main\n");
+    0
+}
