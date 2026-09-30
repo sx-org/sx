@@ -26,7 +26,7 @@ error: 'string' cannot form an initializer for 'View': it is not a member of the
 66 |         "a string".emit();
    |         ^^^^^^^^^^
 
-help: 'string' is a builtin and cannot declare itself into a set — a member is a type the program declares: 'YourType :: @OpenVariant(View) { … }'
+help: 'string' cannot declare itself into a set — a member is a struct declared into it: 'YourType :: @OpenVariant(View) { … }'
    |
 66 |         "a string".emit();
    |         ^^^^^^^^^^
@@ -37,7 +37,7 @@ error: 'i64' cannot form an initializer for 'View': it is not a member of the se
 67 |         emit(41);
    |              ^^
 
-help: 'i64' is a builtin and cannot declare itself into a set — a member is a type the program declares: 'YourType :: @OpenVariant(View) { … }'
+help: 'i64' cannot declare itself into a set — a member is a struct declared into it: 'YourType :: @OpenVariant(View) { … }'
    |
 67 |         emit(41);
    |              ^^

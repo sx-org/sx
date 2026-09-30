@@ -26,7 +26,7 @@ error: 'Boxed' cannot form an initializer for 'View': it is not a member of the 
 64 |     formView(b);
    |              ^
 
-help: a type joins by declaring itself into the set: 'Boxed :: @OpenVariant(View) { … }'
+help: 'Boxed' cannot declare itself into a set — a member is a struct declared into it: 'YourType :: @OpenVariant(View) { … }'
    |
 64 |     formView(b);
    |              ^
@@ -37,7 +37,7 @@ error: 'Boxed' cannot form an initializer for 'View': it is not a member of the 
 65 |     b.formView();
    |     ^
 
-help: a type joins by declaring itself into the set: 'Boxed :: @OpenVariant(View) { … }'
+help: 'Boxed' cannot declare itself into a set — a member is a struct declared into it: 'YourType :: @OpenVariant(View) { … }'
    |
 65 |     b.formView();
    |     ^
@@ -70,7 +70,7 @@ error: 'Boxed' cannot form an initializer for '?View': it is not a member of the
 68 |     formOptView(b);
    |                 ^
 
-help: a type joins by declaring itself into the set: 'Boxed :: @OpenVariant(View) { … }'
+help: 'Boxed' cannot declare itself into a set — a member is a struct declared into it: 'YourType :: @OpenVariant(View) { … }'
    |
 68 |     formOptView(b);
    |                 ^
@@ -81,7 +81,7 @@ error: 'Boxed' cannot form an initializer for '?View': it is not a member of the
 69 |     b.formOptView();
    |     ^
 
-help: a type joins by declaring itself into the set: 'Boxed :: @OpenVariant(View) { … }'
+help: 'Boxed' cannot declare itself into a set — a member is a struct declared into it: 'YourType :: @OpenVariant(View) { … }'
    |
 69 |     b.formOptView();
    |     ^

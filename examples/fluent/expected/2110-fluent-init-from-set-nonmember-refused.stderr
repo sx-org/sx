@@ -48,7 +48,7 @@ error: 'View' cannot form an initializer for 'Named': it is not a member of the 
 60 |     formNamed(v);
    |               ^
 
-help: a type joins by declaring itself into the set: 'Named :: @OpenVariant(View) { … }'
+help: 'Named' cannot declare itself into a set — a member is a struct declared into it: 'YourType :: @OpenVariant(View) { … }'
    |
 60 |     formNamed(v);
    |               ^
@@ -59,7 +59,7 @@ error: 'View' cannot form an initializer for 'Named': it is not a member of the 
 61 |     v.formNamed();
    |     ^
 
-help: a type joins by declaring itself into the set: 'Named :: @OpenVariant(View) { … }'
+help: 'Named' cannot declare itself into a set — a member is a struct declared into it: 'YourType :: @OpenVariant(View) { … }'
    |
 61 |     v.formNamed();
    |     ^
