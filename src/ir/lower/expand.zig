@@ -324,16 +324,19 @@ const Expansion = struct {
         }
     }
 
-    /// Expand the views of every named import spliced since the last call,
-    /// returning whether one of them was not yet expanded.
+    /// Expand, in splice order, the views of every named import spliced since
+    /// the last call, returning whether one of them was not yet expanded.
     fn expandSplicedNamespaces(ex: *Expansion) bool {
         var fresh = false;
-        while (ex.spliced_namespaces.pop()) |ns| {
+        var i: usize = 0;
+        while (i < ex.spliced_namespaces.items.len) : (i += 1) {
+            const ns = ex.spliced_namespaces.items[i];
             if (!ex.namespaces.contains(ns.node)) fresh = true;
             ex.expandNamespaceNodes(&[_]*Node{ns.node}, &ex.namespaces);
             const list = ex.namespaceTargetList(ns.importer, ns.alias) orelse continue;
             ex.expandListInto(list, .own, .{ .ns_target = .{ .importer = ns.importer, .alias = ns.alias } });
         }
+        ex.spliced_namespaces.clearRetainingCapacity();
         return fresh;
     }
 

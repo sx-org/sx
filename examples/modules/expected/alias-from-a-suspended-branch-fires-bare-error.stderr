@@ -1,5 +1,11 @@
-error: halt.sx is reached
-  --> examples/modules/alias-from-a-suspended-branch-fires-bare-error/halt.sx:1:1
+error: first.sx is reached
+  --> examples/modules/alias-from-a-suspended-branch-fires-bare-error/first.sx:1:1
    |
- 1 | @error("halt.sx is reached");
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 1 | @error("first.sx is reached");
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: second.sx is reached
+  --> examples/modules/alias-from-a-suspended-branch-fires-bare-error/second.sx:1:1
+   |
+ 1 | @error("second.sx is reached");
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
