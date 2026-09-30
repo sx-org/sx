@@ -56,6 +56,7 @@ pub fn expandModuleDrivers(self: *Lowering, decls: []const *Node) []const *Node 
         .cursors = std.ArrayList(*std.StringHashMap([]const u8)).empty,
         .runs = std.AutoHashMap(*const Node, RunResult).init(self.alloc),
         .for_bodies = .init(self.alloc),
+        .namespaces = .init(self.alloc),
     };
     defer ex.deinit();
 
@@ -148,6 +149,13 @@ const DeferredBinding = struct {
     replacement: *const Node,
 };
 
+/// A spliced named import and the importer-side key of its namespace target.
+const SplicedNamespace = struct {
+    node: *Node,
+    importer: imports.EnvironmentId,
+    alias: []const u8,
+};
+
 const Expansion = struct {
     self: *Lowering,
     /// The root declaration list — where an `inline for` looks up the curated
@@ -179,6 +187,11 @@ const Expansion = struct {
     parked_any: bool = false,
     deferred_bindings: std.ArrayList(DeferredBinding) = .empty,
     for_bodies: std.AutoHashMap(*const Node, []const *Node),
+    /// Namespace nodes whose views are expanded.
+    namespaces: std.AutoHashMap(*const Node, void),
+    /// Named imports taken groups spliced. A parked driver's group splices
+    /// after `expandNamespaces` has run, so the drain expands their views.
+    spliced_namespaces: std.ArrayList(SplicedNamespace) = .empty,
 
     fn deinit(ex: *Expansion) void {
         ex.expanded.deinit();
@@ -201,6 +214,8 @@ const Expansion = struct {
         ex.runs.deinit();
         ex.deferred_bindings.deinit(ex.self.alloc);
         ex.for_bodies.deinit();
+        ex.namespaces.deinit();
+        ex.spliced_namespaces.deinit(ex.self.alloc);
     }
 
     fn decided(ex: *Expansion, decl: *Node) void {
@@ -290,9 +305,7 @@ const Expansion = struct {
     /// a module reachable only through an alias expands too, and its group is
     /// part of that module's member surface.
     fn expandNamespaces(ex: *Expansion, decls: []const *Node) void {
-        var seen = std.AutoHashMap(*const Node, void).init(ex.self.alloc);
-        defer seen.deinit();
-        ex.expandNamespaceNodes(decls, &seen);
+        ex.expandNamespaceNodes(decls, &ex.namespaces);
 
         // Expanding a target mints declaration facts, which can grow the edge
         // map itself — so the aliases are collected before any of them folds.
@@ -309,6 +322,22 @@ const Expansion = struct {
             const list = ex.namespaceTargetList(sink.ns_target.importer, sink.ns_target.alias) orelse continue;
             ex.expandListInto(list, .own, sink);
         }
+    }
+
+    /// Expand, in splice order, the views of every named import spliced since
+    /// the last call, returning whether one of them was not yet expanded.
+    fn expandSplicedNamespaces(ex: *Expansion) bool {
+        var fresh = false;
+        var i: usize = 0;
+        while (i < ex.spliced_namespaces.items.len) : (i += 1) {
+            const ns = ex.spliced_namespaces.items[i];
+            if (!ex.namespaces.contains(ns.node)) fresh = true;
+            ex.expandNamespaceNodes(&[_]*Node{ns.node}, &ex.namespaces);
+            const list = ex.namespaceTargetList(ns.importer, ns.alias) orelse continue;
+            ex.expandListInto(list, .own, .{ .ns_target = .{ .importer = ns.importer, .alias = ns.alias } });
+        }
+        ex.spliced_namespaces.clearRetainingCapacity();
+        return fresh;
     }
 
     fn namespaceTargetList(ex: *Expansion, importer: imports.EnvironmentId, alias: []const u8) ?[]const *Node {
@@ -489,6 +518,7 @@ const Expansion = struct {
                 _ = ex.parked.orderedRemove(i);
                 progress = true;
             }
+            progress = ex.expandSplicedNamespaces() or progress;
         }
         // The diagnostic is about the driver, not about how many views of its
         // module reached it.
@@ -1154,6 +1184,7 @@ const Group = struct {
             // them.
             g.ex.registerDrivers(imported.decls);
             g.emit(ns_node);
+            g.ex.spliced_namespaces.append(self.alloc, .{ .node = ns_node, .importer = self.environmentForSource(source).?, .alias = ns_name }) catch @panic("out of memory");
             return;
         }
 
