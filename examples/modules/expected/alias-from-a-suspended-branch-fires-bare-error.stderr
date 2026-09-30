@@ -1,0 +1,5 @@
+error: halt.sx is reached
+  --> examples/modules/alias-from-a-suspended-branch-fires-bare-error/halt.sx:1:1
+   |
+ 1 | @error("halt.sx is reached");
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

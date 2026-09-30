@@ -1,0 +1,10 @@
+// A module reached only through an alias declared by a branch whose condition
+// waits on a later branch expands its own module-scope branches.
+@import "modules/std.sx";
+inline if READY { lib :: @import "alias-from-a-suspended-branch-expands-its-module/lib.sx"; }
+inline if true { READY :: true; }
+
+main :: () -> i32 {
+    print("{}\n", lib.value);
+    0
+}

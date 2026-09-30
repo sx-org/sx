@@ -1,0 +1,6 @@
+// A bare `@error` fires in a module reached only through an alias declared by
+// a branch whose condition waits on a later branch.
+inline if READY { halt :: @import "alias-from-a-suspended-branch-fires-bare-error/halt.sx"; }
+inline if true { READY :: true; }
+
+main :: () { }
