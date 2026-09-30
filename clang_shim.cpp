@@ -351,6 +351,7 @@ extern "C" LLVMMemoryBufferRef sx_clang_compile_to_object(
 
     llvm::TargetOptions opts;
     opts.EmulatedTLS = CI->getCodeGenOpts().EmulatedTLS;
+    opts.UseInitArray = CI->getCodeGenOpts().UseInitArray;
     auto TM = std::unique_ptr<llvm::TargetMachine>(
         target->createTargetMachine(triple, "generic", "", opts,
                                      llvm::Reloc::PIC_));
