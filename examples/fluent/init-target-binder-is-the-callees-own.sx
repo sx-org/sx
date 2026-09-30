@@ -1,0 +1,26 @@
+// An initializer target's binder is the callee's own. A caller's binder of the
+// same name says nothing about it, so the call is refused only for the binder it
+// cannot infer.
+@import "modules/std.sx";
+
+Tagged :: struct ($U: Type) {
+    u: $U = ---;
+}
+
+Plain :: struct {
+    text: string = "";
+}
+
+store :: (value: $I/@Init(Tagged($U))) {
+    slot: Tagged(U) = ---;
+    value.write(*slot);
+}
+
+relay :: (x: $U) {
+    store(Plain{ text = "unpinnable" });
+}
+
+main :: () -> i32 {
+    relay(5);
+    0
+}

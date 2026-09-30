@@ -1,0 +1,46 @@
+// What an initializer writes is its bound's type argument read with the callee's
+// own binders, as its call and its instance bind them.
+@import "modules/std.sx";
+
+Tagged :: struct ($U: Type) {
+    u: $U = ---;
+}
+
+store :: (value: $I/@Init(Tagged($U))) -> U {
+    slot: Tagged(U) = ---;
+    value.write(*slot);
+    slot.u
+}
+
+fill :: (dst: *$T, value: $I/@Init(T)) {
+    value.write(dst);
+}
+
+kept :: (value: $I/@Init($T)) -> T {
+    slot: T = ---;
+    value.write(*slot);
+    slot
+}
+
+relay :: (x: $T) -> string {
+    kept("inner")
+}
+
+Box :: struct ($T: Type) {
+    v: T = ---;
+
+    put :: (self: *Box(T), value: $I/@Init(T)) {
+        value.write(*self.v);
+    }
+}
+
+main :: () {
+    print("{}\n", store(Tagged(i64){ u = 3 }));
+    x: u8 = 0;
+    fill(*x, 200);
+    print("{}\n", x);
+    print("{}\n", relay(7));
+    b := Box(i32){};
+    b.put(41);
+    print("{}\n", b.v);
+}

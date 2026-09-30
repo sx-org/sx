@@ -2781,14 +2781,17 @@ pub fn lowerGenericCall(self: *Lowering, fd: *const ast.FnDecl, base_name: []con
 
     // An uninferrable TYPE param must diagnose here: monomorphizing with
     // it unbound stamps `.unresolved` through the body and trips the
-    // emitter's sentinel panic instead of surfacing a source error.
-    for (fd.type_params) |tp| {
+    // emitter's sentinel panic instead of surfacing a source error. An
+    // `@Init` binder waits on the binders its target names, so those are
+    // named first.
+    for ([2]bool{ false, true }) |init_round| for (fd.type_params) |tp| {
+        if (init_plan.isInitBinder(fd, tp.name) != init_round) continue;
         if (!self.genericResolver().bindsTypeArgument(tp, fd.body.source_file)) continue;
         if (bindings.contains(tp.name)) continue;
         if (self.diagnostics) |d|
             d.addFmt(.err, call_node.callee.span, "cannot infer generic type parameter '{s}' for '{s}' from this call's arguments", .{ tp.name, base_name });
         return Ref.none;
-    }
+    };
 
     const types_passed_explicitly = self.genericResolver().typesPassedExplicitly(fd, call_node.args);
     const mangled_name = self.genericResolver().mangleGenericName(base_name, fd, &bindings);

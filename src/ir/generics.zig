@@ -3,6 +3,7 @@ const ast = @import("../ast.zig");
 const types = @import("types.zig");
 const type_bridge = @import("type_bridge.zig");
 const lower = @import("lower.zig");
+const init_plan = @import("lower/init_plan.zig");
 const program_index = @import("program_index.zig");
 
 const Node = ast.Node;
@@ -376,7 +377,14 @@ pub const GenericResolver = struct {
     ) std.StringHashMap(TypeId) {
         var bindings = std.StringHashMap(TypeId).init(self.l.alloc);
         const types_passed_explicitly = self.typesPassedExplicitly(fd, args_ast);
-        for (fd.type_params) |tp| {
+        // An `@Init` binder binds to the implementor formed for its target, and
+        // the target may name the call's other binders (`$I/@Init(Tagged($U))`),
+        // so those bind first.
+        var target_scope: ?std.StringHashMap(TypeId) = null;
+        defer if (target_scope) |*m| m.deinit();
+        for ([2]bool{ false, true }) |init_round| for (fd.type_params) |tp| {
+            if (init_plan.isInitBinder(fd, tp.name) != init_round) continue;
+            if (init_round and target_scope == null) target_scope = self.formationBindings(fd, &bindings);
             var found = false;
             // Strategy 1: explicit — the param whose name matches `tp.name` IS
             // the `$T: Type` declaration; the arg at that position is a type expression.
@@ -441,7 +449,7 @@ pub const GenericResolver = struct {
                             // argument forms into, not to the argument's own type
                             // (§5.2); the init's type argument still binds from the
                             // ordinary type through `extractTypeParam` below.
-                            const extracted = self.l.initBinderType(param.type_expr, tp.name, args_ast[s2_arg_idx], arg_ty) orelse
+                            const extracted = self.formedBinding(target_scope, param.type_expr, tp.name, args_ast[s2_arg_idx], arg_ty) orelse
                                 self.l.blockBinderType(param.type_expr, tp.name, args_ast[s2_arg_idx], arg_ty) orelse
                                 self.l.extractTypeParam(param.type_expr, arg_ty, tp.name);
                             // The binder a function-type bound is written on is
@@ -465,8 +473,44 @@ pub const GenericResolver = struct {
             if (self.l.impl_binder_seed) |seed| {
                 if (seed.get(tp.name)) |ty| bindings.put(tp.name, ty) catch {};
             }
-        }
+        };
         return bindings;
+    }
+
+    /// What an `@Init` binder's target resolves under: the names in force at the
+    /// call, the instance's binders over them, and the call's own over those. A
+    /// binder of `fd` the call left unbound names nothing.
+    fn formationBindings(self: GenericResolver, fd: *const ast.FnDecl, bound: *const std.StringHashMap(TypeId)) std.StringHashMap(TypeId) {
+        var in_scope = if (self.l.type_bindings) |tb| tb.clone() catch unreachable else std.StringHashMap(TypeId).init(self.l.alloc);
+        if (self.l.impl_binder_seed) |seed| {
+            var it = seed.iterator();
+            while (it.next()) |e| in_scope.put(e.key_ptr.*, e.value_ptr.*) catch unreachable;
+        }
+        for (fd.type_params) |tp| {
+            if (bound.get(tp.name)) |ty| {
+                in_scope.put(tp.name, ty) catch unreachable;
+            } else _ = in_scope.remove(tp.name);
+        }
+        return in_scope;
+    }
+
+    /// What an `@Init` binder binds to, its target read under `target_scope`.
+    /// Null before `target_scope` is built, and while the target awaits a binder
+    /// the call left unbound.
+    fn formedBinding(
+        self: GenericResolver,
+        target_scope: ?std.StringHashMap(TypeId),
+        param_type: *const Node,
+        tp_name: []const u8,
+        arg: *const Node,
+        arg_ty: TypeId,
+    ) ?TypeId {
+        const in_scope = target_scope orelse return null;
+        var scope = installTypeBindings(self.l, in_scope);
+        defer scope.exit();
+        const target_node = init_plan.boundTargetNode(param_type) orelse return null;
+        if (init_plan.awaitsBinder(self.l, target_node)) return null;
+        return self.l.initBinderType(param_type, tp_name, arg, arg_ty);
     }
 
     /// The element type a bare `.[…]` binds from its elements, as arguments

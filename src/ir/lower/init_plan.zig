@@ -59,11 +59,28 @@ pub fn boundTargetNode(param_type: *const Node) ?*const Node {
     return null;
 }
 
+/// Whether `tp_name` is the binder of one of `fd`'s `$I/@Init(X)` parameters.
+pub fn isInitBinder(fd: *const ast.FnDecl, tp_name: []const u8) bool {
+    for (fd.params) |p| {
+        if (boundTargetNode(p.type_expr) != null and std.mem.eql(u8, p.type_expr.data.type_expr.name, tp_name)) return true;
+    }
+    return false;
+}
+
+/// Whether the `@Init` target `target_node` builds a type around a `$` binder no
+/// active binding decides (`Tagged($U)` before `U`). An open target (`$T`) is
+/// the argument's own type, so it awaits nothing.
+pub fn awaitsBinder(self: *Lowering, target_node: *const Node) bool {
+    if (target_node.data == .type_expr and target_node.data.type_expr.is_generic) return false;
+    return lower_closure.unboundSignatureBinder(self, target_node, false) != null;
+}
+
 /// The formation request a `$I/@Init(X)` parameter resolves to while `$I` is
 /// still unbound: `@Init(T)` with the target resolved against the active
 /// bindings, or null when `X` is not yet known. Argument lowering keys on it.
 pub fn formationRequest(self: *Lowering, p: *const ast.Param) ?TypeId {
     const target_node = boundTargetNode(p.type_expr) orelse return null;
+    if (awaitsBinder(self, target_node)) return null;
     const target = self.resolveTypeWithBindings(target_node);
     if (target == .unresolved) return null;
     return self.module.types.initPlanType(target);
