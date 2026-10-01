@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 const llvm = @import("llvm_api.zig");
 const c = llvm.c;
 const zig_backend = @import("zig_backend.zig");
+const jit_emutls = @import("jit_emutls.zig");
 
 /// One `main = true @JniClass("...")` declaration's Java-source emission.
 /// Populated by lowering and surfaced to the sx Android bundler in
@@ -361,13 +362,17 @@ fn emitZigLinkArgv(
 }
 
 /// Execute a precompiled object file in-process using LLVM's ORC JIT.
-/// Takes ownership of obj_buf. Returns the exit code from main().
+/// Takes ownership of obj_buf and of every `c_objects` buffer: the
+/// `@import c` objects link into the program's JITDylib, so references
+/// resolve in both directions. Their initializers run before main(); when
+/// main() returns or the program exits, the atexit handlers run, then their
+/// finalizers. Returns the exit code from main().
 /// `priority_dylibs` are consulted for symbols BEFORE the process-wide
-/// search, in order: dylibs that belong to the program (the `@import c`
-/// unit's linked objects, then `@library` deps in declaration order)
-/// must win over a same-named export of an image the host process
-/// happens to carry (libz via LLVM, libsqlite3 via CoreServices, ...).
-pub fn runJITFromObject(obj_buf: c.LLVMMemoryBufferRef, priority_dylibs: []const [:0]const u8) !u8 {
+/// search, in order: dylibs that belong to the program (`@library` deps
+/// in declaration order) must win over a same-named export of an image
+/// the host process happens to carry (libz via LLVM, libsqlite3 via
+/// CoreServices, ...).
+pub fn runJITFromObject(obj_buf: c.LLVMMemoryBufferRef, c_objects: []const c.LLVMMemoryBufferRef, priority_dylibs: []const [:0]const u8) !u8 {
     // Create LLJIT with default builder (no custom TM needed — .o is precompiled)
     var jit: c.LLVMOrcLLJITRef = null;
     var err = c.LLVMOrcCreateLLJIT(&jit, null);
@@ -408,7 +413,34 @@ pub fn runJITFromObject(obj_buf: c.LLVMMemoryBufferRef, priority_dylibs: []const
     }
     c.LLVMOrcJITDylibAddGenerator(jd, gen);
 
-    // Add precompiled object file (transfers ownership of obj_buf)
+    jit_emutls.init();
+    var emutls = c.LLVMOrcCSymbolMapPair{
+        .Name = c.LLVMOrcLLJITMangleAndIntern(jit, "__emutls_get_address"),
+        .Sym = .{
+            .Address = @intFromPtr(&jit_emutls.getAddress),
+            .Flags = .{ .GenericFlags = c.LLVMJITSymbolGenericFlagsExported | c.LLVMJITSymbolGenericFlagsCallable, .TargetFlags = 0 },
+        },
+    };
+    const emutls_mu = c.LLVMOrcAbsoluteSymbols(&emutls, 1);
+    err = c.LLVMOrcJITDylibDefine(jd, emutls_mu);
+    if (err != null) {
+        c.LLVMOrcDisposeMaterializationUnit(emutls_mu);
+        const msg = c.LLVMGetErrorMessage(err);
+        defer c.LLVMDisposeErrorMessage(msg);
+        std.debug.print("JIT define error: {s}\n", .{std.mem.span(msg)});
+        return error.CompileError;
+    }
+
+    var c_lifecycle: ?*c.SxJitCLifecycle = null;
+    if (c_objects.len > 0) {
+        err = c.sx_jit_add_c_objects(jit, c_objects.ptr, c_objects.len, &c_lifecycle);
+        if (err != null) {
+            const msg = c.LLVMGetErrorMessage(err);
+            defer c.LLVMDisposeErrorMessage(msg);
+            std.debug.print("JIT add object error: {s}\n", .{std.mem.span(msg)});
+            return error.CompileError;
+        }
+    }
     err = c.LLVMOrcLLJITAddObjectFile(jit, jd, obj_buf);
     if (err != null) {
         const msg = c.LLVMGetErrorMessage(err);
@@ -437,6 +469,17 @@ pub fn runJITFromObject(obj_buf: c.LLVMMemoryBufferRef, priority_dylibs: []const
         return error.CompileError;
     }
 
+    _ = atexit(finalizeJIT);
+    unfinalized_jit = .{ .jit = jit, .c_lifecycle = c_lifecycle };
+    err = c.sx_jit_run_initializers(jit, c_lifecycle);
+    if (err != null) {
+        unfinalized_jit = null;
+        const msg = c.LLVMGetErrorMessage(err);
+        defer c.LLVMDisposeErrorMessage(msg);
+        std.debug.print("JIT initializer error: {s}\n", .{std.mem.span(msg)});
+        return error.CompileError;
+    }
+
     // Cast to function pointer and call. The exit code is main's integer
     // return truncated to u8 — matching the OS truncation an AOT binary's
     // exit status already gets, so JIT and AOT agree (e.g. 1105 -> 81,
@@ -444,7 +487,25 @@ pub fn runJITFromObject(obj_buf: c.LLVMMemoryBufferRef, priority_dylibs: []const
     // as two's-complement low byte rather than being clamped.
     const main_fn: *const fn () callconv(.c) i32 = @ptrFromInt(main_addr);
     const result = main_fn();
+    finalizeJIT();
     return @truncate(@as(u32, @bitCast(result)));
+}
+
+extern "c" fn atexit(func: *const fn () callconv(.c) void) c_int;
+
+/// The JIT whose finalizers are still owed. A program that calls exit()
+/// never returns from main(), so `finalizeJIT` also runs as an atexit handler.
+var unfinalized_jit: ?struct { jit: c.LLVMOrcLLJITRef, c_lifecycle: ?*c.SxJitCLifecycle } = null;
+
+fn finalizeJIT() callconv(.c) void {
+    const pending = unfinalized_jit orelse return;
+    unfinalized_jit = null;
+    const err = c.sx_jit_run_finalizers(pending.jit, pending.c_lifecycle);
+    if (err != null) {
+        const msg = c.LLVMGetErrorMessage(err);
+        defer c.LLVMDisposeErrorMessage(msg);
+        std.debug.print("JIT finalizer error: {s}\n", .{std.mem.span(msg)});
+    }
 }
 
 // Android APK bundling (createApk, compileJniMainSources,

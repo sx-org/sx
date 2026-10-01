@@ -7,11 +7,10 @@
 // named `@import c` unit below compiles c/sqlite3.c with the pinned
 // options (through sx's content-addressed object cache, so it compiles
 // once per machine, not once per run) and every `extern sqlib` decl binds
-// against it. Under `sx run` the unit's dylib is a PRIORITY
-// symbol-search target consulted before the process images, so an OS
-// libsqlite3 of a different version can never shadow the vendored
-// copy; under `sx build` the unit's objects link directly into the
-// binary. `sqliteVersion()` answers the vendored version — pin it in
+// against it. The unit's objects link with the program under both
+// `sx run` and `sx build`, so an OS libsqlite3 of a different version
+// loaded in the process can never shadow the vendored copy.
+// `sqliteVersion()` answers the vendored version — pin it in
 // the importing project's tests to make any fallback loud.
 //
 // The binding covers the full practical C API, ONE variant per function (the

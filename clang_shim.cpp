@@ -350,6 +350,8 @@ extern "C" LLVMMemoryBufferRef sx_clang_compile_to_object(
     }
 
     llvm::TargetOptions opts;
+    opts.EmulatedTLS = CI->getCodeGenOpts().EmulatedTLS;
+    opts.UseInitArray = CI->getCodeGenOpts().UseInitArray;
     auto TM = std::unique_ptr<llvm::TargetMachine>(
         target->createTargetMachine(triple, "generic", "", opts,
                                      llvm::Reloc::PIC_));
@@ -426,4 +428,159 @@ extern "C" void sx_clang_free_symbol_list(SxCSymbolList *list)
         free((void *)list->names[i]);
     free(list->names);
     free(list);
+}
+
+/* ------------------------------------------------------------------ */
+/* Lifecycle of JIT-linked C objects                                   */
+/* ------------------------------------------------------------------ */
+
+#include <llvm/ExecutionEngine/JITLink/JITLink.h>
+#include <llvm/ExecutionEngine/Orc/LLJIT.h>
+#include <llvm/ExecutionEngine/Orc/ObjectFileInterface.h>
+#include <llvm/ExecutionEngine/Orc/ObjectLinkingLayer.h>
+#include <llvm/ExecutionEngine/Orc/ObjectTransformLayer.h>
+
+#include <algorithm>
+
+namespace {
+
+using namespace llvm;
+using namespace llvm::orc;
+
+struct ArraySection {
+    bool init;
+    unsigned priority;
+};
+
+std::optional<ArraySection> arraySection(StringRef name) {
+    if (name.ends_with(",__mod_init_func")) return ArraySection{true, 65535};
+    if (name.ends_with(",__mod_term_func")) return ArraySection{false, 65535};
+    bool init;
+    if (name.consume_front(".init_array")) init = true;
+    else if (name.consume_front(".fini_array")) init = false;
+    else return std::nullopt;
+    if (name.empty()) return ArraySection{init, 65535};
+    unsigned priority;
+    if (!name.consume_front(".") || name.getAsInteger(10, priority)) return std::nullopt;
+    return ArraySection{init, priority};
+}
+
+struct ArrayEntry {
+    unsigned priority;
+    ExecutorAddr fn;
+};
+
+class CObjectLifecycle : public ObjectLinkingLayer::Plugin {
+public:
+    explicit CObjectLifecycle(size_t count) : inits(count), finis(count) {}
+
+    StringMap<size_t> objectIndex;
+    std::vector<std::vector<ArrayEntry>> inits, finis;
+
+    void modifyPassConfig(MaterializationResponsibility &, jitlink::LinkGraph &G,
+                          jitlink::PassConfiguration &config) override {
+        auto object = objectIndex.find(G.getName());
+        if (object == objectIndex.end()) return;
+        // Nothing references the array blocks, so pruning would drop them.
+        config.PrePrunePasses.push_back([](jitlink::LinkGraph &G) {
+            for (auto &sec : G.sections())
+                if (arraySection(sec.getName()))
+                    for (auto *b : sec.blocks())
+                        G.addAnonymousSymbol(*b, 0, 0, false, true);
+            return Error::success();
+        });
+        config.PostFixupPasses.push_back([this, i = object->second](jitlink::LinkGraph &G) {
+            for (auto &sec : G.sections()) {
+                auto array = arraySection(sec.getName());
+                if (!array) continue;
+                std::vector<std::pair<ExecutorAddr, ExecutorAddr>> slots;
+                for (auto *b : sec.blocks())
+                    for (auto &e : b->edges())
+                        slots.push_back({b->getAddress() + e.getOffset(),
+                                         e.getTarget().getAddress() + e.getAddend()});
+                llvm::sort(slots);
+                auto &out = array->init ? inits[i] : finis[i];
+                for (auto &slot : slots) out.push_back({array->priority, slot.second});
+            }
+            return Error::success();
+        });
+    }
+
+    Error notifyFailed(MaterializationResponsibility &) override { return Error::success(); }
+    Error notifyRemovingResources(JITDylib &, ResourceKey) override { return Error::success(); }
+    void notifyTransferringResources(JITDylib &, ResourceKey, ResourceKey) override {}
+};
+
+// Numbered sections by ascending priority, then the unnumbered ones in object
+// order, as a static link lays them out.
+std::vector<ArrayEntry> linkOrder(const std::vector<std::vector<ArrayEntry>> &perObject) {
+    std::vector<ArrayEntry> entries;
+    for (auto &object : perObject) entries.insert(entries.end(), object.begin(), object.end());
+    std::stable_sort(entries.begin(), entries.end(),
+                     [](const ArrayEntry &a, const ArrayEntry &b) { return a.priority < b.priority; });
+    return entries;
+}
+
+} // namespace
+
+extern "C" LLVMErrorRef sx_jit_add_c_objects(
+    LLVMOrcLLJITRef jit, const LLVMMemoryBufferRef *objects, size_t count,
+    SxJitCLifecycle **out)
+{
+    auto &J = *reinterpret_cast<LLJIT *>(jit);
+    auto &main = J.getMainJITDylib();
+    auto *layer = dyn_cast<ObjectLinkingLayer>(&J.getObjLinkingLayer());
+    if (!layer)
+        return wrap(make_error<StringError>("the JIT's object linker cannot run C initializers",
+                                            inconvertibleErrorCode()));
+    // The platform JITDylib does not export its `__cxa_atexit`, so the main
+    // JITDylib would otherwise bind libc's, whose handlers outlive the JIT.
+    auto cxaAtExit = J.mangleAndIntern("__cxa_atexit");
+    SymbolAliasMap alias;
+    alias[cxaAtExit] = {cxaAtExit, JITSymbolFlags::Exported | JITSymbolFlags::Callable};
+    if (auto err = main.define(
+            reexports(*J.getPlatformJITDylib(), std::move(alias), JITDylibLookupFlags::MatchAllSymbols)))
+        return wrap(std::move(err));
+
+    auto lifecycle = std::make_shared<CObjectLifecycle>(count);
+    layer->addPlugin(lifecycle);
+    for (size_t i = 0; i < count; i++) {
+        std::unique_ptr<MemoryBuffer> object(unwrap(objects[i]));
+        // ORC derives an object's initializer symbol from its buffer name, and
+        // `objectIndex` keys on it, so the names must differ.
+        std::string name = "c-import-" + std::to_string(i) + ".o";
+        lifecycle->objectIndex[name] = i;
+        auto buffer = MemoryBuffer::getMemBufferCopy(object->getBuffer(), name);
+        auto interface = getObjectFileInterface(J.getExecutionSession(), buffer->getMemBufferRef());
+        if (!interface) return wrap(interface.takeError());
+        // `initialize` links only objects with an initializer symbol, and every
+        // object links whether or not anything references it.
+        if (!interface->InitSymbol) addInitSymbol(*interface, J.getExecutionSession(), name);
+        if (auto err = J.getObjTransformLayer().add(main, std::move(buffer), std::move(*interface)))
+            return wrap(std::move(err));
+    }
+    *out = reinterpret_cast<SxJitCLifecycle *>(lifecycle.get());
+    return nullptr;
+}
+
+extern "C" LLVMErrorRef sx_jit_run_initializers(LLVMOrcLLJITRef jit, SxJitCLifecycle *c_lifecycle)
+{
+    auto &J = *reinterpret_cast<LLJIT *>(jit);
+    if (auto err = J.initialize(J.getMainJITDylib())) return wrap(std::move(err));
+    if (c_lifecycle)
+        for (auto &entry : linkOrder(reinterpret_cast<CObjectLifecycle *>(c_lifecycle)->inits))
+            entry.fn.toPtr<void (*)()>()();
+    return nullptr;
+}
+
+extern "C" LLVMErrorRef sx_jit_run_finalizers(LLVMOrcLLJITRef jit, SxJitCLifecycle *c_lifecycle)
+{
+    auto &J = *reinterpret_cast<LLJIT *>(jit);
+    if (auto err = J.deinitialize(J.getMainJITDylib())) return wrap(std::move(err));
+    if (c_lifecycle) {
+        auto finis = linkOrder(reinterpret_cast<CObjectLifecycle *>(c_lifecycle)->finis);
+        for (auto it = finis.rbegin(); it != finis.rend(); ++it)
+            it->fn.toPtr<void (*)()>()();
+    }
+    return nullptr;
 }

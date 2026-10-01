@@ -1,0 +1,7 @@
+first ctor
+second ctor
+main
+second atexit
+third dtor
+second dtor
+first dtor
