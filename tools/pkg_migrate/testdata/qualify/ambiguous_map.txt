@@ -1,5 +1,0 @@
-# `helper` is provided by two different sources — AMBIGUOUS, the tool must
-# refuse to rewrite anything.
-helper=util
-helper=other
-CONSTANT=util
