@@ -1,4 +1,4 @@
-// What a SOFT probe answers once the impls are final (§7.9).
+// What a SOFT probe answers once the impls are final (§6.9).
 //
 // A probe is the question, not the conversion: at finality every miss is an
 // answer rather than a failure, and the answer is `null`. That holds for a

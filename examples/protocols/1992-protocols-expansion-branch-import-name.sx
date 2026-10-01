@@ -1,4 +1,4 @@
-// The declaration namespace, reached through a branch-local `@import` (§7.9).
+// The declaration namespace, reached through a branch-local `@import` (§6.9).
 //
 // A name-lookup MISS waits until no undecided driver can still declare that
 // name into that exact scope. A flat `@import` in an unexpanded branch is one

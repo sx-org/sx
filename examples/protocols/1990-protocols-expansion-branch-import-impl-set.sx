@@ -1,4 +1,4 @@
-// A branch-local `@import` is a contribution, and the ledger counts it (§7.9).
+// A branch-local `@import` is a contribution, and the ledger counts it (§6.9).
 //
 // An `@import` written inside an unexpanded branch names a whole MODULE, and
 // selecting that branch would put everything the module authors into this

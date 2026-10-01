@@ -63,11 +63,11 @@
 
 // ── Raw `any` access (the view's two words) ─────────────────────────────────
 // The `{data, typeId}` layout is private; these two are the stable contract
-// over it. Three sharp edges (specs §any): tags are PER-BUILD values — a serializer
-// writes names and re-resolves, never raw tags; byte copies through the data
-// pointer are SHALLOW — interior pointers are not followed; and a view carries
-// NO lifetime — `@rawMakeAny` trusts the caller that `data` points at a live,
-// aligned value of `tp` covering @sizeOf(tp) bytes.
+// over it. Three sharp edges (specs §Type Introspection): tags are PER-BUILD
+// values — a serializer writes names and re-resolves, never raw tags; byte
+// copies through the data pointer are SHALLOW — interior pointers are not
+// followed; and a view carries NO lifetime — `@rawMakeAny` trusts the caller
+// that `data` points at a live, aligned value of `tp` covering @sizeOf(tp) bytes.
 @rawAnyData :: (av: any) -> *void;
 @rawMakeAny :: (tp: Type, data: *void) -> any;
 
