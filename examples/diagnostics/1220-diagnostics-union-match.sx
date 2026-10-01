@@ -1,9 +1,9 @@
 // A variant-style match (`match x { case .variant: ... }`) on a plain
 // `union` subject is rejected up front — a union has no discriminant, so
-// there is nothing to dispatch on (specs §Unions, Restrictions: "Pattern matching
-// is not supported on unions"). The gate is subject-level, so it fires with or
-// without payload bindings (1211 covers the binding forms) and for a POINTER to an
-// union.
+// there is nothing to dispatch on (specs §Union Types, Restrictions: "Pattern
+// matching is not supported on unions"). The gate is subject-level, so it fires
+// with or without payload bindings (1211 covers the binding forms) and for a
+// POINTER to an union.
 @import "modules/std.sx";
 
 Shape :: union { circle: i64; rect: i64; }

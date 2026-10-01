@@ -1,4 +1,4 @@
-// Whitespace is syntax (specs §1), the spacing rule across a line break. A
+// Spacing and terminators (specs §1), the spacing rule across a line break. A
 // line break is ordinary space, so a completed left operand makes `-` and `*`
 // infix whatever the spacing around them — line-leading, trailing, tight, or
 // spaced. `;` is what cuts the expression, so a prefix `-b` needs one above it.

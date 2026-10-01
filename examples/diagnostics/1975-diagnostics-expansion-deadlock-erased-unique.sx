@@ -3,7 +3,7 @@
 //
 // `Item is Show` is true right now — exactly one visible
 // `impl Show for Item`. But a conversion to an erased protocol resolves through
-// the PROGRAM-UNIQUE impl (§7.4), so that truth dies the moment a second one is
+// the PROGRAM-UNIQUE impl (§6.4), so that truth dies the moment a second one is
 // declared — and the else-branch of the very driver asking would declare it.
 // The positive therefore waits, and the only unit that could publish the fact
 // it waits on is that same driver. Quiescence with the bookmark still down is

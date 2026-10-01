@@ -1,11 +1,11 @@
-// What an impl question owes the discipline, per kind (§7.9).
+// What an impl question owes the discipline, per kind (§6.9).
 //
 // Impls are DECLARATIONS, so an undecided driver that mentions `impl P for …`
 // is what any answer about `P` waits on. Which POLARITY owes that wait differs
 // by kind. A `constraint` partition only ever grows: a visible impl is a fact
 // no later declaration can take back, so a positive is readable on the spot.
 // An ERASED target reads impl MULTIPLICITY — the conversion resolves through
-// the program-unique impl (§7.4) — and multiplicity is monotone in neither
+// the program-unique impl (§6.4) — and multiplicity is monotone in neither
 // direction: a later impl repairs a miss exactly as readily as it destroys a
 // unique success. So BOTH of its polarities wait.
 //

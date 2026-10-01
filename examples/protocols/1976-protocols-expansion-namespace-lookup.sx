@@ -1,4 +1,4 @@
-// The declaration namespace under the discipline (§7.9).
+// The declaration namespace under the discipline (§6.9).
 //
 // A name-lookup HIT is monotone: declarations are never withdrawn, so a name
 // that resolves resolves for good and is readable the moment it lands. A MISS

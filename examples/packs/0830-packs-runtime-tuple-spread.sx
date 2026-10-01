@@ -1,4 +1,4 @@
-// Value spread (specs.md §"Tuple parallels") + pack capture materialization,
+// Value spread (specs.md §Product parallels) + pack capture materialization,
 // including a `..` spread crossing a deferred / value boundary.
 //
 // - `..t` on a concrete TUPLE / fixed ARRAY value spreads its elements into

@@ -1,6 +1,6 @@
 // A compile-time evaluation may WAIT for an open set's layout — and waiting for a
 // layout that waits for the evaluation is the expansion deadlock (spec: Open Sets —
-// when the layout is final; §7.9).
+// when the layout is final; §6.9).
 //
 // `@insert` writes code, so it runs DURING lowering: the set has not frozen, and a
 // generic member means a body lowered later can still spell an instantiation and

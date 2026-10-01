@@ -1,5 +1,5 @@
 // Value-position match over a POINTER-to-payload enum subject: the subject
-// auto-derefs to the pointee (specs §for by-ref capture — "a pointer subject
+// auto-derefs to the pointee (specs §For Loop — "a pointer subject
 // matches through the deref"), payload captures bind the variant payload, and
 // the match RESULT TYPE is inferred from the arms even when every arm's value
 // depends on its capture — the arms are typed against the DEREFERENCED
@@ -24,7 +24,7 @@ main :: () {
     print("{}\n", w);
 
     // A pointer subject also matches through the deref for integer pointees
-    // (specs §for by-ref capture: "a pointer subject matches through the
+    // (specs §For Loop: "a pointer subject matches through the
     // deref") — the pointee value drives the case dispatch directly.
     n : i64 = 42;
     pn := *n;

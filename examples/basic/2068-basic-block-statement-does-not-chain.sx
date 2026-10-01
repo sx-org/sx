@@ -1,4 +1,4 @@
-// Whitespace is syntax (specs §1), statement termination: statements break,
+// Spacing and terminators (specs §1), statement termination: statements break,
 // expressions chain. A statement that IS a block — `if`, `while`, `for`,
 // `match`, a bare scope `{ … }` — ends at its `}`, so a dot-led line after it
 // starts a new statement. An EXPRESSION that merely ends in a block — a

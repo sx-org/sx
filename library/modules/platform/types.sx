@@ -4,7 +4,7 @@
 
 // The one host event stream. INPUT is the normalized InputEvent —
 // consumers push `.input` payloads into their root's InputQueue for
-// the §6.9 router. quit/windowResize are lifecycle events, outside the
+// the router. quit/windowResize are lifecycle events, outside the
 // normalized input surface.
 PlatformEvent :: enum {
     quit;

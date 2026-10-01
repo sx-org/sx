@@ -1,6 +1,6 @@
 // The dynamic reflection paths that work with a runtime `Type` value (an i64
-// tag at runtime, spec §Type): @typeOf on values and any, @typeName and
-// `is unsigned` through locals, params, and []Type elements.
+// tag at runtime, specs §Primitive Types): @typeOf on values and any,
+// @typeName and `is unsigned` through locals, params, and []Type elements.
 @import "modules/std.sx";
 
 Point :: struct { x: i64; y: i64; }

@@ -1,5 +1,5 @@
-// Whitespace is syntax (specs §1), statement termination: `;` ends a statement
-// and a line break is ordinary space. This file writes the terminator
+// Spacing and terminators (specs §1), statement termination: `;` ends a
+// statement and a line break is ordinary space. This file writes the terminator
 // everywhere it is owed — top-level declarations, bindings, calls, assignments,
 // `return`, `defer` — and pins the four positions that end a statement without
 // one: a statement that IS a block, a declaration whose initializer is a block

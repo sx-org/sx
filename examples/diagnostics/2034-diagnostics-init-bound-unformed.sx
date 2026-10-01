@@ -1,6 +1,6 @@
-// An `@Init` bound is satisfied by FORMATION, and by nothing else (fluent spec
-// §5.2). The binder holds the initializer the compiler minted at the argument, so
-// these are all refused, and none of them passes for want of something to check:
+// An `@Init` bound is satisfied by FORMATION, and by nothing else. The binder
+// holds the initializer the compiler minted at the argument, so these are all
+// refused, and none of them passes for want of something to check:
 //
 //   - a binding that never went through formation at all — an explicit
 //     `$T: Type` binder takes a type the caller spells, and no initializer is

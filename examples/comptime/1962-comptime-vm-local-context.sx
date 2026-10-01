@@ -1,5 +1,5 @@
 // Comptime execution is per-evaluation and its Context is VM-LOCAL (specs.md
-// §7.9): the evaluation owns its VM, heap, and Context, and the instances that
+// §6.9): the evaluation owns its VM, heap, and Context, and the instances that
 // Context references are the VM's own. Everything a `@run` allocates — a
 // growing `List`, a formatted string, an arena's chunks — comes from the
 // allocator on that VM-local Context, so the bookkeeping it mutates is

@@ -49,7 +49,7 @@ make :: () -> View { return Label{ text = "returned" }; }
 poke :: (v: View) -> i64 => v.bump(100);
 
 // `@Init(View)` — a fixed target. A member expression is type-checked at expected
-// `View`, so what the initializer writes is a complete slot (§5.2, §5.4).
+// `View`, so what the initializer writes is a complete slot.
 storeView :: (value: $I/@Init(View)) -> string {
     slot: View = ---;
     value.write(*slot);
@@ -57,7 +57,7 @@ storeView :: (value: $I/@Init(View)) -> string {
 }
 
 // An OPEN type argument takes the expression's own type, writes THAT, and the set
-// is reached afterwards by ordinary expected-type formation (§5.4).
+// is reached afterwards by ordinary expected-type formation.
 storeAsView :: (value: $I/@Init($V/View)) -> View {
     item: V = ---;
     value.write(*item);
