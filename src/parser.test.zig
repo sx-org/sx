@@ -128,6 +128,20 @@ test "parser: abi(.c) and abi(.naked) parse standalone" {
     try std.testing.expectEqual(ast.ABI.naked, decls[1].data.fn_decl.abi);
 }
 
+test "parser: abi(...) precedes the extern/export linkage keyword" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var ordered = try Parser.init(alloc, "f :: () -> i32 abi(.c) export { 0 }");
+    const fd = (try ordered.parse()).data.root.decls[0].data.fn_decl;
+    try std.testing.expectEqual(ast.ABI.c, fd.abi);
+    try std.testing.expectEqual(ast.ExternExportModifier.export_, fd.extern_export);
+
+    var reversed = try Parser.init(alloc, "f :: () -> i32 export abi(.c) { 0 }");
+    try std.testing.expectError(error.ParseError, reversed.parse());
+}
+
 // The postfix `abi(...)` slot PARSES on a STRUCT decl — `Name :: struct
 // extern <lib> { … }`. The AST struct_decl carries the abi + the library
 // handle in `extern_lib`, with the field list intact. Parse-only: the
