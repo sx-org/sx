@@ -1,4 +1,0 @@
-identity=ns
-expand=ns
-extend=ns
-builtin=ns

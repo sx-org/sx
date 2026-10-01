@@ -1,3 +1,0 @@
-# name=alias mapping for qualify
-helper=util
-CONSTANT=util
