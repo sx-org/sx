@@ -180,11 +180,7 @@ pub const FnDecl = struct {
     body: *Node,
     type_params: []const StructTypeParam = &.{},
     is_arrow: bool = false,
-    /// ABI / calling-convention annotation (`abi(.c)` / `abi(.naked)`) in the
-    /// postfix slot before `extern`/`export`. `.default` = unannotated.
     abi: ABI = .default,
-    /// Postfix linkage modifier (`extern`/`export`) written after the `abi(...)`
-    /// slot. `.none` for an ordinary sx-internal function.
     extern_export: ExternExportModifier = .none,
     /// Optional library reference + symbol-name override for an `extern`/`export`
     /// function. Both optional: `extern` alone resolves the sx name against the
@@ -610,10 +606,9 @@ pub const StructDecl = struct {
     type_params: []const StructTypeParam = &.{},
     methods: []const *Node = &.{}, // fn_decl nodes for struct methods
     constants: []const *Node = &.{}, // const_decl nodes for struct-level constants
-    /// ABI annotation in the postfix slot (`struct abi(.c) extern <lib> { … }`);
-    /// `.default` when absent. Parse-only: no later pass reads it.
+    /// `struct abi(.c) extern <lib> { … }`. Parse-only: no later pass reads it.
     abi: ABI = .default,
-    /// The library handle after a struct's `extern`; null when absent. Parse-only.
+    /// The `<lib>` after a struct's `extern`. Parse-only.
     extern_lib: ?[]const u8 = null,
     /// True when the declared NAME was a backtick raw identifier
     /// (`` `i32 :: struct { … } ``) — exempt from the reserved-type-name decl
