@@ -1,4 +1,4 @@
-// Whitespace is syntax (specs §1), spacing rule: on a single line, position
+// Spacing and terminators (specs §1), spacing rule: on a single line, position
 // decides the fixity of `-` and `*`. Once the left operand is complete the
 // operator is infix, whatever the gaps around it are, so all four spellings of
 // each glyph mean the same thing. A prefix reading needs a slot with no left

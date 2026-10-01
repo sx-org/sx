@@ -1,4 +1,4 @@
-// Whitespace is syntax (specs §1), inside a `match` arm. An arm body is an
+// Spacing and terminators (specs §1), inside a `match` arm. An arm body is an
 // ordinary statement list, so every statement in it takes its `;` — `case` and
 // `else:` are statement heads, not terminators. `else:` — an `else` followed by
 // a `:` — heads the default arm, while every other `else` chains the `if` above
