@@ -368,8 +368,8 @@ test "openOrUpdate: a new document carries a token list over its own source" {
     const src: [:0]const u8 = "add :: (a: i32) -> i32 { a }";
     const doc = try store.openOrUpdate("main.sx", src, 1);
 
-    try std.testing.expectEqual(src.ptr, doc.source.ptr);
-    try std.testing.expectEqual(src.ptr, doc.tokens.source.ptr);
+    try std.testing.expectEqualStrings(src, doc.source);
+    try std.testing.expectEqual(doc.source.ptr, doc.tokens.source.ptr);
     try std.testing.expectEqual(@as(i64, 1), doc.version);
     try std.testing.expect(tokenCount(doc) > 0);
 }
@@ -388,8 +388,8 @@ test "openOrUpdate: an update replaces source, tokens and version together" {
 
     const again = try store.openOrUpdate("main.sx", second, 2);
     try std.testing.expectEqual(doc, again);
-    try std.testing.expectEqual(second.ptr, doc.source.ptr);
-    try std.testing.expectEqual(second.ptr, doc.tokens.source.ptr);
+    try std.testing.expectEqualStrings(second, doc.source);
+    try std.testing.expectEqual(doc.source.ptr, doc.tokens.source.ptr);
     try std.testing.expectEqual(@as(i64, 2), doc.version);
     try std.testing.expect(tokenCount(doc) > first_count);
 }
@@ -405,19 +405,20 @@ test "openOrUpdate: a failed lex leaves the previous source, tokens and version 
     const second: [:0]const u8 = "a :: 1; b :: 2;";
 
     const doc = try store.openOrUpdate("main.sx", first, 1);
+    const first_source = doc.source;
     const first_count = tokenCount(doc);
 
     failing.fail_index = failing.alloc_index;
     try std.testing.expectError(error.OutOfMemory, store.openOrUpdate("main.sx", second, 2));
 
-    try std.testing.expectEqual(first.ptr, doc.source.ptr);
-    try std.testing.expectEqual(first.ptr, doc.tokens.source.ptr);
+    try std.testing.expectEqual(first_source.ptr, doc.source.ptr);
+    try std.testing.expectEqual(first_source.ptr, doc.tokens.source.ptr);
     try std.testing.expectEqual(@as(i64, 1), doc.version);
     try std.testing.expectEqual(first_count, tokenCount(doc));
     try std.testing.expectEqualStrings("a", doc.tokens.slice(doc.tokens.first()));
 }
 
-test "createDocument: store allocation failures reclaim the token arena" {
+test "createDocument: store allocation failures reclaim the text arena" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -432,7 +433,7 @@ test "createDocument: store allocation failures reclaim the token arena" {
         var store = doc_mod.DocumentStore.init(failing.allocator(), test_io(), &.{}, counter.allocator());
         if (store.openOrUpdate("main.sx", src, 1)) |doc| {
             reached_success = true;
-            doc.token_arena.deinit();
+            doc.text.release();
             break;
         } else |err| {
             try std.testing.expect(err == error.OutOfMemory);
@@ -445,7 +446,7 @@ test "createDocument: store allocation failures reclaim the token arena" {
     try std.testing.expect(reached_success);
 }
 
-test "createDocument: token-backing allocation failures reclaim the token arena" {
+test "createDocument: backing allocation failures reclaim the text arena" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -459,7 +460,7 @@ test "createDocument: token-backing allocation failures reclaim the token arena"
         var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, failing.allocator());
         if (store.openOrUpdate("main.sx", src, 1)) |doc| {
             reached_success = true;
-            doc.token_arena.deinit();
+            doc.text.release();
             try std.testing.expectEqual(@as(usize, 0), counter.live());
             break;
         } else |err| {
@@ -470,7 +471,7 @@ test "createDocument: token-backing allocation failures reclaim the token arena"
     try std.testing.expect(reached_success);
 }
 
-test "openOrUpdate: repeated updates return the prior token arena to its backing" {
+test "openOrUpdate: repeated updates return the prior text arena to its backing" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -480,7 +481,7 @@ test "openOrUpdate: repeated updates return the prior token arena to its backing
     const src: [:0]const u8 = "add :: (a: i32, b: i32) -> i32 { a + b }";
 
     const doc = try store.openOrUpdate("main.sx", src, 1);
-    defer doc.token_arena.deinit();
+    defer doc.text.release();
     _ = try store.openOrUpdate("main.sx", src, 2);
     const live_after_two = counter.live();
     try std.testing.expect(live_after_two > 0);
@@ -492,6 +493,69 @@ test "openOrUpdate: repeated updates return the prior token arena to its backing
 
     try std.testing.expectEqual(live_after_two, counter.live());
     try std.testing.expect(counter.freed > 0);
+}
+
+test "analyzeDocument: superseded analyses return to the backing allocator" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var persistent = CountingAllocator{ .child = arena.allocator() };
+    var backing = CountingAllocator{ .child = std.testing.allocator };
+    var store = doc_mod.DocumentStore.init(persistent.allocator(), test_io(), &.{}, backing.allocator());
+    defer releaseDocuments(&store);
+    _ = try store.openOrUpdate("lib.sx", "Point :: struct { x: i64; }", 1);
+    const src: [:0]const u8 =
+        \\@import "lib.sx";
+        \\length :: (p: Point) -> i64 { p.x }
+    ;
+
+    var persistent_after_two: usize = 0;
+    var backing_after_two: usize = 0;
+    var version: i64 = 1;
+    while (version <= 40) : (version += 1) {
+        const doc = try store.openOrUpdate("main.sx", src, version);
+        try store.analyzeDocument(doc);
+        store.reclaim();
+        try std.testing.expect(doc.sema.?.selection.select("Point") != null);
+        if (version == 2) {
+            persistent_after_two = persistent.live();
+            backing_after_two = backing.live();
+        }
+    }
+
+    try std.testing.expectEqual(persistent_after_two, persistent.live());
+    try std.testing.expectEqual(backing_after_two, backing.live());
+}
+
+fn releaseDocuments(store: *doc_mod.DocumentStore) void {
+    store.reclaim();
+    var docs = store.by_path.valueIterator();
+    while (docs.next()) |doc| {
+        doc.*.text.release();
+        if (doc.*.analysis) |analysis| analysis.release();
+        if (doc.*.last_good) |analysis| analysis.release();
+    }
+}
+
+test "analyzeDocument: an importer keeps the import analysis it read after the import is reanalyzed" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var store = doc_mod.DocumentStore.init(arena.allocator(), test_io(), &.{}, std.heap.page_allocator);
+    defer releaseDocuments(&store);
+    const lib = try store.openOrUpdate("lib.sx", "Point :: struct { x: i64; }", 1);
+    try store.analyzeDocument(lib);
+    const main = try store.openOrUpdate("main.sx",
+        \\@import "lib.sx";
+        \\length :: (p: Point) -> i64 { p.x }
+    , 1);
+    try store.analyzeDocument(main);
+
+    _ = try store.openOrUpdate("lib.sx", "Other :: struct { y: i64; }", 2);
+    try store.analyzeDocument(lib);
+    store.reclaim();
+
+    try std.testing.expectEqualStrings("Point", main.sema.?.selection.select("Point").?.info().name);
 }
 
 fn hasSymbol(sema: sx.sema.SemaResult, name: []const u8) bool {
