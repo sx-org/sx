@@ -510,10 +510,12 @@ fn runLsp(allocator: std.mem.Allocator, io: std.Io, stdlib_paths: []const []cons
     var read_buf: [4096]u8 = undefined;
     var stdin_reader = stdin_file.readerStreaming(io, &read_buf);
 
-    var transport = Transport.init(allocator, io, &stdin_reader.interface, stdout_file);
-    var server = Server.init(allocator, &transport, io, stdlib_paths);
+    var message_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    var transport = Transport.init(message_arena.allocator(), io, &stdin_reader.interface, stdout_file);
+    var server = Server.init(allocator, message_arena.allocator(), &transport, io, stdlib_paths);
 
     while (true) {
+        defer _ = message_arena.reset(.retain_capacity);
         const msg = transport.readMessage() catch |err| {
             if (err == error.EndOfStream) break;
             std.debug.print("lsp: read error: {}\n", .{err});

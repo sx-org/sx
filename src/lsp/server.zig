@@ -18,6 +18,8 @@ const Transport = @import("transport.zig").Transport;
 const SemaResult = sx.sema.SemaResult;
 
 pub const Server = struct {
+    /// Reset after every message: nothing allocated from it outlives the
+    /// message that allocated it.
     allocator: std.mem.Allocator,
     documents: DocumentStore,
     transport: *Transport,
@@ -28,19 +30,22 @@ pub const Server = struct {
     /// URIs the last whole-program check published diagnostics to, so the next
     /// check can clear (publish empty for) files whose errors are now gone.
     project_diag_uris: std.StringHashMap(void),
+    /// Owns `project_diag_uris` once a check has run.
+    project_diag_arena: ?*doc_mod.SharedArena = null,
 
-    pub fn init(allocator: std.mem.Allocator, transport: *Transport, io: std.Io, stdlib_paths: []const []const u8) Server {
+    pub fn init(session: std.mem.Allocator, message: std.mem.Allocator, transport: *Transport, io: std.Io, stdlib_paths: []const []const u8) Server {
         return .{
-            .allocator = allocator,
-            .documents = DocumentStore.init(allocator, io, stdlib_paths, std.heap.page_allocator),
+            .allocator = message,
+            .documents = DocumentStore.init(session, io, stdlib_paths, std.heap.page_allocator),
             .transport = transport,
             .io = io,
             .stdlib_paths = stdlib_paths,
-            .project_diag_uris = std.StringHashMap(void).init(allocator),
+            .project_diag_uris = std.StringHashMap(void).init(session),
         };
     }
 
     pub fn handleMessage(self: *Server, raw: []const u8) bool {
+        defer self.documents.reclaim();
         const parsed = std.json.parseFromSlice(std.json.Value, self.allocator, raw, .{}) catch {
             return true;
         };
@@ -138,7 +143,7 @@ pub const Server = struct {
             const prefix = "file://";
             if (!std.mem.startsWith(u8, root_uri, prefix)) break :chdir;
             const root_path = root_uri[prefix.len..];
-            self.root_path = self.allocator.dupe(u8, root_path) catch break :chdir;
+            self.root_path = self.documents.allocator.dupe(u8, root_path) catch break :chdir;
             self.documents.root_path = self.root_path;
             const path_z = self.allocator.dupeZ(u8, root_path) catch break :chdir;
             _ = std.c.chdir(path_z.ptr);
@@ -1944,9 +1949,7 @@ pub const Server = struct {
     /// compiler pipeline in `runProjectCheck`.
     fn refreshEditorIndex(self: *Server, uri: []const u8, text: []const u8, version: i64) !void {
         const file_path = uriToFilePath(uri) orelse "";
-        const source = try self.allocator.dupeZ(u8, text);
-
-        const doc = try self.documents.openOrUpdate(file_path, source, version);
+        const doc = try self.documents.openOrUpdate(file_path, text, version);
         self.documents.analyzeDocument(doc) catch {};
     }
 
@@ -2019,12 +2022,13 @@ pub const Server = struct {
             gop.value_ptr.append(self.allocator, .{ .range = pd.range, .severity = pd.severity, .message = pd.message }) catch {};
         }
 
-        var new_uris = std.StringHashMap(void).init(self.allocator);
+        const arena = doc_mod.SharedArena.create(self.documents.backing) catch return;
+        var new_uris = std.StringHashMap(void).init(arena.allocator());
         var it = by_file.iterator();
         while (it.next()) |entry| {
             const uri = self.fileUri(entry.key_ptr.*) catch continue;
             self.sendDiagnostics(uri, entry.value_ptr.items) catch {};
-            new_uris.put(uri, {}) catch {};
+            new_uris.put(arena.allocator().dupe(u8, uri) catch continue, {}) catch {};
         }
         // Clear any file that reported errors last time but doesn't now.
         var pit = self.project_diag_uris.iterator();
@@ -2033,8 +2037,9 @@ pub const Server = struct {
                 self.sendDiagnostics(entry.key_ptr.*, &.{}) catch {};
             }
         }
-        self.project_diag_uris.deinit();
         self.project_diag_uris = new_uris;
+        if (self.project_diag_arena) |previous| previous.release();
+        self.project_diag_arena = arena;
     }
 
     // ---- Symbol resolution helpers ----
@@ -3794,6 +3799,25 @@ test "lsp/workspace: loadWorkspaceFiles analyses .sx files that were never opene
     const b = store.get(dir ++ "/b.sx") orelse return error.TestUnexpectedResult;
     try std.testing.expect(a.sema != null);
     try std.testing.expect(b.sema != null);
+}
+
+test "lsp/didOpen: the document keeps its text after the message's memory is unmapped" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var message = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer message.deinit();
+
+    var server = Server{ .allocator = message.allocator(), .documents = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc), .transport = undefined, .io = test_io(), .project_diag_uris = std.StringHashMap(void).init(alloc) };
+    const open =
+        \\{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file://main.sx","languageId":"sx","version":1,"text":"answer :: () -> i64 { 42 }"}}}
+    ;
+    try std.testing.expect(server.handleMessage(try message.allocator().dupe(u8, open)));
+    _ = message.reset(.free_all);
+
+    const doc = server.documents.get("main.sx").?;
+    try std.testing.expectEqualStrings("answer :: () -> i64 { 42 }", doc.source);
+    try std.testing.expectEqualStrings("answer", doc.sema.?.selection.select("answer").?.info().name);
 }
 
 test "lsp/project: contextual literals select routing from index-named target slots" {
