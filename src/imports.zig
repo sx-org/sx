@@ -386,7 +386,7 @@ pub const ResolvedModule = struct {
             if (name.len > 0 and name[0] == '@') return true;
         }
         return switch (decl.data) {
-            .struct_decl, .enum_decl, .union_decl, .error_set_decl, .protocol_decl, .open_set_decl, .runtime_class_decl, .scope_decl => true,
+            .struct_decl, .enum_decl, .union_decl, .error_set_decl, .protocol_decl, .open_set_decl, .runtime_class_decl, .scope_decl, .namespace_decl => true,
             .fn_decl => |fd| fd.extern_export == .extern_ or fd.body.data == .intrinsic_expr,
             .const_decl => |cd| cd.value.data != .fn_decl or isPerSourceDecl(cd.value),
             .var_decl => true,
