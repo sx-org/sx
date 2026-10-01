@@ -3782,8 +3782,8 @@ fn lowerUnboxIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
 
 /// `@tag(v)` — an enum value's tag. A typed enum yields the tag in its tag
 /// type: a payload-free value IS the tag, a payload-carrying one reads its
-/// tag word. A boxed value yields a view of the tag word typed by the tag
-/// type the runtime width table names.
+/// tag word. A boxed value yields a view of the tag word typed by its tag
+/// type.
 fn lowerTagIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
     if (c.args.len != 1) {
         if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "@tag takes 1 argument, got {d}", .{c.args.len});
@@ -3801,41 +3801,12 @@ fn lowerTagIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
     return Ref.none;
 }
 
-/// The integer types a runtime tag width names, sign-encoded as
-/// `variantTagWidth` does: positive widths are unsigned, negative signed.
-const tag_width_types = [_]struct { width: i64, ty: TypeId }{
-    .{ .width = 1, .ty = .u8 },  .{ .width = -1, .ty = .i8 },
-    .{ .width = 2, .ty = .u16 }, .{ .width = -2, .ty = .i16 },
-    .{ .width = 4, .ty = .u32 }, .{ .width = -4, .ty = .i32 },
-    .{ .width = 8, .ty = .u64 }, .{ .width = -8, .ty = .i64 },
-};
-
 /// A view of a boxed enum's tag word, typed by its tag type.
 fn boxedTagView(self: *Lowering, av: Ref) Ref {
     const b = &self.builder;
     const type_word = b.structGet(av, 1, .type_value);
-    const width_args = self.alloc.dupe(Ref, &.{type_word}) catch return Ref.none;
-    const width = b.callBuiltin(.rt_variant_tag_width, width_args, .i64);
-    const slot = b.alloca(.type_value);
-    b.store(slot, b.constType(.i64));
-    const merge_bb = self.freshBlock("tag.merge");
-    var cases = std.ArrayList(inst_mod.SwitchBranch.Case).empty;
-    defer cases.deinit(self.alloc);
-    var blocks = std.ArrayList(inst_mod.BlockId).empty;
-    defer blocks.deinit(self.alloc);
-    for (tag_width_types) |entry| {
-        const bb = self.freshBlock("tag.width");
-        cases.append(self.alloc, .{ .value = @bitCast(entry.width), .target = bb, .args = &.{} }) catch return Ref.none;
-        blocks.append(self.alloc, bb) catch return Ref.none;
-    }
-    b.switchBr(width, cases.items, merge_bb, &.{});
-    for (tag_width_types, blocks.items) |entry, bb| {
-        b.switchToBlock(bb);
-        b.store(slot, b.constType(entry.ty));
-        b.br(merge_bb, &.{});
-    }
-    b.switchToBlock(merge_bb);
-    const tag_ty = b.load(slot, .type_value);
+    const tag_args = self.alloc.dupe(Ref, &.{type_word}) catch return Ref.none;
+    const tag_ty = b.callBuiltin(.rt_variant_tag_type, tag_args, .type_value);
     return b.makeAny(tag_ty, b.anyData(av, self.module.types.ptrTo(.void)));
 }
 

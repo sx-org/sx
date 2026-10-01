@@ -1,0 +1,9 @@
+@import "modules/std.sx";
+
+Nib :: enum @int(4, .signed) { neg = -1; zero; top = 7; }
+
+main :: () {
+    n := Nib.neg;
+    av : any = n;
+    print("{} {} {}\n", @tag(n), @tag(av), av);
+}

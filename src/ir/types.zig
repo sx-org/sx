@@ -1365,23 +1365,15 @@ pub const TypeTable = struct {
         };
     }
 
-    /// The byte width of the tag word a runtime variant read must load from a
-    /// value of type `id`, SIGN-ENCODED: positive = zero-extend, negative =
-    /// |width| bytes, sign-extend (a signed backing / tag type, so small
-    /// negative explicit values round-trip). A payload-free enum's whole
-    /// value IS its tag; a payload-carrying enum's tag is the LOW
-    /// @sizeOf(tag_type) bytes at its offset (a stated layout's header can be
-    /// wider than the tag — the width comes from the tag type, never the
-    /// header). 0 for a non-variant kind. Feeds the `__sx_variant_tag_widths`
-    /// runtime table and its static fold.
-    pub fn variantTagWidth(self: *const TypeTable, id: TypeId) i64 {
-        if (id.index() >= self.infos.items.len or id.isBuiltin()) return 0;
-        const tag_ty: TypeId = switch (self.get(id)) {
+    /// The type a runtime variant read views the tag word of a value of type
+    /// `id` as. Null for a non-variant kind. Feeds the
+    /// `__sx_variant_tag_types` runtime table.
+    pub fn variantTagType(self: *const TypeTable, id: TypeId) ?TypeId {
+        if (id.index() >= self.infos.items.len or id.isBuiltin()) return null;
+        return switch (self.get(id)) {
             .@"enum" => |e| e.tag_type,
-            else => return 0,
+            else => null,
         };
-        const w: i64 = @intCast(self.typeSizeBytes(tag_ty));
-        return if (self.isUnsignedInt(tag_ty)) w else -w;
     }
 
     /// Source-sensitive variant of `findByName`: asserts at most one named type

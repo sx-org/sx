@@ -626,9 +626,9 @@ pub const BuiltinId = enum(u16) {
     // enum/payload enum variants, array elements, vector lanes. 0 for a kind
     // whose count lives in the value (a fat pointer's header).
     rt_member_count,
-    // The tag-word byte width a runtime variant read loads (sign-encoded:
-    // negative = sign-extend). Internal — serves the boxed `@tag` view.
-    rt_variant_tag_width,
+    // The tag type a runtime variant read views the tag word as. Internal —
+    // serves the boxed `@tag` view.
+    rt_variant_tag_type,
     // The packed length-word row (bit width / signedness / header offset) a
     // runtime fat-pointer read needs. Internal — serves the boxed `@len` /
     // `@field` read.

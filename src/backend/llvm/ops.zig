@@ -1858,7 +1858,7 @@ pub const Ops = struct {
             .alignment => self.e.type_align_array_len,
             .flags => self.e.is_flags_array_len,
             .member_count => self.e.member_count_array_len,
-            .tag_width => self.e.variant_tag_width_array_len,
+            .tag_type => self.e.variant_tag_type_array_len,
             .slice_len_info => self.e.slice_len_info_array_len,
             .optional_probe => self.e.optional_probe_array_len,
             .member_stride => self.e.member_stride_array_len,
@@ -1970,7 +1970,7 @@ pub const Ops = struct {
                 const result = c.LLVMBuildLoad2(self.e.builder, self.e.cached_i1, gep, "tiu.load");
                 self.e.mapRef(result);
             },
-            .@"rt_@sizeOf", .@"rt_@alignOf", .rt_is_flags, .rt_member_count, .rt_variant_tag_width, .rt_slice_len_info, .rt_optional_probe => {
+            .@"rt_@sizeOf", .@"rt_@alignOf", .rt_is_flags, .rt_member_count, .rt_variant_tag_type, .rt_slice_len_info, .rt_optional_probe => {
                 // Runtime-Type scalar reflection: resolve the tag the
                 // arg denotes (any → its type-tag), GEP the builtin's lazy
                 // table, load. Same shape as the type_name/is_unsigned arms.
@@ -1979,7 +1979,7 @@ pub const Ops = struct {
                     .@"rt_@alignOf" => .alignment,
                     .rt_is_flags => .flags,
                     .rt_member_count => .member_count,
-                    .rt_variant_tag_width => .tag_width,
+                    .rt_variant_tag_type => .tag_type,
                     .rt_slice_len_info => .slice_len_info,
                     .rt_optional_probe => .optional_probe,
                     else => unreachable,
