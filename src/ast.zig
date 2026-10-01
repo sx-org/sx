@@ -160,22 +160,13 @@ pub const Root = struct {
 ///   context, sx ABI). There is no surface spelling for `.default`; it is the
 ///   value when `abi(...)` is absent.
 /// - `.c` — C ABI / cdecl, no implicit context.
-/// - `.zig` — welded to the real internal Zig type/fn: layout follows the bound
-///   Zig type, functions dispatch over the comptime host-call bridge. The
-///   `compiler` library binds via `abi(.zig)`.
-/// - `.compiler` — a COMPILER-DOMAIN function: it runs in the comptime evaluator
-///   (VM / interp), NEVER in the shipped binary, so the backend does not lower it.
-///   Covers the compiler-API surface (`@rawIntern`/`@rawFindType`/`@buildOptions`/… —
-///   bodiless decls whose Zig/VM handler is the impl) AND user compiler-domain
-///   functions like post-link callbacks (bodied, but emit-skipped). The ABI alone
-///   marks it — there is no `extern <lib>` and no fake `@library "compiler"`.
 /// - `.naked` — a naked function (inline asm body), no calling-convention
 ///   prologue/epilogue. The body is responsible for its own `ret`; args arrive
 ///   in ABI registers (no frame, no implicit `__sx_ctx`).
 pub const ABI = enum { default, c, naked };
 
-/// Linkage modifier written in the postfix slot before `abi(...)`:
-/// `name :: (sig) -> Ret [extern | export] [abi(.x)] [lib] [;|{…}];`
+/// Linkage modifier written in the postfix slot after `abi(...)`:
+/// `name :: (sig) -> Ret [abi(.x)] [extern | export] [lib] [;|{…}];`
 /// `extern` = import (external linkage, no sx ctx — `extern`'s role);
 /// `export` = define + expose (body + external linkage + no ctx).
 /// Variants carry a trailing `_` to dodge the Zig keywords. `.none` = no linkage
@@ -189,14 +180,7 @@ pub const FnDecl = struct {
     body: *Node,
     type_params: []const StructTypeParam = &.{},
     is_arrow: bool = false,
-    /// ABI / calling-convention annotation (`abi(.c)` / `abi(.zig)` / `abi(.naked)`)
-    /// in the postfix slot after `extern`/`export`. `.default` = unannotated.
-    /// `.zig` marks a function bound to the comptime `compiler` library — its
-    /// signature is welded to the real internal Zig fn and it dispatches over the
-    /// host-call bridge at comptime.
     abi: ABI = .default,
-    /// Postfix linkage modifier (`extern`/`export`) written before the `abi(...)`
-    /// slot. `.none` for an ordinary sx-internal function.
     extern_export: ExternExportModifier = .none,
     /// Optional library reference + symbol-name override for an `extern`/`export`
     /// function. Both optional: `extern` alone resolves the sx name against the
@@ -622,14 +606,9 @@ pub const StructDecl = struct {
     type_params: []const StructTypeParam = &.{},
     methods: []const *Node = &.{}, // fn_decl nodes for struct methods
     constants: []const *Node = &.{}, // const_decl nodes for struct-level constants
-    /// ABI / layout annotation (`struct abi(.zig) extern <lib> { … }`). `.default`
-    /// for an ordinary struct. `.zig` marks a layout-welded binding to the named
-    /// `compiler` library's real Zig type — its field offsets are taken from the
-    /// bound Zig type (`@offsetOf`) and asserted equal at compiler-build time.
-    /// Consumed by the binding registry and the layout engine.
+    /// `struct abi(.c) extern <lib> { … }`. Parse-only: no later pass reads it.
     abi: ABI = .default,
-    /// The bound library handle for an `abi(.zig) extern <lib>` welded struct
-    /// (e.g. `compiler`); null for an ordinary struct.
+    /// The `<lib>` after a struct's `extern`. Parse-only.
     extern_lib: ?[]const u8 = null,
     /// True when the declared NAME was a backtick raw identifier
     /// (`` `i32 :: struct { … } ``) — exempt from the reserved-type-name decl

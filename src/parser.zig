@@ -1523,10 +1523,7 @@ pub const Parser = struct {
         open_variant_span: ?ast.Span,
     ) anyerror!*Node {
 
-        // Optional welded-binding annotation: `struct abi(.zig) extern <lib> { … }`.
-        // `abi(...)` (the ABI/layout selector) sits before the `extern` linkage
-        // keyword, mirroring the fn-decl slot order; the library handle follows.
-        // Parse-only — no layout/registry semantics.
+        // Optional `struct abi(.c) extern <lib> { … }` annotation.
         const struct_abi = try self.parseOptionalAbi();
         const struct_extern = self.parseOptionalExternExport();
         var struct_extern_lib: ?[]const u8 = null;
@@ -2906,13 +2903,7 @@ pub const Parser = struct {
                 return self.fail("a '@set' accessor takes exactly the receiver and one value parameter");
         }
 
-        // Optional ABI / calling-convention annotation: `abi(.c)` / `abi(.zig)` /
-        // `abi(.naked)`. Sits in the postfix slot BEFORE the `extern`/`export`
-        // linkage keyword (it is part of the function declaration). `abi(.zig)`
-        // marks a binding to the comptime `compiler` library.
         const abi = try self.parseOptionalAbi();
-
-        // Optional postfix linkage modifier: `extern` (import) / `export` (define).
         const extern_export = self.parseOptionalExternExport();
 
         // `extern` and `export` are mutually exclusive — one declaration is either
@@ -5073,9 +5064,6 @@ pub const Parser = struct {
         return false;
     }
 
-    /// Optional ABI / calling-convention annotation `abi(.c)` / `abi(.zig)` /
-    /// `abi(.naked)` in the postfix slot before `extern`/`export`. `.default` when
-    /// absent.
     fn parseOptionalAbi(self: *Parser) anyerror!ast.ABI {
         if (self.tokens.tag(self.tok) != .kw_abi) return .default;
         self.advance();

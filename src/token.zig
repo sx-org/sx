@@ -50,7 +50,7 @@ pub const Tag = enum(u8) {
     kw_impl, // impl
     kw_Self, // Self (in interface/constraint declarations)
     kw_inline, // inline (compile-time if/for/while)
-    kw_abi, // abi (ABI / calling-convention annotation: abi(.c)/abi(.zig)/abi(.naked))
+    kw_abi, // abi (ABI / calling-convention annotation)
     kw_extern, // extern (import: external linkage, C ABI, no body)
     kw_export, // export (define + expose: external linkage, C ABI)
     kw_asm, // asm (inline assembly expression / global asm decl)
