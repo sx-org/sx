@@ -1,0 +1,10 @@
+// The facade's own `list :: @import "thing.sx"` hides std's `list` handle
+// there, so its re-export `Thing :: list.Thing` names thing.sx's struct.
+@import "modules/std.sx";
+@import "own-namespace-handle-hides-flat-imported-handle/facade.sx";
+
+main :: () -> i32 {
+    t := Thing.init(3);
+    print("{}\n", t.x);
+    0
+}

@@ -1,0 +1,4 @@
+Thing :: struct {
+    x: i64 = 7;
+    init :: (x: i64) -> Thing => .{ x = x };
+}
