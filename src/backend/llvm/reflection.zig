@@ -94,7 +94,7 @@ pub const Reflection = struct {
     /// `[N x i1]` for flags), tag-indexed, one row per TypeId in table order.
     /// Values come from the SAME type-table queries the comptime folds use,
     /// so the static and dynamic answers can never diverge.
-    pub const ScalarTableKind = enum { canonical_type, size, alignment, flags, member_count, tag_width, slice_len_info, optional_probe, member_stride };
+    pub const ScalarTableKind = enum { canonical_type, size, alignment, flags, member_count, tag_type, slice_len_info, optional_probe, member_stride };
 
     pub fn getOrBuildScalarTable(self: Reflection, kind: ScalarTableKind) c.LLVMValueRef {
         const slot: *?c.LLVMValueRef, const len_slot: *u32 = switch (kind) {
@@ -103,7 +103,7 @@ pub const Reflection = struct {
             .alignment => .{ &self.e.type_align_array, &self.e.type_align_array_len },
             .flags => .{ &self.e.is_flags_array, &self.e.is_flags_array_len },
             .member_count => .{ &self.e.member_count_array, &self.e.member_count_array_len },
-            .tag_width => .{ &self.e.variant_tag_width_array, &self.e.variant_tag_width_array_len },
+            .tag_type => .{ &self.e.variant_tag_type_array, &self.e.variant_tag_type_array_len },
             .slice_len_info => .{ &self.e.slice_len_info_array, &self.e.slice_len_info_array_len },
             .optional_probe => .{ &self.e.optional_probe_array, &self.e.optional_probe_array_len },
             .member_stride => .{ &self.e.member_stride_array, &self.e.member_stride_array_len },
@@ -130,8 +130,7 @@ pub const Reflection = struct {
                     break :blk 0;
                 },
                 .member_count => @intCast(tt.memberCount(tid) orelse 0),
-                // Sign-encoded (negative = sign-extend); the i64 bit pattern.
-                .tag_width => @bitCast(tt.variantTagWidth(tid)),
+                .tag_type => (tt.variantTagType(tid) orelse TypeId.i64).index(),
                 .slice_len_info => @bitCast(tt.sliceLenInfo(tid)),
                 .optional_probe => @bitCast(tt.optionalProbe(tid) orelse 0),
                 // A zero-sized element strides by 0, so absence encodes negative.
@@ -148,7 +147,7 @@ pub const Reflection = struct {
             .alignment => "__sx_type_aligns",
             .flags => "__sx_type_flag_bits",
             .member_count => "__sx_member_counts",
-            .tag_width => "__sx_variant_tag_widths",
+            .tag_type => "__sx_variant_tag_types",
             .slice_len_info => "__sx_slice_len_infos",
             .optional_probe => "__sx_optional_probes",
             .member_stride => "__sx_member_strides",

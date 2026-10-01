@@ -2439,7 +2439,7 @@ pub const Vm = struct {
             },
             // Runtime-Type scalar reflection: the tag resolves the same
             // way type_name's does; answers come straight from the type table.
-            .@"rt_@sizeOf", .@"rt_@alignOf", .rt_is_flags, .rt_member_count, .rt_variant_tag_width, .rt_slice_len_info, .rt_optional_probe => {
+            .@"rt_@sizeOf", .@"rt_@alignOf", .rt_is_flags, .rt_member_count, .rt_variant_tag_type, .rt_slice_len_info, .rt_optional_probe => {
                 const table = try self.requireTable();
                 if (bi.args.len < 1) return self.failMsg("comptime reflection: missing argument");
                 const tid = try self.reflectArgTypeId(try self.refTy(ref_types, bi.args[0]), frame.get(bi.args[0].index()));
@@ -2454,7 +2454,7 @@ pub const Vm = struct {
                         break :blk 0;
                     },
                     .rt_member_count => @as(Reg, @intCast(table.memberCount(tid) orelse 0)),
-                    .rt_variant_tag_width => @as(Reg, @bitCast(table.variantTagWidth(tid))),
+                    .rt_variant_tag_type => @as(Reg, (table.variantTagType(tid) orelse TypeId.i64).index()),
                     .rt_slice_len_info => @as(Reg, @bitCast(table.sliceLenInfo(tid))),
                     .rt_optional_probe => @as(Reg, @bitCast(table.optionalProbe(tid) orelse 0)),
                     else => unreachable,
