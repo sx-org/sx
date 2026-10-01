@@ -2140,12 +2140,10 @@ pub const Server = struct {
                     }
                 }
             }
-            // Check fields — use field type span as approximate location
-            for (sd.field_names, 0..) |fname, fi| {
+            for (sd.field_names, sd.field_name_starts) |fname, fstart| {
                 if (std.mem.eql(u8, fname, member_name)) {
-                    if (fi < sd.field_types.len) {
-                        return self.sendSpanLocation(id_json, lookup.doc, sd.field_types[fi].span, origin_doc, origin);
-                    }
+                    const site = lookup.doc.tokens.tokenAtStart(fstart) orelse return false;
+                    return self.sendSpanLocation(id_json, lookup.doc, .{ .start = fstart, .end = lookup.doc.tokens.end(site) }, origin_doc, origin);
                 }
             }
         } else if (lookup.node.data == .enum_decl) {
@@ -3672,6 +3670,23 @@ test "lsp/definition: cursor on a member declaration resolves to itself" {
     try std.testing.expect(Server.selfMemberDefAt(&sema, 0) == null);
 }
 
+test "lsp/definition: a field accessed under an index lands on the field's name" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const doc = try store.openOrUpdate("main.sx",
+        \\Log :: struct { seq: [8]i64; n: i64; }
+        \\rec :: (l: *Log, v: i64) { l.seq[l.n] = v; }
+    , 1);
+    try store.analyzeDocument(doc);
+    const result = try requestAt(alloc, store, doc, "definition", @intCast(std.mem.indexOf(u8, doc.source, "l.seq").? + 2));
+    const target = try std.json.parseFromValueLeaky(lsp.Range, alloc, result.array.items[0].object.get("targetSelectionRange").?, .{});
+    const name: u32 = @intCast(std.mem.indexOf(u8, doc.source, "seq").?);
+    try std.testing.expectEqualDeep(Server.spanToRange(doc.source, .{ .start = name, .end = name + 3 }), target);
+}
+
 test "lsp/inlayHint: a for-loop capture in a struct method shows its element type" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -4696,6 +4711,11 @@ fn scopeRequest(alloc: std.mem.Allocator, method: []const u8, needle: []const u8
     , 1);
     try store.analyzeDocument(doc);
     const offset: u32 = @intCast(std.mem.indexOf(u8, doc.source, needle).? + std.mem.indexOfScalar(u8, needle, '.').? + 1);
+    return requestAt(alloc, store, doc, method, offset);
+}
+
+fn requestAt(alloc: std.mem.Allocator, store: doc_mod.DocumentStore, doc: *const Document, method: []const u8, offset: u32) !std.json.Value {
+    const io = test_io();
     const pos = Server.spanToRange(doc.source, .{ .start = offset, .end = offset }).start;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -4705,8 +4725,8 @@ fn scopeRequest(alloc: std.mem.Allocator, method: []const u8, needle: []const u8
     var transport = Transport.init(alloc, io, &input, out);
     var server = Server{ .allocator = alloc, .documents = store, .transport = &transport, .io = io, .project_diag_uris = std.StringHashMap(void).init(alloc) };
     const request = try std.fmt.allocPrint(alloc,
-        \\{{"jsonrpc":"2.0","id":1,"method":"textDocument/{s}","params":{{"textDocument":{{"uri":"file://main.sx"}},"position":{{"line":{d},"character":{d}}}}}}}
-    , .{ method, pos.line, pos.character });
+        \\{{"jsonrpc":"2.0","id":1,"method":"textDocument/{s}","params":{{"textDocument":{{"uri":"file://{s}"}},"position":{{"line":{d},"character":{d}}}}}}}
+    , .{ method, doc.path, pos.line, pos.character });
     try std.testing.expect(server.handleMessage(request));
     const wire = try tmp.dir.readFileAlloc(io, "response", alloc, .limited(1024 * 1024));
     var reader = std.Io.Reader.fixed(wire);
