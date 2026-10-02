@@ -1,0 +1,34 @@
+@import "modules/std.sx";
+@import "vendors/sqlite/sqlite.sx";
+
+roundTrip :: (db: *sqlite.Sqlite) -> (string, !) {
+    try db.exec("CREATE TABLE t (id INTEGER PRIMARY KEY, data BLOB NOT NULL)");
+    ins := try db.prepareV3("INSERT INTO t (data) VALUES (?1)", sqlite.SQLITE_PREPARE_PERSISTENT);
+    defer ins.finalize();
+    try ins.bindBlob(1, "abcd");
+    _ = try ins.step();
+
+    b := try sqlite.Blob.open(db, "t", "data", 1, true);
+    try b.write(1, "XY");
+    b.close();
+
+    meta := try db.tableColumnMetadata("t", "data");
+    print("data: {} {} not null={}\n", meta.dataType, meta.collSeq, meta.notNull);
+
+    image := try db.serialize();
+    copy := try sqlite.Sqlite.open(":memory:");
+    defer copy.close();
+    try copy.deserialize(image);
+    q := try copy.prepare("SELECT data FROM t");
+    defer q.finalize();
+    _ = try q.step();
+    return q.columnBlob(0);
+}
+
+main :: () -> i32 {
+    db := sqlite.Sqlite.open(":memory:") catch { print("open failed\n"); return 1; };
+    defer db.close();
+    data := roundTrip(*db) catch { print("round trip failed: {}\n", db.errmsg()); return 1; };
+    print("copy: {}\n", data);
+    0
+}

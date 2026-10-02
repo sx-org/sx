@@ -451,7 +451,7 @@ sqlite :: scope {
             return;
         }
         bindBlob :: (self: *Stmt, idx: i32, bytes: string) -> !Error {
-            rc := sqlite3_bind_blob(self.handle, idx, bytes.ptr, bytes.len, SQLITE_TRANSIENT);
+            rc := sqlite3_bind_blob(self.handle, idx, bytes.ptr, bytes.len.(i32), SQLITE_TRANSIENT);
             if rc != SQLITE_OK { raise .Bind; }
             return;
         }
@@ -656,7 +656,7 @@ sqlite :: scope {
         // statement cache a storage layer keeps hot).
         prepareV3 :: (self: *Sqlite, sql: string, flags: u32) -> (Stmt, !Error) {
             sh : usize = 0;
-            rc := sqlite3_prepare_v3(self.handle, sql.ptr, sql.len, flags, *sh, 0);
+            rc := sqlite3_prepare_v3(self.handle, sql.ptr, sql.len.(i32), flags, *sh, 0);
             if rc != SQLITE_OK { raise .Prepare; }
             return Stmt{ handle = sh, db = self.handle };
         }
@@ -740,10 +740,9 @@ sqlite :: scope {
             defer mem.free(columnZ);
             rc := sqlite3_table_column_metadata(self.handle, "main", tableZ, columnZ, *dt, *cs, *nn, *pk, *ai);
             if rc != SQLITE_OK { raise .Metadata; }
-            dtp : ?*u8 = if dt != 0 then dt.(*u8).(?*u8) else null;
-            csp : ?*u8 = if cs != 0 then cs.(*u8).(?*u8) else null;
             return ColumnMeta{
-                dataType = fromCstr(dtp), collSeq = fromCstr(csp),
+                dataType = fromCstr(@reinterpret(?[*:0]u8, dt)),
+                collSeq = fromCstr(@reinterpret(?[*:0]u8, cs)),
                 notNull = nn != 0, primaryKey = pk != 0, autoinc = ai != 0,
             };
         }
@@ -764,9 +763,9 @@ sqlite :: scope {
         // copied into sqlite-owned memory (FREEONCLOSE+RESIZEABLE), so
         // `bytes` may die immediately after.
         deserialize :: (self: *Sqlite, bytes: string) -> !Error {
-            buf := sqlite3_malloc64((bytes.len));
+            buf := sqlite3_malloc64(bytes.len.(u64));
             if buf == 0 { raise .Serialize; }
-            bp : [*]u8 = buf.([*]u8);
+            bp := @reinterpret([*]u8, buf);
             c.memcpy(bp, bytes.ptr, bytes.len);
             rc := sqlite3_deserialize(self.handle, "main", buf, bytes.len, bytes.len,
                                       SQLITE_DESERIALIZE_FREEONCLOSE | SQLITE_DESERIALIZE_RESIZEABLE);
@@ -813,7 +812,7 @@ sqlite :: scope {
             return string{ ptr = raw, len = len };
         }
         write :: (self: *Blob, offset: i32, data: string) -> !Error {
-            rc := sqlite3_blob_write(self.handle, data.ptr, data.len, offset);
+            rc := sqlite3_blob_write(self.handle, data.ptr, data.len.(i32), offset);
             if rc != SQLITE_OK { raise .Blob; }
             return;
         }
