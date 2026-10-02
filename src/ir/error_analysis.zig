@@ -41,12 +41,12 @@ pub const ErrorAnalysis = struct {
         parent: ?*const LocalScope,
     };
 
-    /// What a name binds: a typed value, or a `catch` handler's error — the
-    /// failure of the failable it attempted, read in the scope outside the
-    /// handler.
+    /// What a name binds: a typed value, or an error that is the failure of
+    /// an attempted failable — a `catch` handler's error, or the error slot
+    /// a binding takes from a failable — read in the scope the attempt sees.
     const Binding = union(enum) {
         typed: TypeId,
-        caught: struct { attempted: *const Node, scope: ?*const LocalScope },
+        failure: struct { attempted: *const Node, scope: LocalScope },
     };
 
     const FunctionAuthor = struct { id: imports.DeclId, name: []const u8, decl: *const ast.FnDecl };
@@ -136,10 +136,10 @@ pub const ErrorAnalysis = struct {
     /// `raise VALUE` contributes VALUE's static channel, `dyn` when that
     /// channel has no static member set.
     fn contributeRaisedValue(self: ErrorAnalysis, value: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList(*const ast.FnDecl), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
-        if (value.data == .identifier) if (self.nameBinding(enclosing_fd, value.data.identifier.name)) |b| if (b == .caught) {
+        if (value.data == .identifier) if (self.nameBinding(enclosing_fd, value.data.identifier.name)) |b| if (b == .failure) {
             var outer = self;
-            outer.locals = b.caught.scope;
-            return outer.contributeAttempt(b.caught.attempted, tags, edges, dyn, enclosing_fd);
+            outer.locals = &b.failure.scope;
+            return outer.contributeAttempt(b.failure.attempted, tags, edges, dyn, enclosing_fd);
         };
         const channel = self.l.raisedChannel(self.receiverType(enclosing_fd, value)) orelse {
             dyn.* = true;
@@ -298,8 +298,19 @@ pub const ErrorAnalysis = struct {
         return switch (self.nameBinding(fd, name) orelse return null) {
             .typed => |ty| ty,
             // A bare-`!` callee's channel is what this pass converges, so a
-            // handler's error is read through its attempt instead.
-            .caught => .unresolved,
+            // failure is read through its attempt instead.
+            .failure => .unresolved,
+        };
+    }
+
+    /// The result slot holding the error of `value` when `value` attempts a
+    /// failable — a call whose callee is written with a channel — else null.
+    fn errorSlot(self: ErrorAnalysis, fd: ?*const ast.FnDecl, value: *const Node, ty: TypeId) ?usize {
+        if (value.data != .call or !self.calleeIsFailable(value.data.call.callee, fd) or ty.isBuiltin()) return null;
+        return switch (self.l.module.types.get(ty)) {
+            .failable => |f| self.l.module.types.failableValueSlotCount(f),
+            .@"error" => 0,
+            else => null,
         };
     }
 
@@ -321,6 +332,7 @@ pub const ErrorAnalysis = struct {
                     for (d.names, 0..) |target, index| {
                         if (!std.mem.eql(u8, target, name)) continue;
                         const ty = initializer.receiverType(fd, d.value);
+                        if (initializer.errorSlot(fd, d.value, ty) == index) return .{ .failure = .{ .attempted = d.value, .scope = preceding } };
                         const len = self.l.module.types.productLen(ty) orelse return .{ .typed = .unresolved };
                         return .{ .typed = if (index < len) self.l.module.types.productFieldType(ty, index) else .unresolved };
                     }
@@ -334,7 +346,10 @@ pub const ErrorAnalysis = struct {
                 if (!std.mem.eql(u8, binding.name, name)) continue;
                 if (binding.annotation) |annotation| return .{ .typed = self.l.resolveType(annotation) };
                 const value = binding.value orelse return .{ .typed = .unresolved };
-                return .{ .typed = initializer.receiverType(fd, value) };
+                const ty = initializer.receiverType(fd, value);
+                // A pure failable's whole result is its error slot.
+                if (initializer.errorSlot(fd, value, ty) == 0) return .{ .failure = .{ .attempted = value, .scope = preceding } };
+                return .{ .typed = ty };
             }
             if (current.payload) |payload| {
                 if (std.mem.eql(u8, payload.name, name)) {
@@ -354,7 +369,7 @@ pub const ErrorAnalysis = struct {
                 }
             }
             if (current.caught) |caught| {
-                if (std.mem.eql(u8, caught.name, name)) return .{ .caught = .{ .attempted = caught.attempted, .scope = current.parent } };
+                if (std.mem.eql(u8, caught.name, name)) return .{ .failure = .{ .attempted = caught.attempted, .scope = .{ .parent = current.parent } } };
             }
             if (current.lambda) |lambda| {
                 for (lambda.params) |p| {
