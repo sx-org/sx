@@ -1,5 +1,5 @@
 @import "modules/std.sx";
-sq :: @import "vendors/sqlite/sqlite.sx";
+@import "vendors/sqlite/sqlite.sx";
 
 Hit :: struct {
     rowid: i64;
@@ -7,31 +7,31 @@ Hit :: struct {
 }
 
 // The default rank is bm25; more-negative scores rank first.
-matchHits :: (db: *sq.Sqlite, query: string, out: []Hit) -> (i64, !) {
+matchHits :: (db: *sqlite.Sqlite, query: string, out: []Hit) -> (i64, !) {
     st := try db.prepare("SELECT rowid, bm25(docs) FROM docs WHERE docs MATCH ?1 ORDER BY rank");
     defer st.finalize();
     try st.bindText(1, query);
     n : i64 = 0;
     while n < out.len {
         rc := try st.step();
-        if rc != sq.SQLITE_ROW { break; }
+        if rc != sqlite.SQLITE_ROW { break; }
         out[n] = Hit{ rowid = st.columnInt64(0), score = st.columnDouble(1) };
         n += 1;
     }
     return n;
 }
 
-matchTitle :: (db: *sq.Sqlite, query: string) -> (string, !) {
+matchTitle :: (db: *sqlite.Sqlite, query: string) -> (string, !) {
     st := try db.prepare("SELECT title FROM docs WHERE docs MATCH ?1");
     defer st.finalize();
     try st.bindText(1, query);
     rc := try st.step();
-    if rc != sq.SQLITE_ROW { return ""; }
+    if rc != sqlite.SQLITE_ROW { return ""; }
     return st.columnText(0);
 }
 
 main :: () -> i32 {
-    db := sq.Sqlite.open(":memory:") catch { print("open failed\n"); return 1; };
+    db := sqlite.Sqlite.open(":memory:") catch { print("open failed\n"); return 1; };
     defer db.close();
 
     db.exec("CREATE VIRTUAL TABLE docs USING fts5(title, body)") catch {
@@ -65,6 +65,6 @@ main :: () -> i32 {
     miss := matchHits(*db, "monomorphization", hits[..]) catch { print("miss query failed: {}\n", db.errmsg()); return 1; };
     print("rows for an absent term: {}\n", miss);
 
-    print("vendored sqlite {} fts5 ok\n", sq.sqliteVersion());
+    print("vendored sqlite {} fts5 ok\n", sqlite.version());
     0
 }

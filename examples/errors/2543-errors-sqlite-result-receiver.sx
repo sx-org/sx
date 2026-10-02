@@ -1,24 +1,24 @@
 @import "modules/std.sx";
-sq :: @import "vendors/sqlite/sqlite.sx";
+@import "vendors/sqlite/sqlite.sx";
 
 E :: error { Missing; }
 
-untyped :: (db: *sq.Sqlite) -> ! {
+untyped :: (db: *sqlite.Sqlite) -> ! {
     st := try db.prepare("SELECT 1 WHERE 0");
     defer st.finalize();
     rc := try st.step();
-    if rc != sq.SQLITE_ROW { raise E.Missing; }
+    if rc != sqlite.SQLITE_ROW { raise E.Missing; }
 }
 
-typed :: (db: *sq.Sqlite) -> ! {
-    st : sq.SqliteStmt = try db.prepare("SELECT 1 WHERE 0");
+typed :: (db: *sqlite.Sqlite) -> ! {
+    st : sqlite.Stmt = try db.prepare("SELECT 1 WHERE 0");
     defer st.finalize();
     rc := try st.step();
-    if rc != sq.SQLITE_ROW { raise E.Missing; }
+    if rc != sqlite.SQLITE_ROW { raise E.Missing; }
 }
 
 main :: () -> i32 {
-    db := sq.Sqlite.open(":memory:") catch { print("open failed\n"); return 1; };
+    db := sqlite.Sqlite.open(":memory:") catch { print("open failed\n"); return 1; };
     e1 := untyped(*db);
     e2 := typed(*db);
     print("untyped error={} shorthand={}\n", e1, e1 == .Missing);
