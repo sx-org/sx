@@ -8,8 +8,8 @@
 private clib :: @import "modules/std/c.sx";
 @import "modules/std/thread.sx";
 @import "modules/std/event.sx";
-private gzipCodec :: @import "modules/std/codecs/gzip.sx";
-private zlibCodec :: @import "modules/std/codecs/zlib.sx";
+@import "modules/std/codecs/gzip.sx";
+@import "modules/std/codecs/zlib.sx";
 
 ChunkStatus :: enum {
     NEED_MORE;
@@ -505,46 +505,46 @@ compressibleContentType :: (value: string) -> bool {
         or ceAsciiIeq(media, "image/svg+xml")
 }
 
-encode :: (data: string, encoding: Encoding, level: i64, alloc: Allocator) -> (string, !Error) {
+encode :: (data: string, encoding: Encoding, level: i64, alloc: Allocator) -> (string, !compress.Error) {
     if encoding == .gzip {
-        return gzipCodec.encode(data, .{ level = level }, .{}, alloc);
+        return gzip.encode(data, .{ level = level }, .{}, alloc);
     }
     if encoding == .deflate {
-        return zlibCodec.encode(data, .{ level = level }, alloc);
+        return zlib.encode(data, .{ level = level }, alloc);
     }
     raise .Unsupported;
 }
 
 private EncoderStorage :: union {
-    gzip: gzipCodec.Encoder;
-    deflate: zlibCodec.Encoder;
+    gzip: gzip.Encoder;
+    deflate: zlib.Encoder;
 }
 
 private Encoder :: struct {
     encoding: Encoding;
     storage: EncoderStorage;
 
-    init :: (encoding: Encoding, level: i64, alloc: Allocator) -> (Encoder, !Error) {
+    init :: (encoding: Encoding, level: i64, alloc: Allocator) -> (Encoder, !compress.Error) {
         result : Encoder = ---;
         result.encoding = encoding;
         if encoding == .gzip {
-            result.storage.gzip = try gzipCodec.Encoder.init(.{ level = level }, .{}, alloc);
+            result.storage.gzip = try gzip.Encoder.init(.{ level = level }, .{}, alloc);
             return result;
         }
         if encoding == .deflate {
-            result.storage.deflate = try zlibCodec.Encoder.init(.{ level = level }, alloc);
+            result.storage.deflate = try zlib.Encoder.init(.{ level = level }, alloc);
             return result;
         }
         raise .Unsupported;
     }
 
-    write :: (self: *Encoder, input: string, output: string) -> (Progress, !Error) {
+    write :: (self: *Encoder, input: string, output: string) -> (compress.Progress, !compress.Error) {
         if self.encoding == .gzip { return self.storage.gzip.write(input, output); }
         if self.encoding == .deflate { return self.storage.deflate.write(input, output); }
         raise .Unsupported;
     }
 
-    finish :: (self: *Encoder, output: string) -> (Progress, !Error) {
+    finish :: (self: *Encoder, output: string) -> (compress.Progress, !compress.Error) {
         if self.encoding == .gzip { return self.storage.gzip.finish(output); }
         if self.encoding == .deflate { return self.storage.deflate.finish(output); }
         raise .Unsupported;
@@ -558,35 +558,35 @@ private Encoder :: struct {
 }
 
 private DecoderStorage :: union {
-    gzip: gzipCodec.Decoder;
-    deflate: zlibCodec.Decoder;
+    gzip: gzip.Decoder;
+    deflate: zlib.Decoder;
 }
 
 Decoder :: struct {
     encoding: Encoding;
     storage: DecoderStorage;
 
-    init :: (encoding: Encoding, maxOutput: i64, alloc: Allocator) -> (Decoder, !Error) {
+    init :: (encoding: Encoding, maxOutput: i64, alloc: Allocator) -> (Decoder, !compress.Error) {
         result : Decoder = ---;
         result.encoding = encoding;
         if encoding == .gzip {
-            result.storage.gzip = try gzipCodec.Decoder.init(maxOutput, alloc);
+            result.storage.gzip = try gzip.Decoder.init(maxOutput, alloc);
             return result;
         }
         if encoding == .deflate {
-            result.storage.deflate = try zlibCodec.Decoder.init(maxOutput, alloc);
+            result.storage.deflate = try zlib.Decoder.init(maxOutput, alloc);
             return result;
         }
         raise .Unsupported;
     }
 
-    read :: (self: *Decoder, input: string, output: string) -> (Progress, !Error) {
+    read :: (self: *Decoder, input: string, output: string) -> (compress.Progress, !compress.Error) {
         if self.encoding == .gzip { return self.storage.gzip.read(input, output); }
         if self.encoding == .deflate { return self.storage.deflate.read(input, output); }
         raise .Unsupported;
     }
 
-    finish :: (self: *Decoder, output: string) -> (Progress, !Error) {
+    finish :: (self: *Decoder, output: string) -> (compress.Progress, !compress.Error) {
         if self.encoding == .gzip { return self.storage.gzip.finish(output); }
         if self.encoding == .deflate { return self.storage.deflate.finish(output); }
         raise .Unsupported;
@@ -625,7 +625,7 @@ EncodedProducer :: struct {
     encoder: Encoder;
     alloc: Allocator;
 
-    init :: (encoding: Encoding, level: i64, source: StreamProducer, sourceCtx: usize, alloc: Allocator) -> (EncodedProducer, !Error) {
+    init :: (encoding: Encoding, level: i64, source: StreamProducer, sourceCtx: usize, alloc: Allocator) -> (EncodedProducer, !compress.Error) {
         input := alloc.allocBytes(SOURCE_PIECE);
         if input == null { raise .AllocationFailed; }
         encoder := Encoder.init(encoding, level, alloc) catch |e| {
@@ -647,7 +647,7 @@ EncodedProducer :: struct {
     }
 
     // pending makes progress without output; event-loop callers yield before retrying.
-    next :: (self: *EncodedProducer, output: string) -> (EncodedProduceStep, !Error) {
+    next :: (self: *EncodedProducer, output: string) -> (EncodedProduceStep, !compress.Error) {
         if self.finished { return EncodedProduceStep{ status = EncodedProduceStatus.done }; }
         if self.inputAt < self.inputLen {
             input := string{ ptr = *self.input[self.inputAt], len = self.inputLen - self.inputAt };

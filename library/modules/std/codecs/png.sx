@@ -4,139 +4,141 @@
 // `result.ptr` through that same allocator. `Image.pixels` is borrowed only
 // for the duration of the call.
 
-@import "modules/std/core.sx";
-@import "modules/std/internal/png.sx";
+png :: scope {
+    @import "modules/std/core.sx";
+    @import "modules/std/internal/png.sx";
 
-Error :: error {
-    InvalidDimensions;
-    InvalidStride;
-    PixelDataTooShort;
-    InvalidCompressionLevel;
-    TooLarge;
-    CompressionFailed;
-    AllocationFailed;
-    InvalidSignature;
-    TruncatedData;
-    ChecksumMismatch;
-    UnsupportedFormat;
-    InvalidFilter;
-    DecompressionFailed;
-}
-
-PixelFormat :: enum {
-    gray;
-    grayAlpha;
-    rgb;
-    rgba;
-}
-
-Image :: struct {
-    pixels: string;
-    // PNG stores 31-bit unsigned dimensions; both values must be in
-    // `1..0x7fffffff`.
-    width: i64;
-    height: i64;
-    format: PixelFormat;
-
-    // Zero means tightly packed rows. A positive stride stores logical rows
-    // top-to-bottom. A negative stride describes bottom-up storage: the first
-    // logical row starts at `(height - 1) * abs(stride)` from `pixels.ptr`.
-    // In every case the entire addressed layout must be present in `pixels`.
-    stride: i64 = 0;
-}
-
-EncodeOptions :: struct {
-    // Miniz-compatible compression levels. A value outside this range is
-    // rejected, never silently clamped.
-    level: i64 = 6;
-}
-
-encode :: (image: Image, options: EncodeOptions = .{}, alloc: Allocator = context.allocator) -> (string, !Error) {
-    if image.width < 1 or image.width > 0x7fffffff or
-       image.height < 1 or image.height > 0x7fffffff {
-        raise .InvalidDimensions;
-    }
-    if options.level < 0 or options.level > 10 { raise .InvalidCompressionLevel; }
-
-    channels := 4;
-    colorType := 6;
-    if image.format == .gray {
-        channels = 1;
-        colorType = 0;
-    } else if image.format == .grayAlpha {
-        channels = 2;
-        colorType = 4;
-    } else if image.format == .rgb {
-        channels = 3;
-        colorType = 2;
+    Error :: error {
+        InvalidDimensions;
+        InvalidStride;
+        PixelDataTooShort;
+        InvalidCompressionLevel;
+        TooLarge;
+        CompressionFailed;
+        AllocationFailed;
+        InvalidSignature;
+        TruncatedData;
+        ChecksumMismatch;
+        UnsupportedFormat;
+        InvalidFilter;
+        DecompressionFailed;
     }
 
-    if image.width > i64.max / channels { raise .TooLarge; }
-    rowBytes := image.width * channels;
-
-    actualStride := image.stride;
-    if actualStride == 0 { actualStride = rowBytes; }
-    // Negating the minimum signed integer is itself an overflow.
-    if actualStride == i64.min { raise .TooLarge; }
-    step := if actualStride < 0 then 0 - actualStride else actualStride;
-    if step < rowBytes { raise .InvalidStride; }
-
-    rowsAfterFirst := image.height - 1;
-    if rowsAfterFirst > 0 and step > (i64.max - rowBytes) / rowsAfterFirst {
-        raise .TooLarge;
+    PixelFormat :: enum {
+        gray;
+        grayAlpha;
+        rgb;
+        rgba;
     }
-    requiredPixels := step * rowsAfterFirst + rowBytes;
-    if image.pixels.len < requiredPixels { raise .PixelDataTooShort; }
 
-    if rowBytes == i64.max { raise .TooLarge; }
-    filteredRowBytes := rowBytes + 1;
-    if filteredRowBytes > i64.max / image.height { raise .TooLarge; }
-    filteredLen := filteredRowBytes * image.height;
+    Image :: struct {
+        pixels: string;
+        // PNG stores 31-bit unsigned dimensions; both values must be in
+        // `1..0x7fffffff`.
+        width: i64;
+        height: i64;
+        format: PixelFormat;
 
-    result := pngEncodeBytes(
-        image.pixels,
-        image.width,
-        image.height,
-        rowBytes,
-        step,
-        actualStride < 0,
-        colorType,
-        filteredLen,
-        options.level,
-        alloc,
-    ) catch |e| {
-        if e == .AllocationFailed { raise .AllocationFailed; }
-        if e == .TooLarge { raise .TooLarge; }
-        raise .CompressionFailed;
-    };
-    result
-}
+        // Zero means tightly packed rows. A positive stride stores logical rows
+        // top-to-bottom. A negative stride describes bottom-up storage: the first
+        // logical row starts at `(height - 1) * abs(stride)` from `pixels.ptr`.
+        // In every case the entire addressed layout must be present in `pixels`.
+        stride: i64 = 0;
+    }
 
-// Decode an 8-bit, non-interlaced PNG (grayscale, grayscale-alpha, RGB,
-// or RGBA — the same envelope `encode` emits; filters 0-4 accepted, so
-// files from other encoders load too). Every chunk CRC is verified;
-// palette, 16-bit, and Adam7 images reject with UnsupportedFormat.
-// `Image.pixels` is owned by `alloc`, tightly packed, top-down.
-decode :: (data: string, alloc: Allocator = context.allocator) -> (Image, !Error) {
-    d := pngDecodeBytes(data, alloc) catch |e| {
-        if e == .InvalidSignature { raise .InvalidSignature; }
-        if e == .TruncatedData { raise .TruncatedData; }
-        if e == .ChecksumMismatch { raise .ChecksumMismatch; }
-        if e == .UnsupportedFormat { raise .UnsupportedFormat; }
-        if e == .InvalidFilter { raise .InvalidFilter; }
-        if e == .AllocationFailed { raise .AllocationFailed; }
-        raise .DecompressionFailed;
-    };
-    fmt : PixelFormat = .rgba;
-    if d.channels == 1 { fmt = .gray; }
-    else if d.channels == 2 { fmt = .grayAlpha; }
-    else if d.channels == 3 { fmt = .rgb; }
-    result : Image = .{
-        pixels = d.pixels,
-        width = d.width,
-        height = d.height,
-        format = fmt,
-        stride = 0,
-    };
-    result
+    EncodeOptions :: struct {
+        // Miniz-compatible compression levels. A value outside this range is
+        // rejected, never silently clamped.
+        level: i64 = 6;
+    }
+
+    encode :: (image: Image, options: EncodeOptions = .{}, alloc: Allocator = context.allocator) -> (string, !Error) {
+        if image.width < 1 or image.width > 0x7fffffff or
+           image.height < 1 or image.height > 0x7fffffff {
+            raise .InvalidDimensions;
+        }
+        if options.level < 0 or options.level > 10 { raise .InvalidCompressionLevel; }
+
+        channels := 4;
+        colorType := 6;
+        if image.format == .gray {
+            channels = 1;
+            colorType = 0;
+        } else if image.format == .grayAlpha {
+            channels = 2;
+            colorType = 4;
+        } else if image.format == .rgb {
+            channels = 3;
+            colorType = 2;
+        }
+
+        if image.width > i64.max / channels { raise .TooLarge; }
+        rowBytes := image.width * channels;
+
+        actualStride := image.stride;
+        if actualStride == 0 { actualStride = rowBytes; }
+        // Negating the minimum signed integer is itself an overflow.
+        if actualStride == i64.min { raise .TooLarge; }
+        step := if actualStride < 0 then 0 - actualStride else actualStride;
+        if step < rowBytes { raise .InvalidStride; }
+
+        rowsAfterFirst := image.height - 1;
+        if rowsAfterFirst > 0 and step > (i64.max - rowBytes) / rowsAfterFirst {
+            raise .TooLarge;
+        }
+        requiredPixels := step * rowsAfterFirst + rowBytes;
+        if image.pixels.len < requiredPixels { raise .PixelDataTooShort; }
+
+        if rowBytes == i64.max { raise .TooLarge; }
+        filteredRowBytes := rowBytes + 1;
+        if filteredRowBytes > i64.max / image.height { raise .TooLarge; }
+        filteredLen := filteredRowBytes * image.height;
+
+        result := pngEncodeBytes(
+            image.pixels,
+            image.width,
+            image.height,
+            rowBytes,
+            step,
+            actualStride < 0,
+            colorType,
+            filteredLen,
+            options.level,
+            alloc,
+        ) catch |e| {
+            if e == .AllocationFailed { raise .AllocationFailed; }
+            if e == .TooLarge { raise .TooLarge; }
+            raise .CompressionFailed;
+        };
+        result
+    }
+
+    // Decode an 8-bit, non-interlaced PNG (grayscale, grayscale-alpha, RGB,
+    // or RGBA — the same envelope `encode` emits; filters 0-4 accepted, so
+    // files from other encoders load too). Every chunk CRC is verified;
+    // palette, 16-bit, and Adam7 images reject with UnsupportedFormat.
+    // `Image.pixels` is owned by `alloc`, tightly packed, top-down.
+    decode :: (data: string, alloc: Allocator = context.allocator) -> (Image, !Error) {
+        d := pngDecodeBytes(data, alloc) catch |e| {
+            if e == .InvalidSignature { raise .InvalidSignature; }
+            if e == .TruncatedData { raise .TruncatedData; }
+            if e == .ChecksumMismatch { raise .ChecksumMismatch; }
+            if e == .UnsupportedFormat { raise .UnsupportedFormat; }
+            if e == .InvalidFilter { raise .InvalidFilter; }
+            if e == .AllocationFailed { raise .AllocationFailed; }
+            raise .DecompressionFailed;
+        };
+        fmt : PixelFormat = .rgba;
+        if d.channels == 1 { fmt = .gray; }
+        else if d.channels == 2 { fmt = .grayAlpha; }
+        else if d.channels == 3 { fmt = .rgb; }
+        result : Image = .{
+            pixels = d.pixels,
+            width = d.width,
+            height = d.height,
+            format = fmt,
+            stride = 0,
+        };
+        result
+    }
 }

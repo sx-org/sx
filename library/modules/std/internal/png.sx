@@ -40,7 +40,7 @@ pngEncodeBytes :: (
     filteredLen: i64,
     level: i64,
     alloc: Allocator,
-) -> (string, !Error) {
+) -> (string, !compress.Error) {
     filteredRaw := alloc.allocBytes(filteredLen);
     if filteredRaw == null { raise .AllocationFailed; }
     filtered := string{ ptr = filteredRaw, len = filteredLen };

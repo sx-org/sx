@@ -35,7 +35,7 @@ word is involved, in which case it names the replacement or says there is none.
 | `mz_inflateInit2` | `zlib.Decoder.init()` or raw `deflate.Decoder.init()`; framing selection replaces numeric window bits |
 | `mz_inflateReset` | `zlib.Decoder.reset(maxOutput)` |
 | `mz_uncompress` | strict `zlib.decode`/`zlib.decodeInto` |
-| `mz_uncompress2` | `zlib.decodePrefix`/`decodeIntoPrefix`, whose `DecodeResult.consumed` replaces the in/out source-length pointer |
+| `mz_uncompress2` | `zlib.decodePrefix`/`decodeIntoPrefix`, whose `compress.DecodeResult.consumed` replaces the in/out source-length pointer |
 | `mz_version` | This is a pinned implementation source, not a C compatibility library; SX stdlib exposes no Miniz runtime-version symbol |
 | `mz_zip_add_mem_to_archive_file_in_place` | `zip.Writer.appendFile`, `add`, and `finish` |
 | `mz_zip_add_mem_to_archive_file_in_place_v2` | `zip.Writer.appendFile`, typed `EntryOptions`, explicit archive comment in `finish`, and error channels replace boolean/error-out parameters |

@@ -2,8 +2,8 @@
 
 SX ships dependency-free implementations of raw DEFLATE, zlib, gzip, PNG
 encoding, and ZIP32/ZIP64 archives. Import `modules/std.sx` and use the
-separate `deflate`, `zlib`, `gzip`, `png`, and `zip` namespaces.
-`std.compress` is only their shared contract layer; it is not another codec.
+separate `deflate`, `zlib`, `gzip`, `png`, and `zip` scopes. `compress` is
+only their shared contract layer; it is not another codec.
 
 ```sx
 @import "modules/std.sx";
@@ -36,8 +36,9 @@ DEFLATE, zlib, gzip, and ZIP reuse `compress.Error` directly:
 
 `compress.Progress` reports how much of the caller's input and output windows
 was consumed or initialized, followed by `needInput`, `needOutput`, or
-`done`. `compress.StreamingEncoder` and `StreamingDecoder` provide the common
-bounded streaming behavior implemented by each concrete codec state.
+`done`. `compress.StreamingEncoder` and `compress.StreamingDecoder` provide
+the common bounded streaming behavior implemented by each concrete codec
+state.
 
 ## Ownership and limits
 
@@ -69,8 +70,9 @@ embedded in a larger input.
 
 `deflate.Options` selects a compression `level` from 0 through 10 and a
 `deflate.Strategy`; zlib and gzip take the same options. The default is level 6
-with the default strategy. Invalid levels raise `Error.InvalidOptions`; there
-is no C-style `-1` default or numeric flag word.
+with the default strategy. Invalid levels raise
+`compress.Error.InvalidOptions`; there is no C-style `-1` default or numeric
+flag word.
 
 `zlib.checksum` is Adler-32 and `gzip.checksum` is CRC-32; both take and
 return `u32` and accept an optional prior checksum for incremental updates.
@@ -140,15 +142,13 @@ storage; `Into` variants return borrowed caller-buffer prefixes.
 For bounded random-access input, implement `zip.Source`:
 
 ```sx
-@import "modules/std/compress.sx";
-
 ArchiveSource :: struct { bytes: string; }
 
 impl zip.Source for ArchiveSource {
     size :: (self: *ArchiveSource) -> i64 { self.bytes.len }
 
     readAt :: (self: *ArchiveSource, offset: i64, output: string) ->
-        (string, !Error) {
+        (string, !compress.Error) {
         if offset < 0 or offset > self.bytes.len { raise .InvalidData; }
         take := self.bytes.len - offset;
         if take > output.len { take = output.len; }

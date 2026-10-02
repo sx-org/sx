@@ -21,7 +21,7 @@ StdZipAppendOptions     :: zipContracts.AppendOptions;
 StdZipOpenOptions       :: zipContracts.OpenOptions;
 StdZipOpenFileOptions   :: zipContracts.OpenFileOptions;
 
-private stdZipEntryOptions :: (options: StdZipEntryOptions, fromFile: bool = false) -> (ZipEntryOptions, !Error) {
+private stdZipEntryOptions :: (options: StdZipEntryOptions, fromFile: bool = false) -> (ZipEntryOptions, !compress.Error) {
     if options.method == .unsupported { raise .Unsupported; }
     if options.level < 0 or options.level > 10 { raise .InvalidOptions; }
     if options.comment.len > 65535 or options.extra.len > 65535 { raise .TooLarge; }
@@ -51,7 +51,7 @@ private stdZipEntryOptions :: (options: StdZipEntryOptions, fromFile: bool = fal
 
 private StdZipSourceBridge :: struct {
     source: StdZipSource;
-    failure: ?Error = null;
+    failure: ?compress.Error = null;
 }
 
 private stdZipSourceRead :: (ctx: *void, offset: i64, output: string) -> i64 {
@@ -65,7 +65,7 @@ private stdZipSourceRead :: (ctx: *void, offset: i64, output: string) -> i64 {
         };
         if result.len < 0 or result.len > destination.len or
            (result.len > 0 and result.ptr != destination.ptr) {
-            failure : Error = .InvalidData;
+            failure : compress.Error = .InvalidData;
             bridge.failure = failure;
             return -1;
         }
@@ -77,7 +77,7 @@ private stdZipSourceRead :: (ctx: *void, offset: i64, output: string) -> i64 {
 
 private StdZipSinkBridge :: struct {
     sink: StdZipSink;
-    failure: ?Error = null;
+    failure: ?compress.Error = null;
     poisoned: bool = false;
 }
 
@@ -141,19 +141,19 @@ StdZipReaderState :: struct {
     closed: bool = false;
 }
 
-stdZipReaderMemory :: (data: string, alloc: Allocator = context.allocator) -> (StdZipReaderState, !Error) {
+stdZipReaderMemory :: (data: string, alloc: Allocator = context.allocator) -> (StdZipReaderState, !compress.Error) {
     reader := try openZip(data);
     owned := OwnedZipReader{ reader = reader, bytes = .{ ptr = null, len = 0 }, alloc = alloc };
     StdZipReaderState{ owned = owned }
 }
 
-stdZipReaderEmbedded :: (data: string, alloc: Allocator = context.allocator) -> (StdZipReaderState, !Error) {
+stdZipReaderEmbedded :: (data: string, alloc: Allocator = context.allocator) -> (StdZipReaderState, !compress.Error) {
     reader := try openZipEmbedded(data);
     owned := OwnedZipReader{ reader = reader, bytes = .{ ptr = null, len = 0 }, alloc = alloc };
     StdZipReaderState{ owned = owned }
 }
 
-stdZipReaderSource :: (source: StdZipSource, maxMetadata: i64 = 67108864, alloc: Allocator = context.allocator) -> (StdZipReaderState, !Error) {
+stdZipReaderSource :: (source: StdZipSource, maxMetadata: i64 = 67108864, alloc: Allocator = context.allocator) -> (StdZipReaderState, !compress.Error) {
     size := source.size();
     if size < 0 or maxMetadata < 0 { raise .InvalidArgument; }
     raw := alloc.allocBytes(@sizeOf(StdZipSourceBridge));
@@ -170,7 +170,7 @@ stdZipReaderSource :: (source: StdZipSource, maxMetadata: i64 = 67108864, alloc:
     StdZipReaderState{ owned = owned, sourceBridge = bridge }
 }
 
-stdZipReaderFile :: (path: string, start: i64 = 0, size: i64 = 0, maxMetadata: i64 = 67108864, alloc: Allocator = context.allocator) -> (StdZipReaderState, !Error) {
+stdZipReaderFile :: (path: string, start: i64 = 0, size: i64 = 0, maxMetadata: i64 = 67108864, alloc: Allocator = context.allocator) -> (StdZipReaderState, !compress.Error) {
     owned := try openZipFile(path, start, size, alloc, maxMetadata);
     StdZipReaderState{ owned = owned }
 }
@@ -186,12 +186,12 @@ stdZipReaderDeinit :: (state: *StdZipReaderState) {
     state.closed = true;
 }
 
-private stdZipReaderReady :: (state: *StdZipReaderState) -> !Error {
+private stdZipReaderReady :: (state: *StdZipReaderState) -> !compress.Error {
     if state == null or state.closed or !state.owned.reader.active { raise .Finished; }
     if state.sourceBridge != null { state.sourceBridge.failure = null; }
 }
 
-private stdZipReaderFailure :: (state: *StdZipReaderState, fallback: Error) -> Error {
+private stdZipReaderFailure :: (state: *StdZipReaderState, fallback: compress.Error) -> compress.Error {
     if state.sourceBridge != null {
         if failure := state.sourceBridge.failure { return failure; }
     }
@@ -212,7 +212,7 @@ stdZipReaderIsZip64 :: (state: *StdZipReaderState) -> bool {
     state != null and !state.closed and state.owned.reader.zip64
 }
 
-stdZipReaderEntry :: (state: *StdZipReaderState, index: i64) -> (StdZipEntry, !Error) {
+stdZipReaderEntry :: (state: *StdZipReaderState, index: i64) -> (StdZipEntry, !compress.Error) {
     try stdZipReaderReady(state);
     value := state.owned.reader.entry(index) catch |e| { raise stdZipReaderFailure(state, e); };
     modified : ?i64 = null;
@@ -237,14 +237,14 @@ stdZipReaderEntry :: (state: *StdZipReaderState, index: i64) -> (StdZipEntry, !E
     }
 }
 
-stdZipReaderFind :: (state: *StdZipReaderState, name: string) -> (i64, !Error) {
+stdZipReaderFind :: (state: *StdZipReaderState, name: string) -> (i64, !compress.Error) {
     try stdZipReaderReady(state);
     state.owned.reader.find(name) catch |e| {
         raise stdZipReaderFailure(state, e);
     }
 }
 
-stdZipReaderReadAt :: (state: *StdZipReaderState, offset: i64, output: string) -> (string, !Error) {
+stdZipReaderReadAt :: (state: *StdZipReaderState, offset: i64, output: string) -> (string, !compress.Error) {
     try stdZipReaderReady(state);
     made := state.owned.reader.readArchiveData(offset, output) catch |e| {
         raise stdZipReaderFailure(state, e);
@@ -252,7 +252,7 @@ stdZipReaderReadAt :: (state: *StdZipReaderState, offset: i64, output: string) -
     output[..made]
 }
 
-stdZipReaderExtract :: (state: *StdZipReaderState, index: i64, compressed: bool = false, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (string, !Error) {
+stdZipReaderExtract :: (state: *StdZipReaderState, index: i64, compressed: bool = false, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (string, !compress.Error) {
     try stdZipReaderReady(state);
     if maxOutput < 0 { raise .InvalidArgument; }
     options : ZipExtractOptions = .{ compressedData = compressed };
@@ -261,7 +261,7 @@ stdZipReaderExtract :: (state: *StdZipReaderState, index: i64, compressed: bool 
     }
 }
 
-stdZipReaderExtractInto :: (state: *StdZipReaderState, index: i64, output: string, compressed: bool = false, alloc: Allocator = context.allocator) -> (string, !Error) {
+stdZipReaderExtractInto :: (state: *StdZipReaderState, index: i64, output: string, compressed: bool = false, alloc: Allocator = context.allocator) -> (string, !compress.Error) {
     try stdZipReaderReady(state);
     options : ZipExtractOptions = .{ compressedData = compressed };
     made := state.owned.reader.extractInto(index, output, options, alloc) catch |e| {
@@ -270,21 +270,21 @@ stdZipReaderExtractInto :: (state: *StdZipReaderState, index: i64, output: strin
     output[..made]
 }
 
-stdZipReaderExtractTo :: (state: *StdZipReaderState, index: i64, target: StdZipSink, compressed: bool = false, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !Error) {
+stdZipReaderExtractTo :: (state: *StdZipReaderState, index: i64, target: StdZipSink, compressed: bool = false, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !compress.Error) {
     try stdZipReaderReady(state);
     stdZipExtractToSink(*state.owned.reader, index, target, compressed, maxOutput, alloc) catch |e| {
         raise stdZipReaderFailure(state, e);
     }
 }
 
-stdZipReaderExtractFile :: (state: *StdZipReaderState, index: i64, path: string, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !Error) {
+stdZipReaderExtractFile :: (state: *StdZipReaderState, index: i64, path: string, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !compress.Error) {
     try stdZipReaderReady(state);
     zipExtractToFile(*state.owned.reader, index, path, .{}, maxOutput, alloc) catch |e| {
         raise stdZipReaderFailure(state, e);
     }
 }
 
-stdZipReaderValidate :: (state: *StdZipReaderState, headersOnly: bool = false, alloc: Allocator = context.allocator) -> !Error {
+stdZipReaderValidate :: (state: *StdZipReaderState, headersOnly: bool = false, alloc: Allocator = context.allocator) -> !compress.Error {
     try stdZipReaderReady(state);
     state.owned.reader.validate(headersOnly, alloc) catch |e| {
         raise stdZipReaderFailure(state, e);
@@ -300,7 +300,7 @@ StdZipEntryReaderState :: struct {
     closed: bool = false;
 }
 
-stdZipEntryReader :: (state: *StdZipReaderState, index: i64, compressed: bool = false, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (StdZipEntryReaderState, !Error) {
+stdZipEntryReader :: (state: *StdZipReaderState, index: i64, compressed: bool = false, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (StdZipEntryReaderState, !compress.Error) {
     try stdZipReaderReady(state);
     if maxOutput < 0 { raise .InvalidArgument; }
     options : ZipExtractOptions = .{ compressedData = compressed };
@@ -320,7 +320,7 @@ stdZipEntryReaderOffset :: (state: *StdZipEntryReaderState) -> i64 {
     state.extractor.offset()
 }
 
-stdZipEntryReaderSeek :: (state: *StdZipEntryReaderState, offset: i64) -> !Error {
+stdZipEntryReaderSeek :: (state: *StdZipEntryReaderState, offset: i64) -> !compress.Error {
     if state == null or state.closed { raise .Finished; }
     try stdZipReaderReady(state.owner);
     state.extractor.seek(offset) catch |e| {
@@ -328,7 +328,7 @@ stdZipEntryReaderSeek :: (state: *StdZipEntryReaderState, offset: i64) -> !Error
     };
 }
 
-stdZipEntryReaderRead :: (state: *StdZipEntryReaderState, output: string) -> (string, !Error) {
+stdZipEntryReaderRead :: (state: *StdZipEntryReaderState, output: string) -> (string, !compress.Error) {
     if state == null or state.closed { raise .Finished; }
     try stdZipReaderReady(state.owner);
     if output.len == 0 { return output[..0]; }
@@ -348,7 +348,7 @@ stdZipEntryReaderRead :: (state: *StdZipEntryReaderState, output: string) -> (st
 // completed and its checksum matched. Stopping early (offset short of the
 // final chunk) or a checksum mismatch raises; a stream already finalized by
 // its terminal read returns cleanly. Always leaves the reader closed.
-stdZipEntryReaderFinish :: (state: *StdZipEntryReaderState) -> !Error {
+stdZipEntryReaderFinish :: (state: *StdZipEntryReaderState) -> !compress.Error {
     if state == null { raise .Finished; }
     if state.closed { return; }
     try stdZipReaderReady(state.owner);
@@ -395,7 +395,7 @@ StdZipWriterState :: enum {
     closed;
 }
 
-stdZipWriterMemory :: (zip64: bool = false, alloc: Allocator = context.allocator) -> (StdZipWriterState, !Error) {
+stdZipWriterMemory :: (zip64: bool = false, alloc: Allocator = context.allocator) -> (StdZipWriterState, !compress.Error) {
     raw := alloc.allocBytes(@sizeOf(StdZipMemoryOutput));
     if raw == null { raise .AllocationFailed; }
     output : *StdZipMemoryOutput = raw.(*StdZipMemoryOutput);
@@ -413,7 +413,7 @@ stdZipWriterMemory :: (zip64: bool = false, alloc: Allocator = context.allocator
     StdZipWriterState.memory(payload)
 }
 
-stdZipWriterSink :: (target: StdZipSink, zip64: bool = false, alloc: Allocator = context.allocator) -> (StdZipWriterState, !Error) {
+stdZipWriterSink :: (target: StdZipSink, zip64: bool = false, alloc: Allocator = context.allocator) -> (StdZipWriterState, !compress.Error) {
     raw := alloc.allocBytes(@sizeOf(StdZipSinkBridge));
     if raw == null { raise .AllocationFailed; }
     bridge : *StdZipSinkBridge = raw.(*StdZipSinkBridge);
@@ -428,13 +428,13 @@ stdZipWriterSink :: (target: StdZipSink, zip64: bool = false, alloc: Allocator =
     StdZipWriterState.sink(payload)
 }
 
-stdZipWriterFile :: (path: string, reserve: i64 = 0, zip64: bool = false, alloc: Allocator = context.allocator) -> (StdZipWriterState, !Error) {
+stdZipWriterFile :: (path: string, reserve: i64 = 0, zip64: bool = false, alloc: Allocator = context.allocator) -> (StdZipWriterState, !compress.Error) {
     owned := try openZipWriterFile(path, reserve, zip64, true, alloc);
     payload : StdZipFileWriter = .{ owned = owned };
     StdZipWriterState.file(payload)
 }
 
-stdZipWriterFromReader :: (source: *StdZipReaderState, forceZip64: bool = false, alloc: Allocator = context.allocator) -> (StdZipWriterState, !Error) {
+stdZipWriterFromReader :: (source: *StdZipReaderState, forceZip64: bool = false, alloc: Allocator = context.allocator) -> (StdZipWriterState, !compress.Error) {
     try stdZipReaderReady(source);
     state := try stdZipWriterMemory(source.owned.reader.zip64 or forceZip64, alloc);
     ready := false;
@@ -473,7 +473,7 @@ stdZipWriterFromReader :: (source: *StdZipReaderState, forceZip64: bool = false,
     state
 }
 
-stdZipWriterAppendFile :: (path: string, forceZip64: bool = false, maxMetadata: i64 = 67108864, alloc: Allocator = context.allocator) -> (StdZipWriterState, !Error) {
+stdZipWriterAppendFile :: (path: string, forceZip64: bool = false, maxMetadata: i64 = 67108864, alloc: Allocator = context.allocator) -> (StdZipWriterState, !compress.Error) {
     if !fs.exists(path) { return try stdZipWriterFile(path, 0, forceZip64, alloc); }
     source := try openZipFileWritable(path, 0, 0, alloc, maxMetadata);
     writer := zipFileWriterFromReader(*source, forceZip64, alloc) catch |e| {
@@ -495,7 +495,7 @@ private stdZipWriterStream :: (state: *StdZipWriterState) -> *ZipStreamWriter {
     null
 }
 
-private stdZipWriterFailure :: (state: *StdZipWriterState, fallback: Error) -> Error {
+private stdZipWriterFailure :: (state: *StdZipWriterState, fallback: compress.Error) -> compress.Error {
     match state { case .sink: {} else: { return fallback; } }
     bridge := state.*.sink.bridge;
     if failure := bridge.failure {
@@ -505,7 +505,7 @@ private stdZipWriterFailure :: (state: *StdZipWriterState, fallback: Error) -> E
     fallback
 }
 
-private stdZipWriterTransferFailure :: (target: *StdZipWriterState, source: *StdZipReaderState, fallback: Error) -> Error {
+private stdZipWriterTransferFailure :: (target: *StdZipWriterState, source: *StdZipReaderState, fallback: compress.Error) -> compress.Error {
     match target {
         case .sink: {
             bridge := target.*.sink.bridge;
@@ -519,7 +519,7 @@ private stdZipWriterTransferFailure :: (target: *StdZipWriterState, source: *Std
     stdZipReaderFailure(source, fallback)
 }
 
-private stdZipWriterReady :: (state: *StdZipWriterState) -> (*ZipStreamWriter, !Error) {
+private stdZipWriterReady :: (state: *StdZipWriterState) -> (*ZipStreamWriter, !compress.Error) {
     if state == null { raise .Finished; }
     closed := match state { case .closed: { true } else: { false } };
     if closed { raise .Finished; }
@@ -565,36 +565,36 @@ stdZipWriterIsZip64 :: (state: *StdZipWriterState) -> bool {
     writer != null and writer.active and writer.zip64
 }
 
-stdZipWriterSetAlignment :: (state: *StdZipWriterState, alignment: i64) -> !Error {
+stdZipWriterSetAlignment :: (state: *StdZipWriterState, alignment: i64) -> !compress.Error {
     writer := try stdZipWriterReady(state);
     writer.setAlignment(alignment) catch |e| { raise stdZipWriterFailure(state, e); };
 }
 
-stdZipWriterReservePrefix :: (state: *StdZipWriterState, size: i64) -> !Error {
+stdZipWriterReservePrefix :: (state: *StdZipWriterState, size: i64) -> !compress.Error {
     writer := try stdZipWriterReady(state);
     if writer.finished or writer.entries.len != 0 or size < 0 or size > 0xffffffff { raise .InvalidArgument; }
     writer.emitZeros(size) catch |e| { raise stdZipWriterFailure(state, e); };
 }
 
-stdZipWriterAdd :: (state: *StdZipWriterState, name: string, data: string, options: StdZipEntryOptions = .{}) -> !Error {
+stdZipWriterAdd :: (state: *StdZipWriterState, name: string, data: string, options: StdZipEntryOptions = .{}) -> !compress.Error {
     writer := try stdZipWriterReady(state);
     actual := try stdZipEntryOptions(options);
     writer.addOptions(name, data, actual) catch |e| { raise stdZipWriterFailure(state, e); };
 }
 
-stdZipWriterAddSource :: (state: *StdZipWriterState, name: string, source: StdZipSource, options: StdZipEntryOptions = .{}) -> !Error {
+stdZipWriterAddSource :: (state: *StdZipWriterState, name: string, source: StdZipSource, options: StdZipEntryOptions = .{}) -> !compress.Error {
     writer := try stdZipWriterReady(state);
     actual := try stdZipEntryOptions(options);
     stdZipAddSource(writer, name, source, actual) catch |e| { raise stdZipWriterFailure(state, e); };
 }
 
-stdZipWriterAddFile :: (state: *StdZipWriterState, name: string, path: string, options: StdZipEntryOptions = .{}) -> !Error {
+stdZipWriterAddFile :: (state: *StdZipWriterState, name: string, path: string, options: StdZipEntryOptions = .{}) -> !compress.Error {
     writer := try stdZipWriterReady(state);
     actual := try stdZipEntryOptions(options, true);
     writer.addFile(name, path, actual) catch |e| { raise stdZipWriterFailure(state, e); };
 }
 
-stdZipWriterAddFrom :: (state: *StdZipWriterState, source: *StdZipReaderState, index: i64) -> !Error {
+stdZipWriterAddFrom :: (state: *StdZipWriterState, source: *StdZipReaderState, index: i64) -> !compress.Error {
     writer := try stdZipWriterReady(state);
     try stdZipReaderReady(source);
     writer.addFromReader(*source.owned.reader, index) catch |e| {
@@ -602,19 +602,19 @@ stdZipWriterAddFrom :: (state: *StdZipWriterState, source: *StdZipReaderState, i
     };
 }
 
-stdZipWriterReadAt :: (state: *StdZipWriterState, offset: i64, output: string) -> (string, !Error) {
+stdZipWriterReadAt :: (state: *StdZipWriterState, offset: i64, output: string) -> (string, !compress.Error) {
     writer := try stdZipWriterReady(state);
     made := writer.readArchiveData(offset, output) catch |e| { raise stdZipWriterFailure(state, e); };
     output[..made]
 }
 
-stdZipWriterFinish :: (state: *StdZipWriterState, comment: ?string = null) -> !Error {
+stdZipWriterFinish :: (state: *StdZipWriterState, comment: ?string = null) -> !compress.Error {
     writer := try stdZipWriterReady(state);
     archiveComment := comment ?? stdZipWriterDefaultComment(state);
     writer.finishComment(archiveComment) catch |e| { raise stdZipWriterFailure(state, e); };
 }
 
-stdZipWriterTake :: (state: *StdZipWriterState) -> (string, !Error) {
+stdZipWriterTake :: (state: *StdZipWriterState) -> (string, !compress.Error) {
     memory := match state { case .memory: { true } else: { false } };
     if !memory { raise .Unsupported; }
     output := state.*.memory.output;
@@ -627,10 +627,10 @@ stdZipWriterTake :: (state: *StdZipWriterState) -> (string, !Error) {
 }
 
 // Fallible finalization: exactly deinit's teardown, but flush/close failures
-// surface as `Error.Io` instead of being discarded. The state always ends
-// `.closed` (resources are released even on failure), so a subsequent
+// surface as `compress.Error.Io` instead of being discarded. The state always
+// ends `.closed` (resources are released even on failure), so a subsequent
 // deinit() is a no-op and take() reports Finished.
-stdZipWriterClose :: (state: *StdZipWriterState) -> !Error {
+stdZipWriterClose :: (state: *StdZipWriterState) -> !compress.Error {
     ok := true;
     match state {
         case .memory: {
@@ -682,7 +682,7 @@ stdZipWriterDeinit :: (state: *StdZipWriterState) {
     state.* = .closed;
 }
 
-private stdZipExtractToSink :: (reader: *ZipReader, index: i64, target: StdZipSink, compressed: bool = false, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !Error) {
+private stdZipExtractToSink :: (reader: *ZipReader, index: i64, target: StdZipSink, compressed: bool = false, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !compress.Error) {
     bridge := StdZipSinkBridge{ sink = target };
     options : ZipExtractOptions = .{ compressedData = compressed };
     result := zipExtractToOutput(reader, index, .{ ctx = *bridge, write = stdZipSinkWrite }, options, maxOutput, alloc) catch |e| {
@@ -692,7 +692,7 @@ private stdZipExtractToSink :: (reader: *ZipReader, index: i64, target: StdZipSi
     result
 }
 
-private stdZipAddSource :: (writer: *ZipStreamWriter, name: string, source: StdZipSource, options: ZipEntryOptions) -> !Error {
+private stdZipAddSource :: (writer: *ZipStreamWriter, name: string, source: StdZipSource, options: ZipEntryOptions) -> !compress.Error {
     size := source.size();
     if size < 0 { raise .InvalidArgument; }
     bridge := StdZipSourceBridge{ source = source };
