@@ -11,15 +11,6 @@
 
 @import "modules/std.sx";
 @import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
-// `cli` is imported BOTH flat (so its types — `FlagSpec` / `Command` / `Diag` —
-// are bare-visible) AND namespaced (so the same-name `cli.parse` stays a
-// distinct qualified identity from `json.parse`). A bare reference to a
-// namespaced-ONLY type is a "not visible" error, so the flat import is what makes
-// the bare type names below resolve; `json` is the scope std.sx carries (its
-// `Value` reaches `main` only as `json.parse`'s return type, resolved in
-// `json.sx`'s own context).
-@import "modules/std/cli.sx";
-cli  :: @import "modules/std/cli.sx";
 
 report :: (label: string, ok: bool) {
     if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
@@ -31,15 +22,15 @@ main :: () -> ! {
     defer arena.deinit();
 
     // ── cli.parse: dispatch <group> <command> + a value flag ─────────
-    publishFlags : []FlagSpec = .[
-        FlagSpec{ name = "out", takesValue = true, required = true },
+    publishFlags : []cli.FlagSpec = .[
+        cli.FlagSpec{ name = "out", takesValue = true, required = true },
     ];
-    cmds : []Command = .[
-        Command{ group = "ci", command = "publish", flags = publishFlags },
-        Command{ group = "ci", command = "status",  flags = .[]          },
+    cmds : []cli.Command = .[
+        cli.Command{ group = "ci", command = "publish", flags = publishFlags },
+        cli.Command{ group = "ci", command = "status",  flags = .[]          },
     ];
     argv : []string = .["ci", "publish", "--out", "dist"];
-    d : Diag = .{};
+    d : cli.Diag = .{};
     p := try cli.parse(argv, cmds, *d);
     report("cli-group",   p.group == "ci");
     report("cli-command", p.command == "publish");

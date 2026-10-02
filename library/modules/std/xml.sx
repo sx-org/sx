@@ -1,32 +1,34 @@
 // XML helpers. `escape` replaces XML special characters with entity
 // references — used when emitting Info.plist / AndroidManifest content
 // from sx values that may contain user-supplied text.
-@import "modules/std/core.sx";     // string
-@import "modules/std/fmt.sx";
+xml :: scope {
+    @import "modules/std/core.sx";
+    @import "modules/std/fmt.sx";
 
-escape :: (s: string) -> string {
-    result := "";
-    i := 0;
-    segStart := 0;
-    while i < s.len {
-        c := s[i];
-        ent := "";
-        if c == '&' { ent = "&amp;"; }
-        if c == '<' { ent = "&lt;"; }
-        if c == '>' { ent = "&gt;"; }
-        if c == '"' { ent = "&quot;"; }
-        if c == '\'' { ent = "&apos;"; }
-        if ent.len > 0 {
-            if i > segStart {
-                result = concat(result, s[segStart .. i]);
+    escape :: (s: string) -> string {
+        result := "";
+        i := 0;
+        segStart := 0;
+        while i < s.len {
+            c := s[i];
+            ent := "";
+            if c == '&' { ent = "&amp;"; }
+            if c == '<' { ent = "&lt;"; }
+            if c == '>' { ent = "&gt;"; }
+            if c == '"' { ent = "&quot;"; }
+            if c == '\'' { ent = "&apos;"; }
+            if ent.len > 0 {
+                if i > segStart {
+                    result = concat(result, s[segStart .. i]);
+                }
+                result = concat(result, ent);
+                segStart = i + 1;
             }
-            result = concat(result, ent);
-            segStart = i + 1;
+            i += 1;
         }
-        i += 1;
+        if segStart < s.len {
+            result = concat(result, s[segStart .. s.len]);
+        }
+        result
     }
-    if segStart < s.len {
-        result = concat(result, s[segStart .. s.len]);
-    }
-    result
 }

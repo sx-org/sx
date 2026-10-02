@@ -12,11 +12,10 @@
 // over the C runtime's argv block — no heap, no per-arg allocation.
 
 @import "modules/std.sx";
-@import "modules/std/cli.sx";
 
 main :: () {
     buf : [64]string = ---;
-    args := osArgs(buf[0..64]);
+    args := cli.osArgs(buf[0..64]);
 
     if args.len >= 1 { print("argc>=1: ok\n"); }
     else { print("argc>=1: FAIL ({})\n", args.len); }
@@ -26,6 +25,6 @@ main :: () {
         else { print("arg0-nonempty: FAIL\n"); }
     }
 
-    if osArgc() == args.len { print("argc-consistent: ok\n"); }
-    else { print("argc-consistent: FAIL (osArgc={} len={})\n", osArgc(), args.len); }
+    if cli.osArgc() == args.len { print("argc-consistent: ok\n"); }
+    else { print("argc-consistent: FAIL (osArgc={} len={})\n", cli.osArgc(), args.len); }
 }

@@ -85,7 +85,7 @@ mapCapacityFor :: (n: i64) -> i64 {
 //   • scalar / enum / bool / pointer leaf → raw `@sizeOf` bytes (these have a
 //               unique byte representation — no padding to skip).
 mapHashKey :: (key: $K) -> u64 {
-    return mapHashInto(key, FNV_OFFSET_BASIS);
+    return mapHashInto(key, hash.FNV_OFFSET_BASIS);
 }
 
 // Fold value `v` into running FNV state `h`. The `inline if` branches are
@@ -98,7 +98,7 @@ mapHashInto :: (v: $T, h: u64) -> u64 {
     inline if T is slice {
         E :: @typeInfo(T).slice.elem;
         inline if E is int {
-            return fnv1aFold(h, @reinterpret([*]u8, v.ptr), v.len.(i64) * @sizeOf(E));
+            return hash.fnv1aFold(h, @reinterpret([*]u8, v.ptr), v.len.(i64) * @sizeOf(E));
         }
         hh := h;
         i := 0;
@@ -117,11 +117,11 @@ mapHashInto :: (v: $T, h: u64) -> u64 {
     }
     inline if T is optional {
         present := v != null;
-        hh := fnv1aFold(h, @reinterpret([*]u8, *present), 1);
+        hh := hash.fnv1aFold(h, @reinterpret([*]u8, *present), 1);
         if p := v { return mapHashInto(p, hh); }
         return hh;
     }
-    return fnv1aFold(h, @reinterpret([*]u8, *v), @sizeOf(T));
+    return hash.fnv1aFold(h, @reinterpret([*]u8, *v), @sizeOf(T));
 }
 
 // Loud tripwire for the "no free bucket after a full probe walk" terminal —

@@ -17,31 +17,29 @@
 // unbuffered, so the stdout assertion lines still appear despite the `_exit`.
 
 @import "modules/std.sx";
-@import "modules/std/cli.sx";
-log :: @import "modules/std/log.sx";
 
 report :: (label: string, ok: bool) {
     if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
 }
 
 main :: () -> ! {
-    publishFlags : []FlagSpec = .[
-        FlagSpec{ name = "out", takesValue = true, required = true },
+    publishFlags : []cli.FlagSpec = .[
+        cli.FlagSpec{ name = "out", takesValue = true, required = true },
     ];
-    cmds : []Command = .[
-        Command{ group = "ci", command = "publish", flags = publishFlags },
+    cmds : []cli.Command = .[
+        cli.Command{ group = "ci", command = "publish", flags = publishFlags },
     ];
 
     // ── 1. Named exit-code constants (the dist contract) ──────────────
-    report("ex-ok-is-0",     EX_OK == 0);
-    report("ex-usage-is-64", EX_USAGE == 64);
+    report("ex-ok-is-0",     cli.EX_OK == 0);
+    report("ex-usage-is-64", cli.EX_USAGE == 64);
 
     // ── 2. `--json` detection — true with the flag, false without ─────
-    d : Diag = .{};
+    d : cli.Diag = .{};
     withJson    : []string = .["ci", "publish", "--out", "dist", "--json"];
     withoutJson : []string = .["ci", "publish", "--out", "dist"];
-    pj := try parse(withJson,    cmds, *d);
-    pn := try parse(withoutJson, cmds, *d);
+    pj := try cli.parse(withJson,    cmds, *d);
+    pn := try cli.parse(withoutJson, cmds, *d);
     report("json-set-true",  pj.json);
     report("json-set-false", !pn.json);
 
@@ -55,13 +53,13 @@ main :: () -> ! {
     }
 
     // ── 4. Usage error → human text to stderr → exitUsage() (= 64) ───
-    // A bad command raises a `CliError`. The front-end maps every usage
+    // A bad command raises a `cli.Error`. The front-end maps every usage
     // error to `EX_USAGE`: it writes the human diagnostic to STDERR (stdout
     // stays machine-clean) and terminates with the usage code via the
     // canonical `process.exit`.
     bad : []string = .["ci", "deploy", "--out", "x"];   // unknown command
-    _, e := parse(bad, cmds, *d);
+    _, e := cli.parse(bad, cmds, *d);
     report("usage-error-raised", e == .UnknownCommand);
     log.err("unknown command '{}' (argv index {})", d.token, d.index);
-    exitUsage();                                       // -> _exit(EX_USAGE = 64)
+    cli.exitUsage();                                   // -> _exit(EX_USAGE = 64)
 }

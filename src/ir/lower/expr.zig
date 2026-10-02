@@ -3952,6 +3952,10 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                 };
                 break :blk self.builder.load(self.current_ctx_ref, ctx_ty);
             }
+            // A bound generic parameter answers before same-named declarations.
+            if (self.type_bindings) |tb| {
+                if (tb.get(id.name)) |t| break :blk self.builder.constType(t);
+            }
             // Check globals (@run constants) — source-aware:
             // the global registry is last-wins across modules, so select the
             // AUTHOR first and emit ITS global, never an unrelated module's
@@ -4167,16 +4171,13 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
             // (own-wins, 0754) — resolves to ITS TypeId, NOT whichever same-name
             // author a global `findByName` would pick. An own non-type author
             // that hides a type authored elsewhere is refused as that
-            // declaration; any other value name / generic param / undeclared
-            // name → `.proceed`, falling through below.
+            // declaration; any other value name / undeclared name →
+            // `.proceed`, falling through below.
             const ty = blk_ty: {
                 switch (self.headTypeGate(id.name, node.span)) {
                     .ambiguous, .not_visible, .not_a_type => break :blk self.emitPlaceholder(id.name),
                     .resolved => |tid| break :blk_ty tid,
                     .proceed => {},
-                }
-                if (self.type_bindings) |tb| {
-                    if (tb.get(id.name)) |t| break :blk_ty t;
                 }
                 if (self.program_index.lookup(.type_alias, id.name)) |t| break :blk_ty t;
                 if (type_bridge.resolveTypePrimitive(id.name)) |t| break :blk_ty t;
