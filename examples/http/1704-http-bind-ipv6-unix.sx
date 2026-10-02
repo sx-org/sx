@@ -29,7 +29,6 @@
 //      `HttpErr.Config`; bindAddr="not-an-ip" is `HttpErr.Bind`.
 //   + net-zero GPA gate across the whole run.
 @import "modules/std.sx";
-socket :: @import "modules/std/socket.sx";
 @import "modules/std/http.sx";
 
 SOCK_PATH :: ".sx-tmp/1704-http.sock";

@@ -32,7 +32,6 @@
 //      fetch follows, re-resolves, lands 200 on B.
 //   + net-zero GPA gate.
 @import "modules/std.sx";
-socket :: @import "modules/std/socket.sx";
 @import "modules/std/http.sx";
 tlsp   :: @import "modules/std/http/tls_mbedtls.sx";
 

@@ -5,8 +5,8 @@
 // into it provokes an RST, and that RST DISCARDS the FIN's queued EOF. So the
 // same fact — "the peer had already closed, the request never executed" —
 // reaches the client as either a clean 0 or an ECONNRESET depending purely on
-// which lands first. `recvOn` reports both as `SockErr.Closed`, which is the
-// class `ClientPool.hop` retries on, so the pool's transparent redial fires
+// which lands first. `recvOn` reports both as `http.ClientErr.Closed`, which is
+// the class `ClientPool.hop` retries on, so the pool's transparent redial fires
 // either way.
 //
 // Forcing the RST deterministically, single-threaded, no timing race: close a
@@ -15,7 +15,6 @@
 // reads, close the server side — the client's next read sees ECONNRESET.
 @import "modules/std.sx";
 @import "modules/std/http.sx";
-socket :: @import "modules/std/socket.sx";
 
 main :: () -> i32 {
     // A plain listener — no http.Server: this test never wants the request read.

@@ -4,7 +4,6 @@
 // bound port and is null on an AF_UNIX one.
 @import "modules/std.sx";
 @import "modules/std/http.sx";
-socket :: @import "modules/std/socket.sx";
 
 handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     resp.body = if ctx == 1 then "one" else "two";

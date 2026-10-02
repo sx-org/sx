@@ -25,7 +25,6 @@
 // client.test (the client cert; also the server's mTLS trust anchor).
 @import "modules/std.sx";
 clib    :: @import "modules/std/c.sx";
-socket  :: @import "modules/std/socket.sx";
 mbedtls :: @import "vendors/mbedtls/mbedtls.sx";
 @import "modules/std/http.sx";
 tlsp    :: @import "modules/std/http/tls_mbedtls.sx";

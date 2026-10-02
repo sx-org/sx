@@ -1,7 +1,6 @@
 // HTTP server example (macOS only)
 
 @import "modules/std.sx";
-@import "modules/std/socket.sx";
 @import "modules/std/mem.sx";
 
 // --- Logger ---
@@ -25,23 +24,23 @@ log :: (logger: *Logger, msg: string) {
 main :: () -> i32 {
     PORT :: 8080;
 
-    fd := socket(AF_INET, SOCK_STREAM, 0);
+    fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 {
         print("error: socket()\n");
         return 1;
     }
 
     opt : i32 = 1;
-    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, *opt, 4);
+    socket.setsockopt(fd, socket.SOL_SOCKET, socket.SO_REUSEADDR, *opt, 4);
 
-    addr := sockaddrIn(PORT, 0);   // INADDR_ANY, per-OS layout
+    addr := socket.sockaddrIn(PORT, 0);   // INADDR_ANY, per-OS layout
 
-    if bind(fd, *addr, 16) < 0 {
+    if socket.bind(fd, *addr, 16) < 0 {
         print("error: bind()\n");
         return 1;
     }
 
-    if listen(fd, 10) < 0 {
+    if socket.listen(fd, 10) < 0 {
         print("error: listen()\n");
         return 1;
     }
@@ -52,7 +51,7 @@ main :: () -> i32 {
     logger := Logger{ prefix = "http", count = 0 };
 
     while true {
-        client := accept(fd, null, null);
+        client := socket.accept(fd, null, null);
         if client < 0 { continue; }
 
         push .{ allocator = arena, logger = *logger } {
@@ -60,18 +59,18 @@ main :: () -> i32 {
         }
 
         arena.reset();
-        close(client);
+        socket.close(client);
     }
 
     arena.deinit();
-    close(fd);
+    socket.close(fd);
     0
 }
 
 handle :: (client: i32) {
     // Read request
     buf : [4096]u8 = ---;
-    read(client, buf, buf.len);
+    socket.read(client, buf, buf.len);
 
     body :: "<html><body><h1>Hello from sx!</h1></body></html>";
     response :: format("HTTP/1.1 200 OK\r
@@ -80,7 +79,7 @@ Connection: close\r
 Content-Length: {}\r
 \r\n{}", body.len, body);
 
-    write(client, response.ptr, response.len);
+    socket.write(client, response.ptr, response.len);
     logger := context.logger?!;
     log(logger, format("served request #{}", logger.count + 1));
 }
