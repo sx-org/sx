@@ -7,7 +7,7 @@
 //
 // aborts (exit 134) after the diagnostic — aarch64-macOS-pinned.
 @import "modules/std.sx";
-sched :: @import "modules/std/sched.sx";
+@import "modules/std/sched.sx";
 ..io;
 S :: struct { t: *io.Future(i64); }
 main :: () -> i64 {

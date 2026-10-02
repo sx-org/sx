@@ -6,7 +6,7 @@
 // location.
 
 @import "modules/std.sx";
-trace :: @import "modules/std/trace.sx";
+@import "modules/std/trace.sx";
 
 probe :: () {
     trace.printInterpreterFrames();    // dumps the chain: __run_0 → inner → probe

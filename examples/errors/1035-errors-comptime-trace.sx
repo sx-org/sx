@@ -7,7 +7,7 @@
 // The error is caught, and the trace is printed during the build.
 
 @import "modules/std.sx";
-trace :: @import "modules/std/trace.sx";
+@import "modules/std/trace.sx";
 
 TErr :: error { Bad };
 

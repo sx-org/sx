@@ -9,7 +9,7 @@
 // host (macOS + linux), ir-only on a mismatch.
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
-sched :: @import "modules/std/sched.sx";
+@import "modules/std/sched.sx";
 ..io;
 
 Out :: struct {

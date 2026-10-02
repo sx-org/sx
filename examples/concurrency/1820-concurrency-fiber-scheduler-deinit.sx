@@ -32,7 +32,7 @@
 // aarch64-macOS-pinned (`.build {"target":"macos"}`, matches host → runs
 // end-to-end): sched.sx's switch asm + the kqueue path are per-arch/Apple.
 @import "modules/std.sx";
-sched :: @import "modules/std/sched.sx";
+@import "modules/std/sched.sx";
 
 read   :: (fd: Fd, buf: [*]u8, count: i64) -> isize extern libc "read";
 write  :: (fd: Fd, buf: [*]u8, count: i64) -> isize extern libc "write";

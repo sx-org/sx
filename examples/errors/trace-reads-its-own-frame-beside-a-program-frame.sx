@@ -1,0 +1,27 @@
+// The return trace resolves its frames as trace.sx's `trace.Frame`, not as
+// the program's own `Frame`. The program's `Frame` precedes the imports, so
+// it is the first type of that name the program declares.
+Frame :: struct { x: i64; y: i64; }
+
+@import "modules/std.sx";
+@import "modules/std/trace.sx";
+
+E :: error { Bad }
+
+leaf :: () -> !E {
+    raise .Bad;
+}
+
+mid :: () -> !E {
+    try leaf();
+}
+
+main :: () -> i32 {
+    f := Frame{ x = 3, y = 4 };
+    mid() catch |e| {
+        print("caught {}\n", e);
+        trace.printCurrent();
+    };
+    print("frame {} {}\n", f.x, f.y);
+    return 0;
+}

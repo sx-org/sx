@@ -1,7 +1,7 @@
 // The scheduler uses aarch64 context-switch assembly and is opt-in.
 // The runner and its allocator must outlive the HTTP server.
 @import "modules/std/http.sx";
-private sched :: @import "modules/std/sched.sx";
+@import "modules/std/sched.sx";
 
 SchedRunner :: struct {
     s: sched.Scheduler;

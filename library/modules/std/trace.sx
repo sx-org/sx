@@ -1,6 +1,3 @@
-@import "modules/std/core.sx";
-@import "modules/std/fmt.sx";
-
 // =====================================================================
 // trace.sx — error return-trace formatting.
 //
@@ -13,84 +10,84 @@
 // still sees the chain) or the failable-`main` wrapper.
 //
 // Frame resolution: in compiled code a frame is a pointer
-// to an interned `TraceFrame` the compiler stamped in at the push site, so the
+// to an interned `Frame` the compiler stamped in at the push site, so the
 // location resolves in-process with no DWARF and no symbolizer.
 // =====================================================================
+trace :: scope {
+    @import "modules/std/core.sx";
+    @import "modules/std/fmt.sx";
 
-
-// The compiled return-trace frame. Named `TraceFrame` (not `Frame`) so it never
-// collides with a UI / geometry `Frame` a consumer flat-imports — same-name
-// types are distinct nominal identities, so a bare `Frame`
-// resolves unambiguously to the consumer's own. Layout MUST match
-// `getFrameStructType` in src/ir/emit_llvm.zig and `SxFrame` in
-// library/vendors/sx_trace_runtime/sx_trace.c.
-TraceFrame :: struct {
-    file: string;
-    line: i32;
-    col: i32;
-    func: string;
-    lineText: string;    // the source line, for the snippet + caret
-}
-
-// `n` spaces — used to position the `^` caret under a column.
-spaces :: (n: i32) -> string {
-    s := "";
-    i : i32 = 0;
-    while i < n {
-        s = concat(s, " ");
-        i = i + 1;
-    }
-    s
-}
-
-// The error-trace buffer C API (library/vendors/sx_trace_runtime/sx_trace.c),
-// linked in for the JIT and auto-injected for AOT when traces are used.
-// `sx_trace_frame_at` returns the raw stored `u64`; `__trace_resolve_frame`
-// turns it into a `TraceFrame` — by reinterpreting the stamped `*TraceFrame` in
-// compiled code, or by resolving the packed `(func_id, span.start)` in the
-// comptime interpreter.
-sx_trace_len       :: () -> u32 extern;
-sx_trace_truncated :: () -> u32 extern;
-sx_trace_frame_at  :: (i: u32) -> u64 extern;
-
-// Render the current trace buffer to a string (allocated from
-// context.allocator). Empty buffer → "" so callers can cheaply skip output.
-toString :: () -> string {
-    n := sx_trace_len();
-    if n == 0 { return ""; }
-
-    result := "error return trace (most recent call last):\n";
-    if sx_trace_truncated() != 0 {
-        result = concat(result, "  ... older frames omitted (buffer full)\n");
+    // The compiled return-trace frame. Layout MUST match
+    // `getFrameStructType` in src/ir/emit_llvm.zig and `SxFrame` in
+    // library/vendors/sx_trace_runtime/sx_trace.c.
+    Frame :: struct {
+        file: string;
+        line: i32;
+        col: i32;
+        func: string;
+        lineText: string;    // the source line, for the snippet + caret
     }
 
-    i : u32 = 0;
-    while i < n {
-        f := __trace_resolve_frame(sx_trace_frame_at(i));
-        result = concat(result, format("  {} at {}:{}:{}\n", f.func, f.file, f.line, f.col));
-        if f.lineText.len > 0 {
-            result = concat(result, format("    {}\n", f.lineText));
-            result = concat(result, concat("    ", concat(spaces(f.col - 1), "^\n")));
+    // `n` spaces — used to position the `^` caret under a column.
+    spaces :: (n: i32) -> string {
+        s := "";
+        i : i32 = 0;
+        while i < n {
+            s = concat(s, " ");
+            i = i + 1;
         }
-        i = i + 1;
+        s
     }
-    result
-}
 
-// Write the current trace to stderr (fd 2). No-op when the buffer is empty.
-printCurrent :: () {
-    s := toString();
-    if s.len > 0 {
-        w := FdWriter.init(.stderr);
-        w.write(s);
+    // The error-trace buffer C API (library/vendors/sx_trace_runtime/sx_trace.c),
+    // linked in for the JIT and auto-injected for AOT when traces are used.
+    // `sx_trace_frame_at` returns the raw stored `u64`; `__trace_resolve_frame`
+    // turns it into a `Frame` — by reinterpreting the stamped `*Frame` in
+    // compiled code, or by resolving the packed `(func_id, span.start)` in the
+    // comptime interpreter.
+    sx_trace_len       :: () -> u32 extern;
+    sx_trace_truncated :: () -> u32 extern;
+    sx_trace_frame_at  :: (i: u32) -> u64 extern;
+
+    // Render the current trace buffer to a string (allocated from
+    // context.allocator). Empty buffer → "" so callers can cheaply skip output.
+    toString :: () -> string {
+        n := sx_trace_len();
+        if n == 0 { return ""; }
+
+        result := "error return trace (most recent call last):\n";
+        if sx_trace_truncated() != 0 {
+            result = concat(result, "  ... older frames omitted (buffer full)\n");
+        }
+
+        i : u32 = 0;
+        while i < n {
+            f := __trace_resolve_frame(sx_trace_frame_at(i));
+            result = concat(result, format("  {} at {}:{}:{}\n", f.func, f.file, f.line, f.col));
+            if f.lineText.len > 0 {
+                result = concat(result, format("    {}\n", f.lineText));
+                result = concat(result, concat("    ", concat(spaces(f.col - 1), "^\n")));
+            }
+            i = i + 1;
+        }
+        result
     }
-}
 
-// Dump the comptime (`@run`) interpreter call-frame chain. At
-// comptime the interpreter walks its active sx frames and appends them to the
-// build output; in compiled code this folds to nothing (there is no
-// interpreter stack — the only caller is a dead `@isComptime()` branch).
-// Frame source locations await IR-offset resolution, so only names print.
-printInterpreterFrames :: () {
-    __interp_print_frames();
+    // Write the current trace to stderr (fd 2). No-op when the buffer is empty.
+    printCurrent :: () {
+        s := toString();
+        if s.len > 0 {
+            w := FdWriter.init(.stderr);
+            w.write(s);
+        }
+    }
+
+    // Dump the comptime (`@run`) interpreter call-frame chain. At
+    // comptime the interpreter walks its active sx frames and appends them to the
+    // build output; in compiled code this folds to nothing (there is no
+    // interpreter stack — the only caller is a dead `@isComptime()` branch).
+    // Frame source locations await IR-offset resolution, so only names print.
+    printInterpreterFrames :: () {
+        __interp_print_frames();
+    }
 }
