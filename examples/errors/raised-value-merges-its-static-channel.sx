@@ -1,6 +1,7 @@
 // `raise VALUE` merges VALUE's static channel into an inferred `!`. A catch
-// binding or an error slot holds the failure of the failable it attempted,
-// so the caller's `.X` names the member that arrives.
+// binding or an error slot holds the failure of the failable it attempted, and
+// a binding, a block, an `if` or a `match` hands on the failure it holds, so
+// the caller's `.X` names the member that arrives.
 @import "modules/std.sx";
 
 AErr :: error { Exec; }
@@ -8,6 +9,7 @@ BErr :: error { NotFound; }
 
 exec :: () -> ! { raise AErr.Exec; }
 missing :: () -> ! { raise BErr.NotFound; }
+lookup :: () -> !BErr { raise BErr.NotFound; }
 named :: (n: i32) -> (i32, !BErr) { if n == 0 { raise BErr.NotFound; } return n; }
 
 reraises :: (n: i32) -> ! {
@@ -19,6 +21,9 @@ forwards :: (e: BErr) -> ! { raise e; }
 shadows :: () -> ! { exec() catch |e| { e := BErr.NotFound; raise e; }; return; }
 binds :: () -> ! { err := missing(); if err { raise err; } return; }
 destructures :: (n: i32) -> ! { _, err := named(n); if err { raise err; } return; }
+aliases :: () -> ! { err := lookup(); x := err; if x { raise x; } return; }
+branches :: (n: i32) -> ! { err := missing(); x := if n == 0 { err } else { return; }; if x { raise x; } return; }
+arms :: (n: i32) -> ! { err := missing(); x := match n { case 0: err; else: return; }; if x { raise x; } return; }
 
 main :: () {
     reraises(0) catch |e| { print("{} {}\n", e, e == .NotFound); };
@@ -27,4 +32,7 @@ main :: () {
     shadows() catch |e| { print("{} {}\n", e, e == .NotFound); };
     binds() catch |e| { print("{} {}\n", e, e == .NotFound); };
     destructures(0) catch |e| { print("{} {}\n", e, e == .NotFound); };
+    aliases() catch |e| { print("{} {}\n", e, e == .NotFound); };
+    branches(0) catch |e| { print("{} {}\n", e, e == .NotFound); };
+    arms(0) catch |e| { print("{} {}\n", e, e == .NotFound); };
 }

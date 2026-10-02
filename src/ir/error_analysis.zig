@@ -41,12 +41,16 @@ pub const ErrorAnalysis = struct {
         parent: ?*const LocalScope,
     };
 
-    /// What a name binds: a typed value, or an error that is the failure of
-    /// an attempted failable — a `catch` handler's error, or the error slot
-    /// a binding takes from a failable — read in the scope the attempt sees.
+    /// What a name binds: a typed value; the failure of an attempted failable
+    /// — a `catch` handler's error, or a destructure's error slot; or an
+    /// unannotated binding's initializer value. Each source is read in the
+    /// scope it sees.
     const Binding = union(enum) {
         typed: TypeId,
-        failure: struct { attempted: *const Node, scope: LocalScope },
+        failure: Source,
+        value: Source,
+
+        const Source = struct { node: *const Node, scope: LocalScope };
     };
 
     const FunctionAuthor = struct { id: imports.DeclId, name: []const u8, decl: *const ast.FnDecl };
@@ -133,22 +137,70 @@ pub const ErrorAnalysis = struct {
         }
     }
 
-    /// `raise VALUE` contributes VALUE's static channel, `dyn` when that
-    /// channel has no static member set.
+    /// `raise VALUE` contributes VALUE's static channel, and a failure VALUE
+    /// holds is read through its attempt.
     fn contributeRaisedValue(self: ErrorAnalysis, value: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList(*const ast.FnDecl), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
-        if (value.data == .identifier) if (self.nameBinding(enclosing_fd, value.data.identifier.name)) |b| if (b == .failure) {
-            var outer = self;
-            outer.locals = &b.failure.scope;
-            return outer.contributeAttempt(b.failure.attempted, tags, edges, dyn, enclosing_fd);
-        };
-        const channel = self.l.raisedChannel(self.receiverType(enclosing_fd, value)) orelse {
+        switch (value.data) {
+            .identifier => |id| if (self.nameBinding(enclosing_fd, id.name)) |b| {
+                var source = self;
+                switch (b) {
+                    .typed => |ty| return self.contributeChannel(ty, tags, dyn),
+                    .failure => |f| {
+                        source.locals = &f.scope;
+                        return source.contributeAttempt(f.node, tags, edges, dyn, enclosing_fd);
+                    },
+                    .value => |v| {
+                        source.locals = &v.scope;
+                        return source.contributeRaisedValue(v.node, tags, edges, dyn, enclosing_fd);
+                    },
+                }
+            },
+            .call => {
+                const ty = self.receiverType(enclosing_fd, value);
+                if (self.errorSlot(enclosing_fd, value, ty) == 0) return self.contributeAttempt(value, tags, edges, dyn, enclosing_fd);
+                return self.contributeChannel(ty, tags, dyn);
+            },
+            .block => |b| {
+                // A block with no value holds no failure.
+                if (!b.produces_value or b.stmts.len == 0) return;
+                const scope = LocalScope{ .preceding = b.stmts[0 .. b.stmts.len - 1], .parent = self.locals };
+                var nested = self;
+                nested.locals = &scope;
+                return nested.contributeRaisedValue(b.stmts[b.stmts.len - 1], tags, edges, dyn, enclosing_fd);
+            },
+            .if_expr => |ie| if (ie.else_branch) |eb| {
+                const scope = payloadScope(ie.binding_name, ie.condition, self.locals);
+                var nested = self;
+                nested.locals = &scope;
+                nested.contributeRaisedValue(ie.then_branch, tags, edges, dyn, enclosing_fd);
+                return self.contributeRaisedValue(eb, tags, edges, dyn, enclosing_fd);
+            },
+            .match_expr => |me| {
+                for (me.arms) |arm| {
+                    const scope = armScope(arm, me.subject, self.locals);
+                    var nested = self;
+                    nested.locals = &scope;
+                    nested.contributeRaisedValue(arm.body, tags, edges, dyn, enclosing_fd);
+                }
+                return;
+            },
+            else => {},
+        }
+        self.contributeChannel(self.receiverType(enclosing_fd, value), tags, dyn);
+    }
+
+    /// The static channel of a value of type `ty`: none for a diverging arm,
+    /// `dyn` when the channel has no static member set.
+    fn contributeChannel(self: ErrorAnalysis, ty: TypeId, tags: *std.ArrayList(u32), dyn: *bool) void {
+        if (ty == .noreturn) return;
+        const channel = self.l.raisedChannel(ty) orelse {
             dyn.* = true;
             return;
         };
         if (self.l.channelIsOpen(channel)) dyn.* = true else self.contributeSet(channel, tags);
     }
 
-    /// What the failable a `catch` attempts fails with.
+    /// What an attempted failable fails with.
     fn contributeAttempt(self: ErrorAnalysis, node: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList(*const ast.FnDecl), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
         switch (node.data) {
             .call => |c| self.contributeCallee(c.callee, enclosing_fd, tags, edges, dyn),
@@ -297,8 +349,12 @@ pub const ErrorAnalysis = struct {
     fn bindingType(self: ErrorAnalysis, fd: ?*const ast.FnDecl, name: []const u8) ?TypeId {
         return switch (self.nameBinding(fd, name) orelse return null) {
             .typed => |ty| ty,
-            // A bare-`!` callee's channel is what this pass converges, so a
-            // failure is read through its attempt instead.
+            .value => |v| value: {
+                var initializer = self;
+                initializer.locals = &v.scope;
+                break :value initializer.receiverType(fd, v.node);
+            },
+            // A failure's channel is read through its attempt.
             .failure => .unresolved,
         };
     }
@@ -325,14 +381,14 @@ pub const ErrorAnalysis = struct {
                 const node = current.preceding[i];
                 var preceding = current.*;
                 preceding.preceding = current.preceding[0..i];
-                var initializer = self;
-                initializer.locals = &preceding;
                 if (node.data == .destructure_decl) {
                     const d = node.data.destructure_decl;
+                    var initializer = self;
+                    initializer.locals = &preceding;
                     for (d.names, 0..) |target, index| {
                         if (!std.mem.eql(u8, target, name)) continue;
                         const ty = initializer.receiverType(fd, d.value);
-                        if (initializer.errorSlot(fd, d.value, ty) == index) return .{ .failure = .{ .attempted = d.value, .scope = preceding } };
+                        if (initializer.errorSlot(fd, d.value, ty) == index) return .{ .failure = .{ .node = d.value, .scope = preceding } };
                         const len = self.l.module.types.productLen(ty) orelse return .{ .typed = .unresolved };
                         return .{ .typed = if (index < len) self.l.module.types.productFieldType(ty, index) else .unresolved };
                     }
@@ -346,10 +402,7 @@ pub const ErrorAnalysis = struct {
                 if (!std.mem.eql(u8, binding.name, name)) continue;
                 if (binding.annotation) |annotation| return .{ .typed = self.l.resolveType(annotation) };
                 const value = binding.value orelse return .{ .typed = .unresolved };
-                const ty = initializer.receiverType(fd, value);
-                // A pure failable's whole result is its error slot.
-                if (initializer.errorSlot(fd, value, ty) == 0) return .{ .failure = .{ .attempted = value, .scope = preceding } };
-                return .{ .typed = ty };
+                return .{ .value = .{ .node = value, .scope = preceding } };
             }
             if (current.payload) |payload| {
                 if (std.mem.eql(u8, payload.name, name)) {
@@ -369,7 +422,7 @@ pub const ErrorAnalysis = struct {
                 }
             }
             if (current.caught) |caught| {
-                if (std.mem.eql(u8, caught.name, name)) return .{ .failure = .{ .attempted = caught.attempted, .scope = .{ .parent = current.parent } } };
+                if (std.mem.eql(u8, caught.name, name)) return .{ .failure = .{ .node = caught.attempted, .scope = .{ .parent = current.parent } } };
             }
             if (current.lambda) |lambda| {
                 for (lambda.params) |p| {
