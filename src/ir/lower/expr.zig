@@ -3952,9 +3952,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                 };
                 break :blk self.builder.load(self.current_ctx_ref, ctx_ty);
             }
-            // A generic body lowers in its caller's visibility, where a
-            // same-named declaration may be in view, so a bound generic
-            // parameter answers first.
+            // A bound generic parameter answers before same-named declarations.
             if (self.type_bindings) |tb| {
                 if (tb.get(id.name)) |t| break :blk self.builder.constType(t);
             }
