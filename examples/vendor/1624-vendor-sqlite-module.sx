@@ -5,16 +5,16 @@
 // (an OS libsqlite3 of another version must never shadow the unit)
 // and a typed round trip.
 @import "modules/std.sx";
-sq :: @import "vendors/sqlite/sqlite.sx";
+@import "vendors/sqlite/sqlite.sx";
 
 main :: () -> i32 {
-    v := sq.sqliteVersion();
+    v := sqlite.version();
     if v != "3.53.2" {
         print("unexpected sqlite version: {}\n", v);
         return 1;
     }
 
-    db, oe := sq.Sqlite.open(":memory:");
+    db, oe := sqlite.Sqlite.open(":memory:");
     if oe { print("open failed\n"); return 1; }
     ee := false;
     db.exec("CREATE TABLE t (name TEXT, n INTEGER); INSERT INTO t VALUES ('a', 1), ('b', 2)") catch { ee = true; };
@@ -27,7 +27,7 @@ main :: () -> i32 {
     serr := false;
     if se { serr = true; }
     if serr or ee { print("step failed\n"); st.finalize(); db.close(); return 1; }
-    if rc == sq.SQLITE_ROW {
+    if rc == sqlite.SQLITE_ROW {
         print("row: {} {}\n", st.columnText(0), st.columnInt64(1));
     }
     st.finalize();
