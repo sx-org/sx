@@ -4489,12 +4489,11 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         return self.builder.emit(.{ .interp_print_frames = {} }, .void);
     }
     if (std.mem.eql(u8, name, "__trace_resolve_frame")) {
-        // Backs `trace.sx`'s formatter: a raw trace-buffer u64 → a `TraceFrame`.
-        // Compiled code reinterprets the operand as `*TraceFrame` and loads it;
+        // Backs `trace.sx`'s formatter: a raw trace-buffer u64 → a `trace.Frame`.
+        // Compiled code reinterprets the operand as `*trace.Frame` and loads it;
         // the interp unpacks (func_id, span.start) and resolves it.
-        // Result type is the `TraceFrame` struct from trace.sx.
-        const frame_ty = self.module.types.findByName(self.module.types.internString("TraceFrame")) orelse {
-            if (self.diagnostics) |d| d.addFmt(.err, null, "`__trace_resolve_frame` needs `TraceFrame` (from trace.sx) in scope", .{});
+        const frame_ty = self.traceFrameType() orelse {
+            if (self.diagnostics) |d| d.addFmt(.err, null, "`__trace_resolve_frame` needs `trace.Frame` (from modules/std/trace.sx)", .{});
             return self.builder.constInt(0, .void);
         };
         const arg = self.lowerExpr(c.args[0]);

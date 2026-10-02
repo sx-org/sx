@@ -3,10 +3,12 @@ const imports = @import("../../imports.zig");
 const contracts = @import("../../contracts.zig");
 const runtime_bindings = @import("../runtime_bindings.zig");
 const inst_mod = @import("../inst.zig");
+const types = @import("../types.zig");
 const lower = @import("../lower.zig");
 const lower_decl = @import("decl.zig");
 const Lowering = lower.Lowering;
 const FuncId = inst_mod.FuncId;
+const TypeId = types.TypeId;
 
 /// The function a runtime binding calls: `name`'s declaration in its owner
 /// module, lowered and resolved to its id. Null when the owner module is not
@@ -35,6 +37,21 @@ fn resolveBinding(self: *Lowering, b: runtime_bindings.Binding) ?FuncId {
         const raw = module_decls.get(id).ref orelse return null;
         const fd = lower_decl.fnDeclOfRaw(raw) orelse return null;
         return self.bareAuthorFuncId(fd, b.name, path);
+    }
+    return null;
+}
+
+/// The `Frame` declared in trace.sx's `trace` scope, the type
+/// `__trace_resolve_frame` yields. Null when trace.sx is not in the program.
+pub fn traceFrameType(self: *Lowering) ?TypeId {
+    const module_decls = self.program_index.decl_table orelse return null;
+    for (module_decls.environments.items) |env| {
+        if (env.scope_path.len != 1 or !std.mem.eql(u8, env.scope_path[0], "trace")) continue;
+        if (!ownerAuthored(self, "modules/std/trace.sx", env.source)) continue;
+        const raw = module_decls.get(env.names.get("Frame") orelse return null).ref orelse return null;
+        const ref = imports.innerDeclRef(raw) orelse raw;
+        if (ref != .struct_decl) return null;
+        return self.module.types.type_decl_tids.get(@ptrCast(ref.struct_decl));
     }
     return null;
 }

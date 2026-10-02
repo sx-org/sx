@@ -4297,6 +4297,7 @@ pub const Lowering = struct {
     pub const tryLowerVolatileIntrinsic = lower_call.tryLowerVolatileIntrinsic;
     pub const tryLowerPrintfIntrinsic = lower_call.tryLowerPrintfIntrinsic;
     pub const runtimeBinding = lower_binding.runtimeBinding;
+    pub const traceFrameType = lower_binding.traceFrameType;
     pub const reflectionArgIsType = lower_call.reflectionArgIsType;
     pub const reflectionTypeArgGuard = lower_call.reflectionTypeArgGuard;
     pub const reflectionErrorSentinel = lower_call.reflectionErrorSentinel;

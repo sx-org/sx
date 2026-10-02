@@ -26,7 +26,7 @@
 // aarch64-macOS-pinned (the scheduler's per-arch asm + Apple mmap constants):
 // runs end-to-end on a matching host, ir-only on a mismatch.
 @import "modules/std.sx";
-sched :: @import "modules/std/sched.sx";
+@import "modules/std/sched.sx";
 ..io;
 
 Log :: struct { id: [8]i64; at: [8]i64; n: i64; }

@@ -22,7 +22,7 @@
 // ir-only on a mismatch. Like 1809 (mmap), JIT `sx run` resolves the libc
 // extern calls fine — no AOT build needed.
 @import "modules/std.sx";
-sched :: @import "modules/std/sched.sx";
+@import "modules/std/sched.sx";
 
 read   :: (fd: Fd, buf: [*]u8, count: i64) -> isize extern libc "read";
 write  :: (fd: Fd, buf: [*]u8, count: i64) -> isize extern libc "write";

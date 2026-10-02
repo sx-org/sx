@@ -269,7 +269,7 @@ pub const CallResolver = struct {
             // the registry has nothing to say about them.
             if (std.mem.eql(u8, bare_name, "__interp_print_frames")) return refl(bare_name, .void);
             if (std.mem.eql(u8, bare_name, "__trace_resolve_frame"))
-                return refl(bare_name, self.l.module.types.findByName(self.l.module.types.internString("TraceFrame")) orelse .unresolved);
+                return refl(bare_name, self.l.traceFrameType() orelse .unresolved);
             // Bare same-name flat collision: route through the ONE
             // author producer `selectedFreeAuthor` so `plan` types the call as the
             // SAME author the lowering call-path binds — the two cannot

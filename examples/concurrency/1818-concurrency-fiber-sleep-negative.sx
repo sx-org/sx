@@ -5,7 +5,7 @@
 //
 // aborts (exit 134) after the diagnostic — aarch64-macOS-pinned.
 @import "modules/std.sx";
-sched :: @import "modules/std/sched.sx";
+@import "modules/std/sched.sx";
 main :: () -> i64 {
     s := sched.Scheduler.init(); ps := *s;
     ps.spawn(||_{ ps } { ps.sleep(10); ps.sleep(-5); });   // -5 → loud abort
