@@ -1,13 +1,14 @@
 // A comptime-minted FULLY payloadless enum (every variant tagless) mints as a
 // real `.@"enum"`, not an all-void payload enum, whose IR/LLVM size mismatch
-// trips `verifySizes` at codegen. `makeEnum` (declare/define) with an all-void
-// variant list produces an ordinary enum, usable like a hand-written one.
+// trips `verifySizes` at codegen. `meta.makeEnum` (declare/define) with an
+// all-void variant list produces an ordinary enum, usable like a hand-written
+// one.
 
 @import "modules/std.sx";
 @import "modules/std/meta.sx";
 
 makeSuit :: () -> Type {
-    return makeEnum("Suit", .[
+    return meta.makeEnum("Suit", .[
         VariantInfo{ name = "hearts",   payload = void },
         VariantInfo{ name = "spades",   payload = void },
         VariantInfo{ name = "diamonds", payload = void },

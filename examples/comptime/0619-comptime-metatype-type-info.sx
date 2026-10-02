@@ -1,8 +1,9 @@
 // Comptime reflection — `@typeInfo($T)`: reflect a SOURCE enum INTO a `TypeInfo`
-// value, then feed that value straight back to `define` to mint a byte-identical
-// copy. This is the inverse of `define`'s decode: `@typeInfo` reads a type's
-// variants (name + payload type) out of the type table and constructs the same
-// `.enum(EnumInfo{ fields })` value the `define` examples write by hand.
+// value, then feed that value straight back to `meta.define` to mint a
+// byte-identical copy. This is the inverse of `meta.define`'s decode:
+// `@typeInfo` reads a type's variants (name + payload type) out of the type
+// table and constructs the same `.enum(EnumInfo{ fields })` value the
+// `meta.define` examples write by hand.
 //
 // Round-trip: `ShapeCopy` is reconstructed purely from `@typeInfo(Shape)` — no
 // literal variant list — and constructs/matches like the original.
@@ -16,7 +17,7 @@ Shape :: enum {
 }
 
 // Reflect Shape → TypeInfo, then reconstruct an identical nominal enum.
-ShapeCopy :: define(declare("ShapeCopy"), @typeInfo(Shape));
+ShapeCopy :: meta.define(meta.declare("ShapeCopy"), @typeInfo(Shape));
 
 describe :: (s: ShapeCopy) {
     match s {

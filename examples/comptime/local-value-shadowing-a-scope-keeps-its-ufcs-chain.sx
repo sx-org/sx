@@ -1,0 +1,22 @@
+// A local value shadowing a scope is the receiver of `s.R(i64).value(42)`: the
+// chain calls the UFCS functions on the value, not the scope's type function.
+@import "modules/std.sx";
+
+s :: scope {
+    R :: ($T: Type) -> Type {
+        return enum { value: T; closed; };
+    }
+}
+
+Box :: struct { n: i64; }
+Wrap :: struct { k: i64; }
+
+R :: ufcs (b: Box, $T: Type) -> Wrap { return Wrap{ k = b.n + @sizeOf(T) }; }
+value :: ufcs (w: Wrap, x: i64) -> i64 { return w.k + x; }
+
+main :: () -> i32 {
+    s := Box{ n = 1 };
+    r := s.R(i64).value(42);
+    print("r = {}\n", r);
+    return 0;
+}

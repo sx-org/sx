@@ -1,6 +1,7 @@
-// Comptime type metaprogramming — `declare` / `define`: construct a NEW nominal
-// type from the `TypeInfo` shape the prelude declares and `@typeInfo` reflects
-// into.
+// Comptime type metaprogramming — `meta.declare` / `meta.define`: construct a
+// NEW nominal type from the `TypeInfo` shape the prelude declares and
+// `@typeInfo` reflects into. std.sx does not carry this file: programs import
+// it explicitly.
 //
 // This is a SEPARATE on-demand module rather than part of the prelude: only a
 // program that MINTS types needs it, and it builds its member list via `List`,
@@ -12,122 +13,122 @@
 // `@rawDeclareType` / `@rawRegisterType`, which run at LOWERING time (when a
 // `-> Type` builder's result is first referenced), where the compiler can still
 // resolve references to the minted types.
-@import "modules/std/core.sx";
-@import "modules/std/list.sx";
-@import "modules/std/c.sx";
+meta :: scope {
+    @import "modules/std/core.sx";
+    @import "modules/std/list.sx";
+    @import "modules/std/c.sx";
 
-// ── The low-level compiler-API type-construction primitives ──────────────────
-//
-// These `@` functions are the compiler's type-construction
-// primitives — serviced by `comptime_vm.callCompilerFn`. Declared here, not
-// imported from `modules/compiler.sx`, so `meta.sx` does not intern
-// `compiler.sx`'s `List(string)` types into every importer's table.
-//
-// `@rawRegisterType`'s `Member` is the `{ name, ty }` shape it decodes. The
-// `kind` codes match the read-side `@rawTypeKind`:
-//   1 struct · 2 enum.
-Member :: struct { name: string; ty: Type; }
+    // ── The low-level compiler-API type-construction primitives ──────────────
+    //
+    // These `@` functions are the compiler's type-construction
+    // primitives — serviced by `comptime_vm.callCompilerFn`. Declared here, not
+    // imported from `modules/compiler.sx`, so `meta.sx` does not intern
+    // `compiler.sx`'s `List(string)` types into every importer's table.
+    //
+    // `@rawRegisterType`'s `Member` is the `{ name, ty }` shape it decodes. The
+    // `kind` codes match the read-side `@rawTypeKind`:
+    //   1 struct · 2 enum.
+    Member :: struct { name: string; ty: Type; }
 
-@rawDeclareType  :: (name: string) -> Type;
-@rawRegisterType :: (handle: Type, kind: i64, members: []Member) -> Type;
+    @rawDeclareType  :: (name: string) -> Type;
+    @rawRegisterType :: (handle: Type, kind: i64, members: []Member) -> Type;
 
-KIND_STRUCT       :: 1;
-KIND_ENUM         :: 2;
+    KIND_STRUCT       :: 1;
+    KIND_ENUM         :: 2;
 
-// ── The metatype DSL ─────────────────────────────────────────────────────────
-//
-//   declare(name)        — mint a NEW empty (undefined) nominal type NAMED
-//                          `name`, returned as a `Type` handle. The compiler
-//                          registers the forward type at compile time (it scans
-//                          for the literal `declare("Name")` spelling), so the
-//                          body of `define` can reference it BY NAME — that's how
-//                          self-reference works (`payload = *List` resolves to the
-//                          forward `List`). Using the type before its `define` is
-//                          a loud error; a pointer to it is fine.
-//   define(handle, info) — fill a declared handle's body from a `TypeInfo`, and
-//                          RETURN the handle so the one-shot form chains:
-//                              List :: define(declare("List"), .enum(.{ fields = .[
-//                                  VariantInfo{ name = "cons", payload = *List },
-//                                  VariantInfo{ name = "nil",  payload = void } ] }));
+    // ── The metatype DSL ─────────────────────────────────────────────────────
+    //
+    //   declare(name)        — mint a NEW empty (undefined) nominal type NAMED
+    //                          `name`, returned as a `Type` handle. The compiler
+    //                          registers the forward type at compile time (it scans
+    //                          for a call of this `declare` with a literal name), so
+    //                          the body of `define` can reference it BY NAME — that's
+    //                          how self-reference works (`payload = *List` resolves
+    //                          to the forward `List`). Using the type before its
+    //                          `define` is a loud error; a pointer to it is fine.
+    //   define(handle, info) — fill a declared handle's body from a `TypeInfo`, and
+    //                          RETURN the handle so the one-shot form chains:
+    //                              List :: meta.define(meta.declare("List"), .enum(.{ fields = .[
+    //                                  VariantInfo{ name = "cons", payload = *List },
+    //                                  VariantInfo{ name = "nil",  payload = void } ] }));
 
-declare :: (name: string) -> Type {
-    return @rawDeclareType(name);
-}
-
-define :: (handle: Type, info: TypeInfo) -> Type {
-    match info {
-        case .enum: |e| {
-            mems : List(Member) = .{};
-            for v in e.fields {
-                mems.append(Member{ name = v.name, ty = v.payload });
-            }
-            return @rawRegisterType(handle, KIND_ENUM, mems.items[0..mems.len]);
-        }
-        case .struct: |s| {
-            mems : List(Member) = .{};
-            for f in s.fields {
-                mems.append(Member{ name = f.name, ty = f.type });
-            }
-            return @rawRegisterType(handle, KIND_STRUCT, mems.items[0..mems.len]);
-        }
-        else: {
-            // Reflect-only shapes (int/float/array/union/...) cannot be minted:
-            // there is nothing nominal to register.
-            w := FdWriter.init(.stderr);
-            w.write("define: only struct/enum TypeInfo shapes can be minted\n");
-        }
+    declare :: (name: string) -> Type {
+        return @rawDeclareType(name);
     }
-    return handle;
-}
 
-// `makeEnum` runs in a non-generic `() -> Type` builder (whose whole body is
-// comptime-evaluated, so locals are in scope) or inline with a literal arg
-// (`E :: makeEnum("E", .[ … ])`). A *generic* type-fn comptime-evaluates only
-// its return EXPRESSION, so build the list inline in the return there, not in a
-// preceding local.
-makeEnum :: (name: string, variants: []VariantInfo) -> Type {
-    return define(declare(name), .enum(.{ fields = variants }));
-}
+    define :: (handle: Type, info: TypeInfo) -> Type {
+        match info {
+            case .enum: |e| {
+                mems : List(Member) = .{};
+                for v in e.fields {
+                    mems.append(Member{ name = v.name, ty = v.payload });
+                }
+                return @rawRegisterType(handle, KIND_ENUM, mems.items[0..mems.len]);
+            }
+            case .struct: |s| {
+                mems : List(Member) = .{};
+                for f in s.fields {
+                    mems.append(Member{ name = f.name, ty = f.type });
+                }
+                return @rawRegisterType(handle, KIND_STRUCT, mems.items[0..mems.len]);
+            }
+            else: {
+                // Reflect-only shapes (int/float/array/union/...) cannot be minted:
+                // there is nothing nominal to register.
+                w := FdWriter.init(.stderr);
+                w.write("define: only struct/enum TypeInfo shapes can be minted\n");
+            }
+        }
+        return handle;
+    }
 
-// A blocking recv: a value, or the channel was closed (drained).
-RecvResult :: ($T: Type) -> Type {
-    return define(declare("RecvResult"), .enum(.{ fields = .[
-        VariantInfo{ name = "value",  payload = T    },
-        VariantInfo{ name = "closed", payload = void },
-    ] }));
-}
+    // `makeEnum` runs inline with a literal list (`E :: meta.makeEnum("E", .[ … ])`)
+    // or as the `return` of a `-> Type` builder, whose locals before the `return`
+    // are comptime-evaluated with it.
+    makeEnum :: (name: string, variants: []VariantInfo) -> Type {
+        return define(declare(name), .enum(.{ fields = variants }));
+    }
 
-// A non-blocking try-recv: a value, currently empty, or closed.
-TryResult :: ($T: Type) -> Type {
-    return define(declare("TryResult"), .enum(.{ fields = .[
-        VariantInfo{ name = "value",  payload = T    },
-        VariantInfo{ name = "empty",  payload = void },
-        VariantInfo{ name = "closed", payload = void },
-    ] }));
-}
+    // A blocking recv: a value, or the channel was closed (drained).
+    RecvResult :: ($T: Type) -> Type {
+        return define(declare("RecvResult"), .enum(.{ fields = .[
+            VariantInfo{ name = "value",  payload = T    },
+            VariantInfo{ name = "closed", payload = void },
+        ] }));
+    }
 
-// ── Constructing a minted payload enum VALUE by variant index ─────────────────
-//
-// Build a value of a MINTED payload enum `E` (one made by `makeEnum` /
-// `define(declare, .enum(...))`) whose active variant is `idx`, carrying
-// `payload`. The variant is selected at RUNTIME while the union was synthesized
-// at comptime, so its labels cannot be spelled as a literal `.label(payload)`.
-//
-// LAYOUT COUPLING — MINTED ENUMS ONLY: a minted payload enum is laid out
-// `{ i64 tag @0, payload bytes @ @sizeOf(i64) }` (its tag type is always `i64`
-// — the compiler's `declare`/`define` path fixes it). `makeVariant` writes that
-// layout directly. It is NOT valid for a source `enum { … }` whose tag may be
-// narrower, nor for a `#packed`-backed union — spell those with a literal
-// `.label(…)`. Contract (caller-guaranteed, no runtime check, like any raw
-// construction): `0 <= idx < @typeInfo(E).enum.fields.len`, and `payload`'s
-// type IS variant `idx`'s payload type. `payload` must be non-void (a
-// payload-less variant has no value to carry — match it by tag).
-makeVariant :: ($E: Type, idx: i64, payload: $P) -> E {
-    out : E = ---;
-    c.memset(*out, 0, @sizeOf(E));   // clear tag padding + unused payload bytes
-    tagPtr : *i64 = @reinterpret(*i64, *out);
-    tagPtr.* = idx;
-    payPtr : *P = @reinterpret(*P, @reinterpret(usize, *out) + @sizeOf(i64).(usize));
-    payPtr.* = payload;
-    return out;
+    // A non-blocking try-recv: a value, currently empty, or closed.
+    TryResult :: ($T: Type) -> Type {
+        return define(declare("TryResult"), .enum(.{ fields = .[
+            VariantInfo{ name = "value",  payload = T    },
+            VariantInfo{ name = "empty",  payload = void },
+            VariantInfo{ name = "closed", payload = void },
+        ] }));
+    }
+
+    // ── Constructing a minted payload enum VALUE by variant index ─────────────
+    //
+    // Build a value of a MINTED payload enum `E` (one made by `makeEnum` /
+    // `define(declare, .enum(...))`) whose active variant is `idx`, carrying
+    // `payload`. The variant is selected at RUNTIME while the union was synthesized
+    // at comptime, so its labels cannot be spelled as a literal `.label(payload)`.
+    //
+    // LAYOUT COUPLING — MINTED ENUMS ONLY: a minted payload enum is laid out
+    // `{ i64 tag @0, payload bytes @ @sizeOf(i64) }` (its tag type is always `i64`
+    // — the compiler's `declare`/`define` path fixes it). `makeVariant` writes that
+    // layout directly. It is NOT valid for a source `enum { … }` whose tag may be
+    // narrower, nor for a `#packed`-backed union — spell those with a literal
+    // `.label(…)`. Contract (caller-guaranteed, no runtime check, like any raw
+    // construction): `0 <= idx < @typeInfo(E).enum.fields.len`, and `payload`'s
+    // type IS variant `idx`'s payload type. `payload` must be non-void (a
+    // payload-less variant has no value to carry — match it by tag).
+    makeVariant :: ($E: Type, idx: i64, payload: $P) -> E {
+        out : E = ---;
+        c.memset(*out, 0, @sizeOf(E));   // clear tag padding + unused payload bytes
+        tagPtr : *i64 = @reinterpret(*i64, *out);
+        tagPtr.* = idx;
+        payPtr : *P = @reinterpret(*P, @reinterpret(usize, *out) + @sizeOf(i64).(usize));
+        payPtr.* = payload;
+        return out;
+    }
 }

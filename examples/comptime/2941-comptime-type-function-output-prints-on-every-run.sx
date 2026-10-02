@@ -3,7 +3,7 @@
 
 Boxed :: ($T: Type) -> Type {
     print("building Boxed\n");
-    return define(declare("Boxed"), .struct(.{ fields = .[
+    return meta.define(meta.declare("Boxed"), .struct(.{ fields = .[
         FieldInfo{ name = "value", type = T },
     ] }));
 }

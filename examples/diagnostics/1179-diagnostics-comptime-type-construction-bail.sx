@@ -1,18 +1,18 @@
 // A comptime type construction (declare/define, reflection) that leaves a type
 // INCOMPLETE surfaces a build-gating diagnostic naming the reason. Here
-// `declare("Undefined")` mints a forward nominal slot that no matching
-// `define(handle, …)` completes, and the compiler rejects it at its construction
-// site.
+// `meta.declare("Undefined")` mints a forward nominal slot that no matching
+// `meta.define(handle, …)` completes, and the compiler rejects it at its
+// construction site.
 //
 // An EXPLICITLY-defined empty type — empty struct/tuple/enum/payload enum — is
-// valid; see examples/0641. Only the never-defined `declare` placeholder is
+// valid; see examples/0641. Only the never-defined `meta.declare` placeholder is
 // rejected.
 @import "modules/std.sx";
 @import "modules/std/meta.sx";
 
-// Declared but never `define`d — an incomplete forward slot.
+// Declared but never defined — an incomplete forward slot.
 mkUndefined :: () -> Type {
-    return declare("Undefined");
+    return meta.declare("Undefined");
 }
 
 Undefined :: mkUndefined();

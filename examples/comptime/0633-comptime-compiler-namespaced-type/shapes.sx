@@ -4,8 +4,8 @@
 
 buildSuit :: () -> Type {
     return @rawRegisterType(@rawDeclareType("Suit"), 2, .[   // kind 2 = actual enum
-        Member{ name = "hearts", ty = void },
-        Member{ name = "spades", ty = void },
+        meta.Member{ name = "hearts", ty = void },
+        meta.Member{ name = "spades", ty = void },
     ]);
 }
 

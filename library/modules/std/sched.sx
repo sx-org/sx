@@ -39,9 +39,9 @@ sched :: scope {
     @import "modules/std/atomic.sx";
     // `race` synthesizes its result type (a payload enum mirroring the input tuple's
     // labels) and constructs the winner variant by runtime index — both need the
-    // metatype WRITE side (`makeEnum`/`makeVariant`/`VariantInfo`).
-    // meta.sx imports only std.sx (no naked asm, no cycle back into sched), so it is
-    // safe to pull in here.
+    // metatype WRITE side (`meta.makeEnum`/`meta.makeVariant`/`VariantInfo`).
+    // meta.sx has no naked asm and no cycle back into sched, so it is safe to pull
+    // in here.
     @import "modules/std/meta.sx";
     kqb :: @import "modules/std/net/kqueue.sx";
     // The fd-readiness backend is per-OS: kqueue (kqb, above) on darwin, epoll on
@@ -1050,15 +1050,14 @@ T
     // the input tuple's labels: each variant's NAME is the tuple label, its payload is
     // that future's result type. The tuple must be NAMED (`(a: fa, b: fb)`); a
     // positional-tuple form (`._0`/`._1`) is rejected — an unnamed element reflects a
-    // "" name, which `makeEnum` rejects as a duplicate-name collision.
+    // "" name, which `meta.makeEnum` rejects as a duplicate-name collision.
     //
     // It runs over the `Io` PROTOCOL (`currentPark`/`suspendRaw`/`ready`), so it is
     // colorblind: under the fiber scheduler it really parks/wakes; under the blocking
     // `io.CBlocking` every future is born `.ready`, so the winner scan returns
     // immediately and it never parks. Lives here (not io.sx) because the `RaceResult`
-    // synthesis needs the metatype WRITE side (`makeEnum`/`makeVariant`), and
-    // meta.sx imports only std.sx — pulling it into the io.sx prelude part-file would
-    // cycle.
+    // synthesis needs the metatype WRITE side (`meta.makeEnum`/`meta.makeVariant`),
+    // and pulling meta.sx into the io.sx prelude part-file would cycle.
     //
     //     fa := context.io.async(|| -> (A, !) readA(conn));   // *Future(A)
     //     fb := context.io.async(|| -> (B, !) readB(conn));   // *Future(B)
@@ -1069,7 +1068,7 @@ T
     // A member's `*Future(R)` projects to its result `R`: `@pointeeType` strips the
     // pointer to `Future(R)`, and field 0 of `Future` is `value: R` (the `Value :: R`
     // type member is not a data field). One nominal type per distinct `T` (type-fn
-    // identity), so the decl, every `makeVariant(RaceResult(T), …)` call, and the
+    // identity), so the decl, every `meta.makeVariant(RaceResult(T), …)` call, and the
     // `-> RaceResult(T)` return all name the SAME union.
     RaceResult :: ($T: Type) -> Type {
         vs : [@typeInfo(T).struct.fields.len]VariantInfo = ---;
@@ -1079,7 +1078,7 @@ T
                 payload = @typeInfo(@pointeeType(field.type)).struct.fields[0].type, // *Future(R) -> Future(R) -> R
             };
         }
-        return makeEnum("RaceResult", vs);
+        return meta.makeEnum("RaceResult", vs);
     }
 
     // Structured first-wins race over the `Io` protocol. Suspends the calling fiber
@@ -1138,7 +1137,7 @@ T
         result : RaceResult(T) = ---;
         inline for i in 0..@typeInfo(T).struct.fields.len {
             if i == winnerIdx {
-                result = makeVariant(RaceResult(T), i, @field(futures, i).value);
+                result = meta.makeVariant(RaceResult(T), i, @field(futures, i).value);
             }
         }
 

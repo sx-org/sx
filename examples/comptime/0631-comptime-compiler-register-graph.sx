@@ -31,9 +31,9 @@ KIND_ENUM         :: 2;
 // An actual enum: variants are names, no payloads (ty = void).
 makeSuit :: () -> Type {
     return @rawRegisterType(@rawDeclareType("Suit"), KIND_ENUM, .[
-        Member{ name = "hearts",   ty = void },
-        Member{ name = "spades",   ty = void },
-        Member{ name = "diamonds", ty = void },
+        meta.Member{ name = "hearts",   ty = void },
+        meta.Member{ name = "spades",   ty = void },
+        meta.Member{ name = "diamonds", ty = void },
     ]);
 }
 Suit :: makeSuit();
@@ -43,14 +43,14 @@ buildGraph :: () -> Type {
     hA := @rawDeclareType("GraphA");
     hB := @rawDeclareType("GraphB");
     @rawRegisterType(hA, KIND_ENUM, .[
-        Member{ name = "selfRef", ty = @rawPointerTo(hA) }, // *A — self-reference
-        Member{ name = "toB",     ty = hB },             // B by value (forward)
-        Member{ name = "tag",      ty = u32 },            // a plain payload
+        meta.Member{ name = "selfRef", ty = @rawPointerTo(hA) }, // *A — self-reference
+        meta.Member{ name = "toB",     ty = hB },             // B by value (forward)
+        meta.Member{ name = "tag",      ty = u32 },            // a plain payload
     ]);
     @rawRegisterType(hB, KIND_ENUM, .[
-        Member{ name = "backA", ty = @rawPointerTo(hA) },    // *A — back-reference
-        Member{ name = "selfB", ty = @rawPointerTo(hB) },    // *B — self-reference
-        Member{ name = "num",    ty = u32 },
+        meta.Member{ name = "backA", ty = @rawPointerTo(hA) },    // *A — back-reference
+        meta.Member{ name = "selfB", ty = @rawPointerTo(hB) },    // *B — self-reference
+        meta.Member{ name = "num",    ty = u32 },
     ]);
     return hA;
 }

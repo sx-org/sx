@@ -9,8 +9,8 @@
 @import "modules/std/meta.sx";
 
 mint :: () -> Type {
-    h := declare("L");
-    return define(h, .enum(.{ fields = .[
+    h := meta.declare("L");
+    return meta.define(h, .enum(.{ fields = .[
         VariantInfo{ name = "cons", payload = L },     // by VALUE, not *L
         VariantInfo{ name = "nil",  payload = void },
     ] }));

@@ -154,7 +154,7 @@ pub fn diagInfiniteSize(self: *Lowering, ty: TypeId) void {
 /// True when `fd` declares a `-> Type` return — the signal that a non-generic
 /// call to it (`E :: f(...)`) should be comptime-evaluated to mint a type.
 /// Matches a bare `Type` type-expr return only.
-fn fnReturnsTypeValue(fd: *const ast.FnDecl) bool {
+pub fn fnReturnsTypeValue(fd: *const ast.FnDecl) bool {
     const rt = fd.return_type orelse return false;
     return isTypeKeyword(rt);
 }

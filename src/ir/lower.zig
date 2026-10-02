@@ -3421,6 +3421,23 @@ pub const Lowering = struct {
         return qualifier == .scope;
     }
 
+    /// The declaration a callee (`f`, `ns.f`, `s.t.f`) selects in the current
+    /// lexical context.
+    pub fn calleeDeclaration(self: *Lowering, callee: *const Node) ?imports_mod.DeclId {
+        const environment = self.current_environment orelse return null;
+        const path = imports_mod.aliasPath(self.alloc, callee) orelse return null;
+        defer self.alloc.free(path);
+        var resolver_ = self.resolver();
+        const selection = resolver_.selectPath(path, self.lookupContext(environment));
+        return if (selection == .selected) selection.selected.declaration else null;
+    }
+
+    /// The function a callee selects in the current lexical context.
+    pub fn calleeFunction(self: *Lowering, callee: *const Node) ?*const ast.FnDecl {
+        const id = self.calleeDeclaration(callee) orelse return null;
+        return lower_decl.fnDeclOfRaw(self.program_index.declaration(id).ref orelse return null);
+    }
+
     pub fn selectedFunction(self: *Lowering, member: QualifiedMember) ?*const ast.FnDecl {
         const selected = self.callableAuthorFn(member.author) orelse return null;
         return selected.decl;
@@ -4298,6 +4315,7 @@ pub const Lowering = struct {
     pub const tryLowerPrintfIntrinsic = lower_call.tryLowerPrintfIntrinsic;
     pub const runtimeBinding = lower_binding.runtimeBinding;
     pub const traceFrameType = lower_binding.traceFrameType;
+    pub const isMetaMember = lower_binding.isMetaMember;
     pub const reflectionArgIsType = lower_call.reflectionArgIsType;
     pub const reflectionTypeArgGuard = lower_call.reflectionTypeArgGuard;
     pub const reflectionErrorSentinel = lower_call.reflectionErrorSentinel;
