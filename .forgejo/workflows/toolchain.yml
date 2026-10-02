@@ -21,12 +21,10 @@ jobs:
           curl -fsSL https://download.docker.com/linux/static/stable/x86_64/docker-27.5.1.tgz \
             | tar -xz --strip-components 1 -C /usr/local/bin docker/docker 2>&1 | tee -a /tmp/ci.log
           docker version 2>&1 | tee -a /tmp/ci.log
-      - name: fetch recipe
-        run: git clone --depth 1 https://git.swipelab.com/sx/toolchain.git /tmp/recipe 2>&1 | tee -a /tmp/ci.log
       - name: build
         run: |
           set -o pipefail
-          docker build -f /tmp/recipe/Dockerfile \
+          docker build -f .forgejo/toolchain/Dockerfile \
             -t git.swipelab.com/sx/toolchain:latest \
             -t git.swipelab.com/sx/toolchain:${GITHUB_SHA:0:10} \
             . 2>&1 | tee -a /tmp/ci.log
