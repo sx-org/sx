@@ -36,7 +36,6 @@
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
 cstd   :: @import "modules/std/c.sx";
-socket :: @import "modules/std/socket.sx";
 @import "modules/std/http.sx";
 
 // ── fake TLS provider ────────────────────────────────────────────────

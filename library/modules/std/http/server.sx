@@ -2,9 +2,9 @@
 @import "modules/std/mem.sx";          // Arena
 @import "modules/std/encoding.sx";     // hexValue
 private clib   :: @import "modules/std/c.sx";
-private socket :: @import "modules/std/socket.sx";
+@import "modules/std/socket.sx";
 @import "modules/std/thread.sx";
-private event  :: @import "modules/std/event.sx";
+@import "modules/std/event.sx";
 @import "modules/std/time.sx";
 @import "modules/std/fs.sx";
 @import "modules/std/compress.sx";     // shared codec Error/Progress contract
@@ -2610,7 +2610,7 @@ Server :: struct {
     // read may return WantWrite (the session must flush a pending record
     // before it can deliver plaintext) and a write may return WantRead (the
     // session needs a peer message first) — renegotiation / ticket-flush
-    // shaped flows. Both surface to the callers as `SockErr.WouldBlock`
+    // shaped flows. Both surface to the callers as `socket.Error.WouldBlock`
     // (the same pause/re-arm contract), but the wanted DIRECTION is
     // tracked on the Conn so the ready loop drives the OPPOSITE readiness:
     //   read-want-write  → connRead arms the write watch here (readability
@@ -2661,7 +2661,7 @@ Server :: struct {
             if step == TlsStep.Done {
                 self.tlsRdWantClear(slot);
                 if n > 0 { return n; }
-                raise socket.SockErr.Closed;                // 0 bytes done == EOF
+                raise socket.Error.Closed;                  // 0 bytes done == EOF
             }
             if step == TlsStep.WantWrite {
                 // cross-arm the write watch — only writability can
@@ -2671,21 +2671,21 @@ Server :: struct {
                 if !c.writeArmed {
                     awe := false;
                     self.loop.addWrite(c.fd, slot) catch { awe = true; };
-                    if awe { raise socket.SockErr.Closed; }
+                    if awe { raise socket.Error.Closed; }
                     c.writeArmed = true;
                 }
-                raise socket.SockErr.WouldBlock;
+                raise socket.Error.WouldBlock;
             }
             if step == TlsStep.WantRead {
                 self.tlsRdWantClear(slot);
-                raise socket.SockErr.WouldBlock;
+                raise socket.Error.WouldBlock;
             }
             self.tlsRdWantClear(slot);
-            raise socket.SockErr.Closed;                    // Closed (close_notify) / Fatal → drop
+            raise socket.Error.Closed;                      // Closed (close_notify) / Fatal → drop
         }
         nq, re := socket.readNb(c.fd, buf, cap);
-        if re == .WouldBlock { raise socket.SockErr.WouldBlock; }
-        if re { raise socket.SockErr.Closed; }              // Closed / Fault → drop
+        if re == .WouldBlock { raise socket.Error.WouldBlock; }
+        if re { raise socket.Error.Closed; }                // Closed / Fault → drop
         return nq;
     }
 
@@ -2696,7 +2696,7 @@ Server :: struct {
             if step == TlsStep.Done {
                 c.tlsWrWantRead = false;
                 if n > 0 { return n; }
-                raise socket.SockErr.WouldBlock;            // 0 written → retry on writable
+                raise socket.Error.WouldBlock;              // 0 written → retry on writable
             }
             if step == TlsStep.WantRead {
                 // the write needs READABILITY. Drop the write watch —
@@ -2709,18 +2709,18 @@ Server :: struct {
                     self.loop.delWrite(c.fd);
                     c.writeArmed = false;
                 }
-                raise socket.SockErr.WouldBlock;
+                raise socket.Error.WouldBlock;
             }
             if step == TlsStep.WantWrite {
                 c.tlsWrWantRead = false;
-                raise socket.SockErr.WouldBlock;
+                raise socket.Error.WouldBlock;
             }
             c.tlsWrWantRead = false;
-            raise socket.SockErr.Closed;                    // Closed / Fatal → drop
+            raise socket.Error.Closed;                      // Closed / Fatal → drop
         }
         nq, we := socket.writeNb(c.fd, buf, len);
-        if we == .WouldBlock { raise socket.SockErr.WouldBlock; }
-        if we { raise socket.SockErr.Closed; }              // Closed / Fault → drop
+        if we == .WouldBlock { raise socket.Error.WouldBlock; }
+        if we { raise socket.Error.Closed; }                // Closed / Fault → drop
         return nq;
     }
 

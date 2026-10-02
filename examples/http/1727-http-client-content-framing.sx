@@ -5,7 +5,6 @@
 
 @import "modules/std.sx";
 @import "modules/std/http.sx";
-socket :: @import "modules/std/socket.sx";
 @import "modules/std/mem.sx";
 
 same :: (a: string, b: string) -> bool {

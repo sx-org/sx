@@ -3,7 +3,7 @@
 // The sockaddrIn layout, the SOL_SOCKET / SO_REUSEADDR option codes, and the
 // fcntl O_NONBLOCK bit differ between darwin (BSD) and Linux-family libcs
 // (glibc/musl/bionic). Each is branched on `@host.os` below, in two independent
-// top-level `inline if` blocks. An unsupported target (e.g. windows) matches
+// `inline if` blocks. An unsupported target (e.g. windows) matches
 // NEITHER block, so `SockAddr` / `O_NONBLOCK` / `sockaddrIn` / … stay undefined
 // and the first use is a loud compile error — never a silent darwin-default
 // fallback.
@@ -13,386 +13,553 @@
 // static aarch64-linux build under a Linux VM; Android's bionic path rides the
 // APK smoke build.
 
-clib  :: @import "modules/std/c.sx";     // namespace `clib` (not `c` — `c` is a local fd var throughout)
-@import "modules/std/posix.sx";
-@import "modules/std/time.sx";
-libc  :: clib.c.libc;
-// errno constants live in std/posix.sx — consumers reference `posix.EAGAIN` etc.
-// directly (a cross-module value-const can't be re-aliased at module scope).
+socket :: scope {
+    clib  :: @import "modules/std/c.sx";     // namespace `clib` (not `c` — `c` is a local fd var throughout)
+    @import "modules/std/posix.sx";
+    @import "modules/std/time.sx";
+    libc  :: clib.c.libc;
+    // errno constants live in std/posix.sx — consumers reference `posix.EAGAIN` etc.
+    // directly (a cross-module value-const can't be re-aliased at module scope).
 
-// POSIX socket API. Cross-cutting fd primitives are re-exported from std/c.sx
-// so existing socket.read/write/close callers keep their source-level API
-// without duplicating the libc declarations.
-read  :: clib.c.read;
-write :: clib.c.write;
-close :: clib.c.close;
-fcntl :: clib.c.fcntl;
-socket     :: (domain: i32, kind: i32, protocol: i32) -> i32 extern libc;
-setsockopt :: (fd: i32, level: i32, optname: i32, optval: *i32, optlen: u32) -> i32 extern libc;
-bind       :: (fd: i32, addr: *SockAddr, addrlen: u32) -> i32 extern libc;
-listen     :: (fd: i32, backlog: i32) -> i32 extern libc;
-accept     :: (fd: i32, addr: *SockAddr, addrlen: *u32) -> i32 extern libc;
-connect    :: (fd: i32, addr: *SockAddr, addrlen: u32) -> i32 extern libc;
-shutdown   :: (fd: i32, how: i32) -> i32 extern libc;
-socketpair :: (domain: i32, kind: i32, protocol: i32, fds: *i32) -> i32 extern libc;
-getsockname :: (fd: i32, addr: *SockAddr, addrlen: *u32) -> i32 extern libc;
+    // POSIX socket API. Cross-cutting fd primitives are re-exported from std/c.sx
+    // so existing socket.read/write/close callers keep their source-level API
+    // without duplicating the libc declarations.
+    read  :: clib.c.read;
+    write :: clib.c.write;
+    close :: clib.c.close;
+    fcntl :: clib.c.fcntl;
+    socket     :: (domain: i32, kind: i32, protocol: i32) -> i32 extern libc;
+    setsockopt :: (fd: i32, level: i32, optname: i32, optval: *i32, optlen: u32) -> i32 extern libc;
+    bind       :: (fd: i32, addr: *SockAddr, addrlen: u32) -> i32 extern libc;
+    listen     :: (fd: i32, backlog: i32) -> i32 extern libc;
+    accept     :: (fd: i32, addr: *SockAddr, addrlen: *u32) -> i32 extern libc;
+    connect    :: (fd: i32, addr: *SockAddr, addrlen: u32) -> i32 extern libc;
+    shutdown   :: (fd: i32, how: i32) -> i32 extern libc;
+    socketpair :: (domain: i32, kind: i32, protocol: i32, fds: *i32) -> i32 extern libc;
+    getsockname :: (fd: i32, addr: *SockAddr, addrlen: *u32) -> i32 extern libc;
 
-// OS-neutral constants (same numeric value on darwin + linux).
-AF_UNSPEC    :i32: 0;
-AF_UNIX      :i32: 1;
-AF_INET      :i32: 2;
-IPPROTO_IPV6 :i32: 41;
-SOCK_STREAM  :i32: 1;
-SHUT_RD      :i32: 0;
-SHUT_WR      :i32: 1;
-SHUT_RDWR    :i32: 2;
-F_GETFD      :i32: 1;
-F_SETFD      :i32: 2;
-F_GETFL      :i32: 3;
-F_SETFL      :i32: 4;
-FD_CLOEXEC   :i32: 1;
-IPPROTO_TCP  :i32: 6;
-TCP_NODELAY  :i32: 1;
+    // OS-neutral constants (same numeric value on darwin + linux).
+    AF_UNSPEC    :i32: 0;
+    AF_UNIX      :i32: 1;
+    AF_INET      :i32: 2;
+    IPPROTO_IPV6 :i32: 41;
+    SOCK_STREAM  :i32: 1;
+    SHUT_RD      :i32: 0;
+    SHUT_WR      :i32: 1;
+    SHUT_RDWR    :i32: 2;
+    F_GETFD      :i32: 1;
+    F_SETFD      :i32: 2;
+    F_GETFL      :i32: 3;
+    F_SETFL      :i32: 4;
+    FD_CLOEXEC   :i32: 1;
+    IPPROTO_TCP  :i32: 6;
+    TCP_NODELAY  :i32: 1;
 
-htons :: (port: i64) -> u16 {
-    (((port & 0xFF) << 8) | ((port >> 8) & 0xFF)).(u16)
-}
-
-// ── generic addresses ─────────────────────────────────────────
-// One address value for EVERY family: `buf` is sockaddr_storage-sized on
-// both OSes and holds the family-specific sockaddr bytes; `len` is what the
-// syscall gets. Constructors return (Addr, bool) — a false is LOUD (the
-// caller must branch), never a zeroed address that "binds anyway".
-Addr :: struct {
-    buf: [128]u8 = .{};
-    len: u32 = 0;
-}
-
-// Bind/connect through the SAME extern decls the typed v4 surface uses —
-// the buf bytes ARE a family-specific sockaddr, so the pointer is punned to
-// *SockAddr at the call (one C symbol, one signature; the sockaddrIn
-// surface stays as the legitimate simple-v4 API).
-bindTo :: (fd: i32, a: *Addr) -> i32 {
-    return bind(fd, @reinterpret(*SockAddr, *a.buf[0]), a.len);
-}
-
-connectTo :: (fd: i32, a: *Addr) -> i32 {
-    return connect(fd, @reinterpret(*SockAddr, *a.buf[0]), a.len);
-}
-
-// The port an inet socket is bound to — after a port-0 bind, the one the
-// kernel chose. Null when `fd` is not a bound AF_INET/AF_INET6 socket.
-localPort :: (fd: i32) -> ?i64 {
-    a : Addr = .{};
-    a.len = 128;
-    if getsockname(fd, @reinterpret(*SockAddr, *a.buf[0]), *a.len) != 0 { return null; }
-    fam := addrFamily(*a);
-    if fam != AF_INET and fam != AF_INET6 { return null; }
-    // sin_port and sin6_port sit at bytes 2..3 in network order on every OS.
-    return (a.buf[2].(i64) << 8) | a.buf[3].(i64);
-}
-
-// Leaf-module byte copy (socket.sx imports only libc wrappers; addresses are
-// ≤ 128 bytes, a loop is fine).
-copyBytes :: (dst: [*]u8, src: [*]u8, n: i64) {
-    i : i64 = 0;
-    while i < n { dst[i] = src[i]; i += 1; }
-}
-
-// ── poll + socket-level error/timeouts (— timed client dials) ──
-// pollfd is byte-identical on darwin + linux. `nfds` is i64.
-PollFd :: struct {
-    fd:      i32 = -1;
-    events:  i16 = 0;
-    revents: i16 = 0;
-}
-
-POLLIN  :i16: 0x0001;
-POLLOUT :i16: 0x0004;
-POLLERR :i16: 0x0008;
-POLLHUP :i16: 0x0010;
-
-poll :: (fds: *PollFd, nfds: i64, timeoutMs: i32) -> i32 extern libc;
-
-getsockopt :: (fd: i32, level: i32, optname: i32, optval: *i32, optlen: *u32) -> i32 extern libc;
-
-// Clear O_NONBLOCK (the inverse of setNonblocking — a timed connect flips
-// the fd nonblocking for the poll wait, then restores blocking mode).
-setBlocking :: (fd: i32) -> bool {
-    flags := fcntl(fd, F_GETFL);
-    if flags < 0 { return false; }
-    return fcntl(fd, F_SETFL, flags & ~O_NONBLOCK) >= 0;
-}
-
-// Bound every subsequent blocking read/write on `fd` to `ms` milliseconds
-// (SO_RCVTIMEO + SO_SNDTIMEO; an expired op fails with EAGAIN). The timeval
-// layout is per-OS; the pointer is punned through setsockopt's *i32 the way
-// bindTo puns sockaddrs — optlen carries the truth.
-setIoTimeout :: (fd: i32, ms: i64) -> bool {
-    if ms <= 0 { return false; }
-    tv := timevalMs(ms);
-    if setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, @reinterpret(*i32, *tv), @sizeOf(Timeval)) != 0 { return false; }
-    return setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, @reinterpret(*i32, *tv), @sizeOf(Timeval)) == 0;
-}
-
-// Connect `fd` (already created, any family) to `a` with a hard deadline:
-// nonblocking connect → poll(POLLOUT, timeout) → SO_ERROR, then restore
-// blocking mode. Returns false on refusal, timeout, or any setup failure —
-// the fd is left in an undefined connection state and must be closed.
-connectTimed :: (fd: i32, a: *Addr, timeoutMs: i64) -> bool {
-    if !setNonblocking(fd) { return false; }
-    if connectTo(fd, a) != 0 {
-        if errno() != posix.EINPROGRESS { return false; }
-        if !awaitConnect(fd, timeoutMs) { return false; }
+    htons :: (port: i64) -> u16 {
+        (((port & 0xFF) << 8) | ((port >> 8) & 0xFF)).(u16)
     }
-    return setBlocking(fd);
-}
 
-// Blocking connect. A connect() that a caught signal interrupts carries on in
-// the kernel, so it is awaited rather than failed.
-connectBlocking :: (fd: i32, a: *Addr) -> bool {
-    if connectTo(fd, a) == 0 { return true; }
-    return errno() == posix.EINTR and awaitConnect(fd, null);
-}
+    // ── generic addresses ─────────────────────────────────────────
+    // One address value for EVERY family: `buf` is sockaddr_storage-sized on
+    // both OSes and holds the family-specific sockaddr bytes; `len` is what the
+    // syscall gets. Constructors return (Addr, bool) — a false is LOUD (the
+    // caller must branch), never a zeroed address that "binds anyway".
+    Addr :: struct {
+        buf: [128]u8 = .{};
+        len: u32 = 0;
+    }
 
-// Wait for the connect in flight on `fd` — for at most `timeoutMs` when it is
-// non-null — and report whether it connected. A caught signal resumes the
-// wait for the time left.
-private awaitConnect :: (fd: i32, timeoutMs: ?i64) -> bool {
-    pfd: PollFd = .{ fd = fd, events = POLLOUT };
-    start := time.monoMs();
-    while true {
-        wait : i32 = -1;
-        if limit := timeoutMs {
-            left := limit - (time.monoMs() - start);
-            if left <= 0 { return false; }
-            // poll takes an i32 — clamp instead of truncating (an i64 ≥ 2^31
-            // would go negative = INFINITE poll; ≥ 2^32 would wrap to ~instant).
-            wait = if left > 2147483647 then 2147483647 else left.(i32);
+    // Bind/connect through the SAME extern decls the typed v4 surface uses —
+    // the buf bytes ARE a family-specific sockaddr, so the pointer is punned to
+    // *SockAddr at the call (one C symbol, one signature; the sockaddrIn
+    // surface stays as the legitimate simple-v4 API).
+    bindTo :: (fd: i32, a: *Addr) -> i32 {
+        return bind(fd, @reinterpret(*SockAddr, *a.buf[0]), a.len);
+    }
+
+    connectTo :: (fd: i32, a: *Addr) -> i32 {
+        return connect(fd, @reinterpret(*SockAddr, *a.buf[0]), a.len);
+    }
+
+    // The port an inet socket is bound to — after a port-0 bind, the one the
+    // kernel chose. Null when `fd` is not a bound AF_INET/AF_INET6 socket.
+    localPort :: (fd: i32) -> ?i64 {
+        a : Addr = .{};
+        a.len = 128;
+        if getsockname(fd, @reinterpret(*SockAddr, *a.buf[0]), *a.len) != 0 { return null; }
+        fam := addrFamily(*a);
+        if fam != AF_INET and fam != AF_INET6 { return null; }
+        // sin_port and sin6_port sit at bytes 2..3 in network order on every OS.
+        return (a.buf[2].(i64) << 8) | a.buf[3].(i64);
+    }
+
+    // Leaf-module byte copy (socket.sx imports only libc wrappers; addresses are
+    // ≤ 128 bytes, a loop is fine).
+    copyBytes :: (dst: [*]u8, src: [*]u8, n: i64) {
+        i : i64 = 0;
+        while i < n { dst[i] = src[i]; i += 1; }
+    }
+
+    // ── poll + socket-level error/timeouts (— timed client dials) ──
+    // pollfd is byte-identical on darwin + linux. `nfds` is i64.
+    PollFd :: struct {
+        fd:      i32 = -1;
+        events:  i16 = 0;
+        revents: i16 = 0;
+    }
+
+    POLLIN  :i16: 0x0001;
+    POLLOUT :i16: 0x0004;
+    POLLERR :i16: 0x0008;
+    POLLHUP :i16: 0x0010;
+
+    poll :: (fds: *PollFd, nfds: i64, timeoutMs: i32) -> i32 extern libc;
+
+    getsockopt :: (fd: i32, level: i32, optname: i32, optval: *i32, optlen: *u32) -> i32 extern libc;
+
+    // Clear O_NONBLOCK (the inverse of setNonblocking — a timed connect flips
+    // the fd nonblocking for the poll wait, then restores blocking mode).
+    setBlocking :: (fd: i32) -> bool {
+        flags := fcntl(fd, F_GETFL);
+        if flags < 0 { return false; }
+        return fcntl(fd, F_SETFL, flags & ~O_NONBLOCK) >= 0;
+    }
+
+    // Bound every subsequent blocking read/write on `fd` to `ms` milliseconds
+    // (SO_RCVTIMEO + SO_SNDTIMEO; an expired op fails with EAGAIN). The timeval
+    // layout is per-OS; the pointer is punned through setsockopt's *i32 the way
+    // bindTo puns sockaddrs — optlen carries the truth.
+    setIoTimeout :: (fd: i32, ms: i64) -> bool {
+        if ms <= 0 { return false; }
+        tv := timevalMs(ms);
+        if setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, @reinterpret(*i32, *tv), @sizeOf(Timeval)) != 0 { return false; }
+        return setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, @reinterpret(*i32, *tv), @sizeOf(Timeval)) == 0;
+    }
+
+    // Connect `fd` (already created, any family) to `a` with a hard deadline:
+    // nonblocking connect → poll(POLLOUT, timeout) → SO_ERROR, then restore
+    // blocking mode. Returns false on refusal, timeout, or any setup failure —
+    // the fd is left in an undefined connection state and must be closed.
+    connectTimed :: (fd: i32, a: *Addr, timeoutMs: i64) -> bool {
+        if !setNonblocking(fd) { return false; }
+        if connectTo(fd, a) != 0 {
+            if errno() != posix.EINPROGRESS { return false; }
+            if !awaitConnect(fd, timeoutMs) { return false; }
         }
-        pr := poll(*pfd, 1, wait);
-        if pr > 0 { break; }
-        if pr == 0 or errno() != posix.EINTR { return false; }
-    }
-    if (pfd.revents & (POLLERR | POLLHUP)) != 0 { return false; }
-    soerr : i32 = 0;
-    solen : u32 = 4;
-    if getsockopt(fd, SOL_SOCKET, SO_ERROR, *soerr, *solen) != 0 { return false; }
-    return soerr == 0;
-}
-
-// Presentation → network address (numeric only, no DNS). Same signature on
-// both OSes; returns 1 on success.
-inet_pton :: (af: i32, src: [*]u8, dst: *void) -> i32 extern libc;
-
-// getaddrinfo/freeaddrinfo — `res` is an out-param for the result-list head
-// pointer (typed usize; the per-OS AddrInfo layout is below).
-getaddrinfo  :: (node: [*]u8, service: [*]u8, hints: *AddrInfo, res: *usize) -> i32 extern libc;
-freeaddrinfo :: (res: *AddrInfo) extern libc;
-
-// Parse a NUMERIC address literal ("127.0.0.1", "::", "::1", …) + port into
-// an Addr — v4 first, then v6. No DNS (that is `resolve`); false when the
-// text parses as neither family.
-parseAddr :: (text: string, port: i64) -> (Addr, bool) {
-    a : Addr = .{};
-    if text.len == 0 or text.len > 63 { return a, false; }
-    // an out-of-range port silently truncated through
-    // htons (65536 → port 0 = a kernel-chosen ephemeral bind) — the exact
-    // silent-wrong-result class this API's (Addr, bool) contract rejects.
-    if port < 0 or port > 65535 { return a, false; }
-    tb : [64]u8 = ---;
-    i : i64 = 0;
-    while i < text.len {
-        // an embedded NUL would silently truncate the
-        // literal at the C boundary ("127.0.0.1\0junk" parsing as
-        // 127.0.0.1) — reject; the WHOLE string must be the address.
-        if text[i] == 0 { return a, false; }
-        tb[i] = text[i];
-        i += 1;
-    }
-    tb[text.len] = 0;
-    v4 : u32 = 0;
-    if inet_pton(AF_INET, *tb[0], *v4) == 1 {
-        sa := sockaddrIn(port, v4);
-        copyBytes(*a.buf[0], @reinterpret([*]u8, *sa), @sizeOf(SockAddr));
-        a.len = 16;
-        return a, true;
-    }
-    v6 : [16]u8 = ---;
-    if inet_pton(AF_INET6, *tb[0], *v6[0]) == 1 {
-        sa6 := sockaddrIn6(port, @reinterpret(*[16]u8, *v6[0]));
-        copyBytes(*a.buf[0], @reinterpret([*]u8, *sa6), @sizeOf(SockAddrIn6));
-        a.len = 28;
-        return a, true;
-    }
-    return a, false;
-}
-
-// An AF_UNIX address for `path`. False when the path overflows sun_path
-// (per-OS limit) or is empty. `len` covers the header + path + NUL.
-addrUnix :: (path: string) -> (Addr, bool) {
-    a : Addr = .{};
-    if path.len == 0 or path.len >= SUN_PATH_MAX { return a, false; }
-    unHeader(*a, (2 + path.len + 1).(u8));
-    i : i64 = 0;
-    while i < path.len {
-        a.buf[2 + i] = path[i];
-        i += 1;
-    }
-    a.buf[2 + path.len] = 0;
-    a.len = (2 + path.len + 1).(u32);
-    return a, true;
-}
-
-// Resolve `host` (DNS or numeric) + port to the FIRST stream address
-// getaddrinfo returns. False on resolver failure or a nonsense result.
-resolve :: (host: string, port: i64) -> (Addr, bool) {
-    a : Addr = .{};
-    if host.len == 0 or host.len > 254 or port < 0 or port > 65535 { return a, false; }
-    hb : [256]u8 = ---;
-    copyBytes(*hb[0], host.ptr, host.len);
-    hb[host.len] = 0;
-    // decimal port, NUL-terminated
-    sb : [8]u8 = ---;
-    sn : i64 = 0;
-    p := port;
-    if p == 0 { sb[0] = '0'; sn = 1; }
-    else {
-        tmp : [8]u8 = ---;
-        tn : i64 = 0;
-        while p > 0 { tmp[tn] = ('0' + p % 10).(u8); p = p / 10; tn += 1; }
-        while tn > 0 { tn -= 1; sb[sn] = tmp[tn]; sn += 1; }
-    }
-    sb[sn] = '\0';
-    hints : AddrInfo = .{};
-    hints.aiFamily = AF_UNSPEC;
-    hints.aiSocktype = SOCK_STREAM;
-    res : usize = 0;
-    if getaddrinfo(*hb[0], *sb[0], *hints, *res) != 0 { return a, false; }
-    if res == 0 { return a, false; }
-    ai : *AddrInfo = @reinterpret(*AddrInfo, res);
-    ok := false;
-    if ai.aiAddrlen > 0 and ai.aiAddrlen <= 128 and ai.aiAddr != 0 {
-        copyBytes(*a.buf[0], @reinterpret([*]u8, ai.aiAddr), ai.aiAddrlen);
-        a.len = ai.aiAddrlen;
-        ok = true;
-    }
-    freeaddrinfo(@reinterpret(*AddrInfo, res));
-    return a, ok;
-}
-
-// ── per-OS: Linux-family / Emscripten musl ───────────────────────────
-inline if @host.os == .linux or @host.os == .android or @host.os == .wasm {
-    // linux/bionic/Emscripten sockaddrIn: no sinLen; sinFamily is the
-    // 2-byte sa_family_t.
-    SockAddr :: struct {
-        sinFamily: u16;
-        sinPort:   u16;
-        sinAddr:   u32 = 0;
-        sinZero:   u64 = 0;
+        return setBlocking(fd);
     }
 
-    SOL_SOCKET   :i32: 1;
-    SO_REUSEADDR :i32: 2;
-    SO_REUSEPORT :i32: 15;
-    SO_SNDBUF    :i32: 7;
-    SO_RCVBUF    :i32: 8;
-    O_NONBLOCK   :i32: 2048;     // 0o4000
-    // errno location + per-OS errno constants live in std/posix.sx.
-
-    // Build an AF_INET sockaddr for `port` (host order) at `addr` (network
-    // order; 0 = INADDR_ANY). No sinLen on linux or Android.
-    sockaddrIn :: (port: i64, addr: u32) -> SockAddr {
-        return .{ sinFamily = AF_INET.(u8), sinPort = htons(port), sinAddr = addr };
+    // Blocking connect. A connect() that a caught signal interrupts carries on in
+    // the kernel, so it is awaited rather than failed.
+    connectBlocking :: (fd: i32, a: *Addr) -> bool {
+        if connectTo(fd, a) == 0 { return true; }
+        return errno() == posix.EINTR and awaitConnect(fd, null);
     }
 
-    // ── per-OS io-timeout surface ──────────────────────────────
-    SO_ERROR :i32: 4;
-    inline match @host.os {
-        case .wasm:
-            // Emscripten is wasm32 with 64-bit time_t and 32-bit suseconds_t.
-            // Its time64 socket-option numbers are distinct from 64-bit Linux.
-            SO_RCVTIMEO :i32: 66;
-            SO_SNDTIMEO :i32: 67;
-            Timeval :: struct {
-                tvSec:  i64 = 0;
-                tvUsec: i32 = 0;
-                _pad:   i32 = 0;
-            }
-        else:
-            SO_RCVTIMEO :i32: 20;
-            SO_SNDTIMEO :i32: 21;
-            // linux/bionic timeval: both fields are 64-bit on our 64-bit targets.
-            Timeval :: struct {
-                tvSec:  i64 = 0;
-                tvUsec: i64 = 0;
-            }
-    }
-
-    timevalMs :: (ms: i64) -> Timeval {
-        return .{ tvSec = ms / 1000, tvUsec = ((ms % 1000) * 1000).(i32) };
-    }
-
-    // ── per-OS address surface ──────────────────────────────────
-    AF_INET6    :i32: 10;
-    IPV6_V6ONLY :i32: 26;
-
-    // linux/bionic/Emscripten sockaddrIn6: sin6Family is u16 (no len).
-    SockAddrIn6 :: struct {
-        sin6Family:   u16;
-        sin6Port:     u16;
-        sin6Flowinfo: u32 = 0;
-        sin6Addr:     [16]u8;
-        sin6ScopeId:  u32 = 0;
-    }
-
-    sockaddrIn6 :: (port: i64, ip: *[16]u8) -> SockAddrIn6 {
-        return .{ sin6Family = AF_INET6.(u8), sin6Port = htons(port), sin6Addr = ip.* };
-    }
-
-    // linux/bionic/Emscripten sockaddr_un: u16 family + sun_path[108].
-    SUN_PATH_MAX :i64: 108;
-
-    // Stamp the AF_UNIX header into an Addr buf (family as LE u16; `total`
-    // — header + path + NUL — is unused here, darwin wants it for sun_len).
-    unHeader :: (a: *Addr, total: u8) {
-        _ := total;
-        a.buf[0] = AF_UNIX.(u8);
-        a.buf[1] = 0;
-    }
-
-    // The address family stored in an Addr (sa_family_t is a LE u16).
-    addrFamily :: (a: *Addr) -> i32 {
-        return (a.buf[0].(i32)) | ((a.buf[1].(i32)) << 8);
-    }
-
-    // glibc/musl/bionic addrinfo: aiAddr comes BEFORE aiCanonname (darwin is the
-    // reverse — a swap would read a canonname pointer as a sockaddr).
-    AddrInfo :: struct {
-        aiFlags:     i32 = 0;
-        aiFamily:    i32 = 0;
-        aiSocktype:  i32 = 0;
-        aiProtocol:  i32 = 0;
-        aiAddrlen:   u32 = 0;
-        aiAddr:      usize = 0;   // *sockaddr
-        aiCanonname: usize = 0;   // char*
-        aiNext:      usize = 0;   // *addrinfo
-    }
-
-    // accept4 flags (Linux/Android/Emscripten; darwin has no accept4).
-    SOCK_NONBLOCK :i32: 2048;      // 0o4000 — mirrors O_NONBLOCK
-    SOCK_CLOEXEC  :i32: 524288;    // 0o2000000
-
-    accept4 :: (fd: i32, addr: *SockAddr, addrlen: *u32, flags: i32) -> i32 extern libc;
-
-    // accept one pending connection with O_NONBLOCK + FD_CLOEXEC
-    // already applied — accept4 does both ATOMICALLY (no fd ever exists
-    // without CLOEXEC, so a concurrent fork/exec on another thread can't
-    // inherit it) and saves two fcntl syscalls per accept. Same error
-    // contract as acceptNb (EINTR/ECONNABORTED retried internally).
-    acceptConnNb :: (fd: i32) -> (i32, !SockErr) {
+    // Wait for the connect in flight on `fd` — for at most `timeoutMs` when it is
+    // non-null — and report whether it connected. A caught signal resumes the
+    // wait for the time left.
+    private awaitConnect :: (fd: i32, timeoutMs: ?i64) -> bool {
+        pfd: PollFd = .{ fd = fd, events = POLLOUT };
+        start := time.monoMs();
         while true {
-            c := accept4(fd, null, null, SOCK_NONBLOCK | SOCK_CLOEXEC);
+            wait : i32 = -1;
+            if limit := timeoutMs {
+                left := limit - (time.monoMs() - start);
+                if left <= 0 { return false; }
+                // poll takes an i32 — clamp instead of truncating (an i64 ≥ 2^31
+                // would go negative = INFINITE poll; ≥ 2^32 would wrap to ~instant).
+                wait = if left > 2147483647 then 2147483647 else left.(i32);
+            }
+            pr := poll(*pfd, 1, wait);
+            if pr > 0 { break; }
+            if pr == 0 or errno() != posix.EINTR { return false; }
+        }
+        if (pfd.revents & (POLLERR | POLLHUP)) != 0 { return false; }
+        soerr : i32 = 0;
+        solen : u32 = 4;
+        if getsockopt(fd, SOL_SOCKET, SO_ERROR, *soerr, *solen) != 0 { return false; }
+        return soerr == 0;
+    }
+
+    // Presentation → network address (numeric only, no DNS). Same signature on
+    // both OSes; returns 1 on success.
+    inet_pton :: (af: i32, src: [*]u8, dst: *void) -> i32 extern libc;
+
+    // getaddrinfo/freeaddrinfo — `res` is an out-param for the result-list head
+    // pointer (typed usize; the per-OS AddrInfo layout is below).
+    getaddrinfo  :: (node: [*]u8, service: [*]u8, hints: *AddrInfo, res: *usize) -> i32 extern libc;
+    freeaddrinfo :: (res: *AddrInfo) extern libc;
+
+    // Parse a NUMERIC address literal ("127.0.0.1", "::", "::1", …) + port into
+    // an Addr — v4 first, then v6. No DNS (that is `resolve`); false when the
+    // text parses as neither family.
+    parseAddr :: (text: string, port: i64) -> (Addr, bool) {
+        a : Addr = .{};
+        if text.len == 0 or text.len > 63 { return a, false; }
+        // an out-of-range port silently truncated through
+        // htons (65536 → port 0 = a kernel-chosen ephemeral bind) — the exact
+        // silent-wrong-result class this API's (Addr, bool) contract rejects.
+        if port < 0 or port > 65535 { return a, false; }
+        tb : [64]u8 = ---;
+        i : i64 = 0;
+        while i < text.len {
+            // an embedded NUL would silently truncate the
+            // literal at the C boundary ("127.0.0.1\0junk" parsing as
+            // 127.0.0.1) — reject; the WHOLE string must be the address.
+            if text[i] == 0 { return a, false; }
+            tb[i] = text[i];
+            i += 1;
+        }
+        tb[text.len] = 0;
+        v4 : u32 = 0;
+        if inet_pton(AF_INET, *tb[0], *v4) == 1 {
+            sa := sockaddrIn(port, v4);
+            copyBytes(*a.buf[0], @reinterpret([*]u8, *sa), @sizeOf(SockAddr));
+            a.len = 16;
+            return a, true;
+        }
+        v6 : [16]u8 = ---;
+        if inet_pton(AF_INET6, *tb[0], *v6[0]) == 1 {
+            sa6 := sockaddrIn6(port, @reinterpret(*[16]u8, *v6[0]));
+            copyBytes(*a.buf[0], @reinterpret([*]u8, *sa6), @sizeOf(SockAddrIn6));
+            a.len = 28;
+            return a, true;
+        }
+        return a, false;
+    }
+
+    // An AF_UNIX address for `path`. False when the path overflows sun_path
+    // (per-OS limit) or is empty. `len` covers the header + path + NUL.
+    addrUnix :: (path: string) -> (Addr, bool) {
+        a : Addr = .{};
+        if path.len == 0 or path.len >= SUN_PATH_MAX { return a, false; }
+        unHeader(*a, (2 + path.len + 1).(u8));
+        i : i64 = 0;
+        while i < path.len {
+            a.buf[2 + i] = path[i];
+            i += 1;
+        }
+        a.buf[2 + path.len] = 0;
+        a.len = (2 + path.len + 1).(u32);
+        return a, true;
+    }
+
+    // Resolve `host` (DNS or numeric) + port to the FIRST stream address
+    // getaddrinfo returns. False on resolver failure or a nonsense result.
+    resolve :: (host: string, port: i64) -> (Addr, bool) {
+        a : Addr = .{};
+        if host.len == 0 or host.len > 254 or port < 0 or port > 65535 { return a, false; }
+        hb : [256]u8 = ---;
+        copyBytes(*hb[0], host.ptr, host.len);
+        hb[host.len] = 0;
+        // decimal port, NUL-terminated
+        sb : [8]u8 = ---;
+        sn : i64 = 0;
+        p := port;
+        if p == 0 { sb[0] = '0'; sn = 1; }
+        else {
+            tmp : [8]u8 = ---;
+            tn : i64 = 0;
+            while p > 0 { tmp[tn] = ('0' + p % 10).(u8); p = p / 10; tn += 1; }
+            while tn > 0 { tn -= 1; sb[sn] = tmp[tn]; sn += 1; }
+        }
+        sb[sn] = '\0';
+        hints : AddrInfo = .{};
+        hints.aiFamily = AF_UNSPEC;
+        hints.aiSocktype = SOCK_STREAM;
+        res : usize = 0;
+        if getaddrinfo(*hb[0], *sb[0], *hints, *res) != 0 { return a, false; }
+        if res == 0 { return a, false; }
+        ai : *AddrInfo = @reinterpret(*AddrInfo, res);
+        ok := false;
+        if ai.aiAddrlen > 0 and ai.aiAddrlen <= 128 and ai.aiAddr != 0 {
+            copyBytes(*a.buf[0], @reinterpret([*]u8, ai.aiAddr), ai.aiAddrlen);
+            a.len = ai.aiAddrlen;
+            ok = true;
+        }
+        freeaddrinfo(@reinterpret(*AddrInfo, res));
+        return a, ok;
+    }
+
+    // ── per-OS: Linux-family / Emscripten musl ───────────────────────────
+    inline if @host.os == .linux or @host.os == .android or @host.os == .wasm {
+        // linux/bionic/Emscripten sockaddrIn: no sinLen; sinFamily is the
+        // 2-byte sa_family_t.
+        SockAddr :: struct {
+            sinFamily: u16;
+            sinPort:   u16;
+            sinAddr:   u32 = 0;
+            sinZero:   u64 = 0;
+        }
+
+        SOL_SOCKET   :i32: 1;
+        SO_REUSEADDR :i32: 2;
+        SO_REUSEPORT :i32: 15;
+        SO_SNDBUF    :i32: 7;
+        SO_RCVBUF    :i32: 8;
+        O_NONBLOCK   :i32: 2048;     // 0o4000
+        // errno location + per-OS errno constants live in std/posix.sx.
+
+        // Build an AF_INET sockaddr for `port` (host order) at `addr` (network
+        // order; 0 = INADDR_ANY). No sinLen on linux or Android.
+        sockaddrIn :: (port: i64, addr: u32) -> SockAddr {
+            return .{ sinFamily = AF_INET.(u8), sinPort = htons(port), sinAddr = addr };
+        }
+
+        // ── per-OS io-timeout surface ──────────────────────────────
+        SO_ERROR :i32: 4;
+        inline match @host.os {
+            case .wasm:
+                // Emscripten is wasm32 with 64-bit time_t and 32-bit suseconds_t.
+                // Its time64 socket-option numbers are distinct from 64-bit Linux.
+                SO_RCVTIMEO :i32: 66;
+                SO_SNDTIMEO :i32: 67;
+                Timeval :: struct {
+                    tvSec:  i64 = 0;
+                    tvUsec: i32 = 0;
+                    _pad:   i32 = 0;
+                }
+            else:
+                SO_RCVTIMEO :i32: 20;
+                SO_SNDTIMEO :i32: 21;
+                // linux/bionic timeval: both fields are 64-bit on our 64-bit targets.
+                Timeval :: struct {
+                    tvSec:  i64 = 0;
+                    tvUsec: i64 = 0;
+                }
+        }
+
+        timevalMs :: (ms: i64) -> Timeval {
+            return .{ tvSec = ms / 1000, tvUsec = ((ms % 1000) * 1000).(i32) };
+        }
+
+        // ── per-OS address surface ──────────────────────────────────
+        AF_INET6    :i32: 10;
+        IPV6_V6ONLY :i32: 26;
+
+        // linux/bionic/Emscripten sockaddrIn6: sin6Family is u16 (no len).
+        SockAddrIn6 :: struct {
+            sin6Family:   u16;
+            sin6Port:     u16;
+            sin6Flowinfo: u32 = 0;
+            sin6Addr:     [16]u8;
+            sin6ScopeId:  u32 = 0;
+        }
+
+        sockaddrIn6 :: (port: i64, ip: *[16]u8) -> SockAddrIn6 {
+            return .{ sin6Family = AF_INET6.(u8), sin6Port = htons(port), sin6Addr = ip.* };
+        }
+
+        // linux/bionic/Emscripten sockaddr_un: u16 family + sun_path[108].
+        SUN_PATH_MAX :i64: 108;
+
+        // Stamp the AF_UNIX header into an Addr buf (family as LE u16; `total`
+        // — header + path + NUL — is unused here, darwin wants it for sun_len).
+        unHeader :: (a: *Addr, total: u8) {
+            _ := total;
+            a.buf[0] = AF_UNIX.(u8);
+            a.buf[1] = 0;
+        }
+
+        // The address family stored in an Addr (sa_family_t is a LE u16).
+        addrFamily :: (a: *Addr) -> i32 {
+            return (a.buf[0].(i32)) | ((a.buf[1].(i32)) << 8);
+        }
+
+        // glibc/musl/bionic addrinfo: aiAddr comes BEFORE aiCanonname (darwin is the
+        // reverse — a swap would read a canonname pointer as a sockaddr).
+        AddrInfo :: struct {
+            aiFlags:     i32 = 0;
+            aiFamily:    i32 = 0;
+            aiSocktype:  i32 = 0;
+            aiProtocol:  i32 = 0;
+            aiAddrlen:   u32 = 0;
+            aiAddr:      usize = 0;   // *sockaddr
+            aiCanonname: usize = 0;   // char*
+            aiNext:      usize = 0;   // *addrinfo
+        }
+
+        // accept4 flags (Linux/Android/Emscripten; darwin has no accept4).
+        SOCK_NONBLOCK :i32: 2048;      // 0o4000 — mirrors O_NONBLOCK
+        SOCK_CLOEXEC  :i32: 524288;    // 0o2000000
+
+        accept4 :: (fd: i32, addr: *SockAddr, addrlen: *u32, flags: i32) -> i32 extern libc;
+
+        // accept one pending connection with O_NONBLOCK + FD_CLOEXEC
+        // already applied — accept4 does both ATOMICALLY (no fd ever exists
+        // without CLOEXEC, so a concurrent fork/exec on another thread can't
+        // inherit it) and saves two fcntl syscalls per accept. Same error
+        // contract as acceptNb (EINTR/ECONNABORTED retried internally).
+        acceptConnNb :: (fd: i32) -> (i32, !Error) {
+            while true {
+                c := accept4(fd, null, null, SOCK_NONBLOCK | SOCK_CLOEXEC);
+                if c >= 0 { return c; }
+                e := errno();
+                if e == posix.EINTR or e == posix.ECONNABORTED { continue; }
+                if isWouldblock(e) { raise .WouldBlock; }
+                raise .Fault;
+            }
+            raise .Fault;
+        }
+    }
+
+    // ── per-OS: darwin (macOS / iOS / BSD) ───────────────────────────────
+    inline if @host.os == .macos or @host.os == .ios {
+        // darwin sockaddrIn: leading sinLen:u8, then sinFamily:u8.
+        SockAddr :: struct {
+            sinLen:    u8;
+            sinFamily: u8;
+            sinPort:   u16;
+            sinAddr:   u32 = 0;
+            sinZero:   u64 = 0;
+        }
+
+        SOL_SOCKET   :i32: 0xFFFF;
+        SO_REUSEADDR :i32: 0x4;
+        SO_REUSEPORT :i32: 0x0200;
+        SO_SNDBUF    :i32: 0x1001;
+        SO_RCVBUF    :i32: 0x1002;
+        O_NONBLOCK   :i32: 0x4;
+        // errno location + per-OS errno constants live in std/posix.sx.
+
+        // Build an AF_INET sockaddr for `port` (host order) at `addr` (network
+        // order; 0 = INADDR_ANY). The leading sinLen:u8 is darwin-only.
+        sockaddrIn :: (port: i64, addr: u32) -> SockAddr {
+            return .{ sinLen = 16, sinFamily = AF_INET.(u8), sinPort = htons(port), sinAddr = addr };
+        }
+
+        // ── per-OS io-timeout surface ──────────────────────────────
+        SO_ERROR   :i32: 0x1007;
+        SO_RCVTIMEO :i32: 0x1006;
+        SO_SNDTIMEO :i32: 0x1005;
+
+        // darwin timeval: suseconds_t is 32-bit (struct pads to 16).
+        Timeval :: struct {
+            tvSec:  i64 = 0;
+            tvUsec: i32 = 0;
+        }
+
+        timevalMs :: (ms: i64) -> Timeval {
+            return .{ tvSec = ms / 1000, tvUsec = ((ms % 1000) * 1000).(i32) };
+        }
+
+        // ── per-OS address surface ──────────────────────────────────
+        AF_INET6    :i32: 30;
+        IPV6_V6ONLY :i32: 27;
+
+        // darwin sockaddrIn6: leading sin6Len:u8, sin6Family:u8.
+        SockAddrIn6 :: struct {
+            sin6Len:      u8 = 28;
+            sin6Family:   u8;
+            sin6Port:     u16;
+            sin6Flowinfo: u32 = 0;
+            sin6Addr:     [16]u8;
+            sin6ScopeId:  u32 = 0;
+        }
+
+        sockaddrIn6 :: (port: i64, ip: *[16]u8) -> SockAddrIn6 {
+            return .{ sin6Family = AF_INET6.(u8), sin6Port = htons(port), sin6Addr = ip.* };
+        }
+
+        // darwin sockaddr_un: sun_len:u8 + sun_family:u8 + sun_path[104].
+        SUN_PATH_MAX :i64: 104;
+
+        // Stamp the AF_UNIX header into an Addr buf (sun_len = the full
+        // struct length including the NUL, per BSD convention).
+        unHeader :: (a: *Addr, total: u8) {
+            a.buf[0] = total;
+            a.buf[1] = AF_UNIX.(u8);
+        }
+
+        // The address family stored in an Addr (byte 1; byte 0 is sa_len).
+        addrFamily :: (a: *Addr) -> i32 {
+            return a.buf[1].(i32);
+        }
+
+        // darwin addrinfo: aiCanonname comes BEFORE aiAddr (glibc/musl are
+        // the reverse — a swap would read a canonname pointer as a sockaddr).
+        AddrInfo :: struct {
+            aiFlags:     i32 = 0;
+            aiFamily:    i32 = 0;
+            aiSocktype:  i32 = 0;
+            aiProtocol:  i32 = 0;
+            aiAddrlen:   u32 = 0;
+            aiCanonname: usize = 0;   // char*
+            aiAddr:      usize = 0;   // *sockaddr
+            aiNext:      usize = 0;   // *addrinfo
+        }
+
+        // accept one pending connection with O_NONBLOCK + FD_CLOEXEC
+        // applied. darwin has NO accept4, so this is accept + two fcntls —
+        // NOT atomic w.r.t. a concurrent fork/exec on another thread (the
+        // fd exists briefly without CLOEXEC); the best darwin offers. A
+        // fcntl failure closes the fd and reports Fault — never returns a
+        // half-configured socket. Same error contract as acceptNb.
+        acceptConnNb :: (fd: i32) -> (i32, !Error) {
+            c, ae := acceptNb(fd);
+            if ae == .WouldBlock { raise .WouldBlock; }
+            if ae { raise .Fault; }
+            if fcntl(c, F_SETFD, FD_CLOEXEC) < 0 { clib.c.close(c); raise .Fault; }
+            if !setNonblocking(c) { clib.c.close(c); raise .Fault; }
+            return c;
+        }
+    }
+
+    // ── nonblocking I/O  ──────────────────────────────────
+    // Typed wrappers over the readiness-loop syscall patterns: callers see
+    // WouldBlock / Closed / Fault, never a raw -1/errno pair. EINTR is
+    // retried internally — a readiness loop has nothing useful to do with
+    // an interrupted syscall except issue it again.
+
+    errno :: () -> i32 {
+        return posix.errno();
+    }
+
+    isWouldblock :: (e: i32) -> bool {
+        return e == posix.EAGAIN;
+    }
+
+    // The peer reset the connection. A read that fails this way saw an RST rather
+    // than a clean FIN — for a keep-alive conn the peer had already closed, so the
+    // request it carried never reached a handler.
+    isConnReset :: (e: i32) -> bool {
+        return e == posix.ECONNRESET;
+    }
+
+    // Put `fd` in nonblocking mode (reads/writes/accepts return EAGAIN
+    // instead of parking the thread). False when fcntl refuses.
+    setNonblocking :: (fd: i32) -> bool {
+        flags := fcntl(fd, F_GETFL);
+        if flags < 0 { return false; }
+        return fcntl(fd, F_SETFL, flags | O_NONBLOCK) >= 0;
+    }
+
+    // mark `fd` close-on-exec so a fork/exec'd child (process.run)
+    // never inherits it. FD_CLOEXEC is the only fd flag, so F_SETFD can set
+    // the word directly — no read-modify-write. False when fcntl refuses.
+    setCloexec :: (fd: i32) -> bool {
+        return fcntl(fd, F_SETFD, FD_CLOEXEC) >= 0;
+    }
+
+    // Failure classes for the _nb wrappers.
+    //   WouldBlock — no data/space/pending connection right now; wait for
+    //                readiness and retry.
+    //   Closed     — the peer is gone: EOF on read, EPIPE/ECONNRESET on
+    //                write, ECONNRESET on read.
+    //   Fault      — any other errno (caller treats the fd as broken).
+    Error :: error {
+        WouldBlock;
+        Closed;
+        Fault;
+    }
+
+    // Accept one pending connection on a nonblocking listener. A connection
+    // that died between queueing and accept (ECONNABORTED) is skipped, not
+    // surfaced — the listener is fine.
+    acceptNb :: (fd: i32) -> (i32, !Error) {
+        while true {
+            c := accept(fd, null, null);
             if c >= 0 { return c; }
             e := errno();
             if e == posix.EINTR or e == posix.ECONNABORTED { continue; }
@@ -401,200 +568,35 @@ inline if @host.os == .linux or @host.os == .android or @host.os == .wasm {
         }
         raise .Fault;
     }
-}
 
-// ── per-OS: darwin (macOS / iOS / BSD) ───────────────────────────────
-inline if @host.os == .macos or @host.os == .ios {
-    // darwin sockaddrIn: leading sinLen:u8, then sinFamily:u8.
-    SockAddr :: struct {
-        sinLen:    u8;
-        sinFamily: u8;
-        sinPort:   u16;
-        sinAddr:   u32 = 0;
-        sinZero:   u64 = 0;
-    }
-
-    SOL_SOCKET   :i32: 0xFFFF;
-    SO_REUSEADDR :i32: 0x4;
-    SO_REUSEPORT :i32: 0x0200;
-    SO_SNDBUF    :i32: 0x1001;
-    SO_RCVBUF    :i32: 0x1002;
-    O_NONBLOCK   :i32: 0x4;
-    // errno location + per-OS errno constants live in std/posix.sx.
-
-    // Build an AF_INET sockaddr for `port` (host order) at `addr` (network
-    // order; 0 = INADDR_ANY). The leading sinLen:u8 is darwin-only.
-    sockaddrIn :: (port: i64, addr: u32) -> SockAddr {
-        return .{ sinLen = 16, sinFamily = AF_INET.(u8), sinPort = htons(port), sinAddr = addr };
-    }
-
-    // ── per-OS io-timeout surface ──────────────────────────────
-    SO_ERROR   :i32: 0x1007;
-    SO_RCVTIMEO :i32: 0x1006;
-    SO_SNDTIMEO :i32: 0x1005;
-
-    // darwin timeval: suseconds_t is 32-bit (struct pads to 16).
-    Timeval :: struct {
-        tvSec:  i64 = 0;
-        tvUsec: i32 = 0;
-    }
-
-    timevalMs :: (ms: i64) -> Timeval {
-        return .{ tvSec = ms / 1000, tvUsec = ((ms % 1000) * 1000).(i32) };
-    }
-
-    // ── per-OS address surface ──────────────────────────────────
-    AF_INET6    :i32: 30;
-    IPV6_V6ONLY :i32: 27;
-
-    // darwin sockaddrIn6: leading sin6Len:u8, sin6Family:u8.
-    SockAddrIn6 :: struct {
-        sin6Len:      u8 = 28;
-        sin6Family:   u8;
-        sin6Port:     u16;
-        sin6Flowinfo: u32 = 0;
-        sin6Addr:     [16]u8;
-        sin6ScopeId:  u32 = 0;
-    }
-
-    sockaddrIn6 :: (port: i64, ip: *[16]u8) -> SockAddrIn6 {
-        return .{ sin6Family = AF_INET6.(u8), sin6Port = htons(port), sin6Addr = ip.* };
-    }
-
-    // darwin sockaddr_un: sun_len:u8 + sun_family:u8 + sun_path[104].
-    SUN_PATH_MAX :i64: 104;
-
-    // Stamp the AF_UNIX header into an Addr buf (sun_len = the full
-    // struct length including the NUL, per BSD convention).
-    unHeader :: (a: *Addr, total: u8) {
-        a.buf[0] = total;
-        a.buf[1] = AF_UNIX.(u8);
-    }
-
-    // The address family stored in an Addr (byte 1; byte 0 is sa_len).
-    addrFamily :: (a: *Addr) -> i32 {
-        return a.buf[1].(i32);
-    }
-
-    // darwin addrinfo: aiCanonname comes BEFORE aiAddr (glibc/musl are
-    // the reverse — a swap would read a canonname pointer as a sockaddr).
-    AddrInfo :: struct {
-        aiFlags:     i32 = 0;
-        aiFamily:    i32 = 0;
-        aiSocktype:  i32 = 0;
-        aiProtocol:  i32 = 0;
-        aiAddrlen:   u32 = 0;
-        aiCanonname: usize = 0;   // char*
-        aiAddr:      usize = 0;   // *sockaddr
-        aiNext:      usize = 0;   // *addrinfo
-    }
-
-    // accept one pending connection with O_NONBLOCK + FD_CLOEXEC
-    // applied. darwin has NO accept4, so this is accept + two fcntls —
-    // NOT atomic w.r.t. a concurrent fork/exec on another thread (the
-    // fd exists briefly without CLOEXEC); the best darwin offers. A
-    // fcntl failure closes the fd and reports Fault — never returns a
-    // half-configured socket. Same error contract as acceptNb.
-    acceptConnNb :: (fd: i32) -> (i32, !SockErr) {
-        c, ae := acceptNb(fd);
-        if ae == .WouldBlock { raise .WouldBlock; }
-        if ae { raise .Fault; }
-        if fcntl(c, F_SETFD, FD_CLOEXEC) < 0 { clib.c.close(c); raise .Fault; }
-        if !setNonblocking(c) { clib.c.close(c); raise .Fault; }
-        return c;
-    }
-}
-
-// ── nonblocking I/O  ──────────────────────────────────
-// Typed wrappers over the readiness-loop syscall patterns: callers see
-// WouldBlock / Closed / Fault, never a raw -1/errno pair. EINTR is
-// retried internally — a readiness loop has nothing useful to do with
-// an interrupted syscall except issue it again.
-
-errno :: () -> i32 {
-    return posix.errno();
-}
-
-isWouldblock :: (e: i32) -> bool {
-    return e == posix.EAGAIN;
-}
-
-// The peer reset the connection. A read that fails this way saw an RST rather
-// than a clean FIN — for a keep-alive conn the peer had already closed, so the
-// request it carried never reached a handler.
-isConnReset :: (e: i32) -> bool {
-    return e == posix.ECONNRESET;
-}
-
-// Put `fd` in nonblocking mode (reads/writes/accepts return EAGAIN
-// instead of parking the thread). False when fcntl refuses.
-setNonblocking :: (fd: i32) -> bool {
-    flags := fcntl(fd, F_GETFL);
-    if flags < 0 { return false; }
-    return fcntl(fd, F_SETFL, flags | O_NONBLOCK) >= 0;
-}
-
-// mark `fd` close-on-exec so a fork/exec'd child (process.run)
-// never inherits it. FD_CLOEXEC is the only fd flag, so F_SETFD can set
-// the word directly — no read-modify-write. False when fcntl refuses.
-setCloexec :: (fd: i32) -> bool {
-    return fcntl(fd, F_SETFD, FD_CLOEXEC) >= 0;
-}
-
-// Failure classes for the _nb wrappers.
-//   WouldBlock — no data/space/pending connection right now; wait for
-//                readiness and retry.
-//   Closed     — the peer is gone: EOF on read, EPIPE/ECONNRESET on
-//                write, ECONNRESET on read.
-//   Fault      — any other errno (caller treats the fd as broken).
-SockErr :: error {
-    WouldBlock;
-    Closed;
-    Fault;
-}
-
-// Accept one pending connection on a nonblocking listener. A connection
-// that died between queueing and accept (ECONNABORTED) is skipped, not
-// surfaced — the listener is fine.
-acceptNb :: (fd: i32) -> (i32, !SockErr) {
-    while true {
-        c := accept(fd, null, null);
-        if c >= 0 { return c; }
-        e := errno();
-        if e == posix.EINTR or e == posix.ECONNABORTED { continue; }
-        if isWouldblock(e) { raise .WouldBlock; }
+    // Read up to `cap` bytes. Returns the byte count (> 0); an orderly EOF
+    // or a peer reset is Closed.
+    readNb :: (fd: i32, buf: [*]u8, cap: i64) -> (i64, !Error) {
+        while true {
+            n := clib.c.read(fd, buf, cap);
+            if n > 0 { return n; }
+            if n == 0 { raise .Closed; }
+            e := errno();
+            if e == posix.EINTR { continue; }
+            if isWouldblock(e) { raise .WouldBlock; }
+            if e == posix.ECONNRESET { raise .Closed; }
+            raise .Fault;
+        }
         raise .Fault;
     }
-    raise .Fault;
-}
 
-// Read up to `cap` bytes. Returns the byte count (> 0); an orderly EOF
-// or a peer reset is Closed.
-readNb :: (fd: i32, buf: [*]u8, cap: i64) -> (i64, !SockErr) {
-    while true {
-        n := clib.c.read(fd, buf, cap);
-        if n > 0 { return n; }
-        if n == 0 { raise .Closed; }
-        e := errno();
-        if e == posix.EINTR { continue; }
-        if isWouldblock(e) { raise .WouldBlock; }
-        if e == posix.ECONNRESET { raise .Closed; }
+    // Write up to `len` bytes, returning how many the kernel took (possibly
+    // fewer — the caller continues from there on the next writability).
+    writeNb :: (fd: i32, buf: [*]u8, len: i64) -> (i64, !Error) {
+        while true {
+            n := clib.c.write(fd, buf, len);
+            if n >= 0 { return n; }
+            e := errno();
+            if e == posix.EINTR { continue; }
+            if isWouldblock(e) { raise .WouldBlock; }
+            if e == posix.EPIPE or e == posix.ECONNRESET { raise .Closed; }
+            raise .Fault;
+        }
         raise .Fault;
     }
-    raise .Fault;
-}
-
-// Write up to `len` bytes, returning how many the kernel took (possibly
-// fewer — the caller continues from there on the next writability).
-writeNb :: (fd: i32, buf: [*]u8, len: i64) -> (i64, !SockErr) {
-    while true {
-        n := clib.c.write(fd, buf, len);
-        if n >= 0 { return n; }
-        e := errno();
-        if e == posix.EINTR { continue; }
-        if isWouldblock(e) { raise .WouldBlock; }
-        if e == posix.EPIPE or e == posix.ECONNRESET { raise .Closed; }
-        raise .Fault;
-    }
-    raise .Fault;
 }

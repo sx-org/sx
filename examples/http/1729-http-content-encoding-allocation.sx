@@ -5,7 +5,6 @@
 @import "modules/std.sx";
 @import "modules/std/http.sx";
 wire :: @import "modules/std/http/wire.sx";
-event :: @import "modules/std/event.sx";
 
 FailingAllocator :: struct {
     parent: Allocator;

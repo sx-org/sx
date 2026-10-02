@@ -20,7 +20,7 @@
 @import "modules/std/encoding.sx";     // hexValue
 private clib :: @import "modules/std/c.sx";
 @import "modules/std/posix.sx";
-private socket :: @import "modules/std/socket.sx";
+@import "modules/std/socket.sx";
 @import "modules/std/compress.sx";     // shared codec Error/Progress contract
 
 private HDR_ACCEPT_ENCODING :: "Accept-Encoding: gzip, deflate\r\n";
@@ -1100,7 +1100,7 @@ ClientPool :: struct {
     // One pooled request: reuse the entry when live, else dial + store.
     // RETRY POLICY : a fresh dial retries a REUSED conn
     // only when the request provably never executed — a SEND fault, or the
-    // peer closing before any response byte (`SockErr.Closed`, the stale-keep-
+    // peer closing before any response byte (`ClientErr.Closed`, the stale-keep-
     // alive signature). Every receipt failure after bytes arrived
     // (TooLarge/BadStatus/Recv) propagates AS ITSELF: the server may have
     // executed the request, and re-sending would double side effects.

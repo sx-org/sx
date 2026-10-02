@@ -6148,7 +6148,8 @@ modules/std.sx        the prelude — print/format, string ops (concat,
                       pathJoin, ...), List(T), Context + push, the Allocator
                       interface; spreads c / mem / io / fs / process / encoding /
                       json / xml / cli / hash / log / test / time / posix /
-                      thread scopes and names the remaining module imports
+                      thread / socket / event scopes and names the remaining
+                      module imports
 modules/std/          mem.sx (CAllocator, GPA, Arena, TrackingAllocator),
                       fs.sx, process.sx, socket.sx, json.sx, cli.sx, hash.sx,
                       xml.sx, log.sx, trace.sx, test.sx

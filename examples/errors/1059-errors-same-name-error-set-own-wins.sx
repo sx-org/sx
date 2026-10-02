@@ -1,26 +1,26 @@
 // A locally declared `error` set wins over a same-name set carried in by a
-// flat import: `EventErr :: error { Boom }` here, `event.EventErr`
+// flat import: `Error :: error { Boom }` here, `event.Error`
 // (Init/Register/Wait) through `@import "modules/std.sx"`. Error-set
 // declarations get per-decl nominal identity, so `raise .Boom` and
 // `r == .Boom` check against the LOCAL set and its `Boom` tag.
 
 @import "modules/std.sx";
 
-EventErr :: error { Boom }
+Error :: error { Boom }
 
-fail :: () -> !EventErr {
+fail :: () -> !Error {
     raise .Boom;
 }
 
-failQ :: () -> !EventErr {
-    raise EventErr.Boom;
+failQ :: () -> !Error {
+    raise Error.Boom;
 }
 
 main :: () -> i32 {
     r := fail();
     q := failQ();
-    if r == .Boom and q == EventErr.Boom {
-        print("own EventErr.Boom\n");
+    if r == .Boom and q == Error.Boom {
+        print("own Error.Boom\n");
         return 0;
     }
     print("wrong set\n");
