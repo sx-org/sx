@@ -381,14 +381,14 @@ writeHex :: ufcs (w: Writer, n: u64) {
 // ── `@typeInfo`: the reflected type shape ────────────────────────────────────
 //
 // A type's whole shape as data. `@typeInfo` reflects a type INTO it; the
-// on-demand `modules/std/meta.sx` DSL (`declare` / `define`) constructs a NEW
-// nominal type FROM it. Sizes are not stored — `@sizeOf(tp)` answers for any
-// kind.
+// on-demand `modules/std/meta.sx` DSL (`meta.declare` / `meta.define`)
+// constructs a NEW nominal type FROM it. Sizes are not stored — `@sizeOf(tp)`
+// answers for any kind.
 
 // One field of a struct or tuple: its name, its type, its byte offset, and its
 // member ordinal — offset and index come from the same layout walk the field
-// accessors take. `define` reads name and type; a construction literal omits
-// the rest.
+// accessors take. `meta.define` reads name and type; a construction literal
+// omits the rest.
 FieldInfo :: struct {
     name: string;
     type: Type;
@@ -420,9 +420,9 @@ MemberInfo :: struct {
     payload: Type;
 }
 
-// The per-kind shapes. The type's NAME travels in `declare(name)` rather than
-// in the shape, so `define` can register a forward type whose body references
-// itself.
+// The per-kind shapes. The type's NAME travels in `meta.declare(name)` rather
+// than in the shape, so `meta.define` can register a forward type whose body
+// references itself.
 EnumInfo     :: struct { fields: []VariantInfo; tag: Type = i64; tagOffset: i64 = 0; }
 StructInfo   :: struct { fields: []FieldInfo; }
 UnionInfo    :: struct { arms: []ArmInfo; }

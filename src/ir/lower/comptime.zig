@@ -1014,35 +1014,27 @@ pub fn lowerInsertExprValue(self: *Lowering, expr: *const Node) Ref {
     return last_val;
 }
 
-/// Evaluate a `Type`-returning expression at compile time → its `TypeId`.
-/// `expr` (a call to any bodied `-> Type` fn) is wrapped in a throwaway comptime
-/// fn and run through the interpreter with the type-mint table enabled, so the
-/// `declare`/`define` builtins reached inside it mutate the real type table. The
-/// result value is a `.type_tag`. A type minted via `define` is already named
-/// (the name travels in its `TypeInfo`); a caller needing a different identity
-/// name (the type-fn mangled-name path) renames afterwards via
-/// `renameNominalType`. Returns null (caller poisons) if evaluation didn't yield
-/// a Type.
-/// Register an empty forward nominal type named by each `declare("Name")` call
-/// reachable from `expr` (and, if `expr` is a call to a known fn, that fn's
+/// Register an empty forward nominal type named by each `meta.declare("Name")`
+/// call reachable from `expr` (and, if `expr` calls a function, that function's
 /// body). Runs before the comptime expression lowers so a `*Name` self-reference
 /// resolves to this forward slot. Idempotent (skips an already-registered name).
 fn preregisterForwardTypes(self: *Lowering, expr: *const Node) void {
-    scanDeclareNames(self, expr, 0);
-    if (expr.data == .call and expr.data.call.callee.data == .identifier) {
-        if (self.program_index.lookup(.function, expr.data.call.callee.data.identifier.name)) |fd| {
-            scanDeclareNames(self, fd.body, 0);
-        }
-    }
+    const alias_environment = self.environmentForSource(self.current_source_file);
+    scanDeclareNames(self, expr, alias_environment, 0);
+    if (expr.data != .call) return;
+    const fd = self.calleeFunction(expr.data.call.callee) orelse return;
+    const context = self.lexicalContext();
+    defer self.restoreLexicalContext(context);
+    self.setFunctionContext(fd);
+    scanDeclareNames(self, fd.body, alias_environment, 0);
 }
 
-fn scanDeclareNames(self: *Lowering, node: *const Node, depth: u32) void {
+fn scanDeclareNames(self: *Lowering, node: *const Node, alias_environment: ?@import("../../imports.zig").EnvironmentId, depth: u32) void {
     if (depth > 64) return;
     switch (node.data) {
         .call => |c| {
-            if (c.callee.data == .identifier and
-                std.mem.eql(u8, c.callee.data.identifier.name, "declare") and
-                c.args.len == 1 and c.args[0].data == .string_literal)
+            if (c.args.len == 1 and c.args[0].data == .string_literal and
+                callsMetaDeclare(self, c.callee))
             {
                 const nm = c.args[0].data.string_literal.raw;
                 const nid = self.module.types.internString(nm);
@@ -1058,30 +1050,45 @@ fn scanDeclareNames(self: *Lowering, node: *const Node, depth: u32) void {
                 // resolves through the forward-ALIAS path — which checks
                 // `type_aliases_by_source`, not `findByName`. Without this the
                 // alias path returns a pending empty-struct stub instead.
-                self.putTypeAlias(self.program_index.synthetic(nm, self.environmentForSource(self.current_source_file)), nm, tid);
+                self.putTypeAlias(self.program_index.synthetic(nm, alias_environment), nm, tid);
             }
-            for (c.args) |a| scanDeclareNames(self, a, depth + 1);
+            for (c.args) |a| scanDeclareNames(self, a, alias_environment, depth + 1);
         },
-        .block => |b| for (b.stmts) |s| scanDeclareNames(self, s, depth + 1),
-        .return_stmt => |r| if (r.value) |v| scanDeclareNames(self, v, depth + 1),
-        .var_decl => |v| if (v.value) |val| scanDeclareNames(self, val, depth + 1),
-        .const_decl => |cd| scanDeclareNames(self, cd.value, depth + 1),
-        .struct_literal => |sl| for (sl.field_inits) |fi| scanDeclareNames(self, fi.value, depth + 1),
+        .block => |b| for (b.stmts) |s| scanDeclareNames(self, s, alias_environment, depth + 1),
+        .return_stmt => |r| if (r.value) |v| scanDeclareNames(self, v, alias_environment, depth + 1),
+        .var_decl => |v| if (v.value) |val| scanDeclareNames(self, val, alias_environment, depth + 1),
+        .const_decl => |cd| scanDeclareNames(self, cd.value, alias_environment, depth + 1),
+        .struct_literal => |sl| for (sl.field_inits) |fi| scanDeclareNames(self, fi.value, alias_environment, depth + 1),
         .self_block => |sb| {
-            scanDeclareNames(self, sb.operand, depth + 1);
-            scanDeclareNames(self, sb.block, depth + 1);
+            scanDeclareNames(self, sb.operand, alias_environment, depth + 1);
+            scanDeclareNames(self, sb.block, alias_environment, depth + 1);
         },
-        .array_literal => |al| for (al.elements) |e| scanDeclareNames(self, e, depth + 1),
+        .array_literal => |al| for (al.elements) |e| scanDeclareNames(self, e, alias_environment, depth + 1),
         else => {},
     }
 }
 
+fn callsMetaDeclare(self: *Lowering, callee: *const Node) bool {
+    const id = self.calleeDeclaration(callee) orelse return false;
+    return self.isMetaMember(id, "declare");
+}
+
+/// Evaluate a `Type`-returning expression at compile time → its `TypeId`.
+/// `expr` (a call to any bodied `-> Type` fn) is wrapped in a throwaway comptime
+/// fn and run through the interpreter with the type-mint table enabled, so the
+/// `meta.declare`/`meta.define` calls reached inside it mutate the real type
+/// table. The result value is a `.type_tag`. A type minted via `meta.define` is
+/// already named (the name travels in its `TypeInfo`); a caller needing a
+/// different identity name (the type-fn mangled-name path) renames afterwards
+/// via `renameNominalType`. Returns null (caller poisons) if evaluation didn't
+/// yield a Type.
 pub fn evalComptimeType(self: *Lowering, expr: *const Node) ?TypeId {
-    // Pre-register every `declare("Name")` forward type BEFORE lowering, so a
-    // self-referential `*Name` payload resolves (the name is a known forward
+    // Pre-register every `meta.declare("Name")` forward type BEFORE lowering, so
+    // a self-referential `*Name` payload resolves (the name is a known forward
     // type when the body lowers). Done up-front rather than at declare's
-    // lowering because a `*Name` can lower before its `declare` within the same
-    // body. `declare` returns this same slot; `define` completes it.
+    // lowering because a `*Name` can lower before its `meta.declare` within the
+    // same body. `meta.declare` returns this same slot; `meta.define` completes
+    // it.
     preregisterForwardTypes(self, expr);
     // The wrapper returns a `Type` value → `.type_value` (the dedicated 8-byte
     // handle). The VM converts `func.ret` — `.type_value` → `.type_tag`; an
@@ -1096,8 +1103,9 @@ pub fn evalComptimeType(self: *Lowering, expr: *const Node) ?TypeId {
 /// a prelude, then the return expression. Only used for bodies that actually
 /// have a prelude — the no-prelude case stays on `evalComptimeType`.
 pub fn evalComptimeTypeBody(self: *Lowering, body: *const Node, ret_expr: *const Node) ?TypeId {
-    // Scan the WHOLE body for `declare("Name")` (a local `h := declare(…)` is in
-    // the prelude, not the return) so forward types register before lowering.
+    // Scan the WHOLE body for `meta.declare("Name")` (a local
+    // `h := meta.declare(…)` is in the prelude, not the return) so forward types
+    // register before lowering.
     preregisterForwardTypes(self, body);
     const prelude = preludeBeforeReturn(body);
     // Return type `.type_value` (a `Type` value) — see `evalComptimeType`.
@@ -1117,9 +1125,9 @@ fn preludeBeforeReturn(body: *const Node) []const *const Node {
 }
 
 /// Run a comptime type-construction function and post-process its result: render
-/// any interp bail as a build-gating diagnostic and reject a bare
-/// `declare()` never completed by `define()` (a zero-field nominal slot that
-/// would otherwise panic at codegen). `span` locates both diagnostics.
+/// any interp bail as a build-gating diagnostic and reject a
+/// `meta.declare()` never completed by `meta.define()` (a zero-field nominal
+/// slot that would otherwise panic at codegen). `span` locates both diagnostics.
 pub fn runComptimeTypeFunc(self: *Lowering, func_id: FuncId, span: ast.Span) ?TypeId {
     // The scan-time context comes from the EARLY-emitted
     // `kDefaultContext` (see `evalComptimeType` — assembly + emission
@@ -1164,8 +1172,8 @@ pub fn runComptimeTypeFunc(self: *Lowering, func_id: FuncId, span: ast.Span) ?Ty
     return null;
 }
 
-/// Post-check a comptime type-construction result. A bare `declare("X")` never
-/// completed by a `define(handle, …)` leaves
+/// Post-check a comptime type-construction result. A `meta.declare("X")` never
+/// completed by a `meta.define(handle, …)` leaves
 /// a forward enum PLACEHOLDER (`defined == false`); sizing /
 /// constructing / emitting it panics at codegen (`verifySizes`: llvm_size !=
 /// ir_size). Reject it loudly here. An *explicitly* defined empty type (an empty
@@ -1177,7 +1185,7 @@ fn checkComptimeTypeResult(self: *Lowering, tid: TypeId, span: ast.Span) ?TypeId
         const info = self.module.types.get(tid);
         if (info == .@"enum" and !info.@"enum".defined) {
             if (self.diagnostics) |d|
-                d.addFmt(.err, span, "type '{s}' is declared but never defined — complete it with define(handle, info)", .{self.module.types.getString(info.@"enum".name)});
+                d.addFmt(.err, span, "type '{s}' is declared but never defined — complete it with meta.define(handle, info)", .{self.module.types.getString(info.@"enum".name)});
             return null;
         }
     }

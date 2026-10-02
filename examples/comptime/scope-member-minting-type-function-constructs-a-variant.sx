@@ -1,0 +1,25 @@
+// A type function that mints its type, reached as a scope member, is
+// instantiated by `s.R(i64)` and constructs that type's variants.
+@import "modules/std.sx";
+@import "modules/std/meta.sx";
+
+s :: scope {
+    R :: ($T: Type) -> Type {
+        return meta.define(meta.declare("R"), .enum(.{ fields = .[
+            VariantInfo{ name = "value",  payload = T    },
+            VariantInfo{ name = "closed", payload = void },
+        ] }));
+    }
+}
+
+main :: () -> i32 {
+    r := s.R(i64).value(42);
+    c : s.R(i64) = .closed;
+    for x in .[r, c] {
+        match x {
+            case .value:  |v| { print("value {}\n", v); }
+            case .closed: { print("closed\n"); }
+        }
+    }
+    return 0;
+}

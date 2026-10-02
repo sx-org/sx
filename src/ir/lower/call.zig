@@ -14,6 +14,7 @@ const CallResolver = @import("../calls.zig").CallResolver;
 const init_plan = @import("init_plan.zig");
 const build_block = @import("build_block.zig");
 const lower_generic = @import("generic.zig");
+const lower_decl = @import("decl.zig");
 const lower_open_set = @import("open_set.zig");
 const lower_closure = @import("closure.zig");
 const lower_protocol = @import("protocol.zig");
@@ -1714,48 +1715,61 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     .not_generic => {},
                 }
 
-                if (inner_call.callee.data == .identifier) {
-                    const inner_name = inner_call.callee.data.identifier.name;
-                    const resolved = if (self.scope) |scope| (scope.lookupFn(inner_name) orelse inner_name) else inner_name;
+                // The head selects its author: a bare head the scope-local or
+                // program function, a qualified head (`s.R(i64).value(42)`)
+                // the exact terminal member, exempt from the bare-head gate.
+                const head_qualified = inner_call.callee.data == .field_access;
+                const inner_name: []const u8 = switch (inner_call.callee.data) {
+                    .identifier => |id| id.name,
+                    .field_access => |head| head.field,
+                    else => "",
+                };
+                const head_fd: ?*const ast.FnDecl = if (head_qualified) qualified: {
+                    const path = self.qualifiedTypeName(inner_call.callee) orelse break :qualified null;
+                    defer self.alloc.free(path);
+                    break :qualified self.qualifiedFnMember(path);
+                } else if (inner_name.len > 0)
+                    self.program_index.lookup(.function, if (self.scope) |scope| (scope.lookupFn(inner_name) orelse inner_name) else inner_name)
+                else
+                    null;
 
-                    if (self.program_index.lookup(.function, resolved)) |fd| {
-                        // Only a `-> Type` generic is a type constructor. A
-                        // value-returning generic reaches here as an ordinary
-                        // method receiver (`el(Leaf{…}).opacity(…)`), and
-                        // instantiating it as a type would resolve its VALUE
-                        // arguments in type position.
-                        if (fd.type_params.len > 0 and self.isTypeReturningCallNode(fa.object)) {
-                            if (self.headFnLeak(inner_name, inner_call.callee.span)) return Ref.none;
-                            // Try instantiate as type function
-                            if (self.instantiateTypeFunction(inner_name, inner_name, fd, inner_call.args)) |result_ty| {
-                                const type_info = self.module.types.get(result_ty);
-                                if (type_info == .@"enum") {
-                                    // Qualified enum construction: Type.variant(payload)
-                                    if (self.elseMemberCall(result_ty, fa.field, args.items, c.callee.span)) |ref| return ref;
-                                    if (!self.hasVariant(result_ty, fa.field)) {
-                                        self.emitBadEnumVariant(result_ty, type_info.@"enum", fa.field, c.callee.span);
-                                        return self.builder.enumInit(0, Ref.none, result_ty);
-                                    }
-                                    // ORDINAL indexes `variants[]` (payload-type
-                                    // lookup); the EXPLICIT tag value is what's
-                                    // stored at runtime so match/C-interop agree.
-                                    const ord = self.resolveVariantIndex(result_ty, fa.field);
-                                    const tag = self.resolveVariantValue(result_ty, fa.field);
-                                    var payload = if (args.items.len > 0) args.items[0] else Ref.none;
-                                    if (!payload.isNone()) {
-                                        const variants = type_info.@"enum".variants;
-                                        if (ord < variants.len) {
-                                            const field_ty = variants[ord].payload;
-                                            if (field_ty != .void) {
-                                                const payload_ty = self.builder.getRefType(payload);
-                                                if (field_ty != payload_ty) {
-                                                    payload = self.coerceToType(payload, payload_ty, field_ty);
-                                                }
+                if (head_fd) |fd| {
+                    // Only a `-> Type` generic is a type constructor. A
+                    // value-returning generic reaches here as an ordinary
+                    // method receiver (`el(Leaf{…}).opacity(…)`), and
+                    // instantiating it as a type would resolve its VALUE
+                    // arguments in type position.
+                    if (fd.type_params.len > 0 and lower_decl.fnReturnsTypeValue(fd)) {
+                        if (!head_qualified and self.headFnLeak(inner_name, inner_call.callee.span)) return Ref.none;
+                        // Try instantiate as type function
+                        if (self.instantiateTypeFunction(inner_name, inner_name, fd, inner_call.args)) |result_ty| {
+                            const type_info = self.module.types.get(result_ty);
+                            if (type_info == .@"enum") {
+                                // Qualified enum construction: Type.variant(payload)
+                                if (self.elseMemberCall(result_ty, fa.field, args.items, c.callee.span)) |ref| return ref;
+                                if (!self.hasVariant(result_ty, fa.field)) {
+                                    self.emitBadEnumVariant(result_ty, type_info.@"enum", fa.field, c.callee.span);
+                                    return self.builder.enumInit(0, Ref.none, result_ty);
+                                }
+                                // ORDINAL indexes `variants[]` (payload-type
+                                // lookup); the EXPLICIT tag value is what's
+                                // stored at runtime so match/C-interop agree.
+                                const ord = self.resolveVariantIndex(result_ty, fa.field);
+                                const tag = self.resolveVariantValue(result_ty, fa.field);
+                                var payload = if (args.items.len > 0) args.items[0] else Ref.none;
+                                if (!payload.isNone()) {
+                                    const variants = type_info.@"enum".variants;
+                                    if (ord < variants.len) {
+                                        const field_ty = variants[ord].payload;
+                                        if (field_ty != .void) {
+                                            const payload_ty = self.builder.getRefType(payload);
+                                            if (field_ty != payload_ty) {
+                                                payload = self.coerceToType(payload, payload_ty, field_ty);
                                             }
                                         }
                                     }
-                                    return self.builder.enumInit(tag, payload, result_ty);
                                 }
+                                return self.builder.enumInit(tag, payload, result_ty);
                             }
                         }
                     }
@@ -4339,14 +4353,15 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         if (self.refuseCursorInspection(arg_ty, a.span)) return self.reflectionErrorSentinel(name);
     }
 
-    // `declare(name)` and `define(handle, info)` are ordinary sx functions
-    // (`modules/std/meta.sx`) written over the `@` primitives
-    // (`declare_type` / `register_type`), so they are not intercepted here.
-    // (`preregisterForwardTypes` scans for the literal `declare("Name")`
-    // spelling so a `*Name` self-reference forward-registers before the body
-    // lowers; the sx `declare` calls `declare_type`, which returns that slot.
-    // The `.enum(…)` arg to `define` infers `TypeInfo` from the sx fn's
-    // declared param type via the ordinary call path's target-type threading.)
+    // `meta.declare(name)` and `meta.define(handle, info)` are ordinary sx
+    // functions (`modules/std/meta.sx`) written over the `@` primitives
+    // (`@rawDeclareType` / `@rawRegisterType`), so they are not intercepted
+    // here. (`preregisterForwardTypes` scans for calls that resolve to
+    // `meta.declare` with a literal name, so a `*Name` self-reference
+    // forward-registers before the body lowers; `meta.declare` calls
+    // `@rawDeclareType`, which returns that slot. The `.enum(…)` arg to
+    // `meta.define` infers `TypeInfo` from the sx fn's declared param type via
+    // the ordinary call path's target-type threading.)
     if (std.mem.eql(u8, name, "@typeInfo")) {
         // Reflection-into-data: resolve `$T` at lower time, then emit a
         // `callBuiltin(.@"@typeInfo", [const_type])` the interp executes

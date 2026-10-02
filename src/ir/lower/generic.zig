@@ -2838,8 +2838,9 @@ pub fn instantiateTypeFunction(self: *Lowering, alias_name: []const u8, template
     if (findReturnTypeExpr(fd.body)) |ret_node| {
         if (self.returnExprMintsType(ret_node)) {
             // A body with LOCALS before its `return` (e.g. `vs := …; return
-            // makeEnum(…, vs)`) needs its full body comptime-evaluated so those
-            // locals resolve; the bare return-expr path leaves them unresolved.
+            // meta.makeEnum(…, vs)`) needs its full body comptime-evaluated so
+            // those locals resolve; the bare return-expr path leaves them
+            // unresolved.
             // A no-prelude body stays on the simpler `evalComptimeType` path.
             const has_prelude = fd.body.data == .block and blk: {
                 for (fd.body.data.block.stmts) |stmt| {
@@ -2895,28 +2896,19 @@ pub fn findReturnTypeExpr(body: *const Node) ?*const Node {
 }
 
 /// True when a type-fn's return expression mints a type at comptime and must be
-/// run through the interpreter rather than statically resolved. Two shapes:
-///   - a call to the metatype `define` constructor — `return define(declare(),
-///     info)`, the one-shot constructor form (an sx fn over `register_type`,
-///     caught here as a fast-path before the `fn_ast_map` lookup below); or
-///   - a call to a NON-generic, bodied, `Type`-returning sx fn (a constructor
-///     helper that itself ends in `define` / `register_type`).
+/// run through the interpreter rather than statically resolved: its callee
+/// (`f`, `ns.f`), selected in the current lexical context, is a NON-generic,
+/// bodied, `Type`-returning sx fn — `meta.define`, or a constructor helper that
+/// itself ends in one (`meta.makeEnum`).
 /// Excludes generic / static type constructors (`@Vector(N,T)`, `Make($T)`,
 /// `return [K]T`, `return T`), which the static `resolveTypeWithBindings` path
 /// handles.
 pub fn returnExprMintsType(self: *Lowering, ret: *const Node) bool {
     if (ret.data != .call) return false;
-    const callee = ret.data.call.callee;
-    if (callee.data != .identifier) return false;
-    const name = callee.data.identifier.name;
-    // The construction terminator — a constructor's final act.
-    if (std.mem.eql(u8, name, "define")) return true;
-    // A bodied, non-generic, Type-returning sx helper.
-    const fd = self.program_index.lookup(.function, name) orelse return false;
+    const fd = self.calleeFunction(ret.data.call.callee) orelse return false;
     if (fd.type_params.len != 0) return false;
     if (fd.body.data == .block and fd.body.data.block.stmts.len == 0) return false; // bodyless intrinsic
-    const rt = fd.return_type orelse return false;
-    return rt.data == .type_expr and std.mem.eql(u8, rt.data.type_expr.name, "Type");
+    return lower_decl.fnReturnsTypeValue(fd);
 }
 
 /// Instantiate an enum from a type function body.

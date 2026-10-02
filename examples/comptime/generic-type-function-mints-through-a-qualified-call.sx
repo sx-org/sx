@@ -1,0 +1,25 @@
+// A generic type function whose `return` is a qualified minting call,
+// `meta.makeEnum(…)`, mints its type.
+@import "modules/std.sx";
+@import "modules/std/meta.sx";
+
+Outcome :: ($T: Type) -> Type {
+    vs := .[
+        VariantInfo{ name = "ok",     payload = T },
+        VariantInfo{ name = "failed", payload = i64 },
+    ];
+    return meta.makeEnum("Outcome", vs);
+}
+
+show :: (o: Outcome(f64)) {
+    match o {
+        case .ok:     |v| { print("ok {}\n", v); }
+        case .failed: |e| { print("failed {}\n", e); }
+    }
+}
+
+main :: () -> i32 {
+    show(.ok(2.5));
+    show(.failed(404));
+    return 0;
+}

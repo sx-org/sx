@@ -1,0 +1,25 @@
+// A `meta.declare("L")` reached through the `meta` scope registers the forward
+// type its own `meta.define` body references as `*L`.
+@import "modules/std.sx";
+@import "modules/std/meta.sx";
+
+L :: meta.define(meta.declare("L"), .enum(.{ fields = .[
+    VariantInfo{ name = "cons", payload = *L },
+    VariantInfo{ name = "nil",  payload = void },
+] }));
+
+depth :: (n: *L) -> i64 {
+    match n.* {
+        case .cons: |next| { return 1 + depth(next); }
+        case .nil:  { return 0; }
+    }
+    return 0;
+}
+
+main :: () -> i32 {
+    a : L = .nil;
+    b : L = .cons(*a);
+    c : L = .cons(*b);
+    print("depth = {}\n", depth(*c));
+    return 0;
+}

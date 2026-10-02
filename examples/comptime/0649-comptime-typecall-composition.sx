@@ -24,7 +24,7 @@ ResultOf :: ($T: Type) -> Type {
             payload = @typeInfo(@pointeeType(field.type)).struct.fields[0].type, // *Box(A) -> Box(A) -> A
         };
     }
-    return makeEnum("ResultOf", vs);
+    return meta.makeEnum("ResultOf", vs);
 }
 
 Handles :: struct { a: *Box(i64); b: *Box(bool); c: *Box(f64) };

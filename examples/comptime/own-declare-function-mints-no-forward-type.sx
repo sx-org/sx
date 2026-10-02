@@ -1,0 +1,15 @@
+// A program's own `declare` is not meta.sx's: its literal argument names no
+// forward type, so the type table holds no `Ghost`.
+@import "modules/std.sx";
+
+declare :: (name: string) -> Type { return i64; }
+
+Count :: declare("Ghost");
+
+ghost :: @run @rawFindType(@rawIntern("Ghost"));
+
+main :: () -> i32 {
+    c : Count = 3;
+    print("count {}, Ghost type id {}\n", c, ghost);
+    return 0;
+}

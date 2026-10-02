@@ -7,8 +7,8 @@
 @import "modules/std.sx";
 @import "modules/std/meta.sx";
 
-EmptyStruct :: define(declare("EmptyStruct"), .struct(.{ fields = .[] }));
-EmptyEnum   :: define(declare("EmptyEnum"),   .enum(.{ fields = .[] }));
+EmptyStruct :: meta.define(meta.declare("EmptyStruct"), .struct(.{ fields = .[] }));
+EmptyEnum   :: meta.define(meta.declare("EmptyEnum"),   .enum(.{ fields = .[] }));
 
 main :: () -> i32 {
     s : EmptyStruct = .{};

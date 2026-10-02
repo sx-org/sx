@@ -36,6 +36,7 @@ const comptime_value = @import("../comptime_value.zig");
 
 const lower = @import("../lower.zig");
 const lower_open_set = @import("open_set.zig");
+const lower_decl = @import("decl.zig");
 const Lowering = lower.Lowering;
 
 /// Expand every module-scope driver the program declares, returning the
@@ -911,18 +912,8 @@ const Expansion = struct {
     /// one call shape whose result IS a type identity, minted by evaluation
     /// rather than resolved from a spelling.
     fn typeFunctionCall(ex: *Expansion, callee: *const Node) bool {
-        const name = imports.aliasPath(ex.self.alloc, callee) orelse return false;
-        defer ex.self.alloc.free(name);
-        const id = ex.declarationNamed(name) orelse return false;
-        const decl = ex.self.program_index.declaration(id).node.?;
-        const fd: *const ast.FnDecl = switch (decl.data) {
-            .fn_decl => |*f| f,
-            .const_decl => |cd| if (cd.value.data == .fn_decl) &cd.value.data.fn_decl else return false,
-            else => return false,
-        };
-        if (fd.type_params.len > 0) return false;
-        const rt = fd.return_type orelse return false;
-        return rt.data == .type_expr and std.mem.eql(u8, rt.data.type_expr.name, "Type");
+        const fd = ex.self.calleeFunction(callee) orelse return false;
+        return fd.type_params.len == 0 and lower_decl.fnReturnsTypeValue(fd);
     }
 
     fn declarationNamed(ex: *Expansion, name: []const u8) ?imports.DeclId {

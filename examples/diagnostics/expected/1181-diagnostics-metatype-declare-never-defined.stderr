@@ -1,5 +1,5 @@
-error: type 'Undef' is declared but never defined — complete it with define(handle, info)
+error: type 'Undef' is declared but never defined — complete it with meta.define(handle, info)
   --> examples/diagnostics/1181-diagnostics-metatype-declare-never-defined.sx:7:10
    |
- 7 | Undef :: declare("Undef");          // never define()d
-   |          ^^^^^^^^^^^^^^^^
+ 7 | Undef :: meta.declare("Undef");          // never defined
+   |          ^^^^^^^^^^^^^^^^^^^^^

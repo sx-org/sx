@@ -56,6 +56,15 @@ pub fn traceFrameType(self: *Lowering) ?TypeId {
     return null;
 }
 
+/// Whether `id` is the `name` declared in meta.sx's `meta` scope.
+pub fn isMetaMember(self: *Lowering, id: imports.DeclId, name: []const u8) bool {
+    const info = self.program_index.declaration(id);
+    if (!std.mem.eql(u8, info.name, name)) return false;
+    const env = self.program_index.declarations().environment(info.environment orelse return false);
+    if (env.scope_path.len != 1 or !std.mem.eql(u8, env.scope_path[0], "meta")) return false;
+    return ownerAuthored(self, "modules/std/meta.sx", env.source);
+}
+
 /// Whether `file` IS the owner module, resolved from a library root and
 /// compared by identity on disk.
 fn ownerAuthored(self: *Lowering, module: []const u8, file: ?[]const u8) bool {

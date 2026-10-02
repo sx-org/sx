@@ -1,9 +1,9 @@
 // Comptime type construction — SELF-REFERENCE: a recursive enum minted via
-// declare/define. `declare("List")` names a forward type the compiler registers
-// at compile time, so the body can reference it as `*List` (a pointer to a type
-// that isn't defined yet — legal, since a pointer needs no layout). `define`
-// then fills the body in place. A by-VALUE self-reference would be infinite-size
-// and rejected; `*List` is the idiom.
+// declare/define. `meta.declare("List")` names a forward type the compiler
+// registers at compile time, so the body can reference it as `*List` (a pointer
+// to a type that isn't defined yet — legal, since a pointer needs no layout).
+// `meta.define` then fills the body in place. A by-VALUE self-reference would
+// be infinite-size and rejected; `*List` is the idiom.
 //
 // Builds a 3-node cons-list (c -> b -> a -> nil), matches through the pointer
 // payload directly (`if p ==`) and via deref (`n.*`), and counts it recursively.
@@ -11,8 +11,8 @@
 @import "modules/std/meta.sx";
 
 makeList :: () -> Type {
-    h := declare("List");
-    return define(h, .enum(.{ fields = .[
+    h := meta.declare("List");
+    return meta.define(h, .enum(.{ fields = .[
         VariantInfo{ name = "cons", payload = *List },   // self-reference
         VariantInfo{ name = "nil",  payload = void },
     ] }));
