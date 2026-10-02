@@ -268,38 +268,10 @@ const Expansion = struct {
     fn primeTargetFacts(ex: *Expansion, decls: []const *Node) void {
         const context = ex.self.lexicalContext();
         defer ex.self.restoreLexicalContext(context);
-        var seen = std.AutoHashMap(*const Node, void).init(ex.self.alloc);
-        defer seen.deinit();
-        ex.registerTargetEnums(decls, &seen);
         ex.self.injectComptimeConstants();
         const authored = ast.scopeDeclarations(ex.self.alloc, decls) catch @panic("out of memory");
         ex.self.registerLiteralModuleConsts(authored);
         ex.self.registerConstAliases(authored);
-    }
-
-    fn registerTargetEnums(ex: *Expansion, decls: []const *Node, seen: *std.AutoHashMap(*const Node, void)) void {
-        for (decls) |decl| {
-            switch (decl.data) {
-                .const_decl => |cd| {
-                    if (cd.value.data != .enum_decl) continue;
-                    if (!isTargetEnumName(cd.name)) continue;
-                    ex.self.setDeclarationContext(decl);
-                    ex.self.registerEnumDecl(&cd.value.data.enum_decl);
-                },
-                .enum_decl => |ed| {
-                    if (!isTargetEnumName(ed.name)) continue;
-                    ex.self.setDeclarationContext(decl);
-                    ex.self.registerEnumDecl(&decl.data.enum_decl);
-                },
-                .scope_decl => |scope| ex.registerTargetEnums(scope.decls, seen),
-                .namespace_decl => |ns| {
-                    if (seen.contains(decl)) continue;
-                    seen.put(decl, {}) catch {};
-                    ex.registerTargetEnums(ns.decls, seen);
-                },
-                else => {},
-            }
-        }
     }
 
     /// Expand every namespaced module's views in place, so a driver written in
@@ -957,10 +929,6 @@ const DecidedDecls = struct {
 /// bare `View` names itself.
 fn protocolHead(node: *const Node) *const Node {
     return if (node.data == .call) node.data.call.callee else node;
-}
-
-fn isTargetEnumName(name: []const u8) bool {
-    return std.mem.eql(u8, name, "OperatingSystem") or std.mem.eql(u8, name, "Architecture");
 }
 
 /// The name of the driver class in a diagnostic — what the deadlock report

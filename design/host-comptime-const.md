@@ -122,7 +122,7 @@ Runtime reads go through `lowerExpr`'s identifier arm (`src/ir/lower/expr.zig`):
 
 1. **`@host` is a declared struct contract and a compiler-formed singleton of that type.** The stdlib writes `@host :: struct { … }` in `std/target.sx`. The compiler injects the value under the same `@` name into `comptime_constants`. Type position sees the struct; value position sees the singleton. `@host()` is an ordinary "not a function" error — no dedicated diagnostic.
 
-2. **Field types stay the named enums `OperatingSystem` / `Architecture`, not nested anonymous enums.** They already exist, `fieldTypeMatches` already accepts a `type_expr` spelling, and a function can take `os: OperatingSystem`. Nested anonymous enums would need a shape-checker extension and would be unnameable in signatures.
+2. **Field types stay the named enums `OperatingSystem` / `Architecture`, not nested anonymous enums.** They already exist, `fieldTypeMatches` already accepts a `type_expr` spelling, and a function can take `os: target.OperatingSystem`. Nested anonymous enums would need a shape-checker extension and would be unnameable in signatures.
 
 3. **camelCase is the identifier convention for sx-authored names** in stdlib, corpus, specs, and language contracts. Field names, function names, comptime-const fields, `@` function names, contract struct fields, and example-local identifiers are camelCase (`pointerSize`, `isSimulator`, `@isComptime`, `@addLinkFlag`, `pathJoin`). Type names stay PascalCase (`OperatingSystem`, `Architecture`). Enum variants stay lower/dot identifiers (`.macos`, `.x86_64`). Already-camelCase `@` functions stay (`@sizeOf`, `@typeOf`, `@errorName`). Foreign C/ObjC/JNI **imported symbol spellings** stay as the C name. `__sx_*` compiler ABI stays. Zig compiler internals stay snake_case (Zig). Completeness for sx names is `rg` of snake_case identifiers in `.sx` / `specs.md` / `docs`, minus those exclusions.
 
@@ -148,14 +148,16 @@ Runtime reads go through `lowerExpr`'s identifier arm (`src/ir/lower/expr.zig`):
 
 ```sx
 // library/modules/std/target.sx — imports nothing
-OperatingSystem :: enum { macos; linux; windows; wasm; ios; android; unknown; }
-Architecture    :: enum { aarch64; x86_64; wasm32; wasm64; unknown; }
+target :: scope {
+    OperatingSystem :: enum { macos; linux; windows; wasm; ios; android; unknown; }
+    Architecture    :: enum { aarch64; x86_64; wasm32; wasm64; unknown; }
 
-@host :: struct {
-    os: OperatingSystem;
-    arch: Architecture;
-    pointerSize: i64;
-    isSimulator: bool;
+    @host :: struct {
+        os: OperatingSystem;
+        arch: Architecture;
+        pointerSize: i64;
+        isSimulator: bool;
+    }
 }
 ```
 
@@ -185,7 +187,7 @@ inline match @host.pointerSize { case 4: …; case 8: …; }
 ps := if @host.pointerSize == 8 then "8" else "4";   // runtime const, as today
 ```
 
-Naming the *types* (`OperatingSystem`, `Architecture`, `@host` as a type) still means importing `std/target.sx` — or relying on it being in the program (build.sx's flat import keeps it in the standard graph). `@` contract types also resolve program-wide once declared (`selectNominalLeaf` in `src/ir/lower/decl.zig`), the same rule as `@SourceSite`.
+Naming the *types* (`target.OperatingSystem`, `target.Architecture`, `@host` as a type) still means importing `std/target.sx` — or relying on it being in the program (build.sx's flat import keeps it in the standard graph). `@` contract types also resolve program-wide once declared (`selectNominalLeaf` in `src/ir/lower/decl.zig`), the same rule as `@SourceSite`.
 
 `@host` is **not** an intrinsic. It does not appear in `src/ir/intrinsics.zig`. It is a declared struct contract plus a compiler-injected value.
 
@@ -328,7 +330,7 @@ Field-access is one kernel, not “try bool, else namespace”:
 
 `inline if @host.os == .macos` never hits this arm: it is a `.binary_op`, which already calls `evalComptimeCondition`.
 
-`primeTargetFacts` / `registerTargetEnums`: keep priming `OperatingSystem` and `Architecture`. Also prime the `@host` struct (`registerStructDecl` on the `.struct_decl` named `@host` — `Name :: struct` is a `.struct_decl`, not a wrapping `.const_decl`). Rename the helper to something that is not enum-only (`registerTargetDecls`). The name set is `OperatingSystem`, `Architecture`, `@host` — not every decl in `target.sx`.
+`primeTargetFacts`: keep priming `target.OperatingSystem` and `target.Architecture`, the enums declared in the `target` scope of the `@host` contract's module, never a same-named enum elsewhere. Also prime the `@host` struct (`registerStructDecl` on the `.struct_decl` named `@host` — `Name :: struct` is a `.struct_decl`, not a wrapping `.const_decl`). The name set is `OperatingSystem`, `Architecture`, `@host` — not every decl in `target.sx`.
 
 `registerStructDecl` resolves field types when it runs. `@host`’s fields name `OperatingSystem` and `Architecture`. **One walk, file order:** `target.sx` declares the enums first, then `@host`. `internNamedTypeDecl` is idempotent per `decl_key`, so priming then scanning again is safe. Do not register `@host` in a first pass and the enums in a second — field types would become unresolved stubs. Two explicit passes (enums, then `@host`) are also fine; a name-sorted walk is not.
 
@@ -499,14 +501,14 @@ Replace specs.md §8 "Compiler Constants". The language text states what is, not
 
 - `@host` is a compiler-maintained contract declared by `modules/std/target.sx`. Its value is formed per compilation from the target (`--target`, or the host when `--target` is omitted).
 - Fields: `os: OperatingSystem`, `arch: Architecture`, `pointerSize: i64`, `isSimulator: bool`.
-- `OperatingSystem` variants: `.macos`, `.linux`, `.windows`, `.wasm`, `.ios`, `.android`, `.unknown`.
-- `Architecture` variants: `.aarch64`, `.x86_64`, `.wasm32`, `.wasm64`, `.unknown`.
+- `target.OperatingSystem` variants: `.macos`, `.linux`, `.windows`, `.wasm`, `.ios`, `.android`, `.unknown`.
+- `target.Architecture` variants: `.aarch64`, `.x86_64`, `.wasm32`, `.wasm64`, `.unknown`.
 - `pointerSize` is the pointer width in bytes (`4` or `8`). `isize` / `usize` are the pointer-width integer types.
 - `isSimulator` is true only for an iOS simulator target.
 - `@host` is not a type constructor and not a call. Field reads (`@host.os`) are the access.
 - Module-scope `inline if` / `inline match` fold `@host` field reads, combinations with `not` / `and` / `or`, bool literals, and module consts whose value is a bool-shaped fold. An unfoldable module-scope `inline if` is the existing diagnostic (`cannot evaluate this module-scope \`inline if\` condition; it must fold to a compile-time constant`). A module-scope `inline match` that does not fold splices nothing and has no dedicated diagnostic (pre-existing).
 - A statically-dead `inline if` branch is dropped whole (existing prune rule). The example in that paragraph uses `@host.os`, not `OS`.
-- Naming the enum types, or using `@host` as a type, is an ordinary type reference to the `target.sx` declaration.
+- Naming the enum types (`target.OperatingSystem`, `target.Architecture`), or using `@host` as a type, is an ordinary type reference to the `target.sx` declaration.
 
 Also retarget the `@error` unsupported-target example (~5728) from `inline match OS` to `inline match @host.os`. Same for the Build Configuration wasm example (~5814). Rewrite every snake_case language name the specs currently write (`@isComptime`, `@vaStart`, `structFieldCount`, `@context.extend`, …) in the same specs PR, present tense.
 
@@ -526,7 +528,7 @@ Also retarget the `@error` unsupported-target example (~5728) from `inline match
 | `inline match POINTER_SIZE { case 4: … }` | `inline match @host.pointerSize { case 4: … }` |
 | `NATIVE :: POINTER_SIZE == 8` | `NATIVE :: @host.pointerSize == 8` |
 
-`OperatingSystem` / `Architecture` spellings and variants do not change.
+`target.OperatingSystem` / `target.Architecture` variants do not change.
 
 Sx-authored snake_case identifiers camelCase (kernel mapping above). Completeness is `rg`. Old snake_case is an unresolved identifier. C symbol strings and `__sx_*` do not change.
 

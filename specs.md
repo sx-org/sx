@@ -5845,17 +5845,18 @@ Build flags from `linkFlags` are merged with any flags passed on the command lin
 
 ### The Target Facts — `@host`
 
-`@host` is the target fact. `modules/std/target.sx` declares it, and the
-compiler forms its single value per compilation from the build target. Read it
-by field access; the read resolves by name, so no import is needed — in an
-`inline if` or in a value position. Import `modules/std/target.sx` to name the
-`OperatingSystem` / `Architecture` type, or to read `@host` whole. Using
-`@host` as a type is an ordinary type reference to that declaration.
+`@host` is the target fact. `modules/std/target.sx` declares it in its
+`target` scope, and the compiler forms its single value per compilation from
+the build target. Read it by field access; the read resolves by name, so no
+import is needed — in an `inline if` or in a value position. Import
+`modules/std/target.sx` to name the `target.OperatingSystem` /
+`target.Architecture` type, or to read `@host` whole. Using `@host` as a type
+is an ordinary type reference to that declaration.
 
 | Field | Type | Value |
 |-------|------|-------|
-| `@host.os` | `OperatingSystem` | `.macos`, `.linux`, `.windows`, `.wasm`, `.ios`, `.android`, `.unknown` |
-| `@host.arch` | `Architecture` | `.aarch64`, `.x86_64`, `.wasm32`, `.wasm64`, `.unknown` |
+| `@host.os` | `target.OperatingSystem` | `.macos`, `.linux`, `.windows`, `.wasm`, `.ios`, `.android`, `.unknown` |
+| `@host.arch` | `target.Architecture` | `.aarch64`, `.x86_64`, `.wasm32`, `.wasm64`, `.unknown` |
 | `@host.pointerSize` | `i64` | Pointer width in bytes (8 for 64-bit, 4 for wasm32) |
 | `@host.isSimulator` | `bool` | `true` on an iOS Simulator target |
 
@@ -5867,6 +5868,18 @@ inline if @host.os == .wasm {
 }
 inline if @host.pointerSize == 8 {
     // Only compiled on 64-bit platforms
+}
+```
+
+An `inline match` arm on `@host.os` or `@host.arch` names a variant as `.macos`
+or as `target.OperatingSystem.macos`; the qualified spelling needs no import.
+An arm spelled any other way names no variant of the field's enum and is an
+error.
+
+```sx
+inline match @host.os {
+    case target.OperatingSystem.windows: PATH_SEPARATOR :: "\\";
+    else: PATH_SEPARATOR :: "/";
 }
 ```
 
