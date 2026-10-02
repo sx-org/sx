@@ -1,0 +1,5 @@
+error: this arm names no variant of 'target.OperatingSystem'
+  --> examples/diagnostics/host-arm-qualified-by-another-name.sx:5:10
+   |
+ 5 |     case Bogus.macos: POSIX :: 1;
+   |          ^^^^^^^^^^^

@@ -802,19 +802,34 @@ pub fn staticTypeMatchesCategory(self: *Lowering, tid: TypeId, name: []const u8)
 }
 
 /// The variant a `case` arm names against `enum_name`, the enum a `@host` field
-/// is a variant of: `.leaf`, or `Enum.leaf` spelling that enum. The prefix is
-/// judged on the spelling, since the enum's declaration need not be reachable
-/// from the arm; it is judged at all because `unknown` is a variant of both
-/// target enums.
+/// is a variant of: `.leaf`, or `target.Enum.leaf` spelling that enum. The
+/// prefix is judged on the spelling, since the enum's declaration need not be
+/// reachable from the arm; it is judged at all because `unknown` is a variant
+/// of both target enums. Null for an arm spelled any other way.
 fn targetArmVariant(pattern: *const Node, enum_name: []const u8) ?[]const u8 {
     return switch (pattern.data) {
         .enum_literal => |el| el.name,
-        .field_access => |fa| switch (fa.object.data) {
-            .identifier => |id| if (std.mem.eql(u8, id.name, enum_name)) fa.field else null,
-            else => null,
-        },
+        .field_access => |fa| if (isTargetEnumPath(fa.object, enum_name)) fa.field else null,
         else => null,
     };
+}
+
+fn isTargetEnumPath(node: *const Node, enum_name: []const u8) bool {
+    if (node.data != .field_access) return false;
+    const fa = node.data.field_access;
+    if (fa.object.data != .identifier) return false;
+    return std.mem.eql(u8, fa.object.data.identifier.name, "target") and std.mem.eql(u8, fa.field, enum_name);
+}
+
+/// Report every arm of an `inline match` on a `@host` field that
+/// `targetArmVariant` cannot read, whichever arm the target selects.
+fn refuseTargetArms(self: *Lowering, me: *const ast.MatchExpr, enum_name: []const u8) void {
+    const d = self.diagnostics orelse return;
+    for (me.arms) |arm| {
+        const pattern = arm.pattern orelse continue;
+        if (targetArmVariant(pattern, enum_name) != null) continue;
+        d.addFmt(.err, pattern.span, "this arm names no variant of 'target.{s}'", .{enum_name});
+    }
 }
 
 pub fn evalComptimeMatch(self: *Lowering, me: *const ast.MatchExpr) ?*const Node {
@@ -825,6 +840,7 @@ pub fn evalComptimeMatch(self: *Lowering, me: *const ast.MatchExpr) ?*const Node
             const enum_info = self.module.types.get(et.ty);
             if (enum_info != .@"enum") return null;
             const enum_name = self.module.types.typeName(et.ty);
+            refuseTargetArms(self, me, enum_name);
             for (me.arms) |arm| {
                 const pattern = arm.pattern orelse continue; // default arm
                 const name = targetArmVariant(pattern, enum_name) orelse continue;
@@ -852,6 +868,7 @@ pub fn evalComptimeMatch(self: *Lowering, me: *const ast.MatchExpr) ?*const Node
             return null;
         },
         .target_variant => |tv| {
+            refuseTargetArms(self, me, tv.enum_name);
             for (me.arms) |arm| {
                 const pattern = arm.pattern orelse continue;
                 const name = targetArmVariant(pattern, tv.enum_name) orelse continue;

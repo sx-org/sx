@@ -1,0 +1,9 @@
+// `@host.os` is a variant of target.sx's `target.OperatingSystem`, not of a
+// program's own enum of that spelling, so `.beos` is not the host's os. The
+// program imports nothing, so target.sx is not in it.
+OperatingSystem :: enum { beos; plan9; }
+
+main :: () -> i32 {
+    inline if @host.os == .beos { return 1; }
+    return 0;
+}

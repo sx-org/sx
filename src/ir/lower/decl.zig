@@ -462,10 +462,11 @@ pub fn checkRequiredEntryPoints(self: *Lowering) void {
 /// Inject the target facts from target_config into comptime_constants.
 /// `@host` is a compiler fact, so it exists whether or not the program declares
 /// the enums its os / arch fields are variants of: with `std/target.sx` in the
-/// program they carry the declared enum's tag (a runtime read yields that
-/// constant); without it they carry the target's variant NAME, which is all a
-/// module-scope `inline if @host.os == .windows` needs — and every low-level
-/// backend selecting its platform arm depends on exactly that, since importing
+/// program they carry the tag of `target.OperatingSystem` /
+/// `target.Architecture` (a runtime read yields that constant); without it they
+/// carry the target's variant NAME, which is all a module-scope
+/// `inline if @host.os == .windows` needs — and every low-level backend
+/// selecting its platform arm depends on exactly that, since importing
 /// `target.sx` from inside the arm it selects would be circular.
 pub fn injectComptimeConstants(self: *Lowering) void {
     const tc = self.target_config orelse return;
@@ -507,14 +508,31 @@ pub fn injectComptimeConstants(self: *Lowering) void {
 }
 
 fn targetEnumValue(self: *Lowering, enum_name: []const u8, variant: []const u8) Lowering.ComptimeValue {
-    const enum_name_id = self.module.types.internString(enum_name);
-    if (self.module.types.findByName(enum_name_id)) |enum_ty| {
-        const info = self.module.types.get(enum_ty);
-        if (info == .@"enum") {
-            return .{ .enum_tag = .{ .ty = enum_ty, .tag = self.findVariantIndex(info.@"enum".variants, variant) } };
-        }
+    const enum_ty = registerHostEnum(self, enum_name) orelse
+        return .{ .target_variant = .{ .enum_name = enum_name, .variant = variant } };
+    const variants = self.module.types.get(enum_ty).@"enum".variants;
+    return .{ .enum_tag = .{ .ty = enum_ty, .tag = self.findVariantIndex(variants, variant) } };
+}
+
+/// Register the `name` enum declared in target.sx's `target` scope and return
+/// its type. The scope is selected by the `@host` contract's module, so a
+/// program's own enum of that name is never taken. Null when target.sx is not
+/// in the program.
+fn registerHostEnum(self: *Lowering, name: []const u8) ?TypeId {
+    const table = self.program_index.decl_table orelse return null;
+    const host = contracts.find("@host").?;
+    for (table.environments.items) |env| {
+        if (env.scope_path.len != 1 or !std.mem.eql(u8, env.scope_path[0], "target")) continue;
+        if (!contracts.declaredIn(self.alloc, host, env.source, self.stdlib_paths)) continue;
+        const id = env.names.get(name) orelse return null;
+        const raw = table.get(id).ref orelse return null;
+        const ref = imports.innerDeclRef(raw) orelse raw;
+        if (ref != .enum_decl) return null;
+        self.setAuthorContext(id);
+        self.registerEnumDecl(ref.enum_decl);
+        return self.module.types.type_decl_tids.get(@ptrCast(ref.enum_decl));
     }
-    return .{ .target_variant = .{ .enum_name = enum_name, .variant = variant } };
+    return null;
 }
 
 pub fn findVariantIndex(self: *Lowering, variants: []const types.TypeInfo.EnumInfo.Variant, name: []const u8) u32 {

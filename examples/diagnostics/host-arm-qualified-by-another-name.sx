@@ -1,0 +1,9 @@
+// An arm on a `@host` field names a variant as `.leaf` or
+// `target.OperatingSystem.leaf`. An arm qualified by any other name names no
+// variant of the field's enum and is rejected.
+inline match @host.os {
+    case Bogus.macos: POSIX :: 1;
+    else: POSIX :: 2;
+}
+
+main :: () -> i32 { return POSIX; }
