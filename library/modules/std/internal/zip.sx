@@ -10,17 +10,17 @@
 zipContracts :: @import "modules/std/codecs/zip_contracts.sx";
 @import "modules/std/time.sx";
 
-private le16 :: (data: string, at: i64) -> (i64, !Error) {
+private le16 :: (data: string, at: i64) -> (i64, !compress.Error) {
     if at < 0 or at + 2 > data.len { raise .UnexpectedEnd; }
     encoding.readU16Le(data, at)
 }
 
-private le32 :: (data: string, at: i64) -> (i64, !Error) {
+private le32 :: (data: string, at: i64) -> (i64, !compress.Error) {
     if at < 0 or at + 4 > data.len { raise .UnexpectedEnd; }
     encoding.readU32Le(data, at)
 }
 
-private le64 :: (data: string, at: i64) -> (i64, !Error) {
+private le64 :: (data: string, at: i64) -> (i64, !compress.Error) {
     if at < 0 or at + 8 > data.len { raise .UnexpectedEnd; }
     low := try le32(data, at);
     high := try le32(data, at + 4);
@@ -125,7 +125,7 @@ private zipExtraHasField :: (extra: string, wantedId: i64) -> bool {
 // Validate user-authored extra-field framing before any archive bytes are
 // emitted. Field 0x0001 is owned by the ZIP64 encoder; accepting another copy
 // would make the meaning of sentinel sizes and offsets reader-dependent.
-private zipValidateUserExtra :: (extra: string) -> !Error {
+private zipValidateUserExtra :: (extra: string) -> !compress.Error {
     at := 0;
     while at < extra.len {
         if at + 4 > extra.len { raise .InvalidOptions; }
@@ -140,7 +140,7 @@ private zipValidateUserExtra :: (extra: string) -> !Error {
 // Return the size of an existing central extra block after removing its ZIP64
 // field. Reader-to-writer conversion regenerates that field from resolved
 // values and preserves every other field byte-for-byte.
-private zipExtraWithoutZip64Size :: (extra: string) -> (i64, !Error) {
+private zipExtraWithoutZip64Size :: (extra: string) -> (i64, !compress.Error) {
     kept := 0;
     at := 0;
     while at < extra.len {
@@ -155,7 +155,7 @@ private zipExtraWithoutZip64Size :: (extra: string) -> (i64, !Error) {
     kept
 }
 
-private zipCopyExtraWithoutZip64 :: (output: *ByteWriter, extra: string) -> !Error {
+private zipCopyExtraWithoutZip64 :: (output: *ByteWriter, extra: string) -> !compress.Error {
     at := 0;
     while at < extra.len {
         if at + 4 > extra.len { raise .InvalidData; }
@@ -168,7 +168,7 @@ private zipCopyExtraWithoutZip64 :: (output: *ByteWriter, extra: string) -> !Err
     }
 }
 
-private zip64Values :: (extra: string, compressedSize: i64, size: i64, localOffset: i64, diskStart: i64) -> (i64, i64, i64, i64, !Error) {
+private zip64Values :: (extra: string, compressedSize: i64, size: i64, localOffset: i64, diskStart: i64) -> (i64, i64, i64, i64, !compress.Error) {
     needSize := size == 0xffffffff;
     needCompressed := compressedSize == 0xffffffff;
     needOffset := localOffset == 0xffffffff;
@@ -215,7 +215,7 @@ ZipReadSource :: struct {
     read: (*void, i64, string) -> i64;
 }
 
-private zipSourceReadExact :: (source: ZipReadSource, offset: i64, output: string) -> !Error {
+private zipSourceReadExact :: (source: ZipReadSource, offset: i64, output: string) -> !compress.Error {
     if source.read == null or offset < 0 or output.len < 0 or offset > source.size or output.len > source.size - offset {
         raise .InvalidData;
     }
@@ -239,18 +239,18 @@ ZipReader :: struct {
     sourceRead: (*void, i64, string) -> i64 = null;
     sourceSize: i64 = 0;
 
-    init :: (data: string) -> (ZipReader, !Error) {
+    init :: (data: string) -> (ZipReader, !compress.Error) {
         ZipReader.initMode(data, false)
     }
 
     // File/user callback readers in miniz detect an archive appended to a
     // prefix (for example, a self-extracting executable). Memory readers do
     // not do this implicitly, so native sx exposes the behavior explicitly.
-    initEmbedded :: (data: string) -> (ZipReader, !Error) {
+    initEmbedded :: (data: string) -> (ZipReader, !compress.Error) {
         ZipReader.initMode(data, true)
     }
 
-    initMode :: (data: string, detectPrefix: bool) -> (ZipReader, !Error) {
+    initMode :: (data: string, detectPrefix: bool) -> (ZipReader, !compress.Error) {
         if data.len < 22 { raise .InvalidData; }
         minPos := data.len - 65557;
         if minPos < 0 { minPos = 0; }
@@ -399,7 +399,7 @@ ZipReader :: struct {
 
     isZip64 :: (self: *ZipReader) -> bool { self.active and self.zip64 }
 
-    readArchiveData :: (self: *ZipReader, offset: i64, output: string) -> (i64, !Error) {
+    readArchiveData :: (self: *ZipReader, offset: i64, output: string) -> (i64, !compress.Error) {
         if !self.active or offset < 0 { raise .InvalidData; }
         if offset >= self.archiveSize { return 0; }
         take := self.archiveSize - offset;
@@ -409,7 +409,7 @@ ZipReader :: struct {
         take
     }
 
-    readExactAt :: (self: *ZipReader, offset: i64, output: string) -> !Error {
+    readExactAt :: (self: *ZipReader, offset: i64, output: string) -> !compress.Error {
         if !self.active or offset < 0 or output.len < 0 or offset > self.sourceSize or output.len > self.sourceSize - offset {
             raise .InvalidData;
         }
@@ -424,7 +424,7 @@ ZipReader :: struct {
         while i < output.len { output.ptr[i] = self.data[offset + i]; i += 1; }
     }
 
-    payloadInfo :: (self: *ZipReader, index: i64) -> (ZipEntry, i64, !Error) {
+    payloadInfo :: (self: *ZipReader, index: i64) -> (ZipEntry, i64, !compress.Error) {
         entry := try self.entry(index);
         at := self.archiveStart + entry.localOffset;
         header : [30]u8 = ---;
@@ -442,7 +442,7 @@ ZipReader :: struct {
         return entry, start;
     }
 
-    localRecordBounds :: (self: *ZipReader, entry: ZipEntry) -> (i64, i64, !Error) {
+    localRecordBounds :: (self: *ZipReader, entry: ZipEntry) -> (i64, i64, !compress.Error) {
         at := self.archiveStart + entry.localOffset;
         header : [30]u8 = ---;
         try self.readExactAt(at, string{ ptr = *header[0], len = header.len });
@@ -506,11 +506,11 @@ ZipReader :: struct {
         true
     }
 
-    entry :: (self: *ZipReader, index: i64) -> (ZipEntry, !Error) {
+    entry :: (self: *ZipReader, index: i64) -> (ZipEntry, !compress.Error) {
         self.entryUnchecked(index)
     }
 
-    entryUnchecked :: (self: *ZipReader, index: i64) -> (ZipEntry, !Error) {
+    entryUnchecked :: (self: *ZipReader, index: i64) -> (ZipEntry, !compress.Error) {
         if !self.active { raise .Finished; }
         if index < 0 or index >= self.count { raise .NotFound; }
         pos := self.centralOffset;
@@ -575,7 +575,7 @@ ZipReader :: struct {
     // Exact, case-sensitive, first-match lookup — the single supported
     // policy. The C-compatible case-folded / comment-filtered / path-ignoring
     // variants and their sorted-index machinery are gone with the C surface.
-    find :: (self: *ZipReader, name: string) -> (i64, !Error) {
+    find :: (self: *ZipReader, name: string) -> (i64, !compress.Error) {
         if name.len > 65535 { raise .InvalidData; }
         i := 0;
         while i < self.count {
@@ -586,7 +586,7 @@ ZipReader :: struct {
         raise .NotFound;
     }
 
-    checkExtractSupport :: (self: *ZipReader, entry: ZipEntry, compressedData: bool) -> !Error {
+    checkExtractSupport :: (self: *ZipReader, entry: ZipEntry, compressedData: bool) -> !compress.Error {
         if entry.isEncrypted() or (entry.flags & 0x20) != 0 {
             raise .Unsupported;
         }
@@ -599,18 +599,18 @@ ZipReader :: struct {
         if entry.isDir() or entry.compressedSize == 0 { return; }
     }
 
-    checkValidationSupport :: (self: *ZipReader, entry: ZipEntry) -> !Error {
+    checkValidationSupport :: (self: *ZipReader, entry: ZipEntry) -> !compress.Error {
         if entry.isEncrypted() or (entry.flags & 0x20) != 0 or entry.method == .unsupported {
             raise .Unsupported;
         }
         if entry.isDir() or entry.size == 0 { return; }
     }
 
-    extract :: (self: *ZipReader, index: i64, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (string, !Error) {
+    extract :: (self: *ZipReader, index: i64, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (string, !compress.Error) {
         self.extractOptions(index, ZipExtractOptions{}, maxOutput, alloc)
     }
 
-    extractOptions :: (self: *ZipReader, index: i64, options: ZipExtractOptions, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (string, !Error) {
+    extractOptions :: (self: *ZipReader, index: i64, options: ZipExtractOptions, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (string, !compress.Error) {
         entry := try self.entry(index);
         try self.checkExtractSupport(entry, options.compressedData);
         needed := if options.compressedData then entry.compressedSize else entry.size;
@@ -630,11 +630,11 @@ ZipReader :: struct {
         result
     }
 
-    extractInto :: (self: *ZipReader, index: i64, output: string, options: ZipExtractOptions = .{}, alloc: Allocator = context.allocator) -> (i64, !Error) {
+    extractInto :: (self: *ZipReader, index: i64, output: string, options: ZipExtractOptions = .{}, alloc: Allocator = context.allocator) -> (i64, !compress.Error) {
         self.extractIntoWithReadBuffer(index, output, options, .{ ptr = null, len = 0 }, alloc)
     }
 
-    extractIntoWithReadBuffer :: (self: *ZipReader, index: i64, output: string, options: ZipExtractOptions, readBuffer: string, alloc: Allocator) -> (i64, !Error) {
+    extractIntoWithReadBuffer :: (self: *ZipReader, index: i64, output: string, options: ZipExtractOptions, readBuffer: string, alloc: Allocator) -> (i64, !compress.Error) {
         entry, payloadStart := try self.payloadInfo(index);
         try self.checkExtractSupport(entry, options.compressedData);
         needed := if options.compressedData then entry.compressedSize else entry.size;
@@ -726,7 +726,7 @@ ZipReader :: struct {
         needed
     }
 
-    validateEntry :: (self: *ZipReader, index: i64, headersOnly: bool = false, skipCrc: bool = false, alloc: Allocator = context.allocator) -> !Error {
+    validateEntry :: (self: *ZipReader, index: i64, headersOnly: bool = false, skipCrc: bool = false, alloc: Allocator = context.allocator) -> !compress.Error {
         entry := try self.entry(index);
         try self.checkValidationSupport(entry);
         at := self.archiveStart + entry.localOffset;
@@ -831,7 +831,7 @@ ZipReader :: struct {
         }
     }
 
-    validate :: (self: *ZipReader, headersOnly: bool = false, alloc: Allocator = context.allocator) -> !Error {
+    validate :: (self: *ZipReader, headersOnly: bool = false, alloc: Allocator = context.allocator) -> !compress.Error {
         i := 0;
         while i < self.count {
             try self.validateEntry(i, headersOnly, false, alloc);
@@ -844,11 +844,11 @@ ZipReader :: struct {
 // constructor at module scope also reads naturally once this becomes
 // `zip.open(...)` in the stdlib; `ZipReader.init` remains available to flat
 // importers and internal code.
-openZip :: (data: string) -> (ZipReader, !Error) {
+openZip :: (data: string) -> (ZipReader, !compress.Error) {
     ZipReader.init(data)
 }
 
-openZipEmbedded :: (data: string) -> (ZipReader, !Error) {
+openZipEmbedded :: (data: string) -> (ZipReader, !compress.Error) {
     ZipReader.initEmbedded(data)
 }
 
@@ -946,7 +946,7 @@ OwnedZipReader :: struct {
     }
 }
 
-openZipSource :: (source: ZipReadSource, detectPrefix: bool = true, alloc: Allocator = context.allocator, maxMetadata: i64 = 67108864) -> (OwnedZipReader, !Error) {
+openZipSource :: (source: ZipReadSource, detectPrefix: bool = true, alloc: Allocator = context.allocator, maxMetadata: i64 = 67108864) -> (OwnedZipReader, !compress.Error) {
     if source.read == null or source.size < 22 or maxMetadata < 0 { raise .InvalidData; }
 
     // Match upstream's backward EOCD search: overlapping 4 KiB reads, capped
@@ -1136,17 +1136,17 @@ openZipSource :: (source: ZipReadSource, detectPrefix: bool = true, alloc: Alloc
     OwnedZipReader{ reader = reader, bytes = bytes, alloc = alloc }
 }
 
-openZipFile :: (path: string, start: i64 = 0, size: i64 = 0, alloc: Allocator = context.allocator, maxMetadata: i64 = 67108864) -> (OwnedZipReader, !Error) {
+openZipFile :: (path: string, start: i64 = 0, size: i64 = 0, alloc: Allocator = context.allocator, maxMetadata: i64 = 67108864) -> (OwnedZipReader, !compress.Error) {
     openZipFileMode(path, start, size, false, alloc, maxMetadata)
 }
 
 // MZ_ZIP_FLAG_READ_ALLOW_WRITING: open the backing file read/write up front so
 // reader-to-writer conversion does not need to close and reopen it.
-openZipFileWritable :: (path: string, start: i64 = 0, size: i64 = 0, alloc: Allocator = context.allocator, maxMetadata: i64 = 67108864) -> (OwnedZipReader, !Error) {
+openZipFileWritable :: (path: string, start: i64 = 0, size: i64 = 0, alloc: Allocator = context.allocator, maxMetadata: i64 = 67108864) -> (OwnedZipReader, !compress.Error) {
     openZipFileMode(path, start, size, true, alloc, maxMetadata)
 }
 
-private openZipFileMode :: (path: string, start: i64, size: i64, writable: bool, alloc: Allocator, maxMetadata: i64 = 67108864) -> (OwnedZipReader, !Error) {
+private openZipFileMode :: (path: string, start: i64, size: i64, writable: bool, alloc: Allocator, maxMetadata: i64 = 67108864) -> (OwnedZipReader, !compress.Error) {
     if start < 0 or size < 0 or (size > 0 and size < 22) or maxMetadata < 0 {
         raise .InvalidData;
     }
@@ -1181,7 +1181,7 @@ private ZipExtractSink :: struct {
 
 private zipDiscardOutput :: (ctx: *void, data: string) -> bool { true }
 
-zipExtractToOutput :: (reader: *ZipReader, index: i64, sink: ZipExtractSink, options: ZipExtractOptions = .{}, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !Error) {
+zipExtractToOutput :: (reader: *ZipReader, index: i64, sink: ZipExtractSink, options: ZipExtractOptions = .{}, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !compress.Error) {
     if sink.write == null {
         raise .InvalidData;
     }
@@ -1283,7 +1283,7 @@ private zipFileSinkWrite :: (ctx: *void, data: string) -> bool {
     true
 }
 
-private zipExtractToHandle :: (reader: *ZipReader, index: i64, file: *fs.File, options: ZipExtractOptions = .{}, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !Error) {
+private zipExtractToHandle :: (reader: *ZipReader, index: i64, file: *fs.File, options: ZipExtractOptions = .{}, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !compress.Error) {
     if !file.isValid() { raise .Io; }
     entry := reader.entry(index) catch |e| { raise e; };
     if entry.isDir() or !entry.isSupported() {
@@ -1294,7 +1294,7 @@ private zipExtractToHandle :: (reader: *ZipReader, index: i64, file: *fs.File, o
     zipExtractToOutput(reader, index, sink, options, maxOutput, alloc)
 }
 
-zipExtractToFile :: (reader: *ZipReader, index: i64, path: string, options: ZipExtractOptions = .{}, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !Error) {
+zipExtractToFile :: (reader: *ZipReader, index: i64, path: string, options: ZipExtractOptions = .{}, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !compress.Error) {
     entry := reader.entry(index) catch |e| { raise e; };
     if entry.isDir() or !entry.isSupported() {
         raise .Unsupported;
@@ -1334,7 +1334,7 @@ private ZipExtractIterator :: struct {
     failed: bool;
     readCalled: bool;
 
-    init :: (reader: *ZipReader, index: i64, options: ZipExtractOptions = .{}, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (ZipExtractIterator, !Error) {
+    init :: (reader: *ZipReader, index: i64, options: ZipExtractOptions = .{}, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (ZipExtractIterator, !compress.Error) {
         entry, payloadStart := try reader.payloadInfo(index);
         try reader.checkExtractSupport(entry, options.compressedData);
         expected := if options.compressedData then entry.compressedSize else entry.size;
@@ -1388,7 +1388,7 @@ private ZipExtractIterator :: struct {
         }
     }
 
-    read :: (self: *ZipExtractIterator, output: string) -> (i64, !Error) {
+    read :: (self: *ZipExtractIterator, output: string) -> (i64, !compress.Error) {
         self.readCalled = true;
         if self.done or output.len == 0 { return 0; }
         if self.options.compressedData or self.entry.method == .store {
@@ -1468,8 +1468,8 @@ private ZipExtractIterator :: struct {
         self.done = true;
     }
 
-    finish :: (self: *ZipExtractIterator) -> !Error {
-        failure : ?Error = null;
+    finish :: (self: *ZipExtractIterator) -> !compress.Error {
+        failure : ?compress.Error = null;
         if self.failed or !self.done {
             failure = .InvalidData;
         } else if !self.options.compressedData {
@@ -1493,7 +1493,7 @@ ZipSeekExtractor :: struct {
     alloc: Allocator;
     active: bool;
 
-    init :: (reader: *ZipReader, index: i64, options: ZipExtractOptions = .{}, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (ZipSeekExtractor, !Error) {
+    init :: (reader: *ZipReader, index: i64, options: ZipExtractOptions = .{}, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (ZipSeekExtractor, !compress.Error) {
         iterator := try ZipExtractIterator.init(reader, index, options, maxOutput, alloc);
         size := if options.compressedData then iterator.entry.compressedSize else iterator.entry.size;
         ZipSeekExtractor{ reader = reader, index = index, options = options, iterator = iterator, size = size, alloc = alloc, active = true }
@@ -1501,7 +1501,7 @@ ZipSeekExtractor :: struct {
 
     offset :: (self: *ZipSeekExtractor) -> i64 { self.iterator.outputAt }
 
-    seek :: (self: *ZipSeekExtractor, target: i64) -> !Error {
+    seek :: (self: *ZipSeekExtractor, target: i64) -> !compress.Error {
         if !self.active or target < 0 or target > self.size {
             raise .InvalidData;
         }
@@ -1518,12 +1518,12 @@ ZipSeekExtractor :: struct {
         }
     }
 
-    read :: (self: *ZipSeekExtractor, output: string) -> (i64, !Error) {
+    read :: (self: *ZipSeekExtractor, output: string) -> (i64, !compress.Error) {
         if !self.active { raise .Finished; }
         self.iterator.read(output)
     }
 
-    end :: (self: *ZipSeekExtractor) -> !Error {
+    end :: (self: *ZipSeekExtractor) -> !compress.Error {
         if !self.active { return; }
         self.active = false;
         try self.iterator.finish();
@@ -1625,7 +1625,7 @@ zipSetFileTime :: (path: string, seconds: i64) -> bool {
     fs.setModifiedSeconds(path, seconds)
 }
 
-private zipResolveDosTime :: (options: ZipEntryOptions) -> (i64, i64, !Error) {
+private zipResolveDosTime :: (options: ZipEntryOptions) -> (i64, i64, !compress.Error) {
     if options.timeMode == .none { return options.dosTime, options.dosDate; }
     // `.file` is resolved by the file/handle adapters before reaching here.
     if options.timeMode == .file { raise .InvalidOptions; }
@@ -1845,7 +1845,7 @@ ZipStreamWriter :: struct {
     // Stateful user/file writer conversion. Existing local records stay in
     // place; new output begins at the old central-directory offset while the
     // retained central metadata remains available for extraction and reads.
-    initFromReader :: (source: *ZipReader, sink: ZipSink, forceZip64: bool = false, alloc: Allocator = context.allocator) -> (ZipStreamWriter, !Error) {
+    initFromReader :: (source: *ZipReader, sink: ZipSink, forceZip64: bool = false, alloc: Allocator = context.allocator) -> (ZipStreamWriter, !compress.Error) {
         if !source.active or sink.write == null { raise .InvalidData; }
         destinationZip64 := source.zip64 or forceZip64;
         if (!destinationZip64 and source.count >= 65535) or source.count >= 0xffffffff { raise .TooLarge; }
@@ -1907,7 +1907,7 @@ ZipStreamWriter :: struct {
         writer
     }
 
-    readArchiveData :: (self: *ZipStreamWriter, offset: i64, output: string) -> (i64, !Error) {
+    readArchiveData :: (self: *ZipStreamWriter, offset: i64, output: string) -> (i64, !compress.Error) {
         if !self.active or !self.allowReading or self.sink.readAt == null or offset < 0 {
             raise .InvalidData;
         }
@@ -1919,14 +1919,14 @@ ZipStreamWriter :: struct {
         if made < 0 or made > take { raise .Io; }
         made
     }
-    setAlignment :: (self: *ZipStreamWriter, alignment: i64) -> !Error {
+    setAlignment :: (self: *ZipStreamWriter, alignment: i64) -> !compress.Error {
         if self.finished or alignment < 0 or (alignment > 0 and (alignment & (alignment - 1)) != 0) {
             raise .InvalidArgument;
         }
         self.alignment = alignment;
     }
 
-    emit :: (self: *ZipStreamWriter, data: string) -> !Error {
+    emit :: (self: *ZipStreamWriter, data: string) -> !compress.Error {
         if self.sink.write == null {
             raise .InvalidData;
         }
@@ -1935,7 +1935,7 @@ ZipStreamWriter :: struct {
         self.offset += data.len;
     }
 
-    patch :: (self: *ZipStreamWriter, offset: i64, data: string) -> !Error {
+    patch :: (self: *ZipStreamWriter, offset: i64, data: string) -> !compress.Error {
         if offset < 0 or data.len < 0 or offset > self.offset or data.len > self.offset - offset or self.sink.writeAt == null {
             raise .InvalidData;
         }
@@ -1945,7 +1945,7 @@ ZipStreamWriter :: struct {
         }
     }
 
-    emitZeros :: (self: *ZipStreamWriter, count: i64) -> !Error {
+    emitZeros :: (self: *ZipStreamWriter, count: i64) -> !compress.Error {
         zeros : [4096]u8 = ---;
         i := 0;
         while i < zeros.len { zeros[i] = 0; i += 1; }
@@ -1957,7 +1957,7 @@ ZipStreamWriter :: struct {
         }
     }
 
-    addOptions :: (self: *ZipStreamWriter, name: string, data: string, options: ZipEntryOptions) -> !Error {
+    addOptions :: (self: *ZipStreamWriter, name: string, data: string, options: ZipEntryOptions) -> !compress.Error {
         if !self.active { raise .Io; }
         if self.finished { raise .Finished; }
         centralExtra := if options.separateCentralExtra then options.centralExtra else options.extra;
@@ -2186,7 +2186,7 @@ ZipStreamWriter :: struct {
     // read before `size` is an early EOF, and the callback is never asked for
     // bytes beyond the declared bound. Only fixed input/output windows remain
     // resident while the payload is processed.
-    addSource :: (self: *ZipStreamWriter, name: string, source: ZipInputSource, options: ZipEntryOptions = .{}) -> !Error {
+    addSource :: (self: *ZipStreamWriter, name: string, source: ZipInputSource, options: ZipEntryOptions = .{}) -> !compress.Error {
         if self.finished { raise .Finished; }
         centralExtra := if options.separateCentralExtra then options.centralExtra else options.extra;
         if self.entries.len >= 0xffffffff { raise .TooLarge; }
@@ -2425,7 +2425,7 @@ ZipStreamWriter :: struct {
     // Streaming/backend-general form of mz_zip_writer_add_from_zip_reader().
     // Local metadata and descriptors are copied without semantic validation,
     // exactly like upstream; only framing needed to find the record is parsed.
-    addFromReader :: (self: *ZipStreamWriter, source: *ZipReader, index: i64) -> !Error {
+    addFromReader :: (self: *ZipStreamWriter, source: *ZipReader, index: i64) -> !compress.Error {
         if !self.active { raise .Io; }
         if self.finished { raise .Finished; }
         if source == null or !source.active or (source.sourceRead == null and source.data.ptr == null) {
@@ -2605,7 +2605,7 @@ ZipStreamWriter :: struct {
         committed = true;
     }
 
-    addHandle :: (self: *ZipStreamWriter, name: string, file: *fs.File, maxSize: i64, options: ZipEntryOptions = .{}) -> !Error {
+    addHandle :: (self: *ZipStreamWriter, name: string, file: *fs.File, maxSize: i64, options: ZipEntryOptions = .{}) -> !compress.Error {
         if file.fd < 0 or maxSize < 0 { raise .InvalidData; }
         actualOptions := options;
         if actualOptions.timeMode == .file {
@@ -2620,7 +2620,7 @@ ZipStreamWriter :: struct {
         try self.addSource(name, source, actualOptions);
     }
 
-    addFile :: (self: *ZipStreamWriter, name: string, path: string, options: ZipEntryOptions) -> !Error {
+    addFile :: (self: *ZipStreamWriter, name: string, path: string, options: ZipEntryOptions) -> !compress.Error {
         if options.useFileTime and !fs.exists(path) {
             raise .Io;
         }
@@ -2635,9 +2635,9 @@ ZipStreamWriter :: struct {
         if !file.close() { raise .Io; }
     }
 
-    finish :: (self: *ZipStreamWriter) -> !Error { try self.finishComment(""); }
+    finish :: (self: *ZipStreamWriter) -> !compress.Error { try self.finishComment(""); }
 
-    finishComment :: (self: *ZipStreamWriter, archiveComment: string) -> !Error {
+    finishComment :: (self: *ZipStreamWriter, archiveComment: string) -> !compress.Error {
         if !self.active { raise .Io; }
         if self.finished { raise .Finished; }
         if archiveComment.len > 65535 { raise .TooLarge; }
@@ -2765,11 +2765,11 @@ OwnedZipWriter :: struct {
     deinit :: (self: *OwnedZipWriter) { self.end(); }
 }
 
-openZipWriterFile :: (path: string, reserve: i64 = 0, zip64: bool = false, allowReading: bool = false, alloc: Allocator = context.allocator) -> (OwnedZipWriter, !Error) {
+openZipWriterFile :: (path: string, reserve: i64 = 0, zip64: bool = false, allowReading: bool = false, alloc: Allocator = context.allocator) -> (OwnedZipWriter, !compress.Error) {
     openZipWriterFileMode(path, reserve, zip64, allowReading, alloc)
 }
 
-openZipWriterFileMode :: (path: string, reserve: i64, zip64: bool, allowReading: bool, alloc: Allocator) -> (OwnedZipWriter, !Error) {
+openZipWriterFileMode :: (path: string, reserve: i64, zip64: bool, allowReading: bool, alloc: Allocator) -> (OwnedZipWriter, !compress.Error) {
     if reserve < 0 { raise .InvalidData; }
     maybeCreated := fs.openFile(path, .write);
     if maybeCreated == null { raise .Io; }
@@ -2805,7 +2805,7 @@ openZipWriterFileMode :: (path: string, reserve: i64, zip64: bool, allowReading:
 // Convert a reader opened by openZipFileWritable() into an in-place writer.
 // The returned writer borrows the OwnedZipReader's file state; finalize/end it
 // before deinitializing the owner.
-zipFileWriterFromReader :: (owned: *OwnedZipReader, forceZip64: bool = false, alloc: Allocator = context.allocator) -> (ZipStreamWriter, !Error) {
+zipFileWriterFromReader :: (owned: *OwnedZipReader, forceZip64: bool = false, alloc: Allocator = context.allocator) -> (ZipStreamWriter, !compress.Error) {
     if owned.fileState == null or !owned.fileState.writable or !owned.reader.active {
         raise .InvalidData;
     }

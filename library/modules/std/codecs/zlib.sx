@@ -3,153 +3,155 @@
 // Allocating operations return allocator-owned bytes. `_into` operations
 // return the initialized prefix borrowed from the caller's output buffer.
 
-@import "modules/std/core.sx";
-@import "modules/std/compress.sx";
-@import "modules/std/internal/compress.sx";
-deflate :: @import "modules/std/codecs/deflate.sx";
+zlib :: scope {
+    @import "modules/std/core.sx";
+    @import "modules/std/compress.sx";
+    @import "modules/std/internal/compress.sx";
+    @import "modules/std/codecs/deflate.sx";
 
-bound :: (sourceLen: i64) -> (i64, !Error) {
-    compressBound(sourceLen)
-}
+    bound :: (sourceLen: i64) -> (i64, !compress.Error) {
+        compressBound(sourceLen)
+    }
 
-checksum :: (data: string, initial: u32 = 1) -> u32 { adler32(data, initial).(u32) }
+    checksum :: (data: string, initial: u32 = 1) -> u32 { adler32(data, initial).(u32) }
 
-Encoder :: struct {
-    state: ZlibDeflater;
+    Encoder :: struct {
+        state: ZlibDeflater;
 
-    init :: (options: deflate.Options = .{}, alloc: Allocator = context.allocator) -> (Encoder, !Error) {
+        init :: (options: deflate.Options = .{}, alloc: Allocator = context.allocator) -> (Encoder, !compress.Error) {
+            try options.validate();
+            state := ZlibDeflater.initStrategy(options.level, options.strategy, alloc);
+            if state.raw.allocationFailed { state.deinit(); raise .AllocationFailed; }
+            Encoder{ state = state }
+        }
+
+        reset :: (self: *Encoder, options: deflate.Options = .{}) -> !compress.Error {
+            try options.validate();
+            alloc := self.state.alloc;
+            self.state.deinit();
+            self.state = ZlibDeflater.initStrategy(options.level, options.strategy, alloc);
+            if self.state.raw.allocationFailed { raise .AllocationFailed; }
+        }
+
+        flush :: (self: *Encoder, input: string, output: string, mode: deflate.Flush = .none) -> (compress.Progress, !compress.Error) {
+            self.state.stepFlush(input, output, mode)
+        }
+
+        write :: (self: *Encoder, input: string, output: string) -> (compress.Progress, !compress.Error) {
+            self.flush(input, output, .none)
+        }
+
+        finish :: (self: *Encoder, output: string) -> (compress.Progress, !compress.Error) {
+            self.flush("", output, .finish)
+        }
+
+        deinit :: (self: *Encoder) { self.state.deinit(); }
+    }
+
+    impl compress.StreamingEncoder for Encoder {
+        write :: (self: *Encoder, input: string, output: string) -> (compress.Progress, !compress.Error) {
+            self.write(input, output)
+        }
+
+        finish :: (self: *Encoder, output: string) -> (compress.Progress, !compress.Error) {
+            self.finish(output)
+        }
+
+        deinit :: (self: *Encoder) { self.deinit(); }
+    }
+
+    Decoder :: struct {
+        state: ZlibInflater;
+
+        init :: (maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (Decoder, !compress.Error) {
+            try validateOutputLimit(maxOutput);
+            state := ZlibInflater.init(maxOutput, alloc);
+            if state.raw.window.ptr == null { state.deinit(); raise .AllocationFailed; }
+            Decoder{ state = state }
+        }
+
+        reset :: (self: *Decoder, maxOutput: i64 = 1073741824) -> !compress.Error {
+            try validateOutputLimit(maxOutput);
+            self.state.reset(maxOutput);
+            if self.state.raw.window.ptr == null { raise .AllocationFailed; }
+        }
+
+        read :: (self: *Decoder, input: string, output: string) -> (compress.Progress, !compress.Error) {
+            self.state.step(input, output)
+        }
+
+        finish :: (self: *Decoder, output: string) -> (compress.Progress, !compress.Error) {
+            progress := try self.state.step("", output);
+            if progress.status == .needInput { raise .UnexpectedEnd; }
+            progress
+        }
+
+        deinit :: (self: *Decoder) { self.state.deinit(); }
+    }
+
+    impl compress.StreamingDecoder for Decoder {
+        read :: (self: *Decoder, input: string, output: string) -> (compress.Progress, !compress.Error) {
+            self.read(input, output)
+        }
+
+        finish :: (self: *Decoder, output: string) -> (compress.Progress, !compress.Error) {
+            self.finish(output)
+        }
+
+        deinit :: (self: *Decoder) { self.deinit(); }
+    }
+
+    encode :: (data: string, options: deflate.Options = .{}, alloc: Allocator = context.allocator) -> (string, !compress.Error) {
         try options.validate();
-        state := ZlibDeflater.initStrategy(options.level, options.strategy, alloc);
-        if state.raw.allocationFailed { state.deinit(); raise .AllocationFailed; }
-        Encoder{ state = state }
+        result := compressPath(data, options.level, options.strategy, .fastest, alloc);
+        if result.ptr == null { raise .AllocationFailed; }
+        result
     }
 
-    reset :: (self: *Encoder, options: deflate.Options = .{}) -> !Error {
+    encodeInto :: (data: string, output: string, options: deflate.Options = .{}, alloc: Allocator = context.allocator) -> (string, !compress.Error) {
         try options.validate();
-        alloc := self.state.alloc;
-        self.state.deinit();
-        self.state = ZlibDeflater.initStrategy(options.level, options.strategy, alloc);
-        if self.state.raw.allocationFailed { raise .AllocationFailed; }
+        if options.strategy == .default {
+            return try compressInto(data, output, options.level, alloc);
+        }
+        encoder := try Encoder.init(options, alloc);
+        defer encoder.deinit();
+        inputAt := 0;
+        outputAt := 0;
+        while true {
+            input := "";
+            if inputAt < data.len { input = data[inputAt..]; }
+            destination := "";
+            if outputAt < output.len { destination = output[outputAt..]; }
+            progress := try encoder.flush(input, destination, .finish);
+            inputAt += progress.consumed;
+            outputAt += progress.produced;
+            if progress.status == .done { return output[..outputAt]; }
+            if progress.status == .needOutput and outputAt >= output.len { raise .OutputLimit; }
+        }
+        raise .InvalidData;
     }
 
-    flush :: (self: *Encoder, input: string, output: string, mode: deflate.Flush = .none) -> (Progress, !Error) {
-        self.state.stepFlush(input, output, mode)
-    }
-
-    write :: (self: *Encoder, input: string, output: string) -> (Progress, !Error) {
-        self.flush(input, output, .none)
-    }
-
-    finish :: (self: *Encoder, output: string) -> (Progress, !Error) {
-        self.flush("", output, .finish)
-    }
-
-    deinit :: (self: *Encoder) { self.state.deinit(); }
-}
-
-impl StreamingEncoder for Encoder {
-    write :: (self: *Encoder, input: string, output: string) -> (Progress, !Error) {
-        self.write(input, output)
-    }
-
-    finish :: (self: *Encoder, output: string) -> (Progress, !Error) {
-        self.finish(output)
-    }
-
-    deinit :: (self: *Encoder) { self.deinit(); }
-}
-
-Decoder :: struct {
-    state: ZlibInflater;
-
-    init :: (maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (Decoder, !Error) {
+    decodePrefix :: (data: string, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (compress.DecodeResult, !compress.Error) {
         try validateOutputLimit(maxOutput);
-        state := ZlibInflater.init(maxOutput, alloc);
-        if state.raw.window.ptr == null { state.deinit(); raise .AllocationFailed; }
-        Decoder{ state = state }
+        bytes, consumed := try decompressWithConsumed(data, maxOutput, alloc);
+        result : compress.DecodeResult = .{ bytes = bytes, consumed = consumed };
+        result
     }
 
-    reset :: (self: *Decoder, maxOutput: i64 = 1073741824) -> !Error {
+    decode :: (data: string, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (string, !compress.Error) {
         try validateOutputLimit(maxOutput);
-        self.state.reset(maxOutput);
-        if self.state.raw.window.ptr == null { raise .AllocationFailed; }
+        decompressExact(data, maxOutput, alloc)
     }
 
-    read :: (self: *Decoder, input: string, output: string) -> (Progress, !Error) {
-        self.state.step(input, output)
+    decodeIntoPrefix :: (data: string, output: string, alloc: Allocator = context.allocator) -> (compress.DecodeResult, !compress.Error) {
+        written, consumed := try decompressIntoWithConsumed(data, output, alloc);
+        result : compress.DecodeResult = .{ bytes = output[..written], consumed = consumed };
+        result
     }
 
-    finish :: (self: *Decoder, output: string) -> (Progress, !Error) {
-        progress := try self.state.step("", output);
-        if progress.status == .needInput { raise .UnexpectedEnd; }
-        progress
+    decodeInto :: (data: string, output: string, alloc: Allocator = context.allocator) -> (string, !compress.Error) {
+        result := try decodeIntoPrefix(data, output, alloc);
+        if result.consumed != data.len { raise .InvalidData; }
+        result.bytes
     }
-
-    deinit :: (self: *Decoder) { self.state.deinit(); }
-}
-
-impl StreamingDecoder for Decoder {
-    read :: (self: *Decoder, input: string, output: string) -> (Progress, !Error) {
-        self.read(input, output)
-    }
-
-    finish :: (self: *Decoder, output: string) -> (Progress, !Error) {
-        self.finish(output)
-    }
-
-    deinit :: (self: *Decoder) { self.deinit(); }
-}
-
-encode :: (data: string, options: deflate.Options = .{}, alloc: Allocator = context.allocator) -> (string, !Error) {
-    try options.validate();
-    result := compressPath(data, options.level, options.strategy, .fastest, alloc);
-    if result.ptr == null { raise .AllocationFailed; }
-    result
-}
-
-encodeInto :: (data: string, output: string, options: deflate.Options = .{}, alloc: Allocator = context.allocator) -> (string, !Error) {
-    try options.validate();
-    if options.strategy == .default {
-        return try compressInto(data, output, options.level, alloc);
-    }
-    encoder := try Encoder.init(options, alloc);
-    defer encoder.deinit();
-    inputAt := 0;
-    outputAt := 0;
-    while true {
-        input := "";
-        if inputAt < data.len { input = data[inputAt..]; }
-        destination := "";
-        if outputAt < output.len { destination = output[outputAt..]; }
-        progress := try encoder.flush(input, destination, .finish);
-        inputAt += progress.consumed;
-        outputAt += progress.produced;
-        if progress.status == .done { return output[..outputAt]; }
-        if progress.status == .needOutput and outputAt >= output.len { raise .OutputLimit; }
-    }
-    raise .InvalidData;
-}
-
-decodePrefix :: (data: string, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (DecodeResult, !Error) {
-    try validateOutputLimit(maxOutput);
-    bytes, consumed := try decompressWithConsumed(data, maxOutput, alloc);
-    result : DecodeResult = .{ bytes = bytes, consumed = consumed };
-    result
-}
-
-decode :: (data: string, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (string, !Error) {
-    try validateOutputLimit(maxOutput);
-    decompressExact(data, maxOutput, alloc)
-}
-
-decodeIntoPrefix :: (data: string, output: string, alloc: Allocator = context.allocator) -> (DecodeResult, !Error) {
-    written, consumed := try decompressIntoWithConsumed(data, output, alloc);
-    result : DecodeResult = .{ bytes = output[..written], consumed = consumed };
-    result
-}
-
-decodeInto :: (data: string, output: string, alloc: Allocator = context.allocator) -> (string, !Error) {
-    result := try decodeIntoPrefix(data, output, alloc);
-    if result.consumed != data.len { raise .InvalidData; }
-    result.bytes
 }

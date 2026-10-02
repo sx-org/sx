@@ -21,7 +21,6 @@
 private clib :: @import "modules/std/c.sx";
 @import "modules/std/posix.sx";
 @import "modules/std/socket.sx";
-@import "modules/std/compress.sx";     // shared codec Error/Progress contract
 
 private HDR_ACCEPT_ENCODING :: "Accept-Encoding: gzip, deflate\r\n";
 

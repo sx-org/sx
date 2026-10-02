@@ -28,14 +28,14 @@ private TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF : i64 = 4;
 private TINFL_FLAG_COMPUTE_ADLER32 : i64 = 8;
 
 // miniz's public bound is intentionally conservative.
-compressBound :: (sourceLen: i64) -> (i64, !Error) {
+compressBound :: (sourceLen: i64) -> (i64, !compress.Error) {
     if sourceLen < 0 or sourceLen > 83848836698679778 { raise .TooLarge; }
     ratioBound := 128 + (sourceLen * 110) / 100;
     blockBound := 128 + sourceLen + ((sourceLen / (31 * 1024)) + 1) * 5;
     if ratioBound > blockBound then ratioBound else blockBound
 }
 
-validateOutputLimit :: (maxOutput: i64) -> !Error {
+validateOutputLimit :: (maxOutput: i64) -> !compress.Error {
     if maxOutput < 0 { raise .InvalidArgument; }
 }
 
@@ -1000,16 +1000,8 @@ private emitTdeflFixed :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Alloca
     return writer.finish(), validBits;
 }
 
-deflate :: (data: string, level: i64 = 6, alloc: Allocator = context.allocator) -> string {
-    deflateWithMode(data, level, 0, alloc)
-}
-
 deflateStrategy :: (data: string, level: i64, strategy: Strategy, alloc: Allocator = context.allocator) -> string {
     deflateWithOptions(data, level, strategy, 0, alloc)
-}
-
-private deflateWithMode :: (data: string, level: i64, blockMode: i64, alloc: Allocator) -> string {
-    deflateWithOptions(data, level, .default, blockMode, alloc)
 }
 
 private deflateWithOptions :: (data: string, level: i64, strategy: Strategy, blockMode: i64, alloc: Allocator) -> string {
@@ -1064,7 +1056,7 @@ Huffman :: struct {
     tree: [576]i16;
 }
 
-private buildHuffmanInto :: (h: *Huffman, lengths: string, allowSingle: bool = true, allowEmpty: bool = false) -> !Error {
+private buildHuffmanInto :: (h: *Huffman, lengths: string, allowSingle: bool = true, allowEmpty: bool = false) -> !compress.Error {
     i := 0;
     while i < 16 { h.counts[i] = 0; i += 1; }
     i = 0;
@@ -1197,7 +1189,7 @@ private huffmanResolve :: (h: *Huffman, bits: i64) -> i64 {
     (length << 9) | entry
 }
 
-private fixedTreesInto :: (lit: *Huffman, dist: *Huffman) -> !Error {
+private fixedTreesInto :: (lit: *Huffman, dist: *Huffman) -> !compress.Error {
     litLengths : [288]u8 = ---;
     i := 0;
     while i <= 143 { litLengths[i] = 8; i += 1; }
@@ -1284,12 +1276,12 @@ private StoredDeflater :: struct {
         self.phase = .header;
     }
 
-    step :: (self: *StoredDeflater, input: string, output: string, finish: bool = false) -> (Progress, !Error) {
+    step :: (self: *StoredDeflater, input: string, output: string, finish: bool = false) -> (compress.Progress, !compress.Error) {
         if self.buffer.ptr == null { raise .AllocationFailed; }
         if finish { self.finishing = true; }
         if self.phase == .done {
             if input.len > 0 { raise .Finished; }
-            return Progress{ consumed = 0, produced = 0, status = .done };
+            return compress.Progress{ consumed = 0, produced = 0, status = .done };
         }
         consumed := 0;
         produced := 0;
@@ -1312,7 +1304,7 @@ private StoredDeflater :: struct {
                     self.beginBlock(true);
                     continue;
                 }
-                return Progress{ consumed = consumed, produced = produced, status = .needInput };
+                return compress.Progress{ consumed = consumed, produced = produced, status = .needInput };
             }
             if self.phase == .header {
                 if self.blockFinal and input.len - consumed > 0 { raise .Finished; }
@@ -1321,7 +1313,7 @@ private StoredDeflater :: struct {
                     self.headerAt += 1;
                     produced += 1;
                 }
-                if self.headerAt < 5 { return Progress{ consumed = consumed, produced = produced, status = .needOutput }; }
+                if self.headerAt < 5 { return compress.Progress{ consumed = consumed, produced = produced, status = .needOutput }; }
                 self.phase = .payload;
                 continue;
             }
@@ -1336,10 +1328,10 @@ private StoredDeflater :: struct {
                     produced += 1;
                     n += 1;
                 }
-                if self.payloadAt < self.buffered { return Progress{ consumed = consumed, produced = produced, status = .needOutput }; }
+                if self.payloadAt < self.buffered { return compress.Progress{ consumed = consumed, produced = produced, status = .needOutput }; }
                 if self.blockFinal {
                     self.phase = .done;
-                    return Progress{ consumed = consumed, produced = produced, status = .done };
+                    return compress.Progress{ consumed = consumed, produced = produced, status = .done };
                 }
                 self.buffered = 0;
                 self.payloadAt = 0;
@@ -1350,7 +1342,7 @@ private StoredDeflater :: struct {
         raise .InvalidData;
     }
 
-    end :: (self: *StoredDeflater) -> !Error {
+    end :: (self: *StoredDeflater) -> !compress.Error {
         if self.phase != .done { raise .UnexpectedEnd; }
     }
 }
@@ -2071,25 +2063,25 @@ Deflater :: struct {
         self.phase = .pendingBits;
     }
 
-    stepUnchecked :: (self: *Deflater, input: string, output: string, finish: bool = false) -> Progress {
-        if self.allocationFailed { return Progress{ consumed = 0, produced = 0, status = .done }; }
+    stepUnchecked :: (self: *Deflater, input: string, output: string, finish: bool = false) -> compress.Progress {
+        if self.allocationFailed { return compress.Progress{ consumed = 0, produced = 0, status = .done }; }
         self.stepFlushUnchecked(input, output, if finish then .finish else .none)
     }
 
-    stepFlushUnchecked :: (self: *Deflater, input: string, output: string, mode: Flush = .none) -> Progress {
-        if self.allocationFailed { return Progress{ consumed = 0, produced = 0, status = .done }; }
+    stepFlushUnchecked :: (self: *Deflater, input: string, output: string, mode: Flush = .none) -> compress.Progress {
+        if self.allocationFailed { return compress.Progress{ consumed = 0, produced = 0, status = .done }; }
         if mode == .finish { self.finishing = true; }
         else if mode == .sync or mode == .full {
             if self.flushMode == .none { self.flushMode = mode; }
         }
         if self.phase == .done {
-            return Progress{ consumed = 0, produced = 0, status = .done };
+            return compress.Progress{ consumed = 0, produced = 0, status = .done };
         }
         consumed := 0;
         produced := 0;
         while true {
             if self.allocationFailed {
-                return Progress{ consumed = consumed, produced = produced, status = .done };
+                return compress.Progress{ consumed = consumed, produced = produced, status = .done };
             }
             if self.phase == .fill {
                 if self.level == 0 {
@@ -2112,7 +2104,7 @@ Deflater :: struct {
                         self.beginRawBlock(false);
                         continue;
                     }
-                    return Progress{ consumed = consumed, produced = produced, status = .needInput };
+                    return compress.Progress{ consumed = consumed, produced = produced, status = .needInput };
                 }
 
                 if !self.useFast {
@@ -2127,7 +2119,7 @@ Deflater :: struct {
                         if self.lookaheadSize < 258 and
                            !(self.finishing and consumed == input.len) and
                            !(self.flushMode != .none and consumed == input.len) {
-                            return Progress{ consumed = consumed, produced = produced, status = .needInput };
+                            return compress.Progress{ consumed = consumed, produced = produced, status = .needInput };
                         }
                         if self.lookaheadSize > 0 {
                             self.processNormal();
@@ -2146,7 +2138,7 @@ Deflater :: struct {
                             self.beginCompressedBlock(false);
                             break;
                         }
-                        return Progress{ consumed = consumed, produced = produced, status = .needInput };
+                        return compress.Progress{ consumed = consumed, produced = produced, status = .needInput };
                     }
                     continue;
                 }
@@ -2158,7 +2150,7 @@ Deflater :: struct {
                     if self.lookaheadSize < 4096 and
                        !(self.finishing and consumed == input.len) and
                        !(self.flushMode != .none and consumed == input.len) {
-                        return Progress{ consumed = consumed, produced = produced, status = .needInput };
+                        return compress.Progress{ consumed = consumed, produced = produced, status = .needInput };
                     }
                     self.fastDraining = true;
                 }
@@ -2178,13 +2170,13 @@ Deflater :: struct {
                     self.beginCompressedBlock(false);
                     continue;
                 }
-                return Progress{ consumed = consumed, produced = produced, status = .needInput };
+                return compress.Progress{ consumed = consumed, produced = produced, status = .needInput };
             }
 
             if self.phase == .pendingBits {
                 while self.pendingAt < self.pendingBits {
                     if self.carryCount == 8 {
-                        if produced >= output.len { return Progress{ consumed = consumed, produced = produced, status = .needOutput }; }
+                        if produced >= output.len { return compress.Progress{ consumed = consumed, produced = produced, status = .needOutput }; }
                         output.ptr[produced] = self.carry.(u8);
                         produced += 1;
                         self.carry = 0;
@@ -2198,7 +2190,7 @@ Deflater :: struct {
                         sourceBytes := (self.pendingBits - self.pendingAt) / 8;
                         available := output.len - produced;
                         take := if sourceBytes < available then sourceBytes else available;
-                        if take <= 0 { return Progress{ consumed = consumed, produced = produced, status = .needOutput }; }
+                        if take <= 0 { return compress.Progress{ consumed = consumed, produced = produced, status = .needOutput }; }
                         c.memcpy(*output.ptr[produced], *self.pending.ptr[self.pendingAt / 8], take);
                         produced += take;
                         self.pendingAt += take * 8;
@@ -2208,7 +2200,7 @@ Deflater :: struct {
                     // previous block ended mid-byte, its carry bits occupy the
                     // low side and the source byte completes the output byte.
                     if (self.pendingAt & 7) == 0 and self.pendingBits - self.pendingAt >= 8 {
-                        if produced >= output.len { return Progress{ consumed = consumed, produced = produced, status = .needOutput }; }
+                        if produced >= output.len { return compress.Progress{ consumed = consumed, produced = produced, status = .needOutput }; }
                         sourceByte := self.pending[self.pendingAt / 8].(i64);
                         combined := self.carry | (sourceByte << self.carryCount);
                         output.ptr[produced] = (combined & 0xff).(u8);
@@ -2226,7 +2218,7 @@ Deflater :: struct {
                     self.pendingAt += 1;
                 }
                 if self.carryCount == 8 {
-                    if produced >= output.len { return Progress{ consumed = consumed, produced = produced, status = .needOutput }; }
+                    if produced >= output.len { return compress.Progress{ consumed = consumed, produced = produced, status = .needOutput }; }
                     output.ptr[produced] = self.carry.(u8);
                     produced += 1;
                     self.carry = 0;
@@ -2241,7 +2233,7 @@ Deflater :: struct {
                     self.flushMode = .none;
                     if completedMode == .full { self.clearHistory(); }
                     self.phase = .fill;
-                    return Progress{ consumed = consumed, produced = produced, status = .needInput };
+                    return compress.Progress{ consumed = consumed, produced = produced, status = .needInput };
                 } else if self.needsMarker {
                     self.needsMarker = false;
                     self.beginSyncMarker();
@@ -2251,20 +2243,20 @@ Deflater :: struct {
 
             if self.phase == .flushFinal {
                 if self.carryCount > 0 {
-                    if produced >= output.len { return Progress{ consumed = consumed, produced = produced, status = .needOutput }; }
+                    if produced >= output.len { return compress.Progress{ consumed = consumed, produced = produced, status = .needOutput }; }
                     output.ptr[produced] = self.carry.(u8);
                     produced += 1;
                     self.carry = 0;
                     self.carryCount = 0;
                 }
                 self.phase = .done;
-                return Progress{ consumed = consumed, produced = produced, status = .done };
+                return compress.Progress{ consumed = consumed, produced = produced, status = .done };
             }
         }
-        Progress{ consumed = consumed, produced = produced, status = .done }
+        compress.Progress{ consumed = consumed, produced = produced, status = .done }
     }
 
-    step :: (self: *Deflater, input: string, output: string, finish: bool = false) -> (Progress, !Error) {
+    step :: (self: *Deflater, input: string, output: string, finish: bool = false) -> (compress.Progress, !compress.Error) {
         if self.allocationFailed { raise .AllocationFailed; }
         if input.len > 0 and (self.phase == .done or (self.blockFinal and (self.phase == .pendingBits or self.phase == .flushFinal))) {
             raise .Finished;
@@ -2274,7 +2266,7 @@ Deflater :: struct {
         progress
     }
 
-    stepFlush :: (self: *Deflater, input: string, output: string, mode: Flush) -> (Progress, !Error) {
+    stepFlush :: (self: *Deflater, input: string, output: string, mode: Flush) -> (compress.Progress, !compress.Error) {
         if self.allocationFailed { raise .AllocationFailed; }
         if input.len > 0 and (self.phase == .done or (self.blockFinal and (self.phase == .pendingBits or self.phase == .flushFinal))) {
             raise .Finished;
@@ -2284,7 +2276,7 @@ Deflater :: struct {
         progress
     }
 
-    end :: (self: *Deflater) -> !Error {
+    end :: (self: *Deflater) -> !compress.Error {
         if self.phase != .done { raise .UnexpectedEnd; }
     }
 }
@@ -2355,22 +2347,22 @@ ZlibDeflater :: struct {
 
     deinit :: (self: *ZlibDeflater) { self.raw.deinit(); self.phase = .done; }
 
-    stepUnchecked :: (self: *ZlibDeflater, input: string, output: string, finish: bool = false) -> Progress {
+    stepUnchecked :: (self: *ZlibDeflater, input: string, output: string, finish: bool = false) -> compress.Progress {
         self.stepFlushUnchecked(input, output, if finish then .finish else .none)
     }
 
-    stepFlushUnchecked :: (self: *ZlibDeflater, input: string, output: string, mode: Flush = .none) -> Progress {
+    stepFlushUnchecked :: (self: *ZlibDeflater, input: string, output: string, mode: Flush = .none) -> compress.Progress {
         consumed := 0;
         produced := 0;
         while true {
-            if self.phase == .done { return Progress{ consumed = consumed, produced = produced, status = .done }; }
+            if self.phase == .done { return compress.Progress{ consumed = consumed, produced = produced, status = .done }; }
             if self.phase == .header {
                 while self.headerAt < 2 and produced < output.len {
                     output.ptr[produced] = self.header[self.headerAt];
                     self.headerAt += 1;
                     produced += 1;
                 }
-                if self.headerAt < 2 { return Progress{ consumed = consumed, produced = produced, status = .needOutput }; }
+                if self.headerAt < 2 { return compress.Progress{ consumed = consumed, produced = produced, status = .needOutput }; }
                 self.phase = .body;
                 continue;
             }
@@ -2393,7 +2385,7 @@ ZlibDeflater :: struct {
                     self.phase = .trailer;
                     continue;
                 }
-                return Progress{ consumed = consumed, produced = produced, status = progress.status };
+                return compress.Progress{ consumed = consumed, produced = produced, status = progress.status };
             }
             if self.phase == .trailer {
                 while self.trailerAt < 4 and produced < output.len {
@@ -2401,15 +2393,15 @@ ZlibDeflater :: struct {
                     self.trailerAt += 1;
                     produced += 1;
                 }
-                if self.trailerAt < 4 { return Progress{ consumed = consumed, produced = produced, status = .needOutput }; }
+                if self.trailerAt < 4 { return compress.Progress{ consumed = consumed, produced = produced, status = .needOutput }; }
                 self.phase = .done;
                 continue;
             }
         }
-        Progress{ consumed = consumed, produced = produced, status = .done }
+        compress.Progress{ consumed = consumed, produced = produced, status = .done }
     }
 
-    step :: (self: *ZlibDeflater, input: string, output: string, finish: bool = false) -> (Progress, !Error) {
+    step :: (self: *ZlibDeflater, input: string, output: string, finish: bool = false) -> (compress.Progress, !compress.Error) {
         if self.raw.allocationFailed { raise .AllocationFailed; }
         if input.len > 0 and (self.phase == .done or self.phase == .trailer or (self.phase == .body and self.raw.blockFinal and (self.raw.phase == .pendingBits or self.raw.phase == .flushFinal))) { raise .Finished; }
         progress := self.stepUnchecked(input, output, finish);
@@ -2417,7 +2409,7 @@ ZlibDeflater :: struct {
         progress
     }
 
-    stepFlush :: (self: *ZlibDeflater, input: string, output: string, mode: Flush) -> (Progress, !Error) {
+    stepFlush :: (self: *ZlibDeflater, input: string, output: string, mode: Flush) -> (compress.Progress, !compress.Error) {
         if self.raw.allocationFailed { raise .AllocationFailed; }
         if input.len > 0 and (self.phase == .done or self.phase == .trailer or (self.phase == .body and self.raw.blockFinal and (self.raw.phase == .pendingBits or self.raw.phase == .flushFinal))) { raise .Finished; }
         progress := self.stepFlushUnchecked(input, output, mode);
@@ -2425,7 +2417,7 @@ ZlibDeflater :: struct {
         progress
     }
 
-    end :: (self: *ZlibDeflater) -> !Error { if self.phase != .done { raise .UnexpectedEnd; } }
+    end :: (self: *ZlibDeflater) -> !compress.Error { if self.phase != .done { raise .UnexpectedEnd; } }
 }
 
 GzipOptions :: struct {
@@ -2447,13 +2439,13 @@ private containsZero :: (data: string) -> bool {
     false
 }
 
-private validateGzipOptions :: (options: GzipOptions) -> !Error {
+private validateGzipOptions :: (options: GzipOptions) -> !compress.Error {
     if options.mtime < 0 or options.mtime > 0xffffffff { raise .InvalidData; }
     if options.extra.len > 65535 { raise .TooLarge; }
     if containsZero(options.filename) or containsZero(options.comment) { raise .InvalidData; }
 }
 
-gzipHeaderOverhead :: (options: GzipOptions) -> (i64, !Error) {
+gzipHeaderOverhead :: (options: GzipOptions) -> (i64, !compress.Error) {
     try validateGzipOptions(options);
     overhead : i64 = 18;
     if options.extra.len > 0 {
@@ -2522,7 +2514,7 @@ GzipDeflater :: struct {
         state
     }
 
-    initOptions :: (level: i64, strategy: Strategy, options: GzipOptions, alloc: Allocator = context.allocator) -> (GzipDeflater, !Error) {
+    initOptions :: (level: i64, strategy: Strategy, options: GzipOptions, alloc: Allocator = context.allocator) -> (GzipDeflater, !compress.Error) {
         try validateGzipOptions(options);
         state := GzipDeflater.initStrategy(level, strategy, alloc);
         if state.raw.allocationFailed { state.deinit(); raise .AllocationFailed; }
@@ -2572,7 +2564,7 @@ GzipDeflater :: struct {
         self.* = GzipDeflater.init(level, alloc);
     }
 
-    resetOptions :: (self: *GzipDeflater, level: i64, strategy: Strategy, options: GzipOptions) -> !Error {
+    resetOptions :: (self: *GzipDeflater, level: i64, strategy: Strategy, options: GzipOptions) -> !compress.Error {
         alloc := self.alloc;
         self.deinit();
         self.* = try GzipDeflater.initOptions(level, strategy, options, alloc);
@@ -2586,24 +2578,24 @@ GzipDeflater :: struct {
         self.phase = .done;
     }
 
-    stepUnchecked :: (self: *GzipDeflater, input: string, output: string, finish: bool = false) -> Progress {
+    stepUnchecked :: (self: *GzipDeflater, input: string, output: string, finish: bool = false) -> compress.Progress {
         consumed := 0;
         produced := 0;
         while true {
-            if self.phase == .done { return Progress{ consumed = consumed, produced = produced, status = .done }; }
+            if self.phase == .done { return compress.Progress{ consumed = consumed, produced = produced, status = .done }; }
             if self.phase == .header {
                 while self.headerAt < 10 and produced < output.len {
                     output.ptr[produced] = self.header[self.headerAt];
                     self.headerAt += 1;
                     produced += 1;
                 }
-                if self.headerAt < 10 { return Progress{ consumed = consumed, produced = produced, status = .needOutput }; }
+                if self.headerAt < 10 { return compress.Progress{ consumed = consumed, produced = produced, status = .needOutput }; }
                 while self.headerTailAt < self.headerTail.len and produced < output.len {
                     output.ptr[produced] = self.headerTail[self.headerTailAt];
                     self.headerTailAt += 1;
                     produced += 1;
                 }
-                if self.headerTailAt < self.headerTail.len { return Progress{ consumed = consumed, produced = produced, status = .needOutput }; }
+                if self.headerTailAt < self.headerTail.len { return compress.Progress{ consumed = consumed, produced = produced, status = .needOutput }; }
                 self.phase = .body;
                 continue;
             }
@@ -2632,7 +2624,7 @@ GzipDeflater :: struct {
                     self.phase = .trailer;
                     continue;
                 }
-                return Progress{ consumed = consumed, produced = produced, status = progress.status };
+                return compress.Progress{ consumed = consumed, produced = produced, status = progress.status };
             }
             if self.phase == .trailer {
                 while self.trailerAt < 8 and produced < output.len {
@@ -2640,15 +2632,15 @@ GzipDeflater :: struct {
                     self.trailerAt += 1;
                     produced += 1;
                 }
-                if self.trailerAt < 8 { return Progress{ consumed = consumed, produced = produced, status = .needOutput }; }
+                if self.trailerAt < 8 { return compress.Progress{ consumed = consumed, produced = produced, status = .needOutput }; }
                 self.phase = .done;
                 continue;
             }
         }
-        Progress{ consumed = consumed, produced = produced, status = .done }
+        compress.Progress{ consumed = consumed, produced = produced, status = .done }
     }
 
-    step :: (self: *GzipDeflater, input: string, output: string, finish: bool = false) -> (Progress, !Error) {
+    step :: (self: *GzipDeflater, input: string, output: string, finish: bool = false) -> (compress.Progress, !compress.Error) {
         if self.raw.allocationFailed { raise .AllocationFailed; }
         if input.len > 0 and (self.phase == .done or self.phase == .trailer or (self.phase == .body and self.raw.blockFinal and (self.raw.phase == .pendingBits or self.raw.phase == .flushFinal))) { raise .Finished; }
         progress := self.stepUnchecked(input, output, finish);
@@ -2656,7 +2648,7 @@ GzipDeflater :: struct {
         progress
     }
 
-    end :: (self: *GzipDeflater) -> !Error { if self.phase != .done { raise .UnexpectedEnd; } }
+    end :: (self: *GzipDeflater) -> !compress.Error { if self.phase != .done { raise .UnexpectedEnd; } }
 }
 
 private InflatePhase :: enum {
@@ -2811,7 +2803,7 @@ Inflater :: struct {
         return value, true;
     }
 
-    decode :: (self: *Inflater, input: string, consumed: *i64, tree: *Huffman) -> (i64, bool, !Error) {
+    decode :: (self: *Inflater, input: string, consumed: *i64, tree: *Huffman) -> (i64, bool, !compress.Error) {
         if self.decodeLen == 1 {
             peekBits := self.bitBuffer;
             peekCount := self.bitCount;
@@ -2868,7 +2860,7 @@ Inflater :: struct {
         raise .InvalidData;
     }
 
-    decodeDirect :: (self: *Inflater, input: string, consumed: *i64, tree: *Huffman) -> (i64, !Error) {
+    decodeDirect :: (self: *Inflater, input: string, consumed: *i64, tree: *Huffman) -> (i64, !compress.Error) {
         while self.bitCount < 15 {
             self.bitBuffer = self.bitBuffer | (input[consumed.*].(i64) << self.bitCount);
             consumed.* += 1;
@@ -2898,7 +2890,7 @@ Inflater :: struct {
         self.totalOutput += 1;
     }
 
-    finishDynamicTrees :: (self: *Inflater) -> !Error {
+    finishDynamicTrees :: (self: *Inflater) -> !compress.Error {
         if self.dynamicLengths[256] == 0 { raise .InvalidData; }
         try buildHuffmanInto(*self.litTree, string{ ptr = *self.dynamicLengths[0], len = self.hlit });
         try buildHuffmanInto(*self.distTree, string{ ptr = *self.dynamicLengths[self.hlit], len = self.hdist }, true, true);
@@ -2924,7 +2916,7 @@ Inflater :: struct {
         self.lastProduced = produced;
     }
 
-    step :: (self: *Inflater, input: string, output: string) -> (Progress, !Error) {
+    step :: (self: *Inflater, input: string, output: string) -> (compress.Progress, !compress.Error) {
         if self.window.ptr == null and self.directOutput.ptr == null { self.rememberFailure(0, 0); raise .AllocationFailed; }
         if self.maxOutput < 0 { self.rememberFailure(0, 0); raise .OutputLimit; }
         consumed := 0;
@@ -2941,12 +2933,12 @@ Inflater :: struct {
                         self.bitBuffer = self.bitBuffer & mask;
                     }
                 }
-                return Progress{ consumed = consumed, produced = produced, status = .done };
+                return compress.Progress{ consumed = consumed, produced = produced, status = .done };
             }
 
             if self.phase == .blockHeader {
                 header, available := self.takeBits(input, *consumed, 3);
-                if !available { return Progress{ consumed = consumed, produced = produced, status = .needInput }; }
+                if !available { return compress.Progress{ consumed = consumed, produced = produced, status = .needInput }; }
                 self.finalBlock = (header & 1) != 0;
                 kind := (header >> 1) & 3;
                 if kind == 0 {
@@ -2979,14 +2971,14 @@ Inflater :: struct {
 
             if self.phase == .storedLength {
                 value, available := self.takeBits(input, *consumed, 16);
-                if !available { return Progress{ consumed = consumed, produced = produced, status = .needInput }; }
+                if !available { return compress.Progress{ consumed = consumed, produced = produced, status = .needInput }; }
                 self.storedLength = value;
                 self.phase = .storedInverse;
                 continue;
             }
             if self.phase == .storedInverse {
                 inverse, available := self.takeBits(input, *consumed, 16);
-                if !available { return Progress{ consumed = consumed, produced = produced, status = .needInput }; }
+                if !available { return compress.Progress{ consumed = consumed, produced = produced, status = .needInput }; }
                 if ((self.storedLength ^ inverse) & 0xffff) != 0xffff { self.rememberFailure(consumed, produced); raise .InvalidData; }
                 if self.storedLength > self.maxOutput - self.totalOutput { self.rememberFailure(consumed, produced); raise .OutputLimit; }
                 if self.storedLength == 0 {
@@ -3010,8 +3002,8 @@ Inflater :: struct {
                     self.phase = if self.finalBlock then .done else .blockHeader;
                     continue;
                 }
-                if produced >= output.len { return Progress{ consumed = consumed, produced = produced, status = .needOutput }; }
-                if consumed >= input.len { return Progress{ consumed = consumed, produced = produced, status = .needInput }; }
+                if produced >= output.len { return compress.Progress{ consumed = consumed, produced = produced, status = .needOutput }; }
+                if consumed >= input.len { return compress.Progress{ consumed = consumed, produced = produced, status = .needInput }; }
                 take := self.storedLength;
                 if take > input.len - consumed { take = input.len - consumed; }
                 if take > output.len - produced { take = output.len - produced; }
@@ -3047,7 +3039,7 @@ Inflater :: struct {
 
             if self.phase == .dynamicCounts {
                 counts, available := self.takeBits(input, *consumed, 14);
-                if !available { return Progress{ consumed = consumed, produced = produced, status = .needInput }; }
+                if !available { return compress.Progress{ consumed = consumed, produced = produced, status = .needInput }; }
                 self.hlit = (counts & 31) + 257;
                 self.hdist = ((counts >> 5) & 31) + 1;
                 self.hclen = ((counts >> 10) & 15) + 4;
@@ -3061,7 +3053,7 @@ Inflater :: struct {
             if self.phase == .dynamicCodeLengths {
                 if self.dynamicAt < self.hclen {
                     value, available := self.takeBits(input, *consumed, 3);
-                    if !available { return Progress{ consumed = consumed, produced = produced, status = .needInput }; }
+                    if !available { return compress.Progress{ consumed = consumed, produced = produced, status = .needInput }; }
                     self.codeLengths[CODELEN_ORDER[self.dynamicAt]] = value.(u8);
                     self.dynamicAt += 1;
                     continue;
@@ -3086,7 +3078,7 @@ Inflater :: struct {
                 symbol, available := self.decode(input, *consumed, *self.codeTree) catch |e| {
                     self.rememberFailure(consumed, produced); raise e;
                 };
-                if !available { return Progress{ consumed = consumed, produced = produced, status = .needInput }; }
+                if !available { return compress.Progress{ consumed = consumed, produced = produced, status = .needInput }; }
                 if symbol <= 15 {
                     self.dynamicLengths[self.dynamicAt] = symbol.(u8);
                     self.previousLength = symbol;
@@ -3112,7 +3104,7 @@ Inflater :: struct {
                 if self.phase == .dynamicRepeat17 { extraBits = 3; base = 3; value = 0; }
                 if self.phase == .dynamicRepeat18 { extraBits = 7; base = 11; value = 0; }
                 extra, available := self.takeBits(input, *consumed, extraBits);
-                if !available { return Progress{ consumed = consumed, produced = produced, status = .needInput }; }
+                if !available { return compress.Progress{ consumed = consumed, produced = produced, status = .needInput }; }
                 repeat := base + extra;
                 total := self.hlit + self.hdist;
                 if self.dynamicAt + repeat > total { self.rememberFailure(consumed, produced); raise .InvalidData; }
@@ -3353,7 +3345,7 @@ Inflater :: struct {
                 symbol, available := self.decode(input, *consumed, *self.litTree) catch |e| {
                     self.rememberFailure(consumed, produced); raise e;
                 };
-                if !available { return Progress{ consumed = consumed, produced = produced, status = .needInput }; }
+                if !available { return compress.Progress{ consumed = consumed, produced = produced, status = .needInput }; }
                 if symbol < 256 {
                     self.pendingLiteral = symbol;
                     self.phase = .literal;
@@ -3370,14 +3362,14 @@ Inflater :: struct {
             }
             if self.phase == .literal {
                 if self.totalOutput >= self.maxOutput { self.rememberFailure(consumed, produced); raise .OutputLimit; }
-                if produced >= output.len { return Progress{ consumed = consumed, produced = produced, status = .needOutput }; }
+                if produced >= output.len { return compress.Progress{ consumed = consumed, produced = produced, status = .needOutput }; }
                 self.putHistory(output, *produced, self.pendingLiteral);
                 self.phase = .symbol;
                 continue;
             }
             if self.phase == .lengthExtra {
                 extra, available := self.takeBits(input, *consumed, self.pendingExtraBits);
-                if !available { return Progress{ consumed = consumed, produced = produced, status = .needInput }; }
+                if !available { return compress.Progress{ consumed = consumed, produced = produced, status = .needInput }; }
                 self.matchLength += extra;
                 self.phase = .distanceSymbol;
                 continue;
@@ -3386,7 +3378,7 @@ Inflater :: struct {
                 symbol, available := self.decode(input, *consumed, *self.distTree) catch |e| {
                     self.rememberFailure(consumed, produced); raise e;
                 };
-                if !available { return Progress{ consumed = consumed, produced = produced, status = .needInput }; }
+                if !available { return compress.Progress{ consumed = consumed, produced = produced, status = .needInput }; }
                 if symbol > 29 { self.rememberFailure(consumed, produced); raise .InvalidData; }
                 self.matchDistance = DIST_BASE[symbol];
                 self.pendingExtraBits = DIST_EXTRA[symbol];
@@ -3399,7 +3391,7 @@ Inflater :: struct {
             }
             if self.phase == .distanceExtra {
                 extra, available := self.takeBits(input, *consumed, self.pendingExtraBits);
-                if !available { return Progress{ consumed = consumed, produced = produced, status = .needInput }; }
+                if !available { return compress.Progress{ consumed = consumed, produced = produced, status = .needInput }; }
                 self.matchDistance += extra;
                 if self.matchDistance <= 0 or self.matchDistance > self.historyLen { self.rememberFailure(consumed, produced); raise .InvalidData; }
                 if self.matchLength > self.maxOutput - self.totalOutput { self.rememberFailure(consumed, produced); raise .OutputLimit; }
@@ -3407,7 +3399,7 @@ Inflater :: struct {
                 continue;
             }
             if self.phase == .matchCopy {
-                if produced >= output.len { return Progress{ consumed = consumed, produced = produced, status = .needOutput }; }
+                if produced >= output.len { return compress.Progress{ consumed = consumed, produced = produced, status = .needOutput }; }
                 take := self.matchLength;
                 if take > output.len - produced { take = output.len - produced; }
                 outputAt := produced;
@@ -3449,7 +3441,7 @@ Inflater :: struct {
         raise .InvalidData;
     }
 
-    end :: (self: *Inflater) -> !Error {
+    end :: (self: *Inflater) -> !compress.Error {
         if self.phase != .done { raise .UnexpectedEnd; }
     }
 }
@@ -3517,7 +3509,7 @@ ZlibInflater :: struct {
         self.phase = .done;
     }
 
-    step :: (self: *ZlibInflater, input: string, output: string) -> (Progress, !Error) {
+    step :: (self: *ZlibInflater, input: string, output: string) -> (compress.Progress, !compress.Error) {
         consumed := 0;
         produced := 0;
         defer {
@@ -3525,14 +3517,14 @@ ZlibInflater :: struct {
             self.lastProduced = produced;
         }
         while true {
-            if self.phase == .done { return Progress{ consumed = consumed, produced = produced, status = .done }; }
+            if self.phase == .done { return compress.Progress{ consumed = consumed, produced = produced, status = .done }; }
             if self.phase == .header {
                 while self.headerAt < 2 and consumed < input.len {
                     self.header[self.headerAt] = input[consumed];
                     self.headerAt += 1;
                     consumed += 1;
                 }
-                if self.headerAt < 2 { return Progress{ consumed = consumed, produced = produced, status = .needInput }; }
+                if self.headerAt < 2 { return compress.Progress{ consumed = consumed, produced = produced, status = .needInput }; }
                 cmf := self.header[0].(i64);
                 flg := self.header[1].(i64);
                 if (cmf & 15) != 8 or (cmf >> 4) > 7 {
@@ -3567,7 +3559,7 @@ ZlibInflater :: struct {
                     produced += progress.produced;
                 }
                 if progress.status == .done { self.phase = .checksum; continue; }
-                return Progress{ consumed = consumed, produced = produced, status = progress.status };
+                return compress.Progress{ consumed = consumed, produced = produced, status = progress.status };
             }
             if self.phase == .checksum {
                 while self.trailerAt < 4 and consumed < input.len {
@@ -3575,7 +3567,7 @@ ZlibInflater :: struct {
                     self.trailerAt += 1;
                     consumed += 1;
                 }
-                if self.trailerAt < 4 { return Progress{ consumed = consumed, produced = produced, status = .needInput }; }
+                if self.trailerAt < 4 { return compress.Progress{ consumed = consumed, produced = produced, status = .needInput }; }
                 expected := encoding.readU32Be(self.trailer, 0);
                 if self.checksum != expected {
                     self.lastConsumed = consumed; self.lastProduced = produced;
@@ -3588,7 +3580,7 @@ ZlibInflater :: struct {
         raise .InvalidData;
     }
 
-    end :: (self: *ZlibInflater) -> !Error {
+    end :: (self: *ZlibInflater) -> !compress.Error {
         if self.phase != .done { raise .UnexpectedEnd; }
     }
 }
@@ -3652,19 +3644,19 @@ private TinflDecompressor :: struct {
             if self.previousStatus == .adlerMismatch { self.previousStatus = .done; }
             return TinflProgress{ consumed = 0, produced = 0, status = self.previousStatus };
         }
-        progress : Progress = ---;
+        progress : compress.Progress = ---;
         failed := false;
         failure : TinflStatus = .failed;
         if (self.flags & TINFL_FLAG_PARSE_ZLIB_HEADER) != 0 {
             progress = self.framed.step(input, output) catch |e| {
                 failed = true;
                 if e == .ChecksumMismatch { failure = .adlerMismatch; }
-                Progress{ consumed = self.framed.lastConsumed, produced = self.framed.lastProduced, status = .needInput }
+                compress.Progress{ consumed = self.framed.lastConsumed, produced = self.framed.lastProduced, status = .needInput }
             };
         } else {
             progress = self.framed.raw.step(input, output) catch |e| {
                 failed = true;
-                Progress{ consumed = self.framed.raw.lastConsumed, produced = self.framed.raw.lastProduced, status = .needInput }
+                compress.Progress{ consumed = self.framed.raw.lastConsumed, produced = self.framed.raw.lastProduced, status = .needInput }
             };
         }
         // tinfl updates m_check_adler32 only when the call's final status is
@@ -3690,7 +3682,7 @@ private TinflDecompressor :: struct {
     }
 }
 
-private tinflError :: (status: TinflStatus) -> Error {
+private tinflError :: (status: TinflStatus) -> compress.Error {
     if status == .adlerMismatch { return .ChecksumMismatch; }
     if status == .hasMoreOutput { return .OutputLimit; }
     if status == .needsMoreInput or status == .cannotMakeProgress { return .UnexpectedEnd; }
@@ -3700,7 +3692,7 @@ private tinflError :: (status: TinflStatus) -> Error {
 
 // tinfl_decompress_mem_to_mem equivalent. `parseZlibHeader` selects RFC
 // 1950 framing; raw mode corresponds to the upstream default flags.
-inflateInto :: (data: string, output: string, parseZlibHeader: bool = false, alloc: Allocator = context.allocator) -> (i64, i64, !Error) {
+inflateInto :: (data: string, output: string, parseZlibHeader: bool = false, alloc: Allocator = context.allocator) -> (i64, i64, !compress.Error) {
     flags := TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF;
     if parseZlibHeader { flags = flags | TINFL_FLAG_PARSE_ZLIB_HEADER; }
     // tinfl reports caller-buffer exhaustion as HAS_MORE_OUTPUT; it does not
@@ -3840,14 +3832,14 @@ GzipInflater :: struct {
         else { self.phase = .body; }
     }
 
-    step :: (self: *GzipInflater, input: string, output: string, finish: bool = false) -> (Progress, !Error) {
+    step :: (self: *GzipInflater, input: string, output: string, finish: bool = false) -> (compress.Progress, !compress.Error) {
         if finish { self.finishing = true; }
         consumed := 0;
         produced := 0;
         while true {
             if self.phase == .done {
                 if input.len - consumed > 0 { raise .InvalidData; }
-                return Progress{ consumed = consumed, produced = produced, status = .done };
+                return compress.Progress{ consumed = consumed, produced = produced, status = .done };
             }
             if self.phase == .betweenMembers {
                 if consumed < input.len {
@@ -3855,7 +3847,7 @@ GzipInflater :: struct {
                     continue;
                 }
                 if self.finishing { self.phase = .done; continue; }
-                return Progress{ consumed = consumed, produced = produced, status = .needInput };
+                return compress.Progress{ consumed = consumed, produced = produced, status = .needInput };
             }
             if self.phase == .fixedHeader {
                 start := consumed;
@@ -3867,7 +3859,7 @@ GzipInflater :: struct {
                 if consumed > start {
                     self.headerChecksum = crc32(input[start..consumed], self.headerChecksum);
                 }
-                if self.fixedAt < 10 { return Progress{ consumed = consumed, produced = produced, status = .needInput }; }
+                if self.fixedAt < 10 { return compress.Progress{ consumed = consumed, produced = produced, status = .needInput }; }
                 if self.fixed[0] != 0x1f or self.fixed[1] != 0x8b { raise .InvalidData; }
                 if self.fixed[2] != 8 { raise .Unsupported; }
                 self.flags = self.fixed[3];
@@ -3884,7 +3876,7 @@ GzipInflater :: struct {
                     consumed += 1;
                 }
                 if consumed > start { self.headerChecksum = crc32(input[start..consumed], self.headerChecksum); }
-                if self.extraLengthAt < 2 { return Progress{ consumed = consumed, produced = produced, status = .needInput }; }
+                if self.extraLengthAt < 2 { return compress.Progress{ consumed = consumed, produced = produced, status = .needInput }; }
                 self.extraRemaining = encoding.readU16Le(self.extraLengthBytes, 0);
                 self.phase = .extraData;
                 continue;
@@ -3897,7 +3889,7 @@ GzipInflater :: struct {
                     consumed += take;
                     self.extraRemaining -= take;
                 }
-                if self.extraRemaining > 0 { return Progress{ consumed = consumed, produced = produced, status = .needInput }; }
+                if self.extraRemaining > 0 { return compress.Progress{ consumed = consumed, produced = produced, status = .needInput }; }
                 self.afterExtra();
                 continue;
             }
@@ -3910,7 +3902,7 @@ GzipInflater :: struct {
                     if byte == 0 { found = true; break; }
                 }
                 if consumed > start { self.headerChecksum = crc32(input[start..consumed], self.headerChecksum); }
-                if !found { return Progress{ consumed = consumed, produced = produced, status = .needInput }; }
+                if !found { return compress.Progress{ consumed = consumed, produced = produced, status = .needInput }; }
                 if self.phase == .filename { self.afterFilename(); } else { self.afterComment(); }
                 continue;
             }
@@ -3920,7 +3912,7 @@ GzipInflater :: struct {
                     self.headerCrcAt += 1;
                     consumed += 1;
                 }
-                if self.headerCrcAt < 2 { return Progress{ consumed = consumed, produced = produced, status = .needInput }; }
+                if self.headerCrcAt < 2 { return compress.Progress{ consumed = consumed, produced = produced, status = .needInput }; }
                 expected := encoding.readU16Le(self.headerCrcBytes, 0);
                 if (self.headerChecksum & 0xffff) != expected { raise .ChecksumMismatch; }
                 self.phase = .body;
@@ -3941,7 +3933,7 @@ GzipInflater :: struct {
                     produced += progress.produced;
                 }
                 if progress.status == .done { self.phase = .trailer; continue; }
-                return Progress{ consumed = consumed, produced = produced, status = progress.status };
+                return compress.Progress{ consumed = consumed, produced = produced, status = progress.status };
             }
             if self.phase == .trailer {
                 while self.trailerAt < 8 and consumed < input.len {
@@ -3949,7 +3941,7 @@ GzipInflater :: struct {
                     self.trailerAt += 1;
                     consumed += 1;
                 }
-                if self.trailerAt < 8 { return Progress{ consumed = consumed, produced = produced, status = .needInput }; }
+                if self.trailerAt < 8 { return compress.Progress{ consumed = consumed, produced = produced, status = .needInput }; }
                 expectedCrc := encoding.readU32Le(self.trailer, 0);
                 expectedSize := encoding.readU32Le(self.trailer, 4);
                 if self.memberChecksum != expectedCrc or self.memberSize != expectedSize { raise .ChecksumMismatch; }
@@ -3959,13 +3951,13 @@ GzipInflater :: struct {
                 }
                 if self.finishing { self.phase = .done; continue; }
                 self.phase = .betweenMembers;
-                return Progress{ consumed = consumed, produced = produced, status = .needInput };
+                return compress.Progress{ consumed = consumed, produced = produced, status = .needInput };
             }
         }
         raise .InvalidData;
     }
 
-    end :: (self: *GzipInflater) -> !Error {
+    end :: (self: *GzipInflater) -> !compress.Error {
         if self.phase != .done { raise .UnexpectedEnd; }
     }
 }
@@ -3975,7 +3967,7 @@ GzipInflater :: struct {
 // and to continue with a concatenated member.
 private DIRECT_INFLATE_LIMIT : i64 : 67108864;
 
-inflateWithConsumed :: (data: string, maxOutput: i64, alloc: Allocator) -> (string, i64, !Error) {
+inflateWithConsumed :: (data: string, maxOutput: i64, alloc: Allocator) -> (string, i64, !compress.Error) {
     state := Inflater.init(maxOutput, alloc);
     defer state.deinit();
     out := ByteWriter.init(alloc);
@@ -4020,15 +4012,11 @@ inflateWithConsumed :: (data: string, maxOutput: i64, alloc: Allocator) -> (stri
 // -----------------------------------------------------------------------------
 // RFC 1950 zlib wrapper
 
-compress :: (data: string, level: i64 = -1, alloc: Allocator = context.allocator) -> string {
-    compressStrategy(data, level, .default, alloc)
-}
-
 // Owned helper corresponding to mz_compress/mz_compress2. Miniz accepts every
 // signed level: negative values select the default probes and values above 10
 // clamp to its hidden level-10 mode.
-private compressChecked :: (data: string, level: i64 = -1, alloc: Allocator = context.allocator) -> (string, !Error) {
-    result := compress(data, level, alloc);
+private compressChecked :: (data: string, level: i64 = -1, alloc: Allocator = context.allocator) -> (string, !compress.Error) {
+    result := compressStrategy(data, level, .default, alloc);
     if result.ptr == null { raise .AllocationFailed; }
     result
 }
@@ -4071,7 +4059,7 @@ compressPath :: (data: string, level: i64, strategy: Strategy, path: DeflatePath
 
 // Compress into caller-owned storage without allocating the output. The
 // returned string borrows the initialized prefix of `output`.
-compressInto :: (data: string, output: string, level: i64 = -1, alloc: Allocator = context.allocator) -> (string, !Error) {
+compressInto :: (data: string, output: string, level: i64 = -1, alloc: Allocator = context.allocator) -> (string, !compress.Error) {
     state := ZlibDeflater.init(level, alloc);
     defer state.deinit();
     inputAt := 0;
@@ -4096,7 +4084,7 @@ compressInto :: (data: string, output: string, level: i64 = -1, alloc: Allocator
 }
 
 // Strict framing helper for callers that require exactly one zlib stream.
-decompressExact :: (data: string, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (string, !Error) {
+decompressExact :: (data: string, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (string, !compress.Error) {
     result, consumed := try decompressWithConsumed(data, maxOutput, alloc);
     if consumed != data.len {
         alloc.deallocBytes(result.ptr);
@@ -4105,7 +4093,7 @@ decompressExact :: (data: string, maxOutput: i64 = 1073741824, alloc: Allocator 
     result
 }
 
-decompressWithConsumed :: (data: string, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (string, i64, !Error) {
+decompressWithConsumed :: (data: string, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (string, i64, !compress.Error) {
     direct := maxOutput > 0 and maxOutput <= DIRECT_INFLATE_LIMIT;
     // One-shot decode writes directly into its final output allocation and
     // never consults the wrapping history window. Avoid allocating a second
@@ -4157,7 +4145,7 @@ decompressWithConsumed :: (data: string, maxOutput: i64 = 1073741824, alloc: All
 
 // Fixed-destination equivalent of mz_uncompress2. Trailing bytes are left
 // unconsumed and reported to the caller, exactly like the upstream helper.
-decompressIntoWithConsumed :: (data: string, output: string, alloc: Allocator = context.allocator) -> (i64, i64, !Error) {
+decompressIntoWithConsumed :: (data: string, output: string, alloc: Allocator = context.allocator) -> (i64, i64, !compress.Error) {
     state := ZlibInflater.init(output.len, alloc);
     defer state.deinit();
     inputAt := 0;
@@ -4184,7 +4172,7 @@ decompressIntoWithConsumed :: (data: string, output: string, alloc: Allocator = 
 // -----------------------------------------------------------------------------
 // RFC 1952 gzip wrapper
 
-gzipCompressOptionsStrategy :: (data: string, options: GzipOptions, level: i64, strategy: Strategy, alloc: Allocator = context.allocator) -> (string, !Error) {
+gzipCompressOptionsStrategy :: (data: string, options: GzipOptions, level: i64, strategy: Strategy, alloc: Allocator = context.allocator) -> (string, !compress.Error) {
     try validateGzipOptions(options);
 
     raw := deflateStrategy(data, level, strategy, alloc);
@@ -4224,7 +4212,7 @@ gzipCompressOptionsStrategy :: (data: string, options: GzipOptions, level: i64, 
     out.take()
 }
 
-gzipDecompress :: (data: string, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (string, !Error) {
+gzipDecompress :: (data: string, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (string, !compress.Error) {
     state := GzipInflater.init(maxOutput, alloc);
     defer state.deinit();
     out := ByteWriter.init(alloc);

@@ -5,9 +5,6 @@
 // a net-zero GPA gate.
 
 @import "modules/std.sx";
-@import "modules/std/compress.sx";
-zlib :: @import "modules/std/codecs/zlib.sx";
-gzip :: @import "modules/std/codecs/gzip.sx";
 
 PLAIN :: "public zlib lifecycle coverage payload — repeats repeats repeats repeats";
 

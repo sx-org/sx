@@ -10,11 +10,11 @@ Method :: enum { store; deflate; unsupported; }
 
 Source :: interface {
     size :: (self: *Self) -> i64;
-    readAt :: (self: *Self, offset: i64, output: string) -> (string, !Error);
+    readAt :: (self: *Self, offset: i64, output: string) -> (string, !compress.Error);
 }
 
 Sink :: interface {
-    write :: (self: *Self, data: string) -> !Error;
+    write :: (self: *Self, data: string) -> !compress.Error;
 }
 
 // Typed factory options. Optionals replace magic sentinels: a null

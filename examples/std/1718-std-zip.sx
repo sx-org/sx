@@ -1,5 +1,4 @@
 @import "modules/std.sx";
-@import "modules/std/compress.sx";
 
 ZipSource :: zip.Source;
 ZipSink :: zip.Sink;
@@ -44,13 +43,13 @@ MemorySource :: struct {
     largestRequest: i64 = 0;
     calls: i64 = 0;
     failAt: i64 = -1;
-    failure: Error = .Io;
+    failure: compress.Error = .Io;
 }
 
 impl ZipSource for MemorySource {
     size :: (self: *MemorySource) -> i64 { self.data.len }
 
-    readAt :: (self: *MemorySource, offset: i64, output: string) -> (string, !Error) {
+    readAt :: (self: *MemorySource, offset: i64, output: string) -> (string, !compress.Error) {
         self.calls += 1;
         if output.len > self.largestRequest { self.largestRequest = output.len; }
         if offset < 0 or offset > self.data.len { raise .InvalidData; }
@@ -69,11 +68,11 @@ Collector :: struct {
     len: i64 = 0;
     calls: i64 = 0;
     failAfter: i64 = -1;
-    failure: Error = .Io;
+    failure: compress.Error = .Io;
 }
 
 impl ZipSink for Collector {
-    write :: (self: *Collector, data: string) -> !Error {
+    write :: (self: *Collector, data: string) -> !compress.Error {
         if self.failAfter >= 0 and self.calls >= self.failAfter { raise self.failure; }
         self.calls += 1;
         if data.len > self.bytes.len - self.len { raise .OutputLimit; }
