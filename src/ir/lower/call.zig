@@ -1717,32 +1717,35 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
 
                 // The head selects its author: a bare head the scope-local or
                 // program function, a qualified head (`s.R(i64).value(42)`)
-                // the exact terminal member, exempt from the bare-head gate.
-                const head_qualified = inner_call.callee.data == .field_access;
-                const inner_name: []const u8 = switch (inner_call.callee.data) {
-                    .identifier => |id| id.name,
-                    .field_access => |head| head.field,
-                    else => "",
+                // the exact terminal member, exempt from the bare-head gate. A
+                // value root (`s := Box{…}`) is a UFCS receiver, not a qualifier.
+                const TypeFnHead = struct { name: []const u8, fd: *const ast.FnDecl, qualified: bool };
+                const type_fn_head: ?TypeFnHead = switch (inner_call.callee.data) {
+                    .identifier => |id| bare: {
+                        const resolved = if (self.scope) |scope| (scope.lookupFn(id.name) orelse id.name) else id.name;
+                        const fd = self.program_index.lookup(.function, resolved) orelse break :bare null;
+                        break :bare .{ .name = id.name, .fd = fd, .qualified = false };
+                    },
+                    .field_access => |member| qualified: {
+                        const path = self.qualifiedTypeName(inner_call.callee) orelse break :qualified null;
+                        defer self.alloc.free(path);
+                        if (self.identifierBindsVisibleValue(path[0..std.mem.indexOfScalar(u8, path, '.').?])) break :qualified null;
+                        const fd = self.qualifiedFnMember(path) orelse break :qualified null;
+                        break :qualified .{ .name = member.field, .fd = fd, .qualified = true };
+                    },
+                    else => null,
                 };
-                const head_fd: ?*const ast.FnDecl = if (head_qualified) qualified: {
-                    const path = self.qualifiedTypeName(inner_call.callee) orelse break :qualified null;
-                    defer self.alloc.free(path);
-                    break :qualified self.qualifiedFnMember(path);
-                } else if (inner_name.len > 0)
-                    self.program_index.lookup(.function, if (self.scope) |scope| (scope.lookupFn(inner_name) orelse inner_name) else inner_name)
-                else
-                    null;
 
-                if (head_fd) |fd| {
+                if (type_fn_head) |head| {
                     // Only a `-> Type` generic is a type constructor. A
                     // value-returning generic reaches here as an ordinary
                     // method receiver (`el(Leaf{…}).opacity(…)`), and
                     // instantiating it as a type would resolve its VALUE
                     // arguments in type position.
-                    if (fd.type_params.len > 0 and lower_decl.fnReturnsTypeValue(fd)) {
-                        if (!head_qualified and self.headFnLeak(inner_name, inner_call.callee.span)) return Ref.none;
+                    if (head.fd.type_params.len > 0 and lower_decl.fnReturnsTypeValue(head.fd)) {
+                        if (!head.qualified and self.headFnLeak(head.name, inner_call.callee.span)) return Ref.none;
                         // Try instantiate as type function
-                        if (self.instantiateTypeFunction(inner_name, inner_name, fd, inner_call.args)) |result_ty| {
+                        if (self.instantiateTypeFunction(head.name, head.name, head.fd, inner_call.args)) |result_ty| {
                             const type_info = self.module.types.get(result_ty);
                             if (type_info == .@"enum") {
                                 // Qualified enum construction: Type.variant(payload)
