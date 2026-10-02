@@ -15,12 +15,11 @@
 // are bare-visible) AND namespaced (so the same-name `cli.parse` stays a
 // distinct qualified identity from `json.parse`). A bare reference to a
 // namespaced-ONLY type is a "not visible" error, so the flat import is what makes
-// the bare type names below resolve; `json` stays namespaced-only (its `Value`
-// reaches `main` only as `json.parse`'s return type, resolved in `json.sx`'s own
-// context).
+// the bare type names below resolve; `json` is the scope std.sx carries (its
+// `Value` reaches `main` only as `json.parse`'s return type, resolved in
+// `json.sx`'s own context).
 @import "modules/std/cli.sx";
 cli  :: @import "modules/std/cli.sx";
-json :: @import "modules/std/json.sx";
 
 report :: (label: string, ok: bool) {
     if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }

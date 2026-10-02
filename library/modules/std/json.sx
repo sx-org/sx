@@ -8,8 +8,8 @@
 // object. NUMBERS SPLIT BY SYNTAX: a bare integer is an `int` (i64,
 // exact across the whole range); a number carrying a fraction or an
 // exponent is a `float` (f64). The reader REJECTS an integer outside i64
-// and a float that overflows to infinity (`JsonParseError.BadNumber`) rather than
-// silently substituting a value.
+// and a float that overflows to infinity (`json.ParseError.BadNumber`)
+// rather than silently substituting a value.
 //
 // STABLE KEY ORDER: an object is NOT a hash map. It is an ORDERED list
 // of (key, value) pairs that preserves INSERTION ORDER. Keys are never
@@ -17,20 +17,20 @@
 // in is the order the writer emits them. This is the "stable key order"
 // guarantee the manifest / db.json rely on.
 //
-// Building a value (`@import "modules/std/json.sx";` brings these in):
+// Building a value (`@import "modules/std/json.sx";` brings in `json`):
 //
-//     obj : Object = .{};
+//     obj : json.Object = .{};
 //     obj.put("name", .str(nameView));   // nameView: a `string`
 //     obj.put("size", .int(123));
-//     arr : List(Value) = .{};
+//     arr : List(json.Value) = .{};
 //     arr.append(.int(1));
 //     obj.put("xs", .array(arr));
-//     root : Value = .object(obj);
+//     root : json.Value = .object(obj);
 //
 // Writing onto the heap (`StringBuilder` grows to fit):
 //
 //     sb := StringBuilder.init();
-//     jw := JsonWriter.init(sb);
+//     jw := json.Writer.init(sb);
 //     try jw.write(root);
 //     got := sb.finish();
 //
@@ -39,605 +39,606 @@
 //
 //     buf : [4096]u8 = ---;
 //     fw := FixedWriter.init(buf[..]);
-//     jw := JsonWriter.init(fw);
+//     jw := json.Writer.init(fw);
 //     try jw.write(root);
 //     view := fw.written()?!;
 //
 // Writing a file (the whole document is built, then written by `writeFile`):
 //
 //     sb := StringBuilder.init();
-//     jw := JsonWriter.init(sb);
+//     jw := json.Writer.init(sb);
 //     try jw.write(root);
 //     if !writeFile("db.json", sb.finish()) { … }
 // =====================================================================
 
-@import "modules/std/core.sx";     // Allocator, Writer, @sizeOf, string
-@import "modules/std/list.sx";     // List
-@import "modules/std/c.sx";
-@import "modules/std/mem.sx";      // alloc
-// `toF64` / `shortest` / `floatBits` / `isNonFinite` — the exact
-// decimal <-> binary pair the reader and the writer share.
-@import "modules/std/internal/decimal.sx";
-@import "modules/std/encoding.sx";     // encodeUtf8, hexDigit, hexValue
+json :: scope {
+    @import "modules/std/core.sx";
+    @import "modules/std/list.sx";
+    @import "modules/std/c.sx";
+    @import "modules/std/mem.sx";
+    @import "modules/std/internal/decimal.sx";
+    @import "modules/std/encoding.sx";
+    private core :: @import "modules/std/core.sx";
 
-// The writer's only failure of its own making: a `float` that JSON cannot
-// spell — a NaN or an infinity.
-JsonError :: error { NonFinite }
+    // The writer's only failure of its own making: a `float` that JSON cannot
+    // spell — a NaN or an infinity.
+    Error :: error { NonFinite }
 
-// ── Value model ──────────────────────────────────────────────────────
-//
-// `Value` is a payload enum over the JSON kinds. `null`/`bool`/`int`/
-// `float` are scalars; `str` is a VIEW into caller memory; `array` is a
-// `List(Value)` and `object` owns growable child storage (see Object).
-//
-// `Value` is defined before Object so the `[*]Member` back-reference
-// resolves; `List(Value)` / `object` refer back to `Value` in turn
-// (mutual recursion through pointers — each composite holds a pointer to
-// its children, so the layout is finite).
+    // ── Value model ──────────────────────────────────────────────────────
+    //
+    // `Value` is a payload enum over the JSON kinds. `null`/`bool`/`int`/
+    // `float` are scalars; `str` is a VIEW into caller memory; `array` is a
+    // `List(Value)` and `object` owns growable child storage (see Object).
+    //
+    // `Value` is defined before Object so the `[*]Member` back-reference
+    // resolves; `List(Value)` / `object` refer back to `Value` in turn
+    // (mutual recursion through pointers — each composite holds a pointer to
+    // its children, so the layout is finite).
 
-Value :: enum {
-    null;
-    bool: bool;
-    int:  i64;
-    float: f64;
-    str:   string;     // view into caller-owned bytes; not copied
-    array: List(Value);
-    object: Object;
-}
-
-// One ordered object entry. `key` is a view (not copied); `val` is owned
-// by value inside the object's backing store.
-Member :: struct {
-    key: string;
-    val: Value;
-}
-
-// Ordered list of (key, value) pairs — INSERTION ORDER preserved, never
-// sorted, never deduplicated.
-Object :: struct {
-    items: [*]Member = null;
-    len: i64 = 0;
-    cap: i64 = 0;
-
-    // Append a (key, val) pair at the end. Does not check for or merge a
-    // duplicate key — insertion order is the contract; a repeated key is
-    // emitted twice, in the order added.
-    put :: (self: *Object, key: string, v: Value, alloc: Allocator = context.allocator) {
-        if self.len >= self.cap {
-            newCap := if self.cap == 0 then 4 else self.cap * 2;
-            newItems : [*]Member = mem.alloc(alloc, Member, newCap).ptr;
-            if self.len > 0 {
-                c.memcpy(newItems, self.items, self.len * @sizeOf(Member));
-                alloc.deallocBytes(self.items);
-            }
-            self.items = newItems;
-            self.cap = newCap;
-        }
-        self.items[self.len] = Member{ key = key, val = v };
-        self.len += 1;
+    Value :: enum {
+        null;
+        bool: bool;
+        int:  i64;
+        float: f64;
+        str:   string;     // view into caller-owned bytes; not copied
+        array: List(Value);
+        object: Object;
     }
 
-    deinit :: (self: *Object, alloc: Allocator = context.allocator) {
-        if self.items != null { alloc.deallocBytes(self.items); }
-        self.items = null;
-        self.len = 0;
-        self.cap = 0;
-    }
-}
-
-// Both directions come from std/internal/decimal.sx: `toF64` reads a
-// decimal significand scaled by a power of ten as the NEAREST double,
-// and `shortest` names a double with the fewest digits that read back as
-// itself. The reader and the writer share that one pair, so every finite
-// double survives write -> parse bit for bit.
-
-// Remaining exponent digits are ignored after `ev` exceeds this limit.
-// The largest accumulated value fits in i64, and no in-memory token has
-// enough digits to offset its magnitude.
-private EXP_LIMIT :: 100000000000000000;   // 10^17
-
-// ── Writer ───────────────────────────────────────────────────────────
-
-// The longest run of digits `decimal` pads out rather than switching to the
-// exponential form.
-private INTEGRAL_DIGITS :: 18;
-
-// Padding for the integral and sub-one forms; INTEGRAL_DIGITS bounds both runs.
-private ZEROS : string : "000000000000000000";
-
-// A significand whose emitted text ends in a literal `.0` — `12300.0`.
-private integralForm :: (k: i64, p: i64) -> bool {
-    k >= 0 and p + k + 1 <= INTEGRAL_DIGITS
-}
-
-// The two-byte escape for `c`; null when `c` has none.
-private escapeOf :: (c: u8) -> ?string {
-    if c == '"'    { return "\\\""; }
-    if c == '\\'   { return "\\\\"; }
-    if c == '\x08' { return "\\b"; }
-    if c == '\t'   { return "\\t"; }
-    if c == '\n'   { return "\\n"; }
-    if c == '\x0c' { return "\\f"; }
-    if c == '\r'   { return "\\r"; }
-    null
-}
-
-// The `p`-digit significand `n` scaled by 10^k: `123.45` when the point
-// falls inside the digits, `0.00123` when the value is below one,
-// `12300.0` when it is integral, `1.23e-45` otherwise. Every form spells
-// the same decimal `n * 10^k`, which is what the reader recovers.
-// `p` is at most 17, the most digits `shortest` produces.
-private decimal :: (out: Writer, n: i64, k: i64, p: i64) {
-    digits : [17]u8 = ---;
-    v := n;
-    i := p;
-    while i > 0 {
-        i -= 1;
-        digits[i] = ((v % 10) + '0').(u8);
-        v = v / 10;
-    }
-    if integralForm(k, p) {
-        out.write(digits[..p]);
-        out.write(ZEROS[..k]);
-        out.write(".0");
-        return;
-    }
-    point := k + p - 1;        // 10^point is the leading digit's weight
-    if point >= 0 and point <= p - 2 {
-        out.write(digits[..point + 1]);
-        out.write(".");
-        out.write(digits[point + 1..p]);
-        return;
-    }
-    if point < 0 and point >= 0 - 6 {
-        out.write("0.");
-        out.write(ZEROS[..0 - point - 1]);
-        out.write(digits[..p]);
-        return;
-    }
-    out.write(digits[..1]);
-    if p > 1 {
-        out.write(".");
-        out.write(digits[1..p]);
-    }
-    out.write("e");
-    if point < 0 {
-        out.write("-");
-        out.writeInt(0 - point);
-    } else {
-        out.writeInt(point);
-    }
-}
-
-// One JSON document, emitted into a caller's `Writer`.
-JsonWriter :: struct {
-    out: Writer;
-
-    init :: (out: Writer) -> JsonWriter => .{ out = out };
-
-    // Serialize `v` as a complete document, then flush the sink.
-    write :: (self: *JsonWriter, v: Value) -> !JsonError {
-        try self.value(v);
-        self.out.flush();
-        return;
+    // One ordered object entry. `key` is a view (not copied); `val` is owned
+    // by value inside the object's backing store.
+    Member :: struct {
+        key: string;
+        val: Value;
     }
 
-    value :: (self: *JsonWriter, v: Value) -> !JsonError {
-        match v {
-            case .null:   self.out.write("null");
-            case .bool:   self.out.write(if v.bool then "true" else "false");
-            case .int:    self.out.writeInt(v.int);
-            case .float:  try self.float(v.float);
-            case .str:    self.str(v.str);
-            case .array:  try self.array(v.array);
-            case .object: try self.object(v.object);
-        }
-        return;
-    }
+    // Ordered list of (key, value) pairs — INSERTION ORDER preserved, never
+    // sorted, never deduplicated.
+    Object :: struct {
+        items: [*]Member = null;
+        len: i64 = 0;
+        cap: i64 = 0;
 
-    array :: (self: *JsonWriter, arr: List(Value)) -> !JsonError {
-        self.out.write("[");
-        i := 0;
-        while i < arr.len {
-            if i > 0 { self.out.write(","); }
-            try self.value(arr.items[i]);
-            i += 1;
-        }
-        self.out.write("]");
-        return;
-    }
-
-    // Emits members in stored order — the insertion order guarantee.
-    object :: (self: *JsonWriter, obj: Object) -> !JsonError {
-        self.out.write("{");
-        i := 0;
-        while i < obj.len {
-            if i > 0 { self.out.write(","); }
-            self.str(obj.items[i].key);
-            self.out.write(":");
-            try self.value(obj.items[i].val);
-            i += 1;
-        }
-        self.out.write("}");
-        return;
-    }
-
-    // Opening quote, escaped body, closing quote. Bytes needing no escape
-    // leave as one run, so a string with no escapes costs three writes.
-    // `"`, `\` and the control bytes with a shorthand take it, any other
-    // control byte goes out as `\u00XX`, and every other byte, including
-    // UTF-8 bytes, passes through.
-    str :: (self: *JsonWriter, s: string) {
-        self.out.write("\"");
-        run := 0;
-        i := 0;
-        while i < s.len {
-            c := s[i];
-            if esc := escapeOf(c) {
-                self.out.write(s[run..i]);
-                self.out.write(esc);
-            } else if c < ' ' {
-                self.out.write(s[run..i]);
-                u : [6]u8 = .['\\', 'u', '0', '0',
-                              encoding.hexDigit((c >> 4) & 0xF),
-                              encoding.hexDigit(c & 0xF)];
-                self.out.write(u[..]);
-            } else {
-                i += 1;
-                continue;
-            }
-            i += 1;
-            run = i;
-        }
-        self.out.write(s[run..]);
-        self.out.write("\"");
-    }
-
-    // The SHORTEST decimal that reads back as the identical double. The text
-    // is a preimage of `f`, never an approximation of it. A NaN or an infinity
-    // has no JSON spelling and raises.
-    float :: (self: *JsonWriter, f: f64) -> !JsonError {
-        bits := floatBits(f);
-        if isNonFinite(bits) { raise .NonFinite; }
-        if bits < 0 { self.out.write("-"); }   // the sign BIT, so -0.0 keeps its sign
-        v := if bits < 0 then 0.0 - f else f;
-        if v == 0.0 { self.out.write("0.0"); return; }
-        d := shortest(v);
-        decimal(self.out, d.mant, d.exp10, d.digits);
-        return;
-    }
-}
-
-// ── Reader (parser) ───────────────────────────────────────────────────
-//
-// `parse(src, alloc)` turns a JSON document in `src` into the value model
-// above. It is the inverse of the writer: objects (in INSERTION ORDER),
-// arrays, strings (with full unescaping incl. \uXXXX and surrogate
-// pairs), i64 integers, f64 floats, bool, null.
-//
-// FAILURE SURFACING (hard contract): every malformed input raises on the
-// error channel (`!JsonParseError`) — never a bogus or default value.
-// Trailing non-whitespace after a complete value is `TrailingGarbage`.
-// `pos` (the parser cursor) marks where the failure was detected.
-//
-// NUMBERS follow the RFC 8259 grammar. A bare integer becomes an `int`
-// and an integer outside i64 is `BadNumber` — never a truncation. A
-// fraction or an exponent (`1.5`, `1e9`, `2.5E-3`) becomes a `float`;
-// one that overflows to infinity is `BadNumber`, one that underflows
-// reads as zero. Whatever its length, a float reads as the NEAREST
-// double, ties to even.
-//
-// REJECTED, not silently accepted: a leading-zero integer (`01`), a
-// missing digit after the point (`1.`), and a missing exponent digit
-// (`1e`) → `BadNumber` (`.5` starts no JSON value at all →
-// `UnexpectedToken`). An UNESCAPED raw control byte
-// (U+0000..U+001F) inside a string → `BadControlChar` (RFC 8259 §7
-// requires those bytes to be escaped); the escaped forms (`\t`, `\n`,
-// `\u0009`, …) stay valid and decode normally. Bytes >= 0x20, including
-// 0x7F (DEL) and UTF-8 continuation bytes (>= 0x80), pass through.
-//
-// OWNERSHIP / LIFETIME: un-escaped string values are SLICES into `src` —
-// they are valid only while `src` lives. Everything else (nodes, decoded
-// strings) is owned by `alloc`; free it all by dropping that allocator
-// (e.g. an Arena `deinit`). A typical caller parses under an Arena and
-// keeps `src` alive for as long as the tree is used.
-//
-//     gpa   := GPA.init();
-//     arena := mem.Arena.init(gpa, 4096);
-//     defer arena.deinit();
-//     root  := try parse(src, arena);   // composites + decoded strings in arena
-
-// The reader's failure contract. Meaningful variants so a caller can tell
-// a truncated document from a bad escape from trailing junk.
-JsonParseError :: error { UnexpectedToken; UnexpectedEnd; BadEscape; BadNumber; TrailingGarbage; BadControlChar }
-
-// The cursor over the input. `src` is borrowed (never written); `pos` is
-// the running offset and doubles as the failure position; `alloc` funds
-// composites and decoded strings.
-JsonParser :: struct {
-    src: string;
-    pos: i64 = 0;
-    alloc: Allocator;
-
-    // Advance past JSON whitespace (space / tab / LF / CR).
-    skipWs :: (self: *JsonParser) {
-        while self.pos < self.src.len {
-            c := self.src[self.pos];
-            if c == ' ' or c == '\t' or c == '\n' or c == '\r' { self.pos += 1; }
-            else { break; }
-        }
-    }
-
-    // Consume an exact literal (`true` / `false` / `null`) or fail.
-    expectLit :: (self: *JsonParser, lit: string) -> !JsonParseError {
-        if self.pos + lit.len > self.src.len { raise .UnexpectedEnd; }
-        i := 0;
-        while i < lit.len {
-            if self.src[self.pos + i] != lit[i] { raise .UnexpectedToken; }
-            i += 1;
-        }
-        self.pos += lit.len;
-        return;
-    }
-
-    // Read 4 hex digits at `i` (which must lie within [.., end)); returns
-    // the 16-bit value. Fewer than 4 digits before `end` is a BadEscape.
-    readHex4 :: (self: *JsonParser, i: i64, end: i64) -> (i64, !JsonParseError) {
-        if i + 4 > end { raise .BadEscape; }
-        v := 0;
-        k := 0;
-        while k < 4 {
-            if d := encoding.hexValue(self.src[i + k]) { v = v * 16 + d; } else { raise .BadEscape; }
-            k += 1;
-        }
-        return v;
-    }
-
-    // Decode the escaped string body in [start, end) into `out`, returning
-    // the decoded byte length. Pass 1 (in parseString) guarantees there is
-    // no dangling backslash, so the byte after every `\` is in range.
-    decodeInto :: (self: *JsonParser, start: i64, end: i64, out: []u8) -> (i64, !JsonParseError) {
-        di := 0;
-        i := start;
-        while i < end {
-            c := self.src[i];
-            if c == '\\' {                       // backslash
-                i += 1;
-                e := self.src[i];
-                if      e == '"'  { out[di] = '"'; di += 1; i += 1; }   // \"
-                else if e == '\\' { out[di] = '\\'; di += 1; i += 1; }   // \\
-                else if e == '/'  { out[di] = '/'; di += 1; i += 1; }   // \/
-                else if e == 'b'  { out[di] = '\x08';  di += 1; i += 1; }   // \b
-                else if e == 'f'  { out[di] = '\x0c'; di += 1; i += 1; }   // \f
-                else if e == 'n'  { out[di] = '\n'; di += 1; i += 1; }   // \n
-                else if e == 'r'  { out[di] = '\r'; di += 1; i += 1; }   // \r
-                else if e == 't'  { out[di] = '\t';  di += 1; i += 1; }   // \t
-                else if e == 'u' {                                    // \uXXXX
-                    hpos := i + 1;
-                    u := try self.readHex4(hpos, end);
-                    if u >= 0xD800 and u <= 0xDBFF {
-                        // high surrogate: require a following \uYYYY low surrogate
-                        lpos := hpos + 4;
-                        if lpos + 2 > end { raise .BadEscape; }
-                        if self.src[lpos] != '\\' or self.src[lpos + 1] != 'u' { raise .BadEscape; }
-                        lo := try self.readHex4(lpos + 2, end);
-                        if lo < 0xDC00 or lo > 0xDFFF { raise .BadEscape; }
-                        cp := 0x10000 + ((u - 0xD800) << 10) + (lo - 0xDC00);
-                        if seq := encoding.encodeUtf8(cp, out[di..]) { di += seq.len; } else { raise .BadEscape; }
-                        i = lpos + 6;
-                    } else {
-                        if seq := encoding.encodeUtf8(u, out[di..]) { di += seq.len; } else { raise .BadEscape; }
-                        i = hpos + 4;
-                    }
+        // Append a (key, val) pair at the end. Does not check for or merge a
+        // duplicate key — insertion order is the contract; a repeated key is
+        // emitted twice, in the order added.
+        put :: (self: *Object, key: string, v: Value, alloc: Allocator = context.allocator) {
+            if self.len >= self.cap {
+                newCap := if self.cap == 0 then 4 else self.cap * 2;
+                newItems : [*]Member = mem.alloc(alloc, Member, newCap).ptr;
+                if self.len > 0 {
+                    c.memcpy(newItems, self.items, self.len * @sizeOf(Member));
+                    alloc.deallocBytes(self.items);
                 }
-                else { raise .BadEscape; }
-            } else {
-                out[di] = c; di += 1; i += 1;
+                self.items = newItems;
+                self.cap = newCap;
             }
+            self.items[self.len] = Member{ key = key, val = v };
+            self.len += 1;
         }
-        return di;
+
+        deinit :: (self: *Object, alloc: Allocator = context.allocator) {
+            if self.items != null { alloc.deallocBytes(self.items); }
+            self.items = null;
+            self.len = 0;
+            self.cap = 0;
+        }
     }
 
-    // Parse a string starting at the opening quote (current `pos`). Returns
-    // a zero-copy VIEW into `src` when the body has no escapes; otherwise
-    // decodes into an `alloc`-ed buffer (bounded by the raw span). `pos`
-    // ends just past the closing quote.
-    parseString :: (self: *JsonParser) -> (string, !JsonParseError) {
-        self.pos += 1;                 // consume opening quote
-        start := self.pos;
-        hasEscape := false;
-        i := start;
-        while i < self.src.len {
-            c := self.src[i];
-            if c == '"' { break; }      // closing quote
-            if c == '\\' {             // backslash escapes the next byte
-                hasEscape = true;
+    // Both directions come from std/internal/decimal.sx: `toF64` reads a
+    // decimal significand scaled by a power of ten as the NEAREST double,
+    // and `shortest` names a double with the fewest digits that read back as
+    // itself. The reader and the writer share that one pair, so every finite
+    // double survives write -> parse bit for bit.
+
+    // Remaining exponent digits are ignored after `ev` exceeds this limit.
+    // The largest accumulated value fits in i64, and no in-memory token has
+    // enough digits to offset its magnitude.
+    private EXP_LIMIT :: 100000000000000000;   // 10^17
+
+    // ── Writer ───────────────────────────────────────────────────────────
+
+    // The longest run of digits `decimal` pads out rather than switching to the
+    // exponential form.
+    private INTEGRAL_DIGITS :: 18;
+
+    // Padding for the integral and sub-one forms; INTEGRAL_DIGITS bounds both runs.
+    private ZEROS : string : "000000000000000000";
+
+    // A significand whose emitted text ends in a literal `.0` — `12300.0`.
+    private integralForm :: (k: i64, p: i64) -> bool {
+        k >= 0 and p + k + 1 <= INTEGRAL_DIGITS
+    }
+
+    // The two-byte escape for `c`; null when `c` has none.
+    private escapeOf :: (c: u8) -> ?string {
+        if c == '"'    { return "\\\""; }
+        if c == '\\'   { return "\\\\"; }
+        if c == '\x08' { return "\\b"; }
+        if c == '\t'   { return "\\t"; }
+        if c == '\n'   { return "\\n"; }
+        if c == '\x0c' { return "\\f"; }
+        if c == '\r'   { return "\\r"; }
+        null
+    }
+
+    // The `p`-digit significand `n` scaled by 10^k: `123.45` when the point
+    // falls inside the digits, `0.00123` when the value is below one,
+    // `12300.0` when it is integral, `1.23e-45` otherwise. Every form spells
+    // the same decimal `n * 10^k`, which is what the reader recovers.
+    // `p` is at most 17, the most digits `shortest` produces.
+    private decimal :: (out: core.Writer, n: i64, k: i64, p: i64) {
+        digits : [17]u8 = ---;
+        v := n;
+        i := p;
+        while i > 0 {
+            i -= 1;
+            digits[i] = ((v % 10) + '0').(u8);
+            v = v / 10;
+        }
+        if integralForm(k, p) {
+            out.write(digits[..p]);
+            out.write(ZEROS[..k]);
+            out.write(".0");
+            return;
+        }
+        point := k + p - 1;        // 10^point is the leading digit's weight
+        if point >= 0 and point <= p - 2 {
+            out.write(digits[..point + 1]);
+            out.write(".");
+            out.write(digits[point + 1..p]);
+            return;
+        }
+        if point < 0 and point >= 0 - 6 {
+            out.write("0.");
+            out.write(ZEROS[..0 - point - 1]);
+            out.write(digits[..p]);
+            return;
+        }
+        out.write(digits[..1]);
+        if p > 1 {
+            out.write(".");
+            out.write(digits[1..p]);
+        }
+        out.write("e");
+        if point < 0 {
+            out.write("-");
+            out.writeInt(0 - point);
+        } else {
+            out.writeInt(point);
+        }
+    }
+
+    // One JSON document, emitted into a caller's `core.Writer`.
+    Writer :: struct {
+        out: core.Writer;
+
+        init :: (out: core.Writer) -> Writer => .{ out = out };
+
+        // Serialize `v` as a complete document, then flush the sink.
+        write :: (self: *Writer, v: Value) -> !Error {
+            try self.value(v);
+            self.out.flush();
+            return;
+        }
+
+        value :: (self: *Writer, v: Value) -> !Error {
+            match v {
+                case .null:   self.out.write("null");
+                case .bool:   self.out.write(if v.bool then "true" else "false");
+                case .int:    self.out.writeInt(v.int);
+                case .float:  try self.float(v.float);
+                case .str:    self.str(v.str);
+                case .array:  try self.array(v.array);
+                case .object: try self.object(v.object);
+            }
+            return;
+        }
+
+        array :: (self: *Writer, arr: List(Value)) -> !Error {
+            self.out.write("[");
+            i := 0;
+            while i < arr.len {
+                if i > 0 { self.out.write(","); }
+                try self.value(arr.items[i]);
                 i += 1;
-                if i >= self.src.len { raise .UnexpectedEnd; }
-            } else if c < ' ' {
-                // RFC 8259 §7: a raw control byte (U+0000..U+001F) must be
-                // escaped inside a string; an unescaped one is invalid JSON.
-                self.pos = i;
-                raise .BadControlChar;
             }
-            i += 1;
+            self.out.write("]");
+            return;
         }
-        if i >= self.src.len { raise .UnexpectedEnd; }   // unterminated
-        end := i;
-        if !hasEscape {
+
+        // Emits members in stored order — the insertion order guarantee.
+        object :: (self: *Writer, obj: Object) -> !Error {
+            self.out.write("{");
+            i := 0;
+            while i < obj.len {
+                if i > 0 { self.out.write(","); }
+                self.str(obj.items[i].key);
+                self.out.write(":");
+                try self.value(obj.items[i].val);
+                i += 1;
+            }
+            self.out.write("}");
+            return;
+        }
+
+        // Opening quote, escaped body, closing quote. Bytes needing no escape
+        // leave as one run, so a string with no escapes costs three writes.
+        // `"`, `\` and the control bytes with a shorthand take it, any other
+        // control byte goes out as `\u00XX`, and every other byte, including
+        // UTF-8 bytes, passes through.
+        str :: (self: *Writer, s: string) {
+            self.out.write("\"");
+            run := 0;
+            i := 0;
+            while i < s.len {
+                c := s[i];
+                if esc := escapeOf(c) {
+                    self.out.write(s[run..i]);
+                    self.out.write(esc);
+                } else if c < ' ' {
+                    self.out.write(s[run..i]);
+                    u : [6]u8 = .['\\', 'u', '0', '0',
+                                  encoding.hexDigit((c >> 4) & 0xF),
+                                  encoding.hexDigit(c & 0xF)];
+                    self.out.write(u[..]);
+                } else {
+                    i += 1;
+                    continue;
+                }
+                i += 1;
+                run = i;
+            }
+            self.out.write(s[run..]);
+            self.out.write("\"");
+        }
+
+        // The SHORTEST decimal that reads back as the identical double. The text
+        // is a preimage of `f`, never an approximation of it. A NaN or an infinity
+        // has no JSON spelling and raises.
+        float :: (self: *Writer, f: f64) -> !Error {
+            bits := floatBits(f);
+            if isNonFinite(bits) { raise .NonFinite; }
+            if bits < 0 { self.out.write("-"); }   // the sign BIT, so -0.0 keeps its sign
+            v := if bits < 0 then 0.0 - f else f;
+            if v == 0.0 { self.out.write("0.0"); return; }
+            d := shortest(v);
+            decimal(self.out, d.mant, d.exp10, d.digits);
+            return;
+        }
+    }
+
+    // ── Reader (parser) ───────────────────────────────────────────────────
+    //
+    // `parse(src, alloc)` turns a JSON document in `src` into the value model
+    // above. It is the inverse of the writer: objects (in INSERTION ORDER),
+    // arrays, strings (with full unescaping incl. \uXXXX and surrogate
+    // pairs), i64 integers, f64 floats, bool, null.
+    //
+    // FAILURE SURFACING (hard contract): every malformed input raises on the
+    // error channel (`!ParseError`) — never a bogus or default value.
+    // Trailing non-whitespace after a complete value is `TrailingGarbage`.
+    // `pos` (the parser cursor) marks where the failure was detected.
+    //
+    // NUMBERS follow the RFC 8259 grammar. A bare integer becomes an `int`
+    // and an integer outside i64 is `BadNumber` — never a truncation. A
+    // fraction or an exponent (`1.5`, `1e9`, `2.5E-3`) becomes a `float`;
+    // one that overflows to infinity is `BadNumber`, one that underflows
+    // reads as zero. Whatever its length, a float reads as the NEAREST
+    // double, ties to even.
+    //
+    // REJECTED, not silently accepted: a leading-zero integer (`01`), a
+    // missing digit after the point (`1.`), and a missing exponent digit
+    // (`1e`) → `BadNumber` (`.5` starts no JSON value at all →
+    // `UnexpectedToken`). An UNESCAPED raw control byte
+    // (U+0000..U+001F) inside a string → `BadControlChar` (RFC 8259 §7
+    // requires those bytes to be escaped); the escaped forms (`\t`, `\n`,
+    // `\u0009`, …) stay valid and decode normally. Bytes >= 0x20, including
+    // 0x7F (DEL) and UTF-8 continuation bytes (>= 0x80), pass through.
+    //
+    // OWNERSHIP / LIFETIME: un-escaped string values are SLICES into `src` —
+    // they are valid only while `src` lives. Everything else (nodes, decoded
+    // strings) is owned by `alloc`; free it all by dropping that allocator
+    // (e.g. an Arena `deinit`). A typical caller parses under an Arena and
+    // keeps `src` alive for as long as the tree is used.
+    //
+    //     gpa   := GPA.init();
+    //     arena := mem.Arena.init(gpa, 4096);
+    //     defer arena.deinit();
+    //     root  := try json.parse(src, arena);   // composites + decoded strings in arena
+
+    // The reader's failure contract. Meaningful variants so a caller can tell
+    // a truncated document from a bad escape from trailing junk.
+    ParseError :: error { UnexpectedToken; UnexpectedEnd; BadEscape; BadNumber; TrailingGarbage; BadControlChar }
+
+    // The cursor over the input. `src` is borrowed (never written); `pos` is
+    // the running offset and doubles as the failure position; `alloc` funds
+    // composites and decoded strings.
+    Parser :: struct {
+        src: string;
+        pos: i64 = 0;
+        alloc: Allocator;
+
+        // Advance past JSON whitespace (space / tab / LF / CR).
+        skipWs :: (self: *Parser) {
+            while self.pos < self.src.len {
+                c := self.src[self.pos];
+                if c == ' ' or c == '\t' or c == '\n' or c == '\r' { self.pos += 1; }
+                else { break; }
+            }
+        }
+
+        // Consume an exact literal (`true` / `false` / `null`) or fail.
+        expectLit :: (self: *Parser, lit: string) -> !ParseError {
+            if self.pos + lit.len > self.src.len { raise .UnexpectedEnd; }
+            i := 0;
+            while i < lit.len {
+                if self.src[self.pos + i] != lit[i] { raise .UnexpectedToken; }
+                i += 1;
+            }
+            self.pos += lit.len;
+            return;
+        }
+
+        // Read 4 hex digits at `i` (which must lie within [.., end)); returns
+        // the 16-bit value. Fewer than 4 digits before `end` is a BadEscape.
+        readHex4 :: (self: *Parser, i: i64, end: i64) -> (i64, !ParseError) {
+            if i + 4 > end { raise .BadEscape; }
+            v := 0;
+            k := 0;
+            while k < 4 {
+                if d := encoding.hexValue(self.src[i + k]) { v = v * 16 + d; } else { raise .BadEscape; }
+                k += 1;
+            }
+            return v;
+        }
+
+        // Decode the escaped string body in [start, end) into `out`, returning
+        // the decoded byte length. Pass 1 (in parseString) guarantees there is
+        // no dangling backslash, so the byte after every `\` is in range.
+        decodeInto :: (self: *Parser, start: i64, end: i64, out: []u8) -> (i64, !ParseError) {
+            di := 0;
+            i := start;
+            while i < end {
+                c := self.src[i];
+                if c == '\\' {                       // backslash
+                    i += 1;
+                    e := self.src[i];
+                    if      e == '"'  { out[di] = '"'; di += 1; i += 1; }   // \"
+                    else if e == '\\' { out[di] = '\\'; di += 1; i += 1; }   // \\
+                    else if e == '/'  { out[di] = '/'; di += 1; i += 1; }   // \/
+                    else if e == 'b'  { out[di] = '\x08';  di += 1; i += 1; }   // \b
+                    else if e == 'f'  { out[di] = '\x0c'; di += 1; i += 1; }   // \f
+                    else if e == 'n'  { out[di] = '\n'; di += 1; i += 1; }   // \n
+                    else if e == 'r'  { out[di] = '\r'; di += 1; i += 1; }   // \r
+                    else if e == 't'  { out[di] = '\t';  di += 1; i += 1; }   // \t
+                    else if e == 'u' {                                    // \uXXXX
+                        hpos := i + 1;
+                        u := try self.readHex4(hpos, end);
+                        if u >= 0xD800 and u <= 0xDBFF {
+                            // high surrogate: require a following \uYYYY low surrogate
+                            lpos := hpos + 4;
+                            if lpos + 2 > end { raise .BadEscape; }
+                            if self.src[lpos] != '\\' or self.src[lpos + 1] != 'u' { raise .BadEscape; }
+                            lo := try self.readHex4(lpos + 2, end);
+                            if lo < 0xDC00 or lo > 0xDFFF { raise .BadEscape; }
+                            cp := 0x10000 + ((u - 0xD800) << 10) + (lo - 0xDC00);
+                            if seq := encoding.encodeUtf8(cp, out[di..]) { di += seq.len; } else { raise .BadEscape; }
+                            i = lpos + 6;
+                        } else {
+                            if seq := encoding.encodeUtf8(u, out[di..]) { di += seq.len; } else { raise .BadEscape; }
+                            i = hpos + 4;
+                        }
+                    }
+                    else { raise .BadEscape; }
+                } else {
+                    out[di] = c; di += 1; i += 1;
+                }
+            }
+            return di;
+        }
+
+        // Parse a string starting at the opening quote (current `pos`). Returns
+        // a zero-copy VIEW into `src` when the body has no escapes; otherwise
+        // decodes into an `alloc`-ed buffer (bounded by the raw span). `pos`
+        // ends just past the closing quote.
+        parseString :: (self: *Parser) -> (string, !ParseError) {
+            self.pos += 1;                 // consume opening quote
+            start := self.pos;
+            hasEscape := false;
+            i := start;
+            while i < self.src.len {
+                c := self.src[i];
+                if c == '"' { break; }      // closing quote
+                if c == '\\' {             // backslash escapes the next byte
+                    hasEscape = true;
+                    i += 1;
+                    if i >= self.src.len { raise .UnexpectedEnd; }
+                } else if c < ' ' {
+                    // RFC 8259 §7: a raw control byte (U+0000..U+001F) must be
+                    // escaped inside a string; an unescaped one is invalid JSON.
+                    self.pos = i;
+                    raise .BadControlChar;
+                }
+                i += 1;
+            }
+            if i >= self.src.len { raise .UnexpectedEnd; }   // unterminated
+            end := i;
+            if !hasEscape {
+                self.pos = end + 1;
+                return self.src[start..end];
+            }
+            rawLen := end - start;        // decoded length <= rawLen (escapes shrink)
+            out := mem.alloc(self.alloc, u8, rawLen);
+            dlen := try self.decodeInto(start, end, out);
             self.pos = end + 1;
-            return self.src[start..end];
+            return out[..dlen];
         }
-        rawLen := end - start;        // decoded length <= rawLen (escapes shrink)
-        out := mem.alloc(self.alloc, u8, rawLen);
-        dlen := try self.decodeInto(start, end, out);
-        self.pos = end + 1;
-        return out[..dlen];
-    }
 
-    // Parse an RFC 8259 number: `-`? int frac? exp?. A bare integer is an
-    // `int`; a fraction or an exponent makes it a `float`. The integer
-    // digits feed BOTH accumulators — which one survives is settled by
-    // the tail — so the token is read in a single pass.
-    parseNumber :: (self: *JsonParser) -> (Value, !JsonParseError) {
-        // i64 bounds, built positionally because |MIN| is not a
-        // representable positive i64 literal. `minDiv10` is `MIN / 10`
-        // truncated toward zero (remainder -8) — the int accumulator's
-        // overflow threshold, which runs in NEGATIVE space so MIN is
-        // exact.
-        i64Min := 0 - 9223372036854775807 - 1;
-        minDiv10 := 0 - 922337203685477580;
-        neg := false;
-        if self.src[self.pos] == '-' { neg = true; self.pos += 1; }
-        if self.pos >= self.src.len { raise .BadNumber; }       // '-' with no digit
-        dstart := self.pos;
-        c0 := self.src[self.pos];
-        if c0 < '0' or c0 > '9' { raise .BadNumber; }
-        val : i64 = 0;            // the int form, in negative space
-        overflowed := false;      // fatal for the int form, irrelevant to the float form
-        sig : Significand = .{};  // the float form's significand
-        exp10 : i64 = 0;          // ... scaled by this power of ten
-        digits := 0;
-        while self.pos < self.src.len {
-            c := self.src[self.pos];
-            if c < '0' or c > '9' { break; }
-            d := (c.(i64)) - '0';
-            if overflowed or val < minDiv10 or (val == minDiv10 and d > 8) { overflowed = true; }
-            else { val = val * 10 - d; }
-            if !sig.push(d) { exp10 += 1; }   // past the cap: the digit only weighs the scale
-            digits += 1;
-            self.pos += 1;
-        }
-        if self.src[dstart] == '0' and digits > 1 { raise .BadNumber; }   // no leading zeros
-        isFloat := false;
-        if self.pos < self.src.len and self.src[self.pos] == '.' {
-            isFloat = true;
-            self.pos += 1;
-            fdigits := 0;
+        // Parse an RFC 8259 number: `-`? int frac? exp?. A bare integer is an
+        // `int`; a fraction or an exponent makes it a `float`. The integer
+        // digits feed BOTH accumulators — which one survives is settled by
+        // the tail — so the token is read in a single pass.
+        parseNumber :: (self: *Parser) -> (Value, !ParseError) {
+            // i64 bounds, built positionally because |MIN| is not a
+            // representable positive i64 literal. `minDiv10` is `MIN / 10`
+            // truncated toward zero (remainder -8) — the int accumulator's
+            // overflow threshold, which runs in NEGATIVE space so MIN is
+            // exact.
+            i64Min := 0 - 9223372036854775807 - 1;
+            minDiv10 := 0 - 922337203685477580;
+            neg := false;
+            if self.src[self.pos] == '-' { neg = true; self.pos += 1; }
+            if self.pos >= self.src.len { raise .BadNumber; }       // '-' with no digit
+            dstart := self.pos;
+            c0 := self.src[self.pos];
+            if c0 < '0' or c0 > '9' { raise .BadNumber; }
+            val : i64 = 0;            // the int form, in negative space
+            overflowed := false;      // fatal for the int form, irrelevant to the float form
+            sig : Significand = .{};  // the float form's significand
+            exp10 : i64 = 0;          // ... scaled by this power of ten
+            digits := 0;
             while self.pos < self.src.len {
                 c := self.src[self.pos];
                 if c < '0' or c > '9' { break; }
-                if sig.push(c - '0') { exp10 -= 1; }
-                fdigits += 1;
+                d := (c.(i64)) - '0';
+                if overflowed or val < minDiv10 or (val == minDiv10 and d > 8) { overflowed = true; }
+                else { val = val * 10 - d; }
+                if !sig.push(d) { exp10 += 1; }   // past the cap: the digit only weighs the scale
+                digits += 1;
                 self.pos += 1;
             }
-            if fdigits == 0 { raise .BadNumber; }   // '.' with no digit after it
-        }
-        if self.pos < self.src.len and (self.src[self.pos] == 'e' or self.src[self.pos] == 'E') {
-            isFloat = true;
-            self.pos += 1;
-            eneg := false;
-            if self.pos < self.src.len {
-                s := self.src[self.pos];
-                if s == '+' { self.pos += 1; }
-                else if s == '-' { eneg = true; self.pos += 1; }
-            }
-            if self.pos >= self.src.len { raise .BadNumber; }
-            e0 := self.src[self.pos];
-            if e0 < '0' or e0 > '9' { raise .BadNumber; }   // exponent with no digit
-            ev : i64 = 0;
-            while self.pos < self.src.len {
-                c := self.src[self.pos];
-                if c < '0' or c > '9' { break; }
-                if ev <= EXP_LIMIT { ev = ev * 10 + (c - '0'); }
+            if self.src[dstart] == '0' and digits > 1 { raise .BadNumber; }   // no leading zeros
+            isFloat := false;
+            if self.pos < self.src.len and self.src[self.pos] == '.' {
+                isFloat = true;
                 self.pos += 1;
+                fdigits := 0;
+                while self.pos < self.src.len {
+                    c := self.src[self.pos];
+                    if c < '0' or c > '9' { break; }
+                    if sig.push(c - '0') { exp10 -= 1; }
+                    fdigits += 1;
+                    self.pos += 1;
+                }
+                if fdigits == 0 { raise .BadNumber; }   // '.' with no digit after it
             }
-            if eneg { ev = 0 - ev; }
-            exp10 += ev;
+            if self.pos < self.src.len and (self.src[self.pos] == 'e' or self.src[self.pos] == 'E') {
+                isFloat = true;
+                self.pos += 1;
+                eneg := false;
+                if self.pos < self.src.len {
+                    s := self.src[self.pos];
+                    if s == '+' { self.pos += 1; }
+                    else if s == '-' { eneg = true; self.pos += 1; }
+                }
+                if self.pos >= self.src.len { raise .BadNumber; }
+                e0 := self.src[self.pos];
+                if e0 < '0' or e0 > '9' { raise .BadNumber; }   // exponent with no digit
+                ev : i64 = 0;
+                while self.pos < self.src.len {
+                    c := self.src[self.pos];
+                    if c < '0' or c > '9' { break; }
+                    if ev <= EXP_LIMIT { ev = ev * 10 + (c - '0'); }
+                    self.pos += 1;
+                }
+                if eneg { ev = 0 - ev; }
+                exp10 += ev;
+            }
+            if isFloat {
+                fv := toF64(*sig, exp10);
+                if isNonFinite(floatBits(fv)) { raise .BadNumber; }
+                if neg { fv = fv * (0.0 - 1.0); }   // scaled, not subtracted, so -0.0 keeps its sign
+                return Value.float(fv);
+            }
+            if overflowed { raise .BadNumber; }
+            if !neg {
+                if val == i64Min { raise .BadNumber; }   // |MIN| not representable as +i64
+                val = 0 - val;
+            }
+            return Value.int(val);
         }
-        if isFloat {
-            fv := toF64(*sig, exp10);
-            if isNonFinite(floatBits(fv)) { raise .BadNumber; }
-            if neg { fv = fv * (0.0 - 1.0); }   // scaled, not subtracted, so -0.0 keeps its sign
-            return Value.float(fv);
-        }
-        if overflowed { raise .BadNumber; }
-        if !neg {
-            if val == i64Min { raise .BadNumber; }   // |MIN| not representable as +i64
-            val = 0 - val;
-        }
-        return Value.int(val);
-    }
 
-    // Parse an array starting at '['. Builds a `List(Value)` through `alloc`.
-    parseArray :: (self: *JsonParser) -> (Value, !JsonParseError) {
-        self.pos += 1;                 // consume '['
-        arr : List(Value) = .{};
-        self.skipWs();
-        if self.pos < self.src.len and self.src[self.pos] == ']' {   // empty ']'
-            self.pos += 1;
+        // Parse an array starting at '['. Builds a `List(Value)` through `alloc`.
+        parseArray :: (self: *Parser) -> (Value, !ParseError) {
+            self.pos += 1;                 // consume '['
+            arr : List(Value) = .{};
+            self.skipWs();
+            if self.pos < self.src.len and self.src[self.pos] == ']' {   // empty ']'
+                self.pos += 1;
+                return Value.array(arr);
+            }
+            loop := true;
+            while loop {
+                v := try self.parseValue();
+                arr.append(v, self.alloc);
+                self.skipWs();
+                if self.pos >= self.src.len { raise .UnexpectedEnd; }
+                c := self.src[self.pos];
+                if c == ',' { self.pos += 1; }                          // more
+                else if c == ']' { self.pos += 1; loop = false; }       // done
+                else { raise .UnexpectedToken; }
+            }
             return Value.array(arr);
         }
-        loop := true;
-        while loop {
-            v := try self.parseValue();
-            arr.append(v, self.alloc);
-            self.skipWs();
-            if self.pos >= self.src.len { raise .UnexpectedEnd; }
-            c := self.src[self.pos];
-            if c == ',' { self.pos += 1; }                          // more
-            else if c == ']' { self.pos += 1; loop = false; }       // done
-            else { raise .UnexpectedToken; }
-        }
-        return Value.array(arr);
-    }
 
-    // Parse an object starting at '{'. Keys must be strings; insertion
-    // order is preserved (duplicate keys are kept, never merged).
-    parseObject :: (self: *JsonParser) -> (Value, !JsonParseError) {
-        self.pos += 1;                 // consume '{'
-        obj : Object = .{};
-        self.skipWs();
-        if self.pos < self.src.len and self.src[self.pos] == '}' {  // empty '}'
-            self.pos += 1;
+        // Parse an object starting at '{'. Keys must be strings; insertion
+        // order is preserved (duplicate keys are kept, never merged).
+        parseObject :: (self: *Parser) -> (Value, !ParseError) {
+            self.pos += 1;                 // consume '{'
+            obj : Object = .{};
+            self.skipWs();
+            if self.pos < self.src.len and self.src[self.pos] == '}' {  // empty '}'
+                self.pos += 1;
+                return Value.object(obj);
+            }
+            loop := true;
+            while loop {
+                self.skipWs();
+                if self.pos >= self.src.len { raise .UnexpectedEnd; }
+                if self.src[self.pos] != '"' { raise .UnexpectedToken; }   // key must be a string
+                key := try self.parseString();
+                self.skipWs();
+                if self.pos >= self.src.len { raise .UnexpectedEnd; }
+                if self.src[self.pos] != ':' { raise .UnexpectedToken; }
+                self.pos += 1;
+                v := try self.parseValue();
+                obj.put(key, v, self.alloc);
+                self.skipWs();
+                if self.pos >= self.src.len { raise .UnexpectedEnd; }
+                c := self.src[self.pos];
+                if c == ',' { self.pos += 1; }                          // more
+                else if c == '}' { self.pos += 1; loop = false; }      // done
+                else { raise .UnexpectedToken; }
+            }
             return Value.object(obj);
         }
-        loop := true;
-        while loop {
-            self.skipWs();
-            if self.pos >= self.src.len { raise .UnexpectedEnd; }
-            if self.src[self.pos] != '"' { raise .UnexpectedToken; }   // key must be a string
-            key := try self.parseString();
-            self.skipWs();
-            if self.pos >= self.src.len { raise .UnexpectedEnd; }
-            if self.src[self.pos] != ':' { raise .UnexpectedToken; }
-            self.pos += 1;
-            v := try self.parseValue();
-            obj.put(key, v, self.alloc);
+
+        // Parse any single value (after skipping leading whitespace).
+        parseValue :: (self: *Parser) -> (Value, !ParseError) {
             self.skipWs();
             if self.pos >= self.src.len { raise .UnexpectedEnd; }
             c := self.src[self.pos];
-            if c == ',' { self.pos += 1; }                          // more
-            else if c == '}' { self.pos += 1; loop = false; }      // done
-            else { raise .UnexpectedToken; }
+            if c == '{' { return try self.parseObject(); }
+            if c == '['  { return try self.parseArray(); }
+            if c == '"'  { s := try self.parseString(); return Value.str(s); }
+            if c == 't' { try self.expectLit("true");  return Value.bool(true); }
+            if c == 'f' { try self.expectLit("false"); return Value.bool(false); }
+            if c == 'n' { try self.expectLit("null");  nv : Value = .null; return nv; }
+            if c == '-' or (c >= '0' and c <= '9') { return try self.parseNumber(); }   // '-' / digit
+            raise .UnexpectedToken;
         }
-        return Value.object(obj);
     }
 
-    // Parse any single value (after skipping leading whitespace).
-    parseValue :: (self: *JsonParser) -> (Value, !JsonParseError) {
-        self.skipWs();
-        if self.pos >= self.src.len { raise .UnexpectedEnd; }
-        c := self.src[self.pos];
-        if c == '{' { return try self.parseObject(); }
-        if c == '['  { return try self.parseArray(); }
-        if c == '"'  { s := try self.parseString(); return Value.str(s); }
-        if c == 't' { try self.expectLit("true");  return Value.bool(true); }
-        if c == 'f' { try self.expectLit("false"); return Value.bool(false); }
-        if c == 'n' { try self.expectLit("null");  nv : Value = .null; return nv; }
-        if c == '-' or (c >= '0' and c <= '9') { return try self.parseNumber(); }   // '-' / digit
-        raise .UnexpectedToken;
+    // Parse a complete JSON document from `src` into the value model, using
+    // `alloc` for composite nodes and decoded (escaped) strings. Un-escaped
+    // string values are VIEWS into `src` and are valid only while `src` lives.
+    // Trailing non-whitespace after the value raises `ParseError.TrailingGarbage`.
+    parse :: (src: string, alloc: Allocator) -> (Value, !ParseError) {
+        p := Parser{ src = src, alloc = alloc };
+        v := try p.parseValue();
+        p.skipWs();
+        if p.pos != p.src.len { raise .TrailingGarbage; }
+        return v;
     }
-}
-
-// Parse a complete JSON document from `src` into the value model, using
-// `alloc` for composite nodes and decoded (escaped) strings. Un-escaped
-// string values are VIEWS into `src` and are valid only while `src` lives.
-// Trailing non-whitespace after the value raises `JsonParseError.TrailingGarbage`.
-parse :: (src: string, alloc: Allocator) -> (Value, !JsonParseError) {
-    p := JsonParser{ src = src, alloc = alloc };
-    v := try p.parseValue();
-    p.skipWs();
-    if p.pos != p.src.len { raise .TrailingGarbage; }
-    return v;
 }

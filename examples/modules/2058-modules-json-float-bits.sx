@@ -64,10 +64,10 @@ bandOf :: (bits: i64) -> i64 {
 survives :: (f: f64, alloc: Allocator) -> bool {
     buf : [64]u8 = ---;
     fw := FixedWriter.init(buf[..]);
-    jw := JsonWriter.init(fw);
+    jw := json.Writer.init(fw);
     jw.write(.float(f)) catch { return false; };
     if text := fw.written() {
-        v, pe := parse(text, alloc);
+        v, pe := json.parse(text, alloc);
         if pe { return false; }
         back : Bits = ---;
         orig : Bits = ---;

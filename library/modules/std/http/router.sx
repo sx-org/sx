@@ -27,7 +27,7 @@
 @import "modules/std/mem.sx";
 @import "modules/std/writer.sx";       // StringBuilder
 @import "modules/std/encoding.sx";     // hexValue
-private json  :: @import "modules/std/json.sx";
+@import "modules/std/json.sx";
 
 // Fixed capacities for the per-request scratch. A request that exceeds any
 // of these simply drops the overflow (the extra params/pairs are not
@@ -172,10 +172,10 @@ RouteCtx :: struct {
     // Send `v` as the response body: sets Content-Type application/json
     // and serializes via std/json into a `StringBuilder` on the
     // per-request arena. `status` sets the response status. Returns
-    // false if serialization raises (`JsonError.NonFinite`).
+    // false if serialization raises (`json.Error.NonFinite`).
     jsonSend :: (self: *RouteCtx, status: i64, v: json.Value) -> bool {
         sb := StringBuilder.init();
-        jw := json.JsonWriter.init(sb);
+        jw := json.Writer.init(sb);
         jw.write(v) catch { return false; };
         self.resp.status = status;
         self.resp.contentType = "application/json";

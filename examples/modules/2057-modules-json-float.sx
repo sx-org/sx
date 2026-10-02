@@ -12,7 +12,7 @@ report :: (label: string, ok: bool) {
 emits :: (f: f64, want: string) -> bool {
     buf : [64]u8 = ---;
     fw := FixedWriter.init(buf[..]);
-    jw := JsonWriter.init(fw);
+    jw := json.Writer.init(fw);
     jw.write(.float(f)) catch { return false; };
     if text := fw.written() { return text == want; }
     false
@@ -20,21 +20,21 @@ emits :: (f: f64, want: string) -> bool {
 
 // Reciprocals distinguish -0.0 from 0.0.
 reads :: (src: string, want: f64, alloc: Allocator) -> bool {
-    v, e := parse(src, alloc);
+    v, e := json.parse(src, alloc);
     if e { return false; }
     if v.float != want { return false; }
     (1.0 / v.float) == (1.0 / want)
 }
 
-raises :: (src: string, want: JsonParseError, alloc: Allocator) -> bool {
-    _, e := parse(src, alloc);
+raises :: (src: string, want: json.ParseError, alloc: Allocator) -> bool {
+    _, e := json.parse(src, alloc);
     e == want
 }
 
-writeRaises :: (f: f64, want: JsonError) -> bool {
+writeRaises :: (f: f64, want: json.Error) -> bool {
     buf : [64]u8 = ---;
     fw := FixedWriter.init(buf[..]);
-    jw := JsonWriter.init(fw);
+    jw := json.Writer.init(fw);
     jw.write(.float(f)) catch |e| { return e == want; };
     false
 }
@@ -42,10 +42,10 @@ writeRaises :: (f: f64, want: JsonError) -> bool {
 roundTrips :: (f: f64, alloc: Allocator) -> bool {
     buf : [64]u8 = ---;
     fw := FixedWriter.init(buf[..]);
-    jw := JsonWriter.init(fw);
+    jw := json.Writer.init(fw);
     jw.write(.float(f)) catch { return false; };
     if text := fw.written() {
-        v, pe := parse(text, alloc);
+        v, pe := json.parse(text, alloc);
         if pe { return false; }
         if v.float != f { return false; }
         return (1.0 / v.float) == (1.0 / f);
@@ -67,7 +67,7 @@ farOverflowRaises :: (alloc: Allocator) -> bool {
     while i < FAR_ZEROS { src[2 + i] = '0'; i += 1; }
     j := 0;
     while j < tail.len { src[2 + FAR_ZEROS + j] = tail[j]; j += 1; }
-    _, e := parse(string{ ptr = src, len = len }, alloc);
+    _, e := json.parse(string{ ptr = src, len = len }, alloc);
     e == .BadNumber
 }
 
@@ -126,10 +126,10 @@ main :: () -> ! {
     report("infinity-is-non-finite", writeRaises(f64.inf, .NonFinite));
     report("nan-is-non-finite", writeRaises(f64.nan, .NonFinite));
 
-    tree := try parse(MIXED, arena);
+    tree := try json.parse(MIXED, arena);
     buf : [256]u8 = ---;
     fw := FixedWriter.init(buf[..]);
-    jw := JsonWriter.init(fw);
+    jw := json.Writer.init(fw);
     try jw.write(tree);
     report("mixed-document-round-trips", fw.written()?! == MIXED);
     o := tree.object;

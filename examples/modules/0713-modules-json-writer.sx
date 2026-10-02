@@ -14,7 +14,7 @@
 // All three must yield byte-for-byte the same pinned document, with keys in
 // INSERTION ORDER. A too-small buffer yields no document, and `len` names the
 // size that would fit. The model is built through an explicit Arena allocator
-// and freed in one `deinit`; `JsonWriter` itself allocates nothing.
+// and freed in one `deinit`; `json.Writer` itself allocates nothing.
 
 @import "modules/std.sx";
 @import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
@@ -28,7 +28,7 @@ report :: (label: string, ok: bool) {
     if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
 }
 
-build :: (alloc: Allocator) -> Value {
+build :: (alloc: Allocator) -> json.Value {
     // A raw control byte (0x01) viewed as a 1-byte string — exercises the
     // `\u00XX` path that has no named shorthand. String values are VIEWS,
     // so the bytes must outlive the writes: back them with `alloc` (the
@@ -37,15 +37,15 @@ build :: (alloc: Allocator) -> Value {
     cbytes[0] = 1;
     ctrl := string{ ptr = cbytes, len = 1 };
 
-    nested : Object = .{};
+    nested : json.Object = .{};
     nested.put("k", .str("v"), alloc);
 
-    xs : List(Value) = .{};
+    xs : List(json.Value) = .{};
     xs.append(.int(1), alloc);
     xs.append(.int(0 - 2), alloc);
     xs.append(.int(3), alloc);
 
-    obj : Object = .{};
+    obj : json.Object = .{};
     obj.put("name", .str("a\"b\n"), alloc);   // quote + newline
     obj.put("tab",  .str("x\ty"),   alloc);    // tab
     obj.put("bs",   .str("c\\d"),   alloc);    // backslash
@@ -75,7 +75,7 @@ main :: () -> ! {
     // 1. Write into a roomy caller buffer; assert exact bytes.
     buf : [512]u8 = ---;
     fw := FixedWriter.init(buf[..]);
-    jw := JsonWriter.init(fw);
+    jw := json.Writer.init(fw);
     try jw.write(root);
     view := fw.written()?!;
     print("doc: {}\n", view);
@@ -83,7 +83,7 @@ main :: () -> ! {
 
     // A buffer one byte too small yields no document and names the size.
     tight := FixedWriter.init(buf[256..256 + EXPECT.len - 1]);
-    tjw := JsonWriter.init(tight);
+    tjw := json.Writer.init(tight);
     try tjw.write(root);
     report("overflow-detected", tight.written() == null and tight.len == EXPECT.len);
 
@@ -93,7 +93,7 @@ main :: () -> ! {
     if !createDirAll(".sx-tmp") { print("mkdir: FAIL\n"); return; }
     path :: ".sx-tmp/sx_0713_json.json";
     fsb := StringBuilder.init(arena);
-    fjw := JsonWriter.init(fsb);
+    fjw := json.Writer.init(fsb);
     try fjw.write(root);
     if !writeFile(path, fsb.finish()) { print("write: FAIL\n"); return; }
 
@@ -104,7 +104,7 @@ main :: () -> ! {
 
     // 3. A buffer of exactly the document's length holds all of it.
     exact := FixedWriter.init(buf[256..256 + EXPECT.len]);
-    ejw := JsonWriter.init(exact);
+    ejw := json.Writer.init(exact);
     try ejw.write(root);
     report("exact-fit", exact.written()?! == EXPECT);
     return;

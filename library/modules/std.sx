@@ -112,7 +112,7 @@ GPA     :: mem.GPA;
 fs      :: @import "modules/std/fs.sx";
 ..@import "modules/std/process.sx";
 socket  :: @import "modules/std/socket.sx";
-json    :: @import "modules/std/json.sx";
+..@import "modules/std/json.sx";
 xml     :: @import "modules/std/xml.sx";
 cli     :: @import "modules/std/cli.sx";
 hash    :: @import "modules/std/hash.sx";
