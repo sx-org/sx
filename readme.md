@@ -359,7 +359,7 @@ printAny(pkt);   // walk with @field / anyElement — no copies
 
 `modules/std.sx`: `print`, `List($T)`, string helpers, the `Allocator` interface, `mem.GPA`, and `mem.Arena`.
 
-**Atomics** — `@import "modules/std/atomic.sx"`. `Atomic($T)` with `Ordering` (`.relaxed` … `.seqCst`). `compareExchange` returns `?T` (`null` = success).
+**Atomics** — `@import "modules/std/atomic.sx"`. `atomic.Atomic($T)` with `atomic.Ordering` (`.relaxed` … `.seqCst`). `compareExchange` returns `?T` (`null` = success).
 
 **Volatile** — `@volatileLoad(T, addr)` / `@volatileStore(T, addr, v)` from `core.sx`. Not atomic.
 

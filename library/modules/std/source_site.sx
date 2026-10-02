@@ -4,7 +4,7 @@
 // The compiler fills `id` at compile time, but the value is not opaque:
 // this file IS the specification. A compiler-created site satisfies
 //
-//     site.id == sourceSiteKeyId(sourceSiteKey(site))
+//     site.id == source_site.keyId(source_site.key(site))
 //
 // and the compiler must produce the same result as the ordinary sx below.
 //
@@ -17,7 +17,7 @@
 // At runtime a library EXTENDS the precomputed state instead of hashing the
 // source fields again — `site.id` is the intermediate FNV state after them, so
 //
-//     hasher := sourceSiteHasher(site, "ui.compose.child.v1");
+//     hasher := source_site.hasher(site, "ui.compose.child.v1");
 //     hasher.writeU64Le(runtimeOccurrence);
 //     hasher.writeString(applicationKey);
 //     identity := hasher.state;
@@ -27,64 +27,64 @@
 // first so unrelated libraries never share an identity space.
 //
 // These are FINGERPRINTS, not proof of equality: code that needs
-// collision-free correctness stores and compares `SourceSiteKey` plus its own
-// dynamic key fields.
+// collision-free correctness stores and compares `source_site.Key` plus its
+// own dynamic key fields.
 // =====================================================================
-@import "modules/std/core.sx";
-@import "modules/std/hash.sx";
+source_site :: scope {
+    @import "modules/std/core.sx";
+    @import "modules/std/hash.sx";
 
-// The source fields `id` is computed from — the whole of a site's identity.
-// `line` and `column` are diagnostics, so they are deliberately absent.
-SourceSiteKey :: struct {
-    file: string;
-    declaration: string;
-    ordinal: u64;
-}
-
-// The writers are methods, not free functions: `writeString` is far too
-// common a bare name to take in the flat prelude namespace.
-SourceSiteHasher :: struct {
-    state: u64 = hash.FNV_OFFSET_BASIS;
-
-    writeByte :: (self: *SourceSiteHasher, value: u8) {
-        self.state = (self.state ^ value) * hash.FNV_PRIME;
+    // The source fields `id` is computed from — the whole of a site's identity.
+    // `line` and `column` are diagnostics, so they are deliberately absent.
+    Key :: struct {
+        file: string;
+        declaration: string;
+        ordinal: u64;
     }
 
-    writeU64Le :: (self: *SourceSiteHasher, value: u64) {
-        inline for index in 0..8 {
-            self.writeByte((value >> (index * 8)).(u8));
+    Hasher :: struct {
+        state: u64 = hash.FNV_OFFSET_BASIS;
+
+        writeByte :: (self: *Hasher, value: u8) {
+            self.state = (self.state ^ value) * hash.FNV_PRIME;
+        }
+
+        writeU64Le :: (self: *Hasher, value: u64) {
+            inline for index in 0..8 {
+                self.writeByte((value >> (index * 8)).(u8));
+            }
+        }
+
+        writeString :: (self: *Hasher, value: string) {
+            self.writeU64Le(value.len.(u64));
+            self.state = hash.fnv1aFold(self.state, value.ptr, value.len);
         }
     }
 
-    writeString :: (self: *SourceSiteHasher, value: string) {
-        self.writeU64Le(value.len.(u64));
-        self.state = hash.fnv1aFold(self.state, value.ptr, value.len);
+    key :: (site: @SourceSite) -> Key {
+        Key{
+            file = site.file,
+            declaration = site.declaration,
+            ordinal = site.ordinal,
+        }
     }
-}
 
-sourceSiteKey :: (site: @SourceSite) -> SourceSiteKey {
-    SourceSiteKey{
-        file = site.file,
-        declaration = site.declaration,
-        ordinal = site.ordinal,
+    // The normative encoding. The version string both versions the format and
+    // domain-separates source-site fingerprints from every other key space.
+    keyId :: (key: Key) -> u64 {
+        hasher := Hasher{};
+        hasher.writeString("sx.source-site.v1");
+        hasher.writeString(key.file);
+        hasher.writeString(key.declaration);
+        hasher.writeU64Le(key.ordinal);
+        hasher.state
     }
-}
 
-// The normative encoding. The version string both versions the format and
-// domain-separates source-site fingerprints from every other key space.
-sourceSiteKeyId :: (key: SourceSiteKey) -> u64 {
-    hasher := SourceSiteHasher{};
-    hasher.writeString("sx.source-site.v1");
-    hasher.writeString(key.file);
-    hasher.writeString(key.declaration);
-    hasher.writeU64Le(key.ordinal);
-    hasher.state
-}
-
-// A hasher resumed from the source fields the compiler already folded, then
-// domain-separated. Append dynamic fields after this returns.
-sourceSiteHasher :: (site: @SourceSite, domain: string) -> SourceSiteHasher {
-    hasher := SourceSiteHasher{ state = site.id };
-    hasher.writeString(domain);
-    hasher
+    // A hasher resumed from the source fields the compiler already folded, then
+    // domain-separated. Append dynamic fields after this returns.
+    hasher :: (site: @SourceSite, domain: string) -> Hasher {
+        hasher := Hasher{ state = site.id };
+        hasher.writeString(domain);
+        hasher
+    }
 }

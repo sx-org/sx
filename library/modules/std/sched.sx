@@ -33,7 +33,7 @@ sched :: scope {
     @import "modules/std/mem.sx";
     @import "modules/std/c.sx";
     // True cancellation: `suspendRaw` reads the spawned fiber's cancel
-    // flag — a `*Atomic(bool)` back-ref to the `Future.canceled` — to decide whether
+    // flag — a `*atomic.Atomic(bool)` back-ref to the `Future.canceled` — to decide whether
     // to raise `IoErr.Canceled` on resume. atomic.sx has no naked asm, so it is safe
     // to pull in here (no fibTramp re-emit).
     @import "modules/std/atomic.sx";
@@ -115,7 +115,7 @@ sched :: scope {
         // snapshot is verbatim, by design.
         dctx: Context;
         // True cancellation: back-ref to this fiber's task cancel flag
-        // (the `Future.canceled` `Atomic(bool)`, erased to `*void`), set from
+        // (the `Future.canceled` `atomic.Atomic(bool)`, erased to `*void`), set from
         // `SpawnOpts.cancelFlag` at `spawnRaw`. `suspendRaw` consults it and
         // raises `IoErr.Canceled` when set, so a cancelled worker abandons its body
         // at its next suspend. `null` for a fiber spawned with no cancel channel
@@ -665,14 +665,14 @@ sched :: scope {
         }
 
         // True iff fiber `f`'s task carries a cancel flag that is set. The flag is a
-        // `*Atomic(bool)` back-ref (`Fiber.cancelFlag`, erased to `*void`) to the
+        // `*atomic.Atomic(bool)` back-ref (`Fiber.cancelFlag`, erased to `*void`) to the
         // owning `Future.canceled`. A null flag (uncancellable spawn / bare fiber)
         // is never cancelled. A null `f` (called outside a fiber) likewise can't be
         // cancelled — the caller's own loud `suspendSelf` guard handles that path.
         fiberCanceled :: (self: *Scheduler, f: *Fiber) -> bool {
             if f == null { return false; }
             if f.cancelFlag == null { return false; }
-            flag : *Atomic(bool) = f.cancelFlag.(*Atomic(bool));
+            flag : *atomic.Atomic(bool) = f.cancelFlag.(*atomic.Atomic(bool));
             return flag.load(.acquire);
         }
 

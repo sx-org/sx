@@ -1,15 +1,15 @@
-// Standalone memory fence — fence(.ordering) → LLVM fence.
+// Standalone memory fence — atomic.fence(.ordering) → LLVM fence.
 // (.relaxed is rejected; see 1187.) Single-thread: a fence is observable only as
 // "compiled + ran without error" here.
 @import "modules/std.sx";
 @import "modules/std/atomic.sx";
 
 main :: () {
-    a := Atomic(i64).init(1);
+    a := atomic.Atomic(i64).init(1);
     a.store(2, .relaxed);
-    fence(.release);
+    atomic.fence(.release);
     a.store(3, .relaxed);
-    fence(.acquire);
-    fence(.seqCst);
+    atomic.fence(.acquire);
+    atomic.fence(.seqCst);
     print("after fences: {}\n", a.load(.relaxed)); // 3
 }

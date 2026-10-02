@@ -1,12 +1,12 @@
-// Atomic($T) load/store with explicit memory orderings, single-thread.
-// The ordering is a comptime `$o: Ordering`
+// atomic.Atomic($T) load/store with explicit memory orderings, single-thread.
+// The ordering is a comptime `$o: atomic.Ordering`
 // param (explicit, Rust-style): a.load(.acquire) emits `load atomic … acquire`.
 // An invalid combination (a.load(.release)) is a compile error (see 1131).
 @import "modules/std.sx";
 @import "modules/std/atomic.sx";
 
 main :: () {
-    a := Atomic(i64).init(7);
+    a := atomic.Atomic(i64).init(7);
     print("init: {}\n", a.load(.seqCst));
 
     a.store(42, .release);

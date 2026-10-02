@@ -47,7 +47,7 @@ io :: scope {
         err: IoErr;
         park: ParkToken;
         task: *void = null;
-        canceled: Atomic(bool);
+        canceled: atomic.Atomic(bool);
         alloc: Allocator;
         workerDone: bool = false;
         consumed: bool = false;
@@ -84,7 +84,7 @@ io :: scope {
         f : *Future($R) = raw.(*Future($R));
         f.state = .pending;
         f.park = .{ handle = null };
-        f.canceled = Atomic(bool).init(false);
+        f.canceled = atomic.Atomic(bool).init(false);
         f.alloc = alloc;
         f.workerDone = false;
         f.consumed = false;

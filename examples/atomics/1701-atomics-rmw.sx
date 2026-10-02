@@ -1,4 +1,4 @@
-// Atomic($T) read-modify-write: fetchAdd/sub/and/or/xor/min/max → LLVM atomicrmw.
+// atomic.Atomic($T) read-modify-write: fetchAdd/sub/and/or/xor/min/max → LLVM atomicrmw.
 // Each returns the OLD value. Single-thread.
 // Also covers signed min/max with NEGATIVES at BOTH comptime (@run) and runtime —
 // they must agree — a comptime unsigned compare would diverge from runtime.
@@ -6,30 +6,30 @@
 @import "modules/std/atomic.sx";
 
 // comptime (@run) signed min/max with a negative — must match runtime.
-cMax :: () -> i64 { a := Atomic(i64).init(-5); _ := a.fetchMax(3, .seqCst); return a.load(.seqCst); }
-cMin :: () -> i64 { a := Atomic(i64).init(-5); _ := a.fetchMin(3, .seqCst); return a.load(.seqCst); }
+cMax :: () -> i64 { a := atomic.Atomic(i64).init(-5); _ := a.fetchMax(3, .seqCst); return a.load(.seqCst); }
+cMin :: () -> i64 { a := atomic.Atomic(i64).init(-5); _ := a.fetchMin(3, .seqCst); return a.load(.seqCst); }
 G_MAX :: @run cMax();
 G_MIN :: @run cMin();
 
 main :: () {
-    a := Atomic(i64).init(10);
+    a := atomic.Atomic(i64).init(10);
     print("old add: {}\n", a.fetchAdd(5, .seqCst));   // returns 10, now 15
     print("old sub: {}\n", a.fetchSub(3, .acqRel));   // returns 15, now 12
     print("now: {}\n", a.load(.acquire));               // 12
 
-    b := Atomic(i64).init(0xF0);
+    b := atomic.Atomic(i64).init(0xF0);
     print("old and: {}\n", b.fetchAnd(0x3C, .relaxed));// returns 0xF0(240), now 0x30(48)
     print("old or:  {}\n", b.fetchOr(0x03, .relaxed)); // returns 0x30(48), now 0x33(51)
     print("old xor: {}\n", b.fetchXor(0x0F, .relaxed));// returns 0x33(51), now 0x3C(60)
     print("now: {}\n", b.load(.relaxed));               // 60
 
-    m := Atomic(i64).init(20);
+    m := atomic.Atomic(i64).init(20);
     print("old min: {}\n", m.fetchMin(8, .seqCst));   // returns 20, now 8
     print("old max: {}\n", m.fetchMax(15, .seqCst));  // returns 8, now 15
     print("now: {}\n", m.load(.seqCst));               // 15
 
     // signed min/max with a negative — comptime (@run) and runtime must agree.
-    s := Atomic(i64).init(-5);
+    s := atomic.Atomic(i64).init(-5);
     _ := s.fetchMax(3, .seqCst);
     print("runtime signed max(-5,3): {}\n", s.load(.seqCst));  // 3
     s.store(-5, .seqCst);

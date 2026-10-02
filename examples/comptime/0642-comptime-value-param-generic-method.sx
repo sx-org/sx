@@ -23,7 +23,7 @@ Box :: struct ($T: Type) {
     }
     // The bound tag is also readable in a TYPE position ([o]i64), via
     // comptimeIntNamed — the same accessor the atomics stream uses for
-    // `Atomic($T).load($o)`.
+    // `atomic.Atomic($T).load($o)`.
     sizeFor :: (self: *Box(T), $o: Ord) -> i64 {
         arr : [o]i64 = ---;
         return arr.len;

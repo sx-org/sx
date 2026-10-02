@@ -17,8 +17,8 @@ paintBox :: (rc: *RenderContext, frame: Frame, fill: Color, corner: f32, border:
 }
 
 // Resumes the hash from the site fingerprint the compiler already folded.
-siteHasher :: (siteKey: u64, domain: string, scopeKey: u64) -> SourceSiteHasher {
-    hasher := SourceSiteHasher{ state = siteKey };
+siteHasher :: (siteKey: u64, domain: string, scopeKey: u64) -> source_site.Hasher {
+    hasher := source_site.Hasher{ state = siteKey };
     hasher.writeString(domain);
     hasher.writeU64Le(scopeKey);
     hasher

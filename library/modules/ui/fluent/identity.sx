@@ -65,7 +65,7 @@ Identity :: struct {
     // what comes back restores it.
     enterKey :: (self: *Identity, key: u64) -> u64 {
         prev := self.scopeKey;
-        hasher := SourceSiteHasher{ state = prev };
+        hasher := source_site.Hasher{ state = prev };
         hasher.writeU64Le(key);
         self.scopeKey = hasher.state;
         prev
@@ -76,7 +76,7 @@ Identity :: struct {
     }
 
     nextOccurrence :: (self: *Identity, site: u64) -> u64 {
-        hasher := SourceSiteHasher{ state = site };
+        hasher := source_site.Hasher{ state = site };
         hasher.writeU64Le(self.scopeKey);
         key := hasher.state;
         for c, i in self.counts, 0.. {
