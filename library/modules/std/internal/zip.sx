@@ -8,7 +8,7 @@
 @import "modules/std/encoding.sx";
 @import "modules/std/internal/compress.sx";
 zipContracts :: @import "modules/std/codecs/zip_contracts.sx";
-time :: @import "modules/std/time.sx";
+@import "modules/std/time.sx";
 
 private le16 :: (data: string, at: i64) -> (i64, !Error) {
     if at < 0 or at + 2 > data.len { raise .UnexpectedEnd; }
@@ -1611,7 +1611,7 @@ zipUnixTimeToDos :: (seconds: i64) -> (i64, i64, bool) {
 }
 
 zipDosTimeToUnix :: (dosTime: i64, dosDate: i64) -> (i64, bool) {
-    civil := time.CivilTime{year = ((dosDate >> 9) & 127) + 1980,
+    civil := time.Civil{year = ((dosDate >> 9) & 127) + 1980,
         month = (dosDate >> 5) & 15,
         day = dosDate & 31,
         hour = (dosTime >> 11) & 31,

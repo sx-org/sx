@@ -14,8 +14,8 @@
 // APK smoke build.
 
 clib  :: @import "modules/std/c.sx";     // namespace `clib` (not `c` — `c` is a local fd var throughout)
-posix :: @import "modules/std/posix.sx";
-private time :: @import "modules/std/time.sx";
+@import "modules/std/posix.sx";
+@import "modules/std/time.sx";
 libc  :: clib.c.libc;
 // errno constants live in std/posix.sx — consumers reference `posix.EAGAIN` etc.
 // directly (a cross-module value-const can't be re-aliased at module scope).

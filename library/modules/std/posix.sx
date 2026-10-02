@@ -8,53 +8,55 @@
 // does not re-wrap syscalls into `!`-returning calls. Add portable,
 // already-duplicated helpers here as they arise.
 
-@import "modules/std/c.sx";
+posix :: scope {
+    @import "modules/std/c.sx";
 
-// Current thread's errno. Valid immediately after a libc call that returned its
-// error sentinel (-1 for most, NULL for allocators). `setErrno(0)` before a
-// call that reports success-with-0-result via errno.
-errno    :: () -> i32 { return c.errnoLocation().*; }
-setErrno :: (v: i32)  { c.errnoLocation().* = v; }
+    // Current thread's errno. Valid immediately after a libc call that returned its
+    // error sentinel (-1 for most, NULL for allocators). `setErrno(0)` before a
+    // call that reports success-with-0-result via errno.
+    errno    :: () -> i32 { return c.errnoLocation().*; }
+    setErrno :: (v: i32)  { c.errnoLocation().* = v; }
 
-// ── errno constants (per-OS) ────────────────────────────────────────────────
-// Canonical home for the errno values the stdlib checks. Values differ by OS
-// (the numbers are the kernel's, not portable).
-// Unbraced case decls (a braced `{ }` arm would scope them away from module
-// level — matches the leak rule std/sched.sx relies on). NO silent fallback:
-// errno numbers are per-kernel, so an unsupported OS must add its own case —
-// the `else` forces a loud compile error instead of shipping wrong constants.
-inline match @host.os {
-    case .macos:
-        EAGAIN       :i32: 35;   // == EWOULDBLOCK on darwin
-        EINPROGRESS  :i32: 36;
-        ECONNABORTED :i32: 53;
-        ECONNRESET   :i32: 54;
-    case .ios:
-        EAGAIN       :i32: 35;   // == EWOULDBLOCK on darwin
-        EINPROGRESS  :i32: 36;
-        ECONNABORTED :i32: 53;
-        ECONNRESET   :i32: 54;
-    case .linux:
-        EAGAIN       :i32: 11;   // == EWOULDBLOCK on linux
-        EINPROGRESS  :i32: 115;
-        ECONNABORTED :i32: 103;
-        ECONNRESET   :i32: 104;
-    case .android:
-        // Bionic uses the Linux UAPI errno values.
-        EAGAIN       :i32: 11;
-        EINPROGRESS  :i32: 115;
-        ECONNABORTED :i32: 103;
-        ECONNRESET   :i32: 104;
-    case .wasm:
-        // Emscripten's musl uses the Linux/POSIX errno values.
-        EAGAIN       :i32: 11;
-        EINPROGRESS  :i32: 115;
-        ECONNABORTED :i32: 103;
-        ECONNRESET   :i32: 104;
-    else:
-        @error("std/posix.sx: errno constants are only defined for Darwin, Linux, Android, and Emscripten — add a case for this target's kernel values.");
+    // ── errno constants (per-OS) ────────────────────────────────────────────────
+    // Canonical home for the errno values the stdlib checks. Values differ by OS
+    // (the numbers are the kernel's, not portable).
+    // Unbraced case arms keep their declarations in the enclosing scope.
+    // NO silent fallback: errno numbers are per-kernel, so an unsupported OS
+    // must add its own case — the `else` forces a loud compile error instead
+    // of shipping wrong constants.
+    inline match @host.os {
+        case .macos:
+            EAGAIN       :i32: 35;   // == EWOULDBLOCK on darwin
+            EINPROGRESS  :i32: 36;
+            ECONNABORTED :i32: 53;
+            ECONNRESET   :i32: 54;
+        case .ios:
+            EAGAIN       :i32: 35;   // == EWOULDBLOCK on darwin
+            EINPROGRESS  :i32: 36;
+            ECONNABORTED :i32: 53;
+            ECONNRESET   :i32: 54;
+        case .linux:
+            EAGAIN       :i32: 11;   // == EWOULDBLOCK on linux
+            EINPROGRESS  :i32: 115;
+            ECONNABORTED :i32: 103;
+            ECONNRESET   :i32: 104;
+        case .android:
+            // Bionic uses the Linux UAPI errno values.
+            EAGAIN       :i32: 11;
+            EINPROGRESS  :i32: 115;
+            ECONNABORTED :i32: 103;
+            ECONNRESET   :i32: 104;
+        case .wasm:
+            // Emscripten's musl uses the Linux/POSIX errno values.
+            EAGAIN       :i32: 11;
+            EINPROGRESS  :i32: 115;
+            ECONNABORTED :i32: 103;
+            ECONNRESET   :i32: 104;
+        else:
+            @error("std/posix.sx: errno constants are only defined for Darwin, Linux, Android, and Emscripten — add a case for this target's kernel values.");
+    }
+
+    // Errno values that are uniform across Darwin, Linux, Android, and Emscripten.
+    EINTR :i32: 4;
+    EPIPE :i32: 32;
 }
-
-// Errno values that are uniform across Darwin, Linux, Android, and Emscripten.
-EINTR :i32: 4;
-EPIPE :i32: 32;

@@ -48,7 +48,7 @@
 // the conditional needs no import. Skipping it keeps this module's IR
 // self-contained (libc only) — no std/compiler/bundle baggage.
 @import "modules/std/c.sx";
-posix :: @import "modules/std/posix.sx";
+@import "modules/std/posix.sx";
 libc  :: c.libc;   // epoll_* are module-specific — bind through the shared handle
 
 // struct epoll_event, arch-exact (see the header). Both variants expose the

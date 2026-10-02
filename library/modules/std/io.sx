@@ -3,7 +3,7 @@ io :: scope {
     @import "modules/std/atomic.sx";
     @import "modules/std/mem.sx";
     @import "modules/std/c.sx";
-    time :: @import "modules/std/time.sx";
+    @import "modules/std/time.sx";
 
     // Runs each task inline to completion, so its futures are born `.ready`.
     CBlocking :: struct {}

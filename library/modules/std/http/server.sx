@@ -3,9 +3,9 @@
 @import "modules/std/encoding.sx";     // hexValue
 private clib   :: @import "modules/std/c.sx";
 private socket :: @import "modules/std/socket.sx";
-private thread :: @import "modules/std/thread.sx";
+@import "modules/std/thread.sx";
 private event  :: @import "modules/std/event.sx";
-private time   :: @import "modules/std/time.sx";
+@import "modules/std/time.sx";
 @import "modules/std/fs.sx";
 @import "modules/std/compress.sx";     // shared codec Error/Progress contract
 

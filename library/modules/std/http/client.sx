@@ -19,7 +19,7 @@
 @import "modules/std/mem.sx";
 @import "modules/std/encoding.sx";     // hexValue
 private clib :: @import "modules/std/c.sx";
-private posix :: @import "modules/std/posix.sx";
+@import "modules/std/posix.sx";
 private socket :: @import "modules/std/socket.sx";
 @import "modules/std/compress.sx";     // shared codec Error/Progress contract
 

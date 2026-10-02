@@ -17,7 +17,6 @@
 // the vendored config for exactly this in-process test client).
 @import "modules/std.sx";
 socket  :: @import "modules/std/socket.sx";
-posix   :: @import "modules/std/posix.sx";
 mbedtls :: @import "vendors/mbedtls/mbedtls.sx";
 @import "modules/std/http.sx";
 tlsp    :: @import "modules/std/http/tls_mbedtls.sx";

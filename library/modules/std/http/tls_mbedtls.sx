@@ -5,7 +5,7 @@
 @import "modules/std/http.sx";
 private clib    :: @import "modules/std/c.sx";
 private socket  :: @import "modules/std/socket.sx";
-private posix   :: @import "modules/std/posix.sx";
+@import "modules/std/posix.sx";
 @import "modules/std/fs.sx";
 private mbedtls :: @import "vendors/mbedtls/mbedtls.sx";
 

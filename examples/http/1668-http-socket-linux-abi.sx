@@ -12,7 +12,7 @@
 // captures the symbol. Imports ONLY socket.sx (libc-only) so the IR stays small
 // (mirror of event/1633).
 socket :: @import "modules/std/socket.sx";
-posix   :: @import "modules/std/posix.sx";
+@import "modules/std/posix.sx";
 
 main :: () -> i32 {
     if @sizeOf(socket.SockAddr) != 16 { return 1; }
