@@ -27,7 +27,6 @@
 clib    :: @import "modules/std/c.sx";
 socket  :: @import "modules/std/socket.sx";
 posix   :: @import "modules/std/posix.sx";
-fs      :: @import "modules/std/fs.sx";
 mbedtls :: @import "vendors/mbedtls/mbedtls.sx";
 @import "modules/std/http.sx";
 tlsp    :: @import "modules/std/http/tls_mbedtls.sx";

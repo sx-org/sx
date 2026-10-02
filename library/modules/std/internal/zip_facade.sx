@@ -6,7 +6,7 @@
 @import "modules/std/compress.sx";
 @import "modules/std/internal/compress.sx";
 @import "modules/std/internal/zip.sx";
-fs :: @import "modules/std/fs.sx";
+@import "modules/std/fs.sx";
 zipContracts :: @import "modules/std/codecs/zip_contracts.sx";
 
 StdZipMethod       :: zipContracts.Method;

@@ -109,7 +109,7 @@ allocSlice  :: mem.allocSlice;
 // makes bare `GPA.init()` part of the std facade rather than an accidental
 // reach-through into `std/mem.sx`.
 GPA     :: mem.GPA;
-fs      :: @import "modules/std/fs.sx";
+..@import "modules/std/fs.sx";
 ..@import "modules/std/process.sx";
 socket  :: @import "modules/std/socket.sx";
 ..@import "modules/std/json.sx";

@@ -30,7 +30,6 @@
 //   + net-zero GPA gate across the whole run.
 @import "modules/std.sx";
 socket :: @import "modules/std/socket.sx";
-fs     :: @import "modules/std/fs.sx";
 @import "modules/std/http.sx";
 
 SOCK_PATH :: ".sx-tmp/1704-http.sock";

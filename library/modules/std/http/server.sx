@@ -6,7 +6,7 @@ private socket :: @import "modules/std/socket.sx";
 private thread :: @import "modules/std/thread.sx";
 private event  :: @import "modules/std/event.sx";
 private time   :: @import "modules/std/time.sx";
-private fs :: @import "modules/std/fs.sx";
+@import "modules/std/fs.sx";
 @import "modules/std/compress.sx";     // shared codec Error/Progress contract
 
 @import "modules/std/http/wire.sx";

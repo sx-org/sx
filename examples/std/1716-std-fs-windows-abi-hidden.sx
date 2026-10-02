@@ -1,4 +1,4 @@
-fs :: @import "modules/std/fs.sx";
+@import "modules/std/fs.sx";
 
 main :: () -> i32 {
     handle := fs.fsWindowsCreateFileW(null, 0, 0, null, 0, 0, null);

@@ -853,7 +853,7 @@ openZipEmbedded :: (data: string) -> (ZipReader, !Error) {
 }
 
 private ZipFileReadState :: struct {
-    file: File;
+    file: fs.File;
     start: i64;
     ownsFile: bool;
     writable: bool = false;
@@ -1150,9 +1150,9 @@ private openZipFileMode :: (path: string, start: i64, size: i64, writable: bool,
     if start < 0 or size < 0 or (size > 0 and size < 22) or maxMetadata < 0 {
         raise .InvalidData;
     }
-    maybeFile := if writable then openFile(path, .readWrite) else openFile(path, .read);
+    maybeFile := if writable then fs.openFile(path, .readWrite) else fs.openFile(path, .read);
     if maybeFile == null { raise .Io; }
-    file : File = maybeFile;
+    file : fs.File = maybeFile;
     actualSize := size;
     if actualSize == 0 {
         // mz_zip_reader_init_file_v2() uses the complete physical file size
@@ -1269,7 +1269,7 @@ zipExtractToOutput :: (reader: *ZipReader, index: i64, sink: ZipExtractSink, opt
 }
 
 private ZipFileSinkState :: struct {
-    file: *File;
+    file: *fs.File;
 }
 
 private zipFileSinkWrite :: (ctx: *void, data: string) -> bool {
@@ -1283,7 +1283,7 @@ private zipFileSinkWrite :: (ctx: *void, data: string) -> bool {
     true
 }
 
-private zipExtractToHandle :: (reader: *ZipReader, index: i64, file: *File, options: ZipExtractOptions = .{}, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !Error) {
+private zipExtractToHandle :: (reader: *ZipReader, index: i64, file: *fs.File, options: ZipExtractOptions = .{}, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !Error) {
     if !file.isValid() { raise .Io; }
     entry := reader.entry(index) catch |e| { raise e; };
     if entry.isDir() or !entry.isSupported() {
@@ -1299,9 +1299,9 @@ zipExtractToFile :: (reader: *ZipReader, index: i64, path: string, options: ZipE
     if entry.isDir() or !entry.isSupported() {
         raise .Unsupported;
     }
-    maybeFile := openFile(path, .write);
+    maybeFile := fs.openFile(path, .write);
     if maybeFile == null { raise .Io; }
-    file : File = maybeFile;
+    file : fs.File = maybeFile;
     made := zipExtractToHandle(reader, index, *file, options, maxOutput, alloc) catch |e| {
         file.close();
         raise e;
@@ -1590,8 +1590,8 @@ private zipEntriesAppendReserved :: (entries: *List(ZipWriterEntry), entry: ZipW
 
 private ZipTimeMode :: enum { none; specified; file; }
 
-private zipFileModifiedSeconds :: (file: *File) -> (i64, bool) {
-    modifiedSeconds(file)
+private zipFileModifiedSeconds :: (file: *fs.File) -> (i64, bool) {
+    fs.modifiedSeconds(file)
 }
 
 // DOS timestamps are LOCAL civil time; std.time owns the libc `struct tm`
@@ -1622,7 +1622,7 @@ zipDosTimeToUnix :: (dosTime: i64, dosDate: i64) -> (i64, bool) {
 }
 
 zipSetFileTime :: (path: string, seconds: i64) -> bool {
-    setModifiedSeconds(path, seconds)
+    fs.setModifiedSeconds(path, seconds)
 }
 
 private zipResolveDosTime :: (options: ZipEntryOptions) -> (i64, i64, !Error) {
@@ -1684,7 +1684,7 @@ ZipInputSource :: struct {
 }
 
 private ZipFileInputState :: struct {
-    file: *File;
+    file: *fs.File;
     start: i64;
 }
 
@@ -1696,7 +1696,7 @@ private zipFileInputRead :: (ctx: *void, offset: i64, output: string) -> i64 {
 }
 
 private ZipFileWriteState :: struct {
-    file: File;
+    file: fs.File;
     start: i64;
     position: i64 = 0;
     ownsFile: bool;
@@ -1705,7 +1705,7 @@ private ZipFileWriteState :: struct {
     bufferLen: i64 = 0;
 }
 
-private zipFileWriteHandle :: (state: *ZipFileWriteState) -> *File {
+private zipFileWriteHandle :: (state: *ZipFileWriteState) -> *fs.File {
     *state.file
 }
 
@@ -2605,7 +2605,7 @@ ZipStreamWriter :: struct {
         committed = true;
     }
 
-    addHandle :: (self: *ZipStreamWriter, name: string, file: *File, maxSize: i64, options: ZipEntryOptions = .{}) -> !Error {
+    addHandle :: (self: *ZipStreamWriter, name: string, file: *fs.File, maxSize: i64, options: ZipEntryOptions = .{}) -> !Error {
         if file.fd < 0 or maxSize < 0 { raise .InvalidData; }
         actualOptions := options;
         if actualOptions.timeMode == .file {
@@ -2621,12 +2621,12 @@ ZipStreamWriter :: struct {
     }
 
     addFile :: (self: *ZipStreamWriter, name: string, path: string, options: ZipEntryOptions) -> !Error {
-        if options.useFileTime and !exists(path) {
+        if options.useFileTime and !fs.exists(path) {
             raise .Io;
         }
-        maybeFile := openFile(path, .read);
+        maybeFile := fs.openFile(path, .read);
         if maybeFile == null { raise .Io; }
-        file : File = maybeFile;
+        file : fs.File = maybeFile;
         size := file.seek(0, .end);
         if size < 0 { file.close(); raise .Io; }
         actualOptions := options;
@@ -2771,13 +2771,13 @@ openZipWriterFile :: (path: string, reserve: i64 = 0, zip64: bool = false, allow
 
 openZipWriterFileMode :: (path: string, reserve: i64, zip64: bool, allowReading: bool, alloc: Allocator) -> (OwnedZipWriter, !Error) {
     if reserve < 0 { raise .InvalidData; }
-    maybeCreated := openFile(path, .write);
+    maybeCreated := fs.openFile(path, .write);
     if maybeCreated == null { raise .Io; }
-    created : File = maybeCreated;
+    created : fs.File = maybeCreated;
     file := created;
     if allowReading {
         if !created.close() { raise .Io; }
-        maybeReopened := openFile(path, .readWrite);
+        maybeReopened := fs.openFile(path, .readWrite);
         if maybeReopened == null { raise .Io; }
         file = maybeReopened;
     }

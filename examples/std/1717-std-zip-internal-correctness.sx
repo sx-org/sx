@@ -1,5 +1,4 @@
 @import "modules/std.sx";
-fs :: @import "modules/std/fs.sx";
 zip :: @import "modules/std/internal/zip.sx";
 codec :: @import "modules/std/internal/compress.sx";
 

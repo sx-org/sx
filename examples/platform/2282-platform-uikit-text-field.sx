@@ -18,7 +18,6 @@
 
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
-@import "modules/std/fs.sx";
 @import "modules/build.sx";
 @import "modules/gpu/types.sx";
 @import "modules/gpu/api.sx";
@@ -46,9 +45,9 @@ BUNDLE_FACE :: "assets/AppleGothic.ttf";
 configure :: () {
     opts := @buildOptions();
     opts.addAssetDir(STAGE_DIR, "assets");
-    if !exists(HOST_FACE) { return; }
-    if !createDirAll(STAGE_DIR) { return; }
-    copyFile(HOST_FACE, STAGE_FACE);
+    if !fs.exists(HOST_FACE) { return; }
+    if !fs.createDirAll(STAGE_DIR) { return; }
+    fs.copyFile(HOST_FACE, STAGE_FACE);
 }
 @run configure();
 
