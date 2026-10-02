@@ -11,7 +11,6 @@
 // line's start. Caret math is LTR-only.
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
-@import "modules/std/hash.sx";
 @import "modules/ui/types.sx";
 @import "modules/ui/glyph_cache.sx";
 @import "modules/ui/font.sx";
@@ -231,7 +230,7 @@ ParagraphCache :: struct {
     }
 
     get :: (self: *ParagraphCache, text: string, fontSize: f32, maxWidth: ?f32) -> *Paragraph {
-        key := ParaKey{ hash = fnv1a(text), sizeQ = quantizeSize(fontSize), width = maxWidth ?? f32.inf };
+        key := ParaKey{ hash = hash.fnv1a(text), sizeQ = quantizeSize(fontSize), width = maxWidth ?? f32.inf };
         self.tick += 1;
         if e := self.index.get(key) {
             if sameBytes(e.text, text) {

@@ -1,7 +1,6 @@
 @import "modules/std.sx";
 @import "modules/math";
 @import "modules/build.sx";
-@import "modules/std/test.sx";
 
 // --- Extern function binding ---
 libc :: @library "c";

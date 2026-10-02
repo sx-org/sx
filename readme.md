@@ -386,7 +386,7 @@ main :: () {
 
 `a.await()` parks the current fiber, so the coordinator is `s.spawn`ed.
 
-**CLI** — `modules/std/cli.sx`: `osArgs`, `parse`, `EX_OK` / `EX_USAGE`.
+**CLI** — `modules/std/cli.sx`: `cli.osArgs`, `cli.parse`, `cli.EX_OK` / `cli.EX_USAGE`.
 
 ## Cross-Compilation
 

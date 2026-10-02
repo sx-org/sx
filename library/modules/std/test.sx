@@ -1,7 +1,9 @@
-@import "modules/std/core.sx";     // out
+test :: scope {
+    @import "modules/std/core.sx";
 
-assert :: (condition: bool) {
-    if !condition {
-        @printf("assertion failed\n");
+    assert :: (condition: bool) {
+        if !condition {
+            @printf("assertion failed\n");
+        }
     }
 }

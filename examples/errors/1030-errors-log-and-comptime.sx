@@ -10,7 +10,6 @@
 // single stdout line.
 
 @import "modules/std.sx";
-log :: @import "modules/std/log.sx";
 
 probe :: () -> i32 {
     if @isComptime() { return 1; }        // comptime interpreter path

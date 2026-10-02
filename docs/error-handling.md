@@ -504,7 +504,7 @@ it from a handler:
 
 ```sx
 v := parse(s) catch |e| {
-  log.error("parse failed: {}", e);
+  log.err("parse failed: {}", e);
   trace.printCurrent();
   return default;
 };

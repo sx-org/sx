@@ -2,7 +2,6 @@
 @import "modules/std/mem.sx";
 @import "modules/math";
 @import "modules/build.sx";
-@import "modules/std/test.sx";
 pkg :: @import "tests/fixtures/testpkg/math.sx";
 greetings :: @import "tests/fixtures/testpkg/greet.sx";
 cwd :: @import "tests/fixtures/testpkg/cwd_test.sx";

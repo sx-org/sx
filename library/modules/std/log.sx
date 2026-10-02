@@ -1,7 +1,3 @@
-@import "modules/std/core.sx";
-@import "modules/std/fmt.sx";
-@import "modules/std/writer.sx";
-
 // =====================================================================
 // log.sx — plain leveled logging, orthogonal to the
 // error channel. Each entry is written to stderr as `LEVEL: <msg>\n`,
@@ -11,15 +7,21 @@
 // are the whole record, which keeps goldens time-independent.
 // =====================================================================
 
-// Prefix the level, append a newline, write the whole line to stderr.
-logEmit :: (level: string, msg: string) {
-    w := FdWriter.init(.stderr);
-    w.write(level);
-    w.write(msg);
-    w.write("\n");
-}
+log :: scope {
+    @import "modules/std/core.sx";
+    @import "modules/std/fmt.sx";
+    @import "modules/std/writer.sx";
 
-warn  :: ($fmt: string, ..$args) { sb := StringBuilder.init(); @insert buildFormat(fmt, "sb"); sb.flush(); logEmit("WARN:  ", sb.finish()); }
-info  :: ($fmt: string, ..$args) { sb := StringBuilder.init(); @insert buildFormat(fmt, "sb"); sb.flush(); logEmit("INFO:  ", sb.finish()); }
-debug :: ($fmt: string, ..$args) { sb := StringBuilder.init(); @insert buildFormat(fmt, "sb"); sb.flush(); logEmit("DEBUG: ", sb.finish()); }
-err   :: ($fmt: string, ..$args) { sb := StringBuilder.init(); @insert buildFormat(fmt, "sb"); sb.flush(); logEmit("ERROR: ", sb.finish()); }
+    // Prefix the level, append a newline, write the whole line to stderr.
+    emit :: (level: string, msg: string) {
+        w := FdWriter.init(.stderr);
+        w.write(level);
+        w.write(msg);
+        w.write("\n");
+    }
+
+    warn  :: ($fmt: string, ..$args) { sb := StringBuilder.init(); @insert buildFormat(fmt, "sb"); sb.flush(); emit("WARN:  ", sb.finish()); }
+    info  :: ($fmt: string, ..$args) { sb := StringBuilder.init(); @insert buildFormat(fmt, "sb"); sb.flush(); emit("INFO:  ", sb.finish()); }
+    debug :: ($fmt: string, ..$args) { sb := StringBuilder.init(); @insert buildFormat(fmt, "sb"); sb.flush(); emit("DEBUG: ", sb.finish()); }
+    err   :: ($fmt: string, ..$args) { sb := StringBuilder.init(); @insert buildFormat(fmt, "sb"); sb.flush(); emit("ERROR: ", sb.finish()); }
+}
