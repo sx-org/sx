@@ -6,7 +6,7 @@
 ..@import "modules/std/http/tls.sx";
 ..@import "modules/std/http/fiber.sx";
 private clib :: @import "modules/std/c.sx";
-private thread :: @import "modules/std/thread.sx";
+@import "modules/std/thread.sx";
 private event :: @import "modules/std/event.sx";
 private gzipCodec :: @import "modules/std/codecs/gzip.sx";
 private zlibCodec :: @import "modules/std/codecs/zlib.sx";

@@ -4,7 +4,7 @@ process :: scope {
     @import "modules/std/mem.sx";
     @import "modules/std/writer.sx";
     @import "modules/std/c.sx";
-    posix :: @import "modules/std/posix.sx";
+    @import "modules/std/posix.sx";
     trace :: @import "modules/std/trace.sx";
 
     libc :: c.libc;

@@ -100,7 +100,7 @@ IoErr :: core.IoErr;
 
 // --- The stdlib namespace tail: flat-importing std.sx carries these ---
 
-posix   :: @import "modules/std/posix.sx";
+..@import "modules/std/posix.sx";
 ..@import "modules/std/mem.sx";
 allocString :: mem.allocString;
 allocSlice  :: mem.allocSlice;
@@ -118,9 +118,9 @@ socket  :: @import "modules/std/socket.sx";
 ..@import "modules/std/hash.sx";
 ..@import "modules/std/log.sx";
 ..@import "modules/std/test.sx";
-time    :: @import "modules/std/time.sx";
+..@import "modules/std/time.sx";
 event   :: @import "modules/std/event.sx";
-thread  :: @import "modules/std/thread.sx";
+..@import "modules/std/thread.sx";
 compress :: @import "modules/std/compress.sx";
 ..@import "modules/std/encoding.sx";
 deflate  :: @import "modules/std/codecs/deflate.sx";
