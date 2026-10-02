@@ -28,6 +28,7 @@
 // mismatch.
 @import "modules/std.sx";
 sched :: @import "modules/std/sched.sx";
+..io;
 
 Log :: struct { seq: [16]i64; n: i64; }
 rec :: (l: *Log, v: i64) { l.seq[l.n] = v; l.n = l.n + 1; }

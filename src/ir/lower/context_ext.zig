@@ -327,6 +327,25 @@ pub fn contextExtensionDefault(self: *Lowering, fname: []const u8, fty: types_mo
     return null;
 }
 
+/// Register, ahead of its scan's global pass, each global a default borrows,
+/// so comptime running during the scan can materialize the default context. A
+/// global whose declared type is not registered yet waits for that pass.
+pub fn registerBorrowedDefaultGlobals(self: *Lowering) void {
+    const saved = self.lexicalContext();
+    defer self.restoreLexicalContext(saved);
+    for (self.program_index.context_extensions) |e| {
+        if (!e.valid) continue;
+        const de = e.default_expr orelse continue;
+        self.setDeclarationContext(de);
+        const author = self.unregisteredBorrowedGlobal(de) orelse continue;
+        const node = self.program_index.declaration(author.id).node orelse continue;
+        const ty = author.raw.var_decl.type_annotation orelse continue;
+        self.setDeclarationContext(node);
+        if (!typeExprReady(self, ty, true)) continue;
+        self.registerGlobalAhead(node);
+    }
+}
+
 /// Is `fname` a collected `@context.extend` declaration (valid or not)?
 pub fn hasContextExtension(self: *Lowering, fname: []const u8) bool {
     for (self.program_index.context_extensions) |e| {

@@ -1,4 +1,4 @@
 default io present = true
 default allocator present = true
-io borrows cBlockingIo = true
+io borrows io.cBlocking = true
 global-erasure allocator works = true

@@ -1,6 +1,6 @@
 // The M:1 fiber scheduler installed AS an `Io` capability vtable,
 // driven entirely through `context.io`. `impl Io for Scheduler` (sched.sx) folds
-// the scheduler behind the same `Io` protocol the blocking `CBlockingIo`
+// the scheduler behind the same `Io` protocol the blocking `io.CBlocking`
 // implements, so the worker below reaches real suspension/timers through the
 // PROTOCOL (`context.io.spawnRaw`/`armTimer`/`suspendRaw`/`nowMs`) rather
 // than bespoke scheduler methods — the foundation for a colorblind

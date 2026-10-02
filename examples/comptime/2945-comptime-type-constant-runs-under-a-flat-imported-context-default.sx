@@ -1,0 +1,18 @@
+// A `-> Type` constant is evaluated while declarations are still being
+// registered, under the default context. A flat-imported module's
+// `@context.extend` default borrows that module's global; the evaluation reads
+// it through the context, and the program's `*gauge` is the same global.
+@import "modules/std.sx";
+@import "2945-comptime-type-constant-runs-under-a-flat-imported-context-default/gauge.sx";
+
+pick :: () -> Type {
+    if context.probe.reading() == 7 { return i64; }
+    return f64;
+}
+Level :: pick();
+
+main :: () {
+    v : Level = 3;
+    recv : *Gauge = xx context.probe;
+    print("{} {} {}\n", v, context.probe.reading(), recv == *gauge);
+}

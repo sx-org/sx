@@ -1,5 +1,5 @@
 // The async ergonomic layer over the `Io` capability, blocking default. `context.io.async(worker)` submits a NULLARY `worker: Closure() -> $R`
-// and returns a `*Future($R)` handle; under the blocking `CBlockingIo` the worker
+// and returns a `*Future($R)` handle; under the blocking `io.CBlocking` the worker
 // runs to completion inline, so the Future is born `.ready`. `f.await()` yields
 // the result (a value-failable `($R, !IoErr)`, handled with `or`).
 // `context.io.nowMs()` reads the clock through the same capability.
@@ -9,6 +9,7 @@
 // the worker is deferred onto a fiber (a captured variadic pack can't cross the
 // fiber boundary).
 @import "modules/std.sx";
+..io;
 
 main :: () {
     // Inputs captured at the call site. The worker is FAILABLE

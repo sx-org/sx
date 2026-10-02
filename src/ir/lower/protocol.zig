@@ -9,6 +9,7 @@ const program_index_mod = @import("../program_index.zig");
 const ProtocolDeclInfo = program_index_mod.ProtocolDeclInfo;
 const ProtocolMethodInfo = program_index_mod.ProtocolMethodInfo;
 const ProtocolResolver = @import("../protocols.zig").ProtocolResolver;
+const resolver_mod = @import("../resolver.zig");
 
 const TypeId = types.TypeId;
 const Ref = inst_mod.Ref;
@@ -784,6 +785,43 @@ fn selectedNamespaceGlobal(self: *Lowering, sel: Lowering.QualifiedMember) ?prog
     return null;
 }
 
+/// The global an interface-typed static initializer names: `g`, `m.g`, or `xx` of either.
+fn borrowedGlobalOperand(v: *const Node) ?*const Node {
+    return switch (v.data) {
+        .identifier, .field_access => v,
+        .unary_op => |u| if (u.op != .xx) null else switch (u.operand.data) {
+            .identifier, .field_access => u.operand,
+            else => null,
+        },
+        else => null,
+    };
+}
+
+/// The author of the module global the interface-typed initializer `v`
+/// borrows, while no scan has registered that global.
+pub fn unregisteredBorrowedGlobal(self: *Lowering, v: *const Node) ?resolver_mod.RawAuthor {
+    const operand = borrowedGlobalOperand(v) orelse return null;
+    const author: resolver_mod.RawAuthor = switch (operand.data) {
+        .identifier => |id| blk: {
+            const from = self.current_source_file orelse self.main_file orelse return null;
+            break :blk switch (self.visibleAuthor(from, id.name)) {
+                .author => |a| a,
+                .ambiguous, .none => return null,
+            };
+        },
+        else => blk: {
+            const path = self.qualifiedTypeName(operand) orelse return null;
+            defer self.alloc.free(path);
+            break :blk switch (self.qualifiedMemberVerdict(path)) {
+                .selected => |sel| sel.author,
+                else => return null,
+            };
+        },
+    };
+    if (author.raw != .var_decl or self.program_index.get(.global, author.id) != null) return null;
+    return author;
+}
+
 /// What the protocol-typed arm of the global-initializer serializer decided.
 pub const ProtocolGlobalInit = union(enum) {
     /// Not an interface-typed global — the ordinary serializer owns it.
@@ -808,18 +846,7 @@ pub fn protocolGlobalInit(self: *Lowering, vd: *const ast.VarDecl, v: *const Nod
     const pd = self.getProtocolInfo(proto_ty) orelse return .not_applicable;
     if (pd.kind == .constraint) return .not_applicable;
 
-    const named: ?*const Node = switch (v.data) {
-        .identifier, .field_access => v,
-        .unary_op => |u| blk: {
-            if (u.op != .xx) break :blk null;
-            break :blk switch (u.operand.data) {
-                .identifier, .field_access => u.operand,
-                else => null,
-            };
-        },
-        else => null,
-    };
-    const operand = named orelse {
+    const operand = borrowedGlobalOperand(v) orelse {
         if (self.diagnostics) |d| {
             const pname = self.formatTypeName(proto_ty);
             d.addFmt(.err, v.span, "'{s}' is a '{s}' value, which borrows its receiver — its initializer must NAME a global instance to borrow ('{s} : {s} = the_instance;'), and this expression has no address to point at", .{ vd.name, pname, vd.name, pname });
@@ -868,15 +895,18 @@ pub fn emitDefaultContextGlobal(self: *Lowering) void {
 /// `scanDecls` (a type-fn const): once the Context is assembled, the same
 /// constant pass 1c would emit is emitted now, so the VM's one materializer —
 /// laying out `kDefaultContext` — serves scan time too (no hand-built
-/// shadow context, no hardcoded thunk tables). Quiet by construction:
-/// diagnostics are suspended, and if ANY field's default fails to serialize
-/// (e.g. its backing global isn't registered yet) nothing is emitted — the
-/// authoritative pass-1c call re-runs with diagnostics live.
+/// shadow context, no hardcoded thunk tables). The globals the defaults
+/// borrow are registered first, ahead of their scan's global pass. Quiet by
+/// construction: diagnostics are suspended, and if ANY field's default fails
+/// to serialize (e.g. its backing global's type isn't registered yet) nothing
+/// is emitted — the authoritative pass-1c call re-runs with diagnostics live.
 pub fn emitDefaultContextGlobalEarly(self: *Lowering) void {
     if (!self.context_assembled) return;
+    if (self.program_index.contains(.global, "kDefaultContext")) return;
     const saved_diags = self.diagnostics;
     self.diagnostics = null;
     defer self.diagnostics = saved_diags;
+    self.registerBorrowedDefaultGlobals();
     emitDefaultContextGlobalImpl(self, .early);
 }
 
@@ -894,8 +924,8 @@ fn emitDefaultContextGlobalImpl(self: *Lowering, mode: enum { early, final }) vo
     // `@context.extend` declaration (the struct decl itself is empty —
     // allocator/io are declared in std/mem.sx and std/io.sx like any user
     // field), so the whole initializer flows through the declaration-default
-    // serializer; the stateless thunk tables come from the `xx cAllocator` /
-    // `xx cBlockingIo` erasure folds. A field with NO matching declaration
+    // serializer; the stateless thunk tables come from the `xx mem.cAllocator` /
+    // `xx io.cBlocking` erasure folds. A field with NO matching declaration
     // (a hand-declared Context struct with its own fields, outside std) has
     // no constructible default — emit no global at all rather than a
     // silently zero-filled one; consumers of the default context diagnose at

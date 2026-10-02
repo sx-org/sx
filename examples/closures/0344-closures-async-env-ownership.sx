@@ -5,6 +5,7 @@
 
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
+..io;
 
 main :: () {
     gpa := mem.GPA.init();

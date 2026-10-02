@@ -19,8 +19,8 @@
 // runs end-to-end on a matching host (macOS + linux), ir-only on a mismatch.
 @import "modules/std.sx";
 @import "modules/std/sched.sx";
-@import "modules/std/io.sx";
 sched :: @import "modules/std/sched.sx";
+..io;
 
 Log :: struct { id: [8]i64; at: [8]i64; n: i64; }
 rec :: (l: *Log, id: i64, at: i64) { l.id[l.n] = id; l.at[l.n] = at; l.n = l.n + 1; }

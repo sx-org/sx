@@ -638,6 +638,9 @@ pub const Lowering = struct {
     /// must recover the slot from that identity instead of reselecting a
     /// same-spelled process-global entry.
     global_decl_infos: std.AutoHashMap(*const ast.VarDecl, GlobalInfo),
+    /// Globals a context default borrows, registered ahead of their scan's
+    /// global pass; the default context holds this slot's address.
+    ahead_globals: std.AutoHashMap(*const ast.VarDecl, inst_mod.GlobalId),
     /// FuncId-keyed lowered tracking — the identity twin of `lowered_functions`
     /// (which keys by name). A shadowed same-name author shares the winner's name
     /// but not its FuncId, so name-keyed tracking can't tell them apart; this
@@ -1506,6 +1509,7 @@ pub const Lowering = struct {
             .fn_decl_fids = std.AutoHashMap(imports_mod.DeclId, FuncId).init(module.alloc),
             .runtime_binding_fids = std.StringHashMap(FuncId).init(module.alloc),
             .global_decl_infos = std.AutoHashMap(*const ast.VarDecl, GlobalInfo).init(module.alloc),
+            .ahead_globals = std.AutoHashMap(*const ast.VarDecl, inst_mod.GlobalId).init(module.alloc),
             .lowered_fids = std.AutoHashMap(FuncId, void).init(module.alloc),
             .nominal_name_authors = std.AutoHashMap(types.StringId, []const u8).init(module.alloc),
             .struct_instances = instances.Cache(TypeId).init(module.alloc),
@@ -3881,6 +3885,7 @@ pub const Lowering = struct {
     pub const selectModuleConst = lower_comptime.selectModuleConst;
     pub const GlobalAuthor = lower_comptime.GlobalAuthor;
     pub const selectGlobalAuthor = lower_comptime.selectGlobalAuthor;
+    pub const visibleAuthor = lower_comptime.visibleAuthor;
     pub const foldConstAggLen = lower_comptime.foldConstAggLen;
     pub const foldFieldInt = lower_comptime.foldFieldInt;
     pub const foldConstArrayElem = lower_comptime.foldConstArrayElem;
@@ -4002,6 +4007,7 @@ pub const Lowering = struct {
     pub const collectContextExtensions = lower_context_ext.collectContextExtensions;
     pub const assembleContext = lower_context_ext.assembleContext;
     pub const assembleContextEarly = lower_context_ext.assembleContextEarly;
+    pub const registerBorrowedDefaultGlobals = lower_context_ext.registerBorrowedDefaultGlobals;
     pub const assembleContextIfReady = lower_context_ext.assembleContextIfReady;
     pub const contextExtensionDefault = lower_context_ext.contextExtensionDefault;
     pub const hasContextExtension = lower_context_ext.hasContextExtension;
@@ -4022,6 +4028,7 @@ pub const Lowering = struct {
     pub const typedConstInitFits = lower_decl.typedConstInitFits;
     pub const constExprInitFits = lower_decl.constExprInitFits;
     pub const registerTopLevelGlobal = lower_decl.registerTopLevelGlobal;
+    pub const registerGlobalAhead = lower_decl.registerGlobalAhead;
     pub const globalInitValue = lower_decl.globalInitValue;
     pub const globalInitValuePayload = lower_decl.globalInitValuePayload;
     pub const diagnoseNonConstGlobal = lower_decl.diagnoseNonConstGlobal;
@@ -4129,6 +4136,7 @@ pub const Lowering = struct {
     pub const getOrCreateThunks = lower_protocol.getOrCreateThunks;
     pub const emitDefaultContextGlobal = lower_protocol.emitDefaultContextGlobal;
     pub const emitDefaultContextGlobalEarly = lower_protocol.emitDefaultContextGlobalEarly;
+    pub const unregisteredBorrowedGlobal = lower_protocol.unregisteredBorrowedGlobal;
     pub const protocolErasureConst = lower_protocol.protocolErasureConst;
     pub const protocolGlobalInit = lower_protocol.protocolGlobalInit;
     pub const createProtocolThunk = lower_protocol.createProtocolThunk;

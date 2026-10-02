@@ -2758,13 +2758,29 @@ pub const GlobalAuthor = union(enum) {
 /// bare `K` hijacked by an unrelated module's same-named global.
 pub fn selectGlobalAuthor(self: *Lowering, name: []const u8) GlobalAuthor {
     const from = self.current_source_file orelse self.main_file orelse return .untracked;
+    return switch (visibleAuthor(self, from, name)) {
+        .author => |a| globalAuthorAt(self, a),
+        .ambiguous => .ambiguous,
+        .none => if (anyRawAuthor(self, name)) .not_visible else .untracked,
+    };
+}
+
+pub const VisibleAuthor = union(enum) {
+    author: resolver_mod.RawAuthor,
+    /// ≥2 distinct flat-visible authors and none is the reader's own.
+    ambiguous,
+    none,
+};
+
+/// The author bare `name` selects from `from`: its own, else its single flat author.
+pub fn visibleAuthor(self: *Lowering, from: []const u8, name: []const u8) VisibleAuthor {
     var res = self.resolver();
     const set = res.collectVisibleAuthors(name, self.environmentForSource(from).?, .user_bare_flat);
     defer if (set.flat.len > 0) self.alloc.free(set.flat);
-    if (set.own) |o| return globalAuthorAt(self, o);
+    if (set.own) |o| return .{ .author = o };
     if (set.flat.len >= 2) return .ambiguous;
-    if (set.flat.len == 1) return globalAuthorAt(self, set.flat[0]);
-    return if (anyRawAuthor(self, name)) .not_visible else .untracked;
+    if (set.flat.len == 1) return .{ .author = set.flat[0] };
+    return .none;
 }
 
 fn globalAuthorAt(self: *Lowering, author: resolver_mod.RawAuthor) GlobalAuthor {
