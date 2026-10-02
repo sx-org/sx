@@ -15,9 +15,9 @@ App :: struct {
     body: string;
     gzipBody: string;
     deflateBody: string;
-    streamCalls: Atomic(i64);
-    hugeCalls: Atomic(i64);
-    pingSeen: Atomic(i64);
+    streamCalls: atomic.Atomic(i64);
+    hugeCalls: atomic.Atomic(i64);
+    pingSeen: atomic.Atomic(i64);
 }
 
 same :: (a: string, b: string) -> bool {
@@ -371,9 +371,9 @@ main :: () -> i32 {
             body = body,
             gzipBody = gz,
             deflateBody = zl,
-            streamCalls = Atomic(i64).init(0),
-            hugeCalls = Atomic(i64).init(0),
-            pingSeen = Atomic(i64).init(-1),
+            streamCalls = atomic.Atomic(i64).init(0),
+            hugeCalls = atomic.Atomic(i64).init(0),
+            pingSeen = atomic.Atomic(i64).init(-1),
         };
         ok = runMode(*app, 0);
         if ok { ok = runMode(*app, 1); }

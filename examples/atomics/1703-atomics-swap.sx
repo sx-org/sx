@@ -1,14 +1,14 @@
-// Atomic($T).swap — atomic exchange (LLVM atomicrmw xchg): store the new value,
+// atomic.Atomic($T).swap — atomic exchange (LLVM atomicrmw xchg): store the new value,
 // return the OLD one. Single-thread.
 // Covers swap at BOTH comptime (@run) and runtime — they must agree.
 @import "modules/std.sx";
 @import "modules/std/atomic.sx";
 
-cSwap :: () -> i64 { a := Atomic(i64).init(7); old := a.swap(42, .seqCst); return old * 100 + a.load(.seqCst); }
+cSwap :: () -> i64 { a := atomic.Atomic(i64).init(7); old := a.swap(42, .seqCst); return old * 100 + a.load(.seqCst); }
 G_SWAP :: @run cSwap();   // 742 (old 7, now 42)
 
 main :: () {
-    a := Atomic(i64).init(7);
+    a := atomic.Atomic(i64).init(7);
     old := a.swap(42, .acqRel);
     print("swap old: {}\n", old);              // 7
     print("swap now: {}\n", a.load(.acquire)); // 42

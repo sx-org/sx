@@ -35,8 +35,8 @@ ElementId :: struct { value: u64 = 0; }
 ELEMENT_DOMAIN :: "ui.compose.element.v1";
 
 // Resumes the hash from the site fingerprint the compiler already folded.
-siteHasher :: (site: SiteId, domain: string) -> SourceSiteHasher {
-    hasher := SourceSiteHasher{ state = site.key };
+siteHasher :: (site: SiteId, domain: string) -> source_site.Hasher {
+    hasher := source_site.Hasher{ state = site.key };
     hasher.writeString(domain);
     hasher
 }

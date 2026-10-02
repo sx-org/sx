@@ -1,4 +1,4 @@
-// Atomic($T) compare-exchange: compareExchange / compareExchangeWeak → LLVM
+// atomic.Atomic($T) compare-exchange: compareExchange / compareExchangeWeak → LLVM
 // cmpxchg. Result is `?T` — null = SUCCESS; a present value is the ACTUAL current
 // value on failure (for a retry loop). Single-thread.
 @import "modules/std.sx";
@@ -6,7 +6,7 @@
 
 main :: () {
     // Successful CAS: 10 == 10 → store 20, returns null.
-    a := Atomic(i64).init(10);
+    a := atomic.Atomic(i64).init(10);
     got := a.compareExchange(10, 20, .acqRel, .acquire);
     if got == null {
         print("cas ok, now: {}\n", a.load(.acquire));   // 20
@@ -23,7 +23,7 @@ main :: () {
     }
 
     // Retry loop with the weak variant: increment a counter by 5.
-    counter := Atomic(i64).init(100);
+    counter := atomic.Atomic(i64).init(100);
     cur := counter.load(.relaxed);
     while true {
         r := counter.compareExchangeWeak(cur, cur + 5, .acqRel, .acquire);

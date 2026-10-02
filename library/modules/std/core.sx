@@ -79,7 +79,7 @@
 //
 // Volatile is NOT atomic: the access carries no memory ordering, orders nothing
 // between threads, and is not guaranteed indivisible. Sharing data between
-// threads is `Atomic($T)`'s job (modules/std/atomic.sx).
+// threads is `atomic.Atomic($T)`'s job (modules/std/atomic.sx).
 //
 // `T` is any type with storage — integer, float, bool, pointer, enum, vector,
 // or an aggregate. The access is one typed load/store of `T`, so an aggregate
@@ -475,7 +475,7 @@ TypeInfo :: enum {
 // module identity, so the field set is a compiler + stdlib contract, not a
 // shape any lookalike can satisfy. User code may construct values — `id = 0`
 // is enough for a diagnostic-only fake; a test that exercises identity
-// computes the matching value with `sourceSiteKeyId`
+// computes the matching value with `source_site.keyId`
 // (modules/std/source_site.sx).
 @SourceSite :: struct {
     // Normalized source file identity, independent of the working directory.
@@ -496,7 +496,7 @@ TypeInfo :: enum {
     ordinal: u64 = 0;
 
     // Compile-time fingerprint of (file, declaration, ordinal), exactly
-    // `sourceSiteKeyId(sourceSiteKey(site))`. It contains no line,
+    // `source_site.keyId(source_site.key(site))`. It contains no line,
     // column, pointer, padding, compiler-process, or runtime state.
     id: u64 = 0;
 }
@@ -546,7 +546,7 @@ PinTarget :: enum { any; main; onThread; }
 SpawnOpts :: struct {
     pin: PinTarget = .any;
     // Cancellation back-ref (true cancellation). A pointer to the
-    // spawned task's cancel flag (the `Future.canceled` `Atomic(bool)`, erased to
+    // spawned task's cancel flag (the `Future.canceled` `atomic.Atomic(bool)`, erased to
     // `*void` so this foundation type stays free of the atomic dependency). A
     // suspending impl stashes it on the spawned execution context so its
     // `suspendRaw` can consult it and raise `IoErr.Canceled` on resume. `null`

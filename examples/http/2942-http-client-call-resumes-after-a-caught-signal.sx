@@ -26,7 +26,7 @@ Helper :: struct {
     target: usize;
     fd: i32;
     release: Release;
-    done: Atomic(bool);
+    done: atomic.Atomic(bool);
 }
 
 helperEntry :: (arg: *void) -> *void abi(.c) {
@@ -68,7 +68,7 @@ connectCase :: (label: string, opts: http.ClientOpts) {
         i += 1;
     }
     socket.setNonblocking(l);
-    h : Helper = .{ target = pthread_self(), fd = l, release = .drainListener, done = Atomic(bool).init(false) };
+    h : Helper = .{ target = pthread_self(), fd = l, release = .drainListener, done = atomic.Atomic(bool).init(false) };
     t, te := thread.Thread.spawn(helperEntry, *h);
     if te { print("{}: spawn failed\n", label); return; }
     a, _ := socket.parseAddr("127.0.0.1", port);
@@ -87,7 +87,7 @@ sendCase :: () {
     body : [*]u8 = mem.alloc(context.allocator, u8, BODY_LEN).ptr;
     i := 0;
     while i < BODY_LEN { body[i] = 'x'; i += 1; }
-    h : Helper = .{ target = pthread_self(), fd = pair[1], release = .drainPeer, done = Atomic(bool).init(false) };
+    h : Helper = .{ target = pthread_self(), fd = pair[1], release = .drainPeer, done = atomic.Atomic(bool).init(false) };
     t, te := thread.Thread.spawn(helperEntry, *h);
     if te { print("send: spawn failed\n"); return; }
     e := http.Client.send(pair[0], "POST", "/", "t", "", string{ ptr = body, len = BODY_LEN });
@@ -101,7 +101,7 @@ sendCase :: () {
 recvCase :: () {
     pair : [2]i32 = ---;
     if socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM, 0, *pair[0]) != 0 { print("recv: socketpair failed\n"); return; }
-    h : Helper = .{ target = pthread_self(), fd = pair[1], release = .respond, done = Atomic(bool).init(false) };
+    h : Helper = .{ target = pthread_self(), fd = pair[1], release = .respond, done = atomic.Atomic(bool).init(false) };
     t, te := thread.Thread.spawn(helperEntry, *h);
     if te { print("recv: spawn failed\n"); return; }
     buf : [4096]u8 = ---;

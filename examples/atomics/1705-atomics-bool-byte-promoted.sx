@@ -1,4 +1,4 @@
-// Atomic(bool) — a sub-byte (i1) element atomically loaded/stored. LLVM
+// atomic.Atomic(bool) — a sub-byte (i1) element atomically loaded/stored. LLVM
 // rejects a sub-byte atomic ("atomic memory access' size must be byte-
 // sized"), so codegen performs the access in the byte storage type (i8)
 // and trunc/zext's the value at the boundary. (rmw/cmpxchg on a bool is
@@ -8,7 +8,7 @@
 @import "modules/std/atomic.sx";
 
 main :: () {
-    a := Atomic(bool).init(false);
+    a := atomic.Atomic(bool).init(false);
     print("init: {}\n", a.load(.acquire));        // false
 
     a.store(true, .release);

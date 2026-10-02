@@ -42,7 +42,7 @@ main :: () -> i64 {
     if CT_SQRT < 3.9 or CT_SQRT > 4.1 { bad = bad + 1; }
 
     // Atomics — lowered to atomic ops. `.seqCst` is an enum literal inferred
-    // from the intrinsic's own signature, so even `Ordering` needs no import.
+    // from the intrinsic's own signature, so even `atomic.Ordering` needs no import.
     x : i64 = 5;
     @atomicStore(i64, *x, 7, .seqCst);
     bad = bad + check("@atomicLoad", @atomicLoad(i64, *x, .seqCst), 7);
