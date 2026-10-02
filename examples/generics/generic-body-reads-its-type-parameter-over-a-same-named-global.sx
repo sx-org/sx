@@ -1,0 +1,12 @@
+// A generic body reads its type parameter as a value over a same-named global.
+@import "modules/std.sx";
+
+K : [2]i64 = .[1, 2];
+
+show :: ($K: Type) { print("{}\n", K); }
+
+main :: () -> i32 {
+    show(i32);
+    print("{}\n", K);
+    0
+}

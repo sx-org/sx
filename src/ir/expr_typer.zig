@@ -386,6 +386,10 @@ pub const ExprTyper = struct {
                 if (self.l.implicit_ctx_enabled and std.mem.eql(u8, id.name, "context")) {
                     if (self.l.module.types.findByName(self.l.module.types.internString("Context"))) |ty| return ty;
                 }
+                // A bound generic parameter answers before same-named declarations.
+                if (self.l.type_bindings) |tb| {
+                    if (tb.contains(id.name)) return .type_value;
+                }
                 // Check global variables (e.g., `context : Context`) —
                 // source-aware: infer the AUTHOR's global type,
                 // never an unrelated module's same-named one. `.not_a_global`
