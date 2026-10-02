@@ -10,11 +10,13 @@
   `*_IMPLEMENTATION` macro and includes its header)
 
 `@import "vendors/stb_image/stb_image.sx"` resolves through the stdlib
-search paths; the decls (`stbi_load`, `stbi_load_from_memory`,
-`stbi_image_free`, `stbi_write_png`, …) are synthesized from the
-headers, and the implementation compiles once per machine through sx's
-object cache. `examples/1625-vendor-stb-image-decode.sx` pins an
-in-memory BMP decode in the sx suite.
+search paths and supplies the `stb_image` scope; its members
+(`stb_image.stbi_load`, `stb_image.stbi_load_from_memory`,
+`stb_image.stbi_image_free`, `stb_image.stbi_write_png`, …) are
+synthesized from the headers, and the implementation compiles once per
+machine through sx's object cache.
+`examples/1625-vendor-stb-image-decode.sx` pins an in-memory BMP decode
+in the sx suite.
 
 To upgrade: replace the headers under `c/` with newer upstream copies,
 update this file, and rebuild (the object cache keys on source bytes).

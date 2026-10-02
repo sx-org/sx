@@ -5,7 +5,7 @@
 // across macOS releases): init succeeds, the pixel-height scale is
 // positive, the ascender is positive and the descender negative.
 @import "modules/std.sx";
-tt :: @import "vendors/stb_truetype/stb_truetype.sx";
+@import "vendors/stb_truetype/stb_truetype.sx";
 
 main :: () -> i32 {
     data := fs.readFile("/System/Library/Fonts/Helvetica.ttc");
@@ -15,21 +15,21 @@ main :: () -> i32 {
     }
     bytes := data?!;
 
-    off := tt.stbtt_GetFontOffsetForIndex(bytes.ptr, 0);
+    off := stb_truetype.stbtt_GetFontOffsetForIndex(bytes.ptr, 0);
     print("font offset >= 0: {}\n", off >= 0);
 
     info : *void = context.allocator.allocBytes(256);
-    ok := tt.stbtt_InitFont(info, bytes.ptr, off);
+    ok := stb_truetype.stbtt_InitFont(info, bytes.ptr, off);
     print("init ok: {}\n", ok != 0);
 
     px : f32 = 32.0;
-    scale := tt.stbtt_ScaleForPixelHeight(info, px);
+    scale := stb_truetype.stbtt_ScaleForPixelHeight(info, px);
     print("scale > 0: {}\n", scale > 0.0);
 
     ascent : i32 = 0;
     descent : i32 = 0;
     linegap : i32 = 0;
-    tt.stbtt_GetFontVMetrics(info, *ascent, *descent, *linegap);
+    stb_truetype.stbtt_GetFontVMetrics(info, *ascent, *descent, *linegap);
     print("ascent > 0, descent < 0: {} {}\n", ascent > 0, descent < 0);
     0
 }

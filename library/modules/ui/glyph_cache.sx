@@ -214,7 +214,7 @@ GlyphCache :: struct {
         fileSize : i32 = 0;
         pathZ := mem.cloneZ(path);
         defer mem.free(pathZ);
-        fontData := read_file_bytes(pathZ, *fileSize);
+        fontData := file_utils.read_file_bytes(pathZ, *fileSize);
         if fontData == null {
             @printf("Failed to load font: ");
             @printf("{}", path);
@@ -227,13 +227,13 @@ GlyphCache :: struct {
         // Init stbtt_fontinfo
         self.fontInfo = self.parentAllocator.allocBytes(FONTINFO_SIZE);
         c.memset(self.fontInfo, 0, FONTINFO_SIZE);
-        stbtt_InitFont(self.fontInfo, fontData, 0);
+        stb_truetype.stbtt_InitFont(self.fontInfo, fontData, 0);
 
         // Get font vertical metrics (in unscaled font units)
         ascentI : i32 = 0;
         descentI : i32 = 0;
         linegapI : i32 = 0;
-        stbtt_GetFontVMetrics(self.fontInfo, *ascentI, *descentI, *linegapI);
+        stb_truetype.stbtt_GetFontVMetrics(self.fontInfo, *ascentI, *descentI, *linegapI);
 
         // Unscaled metrics; getAscent / getLineHeight scale them per fontSize.
         self.ascent = ascentI;
@@ -241,14 +241,14 @@ GlyphCache :: struct {
         self.lineGap = linegapI;
 
         // Init text shaping context
-        self.shapeCtx = kbts_CreateShapeContext(null, null);
+        self.shapeCtx = kb_text_shape.kbts_CreateShapeContext(null, null);
         if self.shapeCtx != null {
-            self.shapeFont = kbts_ShapePushFontFromMemory(self.shapeCtx, self.fontData, fileSize, 0);
+            self.shapeFont = kb_text_shape.kbts_ShapePushFontFromMemory(self.shapeCtx, self.fontData, fileSize, 0);
             // Get font metrics (unitsPerEm) from kbts
             kbInfo : KbtsFontInfo2_1 = ---;
             c.memset(*kbInfo, 0, @sizeOf(KbtsFontInfo2_1));
             kbInfo.base.size = @sizeOf(KbtsFontInfo2_1);
-            kbts_GetFontInfo2(self.shapeFont, *kbInfo);
+            kb_text_shape.kbts_GetFontInfo2(self.shapeFont, *kbInfo);
             self.unitsPerEm = kbInfo.unitsPerEm;
         }
 
@@ -321,14 +321,14 @@ GlyphCache :: struct {
 
         // Cache miss — rasterize
         actualSize := dequantizeSize(sizeQ);
-        scale := stbtt_ScaleForPixelHeight(self.fontInfo, actualSize);
+        scale := stb_truetype.stbtt_ScaleForPixelHeight(self.fontInfo, actualSize);
 
         // Get glyph bounding box
         x0 : i32 = 0;
         y0 : i32 = 0;
         x1 : i32 = 0;
         y1 : i32 = 0;
-        stbtt_GetGlyphBitmapBox(self.fontInfo, glyphIndex, scale, scale, *x0, *y0, *x1, *y1);
+        stb_truetype.stbtt_GetGlyphBitmapBox(self.fontInfo, glyphIndex, scale, scale, *x0, *y0, *x1, *y1);
 
         glyphW: i32 = if x1 > x0 then x1 - x0 else 0;
         glyphH: i32 = if y1 > y0 then y1 - y0 else 0;
@@ -336,7 +336,7 @@ GlyphCache :: struct {
         // Get horizontal metrics
         advanceI : i32 = 0;
         lsbI : i32 = 0;
-        stbtt_GetGlyphHMetrics(self.fontInfo, glyphIndex, *advanceI, *lsbI);
+        stb_truetype.stbtt_GetGlyphHMetrics(self.fontInfo, glyphIndex, *advanceI, *lsbI);
         advance : f32 = (advanceI * scale).(f32);
 
         // Zero-size glyph (e.g. space) — cache with advance only
@@ -365,7 +365,7 @@ GlyphCache :: struct {
 
         // Rasterize directly into atlas bitmap
         destOffset : i64 = pack.y * self.atlasWidth + pack.x;
-        stbtt_MakeGlyphBitmap(
+        stb_truetype.stbtt_MakeGlyphBitmap(
             self.fontInfo,
             *self.bitmap[destOffset],
             glyphW, glyphH,
@@ -563,7 +563,7 @@ GlyphCache :: struct {
 
     // Get the scale factor for a logical font size
     scaleForSize :: (self: *GlyphCache, fontSize: f32) -> f32 {
-        stbtt_ScaleForPixelHeight(self.fontInfo, fontSize)
+        stb_truetype.stbtt_ScaleForPixelHeight(self.fontInfo, fontSize)
     }
 
     // Get scaled ascent for a logical font size
@@ -589,16 +589,16 @@ GlyphCache :: struct {
     }
 
     shapeAscii :: (self: *GlyphCache, text: string, fontSize: f32, into: *List(ShapedGlyph), alloc: Allocator) {
-        scale := stbtt_ScaleForPixelHeight(self.fontInfo, fontSize);
+        scale := stb_truetype.stbtt_ScaleForPixelHeight(self.fontInfo, fontSize);
         total : f32 = 0.0;
         i : i64 = 0;
         while i < text.len {
             ch : i32 = text[i].(i32);
-            glyphIndex : u16 = (stbtt_FindGlyphIndex(self.fontInfo, ch)).(u16);
+            glyphIndex : u16 = (stb_truetype.stbtt_FindGlyphIndex(self.fontInfo, ch)).(u16);
 
             advanceI : i32 = 0;
             lsbI : i32 = 0;
-            stbtt_GetGlyphHMetrics(self.fontInfo, glyphIndex, *advanceI, *lsbI);
+            stb_truetype.stbtt_GetGlyphHMetrics(self.fontInfo, glyphIndex, *advanceI, *lsbI);
             adv : f32 = (advanceI * scale).(f32);
 
             into.append(ShapedGlyph{
@@ -628,14 +628,14 @@ GlyphCache :: struct {
         scale := self.scaleForSize(fontSize);
         total : f32 = 0.0;
 
-        kbts_ShapeBegin(self.shapeCtx, KBTS_DIRECTION_DONT_KNOW, KBTS_LANGUAGE_DONT_KNOW);
-        kbts_ShapeUtf8(self.shapeCtx, @reinterpret([*:0]u8, text.ptr), text.len.(i32), KBTS_USER_ID_GENERATION_MODE_CODEPOINT_INDEX);
-        kbts_ShapeEnd(self.shapeCtx);
+        kb_text_shape.kbts_ShapeBegin(self.shapeCtx, KBTS_DIRECTION_DONT_KNOW, KBTS_LANGUAGE_DONT_KNOW);
+        kb_text_shape.kbts_ShapeUtf8(self.shapeCtx, @reinterpret([*:0]u8, text.ptr), text.len.(i32), KBTS_USER_ID_GENERATION_MODE_CODEPOINT_INDEX);
+        kb_text_shape.kbts_ShapeEnd(self.shapeCtx);
 
         run : KbtsRun = ---;
-        while kbts_ShapeRun(self.shapeCtx, *run) != 0 {
+        while kb_text_shape.kbts_ShapeRun(self.shapeCtx, *run) != 0 {
             glyphPtr : *KbtsGlyph = null;
-            while kbts_GlyphIteratorNext(*run.glyphs, *glyphPtr) != 0 {
+            while kb_text_shape.kbts_GlyphIteratorNext(*run.glyphs, *glyphPtr) != 0 {
                 if glyphPtr == null { continue; }
                 gx := total + glyphPtr.offsetX * scale;
                 gy : f32 = (glyphPtr.offsetY * scale).(f32);

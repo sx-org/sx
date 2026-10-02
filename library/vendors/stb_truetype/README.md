@@ -7,10 +7,12 @@
   defines `STB_TRUETYPE_IMPLEMENTATION` and includes the header)
 
 `@import "vendors/stb_truetype/stb_truetype.sx"` resolves through the
-stdlib search paths; the decls (`stbtt_InitFont`,
-`stbtt_ScaleForPixelHeight`, `stbtt_GetFontVMetrics`,
-`stbtt_MakeGlyphBitmap`, …) are synthesized from the header, and the
-implementation compiles once per machine through sx's object cache.
+stdlib search paths and supplies the `stb_truetype` scope; its members
+(`stb_truetype.stbtt_InitFont`, `stb_truetype.stbtt_ScaleForPixelHeight`,
+`stb_truetype.stbtt_GetFontVMetrics`,
+`stb_truetype.stbtt_MakeGlyphBitmap`, …) are synthesized from the
+header, and the implementation compiles once per machine through sx's
+object cache.
 `stbtt_fontinfo` is opaque on the sx side: allocate a 256-byte blob
 and pass its pointer (modules/ui/glyph_cache.sx is the reference
 consumer; `examples/1626-vendor-stb-truetype-metrics.sx` pins font

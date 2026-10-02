@@ -5,7 +5,7 @@
 // context constructs, the system Helvetica loads as a shaping font,
 // and teardown is clean.
 @import "modules/std.sx";
-kb :: @import "vendors/kb_text_shape/kb_text_shape.sx";
+@import "vendors/kb_text_shape/kb_text_shape.sx";
 
 main :: () -> i32 {
     data := fs.readFile("/System/Library/Fonts/Helvetica.ttc");
@@ -15,13 +15,13 @@ main :: () -> i32 {
     }
     bytes := data?!;
 
-    ctx := kb.kbts_CreateShapeContext(null, null);
+    ctx := kb_text_shape.kbts_CreateShapeContext(null, null);
     print("context created: {}\n", ctx != null);
 
-    font := kb.kbts_ShapePushFontFromMemory(ctx, bytes.ptr, bytes.len.(i32), 0);
+    font := kb_text_shape.kbts_ShapePushFontFromMemory(ctx, bytes.ptr, bytes.len.(i32), 0);
     print("font pushed: {}\n", font != null);
 
-    kb.kbts_DestroyShapeContext(ctx);
+    kb_text_shape.kbts_DestroyShapeContext(ctx);
     print("context destroyed\n");
     0
 }

@@ -11,11 +11,15 @@
   upstream header.
 
 `@import "vendors/kb_text_shape/kb_text_shape.sx"` resolves through
-the stdlib search paths; the implementation compiles once per machine
-through sx's object cache. Shape contexts, fonts, runs, and glyphs are
-opaque pointers on the sx side (modules/ui/glyph_cache.sx is the
-reference consumer; `examples/1627-vendor-kbts-shape-context.sx` pins
-context + font creation in the sx suite).
+the stdlib search paths and supplies the `kb_text_shape` scope, whose
+members are the declarations of `c/kbts_api.h`
+(`kb_text_shape.kbts_CreateShapeContext`,
+`kb_text_shape.kbts_ShapeBegin`, …); the implementation compiles once
+per machine through sx's object cache. Shape contexts, fonts, runs,
+and glyphs are opaque pointers on the sx side
+(modules/ui/glyph_cache.sx is the reference consumer;
+`examples/1627-vendor-kbts-shape-context.sx` pins context + font
+creation in the sx suite).
 
 To upgrade: replace `c/kb/kb_text_shape.h` with a newer upstream copy,
 extend `c/kbts_api.h` if the bound surface grows, update this file,

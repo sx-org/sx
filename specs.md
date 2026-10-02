@@ -6167,14 +6167,19 @@ modules/std.sx        the prelude — print/format, string ops (concat,
 modules/std/          mem.sx (CAllocator, GPA, Arena, TrackingAllocator),
                       fs.sx, process.sx, socket.sx, json.sx, cli.sx, hash.sx,
                       xml.sx, log.sx, trace.sx, test.sx
-modules/ffi/          objc.sx, objc_block.sx, sdl3.sx, opengl.sx, raylib.sx,
-                      stb.sx, stb_truetype.sx, wasm.sx
+modules/ffi/          objc.sx, objc_block.sx, opengl.sx, quartzcore.sx,
+                      raylib.sx, sdl3.sx
 modules/math/         scalar.sx, vector2.sx, matrix44.sx — import the
                       directory: @import "modules/math"
 modules/build.sx      @BuildOptions — compile-time build configuration (§10.5)
 modules/platform/     bundle.sx, uikit.sx, android.sx, sdl3.sx, ... —
                       windowing/bundling backends
 modules/gpu/, modules/ui/   GPU layer + retained UI toolkit
+vendors/              vendored C libraries; the bindings sqlite, mbedtls,
+                      stb_image, stb_truetype, kb_text_shape and file_utils
+                      (vendors/V/V.sx) are each self-scoped and imported
+                      explicitly: @import "vendors/sqlite/sqlite.sx";
+                      gives sqlite.Sqlite
 ```
 
 `@import "modules/std.sx"` gives every prelude name bare, plus `mem.GPA`,
