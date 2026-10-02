@@ -5,77 +5,79 @@
 // File is a small by-value handle whose portable slot holds either a POSIX
 // descriptor or the bits of a Win32 HANDLE.
 
-inline if @host.os == .windows {
-    @import "modules/std/fs/windows.sx";
-} else {
-    @import "modules/std/fs/posix.sx";
+fs :: scope {
+    inline if @host.os == .windows {
+        @import "modules/std/fs/windows.sx";
+    } else {
+        @import "modules/std/fs/posix.sx";
+    }
+
+    OpenMode :: enum i32 { read = 0; write = 1; append = 2; readWrite = 3; }
+    SeekFrom :: enum i32 { set = 0; current = 1; end = 2; }
+
+    File :: struct {
+        // The portable handle slot is wide enough for both a POSIX descriptor and
+        // the bits of a Win32 HANDLE.
+        fd: i64 = -1;
+
+        isValid :: (self: *File) -> bool {
+            self != null and fsFileIsValid(self.fd)
+        }
+
+        close :: (self: *File) -> bool {
+            if !self.isValid() { return false; }
+            ok := fsFileClose(self.fd);
+            self.fd = -1;
+            ok
+        }
+
+        read :: (self: *File, output: string) -> i64 {
+            if !self.isValid() { return -1; }
+            fsFileRead(self.fd, output)
+        }
+
+        write :: (self: *File, data: string) -> i64 {
+            if !self.isValid() { return -1; }
+            fsFileWrite(self.fd, data)
+        }
+
+        // Set the file's length. The file position is unspecified afterwards;
+        // callers that keep writing must seek explicitly.
+        truncate :: (self: *File, len: i64) -> bool {
+            if !self.isValid() { return false; }
+            fsFileTruncate(self.fd, len)
+        }
+
+        seek :: (self: *File, offset: i64, from: SeekFrom) -> i64 {
+            if !self.isValid() { return -1; }
+            fsFileSeek(self.fd, offset, from)
+        }
+    }
+
+    openFile :: (path: string, mode: OpenMode) -> ?File {
+        handle := fsOpenHandle(path, mode);
+        if !fsFileIsValid(handle) { return null; }
+        File{ fd = handle }
+    }
+    readFile :: (path: string) -> ?string { fsReadFile(path) }
+    writeFile :: (path: string, data: string) -> bool { fsWriteFile(path, data) }
+    appendFile :: (path: string, data: string) -> bool { fsAppendFile(path, data) }
+    exists :: (path: string) -> bool { fsExists(path) }
+    deleteFile :: (path: string) -> bool { fsDeleteFile(path) }
+    deleteDir :: (path: string) -> bool { fsDeleteDir(path) }
+    createDir :: (path: string) -> bool { fsCreateDir(path) }
+    createDirAll :: (path: string) -> bool { fsCreateDirAll(path) }
+    setMode :: (path: string, mode: u32) -> bool { fsSetMode(path, mode) }
+    move :: (oldPath: string, newPath: string) -> bool { fsMove(oldPath, newPath) }
+    copyFile :: (source: string, destination: string) -> bool { fsCopyFile(source, destination) }
+    basename :: (path: string) -> string { fsBasename(path) }
+    dirname :: (path: string) -> string { fsDirname(path) }
+
+    // Whole-second modification timestamps. These are deliberately small
+    // portable adapters rather than public platform stat/FileTime layouts.
+    modifiedSeconds :: (file: *File) -> (i64, bool) {
+        if file == null or !file.isValid() { return 0, false; }
+        fsModifiedSecondsHandle(file.fd)
+    }
+    setModifiedSeconds :: (path: string, seconds: i64) -> bool { fsSetModifiedSeconds(path, seconds) }
 }
-
-OpenMode :: enum i32 { read = 0; write = 1; append = 2; readWrite = 3; }
-SeekFrom :: enum i32 { set = 0; current = 1; end = 2; }
-
-File :: struct {
-    // The portable handle slot is wide enough for both a POSIX descriptor and
-    // the bits of a Win32 HANDLE.
-    fd: i64 = -1;
-
-    isValid :: (self: *File) -> bool {
-        self != null and fsFileIsValid(self.fd)
-    }
-
-    close :: (self: *File) -> bool {
-        if !self.isValid() { return false; }
-        ok := fsFileClose(self.fd);
-        self.fd = -1;
-        ok
-    }
-
-    read :: (self: *File, output: string) -> i64 {
-        if !self.isValid() { return -1; }
-        fsFileRead(self.fd, output)
-    }
-
-    write :: (self: *File, data: string) -> i64 {
-        if !self.isValid() { return -1; }
-        fsFileWrite(self.fd, data)
-    }
-
-    // Set the file's length. The file position is unspecified afterwards;
-    // callers that keep writing must seek explicitly.
-    truncate :: (self: *File, len: i64) -> bool {
-        if !self.isValid() { return false; }
-        fsFileTruncate(self.fd, len)
-    }
-
-    seek :: (self: *File, offset: i64, from: SeekFrom) -> i64 {
-        if !self.isValid() { return -1; }
-        fsFileSeek(self.fd, offset, from)
-    }
-}
-
-openFile :: (path: string, mode: OpenMode) -> ?File {
-    handle := fsOpenHandle(path, mode);
-    if !fsFileIsValid(handle) { return null; }
-    File{ fd = handle }
-}
-readFile :: (path: string) -> ?string { fsReadFile(path) }
-writeFile :: (path: string, data: string) -> bool { fsWriteFile(path, data) }
-appendFile :: (path: string, data: string) -> bool { fsAppendFile(path, data) }
-exists :: (path: string) -> bool { fsExists(path) }
-deleteFile :: (path: string) -> bool { fsDeleteFile(path) }
-deleteDir :: (path: string) -> bool { fsDeleteDir(path) }
-createDir :: (path: string) -> bool { fsCreateDir(path) }
-createDirAll :: (path: string) -> bool { fsCreateDirAll(path) }
-setMode :: (path: string, mode: u32) -> bool { fsSetMode(path, mode) }
-move :: (oldPath: string, newPath: string) -> bool { fsMove(oldPath, newPath) }
-copyFile :: (source: string, destination: string) -> bool { fsCopyFile(source, destination) }
-basename :: (path: string) -> string { fsBasename(path) }
-dirname :: (path: string) -> string { fsDirname(path) }
-
-// Whole-second modification timestamps. These are deliberately small
-// portable adapters rather than public platform stat/FileTime layouts.
-modifiedSeconds :: (file: *File) -> (i64, bool) {
-    if file == null or !file.isValid() { return 0, false; }
-    fsModifiedSecondsHandle(file.fd)
-}
-setModifiedSeconds :: (path: string, seconds: i64) -> bool { fsSetModifiedSeconds(path, seconds) }

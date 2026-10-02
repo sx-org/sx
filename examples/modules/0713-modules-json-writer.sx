@@ -19,7 +19,6 @@
 @import "modules/std.sx";
 @import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
 @import "modules/std/json.sx";
-@import "modules/std/fs.sx";
 
 // The exact document the writer must produce (insertion order, escaping).
 EXPECT : string : "{\"name\":\"a\\\"b\\n\",\"tab\":\"x\\ty\",\"bs\":\"c\\\\d\",\"ctrl\":\"\\u0001\",\"n\":-7,\"zero\":0,\"pos\":7,\"min\":-9223372036854775808,\"max\":9223372036854775807,\"ok\":true,\"nil\":null,\"xs\":[1,-2,3],\"nested\":{\"k\":\"v\"}}";
@@ -90,15 +89,15 @@ main :: () -> ! {
     // 2. Write the document to a file and read it back. Write into the
     //    repo-local, gitignored scratch dir and unlink afterwards so nothing
     //    leaks and concurrent runs don't fight over a shared /tmp name.
-    if !createDirAll(".sx-tmp") { print("mkdir: FAIL\n"); return; }
+    if !fs.createDirAll(".sx-tmp") { print("mkdir: FAIL\n"); return; }
     path :: ".sx-tmp/sx_0713_json.json";
     fsb := StringBuilder.init(arena);
     fjw := json.Writer.init(fsb);
     try fjw.write(root);
-    if !writeFile(path, fsb.finish()) { print("write: FAIL\n"); return; }
+    if !fs.writeFile(path, fsb.finish()) { print("write: FAIL\n"); return; }
 
-    back := readFile(path);
-    deleteFile(path);
+    back := fs.readFile(path);
+    fs.deleteFile(path);
     if back == null { print("file-read: FAIL\n"); return; }
     report("file-exact", back?! == EXPECT);
 

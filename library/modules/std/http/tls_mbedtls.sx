@@ -6,7 +6,7 @@
 private clib    :: @import "modules/std/c.sx";
 private socket  :: @import "modules/std/socket.sx";
 private posix   :: @import "modules/std/posix.sx";
-private fs      :: @import "modules/std/fs.sx";
+@import "modules/std/fs.sx";
 private mbedtls :: @import "vendors/mbedtls/mbedtls.sx";
 
 // mbedTLS hands each its pBio ctx = the *TlsSession (set via set_bio); the

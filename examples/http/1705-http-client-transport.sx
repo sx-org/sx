@@ -31,7 +31,6 @@
 //   + net-zero GPA gate.
 @import "modules/std.sx";
 socket :: @import "modules/std/socket.sx";
-fs     :: @import "modules/std/fs.sx";
 @import "modules/std/http.sx";
 tlsp   :: @import "modules/std/http/tls_mbedtls.sx";
 

@@ -6146,7 +6146,7 @@ main :: () -> i32 {
 ```
 modules/std.sx        the prelude — print/format, string ops (concat,
                       pathJoin, ...), List(T), Context + push, the Allocator
-                      interface; spreads c / mem / io / process / encoding /
+                      interface; spreads c / mem / io / fs / process / encoding /
                       json scopes and names the remaining module imports
 modules/std/          mem.sx (CAllocator, GPA, Arena, TrackingAllocator),
                       fs.sx, process.sx, socket.sx, json.sx, cli.sx, hash.sx,
@@ -6308,22 +6308,22 @@ arity-switched cdecl trampoline).
 
 | Function | Purpose |
 |----------|---------|
-| `openFile(path, mode) -> ?File` | open a handle |
-| `readFile(path) -> ?string` | one-shot slurp |
-| `writeFile(path, data) -> bool` | create / truncate / write |
-| `appendFile(path, data) -> bool` | append |
-| `copyFile(src, dst) -> bool` | byte copy (streamed through 64 KB buffer) |
-| `deleteFile(path) -> bool` | `unlink` |
-| `deleteDir(path) -> bool` | `rmdir` (empty only) |
-| `createDir(path) -> bool` / `createDirAll(path) -> bool` | `mkdir` / `mkdir -p` |
-| `move(old, new) -> bool` | `rename` |
-| `setMode(path, mode) -> bool` | `chmod` |
-| `exists(path) -> bool` | `access(F_OK)` |
-| `basename(p) -> string` / `dirname(p) -> string` | text-only path split |
+| `fs.openFile(path, mode) -> ?fs.File` | open a handle |
+| `fs.readFile(path) -> ?string` | one-shot slurp |
+| `fs.writeFile(path, data) -> bool` | create / truncate / write |
+| `fs.appendFile(path, data) -> bool` | append |
+| `fs.copyFile(src, dst) -> bool` | byte copy (streamed through 64 KB buffer) |
+| `fs.deleteFile(path) -> bool` | `unlink` |
+| `fs.deleteDir(path) -> bool` | `rmdir` (empty only) |
+| `fs.createDir(path) -> bool` / `fs.createDirAll(path) -> bool` | `mkdir` / `mkdir -p` |
+| `fs.move(old, new) -> bool` | `rename` |
+| `fs.setMode(path, mode) -> bool` | `chmod` |
+| `fs.exists(path) -> bool` | `access(F_OK)` |
+| `fs.basename(p) -> string` / `fs.dirname(p) -> string` | text-only path split |
 
-`File` is a small value-typed handle wrapping a POSIX fd, with
+`fs.File` is a small value-typed handle wrapping a POSIX fd, with
 methods `isValid / close / read / write / seek`. Higher-level helpers
-(`readFile`, `writeFile`, `copyFile`) bypass `*File` methods and
+(`fs.readFile`, `fs.writeFile`, `fs.copyFile`) bypass `*fs.File` methods and
 call libc directly so they remain callable from the post-link IR
 interpreter (which doesn't yet handle `*Self` method dispatch on
 locally-unwrapped optionals).
@@ -6337,7 +6337,7 @@ locally-unwrapped optionals).
 | `process.findExecutable(name) -> ?string` | `command -v <name>` via shell |
 
 Every path, command and name is a `string`, and only a returned `string`
-(`readFile`, `stdout`) is the caller's to free.
+(`fs.readFile`, `stdout`) is the caller's to free.
 
 `process.ProcessResult` is `{ exitCode: i32, stdout: string }`. The post-link
 bundler invokes `codesign`, `plutil`, `security`, `aapt2`, `javac`,
@@ -6363,7 +6363,7 @@ The Android branch:
 
 1. **Discover SDK** — `$ANDROID_HOME` → `$ANDROID_SDK_ROOT` → `$HOME/Library/Android/sdk`.
 2. **Find highest `build-tools` / `platforms` subdir** — `process.run("ls -1 <parent> | sort -V | tail -1")`.
-3. **Stage `<apk>.stage/lib/arm64-v8a/<libfoo.so>`** — `copyFile` from the linked output.
+3. **Stage `<apk>.stage/lib/arm64-v8a/<libfoo.so>`** — `fs.copyFile` from the linked output.
 4. **Manifest** — user-supplied via `opts.manifestPath`, or synthesized:
    - `NativeActivity` shape when no `main = true` is declared.
    - `main = true` Activity shape with `android:name="<runtime_path_with_dots>"` + `android:hasCode="true"` otherwise.

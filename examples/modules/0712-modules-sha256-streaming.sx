@@ -13,7 +13,6 @@
 
 @import "modules/std.sx";
 @import "modules/std/hash.sx";
-@import "modules/std/fs.sx";
 
 // 112-byte NIST multi-block vector — long enough that a 64-byte split is
 // a genuine block boundary and a 30-byte split lands mid-block.
@@ -59,9 +58,9 @@ main :: () {
     check("split-on-boundary", streamSplit(MSG, 64), PIN);   // 64: exact block edge
 
     // sha256File (streaming) must equal the in-memory digest.
-    if !createDirAll(".sx-tmp") { print("mkdir: FAIL\n"); return; }
+    if !fs.createDirAll(".sx-tmp") { print("mkdir: FAIL\n"); return; }
     path :: ".sx-tmp/sx_0712_stream.bin";
-    if !writeFile(path, MSG) { print("file-write: FAIL\n"); return; }
+    if !fs.writeFile(path, MSG) { print("file-write: FAIL\n"); return; }
 
     maybe := sha256File(path);
     if maybe == null { print("file-eq-memory: FAIL (open)\n"); return; }
@@ -73,5 +72,5 @@ main :: () {
     report("file-eq-memory", fv == mv);
     check("file-pinned", fileDigest, PIN);
 
-    deleteFile(path);
+    fs.deleteFile(path);
 }
