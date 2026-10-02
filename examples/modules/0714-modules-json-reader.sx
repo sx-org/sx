@@ -17,7 +17,7 @@
 //   4. UNICODE — `\uXXXX` (BMP + 2-byte) and a surrogate pair decode to
 //      the right UTF-8 bytes.
 //   5. FAILURE SURFACING — every malformed input raises the right
-//      `JsonParseError` variant on the error channel, never a bogus value.
+//      `json.ParseError` variant on the error channel, never a bogus value.
 
 @import "modules/std.sx";
 @import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
@@ -36,10 +36,10 @@ inRange :: (x: i64, lo: i64, hi: i64) -> bool {
     return x >= lo and x < hi;
 }
 
-// True when `parse(src)` raised `want` — destructure captures the error
+// True when `json.parse(src)` raised `want` — destructure captures the error
 // tag without `try`, so a malformed input never aborts the example.
-raises :: (src: string, want: JsonParseError, alloc: Allocator) -> bool {
-    _, e := parse(src, alloc);
+raises :: (src: string, want: json.ParseError, alloc: Allocator) -> bool {
+    _, e := json.parse(src, alloc);
     e == want
 }
 
@@ -59,7 +59,7 @@ main :: () -> ! {
 
     // ── 1. Structure ─────────────────────────────────────────────────
     src := DOC;
-    root := try parse(src, arena);
+    root := try json.parse(src, arena);
 
     isObject := match root { case .object: true; else: false; };
     report("root-is-object", isObject);
@@ -96,33 +96,33 @@ main :: () -> ! {
     // ── 3. Round-trip back through the writer ────────────────────────
     buf : [256]u8 = ---;
     fw := FixedWriter.init(buf[..]);
-    jw := JsonWriter.init(fw);
+    jw := json.Writer.init(fw);
     try jw.write(root);
     report("round-trip", fw.written()?! == src);
 
     // ── 4. Leading/trailing/inner whitespace is insignificant ────────
-    wsv := try parse("  [ 1 , 2 , 3 ]  ", arena);
+    wsv := try json.parse("  [ 1 , 2 , 3 ]  ", arena);
     wa := wsv.array;
     report("ws-count", wa.len == 3);
     report("ws-first", wa.items[0].int == 1);
     report("ws-last",  wa.items[2].int == 3);
 
     fbuf : [32]u8 = ---;
-    fv := try parse("1.5", arena);
+    fv := try json.parse("1.5", arena);
     ffw := FixedWriter.init(fbuf[..]);
-    fjw := JsonWriter.init(ffw);
+    fjw := json.Writer.init(ffw);
     try fjw.write(fv);
     report("fraction-round-trips", ffw.written()?! == "1.5");
 
     // Empty container literals (the manifest/db.json use these).
-    ea := try parse("[]", arena);
+    ea := try json.parse("[]", arena);
     report("empty-array", ea.array.len == 0);
-    eo := try parse("{}", arena);
+    eo := try json.parse("{}", arena);
     report("empty-object", eo.object.len == 0);
 
     // ── 5. Unicode: \uXXXX (1- and 2-byte) + surrogate pair (4-byte) ──
     // JSON "Aé😀" -> 'A', 'é' (C3 A9), '😀' (F0 9F 98 80). One byte per report.
-    univ := try parse("\"\\u0041\\u00e9\\uD83D\\uDE00\"", arena);
+    univ := try json.parse("\"\\u0041\\u00e9\\uD83D\\uDE00\"", arena);
     u := univ.str;
     report("uni-len", u.len == 7);
     report("uni-A",   u[0] == 0x41);                    // U+0041 -> 1 byte
@@ -150,7 +150,7 @@ main :: () -> ! {
 
     // POSITIVE: the ESCAPED control forms stay valid and decode to the
     // exact bytes. JSON "\t\n\u0009" -> 0x09 0x0A 0x09 (3 bytes).
-    esc := try parse("\"\\t\\n\\u0009\"", arena);
+    esc := try json.parse("\"\\t\\n\\u0009\"", arena);
     es := esc.str;
     report("esc-ctrl-len", es.len == 3);
     report("esc-tab", es[0] == 0x09);   // \t

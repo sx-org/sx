@@ -10,12 +10,12 @@
 //     small-negative / i64 MIN (-9223372036854775808) / i64 MAX
 //     (9223372036854775807), bool, null) through an explicit Arena, then
 //     `build -> write -> parse -> write`: assert the writer's EXACT bytes,
-//     assert `parse` then re-`write` reproduces them (idempotent), and
+//     assert `json.parse` then re-`write` reproduces them (idempotent), and
 //     spot-check the parsed tree's STRUCTURE incl. INSERTION ORDER.
 //   PART B — DECODE POSITIVES. `\/`, the full named-escape set, `\uXXXX`
 //     (BMP 1- and 2-byte) and a SURROGATE PAIR, the escaped control forms,
 //     and raw multi-byte UTF-8 round-tripping through writer + reader.
-//   PART C — MALFORMED MATRIX. One assertion per `JsonParseError` variant
+//   PART C — MALFORMED MATRIX. One assertion per `json.ParseError` variant
 //     and its key edges, each asserted to RAISE (never crash, never accept).
 //
 // Every model is built through an explicit Arena allocator (heap
@@ -40,10 +40,10 @@ inRange :: (x: i64, lo: i64, hi: i64) -> bool {
     return x >= lo and x < hi;
 }
 
-// True when `parse(src)` raised exactly `want`. Destructure captures the
+// True when `json.parse(src)` raised exactly `want`. Destructure captures the
 // error tag without `try`, so a malformed input never aborts the example.
-raises :: (src: string, want: JsonParseError, alloc: Allocator) -> bool {
-    _, e := parse(src, alloc);
+raises :: (src: string, want: json.ParseError, alloc: Allocator) -> bool {
+    _, e := json.parse(src, alloc);
     e == want
 }
 
@@ -60,7 +60,7 @@ ctrlRaises :: (b: u8, alloc: Allocator) -> bool {
 // writer must emit. The `esc` value carries one byte per escape kind; its
 // bytes are backed by `alloc` (string values are VIEWS, so they must
 // outlive `build`).
-build :: (alloc: Allocator) -> Value {
+build :: (alloc: Allocator) -> json.Value {
     ebytes : [*]u8 = alloc.allocBytes(8);
     ebytes[0] = 34;    // "   -> \"
     ebytes[1] = 92;    // \   -> \\
@@ -72,15 +72,15 @@ build :: (alloc: Allocator) -> Value {
     ebytes[7] = 1;     // SOH ->  (control with no named shorthand)
     esc := string{ ptr = ebytes, len = 8 };
 
-    nested : Object = .{};
+    nested : json.Object = .{};
     nested.put("k", .str("v"), alloc);
 
-    xs : List(Value) = .{};
+    xs : List(json.Value) = .{};
     xs.append(.int(1), alloc);
     xs.append(.int(0 - 2), alloc);
     xs.append(.int(3), alloc);
 
-    obj : Object = .{};
+    obj : json.Object = .{};
     obj.put("esc",  .str(esc),  alloc);
     obj.put("zero", .int(0),   alloc);
     obj.put("neg",  .int(0 - 7), alloc);
@@ -106,7 +106,7 @@ main :: () -> ! {
 
     buf : [512]u8 = ---;
     fw := FixedWriter.init(buf[..]);
-    jw := JsonWriter.init(fw);
+    jw := json.Writer.init(fw);
     try jw.write(root);
     canon := fw.written()?!;
     print("doc: {}\n", canon);                 // golden pins the exact bytes
@@ -114,10 +114,10 @@ main :: () -> ! {
 
     // parse the writer's output, then re-serialize: must reproduce it byte
     // for byte (writer/reader are inverses on the canonical form).
-    tree2 := try parse(canon, a);
+    tree2 := try json.parse(canon, a);
     buf2 : [512]u8 = ---;
     fw2 := FixedWriter.init(buf2[..]);
-    jw2 := JsonWriter.init(fw2);
+    jw2 := json.Writer.init(fw2);
     try jw2.write(tree2);
     canon2 := fw2.written()?!;
     report("rt-idempotent", canon2 == canon);
@@ -153,11 +153,11 @@ main :: () -> ! {
     // ── PART B. decode positives ─────────────────────────────────────────
     // `\/` decodes to a bare slash (the writer emits it unescaped, so this
     // is a parse-only form).
-    slash := try parse("\"\\/\"", a);
+    slash := try json.parse("\"\\/\"", a);
     report("dec-slash", slash.str == "/");
 
     // The full named-escape set in one string: \" \\ \/ \b \f \n \r \t.
-    esc := try parse("\"\\\"\\\\\\/\\b\\f\\n\\r\\t\"", a);
+    esc := try json.parse("\"\\\"\\\\\\/\\b\\f\\n\\r\\t\"", a);
     sexp : [8]u8 = ---;
     sexp[0] = 34; sexp[1] = 92; sexp[2] = 47; sexp[3] = 8;
     sexp[4] = 12; sexp[5] = 10; sexp[6] = 13; sexp[7] = 9;
@@ -165,7 +165,7 @@ main :: () -> ! {
 
     // \uXXXX: BMP 1-byte (A), BMP 2-byte (é), and a SURROGATE PAIR (😀).
     // "Aé😀" -> 41 | C3 A9 | F0 9F 98 80  (7 bytes).
-    uni := try parse("\"\\u0041\\u00e9\\uD83D\\uDE00\"", a);
+    uni := try json.parse("\"\\u0041\\u00e9\\uD83D\\uDE00\"", a);
     uexp : [7]u8 = ---;
     uexp[0] = 0x41; uexp[1] = 0xC3; uexp[2] = 0xA9;
     uexp[3] = 0xF0; uexp[4] = 0x9F; uexp[5] = 0x98; uexp[6] = 0x80;
@@ -173,7 +173,7 @@ main :: () -> ! {
 
     // POSITIVE counterpart to BadControlChar: the ESCAPED control forms
     // backslash-t, backslash-n and backslash-u-0009 decode to 09 0A 09.
-    ectrl := try parse("\"\\t\\n\\u0009\"", a);
+    ectrl := try json.parse("\"\\t\\n\\u0009\"", a);
     cexp : [3]u8 = ---;
     cexp[0] = 9; cexp[1] = 10; cexp[2] = 9;
     report("dec-esc-ctrl", ectrl.str == string{ ptr = *cexp[0], len = 3 });
@@ -182,21 +182,21 @@ main :: () -> ! {
     ubytes : [*]u8 = a.allocBytes(7);
     ubytes[0] = 0x41; ubytes[1] = 0xC3; ubytes[2] = 0xA9;
     ubytes[3] = 0xF0; ubytes[4] = 0x9F; ubytes[5] = 0x98; ubytes[6] = 0x80;
-    uval : Value = .str(string{ ptr = ubytes, len = 7 });
+    uval : json.Value = .str(string{ ptr = ubytes, len = 7 });
     ubuf : [64]u8 = ---;
     ufw := FixedWriter.init(ubuf[..]);
-    ujw := JsonWriter.init(ufw);
+    ujw := json.Writer.init(ufw);
     try ujw.write(uval);
-    uback := try parse(ufw.written()?!, a);
+    uback := try json.parse(ufw.written()?!, a);
     report("rt-utf8", uback.str == string{ ptr = *ubytes[0], len = 7 });
 
     fbuf : [64]u8 = ---;
-    ffrac := try parse("1.5", a);
-    fexp := try parse("2.5E-3", a);
+    ffrac := try json.parse("1.5", a);
+    fexp := try json.parse("2.5E-3", a);
     report("fraction-is-float", ffrac.float == 1.5);
     report("exponent-is-float", fexp.float == 0.0025);
     ffw := FixedWriter.init(fbuf[..]);
-    fjw := JsonWriter.init(ffw);
+    fjw := json.Writer.init(ffw);
     try fjw.write(ffrac);
     report("fraction-round-trips", ffw.written()?! == "1.5");
 

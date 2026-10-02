@@ -6126,7 +6126,9 @@ When compiling from `project/`, both `main.sx` and `modules/math/vector3.sx` can
 
 ```sx
 // modules/std/json.sx
-parse :: (text: string) -> ?JsonValue { ... }
+json :: scope {
+    parse :: (src: string, alloc: Allocator) -> (Value, !ParseError) { ... }
+}
 
 // main.sx
 std :: @import "modules/std.sx";
@@ -6134,7 +6136,7 @@ std :: @import "modules/std.sx";
 
 main :: () -> i32 {
     std.print("hello there\n");
-    v := parse("{}");
+    v, e := json.parse("{}", context.allocator);
     0
 }
 ```
@@ -6144,8 +6146,8 @@ main :: () -> i32 {
 ```
 modules/std.sx        the prelude — print/format, string ops (concat,
                       pathJoin, ...), List(T), Context + push, the Allocator
-                      interface; spreads c / mem / io / process / encoding scopes
-                      and names the remaining module imports
+                      interface; spreads c / mem / io / process / encoding /
+                      json scopes and names the remaining module imports
 modules/std/          mem.sx (CAllocator, GPA, Arena, TrackingAllocator),
                       fs.sx, process.sx, socket.sx, json.sx, cli.sx, hash.sx,
                       xml.sx, log.sx, trace.sx, test.sx
@@ -6163,7 +6165,7 @@ modules/gpu/, modules/ui/   GPU layer + retained UI toolkit
 `json.parse`, `fs.exists`, `hash.sha256Hex`, `log.warn`, ... through the
 carried namespace tail. A self-scoped file supplies its scope on direct
 import: `@import "modules/std/mem.sx";` exposes `mem.GPA`. Unscoped files
-provide bare access, such as `parse` from `modules/std/json.sx`.
+provide bare access, such as `List` from `modules/std/list.sx`.
 
 `modules/std/http.sx` is a scope facade:
 
