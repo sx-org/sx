@@ -10,6 +10,7 @@
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
 sched :: @import "modules/std/sched.sx";
+..io;
 
 Out :: struct {
     read: i64;

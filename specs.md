@@ -5443,8 +5443,10 @@ mem :: scope {
 }
 
 // std/io.sx
-cBlockingIo : CBlockingIo = .{};
-@context.extend io: Io = cBlockingIo;
+io :: scope {
+    cBlocking : CBlocking = .{};
+    @context.extend io: Io = cBlocking;
+}
 ```
 Before any `push`, code runs under `kDefaultContext`, a static constant holding every field's folded default. An interface-typed default like the two above is the handle over the named instance global — a BORROW: the constant's ctx word is the global's real address, never null (null ctx is the `?I` absent sentinel). The same fold works for any user global (`fallback : Allocator = myImplGlobal;` — no `xx` needed, the declared type states the coercion), and a module-scope global is the only operand it accepts (see Constraints and Interfaces §6.6). Threads and fibers inherit by snapshotting the spawner's whole context value.
 
@@ -6142,7 +6144,7 @@ main :: () -> i32 {
 ```
 modules/std.sx        the prelude — print/format, string ops (concat,
                       pathJoin, ...), List(T), Context + push, the Allocator
-                      interface; spreads c / mem / process / encoding scopes
+                      interface; spreads c / mem / io / process / encoding scopes
                       and names the remaining module imports
 modules/std/          mem.sx (CAllocator, GPA, Arena, TrackingAllocator),
                       fs.sx, process.sx, socket.sx, json.sx, cli.sx, hash.sx,
@@ -6920,9 +6922,9 @@ trace** — the chain of `raise` / `try` sites the error passed through.
 IoErr :: error { Failed; Canceled }
 ```
 
-`Io.suspendRaw` is `-> !IoErr.Canceled`; `await` is `-> ($R, !IoErr)`. An async
-worker is a failable nullary callable
-(`context.io.async(|| -> (i64, !IoErr) try compute(a, b))`).
+`Io.suspendRaw` is `-> !IoErr.Canceled`; `io.await` is `-> ($R, !IoErr)`. An
+async worker is a failable nullary callable
+(`io.async(context.io, || -> (i64, !IoErr) try compute(a, b))`).
 
 ### ABI
 

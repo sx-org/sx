@@ -9,7 +9,6 @@
 // an impl global (no `xx` needed — the declared type states the erasure).
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
-@import "modules/std/io.sx";
 
 fallback : Allocator = mem.cAllocator;
 
@@ -19,8 +18,8 @@ main :: () {
     maybeAlloc : ?Allocator = context.allocator;
     print("default allocator present = {}\n", maybeAlloc != null);
 
-    recv : *CBlockingIo = xx context.io;
-    print("io borrows cBlockingIo = {}\n", recv == *cBlockingIo);
+    recv : *io.CBlocking = xx context.io;
+    print("io borrows io.cBlocking = {}\n", recv == *io.cBlocking);
 
     p := fallback.allocBytes(32);
     print("global-erasure allocator works = {}\n", p != null);

@@ -522,7 +522,7 @@ IoErr :: error { Failed; Canceled }
 // --- Io capability protocol (impls live in std/io.sx) ---
 //
 // `Io` is threaded on `Context` exactly like `Allocator`: a `vtable`-kind
-// protocol whose default impl (the stateless `CBlockingIo` in std/io.sx)
+// protocol whose default impl (the stateless `io.CBlocking` in std/io.sx)
 // is installed in the process-wide `kDefaultContext`. Async runtime
 // is sx LIBRARY code — the compiler provides only the primitives (inline
 // asm, `abi(.naked)`, atomics) + fiber-safe codegen. The protocol is the

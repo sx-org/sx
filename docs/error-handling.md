@@ -571,13 +571,13 @@ IoErr :: error { Failed; Canceled }
 ```
 
 `Io.suspendRaw` is `-> !IoErr.Canceled` — it fails only by cancellation,
-and its channel says so. `await` is `-> ($R, !IoErr)`: a cancelled future
+and its channel says so. `io.await` is `-> ($R, !IoErr)`: a cancelled future
 raises `.Canceled`, a failed one `.Failed`. An async worker is a failable
 nullary callable:
 
 ```sx
-f := context.io.async(|| -> (i64, !IoErr) try compute(a, b));
-v := try await(f);
+f := io.async(context.io, || -> (i64, !IoErr) try compute(a, b));
+v := try io.await(f);
 ```
 
 ---

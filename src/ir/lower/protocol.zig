@@ -924,8 +924,8 @@ fn emitDefaultContextGlobalImpl(self: *Lowering, mode: enum { early, final }) vo
     // `@context.extend` declaration (the struct decl itself is empty —
     // allocator/io are declared in std/mem.sx and std/io.sx like any user
     // field), so the whole initializer flows through the declaration-default
-    // serializer; the stateless thunk tables come from the `xx cAllocator` /
-    // `xx cBlockingIo` erasure folds. A field with NO matching declaration
+    // serializer; the stateless thunk tables come from the `xx mem.cAllocator` /
+    // `xx io.cBlocking` erasure folds. A field with NO matching declaration
     // (a hand-declared Context struct with its own fields, outside std) has
     // no constructible default — emit no global at all rather than a
     // silently zero-filled one; consumers of the default context diagnose at

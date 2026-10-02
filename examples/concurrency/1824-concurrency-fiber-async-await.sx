@@ -1,6 +1,6 @@
 // `async`/`await` (the io.sx ergonomic layer) running COLORBLIND over
 // the fiber `Io` scheduler. The SAME `context.io.async(worker)` that runs inline
-// under the blocking `CBlockingIo` (1805) here spawns the worker as a real fiber
+// under the blocking `io.CBlocking` (1805) here spawns the worker as a real fiber
 // and returns a PENDING `*Future`; `await` suspends the calling fiber until the
 // worker completes. No bespoke `go`/`wait` — this is the unified async stack
 // (io.sx async over the `Io` protocol), reaching the fiber scheduler purely
@@ -14,6 +14,7 @@
 // host (macOS + linux), ir-only on a mismatch.
 @import "modules/std.sx";
 sched :: @import "modules/std/sched.sx";
+..io;
 
 Log :: struct { seq: [8]i64; n: i64; }
 rec :: (l: *Log, v: i64) { l.seq[l.n] = v; l.n = l.n + 1; }

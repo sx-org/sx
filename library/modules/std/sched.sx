@@ -586,7 +586,7 @@ Scheduler :: struct {
 // --- The fiber scheduler AS an `Io` capability vtable ------------------------
 //
 // `impl Io for Scheduler` folds the M:1 fiber scheduler behind `context.io` —
-// the same `Io` protocol (core.sx) the blocking `CBlockingIo` (io.sx) implements,
+// the same `Io` protocol (core.sx) the blocking `io.CBlocking` implements,
 // so the async ergonomic layer (`async`/`await`/`cancel`/`race`) runs COLORBLIND
 // over whichever impl is installed. Install it the allocator way — by value, the
 // receiver borrowed into the protocol field:
@@ -691,7 +691,7 @@ impl Io for Scheduler {
     //
     // `deadlineMs` is RESERVED — the virtual-time single-step jumps the clock to
     // the earliest timer regardless of any real-time budget, so there is nothing
-    // for a deadline to bound here (it matches `CBlockingIo.poll`'s stub shape; a
+    // for a deadline to bound here (it matches `io.CBlocking.poll`'s stub shape; a
     // real-clock `Io` would honor it). Named for protocol conformance, intentionally
     // unread — NOT a silently-dropped argument.
     //
@@ -1053,7 +1053,7 @@ wakeIoWaiterForFd :: (self: *Scheduler, fd: i32) {
 //
 // It runs over the `Io` PROTOCOL (`currentPark`/`suspendRaw`/`ready`), so it is
 // colorblind: under the fiber scheduler it really parks/wakes; under the blocking
-// `CBlockingIo` every future is born `.ready`, so the winner scan returns
+// `io.CBlocking` every future is born `.ready`, so the winner scan returns
 // immediately and it never parks. Lives here (not io.sx) because the `RaceResult`
 // synthesis needs the metatype WRITE side (`makeEnum`/`makeVariant`), and
 // meta.sx imports only std.sx — pulling it into the io.sx prelude part-file would
@@ -1087,7 +1087,7 @@ RaceResult :: ($T: Type) -> Type {
 //
 // MUST be called from inside a fiber under a suspending `Io` (there must be a
 // `current` to park) — `currentPark` bails loudly on a null current. Under
-// `CBlockingIo` the futures are already `.ready`, so the winner scan returns
+// `io.CBlocking` the futures are already `.ready`, so the winner scan returns
 // without ever calling `currentPark`/`suspendRaw`.
 //
 // TRUE-CANCEL SEMANTIC: each loser was parked mid-suspend when cancelled;
@@ -1095,7 +1095,7 @@ RaceResult :: ($T: Type) -> Type {
 // `suspendRaw` raises `Canceled` and unwinds the body — its post-suspend work
 // never runs. `race` does NOT join the losers (they unwind on their own next turn),
 // so it returns at winner-time. The winner's value is taken from `f.value`.
-race :: ufcs (io: Io, futures: $T) -> RaceResult(T) {
+race :: ufcs (driver: Io, futures: $T) -> RaceResult(T) {
     // First winner. Scan for an already-`.ready` future (lowest index
     // wins on a same-tick tie → deterministic). If none, register THIS coordinator
     // (`currentPark`) as the waiter on every still-`.pending` future's `park`
@@ -1109,7 +1109,7 @@ race :: ufcs (io: Io, futures: $T) -> RaceResult(T) {
             if winnerIdx < 0 and @field(futures, i).state == .ready { winnerIdx = i; }
         }
         if winnerIdx >= 0 { break; }
-        me := io.currentPark();
+        me := driver.currentPark();
         anyPending := false;
         inline for i in 0..@typeInfo(T).struct.fields.len {
             if @field(futures, i).state == .pending { @field(futures, i).park.handle = me.handle; anyPending = true; }
@@ -1127,7 +1127,7 @@ race :: ufcs (io: Io, futures: $T) -> RaceResult(T) {
         // The coordinator is the user's fiber (no cancel flag), so `suspendRaw`
         // never raises here; the `catch {}` just discards the `!` for the type.
         pk : ParkToken = .{ handle = null };
-        io.suspendRaw(*pk) catch {};
+        driver.suspendRaw(*pk) catch {};
         inline for i in 0..@typeInfo(T).struct.fields.len {
             if @field(futures, i).park.handle == me.handle { @field(futures, i).park.handle = null; }
         }
@@ -1148,7 +1148,7 @@ race :: ufcs (io: Io, futures: $T) -> RaceResult(T) {
     // already settled (`.ready`/`.failed`) is done — cancelling it would do
     // nothing useful and would stomp its real outcome label to `.canceled`.
     inline for i in 0..@typeInfo(T).struct.fields.len {
-        if i != winnerIdx and @field(futures, i).state == .pending { @field(futures, i).cancel(); }
+        if i != winnerIdx and @field(futures, i).state == .pending { io.cancel(@field(futures, i)); }
     }
 
     return result;

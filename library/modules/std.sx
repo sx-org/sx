@@ -93,16 +93,10 @@ List :: list.List;
 HashMap :: map.HashMap;
 IndexMap :: map.IndexMap;
 
-// --- Async / Io capability (impls in std/io.sx) ---
+// --- Async / Io capability ---
 
-ioMod       :: @import "modules/std/io.sx";
-CBlockingIo :: ioMod.CBlockingIo;
-Future      :: ioMod.Future;
-FutureState :: ioMod.FutureState;
-IoErr       :: core.IoErr;
-async       :: ioMod.async;
-await       :: ioMod.await;
-cancel      :: ioMod.cancel;
+IoErr :: core.IoErr;
+..@import "modules/std/io.sx";
 
 // --- The stdlib namespace tail: flat-importing std.sx carries these ---
 
