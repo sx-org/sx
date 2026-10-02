@@ -36,8 +36,17 @@ pub const ErrorAnalysis = struct {
         loop: ?*const ast.ForExpr = null,
         payload: ?struct { name: []const u8, condition: *const Node } = null,
         arm: ?struct { capture: []const u8, pattern: ?*const Node, subject: *const Node } = null,
+        caught: ?struct { name: []const u8, attempted: *const Node } = null,
         lambda: ?*const ast.Lambda = null,
         parent: ?*const LocalScope,
+    };
+
+    /// What a name binds: a typed value, or a `catch` handler's error — the
+    /// failure of the failable it attempted, read in the scope outside the
+    /// handler.
+    const Binding = union(enum) {
+        typed: TypeId,
+        caught: struct { attempted: *const Node, scope: ?*const LocalScope },
     };
 
     const FunctionAuthor = struct { id: imports.DeclId, name: []const u8, decl: *const ast.FnDecl };
@@ -121,6 +130,34 @@ pub const ErrorAnalysis = struct {
     fn contributeSet(self: ErrorAnalysis, set: TypeId, tags: *std.ArrayList(u32)) void {
         for (self.l.module.types.get(set).@"error".tags) |t| {
             if (!Lowering.containsTag(tags.items, t)) tags.append(self.l.alloc, t) catch {};
+        }
+    }
+
+    /// `raise VALUE` contributes VALUE's static channel, `dyn` when that
+    /// channel has no static member set.
+    fn contributeRaisedValue(self: ErrorAnalysis, value: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList(*const ast.FnDecl), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
+        if (value.data == .identifier) if (self.nameBinding(enclosing_fd, value.data.identifier.name)) |b| if (b == .caught) {
+            var outer = self;
+            outer.locals = b.caught.scope;
+            return outer.contributeAttempt(b.caught.attempted, tags, edges, dyn, enclosing_fd);
+        };
+        const channel = self.l.raisedChannel(self.receiverType(enclosing_fd, value)) orelse {
+            dyn.* = true;
+            return;
+        };
+        if (self.l.channelIsOpen(channel)) dyn.* = true else self.contributeSet(channel, tags);
+    }
+
+    /// What the failable a `catch` attempts fails with.
+    fn contributeAttempt(self: ErrorAnalysis, node: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList(*const ast.FnDecl), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
+        switch (node.data) {
+            .call => |c| self.contributeCallee(c.callee, enclosing_fd, tags, edges, dyn),
+            .try_expr => |te| self.contributeAttempt(te.operand, tags, edges, dyn, enclosing_fd),
+            // A `try { … }` boundary fails with the escapes inside it.
+            .block => self.collectErrorSites(node, tags, edges, dyn, enclosing_fd),
+            // A `??` chain fails with its last operand.
+            .null_coalesce => |nc| self.contributeAttempt(nc.rhs, tags, edges, dyn, enclosing_fd),
+            else => dyn.* = true,
         }
     }
 
@@ -257,9 +294,18 @@ pub const ErrorAnalysis = struct {
         };
     }
 
+    fn bindingType(self: ErrorAnalysis, fd: ?*const ast.FnDecl, name: []const u8) ?TypeId {
+        return switch (self.nameBinding(fd, name) orelse return null) {
+            .typed => |ty| ty,
+            // A bare-`!` callee's channel is what this pass converges, so a
+            // handler's error is read through its attempt instead.
+            .caught => .unresolved,
+        };
+    }
+
     // A local initializer sees only preceding declarations, including when
     // it shadows a receiver in an outer scope.
-    fn bindingType(self: ErrorAnalysis, fd: ?*const ast.FnDecl, name: []const u8) ?TypeId {
+    fn nameBinding(self: ErrorAnalysis, fd: ?*const ast.FnDecl, name: []const u8) ?Binding {
         var scope = self.locals;
         while (scope) |current| : (scope = current.parent) {
             var i = current.preceding.len;
@@ -275,8 +321,8 @@ pub const ErrorAnalysis = struct {
                     for (d.names, 0..) |target, index| {
                         if (!std.mem.eql(u8, target, name)) continue;
                         const ty = initializer.receiverType(fd, d.value);
-                        const len = self.l.module.types.productLen(ty) orelse return .unresolved;
-                        return if (index < len) self.l.module.types.productFieldType(ty, index) else .unresolved;
+                        const len = self.l.module.types.productLen(ty) orelse return .{ .typed = .unresolved };
+                        return .{ .typed = if (index < len) self.l.module.types.productFieldType(ty, index) else .unresolved };
                     }
                     continue;
                 }
@@ -286,9 +332,9 @@ pub const ErrorAnalysis = struct {
                     else => continue,
                 };
                 if (!std.mem.eql(u8, binding.name, name)) continue;
-                if (binding.annotation) |annotation| return self.l.resolveType(annotation);
-                const value = binding.value orelse return .unresolved;
-                return initializer.receiverType(fd, value);
+                if (binding.annotation) |annotation| return .{ .typed = self.l.resolveType(annotation) };
+                const value = binding.value orelse return .{ .typed = .unresolved };
+                return .{ .typed = initializer.receiverType(fd, value) };
             }
             if (current.payload) |payload| {
                 if (std.mem.eql(u8, payload.name, name)) {
@@ -296,24 +342,27 @@ pub const ErrorAnalysis = struct {
                     outer.locals = current.parent;
                     const ty = outer.receiverType(fd, payload.condition);
                     if (!ty.isBuiltin() and self.l.module.types.get(ty) == .optional)
-                        return self.l.module.types.get(ty).optional.child;
-                    return ty;
+                        return .{ .typed = self.l.module.types.get(ty).optional.child };
+                    return .{ .typed = ty };
                 }
             }
             if (current.arm) |arm| {
                 if (std.mem.eql(u8, arm.capture, name)) {
                     var outer = self;
                     outer.locals = current.parent;
-                    return self.l.matchCaptureType(outer.receiverType(fd, arm.subject), arm.pattern) orelse .unresolved;
+                    return .{ .typed = self.l.matchCaptureType(outer.receiverType(fd, arm.subject), arm.pattern) orelse .unresolved };
                 }
+            }
+            if (current.caught) |caught| {
+                if (std.mem.eql(u8, caught.name, name)) return .{ .caught = .{ .attempted = caught.attempted, .scope = current.parent } };
             }
             if (current.lambda) |lambda| {
                 for (lambda.params) |p| {
-                    if (std.mem.eql(u8, p.name, name)) return self.l.resolveType(p.type_expr);
+                    if (std.mem.eql(u8, p.name, name)) return .{ .typed = self.l.resolveType(p.type_expr) };
                 }
                 // An env field's value reads the enclosing body, whose bindings this scope does not see.
                 for (lambda.env) |field| {
-                    if (std.mem.eql(u8, field.name, name)) return .unresolved;
+                    if (std.mem.eql(u8, field.name, name)) return .{ .typed = .unresolved };
                 }
             }
             if (current.loop) |loop| {
@@ -328,18 +377,18 @@ pub const ErrorAnalysis = struct {
                         TypeId.i64
                     else
                         outer.iterableElementType(fd, iterable.expr);
-                    return if (capture.by_ref) self.l.module.types.ptrTo(element) else element;
+                    return .{ .typed = if (capture.by_ref) self.l.module.types.ptrTo(element) else element };
                 }
             }
         }
         if (fd) |decl| for (decl.params) |p| {
-            if (std.mem.eql(u8, p.name, name)) return self.l.resolveType(p.type_expr);
+            if (std.mem.eql(u8, p.name, name)) return .{ .typed = self.l.resolveType(p.type_expr) };
         };
         // Past these scopes a name reads as lowering reads it: a live lowering scope's binding, else a module-level value.
         const read = Node{ .span = .{ .start = 0, .end = 0 }, .data = .{ .identifier = .{ .name = name } } };
         return switch (self.l.inferExprType(&read)) {
             .unresolved, .type_value => null,
-            else => |ty| ty,
+            else => |ty| .{ .typed = ty },
         };
     }
 
@@ -438,10 +487,7 @@ pub const ErrorAnalysis = struct {
                     } else {
                         tags.append(self.l.alloc, self.l.anonymousErrorMember(rm.member)) catch {};
                     }
-                } else {
-                    // A computed tag (`raise e`) names no static set here.
-                    dyn.* = true;
-                }
+                } else self.contributeRaisedValue(rs.tag, tags, edges, dyn, enclosing_fd);
                 self.collectErrorSites(rs.tag, tags, edges, dyn, enclosing_fd);
             },
             .try_expr => |te| {
@@ -537,7 +583,10 @@ pub const ErrorAnalysis = struct {
             // attempts is absorbed.
             .catch_expr => |ce| {
                 self.collectAbsorbed(ce.operand, tags, edges, dyn, enclosing_fd);
-                self.collectErrorSites(ce.body, tags, edges, dyn, enclosing_fd);
+                const scope = LocalScope{ .caught = if (ce.binding) |b| .{ .name = b, .attempted = ce.operand } else null, .parent = self.locals };
+                var nested = self;
+                nested.locals = &scope;
+                nested.collectErrorSites(ce.body, tags, edges, dyn, enclosing_fd);
             },
             .defer_stmt => |d| self.collectErrorSites(d.expr, tags, edges, dyn, enclosing_fd),
             .push_stmt => |p| {

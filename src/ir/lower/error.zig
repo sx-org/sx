@@ -877,7 +877,7 @@ pub fn diagTagsNotInSet(self: *Lowering, src_tags: []const u32, dst: TypeId, spa
 
 /// The channel a `raise` operand carries, seen past an optional wrapper — a
 /// destructured error slot raises as it stands.
-fn raisedChannel(self: *Lowering, ty: TypeId) ?TypeId {
+pub fn raisedChannel(self: *Lowering, ty: TypeId) ?TypeId {
     if (ty.isBuiltin()) return null;
     return switch (self.module.types.get(ty)) {
         .@"error" => ty,

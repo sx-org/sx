@@ -1,0 +1,25 @@
+// `raise VALUE` merges VALUE's static channel into an inferred `!`. A catch
+// binding holds the failure of the failable its handler attempted, so the
+// caller's `.X` names the member that arrives.
+@import "modules/std.sx";
+
+AErr :: error { Exec; }
+BErr :: error { NotFound; }
+
+exec :: () -> ! { raise AErr.Exec; }
+missing :: () -> ! { raise BErr.NotFound; }
+
+reraises :: (n: i32) -> ! {
+    if n == 0 { try missing(); }
+    exec() catch |e| { raise e; };
+    return;
+}
+forwards :: (e: BErr) -> ! { raise e; }
+shadows :: () -> ! { exec() catch |e| { e := BErr.NotFound; raise e; }; return; }
+
+main :: () {
+    reraises(0) catch |e| { print("{} {}\n", e, e == .NotFound); };
+    reraises(1) catch |e| { print("{} {}\n", e, e == .Exec); };
+    forwards(BErr.NotFound) catch |e| { print("{} {}\n", e, e == .NotFound); };
+    shadows() catch |e| { print("{} {}\n", e, e == .NotFound); };
+}
