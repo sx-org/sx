@@ -3,7 +3,11 @@
 Not third-party: a small in-house C helper kept under vendors/ because
 it ships as a `@import c` unit like the rest.
 
-- `read_file_bytes(path, *out_size)` — whole-file read, malloc'd bytes.
+`@import "vendors/file_utils/file_utils.sx"` supplies the `file_utils`
+scope:
+
+- `file_utils.read_file_bytes(path, *out_size)` — whole-file read,
+  malloc'd bytes.
 - On Android, paths rooted inside the APK resolve through the
   `AAssetManager` installed via `sx_android_set_asset_manager`
   (modules/platform/android.sx calls it during activity startup; the

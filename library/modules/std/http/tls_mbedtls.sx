@@ -7,7 +7,7 @@ private clib    :: @import "modules/std/c.sx";
 @import "modules/std/socket.sx";
 @import "modules/std/posix.sx";
 @import "modules/std/fs.sx";
-private mbedtls :: @import "vendors/mbedtls/mbedtls.sx";
+@import "vendors/mbedtls/mbedtls.sx";
 
 // mbedTLS hands each its pBio ctx = the *TlsSession (set via set_bio); the
 // thunk reads its fd and issues one raw nonblocking read/write, translating

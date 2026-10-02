@@ -16,7 +16,7 @@
 // VERIFY_NONE to accept the self-signed cert (MBEDTLS_SSL_CLI_C is enabled in
 // the vendored config for exactly this in-process test client).
 @import "modules/std.sx";
-mbedtls :: @import "vendors/mbedtls/mbedtls.sx";
+@import "vendors/mbedtls/mbedtls.sx";
 @import "modules/std/http.sx";
 tlsp    :: @import "modules/std/http/tls_mbedtls.sx";
 

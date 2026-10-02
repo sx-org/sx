@@ -20,17 +20,22 @@ c/include/sx_mbedtls_anchor.h       # sx-added: anchors -Ic/include (see below)
 `@import "vendors/mbedtls/mbedtls.sx"` compiles `c/library/*.c` through sx's
 content-addressed C-object cache and binds every `extern mbedtls` decl against
 it — no system mbedTLS, no `zig cc`. A program that never imports it compiles
-none of it.
+none of it. The import supplies the `mbedtls` scope: the bindings are reached as
+`mbedtls.mbedtls_ssl_init`, `mbedtls.SslContext`, `mbedtls.MBEDTLS_SSL_IS_SERVER`,
+and the C unit itself as `mbedtls.mbedtls`.
 
 ## The `@import c` wiring (mbedtls.sx)
 
 ```
-mbedtls :: @import c {
-    @include "c/include/sx_mbedtls_anchor.h";       // -> -Ic/include
-    @include "c/library/sx_mbedtls_lib_anchor.h";   // -> -Ic/library
-    @flags  "-Os";
-    @source "c/library/<each>.c";                   // x109
-};
+mbedtls :: scope {
+    mbedtls :: @import c {
+        @include "c/include/sx_mbedtls_anchor.h";       // -> -Ic/include
+        @include "c/library/sx_mbedtls_lib_anchor.h";   // -> -Ic/library
+        @flags  "-Os";
+        @source "c/library/<each>.c";                   // x109
+    };
+    ...
+}
 ```
 
 The two **anchor headers** are an sx idiom: a `@import c` `@include "x"` adds

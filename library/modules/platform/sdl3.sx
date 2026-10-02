@@ -13,8 +13,9 @@ gSdlPlat : *SdlPlatform = null;
 SDL_GetBasePath :: () -> [*:0]u8 extern;
 
 // A macOS `.app` launched via Finder / `open` starts with CWD=`/`, so a
-// game's CWD-relative asset loads (`read_file_bytes("assets/...")`) miss and
-// the app crashes loading fonts/textures. SDL's base path is the directory
+// game's CWD-relative asset loads
+// (`file_utils.read_file_bytes("assets/...")`) miss and the app crashes
+// loading fonts/textures. SDL's base path is the directory
 // holding the executable — inside the `.app`, where the bundler copied
 // `assets/`. chdir there, but ONLY when actually running from within a `.app`
 // bundle, so the `sx run` dev flow (binary not bundled, assets in the project
