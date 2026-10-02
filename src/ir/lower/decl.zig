@@ -1658,6 +1658,7 @@ pub fn registerTopLevelGlobal(self: *Lowering, vd: *const ast.VarDecl) void {
     const sym_name = vd.extern_name orelse vd.name;
     const name_id = self.module.types.internString(sym_name);
     const gid = shared: {
+        if (self.ahead_globals.get(vd)) |gid| break :shared gid;
         if (vd.is_extern) for (self.module.globals.items, 0..) |global, i| {
             if (!global.is_extern or global.name != name_id) continue;
             if (!self.module.types.sameType(global.ty, var_ty)) {
@@ -1677,6 +1678,17 @@ pub fn registerTopLevelGlobal(self: *Lowering, vd: *const ast.VarDecl) void {
     const info = program_index_mod.GlobalInfo{ .id = gid, .ty = var_ty };
     self.global_decl_infos.put(vd, info) catch @panic("out of memory while indexing global declaration identity");
     self.putGlobal(self.declId(.{ .var_decl = vd }, self.current_source_file), vd.name, info);
+}
+
+/// Register and initialize the global `node` declares before its scan's
+/// global pass. Every later registration of the declaration keeps this slot.
+pub fn registerGlobalAhead(self: *Lowering, node: *const Node) void {
+    const vd = &node.data.var_decl;
+    self.settleModuleJuxtapositions(&.{node});
+    registerTopLevelGlobal(self, vd);
+    const info = self.global_decl_infos.get(vd) orelse return;
+    self.ahead_globals.put(vd, info.id) catch @panic("out of memory");
+    initializeTopLevelGlobal(self, vd);
 }
 
 fn initializeTopLevelGlobal(self: *Lowering, vd: *const ast.VarDecl) void {

@@ -1,0 +1,10 @@
+@import "modules/std.sx";
+
+Probe :: interface { reading :: (self: *Self) -> i64; }
+
+Gauge :: struct { level: i64; }
+impl Probe for Gauge { reading :: (self: *Gauge) -> i64 { self.level } }
+
+gauge : Gauge = .{ level = 7 };
+
+@context.extend probe: Probe = gauge;
