@@ -30,6 +30,9 @@ pub const ErrorFacts = struct {
 pub const ErrorAnalysis = struct {
     l: *Lowering,
     locals: ?*const LocalScope = null,
+    /// The binding sources a collect has read. A source contributes the same
+    /// escapes wherever it is named, so the collect reads it once.
+    read: ?*std.AutoHashMapUnmanaged(*const Node, void) = null,
 
     const LocalScope = struct {
         preceding: []const *Node = &.{},
@@ -145,13 +148,11 @@ pub const ErrorAnalysis = struct {
                 var source = self;
                 switch (b) {
                     .typed => |ty| return self.contributeChannel(ty, tags, dyn),
-                    .failure => |f| {
-                        source.locals = &f.scope;
-                        return source.contributeAttempt(f.node, tags, edges, dyn, enclosing_fd);
-                    },
-                    .value => |v| {
-                        source.locals = &v.scope;
-                        return source.contributeRaisedValue(v.node, tags, edges, dyn, enclosing_fd);
+                    .failure, .value => |s| {
+                        if ((self.read.?.getOrPut(self.l.alloc, s.node) catch @panic("out of memory")).found_existing) return;
+                        source.locals = &s.scope;
+                        if (b == .failure) return source.contributeAttempt(s.node, tags, edges, dyn, enclosing_fd);
+                        return source.contributeRaisedValue(s.node, tags, edges, dyn, enclosing_fd);
                     },
                 }
             },
@@ -545,6 +546,13 @@ pub const ErrorAnalysis = struct {
     /// Collect the error TAGS raised + the call EDGES of a function body, for
     /// the inferred-set fix-point. Stops at nested function boundaries.
     pub fn collectErrorSites(self: ErrorAnalysis, node: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList(*const ast.FnDecl), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
+        if (self.read == null) {
+            var read: std.AutoHashMapUnmanaged(*const Node, void) = .empty;
+            defer read.deinit(self.l.alloc);
+            var collect = self;
+            collect.read = &read;
+            return collect.collectErrorSites(node, tags, edges, dyn, enclosing_fd);
+        }
         switch (node.data) {
             .raise_stmt => |rs| {
                 if (self.l.raisedMember(rs.tag)) |rm| {
