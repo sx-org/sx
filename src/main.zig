@@ -40,7 +40,7 @@ pub fn main(init: std.process.Init) !void {
             i += 1;
             if (i >= args.len) {
                 std.debug.print("error: --target requires a value\n", .{});
-                return;
+                std.process.exit(1);
             }
             const raw = args[i];
             // Shorthand aliases for common targets
@@ -81,32 +81,32 @@ pub fn main(init: std.process.Init) !void {
             i += 1;
             if (i >= args.len) {
                 std.debug.print("error: --cpu requires a value\n", .{});
-                return;
+                std.process.exit(1);
             }
             target_config.cpu = (try allocator.dupeZ(u8, args[i])).ptr;
         } else if (std.mem.eql(u8, arg, "--opt")) {
             i += 1;
             if (i >= args.len) {
                 std.debug.print("error: --opt requires a value\n", .{});
-                return;
+                std.process.exit(1);
             }
             target_config.opt_level = parseOptLevel(args[i]) orelse {
                 std.debug.print("error: invalid --opt value '{s}' (expected: none/0, less/1, default/2, aggressive/3)\n", .{args[i]});
-                return;
+                std.process.exit(1);
             };
             explicit_opt = true;
         } else if (std.mem.eql(u8, arg, "-o")) {
             i += 1;
             if (i >= args.len) {
                 std.debug.print("error: -o requires a value\n", .{});
-                return;
+                std.process.exit(1);
             }
             target_config.output_path = args[i];
         } else if (std.mem.eql(u8, arg, "--linker")) {
             i += 1;
             if (i >= args.len) {
                 std.debug.print("error: --linker requires a value\n", .{});
-                return;
+                std.process.exit(1);
             }
             target_config.linker = args[i];
         } else if (std.mem.eql(u8, arg, "--self-contained")) {
@@ -117,63 +117,63 @@ pub fn main(init: std.process.Init) !void {
             i += 1;
             if (i >= args.len) {
                 std.debug.print("error: --sysroot requires a value\n", .{});
-                return;
+                std.process.exit(1);
             }
             target_config.sysroot = args[i];
         } else if (std.mem.eql(u8, arg, "--bundle")) {
             i += 1;
             if (i >= args.len) {
                 std.debug.print("error: --bundle requires a path (e.g. MyApp.app)\n", .{});
-                return;
+                std.process.exit(1);
             }
             target_config.bundle_path = args[i];
         } else if (std.mem.eql(u8, arg, "--apk")) {
             i += 1;
             if (i >= args.len) {
                 std.debug.print("error: --apk requires a path (e.g. out.apk)\n", .{});
-                return;
+                std.process.exit(1);
             }
             target_config.apk_path = args[i];
         } else if (std.mem.eql(u8, arg, "--manifest")) {
             i += 1;
             if (i >= args.len) {
                 std.debug.print("error: --manifest requires a path\n", .{});
-                return;
+                std.process.exit(1);
             }
             target_config.manifest_path = args[i];
         } else if (std.mem.eql(u8, arg, "--keystore")) {
             i += 1;
             if (i >= args.len) {
                 std.debug.print("error: --keystore requires a path\n", .{});
-                return;
+                std.process.exit(1);
             }
             target_config.keystore_path = args[i];
         } else if (std.mem.eql(u8, arg, "--bundle-id")) {
             i += 1;
             if (i >= args.len) {
                 std.debug.print("error: --bundle-id requires a value (e.g. co.swipelab.myapp)\n", .{});
-                return;
+                std.process.exit(1);
             }
             target_config.bundle_id = args[i];
         } else if (std.mem.eql(u8, arg, "--codesign-identity")) {
             i += 1;
             if (i >= args.len) {
                 std.debug.print("error: --codesign-identity requires a value\n", .{});
-                return;
+                std.process.exit(1);
             }
             target_config.codesign_identity = args[i];
         } else if (std.mem.eql(u8, arg, "--provisioning-profile")) {
             i += 1;
             if (i >= args.len) {
                 std.debug.print("error: --provisioning-profile requires a path\n", .{});
-                return;
+                std.process.exit(1);
             }
             target_config.provisioning_profile = args[i];
         } else if (std.mem.eql(u8, arg, "--entitlements")) {
             i += 1;
             if (i >= args.len) {
                 std.debug.print("error: --entitlements requires a path\n", .{});
-                return;
+                std.process.exit(1);
             }
             target_config.entitlements_path = args[i];
         } else if (std.mem.eql(u8, arg, "--time")) {
@@ -189,7 +189,7 @@ pub fn main(init: std.process.Init) !void {
                 i += 1;
                 if (i >= args.len) {
                     std.debug.print("error: -L requires a value\n", .{});
-                    return;
+                    std.process.exit(1);
                 }
                 try lib_paths.append(allocator, args[i]);
             }
@@ -200,7 +200,7 @@ pub fn main(init: std.process.Init) !void {
                 i += 1;
                 if (i >= args.len) {
                     std.debug.print("error: -F requires a value\n", .{});
-                    return;
+                    std.process.exit(1);
                 }
                 try framework_paths.append(allocator, args[i]);
             }
@@ -208,14 +208,14 @@ pub fn main(init: std.process.Init) !void {
             i += 1;
             if (i >= args.len) {
                 std.debug.print("error: --lflags requires a value\n", .{});
-                return;
+                std.process.exit(1);
             }
             try link_flags.append(allocator, args[i]);
         } else if (!std.mem.startsWith(u8, arg, "-")) {
             input_path = arg;
         } else {
             std.debug.print("error: unknown flag '{s}'\n", .{arg});
-            return;
+            std.process.exit(1);
         }
     }
 
@@ -241,7 +241,7 @@ pub fn main(init: std.process.Init) !void {
 
     const raw_input = input_path orelse {
         printUsage();
-        return;
+        std.process.exit(1);
     };
     // Canonicalize the entry path the same way `@import`-resolved paths are
     // keyed: an absolute entry that lives under the CWD becomes
@@ -273,7 +273,7 @@ pub fn main(init: std.process.Init) !void {
     } else if (std.mem.eql(u8, command, "run")) {
         if (target_config.isWasm()) {
             std.debug.print("error: 'run' is not supported for wasm targets. Use 'build' instead.\n", .{});
-            return;
+            std.process.exit(1);
         }
         // Default to -O0 for run (faster compile) unless user explicitly set --opt
         if (!explicit_opt) target_config.opt_level = .none;
@@ -418,6 +418,7 @@ pub fn main(init: std.process.Init) !void {
         if (exit_code != 0) std.process.exit(exit_code);
     } else {
         printUsage();
+        std.process.exit(1);
     }
 }
 

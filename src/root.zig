@@ -29,6 +29,7 @@ pub const core = @import("core.zig");
 pub const c_import = @import("c_import.zig");
 pub const c_import_tests = @import("c_import.test.zig");
 pub const corpus_run_tests = @import("corpus_run.test.zig");
+pub const cli_tests = @import("cli.test.zig");
 pub const library_xx_tests = @import("library_xx.test.zig");
 pub const ir = @import("ir/ir.zig");
 
