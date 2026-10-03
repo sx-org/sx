@@ -3265,6 +3265,7 @@ pub const Vm = struct {
         if (sty == .any) return if (idx == 0) 0 else 8;
         switch (table.get(sty)) {
             .slice, .closure => return if (idx == 0) 0 else 8,
+            .array => |a| return @as(Addr, idx) * table.typeSizeBytes(a.element),
             .optional => |o| return if (idx == 0) 0 else table.typeSizeBytes(o.child),
             .failable => |f| {
                 const n = table.failableValueSlotCount(f);
