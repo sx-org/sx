@@ -26,28 +26,28 @@ mkdir -p "$TMP_DIR"
 # compiles cleanly for the target's NDK / SDK without needing the
 # host to actually run it.
 TUPLES=(
-    "android|examples/1336-ffi-objc-call-10-os-gate.sx"
-    "android|examples/1401-ffi-jni-call-02-void.sx"
+    "android|examples/ffi-objc/1336-ffi-objc-call-10-os-gate.sx"
+    "android|examples/ffi-jni/1401-ffi-jni-call-02-void.sx"
     # The inverse OS gate: `inline if @host.os == .android
     # { #jni_call(...) }` must strip its body before lowering on iOS so
     # emit_llvm doesn't try to use libjvm symbols the iOS SDK lacks.
-    "ios-sim|examples/1401-ffi-jni-call-02-void.sx"
+    "ios-sim|examples/ffi-jni/1401-ffi-jni-call-02-void.sx"
     # #jni_main pipeline slice 2: an example carrying a `#jni_main
     # #jni_class(...)` decl must continue to lower + link cleanly for
     # android even without an APK build (compile-only check).
-    "android|examples/1423-ffi-jni-main-01-emit.sx"
+    "android|examples/ffi-jni/1423-ffi-jni-main-01-emit.sx"
     # `super.method(args)` dispatch: lowers to JNI CallNonvirtualVoidMethod
     # against the parent class (Activity by default). Compile-only check
     # — an on-device deploy covers runtime correctness.
-    "android|examples/1424-ffi-jni-main-02-super.sx"
+    "android|examples/ffi-jni/1424-ffi-jni-main-02-super.sx"
     # `Alias.new(args)` constructor dispatch: lowers to FindClass +
     # GetMethodID("<init>") + NewObject. Compile-only — runtime via chess.
-    "android|examples/1425-ffi-jni-main-03-ctor.sx"
+    "android|examples/ffi-jni/1425-ffi-jni-main-03-ctor.sx"
     # Week 6: iOS-simulator branch of platform.bundle. Cross-compiles
     # against the iPhoneSimulator SDK; the post-link callback then
     # writes an `.app` with the iOS-shaped Info.plist (UIDeviceFamily,
     # LSRequiresIPhoneOS, UIApplicationSceneManifest, DTPlatformName).
-    "ios-sim|examples/1615-platform-ios-sim-bundle.sx"
+    "ios-sim|examples/platform/1615-platform-ios-sim-bundle.sx"
 )
 
 PASS=0
