@@ -996,7 +996,7 @@ pub const TypeTable = struct {
         if (self.anon_struct_map.get(key.items)) |existing| return existing;
         const id = TypeId.fromIndex(@intCast(self.infos.items.len));
         self.infos.append(self.alloc, info) catch unreachable;
-        const owned_key = self.alloc.dupe(u8, key.items) catch unreachable;
+        const owned_key = self.slice_arena.allocator().dupe(u8, key.items) catch unreachable;
         self.anon_struct_map.put(owned_key, id) catch unreachable;
         self.recordCanonicalType(id, info, true);
         return id;

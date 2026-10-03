@@ -65,6 +65,14 @@ test "annotation construction handles preserve defaults beneath structural equal
     try std.testing.expect(!table.sameType(a, named));
 }
 
+test "a table releases its anonymous-shape keys" {
+    var table = TypeTable.init(std.testing.allocator);
+    defer table.deinit();
+    const fields = [_]TypeInfo.StructInfo.Field{.{ .name = table.internString("p"), .ty = .i32 }};
+    const shape = table.internAnonStruct(&fields);
+    try std.testing.expectEqual(shape, table.internAnonStruct(&fields));
+}
+
 test "slice and array interning" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
