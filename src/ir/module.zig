@@ -714,12 +714,12 @@ pub const Builder = struct {
         } }, .void);
     }
 
-    pub fn integerSwitchBr(self: *Builder, operand: Ref, cases: []const inst.SwitchBranch.Case, integer_cases: []const inst.SwitchBranch.IntegerCase, default: BlockId) void {
+    pub fn categorySwitchBr(self: *Builder, operand: Ref, cases: []const inst.SwitchBranch.Case, category_cases: []const inst.SwitchBranch.CategoryCase, default: BlockId) void {
         const arena = self.module.slice_arena.allocator();
         self.emitVoid(.{ .switch_br = .{
             .operand = operand,
             .cases = arena.dupe(inst.SwitchBranch.Case, cases) catch unreachable,
-            .integer_cases = arena.dupe(inst.SwitchBranch.IntegerCase, integer_cases) catch unreachable,
+            .category_cases = arena.dupe(inst.SwitchBranch.CategoryCase, category_cases) catch unreachable,
             .default = default,
             .default_args = &.{},
         } }, .void);

@@ -5272,28 +5272,23 @@ fn staticAnswerOrFalse(self: *Lowering, subject_ty: TypeId, rhs: *const Node) bo
 }
 
 /// The runtime answer over a `Type`-valued tag: an OR-reduction over the tag
-/// set the target denotes.
+/// set the target denotes. A table-decided category is asked of the final
+/// table instead, since its set is only complete once every type is
+/// registered and the tag can name a type registered after this site lowers.
 fn runtimeIsAnswer(self: *Lowering, tag: Ref, rhs: *const Node, span: ast.Span) Ref {
     const target = self.classifyIsTarget(rhs) orelse return self.builder.constBool(false);
-    // Signedness reads the tag-indexed table rather than an OR over the tag
-    // set: the set is only complete once every type is registered, and the
-    // `{}` formatter asks this of types that register after it lowers.
     if (target == .category and std.mem.eql(u8, target.category, "unsigned")) {
         const args = self.alloc.dupe(Ref, &.{tag}) catch return self.builder.constBool(false);
         return self.builder.callBuiltin(.is_unsigned, args, .bool);
     }
-    if (target == .category and (std.mem.eql(u8, target.category, "int") or std.mem.eql(u8, target.category, "signed"))) {
+    const table_category = if (target == .category) std.meta.stringToEnum(types.TypeCategory, target.category) else null;
+    if (table_category) |category| {
         const b = &self.builder;
-        const yes = self.freshBlock("is.integer");
+        const yes = self.freshBlock("is.category");
         const no = self.freshBlock("is.other");
         const merge = self.freshBlock("is.merge");
         const slot = b.alloca(.bool);
-        var cases = [_]inst_mod.SwitchBranch.IntegerCase{
-            .{ .signed = true, .target = yes },
-            .{ .signed = false, .target = yes },
-        };
-        const count: usize = if (std.mem.eql(u8, target.category, "int")) 2 else 1;
-        b.integerSwitchBr(tag, &.{}, cases[0..count], no);
+        b.categorySwitchBr(tag, &.{}, &.{.{ .category = category, .target = yes }}, no);
         b.switchToBlock(yes);
         b.store(slot, b.constBool(true));
         b.br(merge, &.{});

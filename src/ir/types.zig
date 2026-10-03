@@ -190,6 +190,24 @@ pub const FloatText = struct {
     }
 };
 
+/// A category word whose members the type table decides by each type's own
+/// kind (`TypeTable.inCategory`).
+pub const TypeCategory = enum {
+    int,
+    signed,
+    unsigned,
+    @"struct",
+    @"enum",
+    @"union",
+    slice,
+    array,
+    pointer,
+    vector,
+    optional,
+    @"error",
+    closure,
+};
+
 // ── TypeInfo ────────────────────────────────────────────────────────────
 // Resolved type information stored in the TypeTable.
 // Unlike the AST-level `types.Type` which uses string names for references,
@@ -2037,6 +2055,34 @@ pub const TypeTable = struct {
     pub fn isUnsignedInt(self: *const TypeTable, ty: TypeId) bool {
         const layout = self.integerLayout(ty) orelse return false;
         return !layout.signed;
+    }
+
+    /// Whether `ty` belongs to `category`. An interface's backing struct is not
+    /// a `struct`, and a container over `.unresolved` is the residue of a failed
+    /// resolution that no value has, so it belongs to no category.
+    pub fn inCategory(self: *const TypeTable, ty: TypeId, category: TypeCategory) bool {
+        const info = self.get(ty);
+        return switch (category) {
+            .int => self.integerLayout(ty) != null,
+            .signed, .unsigned => if (self.integerLayout(ty)) |layout| layout.signed == (category == .signed) else false,
+            .@"struct" => info == .@"struct" and !info.@"struct".is_protocol,
+            .@"enum" => info == .@"enum",
+            .@"union" => info == .@"union",
+            .slice => info == .slice and info.slice.element != .unresolved,
+            .array => info == .array and info.array.element != .unresolved,
+            .pointer => switch (info) {
+                .pointer => |p| p.pointee != .unresolved,
+                .many_pointer => |m| m.element != .unresolved,
+                else => false,
+            },
+            .vector => info == .vector,
+            .optional => info == .optional and info.optional.child != .unresolved,
+            .@"error" => info == .@"error",
+            .closure => switch (info) {
+                .closure => |c| c.ret != .unresolved and std.mem.indexOfScalar(TypeId, c.params, .unresolved) == null,
+                else => false,
+            },
+        };
     }
 
     pub fn typeSizeBytes(self: *const TypeTable, ty: TypeId) usize {

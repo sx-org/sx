@@ -1674,7 +1674,7 @@ test "integer predicates expand late types into reachable exact-width reads" {
     b.switchToBlock(entry);
     const av = Ref.fromIndex(0);
     const tag = b.structGet(av, 1, .type_value);
-    b.integerSwitchBr(tag, &.{.{ .value = TypeId.i32.index(), .target = exact, .args = &.{} }}, &.{ .{ .signed = true, .target = integer }, .{ .signed = false, .target = integer } }, refuse);
+    b.categorySwitchBr(tag, &.{.{ .value = TypeId.i32.index(), .target = exact, .args = &.{} }}, &.{.{ .category = .int, .target = integer }}, refuse);
     b.switchToBlock(exact);
     b.ret(b.constInt(71, .i64), .i64);
     b.switchToBlock(integer);

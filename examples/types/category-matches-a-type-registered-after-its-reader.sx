@@ -1,0 +1,17 @@
+@import "modules/std.sx";
+
+kind :: (a: any) -> i64 { match a { case struct: { 1 } else: { 100 } } }
+classify :: (a: any) -> bool { a is struct }
+
+walk :: () -> i64 {
+    Early :: struct { p: i64; }
+    early := Early{p = 1};
+    first := kind(early) + (if classify(early) then 10 else 0);
+    Late :: struct { q: i64; }
+    late := Late{q = 2};
+    first * 100 + kind(late) + (if classify(late) then 10 else 0)
+}
+
+C :: @run walk();
+
+main :: () { print("struct={} {}\n", C, walk()); }

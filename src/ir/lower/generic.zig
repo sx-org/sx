@@ -1087,51 +1087,16 @@ pub fn mangleTypeName(self: *Lowering, ty: TypeId) []const u8 {
     return self.genericResolver().mangleTypeName(ty);
 }
 
-/// A container type built over `.unresolved` — `[]unresolved`, `*unresolved`.
-/// No runtime value can have such a type: `.unresolved` is the sentinel for a
-/// resolution that failed, so the container is an artifact of a partially
-/// resolved signature, not something a `case slice:` arm could ever receive.
-/// The category scan skips these; without that, a type-category dispatch
-/// stamps a monomorphized body whose element type is `.unresolved` and the
-/// backend panics on it instead of any error being reported.
-fn hasUnresolvedElement(info: types.TypeInfo) bool {
-    return switch (info) {
-        .slice => |s| s.element == .unresolved,
-        .array => |a| a.element == .unresolved,
-        .many_pointer => |m| m.element == .unresolved,
-        .pointer => |p| p.pointee == .unresolved,
-        .optional => |o| o.child == .unresolved,
-        .closure => |c| blk: {
-            if (c.ret == .unresolved) break :blk true;
-            for (c.params) |p| {
-                if (p == .unresolved) break :blk true;
-            }
-            break :blk false;
-        },
-        else => false,
-    };
-}
-
 /// Resolve type category names (like "int", "struct", "float") to matching TypeId tag values.
 /// Returns a list of TypeId index values that match the category.
 pub fn resolveTypeCategoryTags(self: *Lowering, name: []const u8) []const u64 {
     var tags = std.ArrayList(u64).empty;
 
-    if (std.mem.eql(u8, name, "int")) {
+    if (std.meta.stringToEnum(types.TypeCategory, name)) |category| {
         for (0..self.module.types.infos.items.len) |idx| {
-            if (self.module.types.integerLayout(TypeId.fromIndex(@intCast(idx))) != null)
+            if (self.module.types.inCategory(TypeId.fromIndex(@intCast(idx)), category))
                 tags.append(self.alloc, @intCast(idx)) catch {};
         }
-        return tags.items;
-    }
-    // `signed` / `unsigned` partition `int`; neither reaches a float.
-    if (std.mem.eql(u8, name, "signed") or std.mem.eql(u8, name, "unsigned")) {
-        const want_unsigned = std.mem.eql(u8, name, "unsigned");
-        for (resolveTypeCategoryTags(self, "int")) |t| {
-            if (self.module.types.isUnsignedInt(TypeId.fromIndex(@intCast(t))) == want_unsigned)
-                tags.append(self.alloc, t) catch {};
-        }
-        return tags.items;
     }
     if (std.mem.eql(u8, name, "float")) {
         tags.append(self.alloc, TypeId.f32.index()) catch {};
@@ -1163,54 +1128,6 @@ pub fn resolveTypeCategoryTags(self: *Lowering, name: []const u8) []const u64 {
         // an Any holding a Type.
         tags.append(self.alloc, TypeId.type_value.index()) catch {};
         return tags.items;
-    }
-
-    // Dynamic categories: scan TypeTable for matching types
-    const Category = enum { @"struct", @"enum", @"union", slice, array, pointer, vector, optional, @"error", closure };
-    const cat: ?Category = if (std.mem.eql(u8, name, "struct"))
-        .@"struct"
-    else if (std.mem.eql(u8, name, "enum"))
-        .@"enum"
-    else if (std.mem.eql(u8, name, "union"))
-        .@"union"
-    else if (std.mem.eql(u8, name, "slice"))
-        .slice
-    else if (std.mem.eql(u8, name, "array"))
-        .array
-    else if (std.mem.eql(u8, name, "pointer"))
-        .pointer
-    else if (std.mem.eql(u8, name, "vector"))
-        .vector
-    else if (std.mem.eql(u8, name, "optional"))
-        .optional
-    else if (std.mem.eql(u8, name, "error"))
-        .@"error"
-    else if (std.mem.eql(u8, name, "closure"))
-        .closure
-    else
-        null;
-
-    if (cat) |c| {
-        for (self.module.types.infos.items, 0..) |info, idx| {
-            const matches = switch (c) {
-                // Disjoint from `interface`: an interface handle is backed by
-                // a struct in the type table, and only the interface word
-                // names it.
-                .@"struct" => info == .@"struct" and !info.@"struct".is_protocol,
-                .@"enum" => info == .@"enum",
-                .@"union" => info == .@"union",
-                .slice => info == .slice,
-                .array => info == .array,
-                .pointer => info == .pointer or info == .many_pointer,
-                .vector => info == .vector,
-                .optional => info == .optional,
-                .@"error" => info == .@"error",
-                .closure => info == .closure,
-            };
-            if (matches and !hasUnresolvedElement(info)) {
-                tags.append(self.alloc, @intCast(idx)) catch {};
-            }
-        }
     }
 
     // Specific type name (e.g., Point, Color) — look up in type registry

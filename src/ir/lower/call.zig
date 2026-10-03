@@ -3904,18 +3904,18 @@ fn boxedAs(self: *Lowering, av: Ref, dst: TypeId, span: ast.Span) Ref {
         srcs.append(self.alloc, s) catch return Ref.none;
         blocks.append(self.alloc, bb) catch return Ref.none;
     }
-    var integer_cases = std.ArrayList(inst_mod.SwitchBranch.IntegerCase).empty;
+    var integer_cases = std.ArrayList(inst_mod.SwitchBranch.CategoryCase).empty;
     defer integer_cases.deinit(self.alloc);
     for ([_]TypeId{ .i64, .u64 }) |word| {
         if (!boxedAsConverts(self, word, dst)) continue;
         const bb = self.freshBlock("as.integer");
-        integer_cases.append(self.alloc, .{ .signed = word == .i64, .target = bb }) catch return Ref.none;
+        integer_cases.append(self.alloc, .{ .category = if (word == .i64) .signed else .unsigned, .target = bb }) catch return Ref.none;
     }
-    b.integerSwitchBr(type_word, cases.items, integer_cases.items, refuse_bb);
+    b.categorySwitchBr(type_word, cases.items, integer_cases.items, refuse_bb);
     for (integer_cases.items) |case| {
         b.switchToBlock(case.target);
         const args = self.alloc.dupe(Ref, &.{av}) catch return Ref.none;
-        const word: TypeId = if (case.signed) .i64 else .u64;
+        const word: TypeId = if (case.category == .signed) .i64 else .u64;
         const loaded = b.callBuiltin(.read_integer, args, word);
         b.store(slot, self.coerceExplicit(loaded, word, dst));
         b.br(merge_bb, &.{});

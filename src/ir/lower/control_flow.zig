@@ -1293,6 +1293,13 @@ fn categoryCapture(self: *Lowering, pat: *const Node, subject: Ref, tags: []cons
     return .{ .ref = subject, .ty = .any };
 }
 
+/// Route an arm's category to `target` for the types its lowering-time tag set
+/// misses: those registered after this match lowers.
+fn appendCategoryCase(self: *Lowering, category_cases: *std.ArrayList(inst_mod.SwitchBranch.CategoryCase), name: []const u8, target: BlockId) void {
+    const category = std.meta.stringToEnum(types.TypeCategory, name) orelse return;
+    category_cases.append(self.alloc, .{ .category = category, .target = target }) catch unreachable;
+}
+
 /// Append the switch case dispatching `value` to `target`, unless an earlier
 /// arm already claims that value — the second arm can never run, and one
 /// integer carrying two cases is invalid IR.
@@ -1569,25 +1576,13 @@ pub fn lowerMatch(self: *Lowering, node: *const Node, demand: lower_stmt.TailDem
         arm_blocks.append(self.alloc, self.freshBlock("match.arm")) catch unreachable;
     }
 
-    var integer_cases = std.ArrayList(inst_mod.SwitchBranch.IntegerCase).empty;
-    defer integer_cases.deinit(self.alloc);
+    var category_cases = std.ArrayList(inst_mod.SwitchBranch.CategoryCase).empty;
+    defer category_cases.deinit(self.alloc);
     if (is_any_switch or is_type_match) {
         for (me.arms) |arm| {
             if (arm.pattern) |pat| {
                 if (pat.data == .call) _ = self.resolveTypeArg(pat);
             }
-        }
-        for (me.arms, 0..) |arm, i| {
-            const pat = arm.pattern orelse continue;
-            const name: []const u8 = switch (pat.data) {
-                .identifier => |id| id.name,
-                .type_expr => |te| te.name,
-                else => "",
-            };
-            if (std.mem.eql(u8, name, "signed") or std.mem.eql(u8, name, "int"))
-                integer_cases.append(self.alloc, .{ .signed = true, .target = arm_blocks.items[i] }) catch unreachable;
-            if (std.mem.eql(u8, name, "unsigned") or std.mem.eql(u8, name, "int"))
-                integer_cases.append(self.alloc, .{ .signed = false, .target = arm_blocks.items[i] }) catch unreachable;
         }
     }
 
@@ -1656,6 +1651,7 @@ pub fn lowerMatch(self: *Lowering, node: *const Node, demand: lower_stmt.TailDem
             }
             const raw_tags: []const u64 = blk_rt: {
                 if (cat_name.len > 0 and Lowering.isRuntimeCategoryName(cat_name)) {
+                    appendCategoryCase(self, &category_cases, cat_name, arm_blocks.items[i]);
                     break :blk_rt self.resolveTypeCategoryTags(cat_name);
                 }
                 switch (pat.data) {
@@ -1758,8 +1754,10 @@ pub fn lowerMatch(self: *Lowering, node: *const Node, demand: lower_stmt.TailDem
                         // types registered), which must not fall through
                         // to the type resolver's unknown-name error.
                         .proceed => {
-                            if (Lowering.isRuntimeCategoryName(name))
+                            if (Lowering.isRuntimeCategoryName(name)) {
+                                appendCategoryCase(self, &category_cases, name, arm_blocks.items[i]);
                                 break :blk_tv self.resolveTypeCategoryTags(name);
+                            }
                         },
                     }
                 }
@@ -1938,7 +1936,7 @@ pub fn lowerMatch(self: *Lowering, node: *const Node, demand: lower_stmt.TailDem
         };
         break :blk self.builder.enumTag(subject, tag_ty);
     };
-    self.builder.integerSwitchBr(tag, cases.items, integer_cases.items, default_bb.?);
+    self.builder.categorySwitchBr(tag, cases.items, category_cases.items, default_bb.?);
 
     // Arms are alternatives, not a sequence: each starts from the facts holding
     // at the `match`, and only the arms that reach `merge_bb` say what holds

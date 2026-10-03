@@ -690,11 +690,12 @@ pub const SwitchBranch = struct {
     default: BlockId,
     default_args: []const Ref,
     // Predicates interpret the operand as a TypeId, after concrete cases,
-    // in first-wins order. Their destinations have no block parameters.
-    integer_cases: []const IntegerCase = &.{},
+    // in first-wins order, over the table the program ends with. Their
+    // destinations have no block parameters.
+    category_cases: []const CategoryCase = &.{},
 
-    pub const IntegerCase = struct {
-        signed: bool,
+    pub const CategoryCase = struct {
+        category: types.TypeCategory,
         target: BlockId,
     };
 
