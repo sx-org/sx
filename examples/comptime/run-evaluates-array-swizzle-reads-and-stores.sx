@@ -1,0 +1,11 @@
+@import "modules/std.sx";
+
+probe :: () -> i64 {
+    a: [4]i64 = .[10, 20, 30, 40];
+    a.yx = .[7, 8];
+    a.x * 100 + a.y * 10 + a.len
+}
+
+Folded :: @run probe();
+
+main :: () { print("{} {}\n", Folded, probe()); }
