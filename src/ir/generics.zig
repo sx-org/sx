@@ -330,10 +330,13 @@ pub const GenericResolver = struct {
         return type_bridge.typeInfoProjection(aliased) != null;
     }
 
-    /// A call whose `Type` result is a runtime value (`@typeOf` of an `any`)
-    /// fills a type slot but binds nothing at the call.
+    /// A runtime `Type` value — `@typeOf` of an `any`, or a member type
+    /// projected from one — fills a type slot but binds nothing at the call.
     fn argIsRuntimeType(self: GenericResolver, arg: *const Node) bool {
-        return arg.data == .call and !self.l.isStaticTypeArg(arg);
+        return switch (arg.data) {
+            .call, .field_access => !self.l.isStaticTypeArg(arg),
+            else => false,
+        };
     }
 
     /// Build the `$T → concrete TypeId` bindings for a generic call site.

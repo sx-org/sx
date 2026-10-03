@@ -1,12 +1,16 @@
-// `@typeInfo(@typeOf(a))` over an `any` reads the boxed value's record in
-// place, under `@run` and at run time.
+// `@typeInfo` over a runtime `Type` spelled in place — `@typeOf(a)` of an
+// `any`, or a member type projected from it — reads the boxed value's record,
+// under `@run` and at run time.
 
 @import "modules/std.sx";
+
+Pair :: struct { lo: @int(23, .signed); hi: bool; }
 
 read :: (a: any) -> i64 { @as(i64, a) }
 signed :: (a: any) -> bool { a is signed }
 integer :: (a: any) -> bool { @typeOf(a) is int }
 info :: (a: any) -> i64 { @typeInfo(@typeOf(a)).int.bits }
+member :: (a: any) -> i64 { @typeInfo(@typeInfo(@typeOf(a)).struct.fields[0].type).int.bits }
 
 walk :: () -> i64 {
     b: i64 = 2;
@@ -15,6 +19,7 @@ walk :: () -> i64 {
     a: any = x;
     @assert(read(a) == -6 and signed(a) and integer(a) and info(a) == 23);
     @assert(!integer(true) and !signed(true));
+    @assert(member(Pair{ lo = x, hi = true }) == 23);
     read(a)
 }
 
