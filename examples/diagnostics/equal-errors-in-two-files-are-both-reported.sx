@@ -1,0 +1,6 @@
+// A division by zero is a located compile error in every file that holds one,
+// including two files with the same error at the same offset.
+a :: @import "equal-errors-in-two-files-are-both-reported/a.sx";
+b :: @import "equal-errors-in-two-files-are-both-reported/b.sx";
+
+main :: () -> i32 { return a.K + b.K; }

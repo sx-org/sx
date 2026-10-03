@@ -358,3 +358,20 @@ test "render: compact style still available behind the flag" {
 
     try testing.expectEqualStrings("c.sx:1:1: error: compact error\n", result.items);
 }
+
+test "diagnostic identity includes its source file" {
+    var dl = errors.DiagnosticList.init(testing.allocator, "x", "main.sx");
+    defer dl.deinit();
+    const span = Span{ .start = 0, .end = 1 };
+    const root = dl.addId(.err, "same message", span);
+    dl.current_source_file = "main.sx";
+    try testing.expectEqual(root, dl.addId(.err, "same message", span));
+    dl.current_source_file = "a.sx";
+    const a = dl.addId(.err, "same message", span);
+    dl.current_source_file = "b.sx";
+    const b = dl.addId(.err, "same message", span);
+    try testing.expectEqual(b, dl.addId(.err, "same message", span));
+    try testing.expectEqual(@as(usize, 3), dl.errorCount());
+    try testing.expectEqualStrings("a.sx", dl.items.items[a].source_file.?);
+    try testing.expectEqualStrings("b.sx", dl.items.items[b].source_file.?);
+}
