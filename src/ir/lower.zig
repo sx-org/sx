@@ -1104,6 +1104,8 @@ pub const Lowering = struct {
     ///
     /// The partition is total, and `slot` exists exactly for `value`:
     ///   - a material value, tuple or error set → `value`
+    ///   - a return-position callable binder    → `callable`: the join's one
+    ///     parameter, typed by the first exit that hands a value back
     ///   - `void`                               → `unit`
     ///   - a return type that never resolved    → `poison`
     ///   - `noreturn`                           → `diverges`
@@ -1111,6 +1113,7 @@ pub const Lowering = struct {
         ret_ty: TypeId,
         dest: union(enum) {
             value: struct { slot: Ref, join: BlockId },
+            callable: BlockId,
             unit: BlockId,
             poison: BlockId,
             diverges,
