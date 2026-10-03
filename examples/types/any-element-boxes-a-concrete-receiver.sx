@@ -1,0 +1,11 @@
+@import "modules/std.sx";
+
+second :: () -> i64 {
+    xs: [2]i32 = .[1, 2];
+    e := @anyElement(i32, xs, 1);
+    e.(i32).(i64)
+}
+
+C :: @run second();
+
+main :: () { print("element={} {}\n", C, second()); }
