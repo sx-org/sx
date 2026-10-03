@@ -1089,11 +1089,12 @@ pub const Vm = struct {
             .struct_init => |agg| {
                 const table = try self.requireTable();
                 const sty = ins.ty;
-                // A slice and `any` are TWO-WORD aggregates (`{ptr@0, len@8}` /
-                // `{tag@0, value@8}`) — a literal like `.{ ptr = p, len = n }`
-                // struct_inits one. Lay each operand as an 8-byte word; the
-                // other builtins have no aggregate literal form.
-                if (sty == .any or table.sliceInfoOf(sty) != null) {
+                // A slice, `any` and a closure are TWO-WORD aggregates
+                // (`{ptr@0, len@8}` / `{tag@0, value@8}` / `{fnPtr@0, env@8}`) —
+                // a literal like `.{ ptr = p, len = n }` struct_inits one. Lay
+                // each operand as an 8-byte word; the other builtins have no
+                // aggregate literal form.
+                if (sty == .any or table.sliceInfoOf(sty) != null or table.get(sty) == .closure) {
                     const a = self.machine.allocBytes(16, 8);
                     for (agg.fields, 0..) |fr, i| {
                         if (i >= 2) break;
@@ -3007,8 +3008,9 @@ pub const Vm = struct {
     /// How a value of type `ty` is held: a register word (scalar, pointer,
     /// func-ref, enum tag, error tag, pointer-child or high-bit optional) or
     /// by-address in comptime memory (struct, array, tuple, slice, string,
-    /// `any`, payload enum, any other optional). Everything else — `void`,
-    /// `noreturn`, `unresolved`, vectors — is `.unsupported`.
+    /// `{fnPtr, env}` closure, `any`, payload enum, any other optional).
+    /// Everything else — `void`, `noreturn`, `unresolved`, vectors — is
+    /// `.unsupported`.
     const Kind = enum { word, aggregate, unsupported };
 
     /// The bytes a word-kind value occupies at its address: the type's size,
@@ -3036,7 +3038,7 @@ pub const Vm = struct {
             // a struct) — same as the `enum_init` write path.
             .@"enum" => |e| if (e.hasPayload()) .aggregate else .word,
             .@"error" => .word, // the error channel is a u32 tag id — a word
-            .@"struct", .array, .slice, .failable => .aggregate,
+            .@"struct", .array, .slice, .failable, .closure => .aggregate,
             // `?T`: a one-word sentinel child is null-as-0 and a high-bit
             // optional is its storage word (word); else `{T, i1}` by-address.
             .optional => |o| if (optChildIsPtr(table, o.child) or table.optionalShape(o.child) == .high_bit) .word else .aggregate,
@@ -3189,11 +3191,11 @@ pub const Vm = struct {
     /// matches the table's size computation. A string/slice is a `{ptr@0, len@8}`
     /// fat pointer (the `makeSlice` layout), accessed by field 0 (ptr) / 1 (len).
     fn fieldOffset(table: *const types.TypeTable, sty: TypeId, idx: u32) Addr {
-        // string/slice `{ptr@0, len@8}` and the boxed Any `{type_tag@0, value@8}`
-        // share the same two-8-byte-field layout.
+        // string/slice `{ptr@0, len@8}`, the boxed Any `{type_tag@0, value@8}` and
+        // a closure `{fnPtr@0, env@8}` share the same two-8-byte-field layout.
         if (sty == .any) return if (idx == 0) 0 else 8;
         switch (table.get(sty)) {
-            .slice => return if (idx == 0) 0 else 8,
+            .slice, .closure => return if (idx == 0) 0 else 8,
             .optional => |o| return if (idx == 0) 0 else table.typeSizeBytes(o.child),
             .failable => |f| {
                 const n = table.failableValueSlotCount(f);
