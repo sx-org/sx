@@ -322,14 +322,14 @@ fn bindConditionPayload(self: *Lowering, cond: LoweredCondition, name: []const u
     }
 }
 
-fn contextualArmType(self: *Lowering, inferred: TypeId) TypeId {
+fn contextualArmType(self: *Lowering, node: *const Node, inferred: TypeId) TypeId {
     // A cast converts the merged value; its operand keeps its inferred type.
-    if (self.cast_operand != null) return inferred;
+    if (self.cast_reached == node) return inferred;
     const target = self.target_type orelse return inferred;
     // A `null` arm lifted the join to `?T`; the context decides `T`.
     if (!inferred.isBuiltin() and self.module.types.get(inferred) == .optional) {
         const child = self.module.types.get(inferred).optional.child;
-        const decided = contextualArmType(self, child);
+        const decided = contextualArmType(self, node, child);
         return if (decided == child) inferred else self.module.types.optionalOf(decided);
     }
     if (self.isIntEx(inferred)) if (self.integerContext(target)) |ty| return ty;
@@ -449,7 +449,7 @@ pub fn lowerIfExpr(self: *Lowering, node: *const Node, demand: lower_stmt.TailDe
         if (t == .unresolved and self.cast_reached != node) {
             if (self.target_type) |tt| t = tt;
         }
-        t = contextualArmType(self, t);
+        t = contextualArmType(self, node, t);
 
         // Optional lift: a value `if` must produce an OPTIONAL
         // when the arms demand it — otherwise a `null` arm is coerced in a
@@ -1553,7 +1553,7 @@ pub fn lowerMatch(self: *Lowering, node: *const Node, demand: lower_stmt.TailDem
         }
     }
     const is_value = if (error_only) false else if (is_type_match) self.force_block_value else (self.force_block_value or (inferred_result != .void and inferred_result != .unresolved));
-    var result_type: TypeId = if (is_value) contextualArmType(self, inferred_result) else .void;
+    var result_type: TypeId = if (is_value) contextualArmType(self, node, inferred_result) else .void;
     // A fully-diverging match (`result_type == .noreturn` — every arm
     // `return`s / `raise`s / etc.) produces no value, so it builds no
     // merge phi; its arms terminate and the merge block is unreachable.
