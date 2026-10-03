@@ -50,7 +50,7 @@ isNonFinite :: (bits: i64) -> bool {
 // multiply with room to spare.
 //
 // 96 limbs span 2688 bits. The widest value either conversion forms is
-// `toF64`'s scaled divisor at the full digit cap, about 2592 bits.
+// `toF64`'s scaled dividend at the full digit cap, about 2582 bits.
 
 private LIMB_BITS :: 28;
 private LIMB_MASK :: 0xFFFFFFF;
@@ -87,6 +87,9 @@ Nat :: struct {
 
     isZero :: (self: *Nat) -> bool { self.n == 0 }
 
+    // Limb `i`, zero past the significant ones.
+    limb :: (self: *Nat, i: i64) -> i64 { if i < self.n then self.limbs[i] else 0 }
+
     // Position of the highest set bit, counted from one; 0 for zero.
     bitLen :: (self: *Nat) -> i64 {
         if self.n == 0 { return 0; }
@@ -109,6 +112,17 @@ Nat :: struct {
         0
     }
 
+    // Whether `self` is at least `o * 2^(28 j)`.
+    reaches :: (self: *Nat, o: *Nat, j: i64) -> bool {
+        if self.n != o.n + j { return self.n > o.n + j; }
+        i := o.n;
+        while i > 0 {
+            i -= 1;
+            if self.limbs[j + i] != o.limbs[i] { return self.limbs[j + i] > o.limbs[i]; }
+        }
+        true
+    }
+
     add :: (self: *Nat, o: *Nat) {
         len := if self.n > o.n then self.n else o.n;
         carry := 0;
@@ -125,15 +139,22 @@ Nat :: struct {
         if carry != 0 { self.limbs[self.n] = carry; self.n += 1; }
     }
 
-    // `o` must not exceed `self`.
-    sub :: (self: *Nat, o: *Nat) {
+    // Subtract `o * m * 2^(28 j)`, which must not exceed `self`. `m` must
+    // be positive and fit in one limb.
+    subMul :: (self: *Nat, o: *Nat, m: i64, j: i64) {
         borrow := 0;
         i := 0;
-        while i < self.n {
-            b := if i < o.n then o.limbs[i] else 0;
-            v := self.limbs[i] - b - borrow;
-            if v < 0 { v += LIMB_BASE; borrow = 1; } else { borrow = 0; }
-            self.limbs[i] = v;
+        while i < o.n {
+            v := self.limbs[j + i] - o.limbs[i] * m - borrow;
+            self.limbs[j + i] = v & LIMB_MASK;
+            borrow = 0 - (v >> LIMB_BITS);
+            i += 1;
+        }
+        i = j + o.n;
+        while borrow != 0 {
+            v := self.limbs[i] - borrow;
+            self.limbs[i] = v & LIMB_MASK;
+            borrow = 0 - (v >> LIMB_BITS);
             i += 1;
         }
         while self.n > 0 and self.limbs[self.n - 1] == 0 { self.n -= 1; }
@@ -193,18 +214,6 @@ Nat :: struct {
         }
     }
 
-    shr1 :: (self: *Nat) {
-        carry := 0;
-        i := self.n;
-        while i > 0 {
-            i -= 1;
-            v := self.limbs[i];
-            self.limbs[i] = (v >> 1) | (carry << (LIMB_BITS - 1));
-            carry = v & 1;
-        }
-        while self.n > 0 and self.limbs[self.n - 1] == 0 { self.n -= 1; }
-    }
-
     mulPow5 :: (self: *Nat, k: i64) {
         r := k;
         while r >= POW5_STEP { self.mulSmall(POW5[POW5_STEP]); r -= POW5_STEP; }
@@ -217,18 +226,28 @@ Nat :: struct {
     }
 }
 
-// `floor(num / den)` as an integer of at most `qbits` bits, which the
-// callers size so the quotient fits. `num` is left holding the
-// remainder and `work` is scratch.
-private divide :: (num: *Nat, den: *Nat, qbits: i64, work: *Nat) -> i64 {
-    work.copyFrom(den);
-    work.shl(qbits - 1);
+// `floor(num / (den * 2^(28 j)))`, which must fit in one limb, taken
+// out of `num`. The guess from the top limbs never overshoots, and it
+// falls at most two short when `den`'s top limb has its high bit set.
+private divideLimb :: (num: *Nat, den: *Nat, j: i64) -> i64 {
+    n := den.n;
+    q := (num.limb(j + n) * LIMB_BASE + num.limb(j + n - 1)) / (den.limbs[n - 1] + 1);
+    if q > 0 { num.subMul(den, q, j); }
+    while num.reaches(den, j) { num.subMul(den, 1, j); q += 1; }
+    q
+}
+
+// `floor(num / den)`, which must fit in i64. `num` is left holding the
+// remainder, `num` and `den` both scaled by one power of two.
+private divide :: (num: *Nat, den: *Nat) -> i64 {
+    sh := LIMB_BITS - intBitLen(den.limbs[den.n - 1]);
+    num.shl(sh);
+    den.shl(sh);
     q := 0;
-    i := qbits;
-    while i > 0 {
-        i -= 1;
-        if num.cmp(work) >= 0 { num.sub(work); q = q | (1 << i); }
-        work.shr1();
+    j := num.n - den.n;
+    while j >= 0 {
+        q = (q << LIMB_BITS) | divideLimb(num, den, j);
+        j -= 1;
     }
     q
 }
@@ -298,7 +317,7 @@ toF64 :: (sig: *Significand, exp10: i64) -> f64 {
     // Divide out 2^e, leaving `q + num/den` with q under 2^54.
     shift := scale - e;
     if shift >= 0 { num.shl(shift); } else { den.shl(0 - shift); }
-    q := divide(*num, *den, 55, *work);
+    q := divide(*num, *den);
 
     if q >= (1 << 53) {
         // The bracket landed one binary place low; the bit dropped here
@@ -406,13 +425,17 @@ shortest :: (f: f64) -> Decimal {
         r.mulSmall(10); mm.mulSmall(10); mp.mulSmall(10); k -= 1;
     }
 
+    // One scale for all four leaves every comparison as it was, and sets
+    // the high bit of `s`'s top limb for `divideLimb`.
+    sh := LIMB_BITS - intBitLen(s.limbs[s.n - 1]);
+    r.shl(sh); s.shl(sh); mm.shl(sh); mp.shl(sh);
+
     n := 0;
     p := 0;
     emitting := true;
     while emitting {
         r.mulSmall(10); mm.mulSmall(10); mp.mulSmall(10);
-        d := 0;
-        while r.cmp(*s) >= 0 { r.sub(*s); d += 1; }
+        d := divideLimb(*r, *s, 0);
         cl := r.cmp(*mm);
         low := if inclusive then cl <= 0 else cl < 0;
         high := reachesUpper(*r, *mp, *s, inclusive, *work);
