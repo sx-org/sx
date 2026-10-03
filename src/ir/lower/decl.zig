@@ -1334,6 +1334,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
         if (!recv_is_agg) continue;
         self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, .{ .value = cd.value, .ty = .i64 });
     }
+    registerCallConsts(self, decls);
     // Pass 2c: the const-alias fixpoint again. Its pass-0a' run can only see
     // the LITERAL consts pass 0 registers; an aggregate const (`C :: S{…}`,
     // `A :: .[…]`) does not reach `module_const_map` until pass 1/2, so an
@@ -1464,6 +1465,46 @@ pub fn registerConstAliases(self: *Lowering, decls: []const *const Node) void {
             changed = true;
         }
     }
+}
+
+/// Fixpoint over the untyped consts whose initializer calls a function
+/// returning a value (`X :: f(1)`) and the aliases naming them. A call
+/// registers once its type resolves, so one typed by an argument naming another
+/// such const waits for it. The stored value node stays the call, so each read
+/// lowers it; a call that never types registers last, untyped, and its read
+/// reports the call's own error.
+fn registerCallConsts(self: *Lowering, decls: []const *const Node) void {
+    var changed = true;
+    while (changed) {
+        changed = false;
+        registerConstAliases(self, decls);
+        for (decls) |decl| {
+            const cd = enterValueCallConst(self, decl) orelse continue;
+            const id = self.declId(.{ .const_decl = cd }, decl.source_file);
+            if (self.program_index.get(.module_const, id) != null) continue;
+            const ty = self.inferExprType(cd.value);
+            if (ty == .unresolved) continue;
+            self.putModuleConst(id, cd.name, .{ .value = cd.value, .ty = ty });
+            changed = true;
+        }
+    }
+    for (decls) |decl| {
+        const cd = enterValueCallConst(self, decl) orelse continue;
+        const id = self.declId(.{ .const_decl = cd }, decl.source_file);
+        if (self.program_index.get(.module_const, id) == null)
+            self.putModuleConst(id, cd.name, .{ .value = cd.value, .ty = .unresolved });
+    }
+}
+
+/// Enter `decl`'s declaration context and answer its const when it is untyped
+/// and its initializer calls a function returning a value.
+fn enterValueCallConst(self: *Lowering, decl: *const Node) ?*const ast.ConstDecl {
+    if (decl.data != .const_decl) return null;
+    const cd = &decl.data.const_decl;
+    if (cd.type_annotation != null or cd.value.data != .call) return null;
+    self.setDeclarationContext(decl);
+    const source = self.current_source_file orelse self.main_file orelse return null;
+    return if (valueMayBindType(self, cd.value, source)) null else cd;
 }
 
 /// Register a typed module-level value constant (`AF_INET :i32: 2`). Run in

@@ -1,0 +1,7 @@
+// A module constant's call initializer is checked where the constant is read:
+// the read constant reports its trailing-block refusal at its initializer, and
+// the unread one is never checked.
+mk :: (v: i64) -> i64 { v }
+Unread :: mk(1) {};
+Read :: mk(2) {};
+main :: () -> i64 { Read }
