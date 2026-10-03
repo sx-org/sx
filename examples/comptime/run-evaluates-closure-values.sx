@@ -2,6 +2,7 @@
 
 dbl :: (x: i64) -> i64 => x * 2;
 apply :: (x: i64, f: Closure(i64) -> i64 = dbl) -> i64 { f(x) }
+thunked :: (f: Closure(i64) -> i64) -> bool { f.fnPtr != null and f.env == null }
 
 persist :: (x: i64) -> i64 {
     n := 40;
@@ -13,5 +14,6 @@ persist :: (x: i64) -> i64 {
 
 Folded :: @run apply(21);
 Persisted :: @run persist(2);
+Thunked :: @run thunked(dbl);
 
-main :: () { print("{} {}\n", Folded, Persisted); }
+main :: () { print("{} {} {}\n", Folded, Persisted, Thunked); }

@@ -3191,11 +3191,11 @@ pub const Vm = struct {
     /// matches the table's size computation. A string/slice is a `{ptr@0, len@8}`
     /// fat pointer (the `makeSlice` layout), accessed by field 0 (ptr) / 1 (len).
     fn fieldOffset(table: *const types.TypeTable, sty: TypeId, idx: u32) Addr {
-        // string/slice `{ptr@0, len@8}` and the boxed Any `{type_tag@0, value@8}`
-        // share the same two-8-byte-field layout.
+        // string/slice `{ptr@0, len@8}`, the boxed Any `{type_tag@0, value@8}` and
+        // a closure `{fnPtr@0, env@8}` share the same two-8-byte-field layout.
         if (sty == .any) return if (idx == 0) 0 else 8;
         switch (table.get(sty)) {
-            .slice => return if (idx == 0) 0 else 8,
+            .slice, .closure => return if (idx == 0) 0 else 8,
             .optional => |o| return if (idx == 0) 0 else table.typeSizeBytes(o.child),
             .failable => |f| {
                 const n = table.failableValueSlotCount(f);
