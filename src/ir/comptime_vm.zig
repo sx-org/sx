@@ -985,7 +985,7 @@ pub const Vm = struct {
             },
             .load => |u| {
                 const table = try self.requireTable();
-                return .{ .value = try self.readField(table, frame.get(u.operand.index()), ins.ty) };
+                return .{ .value = try self.loadValue(table, frame.get(u.operand.index()), ins.ty) };
             },
             .store => |s| {
                 const table = try self.requireTable();
@@ -997,7 +997,7 @@ pub const Vm = struct {
             // is given — so a volatile access is an ordinary load/store here.
             .volatile_load => |u| {
                 const table = try self.requireTable();
-                return .{ .value = try self.readField(table, frame.get(u.operand.index()), ins.ty) };
+                return .{ .value = try self.loadValue(table, frame.get(u.operand.index()), ins.ty) };
             },
             .volatile_store => |s| {
                 const table = try self.requireTable();
@@ -1011,7 +1011,7 @@ pub const Vm = struct {
             // atomics machinery.
             .atomic_load => |a| {
                 const table = try self.requireTable();
-                return .{ .value = try self.readField(table, frame.get(a.ptr.index()), ins.ty) };
+                return .{ .value = try self.loadValue(table, frame.get(a.ptr.index()), ins.ty) };
             },
             .atomic_store => |a| {
                 const table = try self.requireTable();
@@ -1150,7 +1150,7 @@ pub const Vm = struct {
             .index_get => |b| {
                 const table = try self.requireTable();
                 const addr = try self.elemAddr(table, (try self.refTy(ref_types, b.lhs)), frame.get(b.lhs.index()), frame.get(b.rhs.index()), table.typeSizeBytes(ins.ty));
-                return .{ .value = try self.readField(table, addr, ins.ty) };
+                return .{ .value = try self.loadValue(table, addr, ins.ty) };
             },
             .index_gep => |b| {
                 const table = try self.requireTable();
@@ -1551,7 +1551,7 @@ pub const Vm = struct {
             // `p.*` — read the pointee (like `load`); `ins.ty` is the pointee type.
             .deref => |u| {
                 const table = try self.requireTable();
-                return .{ .value = try self.readField(table, frame.get(u.operand.index()), ins.ty) };
+                return .{ .value = try self.loadValue(table, frame.get(u.operand.index()), ins.ty) };
             },
 
             // ── Terminators ─────────────────────────────────────
@@ -1594,18 +1594,13 @@ pub const Vm = struct {
                 try self.machine.writeWord(addr + 8, 8, @as(Reg, ba.source_type.index()));
                 return .{ .value = addr };
             },
-            // any → T: a typed LOAD through the view's data pointer. A word
-            // target reads its scalar bytes; an aggregate target's value IS the
-            // pointed-at address (VM convention: aggregate value = its address).
+            // any → T: a typed LOAD through the view's data pointer.
             .unbox_any => |ua| {
                 const table = try self.requireTable();
                 const base = frame.get(ua.operand.index()); // Addr of the {data, typeId} view
                 const data = try self.machine.readWord(base, 8);
-                switch (kindOf(table, ins.ty)) {
-                    .word => return .{ .value = try self.readField(table, data, ins.ty) },
-                    .aggregate => return .{ .value = data },
-                    .unsupported => return self.failMsg("comptime VM: unbox_any to an unsupported target type"),
-                }
+                if (kindOf(table, ins.ty) == .unsupported) return self.failMsg("comptime VM: unbox_any to an unsupported target type");
+                return .{ .value = try self.loadValue(table, data, ins.ty) };
             },
             // The view's data pointer itself (no load).
             .any_data => |ua| {
@@ -3146,6 +3141,16 @@ pub const Vm = struct {
                 return error.Unsupported;
             },
         };
+    }
+
+    /// Load a value of type `ty` from memory at `addr`: an aggregate is copied to
+    /// fresh memory, so a later store to `addr` leaves the loaded value unchanged.
+    fn loadValue(self: *Vm, table: *const types.TypeTable, addr: Addr, ty: TypeId) Error!Reg {
+        if (kindOf(table, ty) != .aggregate) return self.readField(table, addr, ty);
+        const n = table.typeSizeBytes(ty);
+        const copy = self.machine.allocBytes(n, table.typeAlignBytes(ty));
+        @memcpy(try self.machine.bytes(copy, n), try self.machine.bytes(addr, n));
+        return copy;
     }
 
     /// Write register word `val` (of type `ty`) to comptime address `addr`: a scalar
