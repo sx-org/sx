@@ -118,13 +118,13 @@ if.else.3:                                        ; preds = %if.merge.1
   br i1 %icmpN, label %if.then.5, label %if.else.6
 
 if.merge.4:                                       ; preds = %if.merge.12, %if.then.2
+  %loadN = load { ptr, i64, ptr }, ptr %alloca, align 8
   %loadN = load i64, ptr %allocaN, align 8
-  %igp.ptr14 = getelementptr i8, ptr %allocaN, i64 %loadN
+  %igp.ptr15 = getelementptr i8, ptr %allocaN, i64 %loadN
   %loadN = load i64, ptr %allocaN, align 8
   %subN = sub i64 20, %loadN
-  %si = insertvalue { ptr, i64 } undef, ptr %igp.ptr14, 0
+  %si = insertvalue { ptr, i64 } undef, ptr %igp.ptr15, 0
   %siN = insertvalue { ptr, i64 } %si, i64 %subN, 1
-  %loadN = load { ptr, i64, ptr }, ptr %alloca, align 8
   %sgN = extractvalue { ptr, i64, ptr } %loadN, 0
   %sgN = extractvalue { ptr, i64, ptr } %loadN, 2
   %derefN = load { ptr, ptr }, ptr %sgN, align 8

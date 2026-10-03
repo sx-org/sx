@@ -603,14 +603,6 @@ pub const Lowering = struct {
     /// `lowerExpr` temporarily hide the caller scope for these roots while the
     /// node's source pin remains active through all recursive children.
     authored_call_defaults: std.AutoHashMap(*const Node, AuthoredDefault),
-    /// Named-argument pin (specs: Named Arguments): argument values
-    /// PRE-LOWERED in written order by `mapNamedArgs` when the mapped
-    /// declaration order would displace evaluation. `lowerExpr` returns the
-    /// recorded ref instead of re-lowering the node, so each value evaluates
-    /// exactly once, at its written position. Entries are overwritten by the
-    /// next mapping of the same call node (per monomorphization), never
-    /// consumed across function bodies.
-    precomputed_args: std.AutoHashMap(*const Node, Ref),
     /// The generic-instantiation call-site chain active while a monomorphized
     /// body lowers (outermost first). A `@error` that survives comptime
     /// pruning inside a mono anchors its diagnostic at the OUTERMOST site —
@@ -1507,7 +1499,6 @@ pub const Lowering = struct {
             .alloc = module.alloc,
             .lowered_functions = std.StringHashMap(void).init(module.alloc),
             .authored_call_defaults = std.AutoHashMap(*const Node, AuthoredDefault).init(module.alloc),
-            .precomputed_args = std.AutoHashMap(*const Node, Ref).init(module.alloc),
             .mono_sites = std.ArrayList(DefaultCallSite).empty,
             .fn_decl_fids = std.AutoHashMap(imports_mod.DeclId, FuncId).init(module.alloc),
             .runtime_binding_fids = std.StringHashMap(FuncId).init(module.alloc),
