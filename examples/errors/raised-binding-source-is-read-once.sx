@@ -1,0 +1,92 @@
+// A raised binding's source is read once, however often it is named. Each
+// `if` below names the previous binding twice, and each handler raises its
+// error twice from a boundary that holds the next handler, 32 levels deep.
+@import "modules/std.sx";
+
+BErr :: error { NotFound; }
+
+missing :: () -> ! { raise BErr.NotFound; }
+
+aliases :: (c: bool) -> ! {
+    x0 := missing();
+    x1 := if c { x0 } else { x0 };
+    x2 := if c { x1 } else { x1 };
+    x3 := if c { x2 } else { x2 };
+    x4 := if c { x3 } else { x3 };
+    x5 := if c { x4 } else { x4 };
+    x6 := if c { x5 } else { x5 };
+    x7 := if c { x6 } else { x6 };
+    x8 := if c { x7 } else { x7 };
+    x9 := if c { x8 } else { x8 };
+    x10 := if c { x9 } else { x9 };
+    x11 := if c { x10 } else { x10 };
+    x12 := if c { x11 } else { x11 };
+    x13 := if c { x12 } else { x12 };
+    x14 := if c { x13 } else { x13 };
+    x15 := if c { x14 } else { x14 };
+    x16 := if c { x15 } else { x15 };
+    x17 := if c { x16 } else { x16 };
+    x18 := if c { x17 } else { x17 };
+    x19 := if c { x18 } else { x18 };
+    x20 := if c { x19 } else { x19 };
+    x21 := if c { x20 } else { x20 };
+    x22 := if c { x21 } else { x21 };
+    x23 := if c { x22 } else { x22 };
+    x24 := if c { x23 } else { x23 };
+    x25 := if c { x24 } else { x24 };
+    x26 := if c { x25 } else { x25 };
+    x27 := if c { x26 } else { x26 };
+    x28 := if c { x27 } else { x27 };
+    x29 := if c { x28 } else { x28 };
+    x30 := if c { x29 } else { x29 };
+    x31 := if c { x30 } else { x30 };
+    x32 := if c { x31 } else { x31 };
+    if x32 { raise x32; }
+    return;
+}
+
+nests :: (c: bool) -> ! {
+    try { try { try { try { try { try { try { try {
+    try { try { try { try { try { try { try { try {
+    try { try { try { try { try { try { try { try {
+    try { try { try { try { try { try { try { try {
+    try missing();
+    } catch |e| { if c { raise e; } raise e; };
+    } catch |e| { if c { raise e; } raise e; };
+    } catch |e| { if c { raise e; } raise e; };
+    } catch |e| { if c { raise e; } raise e; };
+    } catch |e| { if c { raise e; } raise e; };
+    } catch |e| { if c { raise e; } raise e; };
+    } catch |e| { if c { raise e; } raise e; };
+    } catch |e| { if c { raise e; } raise e; };
+    } catch |e| { if c { raise e; } raise e; };
+    } catch |e| { if c { raise e; } raise e; };
+    } catch |e| { if c { raise e; } raise e; };
+    } catch |e| { if c { raise e; } raise e; };
+    } catch |e| { if c { raise e; } raise e; };
+    } catch |e| { if c { raise e; } raise e; };
+    } catch |e| { if c { raise e; } raise e; };
+    } catch |e| { if c { raise e; } raise e; };
+    } catch |e| { if c { raise e; } raise e; };
+    } catch |e| { if c { raise e; } raise e; };
+    } catch |e| { if c { raise e; } raise e; };
+    } catch |e| { if c { raise e; } raise e; };
+    } catch |e| { if c { raise e; } raise e; };
+    } catch |e| { if c { raise e; } raise e; };
+    } catch |e| { if c { raise e; } raise e; };
+    } catch |e| { if c { raise e; } raise e; };
+    } catch |e| { if c { raise e; } raise e; };
+    } catch |e| { if c { raise e; } raise e; };
+    } catch |e| { if c { raise e; } raise e; };
+    } catch |e| { if c { raise e; } raise e; };
+    } catch |e| { if c { raise e; } raise e; };
+    } catch |e| { if c { raise e; } raise e; };
+    } catch |e| { if c { raise e; } raise e; };
+    } catch |e| { if c { raise e; } raise e; };
+    return;
+}
+
+main :: () {
+    aliases(true) catch |e| { print("{} {}\n", e, e == .NotFound); };
+    nests(true) catch |e| { print("{} {}\n", e, e == .NotFound); };
+}

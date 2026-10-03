@@ -3775,6 +3775,7 @@ pub const Lowering = struct {
     pub const checkSlotChannel = lower_error.checkSlotChannel;
     pub const literalTagName = lower_error.literalTagName;
     pub const raisedMember = lower_error.raisedMember;
+    pub const raisedChannel = lower_error.raisedChannel;
     pub const emitErrorKeywordMember = lower_error.emitErrorKeywordMember;
     pub const emitAmbiguousMember = lower_error.emitAmbiguousMember;
     pub const lowerErrorMemberConstruction = lower_error.lowerErrorMemberConstruction;
