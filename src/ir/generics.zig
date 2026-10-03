@@ -330,6 +330,12 @@ pub const GenericResolver = struct {
         return type_bridge.typeInfoProjection(aliased) != null;
     }
 
+    /// A call whose `Type` result is a runtime value (`@typeOf` of an `any`)
+    /// fills a type slot but binds nothing at the call.
+    fn argIsRuntimeType(self: GenericResolver, arg: *const Node) bool {
+        return arg.data == .call and !self.l.isStaticTypeArg(arg);
+    }
+
     /// Build the `$T → concrete TypeId` bindings for a generic call site.
     /// Strategy 1: explicit type args (the param named `$T` IS a type
     /// expression). Strategy 2: infer from value params that use `T`
@@ -391,7 +397,7 @@ pub const GenericResolver = struct {
             if (types_passed_explicitly) {
                 for (fd.params, 0..) |param, pi| {
                     if (std.mem.eql(u8, param.name, tp.name)) {
-                        if (pi < args_ast.len and (type_bridge.isTypeShapedAstNode(args_ast[pi], &self.l.module.types) or self.l.isTypeReturningCallNode(args_ast[pi]) or self.l.isGenericTypeConstructorCallNode(args_ast[pi]) or self.argIsBoundTypeParam(args_ast[pi]) or self.argIsAliasedMemberType(args_ast[pi]))) {
+                        if (pi < args_ast.len and !self.argIsRuntimeType(args_ast[pi]) and (type_bridge.isTypeShapedAstNode(args_ast[pi], &self.l.module.types) or self.l.isTypeReturningCallNode(args_ast[pi]) or self.l.isGenericTypeConstructorCallNode(args_ast[pi]) or self.argIsBoundTypeParam(args_ast[pi]) or self.argIsAliasedMemberType(args_ast[pi]))) {
                             const ty = self.l.resolveTypeArg(args_ast[pi]);
                             bindings.put(tp.name, ty) catch {};
                             found = true;
