@@ -4834,7 +4834,11 @@ pub fn lowerDefaultArg(self: *Lowering, fd: *const ast.FnDecl, idx: usize, call_
     // function author's source (resolveDeclParamType owns that pin). The
     // default cannot capture caller locals; contextual values such as
     // `context.allocator` resolve through the implicit context channel.
-    var dem = self.enterDemand(lower_bound.paramDemand(self, fd, idx));
+    // The target is the parameter type under what this call binds.
+    var binding_scope: ?generics_mod.TypeBindingScope = if (own) |b| generics_mod.installTypeBindings(self, b) else null;
+    const demand = lower_bound.paramDemand(self, fd, idx);
+    if (binding_scope) |*bs| bs.exit();
+    var dem = self.enterDemand(demand);
     defer dem.restore();
     const authored = defaultArgAtCall(self, fd, dflt, call_site, own) orelse return null;
     return self.lowerExpr(authored);

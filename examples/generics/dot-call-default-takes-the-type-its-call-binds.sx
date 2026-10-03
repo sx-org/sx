@@ -1,0 +1,14 @@
+// An omitted default of a generic dot call converts to the parameter type the
+// call binds.
+@import "modules/std.sx";
+
+Box :: struct ($T: Type) { v: T; }
+
+dbl :: (x: i64) -> i64 => x * 2;
+
+apply :: ufcs (b: *Box($T), f: Closure(T) -> T = dbl) -> T { return f(b.v); }
+
+main :: () {
+    b : Box(i64) = .{ v = 21 };
+    print("{}\n", b.apply());
+}
