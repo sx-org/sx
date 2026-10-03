@@ -1571,12 +1571,11 @@ pub const Vm = struct {
                 for (sb.cases) |case| {
                     if (operand == case.value) return .{ .jump = .{ .target = case.target, .args = case.args } };
                 }
-                if (sb.integer_cases.len > 0) {
+                if (sb.category_cases.len > 0) {
+                    const table = try self.requireTable();
                     const tid = TypeId.fromIndex(try self.typeIdxOf(@bitCast(operand)));
-                    if ((try self.requireTable()).integerLayout(tid)) |layout| {
-                        for (sb.integer_cases) |case| {
-                            if (layout.signed == case.signed) return .{ .jump = .{ .target = case.target, .args = &.{} } };
-                        }
+                    for (sb.category_cases) |case| {
+                        if (table.inCategory(tid, case.category)) return .{ .jump = .{ .target = case.target, .args = &.{} } };
                     }
                 }
                 return .{ .jump = .{ .target = sb.default, .args = sb.default_args } };

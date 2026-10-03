@@ -3315,7 +3315,7 @@ fn checkInlineExitCell(cell: InlineExitCell) !void {
                     .switch_br => |b| {
                         try std.testing.expect(b.default.index() < func.blocks.items.len);
                         for (b.cases) |case| try std.testing.expect(case.target.index() < func.blocks.items.len);
-                        for (b.integer_cases) |case| {
+                        for (b.category_cases) |case| {
                             try std.testing.expect(case.target.index() < func.blocks.items.len);
                             try std.testing.expectEqual(@as(usize, 0), func.blocks.items[case.target.index()].params.len);
                         }
@@ -3368,7 +3368,7 @@ fn checkInlineExitCell(cell: InlineExitCell) !void {
             .switch_br => |b| blk: {
                 if (b.default.index() == join_idx) break :blk true;
                 for (b.cases) |case| if (case.target.index() == join_idx) break :blk true;
-                for (b.integer_cases) |case| if (case.target.index() == join_idx) break :blk true;
+                for (b.category_cases) |case| if (case.target.index() == join_idx) break :blk true;
                 break :blk false;
             },
             else => false,

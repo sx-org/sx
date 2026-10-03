@@ -3021,15 +3021,15 @@ pub const Ops = struct {
             c.LLVMAddCase(switch_inst, case_val, case_bb);
         }
         self.e.advanceRefCounter();
-        if (sw.integer_cases.len > 0) {
+        if (sw.category_cases.len > 0) {
+            var claimed = std.AutoHashMap(i64, void).init(self.e.alloc);
+            defer claimed.deinit();
+            for (sw.cases) |case| claimed.put(case.value, {}) catch unreachable;
             for (0..self.e.ir_mod.types.infos.items.len) |idx| {
+                if (claimed.contains(@intCast(idx))) continue;
                 const tid = TypeId.fromIndex(@intCast(idx));
-                const layout = self.e.ir_mod.types.integerLayout(tid) orelse continue;
-                var claimed = false;
-                for (sw.cases) |case| claimed = claimed or case.value == @as(i64, @intCast(idx));
-                if (claimed) continue;
-                for (sw.integer_cases) |case| {
-                    if (case.signed != layout.signed) continue;
+                for (sw.category_cases) |case| {
+                    if (!self.e.ir_mod.types.inCategory(tid, case.category)) continue;
                     c.LLVMAddCase(switch_inst, c.LLVMConstInt(c.LLVMTypeOf(operand), idx, 0), self.e.getBlock(func_idx, case.target));
                     break;
                 }

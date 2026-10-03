@@ -1921,12 +1921,12 @@ test "integer switch queries late types after concrete cases and preserves branc
     const entry = fb.block(&.{});
     const value = fb.add(entry, inst(.{ .const_int = 71 }, .i64));
     const concrete = [_]inst_mod.SwitchBranch.Case{.{ .value = TypeId.i32.index(), .target = BlockId.fromIndex(1), .args = &.{ref(value)} }};
-    const categories = [_]inst_mod.SwitchBranch.IntegerCase{
-        .{ .signed = true, .target = BlockId.fromIndex(2) },
-        .{ .signed = true, .target = BlockId.fromIndex(3) },
-        .{ .signed = false, .target = BlockId.fromIndex(3) },
+    const categories = [_]inst_mod.SwitchBranch.CategoryCase{
+        .{ .category = .signed, .target = BlockId.fromIndex(2) },
+        .{ .category = .signed, .target = BlockId.fromIndex(3) },
+        .{ .category = .unsigned, .target = BlockId.fromIndex(3) },
     };
-    _ = fb.add(entry, inst(.{ .switch_br = .{ .operand = ref(0), .cases = &concrete, .integer_cases = &categories, .default = BlockId.fromIndex(1), .default_args = &.{ref(value)} } }, .void));
+    _ = fb.add(entry, inst(.{ .switch_br = .{ .operand = ref(0), .cases = &concrete, .category_cases = &categories, .default = BlockId.fromIndex(1), .default_args = &.{ref(value)} } }, .void));
     const arg_block = fb.block(&.{.i64});
     const arg = fb.add(arg_block, inst(.{ .block_param = .{ .block = BlockId.fromIndex(arg_block), .param_index = 0 } }, .i64));
     _ = fb.add(arg_block, inst(.{ .ret = .{ .operand = ref(arg) } }, .void));

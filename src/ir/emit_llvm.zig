@@ -1848,7 +1848,7 @@ pub const LLVMEmitter = struct {
                     },
                     .switch_br => |sw| {
                         for (sw.cases) |case| self.markReachable(case.target, seen, &stack);
-                        for (sw.integer_cases) |case| self.markReachable(case.target, seen, &stack);
+                        for (sw.category_cases) |case| self.markReachable(case.target, seen, &stack);
                         self.markReachable(sw.default, seen, &stack);
                     },
                     else => {},
