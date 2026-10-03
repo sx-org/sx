@@ -157,9 +157,12 @@ pub const DiagnosticList = struct {
     /// messages under it. On a deduplicated hit the existing index is
     /// returned, so bundling still attaches to the surviving primary.
     pub fn addId(self: *DiagnosticList, level: Level, message: []const u8, span: ?Span) usize {
-        // Deduplicate: skip if same level+span+message already exists
+        // Deduplicate: skip if same level+file+span+message already exists
+        const file = self.current_source_file orelse self.file_name;
         for (self.items.items, 0..) |d, i| {
-            if (d.level == level and std.mem.eql(u8, d.message, message)) {
+            if (d.level == level and std.mem.eql(u8, d.message, message) and
+                std.mem.eql(u8, d.source_file orelse self.file_name, file))
+            {
                 const a = d.span orelse continue;
                 const b = span orelse continue;
                 if (a.start == b.start and a.end == b.end) return i;

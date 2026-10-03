@@ -1,0 +1,11 @@
+error: integer constant divides by zero
+  --> examples/diagnostics/equal-errors-in-two-files-are-both-reported/a.sx:1:6
+   |
+ 1 | K :: 1 / 0;
+   |      ^^^^^
+
+error: integer constant divides by zero
+  --> examples/diagnostics/equal-errors-in-two-files-are-both-reported/b.sx:1:6
+   |
+ 1 | K :: 1 / 0;
+   |      ^^^^^
