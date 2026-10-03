@@ -19,6 +19,7 @@ const Function = inst_mod.Function;
 
 const lower = @import("../lower.zig");
 const lower_bound = @import("bound.zig");
+const lower_decl = @import("decl.zig");
 const lower_open_set = @import("open_set.zig");
 const Lowering = lower.Lowering;
 const Scope = lower.Scope;
@@ -1935,10 +1936,23 @@ fn lowerComptimeCallArgsMode(
     // a `return` it generates is invisible to any pre-scan of the AST — and a
     // body with no exit context of its own emits the CALLER's `ret`.
     const ret_ty = self.resolveReturnType(fd);
-    const inline_exit = classifyInlineExit(self, ret_ty);
+    const binder = lower_decl.callableReturnBinder(fd, ret_ty);
+    const inline_exit = classifyInlineExit(self, ret_ty, binder != null);
     const saved_exit = self.inline_return_target;
     self.inline_return_target = inline_exit;
     defer self.inline_return_target = saved_exit;
+
+    // A return-position callable binder belongs to the body that declares it:
+    // the callee's is fixed by the callee's exits, and an enclosing body's is
+    // not answered by them.
+    const saved_pcr = self.pending_callable_return;
+    const saved_fcr = self.fixed_callable_ret;
+    self.pending_callable_return = binder;
+    self.fixed_callable_ret = null;
+    defer {
+        self.pending_callable_return = saved_pcr;
+        self.fixed_callable_ret = saved_fcr;
+    }
 
     // The inlined body is its own failable body: a `raise` in it exits THAT
     // function, not a `try { … }` boundary the call site happens to sit in.
@@ -1982,6 +1996,11 @@ fn lowerComptimeCallArgsMode(
             self.builder.switchToBlock(v.join);
             return self.builder.load(v.slot, ret_ty);
         },
+        .callable => |join| {
+            self.builder.switchToBlock(join);
+            const fixed = self.fixed_callable_ret orelse return self.builder.constUndef(.unresolved);
+            return self.builder.blockParam(join, 0, fixed);
+        },
         .unit => |join| {
             self.builder.switchToBlock(join);
             return self.builder.constInt(0, .void);
@@ -1999,7 +2018,8 @@ fn lowerComptimeCallArgsMode(
 /// Where an inlined callee's body exits to, read off its resolved return type.
 /// The slot and the join are materialized HERE — at the call position, before
 /// any of the body's control flow exists — so every exit finds them live.
-fn classifyInlineExit(self: *Lowering, ret_ty: TypeId) Lowering.InlineExit {
+fn classifyInlineExit(self: *Lowering, ret_ty: TypeId, binds_from_body: bool) Lowering.InlineExit {
+    if (binds_from_body) return .{ .ret_ty = ret_ty, .dest = .{ .callable = self.freshBlockWithParams("ct.ret_done", &.{ret_ty}) } };
     if (ret_ty == .noreturn) return .{ .ret_ty = ret_ty, .dest = .diverges };
     if (ret_ty == .void) return .{ .ret_ty = ret_ty, .dest = .{ .unit = self.freshBlock("ct.ret_done") } };
     if (ret_ty == .unresolved) return .{ .ret_ty = ret_ty, .dest = .{ .poison = self.freshBlock("ct.ret_done") } };

@@ -1,0 +1,26 @@
+// A callee with a comptime parameter is inlined, and its return-position binder
+// is fixed by its own exits. The binder of the body it is inlined into is not:
+// `outer` hands back the closure, not the `i64` that `bump` returns.
+
+@import "modules/std.sx";
+
+pick :: ($tag: string, up: bool) -> $F/(i64) -> i64 {
+    inc :: (x: i64) -> i64 { x + 1 }
+    dec :: (x: i64) -> i64 { x - 1 }
+    if up { return inc; }
+    dec
+}
+
+bump :: ($tag: string, n: i64) -> i64 { return n + 1; }
+
+outer :: () -> $F/(i64) -> i64 {
+    k := bump("k", 1);
+    return |x: i64|_{ k = k } -> i64 { x + k };
+}
+
+main :: () {
+    f := pick("a", true);
+    g := pick("b", false);
+    h := outer();
+    print("{} {} {}\n", f(41), g(43), h(40));
+}

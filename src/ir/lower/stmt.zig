@@ -449,6 +449,7 @@ pub fn emitBodyExit(self: *Lowering, value: ?Ref, ret_ty: TypeId, form: ExitForm
                 if (carried) |ref| self.builder.store(v.slot, ref);
                 self.builder.br(v.join, &.{});
             },
+            .callable => |join| if (carried) |ref| self.builder.br(join, &.{ref}) else self.builder.br(join, &.{}),
             .unit, .poison => |join| self.builder.br(join, &.{}),
             // A `-> noreturn` body has no continuation to reach: the exit ends
             // where it stands, exactly as the real body's does.
@@ -1399,7 +1400,11 @@ fn fixCallableReturn(self: *Lowering, ret_val: Ref) ?TypeId {
         return fixed;
     }
     self.fixed_callable_ret = ty;
-    self.builder.currentFunc().ret = ty;
+    // While inlining, `currentFunc()` is the caller; the inlined exit is this body's.
+    if (self.inline_return_target) |*exit| {
+        exit.ret_ty = ty;
+        self.setMergeParamType(exit.dest.callable, ty);
+    } else self.builder.currentFunc().ret = ty;
     const bound = Lowering.callableBound(binder) orelse return ty;
     self.checkCallableBound(bound, binder.data.type_expr.name, ty);
     return ty;
