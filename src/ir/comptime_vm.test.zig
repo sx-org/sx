@@ -326,6 +326,185 @@ test "comptime_vm exec: alloca + struct_gep + store + load" {
     try std.testing.expectEqual(@as(i64, 16), toI64(try v.run(&fb.func, &.{})));
 }
 
+test "comptime_vm exec: aggregate copies reuse their memory when a loop or a call executes them again" {
+    const alloc = std.testing.allocator;
+    var module = Module.init(alloc);
+    defer module.deinit();
+    const pfields = [_]types.TypeInfo.StructInfo.Field{
+        .{ .name = module.types.internString("x"), .ty = .i64 },
+        .{ .name = module.types.internString("y"), .ty = .i64 },
+    };
+    const point = module.types.intern(.{ .@"struct" = .{ .name = module.types.internString("Point"), .fields = &pfields } });
+    const pptr = module.types.intern(.{ .pointer = .{ .pointee = point } });
+    const i64ptr = module.types.intern(.{ .pointer = .{ .pointee = .i64 } });
+
+    // fn get(p: *Point) -> Point { return load p }   (FuncId 0)
+    const get_params = [_]Function.Param{param(pptr)};
+    var gb = Fb.init(alloc, &get_params, point);
+    const gb0 = gb.block(&.{});
+    const gl = gb.add(gb0, inst(.{ .load = .{ .operand = ref(0) } }, point));
+    _ = gb.add(gb0, inst(.{ .ret = .{ .operand = ref(gl) } }, .void));
+    const get_id = module.addFunction(gb.func);
+
+    // fn main(n) { p := alloca Point; p.x = 7; acc = 0; i = n; while i > 0 { acc += (load p).x + get(p).x; i -= 1 } return acc }
+    const params = [_]Function.Param{param(.i64)};
+    var fb = Fb.init(alloc, &params, .i64);
+    const loop_p = [_]TypeId{ .i64, .i64 }; // (acc, i)
+    const exit_p = [_]TypeId{.i64}; // (acc)
+
+    const b0 = fb.block(&.{});
+    const p = fb.add(b0, inst(.{ .alloca = .{ .ty = point, .alignment = module.types.typeAlignBytes(point) } }, pptr));
+    const gx = fb.add(b0, inst(.{ .struct_gep = .{ .base = ref(p), .field_index = 0, .base_type = point } }, i64ptr));
+    const c7 = fb.add(b0, inst(.{ .const_int = 7 }, .i64));
+    _ = fb.add(b0, inst(.{ .store = .{ .ptr = ref(gx), .val = ref(c7), .val_ty = .i64 } }, .void));
+    const zero = fb.add(b0, inst(.{ .const_int = 0 }, .i64));
+    _ = fb.add(b0, inst(.{ .br = .{ .target = BlockId.fromIndex(1), .args = &.{ ref(zero), ref(0) } } }, .void));
+
+    const b1 = fb.block(&loop_p);
+    const acc = fb.add(b1, inst(.{ .block_param = .{ .block = BlockId.fromIndex(1), .param_index = 0 } }, .i64));
+    const i = fb.add(b1, inst(.{ .block_param = .{ .block = BlockId.fromIndex(1), .param_index = 1 } }, .i64));
+    const z = fb.add(b1, inst(.{ .const_int = 0 }, .i64));
+    const more = fb.add(b1, inst(.{ .cmp_gt = .{ .lhs = ref(i), .rhs = ref(z) } }, .bool));
+    _ = fb.add(b1, inst(.{ .cond_br = .{ .cond = ref(more), .then_target = BlockId.fromIndex(2), .then_args = &.{}, .else_target = BlockId.fromIndex(3), .else_args = &.{ref(acc)} } }, .void));
+
+    const b2 = fb.block(&.{});
+    const l = fb.add(b2, inst(.{ .load = .{ .operand = ref(p) } }, point));
+    const lx = fb.add(b2, inst(.{ .struct_get = .{ .base = ref(l), .field_index = 0, .base_type = point } }, .i64));
+    const cargs = [_]Ref{ref(p)};
+    const r = fb.add(b2, inst(.{ .call = .{ .callee = get_id, .args = &cargs } }, point));
+    const rx = fb.add(b2, inst(.{ .struct_get = .{ .base = ref(r), .field_index = 0, .base_type = point } }, .i64));
+    const both = fb.add(b2, inst(.{ .add = .{ .lhs = ref(lx), .rhs = ref(rx) } }, .i64));
+    const nacc = fb.add(b2, inst(.{ .add = .{ .lhs = ref(acc), .rhs = ref(both) } }, .i64));
+    const one = fb.add(b2, inst(.{ .const_int = 1 }, .i64));
+    const ni = fb.add(b2, inst(.{ .sub = .{ .lhs = ref(i), .rhs = ref(one) } }, .i64));
+    _ = fb.add(b2, inst(.{ .br = .{ .target = BlockId.fromIndex(1), .args = &.{ ref(nacc), ref(ni) } } }, .void));
+
+    const b3 = fb.block(&exit_p);
+    const res = fb.add(b3, inst(.{ .block_param = .{ .block = BlockId.fromIndex(3), .param_index = 0 } }, .i64));
+    _ = fb.add(b3, inst(.{ .ret = .{ .operand = ref(res) } }, .void));
+    const main_id = module.addFunction(fb.func);
+
+    var capacity: [2]usize = undefined;
+    for ([_]i64{ 1, 1000 }, &capacity) |n, *cap| {
+        var v = vm.Vm.init(alloc);
+        v.table = &module.types;
+        v.module = &module;
+        defer v.deinit();
+        try std.testing.expectEqual(14 * n, toI64(try v.run(module.getFunction(main_id), &.{fromI64(n)})));
+        cap.* = v.machine.arena.queryCapacity();
+    }
+    try std.testing.expectEqual(capacity[0], capacity[1]);
+}
+
+test "comptime_vm exec: a returned aggregate keeps its value when a later call reuses the callee's memory" {
+    const alloc = std.testing.allocator;
+    var module = Module.init(alloc);
+    defer module.deinit();
+    const pfields = [_]types.TypeInfo.StructInfo.Field{
+        .{ .name = module.types.internString("x"), .ty = .i64 },
+        .{ .name = module.types.internString("y"), .ty = .i64 },
+    };
+    const point = module.types.intern(.{ .@"struct" = .{ .name = module.types.internString("Point"), .fields = &pfields } });
+    const pptr = module.types.intern(.{ .pointer = .{ .pointee = point } });
+
+    // fn get(p: *Point) -> Point { return load p }   (FuncId 0)
+    const get_params = [_]Function.Param{param(pptr)};
+    var gb = Fb.init(alloc, &get_params, point);
+    const gb0 = gb.block(&.{});
+    const gl = gb.add(gb0, inst(.{ .load = .{ .operand = ref(0) } }, point));
+    _ = gb.add(gb0, inst(.{ .ret = .{ .operand = ref(gl) } }, .void));
+    const get_id = module.addFunction(gb.func);
+
+    // fn getX(p: *Point) -> i64 { return (load p).x }   (FuncId 1)
+    var xb = Fb.init(alloc, &get_params, .i64);
+    const xb0 = xb.block(&.{});
+    const xl = xb.add(xb0, inst(.{ .load = .{ .operand = ref(0) } }, point));
+    const xx = xb.add(xb0, inst(.{ .struct_get = .{ .base = ref(xl), .field_index = 0, .base_type = point } }, .i64));
+    _ = xb.add(xb0, inst(.{ .ret = .{ .operand = ref(xx) } }, .void));
+    const get_x_id = module.addFunction(xb.func);
+
+    // fn main() { p := alloca Point; q := alloca Point; p = {1, 0}; q = {10, 0}; a := get(p); return a.x + getX(q) }
+    var fb = Fb.init(alloc, &.{}, .i64);
+    const b0 = fb.block(&.{});
+    const p = fb.add(b0, inst(.{ .alloca = .{ .ty = point, .alignment = module.types.typeAlignBytes(point) } }, pptr));
+    const q = fb.add(b0, inst(.{ .alloca = .{ .ty = point, .alignment = module.types.typeAlignBytes(point) } }, pptr));
+    const c1 = fb.add(b0, inst(.{ .const_int = 1 }, .i64));
+    const c10 = fb.add(b0, inst(.{ .const_int = 10 }, .i64));
+    const z = fb.add(b0, inst(.{ .const_int = 0 }, .i64));
+    const pf = [_]Ref{ ref(c1), ref(z) };
+    const ps = fb.add(b0, inst(.{ .struct_init = .{ .fields = &pf } }, point));
+    _ = fb.add(b0, inst(.{ .store = .{ .ptr = ref(p), .val = ref(ps), .val_ty = point } }, .void));
+    const qf = [_]Ref{ ref(c10), ref(z) };
+    const qs = fb.add(b0, inst(.{ .struct_init = .{ .fields = &qf } }, point));
+    _ = fb.add(b0, inst(.{ .store = .{ .ptr = ref(q), .val = ref(qs), .val_ty = point } }, .void));
+    const pargs = [_]Ref{ref(p)};
+    const a = fb.add(b0, inst(.{ .call = .{ .callee = get_id, .args = &pargs } }, point));
+    const qargs = [_]Ref{ref(q)};
+    const bx = fb.add(b0, inst(.{ .call = .{ .callee = get_x_id, .args = &qargs } }, .i64));
+    const ax = fb.add(b0, inst(.{ .struct_get = .{ .base = ref(a), .field_index = 0, .base_type = point } }, .i64));
+    const sum = fb.add(b0, inst(.{ .add = .{ .lhs = ref(ax), .rhs = ref(bx) } }, .i64));
+    _ = fb.add(b0, inst(.{ .ret = .{ .operand = ref(sum) } }, .void));
+    const main_id = module.addFunction(fb.func);
+
+    var v = vm.Vm.init(alloc);
+    v.table = &module.types;
+    v.module = &module;
+    defer v.deinit();
+    try std.testing.expectEqual(@as(i64, 11), toI64(try v.run(module.getFunction(main_id), &.{})));
+}
+
+test "comptime_vm exec: an aggregate block param keeps its value when its argument's load re-executes" {
+    const alloc = std.testing.allocator;
+    var table = types.TypeTable.init(alloc);
+    defer table.deinit();
+    const pfields = [_]types.TypeInfo.StructInfo.Field{
+        .{ .name = table.internString("x"), .ty = .i64 },
+        .{ .name = table.internString("y"), .ty = .i64 },
+    };
+    const point = table.intern(.{ .@"struct" = .{ .name = table.internString("Point"), .fields = &pfields } });
+    const pptr = table.intern(.{ .pointer = .{ .pointee = point } });
+
+    // a := alloca Point; a = {1, 0}
+    // loop(prev = load a): x = prev.x; a = {x + 10, 0}; next = load a; if x > 5 { return prev.x } loop(next)
+    // → 11: the second pass reloads next = {21, 0} before the exit reads prev.x
+    var fb = Fb.init(alloc, &.{}, .i64);
+    defer fb.deinit();
+    const loop_p = [_]TypeId{point};
+
+    const b0 = fb.block(&.{});
+    const a = fb.add(b0, inst(.{ .alloca = .{ .ty = point, .alignment = table.typeAlignBytes(point) } }, pptr));
+    const c1 = fb.add(b0, inst(.{ .const_int = 1 }, .i64));
+    const z0 = fb.add(b0, inst(.{ .const_int = 0 }, .i64));
+    const f0 = [_]Ref{ ref(c1), ref(z0) };
+    const s0 = fb.add(b0, inst(.{ .struct_init = .{ .fields = &f0 } }, point));
+    _ = fb.add(b0, inst(.{ .store = .{ .ptr = ref(a), .val = ref(s0), .val_ty = point } }, .void));
+    const first = fb.add(b0, inst(.{ .load = .{ .operand = ref(a) } }, point));
+    _ = fb.add(b0, inst(.{ .br = .{ .target = BlockId.fromIndex(1), .args = &.{ref(first)} } }, .void));
+
+    const b1 = fb.block(&loop_p);
+    const prev = fb.add(b1, inst(.{ .block_param = .{ .block = BlockId.fromIndex(1), .param_index = 0 } }, point));
+    const x = fb.add(b1, inst(.{ .struct_get = .{ .base = ref(prev), .field_index = 0, .base_type = point } }, .i64));
+    const c10 = fb.add(b1, inst(.{ .const_int = 10 }, .i64));
+    const nx = fb.add(b1, inst(.{ .add = .{ .lhs = ref(x), .rhs = ref(c10) } }, .i64));
+    const z1 = fb.add(b1, inst(.{ .const_int = 0 }, .i64));
+    const f1 = [_]Ref{ ref(nx), ref(z1) };
+    const s1 = fb.add(b1, inst(.{ .struct_init = .{ .fields = &f1 } }, point));
+    _ = fb.add(b1, inst(.{ .store = .{ .ptr = ref(a), .val = ref(s1), .val_ty = point } }, .void));
+    const next = fb.add(b1, inst(.{ .load = .{ .operand = ref(a) } }, point));
+    const c5 = fb.add(b1, inst(.{ .const_int = 5 }, .i64));
+    const done = fb.add(b1, inst(.{ .cmp_gt = .{ .lhs = ref(x), .rhs = ref(c5) } }, .bool));
+    _ = fb.add(b1, inst(.{ .cond_br = .{ .cond = ref(done), .then_target = BlockId.fromIndex(2), .then_args = &.{}, .else_target = BlockId.fromIndex(1), .else_args = &.{ref(next)} } }, .void));
+
+    const b2 = fb.block(&.{});
+    const px = fb.add(b2, inst(.{ .struct_get = .{ .base = ref(prev), .field_index = 0, .base_type = point } }, .i64));
+    _ = fb.add(b2, inst(.{ .ret = .{ .operand = ref(px) } }, .void));
+
+    var v = vm.Vm.init(alloc);
+    v.table = &table;
+    defer v.deinit();
+    try std.testing.expectEqual(@as(i64, 11), toI64(try v.run(&fb.func, &.{})));
+}
+
 test "comptime_vm exec: nested struct (aggregate field copy + nested read)" {
     const alloc = std.testing.allocator;
     var table = types.TypeTable.init(alloc);
