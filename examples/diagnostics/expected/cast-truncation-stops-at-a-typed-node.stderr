@@ -1,0 +1,5 @@
+error: integer literal 300 does not fit in i8 (range -128..127) — use an explicit `.(i8)` to truncate
+  --> examples/diagnostics/cast-truncation-stops-at-a-typed-node.sx:12:14
+   |
+12 |     k : i8 = 300;
+   |              ^^^

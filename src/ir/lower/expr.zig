@@ -3692,6 +3692,11 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
     if (self.precomputed_args.count() > 0) {
         if (self.precomputed_args.get(node)) |pre| return pre;
     }
+    // A typed node beneath a truncating cast operand (a shift amount) is no
+    // part of the value the cast converts, nor is any body it lowers.
+    const saved_truncates = self.cast_truncates;
+    defer self.cast_truncates = saved_truncates;
+    if (saved_truncates and program_index_mod.untypedConst(node, self) == null) self.cast_truncates = false;
     // A synthetic declared-default root evaluates with the callee declaration's
     // lexical authority and substitution, not the caller's local scope.
     // Keep this override for the entire recursive lowering of the default
@@ -3760,14 +3765,14 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
 }
 
 fn lowerCastOperand(self: *Lowering, operand: *const Node) Ref {
-    const saved = self.cast_operand;
+    const saved = self.cast_truncates;
     const saved_reached = self.cast_reached;
     defer {
-        self.cast_operand = saved;
+        self.cast_truncates = saved;
         self.cast_reached = saved_reached;
     }
-    self.cast_operand = if (program_index_mod.untypedConst(operand, self) != null) .untyped else .typed;
-    self.cast_reached = if (self.cast_operand == .typed) operand else null;
+    self.cast_truncates = program_index_mod.untypedConst(operand, self) != null;
+    self.cast_reached = if (self.cast_truncates) null else operand;
     return self.lowerExpr(operand);
 }
 

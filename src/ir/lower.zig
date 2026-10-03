@@ -468,11 +468,6 @@ pub fn nameVisibleOverEdges(
     return false;
 }
 
-/// The operand of an explicit `.(T)` or `xx`, which the cast converts. Only an
-/// untyped constant operand truncates by request; a literal inside a typed
-/// operand must fit the type it takes.
-pub const CastOperand = enum { typed, untyped };
-
 // ── Lowering ────────────────────────────────────────────────────────────
 
 /// A literal belongs to its source function's specialization, including inside initializer thunks.
@@ -486,7 +481,9 @@ pub const Lowering = struct {
     break_target: ?BlockId = null,
     continue_target: ?BlockId = null,
     loop_defer_base: usize = 0, // defer-stack height at the innermost loop's body start (break/continue drain to here)
-    cast_operand: ?CastOperand = null,
+    /// Lowering the untyped constant an explicit `.(T)` or `xx` converts: its
+    /// literals truncate by request instead of fit-checking.
+    cast_truncates: bool = false,
     /// The node a cast's destination reaches as its target: a typed cast
     /// operand, and each operand a reached node computes its value from at its
     /// own target (see `reachOperand`).
@@ -3601,7 +3598,7 @@ pub const Lowering = struct {
     /// in `ty` (REJECTED PATTERNS: no silent wrap). The constant is still
     /// emitted by the caller so lowering continues and surfaces further errors.
     pub fn checkIntLiteralFits(self: *Lowering, value: i128, ty: TypeId, span: ast.Span) void {
-        if (self.cast_operand == .untyped) return;
+        if (self.cast_truncates) return;
         const r = self.intLiteralRange(ty) orelse return;
         if (value < r.min or value > r.max) {
             if (self.diagnostics) |d| {
@@ -3618,7 +3615,7 @@ pub const Lowering = struct {
     /// `'raw'` is included so the user sees which literal overflowed. The
     /// constant is still emitted by the caller so lowering continues.
     pub fn checkCharLiteralFits(self: *Lowering, cl: ast.CharLiteral, ty: TypeId, span: ast.Span) void {
-        if (self.cast_operand == .untyped) return;
+        if (self.cast_truncates) return;
         const r = self.intLiteralRange(ty) orelse return;
         if (cl.value < r.min or cl.value > r.max) {
             if (self.diagnostics) |d| {
