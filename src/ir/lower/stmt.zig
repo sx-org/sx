@@ -3332,7 +3332,10 @@ pub fn diagPayloadVariantWrite(self: *Lowering, obj_ty: TypeId, field: []const u
 /// A field/index chain rooted at a storage-less binding has no slot to GEP.
 /// A chain that itself types `.unresolved` already carries the diagnostic for
 /// why; naming its root would bury that one.
-pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
+/// Diagnoses taking the address of a member or element chain rooted at a
+/// binding with no storage of its own; the placeholder stands in for the
+/// address. Null when the chain may be addressed.
+pub fn nonstoreAddress(self: *Lowering, node: *const Node) ?Ref {
     if ((node.data == .field_access or node.data == .index_expr or self.fieldCall(node) != null) and
         self.inferExprType(node) != .unresolved)
     {
@@ -3341,6 +3344,11 @@ pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
             return self.emitPlaceholder("addr_of_nonstore");
         }
     }
+    return null;
+}
+
+pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
+    if (nonstoreAddress(self, node)) |placeholder| return placeholder;
     switch (node.data) {
         .identifier => |id| {
             // An lvalue reached only ACROSS a nested-fn boundary is the

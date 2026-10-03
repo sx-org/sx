@@ -3939,6 +3939,7 @@ pub const Lowering = struct {
     pub const lowerUnionLiteral = lower_stmt.lowerUnionLiteral;
     pub const diagPayloadVariantWrite = lower_stmt.diagPayloadVariantWrite;
     pub const lowerExprAsPtr = lower_stmt.lowerExprAsPtr;
+    pub const nonstoreAddress = lower_stmt.nonstoreAddress;
     pub const rootIsConstant = lower_stmt.rootIsConstant;
     pub const constantRoot = lower_stmt.constantRoot;
     pub const storeOrCompound = lower_stmt.storeOrCompound;

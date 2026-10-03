@@ -1222,9 +1222,18 @@ pub fn fixupMethodReceiver(self: *Lowering, method_args: *std.ArrayList(Ref), fu
                 obj_node.data.index_expr.object.data == .identifier and
                 self.isPackName(obj_node.data.index_expr.object.data.identifier.name);
             if (!is_pack_index and (obj_node.data == .field_access or obj_node.data == .index_expr or obj_node.data == .deref_expr)) {
-                const storage = self.refStorageAddress(method_args.items[0]) orelse self.lowerExprAsPtr(obj_node);
-                method_args.items[0] = receiverPointer(self, storage, obj_ty);
-                return;
+                if (self.nonstoreAddress(obj_node)) |placeholder| {
+                    method_args.items[0] = placeholder;
+                    return;
+                }
+                if (self.refStorageAddress(method_args.items[0])) |storage| {
+                    method_args.items[0] = receiverPointer(self, storage, obj_ty);
+                    return;
+                }
+                if (self.exprHasAddressableStorage(obj_node)) {
+                    method_args.items[0] = receiverPointer(self, self.lowerExprAsPtr(obj_node), obj_ty);
+                    return;
+                }
             }
             // General case: alloca+store the value and pass the alloca pointer
             {

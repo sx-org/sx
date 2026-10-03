@@ -95,6 +95,16 @@ fn methodReceiverNode(object: *const Node) *const Node {
     return if (object.data == .deref_expr) object.data.deref_expr.operand else object;
 }
 
+/// A named call's written `order` over an argument list with the receiver
+/// prepended: the receiver first, then the written arguments.
+fn receiverFirst(self: *Lowering, order: ?[]const usize) ?[]const usize {
+    const written = order orelse return null;
+    const shifted = self.alloc.alloc(usize, written.len + 1) catch unreachable;
+    shifted[0] = 0;
+    for (written, shifted[1..]) |k, *s| s.* = k + 1;
+    return shifted;
+}
+
 /// The ufcs function a dot-call resolves to when ANY of its parameters is
 /// destination-first (`$I/@Init(T)`), or null when the dot-call is anything else.
 /// Answers the same questions the ufcs dispatch arm asks, in the same order — the
@@ -755,11 +765,13 @@ fn comptimeMethodBindingsComplete(
 /// target-typed shorthand calls do not. The shared comptime helper stages the
 /// whole list before installing any formal, so all call forms get identical
 /// target typing, pointer adaptation, single evaluation, and body hygiene.
+/// `order` is the written order of a named call's `call_args` positions.
 fn lowerComptimePlainStructMethod(
     self: *Lowering,
     method: Lowering.PlainStructMethod,
     recv_node: ?*const Node,
     call_args: []const *Node,
+    order: ?[]const usize,
     call_span: ast.Span,
 ) Ref {
     const fd = method.fd;
@@ -780,7 +792,8 @@ fn lowerComptimePlainStructMethod(
         binding_scope = generics_mod.installTypeBindings(self, method_bindings.?);
     }
 
-    return self.lowerComptimeMethodCallArgs(fd, effective_args.items, recv_node != null, call_span);
+    const effective_order = if (recv_node != null) receiverFirst(self, order) else order;
+    return self.lowerComptimeMethodCallArgs(fd, effective_args.items, effective_order, recv_node != null, call_span);
 }
 
 pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
@@ -990,10 +1003,10 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             if (isPackFn(fd)) {
                 // Protocol packs (`..xs: P`) and comptime type-packs
                 // (`..$args`) both monomorphize per call shape.
-                return self.lowerPackFnCall(fd, c);
+                return self.lowerPackFnCall(fd, c, written_order);
             }
             if (hasComptimeParams(fd)) {
-                return self.lowerComptimeCall(fd, c);
+                return self.lowerComptimeCall(fd, c, written_order);
             }
             // Early detection of generic function calls — skip arg lowering for type params
             // because lowerGenericCall resolves type params from AST nodes, not lowered refs.
@@ -1030,40 +1043,39 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 }
                 var lowered_args = std.ArrayList(Ref).empty;
                 defer lowered_args.deinit(self.alloc);
-                for (c.args, 0..) |arg, ai| {
+                lowered_args.appendNTimes(self.alloc, Ref.none, c.args.len) catch unreachable;
+                for (0..c.args.len) |n| {
+                    const ai = if (written_order) |order| order[n] else n;
+                    const arg = c.args[ai];
                     // Skip type param args only when types are passed explicitly
-                    if (types_explicit and ai < fd.params.len and isTypeParamDecl(&fd.params[ai], fd.type_params)) {
-                        lowered_args.append(self.alloc, Ref.none) catch unreachable;
-                    } else {
-                        var dem = self.enterDemand(if (ai < arg_demands.items.len) arg_demands.items[ai] else .none);
-                        defer dem.restore();
-                        const tgt: ?TypeId = self.target_type;
-                        const r = blk: {
-                            // A `$I/@Init(T)` param forms its recipe instead of
-                            // evaluating the argument (same arm as the direct
-                            // path below).
-                            if (tgt) |ptv| {
-                                if (self.initTargetOf(ptv)) |target| break :blk self.formInitPlan(arg, target);
-                                // A `$B/@BuildBlock(P)` param forms its block from
-                                // the trailing body, or takes one already formed.
-                                if (self.blockProtocolOf(ptv)) |protocol| break :blk self.formBuildBlock(arg, protocol);
-                            }
-                            // Protocol param targets erase node-aware
-                            // (same arm as the direct path).
-                            if (tgt) |ptv| {
-                                if (protocolArgErasure(self, arg, ptv)) |ib| break :blk ib;
-                            }
-                            // A `@VaList` param is the C boundary: the argument
-                            // names a live list and its PLACE crosses (same arm
-                            // as the direct path) — a cursor has no value form
-                            // for `lowerExpr` to read.
-                            if (tgt) |ptv| {
-                                if (self.boundaryCursorArg(arg, ptv)) |place| break :blk place;
-                            }
-                            break :blk self.lowerExpr(arg);
-                        };
-                        lowered_args.append(self.alloc, r) catch unreachable;
-                    }
+                    if (types_explicit and ai < fd.params.len and isTypeParamDecl(&fd.params[ai], fd.type_params)) continue;
+                    var dem = self.enterDemand(if (ai < arg_demands.items.len) arg_demands.items[ai] else .none);
+                    defer dem.restore();
+                    const tgt: ?TypeId = self.target_type;
+                    lowered_args.items[ai] = blk: {
+                        // A `$I/@Init(T)` param forms its recipe instead of
+                        // evaluating the argument (same arm as the direct
+                        // path below).
+                        if (tgt) |ptv| {
+                            if (self.initTargetOf(ptv)) |target| break :blk self.formInitPlan(arg, target);
+                            // A `$B/@BuildBlock(P)` param forms its block from
+                            // the trailing body, or takes one already formed.
+                            if (self.blockProtocolOf(ptv)) |protocol| break :blk self.formBuildBlock(arg, protocol);
+                        }
+                        // Protocol param targets erase node-aware
+                        // (same arm as the direct path).
+                        if (tgt) |ptv| {
+                            if (protocolArgErasure(self, arg, ptv)) |ib| break :blk ib;
+                        }
+                        // A `@VaList` param is the C boundary: the argument
+                        // names a live list and its PLACE crosses (same arm
+                        // as the direct path) — a cursor has no value form
+                        // for `lowerExpr` to read.
+                        if (tgt) |ptv| {
+                            if (self.boundaryCursorArg(arg, ptv)) |place| break :blk place;
+                        }
+                        break :blk self.lowerExpr(arg);
+                    };
                 }
                 return self.lowerGenericCall(fd, early_name, c, lowered_args.items);
             }
@@ -1077,9 +1089,9 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
     // distinct; comptime lowering consumes the exact declaration directly.
     if (qualified_author) |sf| {
         if (isPackFn(sf.decl))
-            return self.lowerPackFnCallNamed(sf.decl, selectedDispatchName(self, sf), c, null);
+            return self.lowerPackFnCallNamed(sf.decl, selectedDispatchName(self, sf), c, null, written_order);
         if (hasComptimeParams(sf.decl))
-            return self.lowerComptimeCall(sf.decl, c);
+            return self.lowerComptimeCall(sf.decl, c, written_order);
     }
 
     // Selected static plain-struct pack/comptime methods must dispatch before
@@ -1098,9 +1110,9 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         else => null,
     };
     if (early_static_method) |method| {
-        if (isPackFn(method.fd)) return self.lowerPackFnCallNamed(method.fd, self.plainStructMethodName(method), c, null);
+        if (isPackFn(method.fd)) return self.lowerPackFnCallNamed(method.fd, self.plainStructMethodName(method), c, null, written_order);
         if (hasComptimeParams(method.fd))
-            return lowerComptimePlainStructMethod(self, method, null, c.args, c.callee.span);
+            return lowerComptimePlainStructMethod(self, method, null, c.args, written_order, c.callee.span);
     }
 
     // Instance pack/comptime methods also own AST argument evaluation. Select
@@ -1116,10 +1128,10 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     eff_args[0] = @constCast(fa.object);
                     @memcpy(eff_args[1..], c.args);
                     const syn_call = ast.Call{ .callee = c.callee, .args = eff_args };
-                    return self.lowerPackFnCallNamed(method.fd, self.plainStructMethodName(method), &syn_call, fa.object);
+                    return self.lowerPackFnCallNamed(method.fd, self.plainStructMethodName(method), &syn_call, fa.object, receiverFirst(self, written_order));
                 }
                 if (hasComptimeParams(method.fd))
-                    return lowerComptimePlainStructMethod(self, method, fa.object, c.args, c.callee.span);
+                    return lowerComptimePlainStructMethod(self, method, fa.object, c.args, written_order, c.callee.span);
             }
             // Generic-struct instances carry a separate author stamp and are
             // intentionally absent from plainStructMethod. Select their
@@ -1438,7 +1450,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             // Check for comptime-expanded or generic functions
             if (named_fd) |fd| {
                 if (hasComptimeParams(fd)) {
-                    return self.lowerComptimeCall(fd, c);
+                    return self.lowerComptimeCall(fd, c, written_order);
                 }
                 if (fd.type_params.len > 0) {
                     // Runtime dispatch already handled above (before arg lowering)
@@ -1673,9 +1685,9 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         if (self.plainStructMethod(owner_ty, fa.field)) |method| {
                             const fd = method.fd;
                             const dispatch_name = self.plainStructMethodName(method);
-                            if (isPackFn(fd)) return self.lowerPackFnCallNamed(fd, dispatch_name, c, null);
+                            if (isPackFn(fd)) return self.lowerPackFnCallNamed(fd, dispatch_name, c, null, written_order);
                             if (hasComptimeParams(fd))
-                                return lowerComptimePlainStructMethod(self, method, null, c.args, c.callee.span);
+                                return lowerComptimePlainStructMethod(self, method, null, c.args, written_order, c.callee.span);
                             if (fd.type_params.len > 0) return self.lowerGenericCall(fd, dispatch_name, c, args.items);
                             if (self.checkCallArity(fd, dispatch_name, args.items.len, false, c.callee.span)) return Ref.none;
                             self.appendDefaultArgs(fd, &args, c.callee, null);
@@ -1765,7 +1777,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                                 .intrinsic_expr => break :gate,
                                 else => {},
                             }
-                            if (hasComptimeParams(fd)) return self.lowerComptimeCall(fd, c);
+                            if (hasComptimeParams(fd)) return self.lowerComptimeCall(fd, c, written_order);
                             if (fd.type_params.len > 0) return self.lowerGenericCall(fd, fa.field, c, args.items);
                             if (self.checkCallArity(fd, fa.field, args.items.len, false, c.callee.span)) return Ref.none;
                             var sf = SelectedFunc{ .decl = fd, .source = target.target_module_path };
@@ -1795,7 +1807,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 const effective_name = if (self.program_index.lookup(.function, qualified_name) != null) qualified_name else func_name;
                 if (self.program_index.lookup(.function, effective_name)) |fd| {
                     if (hasComptimeParams(fd)) {
-                        return self.lowerComptimeCall(fd, c);
+                        return self.lowerComptimeCall(fd, c, written_order);
                     }
                     if (fd.type_params.len > 0) {
                         return self.lowerGenericCall(fd, effective_name, c, args.items);
@@ -2193,7 +2205,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         syn_args.append(self.alloc, @constCast(effective_obj_node)) catch unreachable;
                         for (c.args) |a| syn_args.append(self.alloc, a) catch unreachable;
                         const syn_call = ast.Call{ .callee = c.callee, .args = syn_args.items };
-                        return self.lowerPackFnCall(fd, &syn_call);
+                        return self.lowerPackFnCall(fd, &syn_call, receiverFirst(self, written_order));
                     }
                 }
                 // Generic ufcs target: monomorphize with the receiver's AST

@@ -26,6 +26,22 @@ store :: (a: i64, cell: *Cell) {
     cell.v = a;
 }
 
+pair :: (a: $T, b: T) -> T { a * 10 + b }
+tagged :: ($tag: string, a: i64, b: i64) -> i64 { a * 10 + b }
+packed :: (a: i64, b: i64 = 0, ..rest: i64) -> i64 { a * 10 + b }
+
+Holder :: struct { cell: Cell; }
+
+cellPair :: (trace: *i64) -> [2]Cell {
+    _ = mark(trace, 1);
+    .[Cell{v = 0}, Cell{v = 0}]
+}
+
+holder :: (trace: *i64) -> Holder {
+    _ = mark(trace, 4);
+    Holder{cell = Cell{v = 0}}
+}
+
 receiver :: (trace: *i64) -> Box {
     _ = mark(trace, 1);
     Box{trace = trace}
@@ -50,9 +66,26 @@ displaced :: () -> i64 {
     trace * 100 + cells[0].v
 }
 
+specialized :: () -> i64 {
+    trace: i64 = 0;
+    _ = pair(b = mark(*trace, 2), a = mark(*trace, 1));
+    _ = tagged("t", b = mark(*trace, 4), a = mark(*trace, 3));
+    _ = packed(b = mark(*trace, 6), a = mark(*trace, 5));
+    trace
+}
+
+temporary :: () -> i64 {
+    trace: i64 = 0;
+    _ = cellPair(*trace)[mark(*trace, 2) - 2].bump(mark(*trace, 3));
+    _ = holder(*trace).cell.bump(mark(*trace, 5));
+    trace
+}
+
 Folded :: @run named();
+FoldedSpecialized :: @run specialized();
 
 main :: () {
     print("comptime={} runtime={}\n", Folded, named());
     print("indexed={} displaced={}\n", indexed(), displaced());
+    print("specialized={} {} temporary={}\n", FoldedSpecialized, specialized(), temporary());
 }

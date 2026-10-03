@@ -1,0 +1,5 @@
+error: cannot take the address through immutable capture 'e' — it is a by-value copy of the element; capture by reference with '*e' to write into the container, or copy it into a `:=` local to mutate
+  --> examples/diagnostics/pointer-receiver-through-a-capture-member-is-refused.sx:14:22
+   |
+14 |     for e in items { e.cell.bump(); }
+   |                      ^^^^^^

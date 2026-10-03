@@ -929,8 +929,8 @@ fn lowerPackPrefixArg(self: *Lowering, arg: *const Node, param_ty: TypeId, is_re
 /// emits a direct call. Pack params expand into N positional IR
 /// params with concrete types; the body's `args[<lit>]` and
 /// `args.len` resolve to those params via the pack bindings.
-pub fn lowerPackFnCall(self: *Lowering, fd: *const ast.FnDecl, call_node: *const ast.Call) Ref {
-    return self.lowerPackFnCallNamed(fd, fd.name, call_node, null);
+pub fn lowerPackFnCall(self: *Lowering, fd: *const ast.FnDecl, call_node: *const ast.Call, order: ?[]const usize) Ref {
+    return self.lowerPackFnCallNamed(fd, fd.name, call_node, null, order);
 }
 
 /// Pack-call lowering with an identity-bearing compiler-internal base name.
@@ -938,13 +938,15 @@ pub fn lowerPackFnCall(self: *Lowering, fd: *const ast.FnDecl, call_node: *const
 /// pass their author-specific dispatch key so two same-named methods with the
 /// same call shape cannot share a monomorphized body. `receiver_node` marks a
 /// receiver AST prepended by instance-method dispatch; it occupies fixed-prefix
-/// index zero. Free/static pack calls pass null.
+/// index zero. Free/static pack calls pass null. `order` is the written order
+/// of a named call's argument positions.
 pub fn lowerPackFnCallNamed(
     self: *Lowering,
     fd: *const ast.FnDecl,
     dispatch_name: []const u8,
     call_node: *const ast.Call,
     receiver_node: ?*const Node,
+    order: ?[]const usize,
 ) Ref {
     // Spread args expand at AST level FIRST (element access nodes) so each
     // element is an independent pack arg: pack forwarding `g(..xs)`, tuple
@@ -953,7 +955,7 @@ pub fn lowerPackFnCallNamed(
     // expanded list contains no expandable spreads.
     if (self.expandSpreadArgNodes(call_node.args)) |expanded| {
         const syn_call = ast.Call{ .callee = call_node.callee, .args = expanded };
-        return self.lowerPackFnCallNamed(fd, dispatch_name, &syn_call, receiver_node);
+        return self.lowerPackFnCallNamed(fd, dispatch_name, &syn_call, receiver_node, order);
     }
     // A spread that could not be expanded at AST level has already lost the
     // static element shape required by a pack call (notably `..make_tuple()`).
@@ -1051,38 +1053,39 @@ pub fn lowerPackFnCallNamed(
     var args = std.ArrayList(Ref).empty;
     defer args.deinit(self.alloc);
     {
-        var ri: usize = 0;
-        for (fd.params, 0..) |p, param_idx| {
-            if (isPackParam(p)) break;
-            if (ri >= call_node.args.len) break;
-            if (!p.is_comptime) {
-                // Contextually type the arg from the param (so a lambda arg
-                // `|x| …` takes its param types from a `Closure(...)` param).
-                // The param type is resolved under the pack fn's OWN source
-                // a fixed-prefix type bare-visible only in the defining
-                // module must resolve there, not the caller's. The arg itself
-                // is lowered AFTER, in the caller's context.
-                const demand = lower_bound.paramDemand(self, fd, param_idx);
-                var dem = self.enterDemand(demand);
-                const arg_node = call_node.args[ri];
-                const declared = demand.coerceType() orelse .unresolved;
-                // An open `@Init` target (`$I/@Init($T)`) is the argument's own
-                // type, so its binder is known only from the argument.
-                const pty = if (declared == .unresolved and lower_init_plan.boundTargetNode(p.type_expr) != null)
-                    self.initBinderType(p.type_expr, p.type_expr.data.type_expr.name, arg_node, self.inferExprType(arg_node)) orelse declared
-                else
-                    declared;
-                // Prefix arg is a value position (see the pack-arg
-                // loop above): force block-form if/match to yield its value.
-                const saved_prefix_fbv = self.force_block_value;
-                self.force_block_value = true;
-                const arg_ref = lowerPackPrefixArg(self, arg_node, pty, receiver_node != null and param_idx == 0);
-                args.append(self.alloc, arg_ref) catch return self.builder.constInt(0, .void);
-                self.force_block_value = saved_prefix_fbv;
-                dem.restore();
-            }
-            ri += 1;
+        // The fixed prefix's runtime arguments, by parameter position.
+        const prefix = self.alloc.alloc(?Ref, pack_start) catch return self.builder.constInt(0, .void);
+        @memset(prefix, null);
+        for (0..call_node.args.len) |n| {
+            const param_idx = if (order) |o| o[n] else n;
+            if (param_idx >= pack_start) continue;
+            const p = fd.params[param_idx];
+            if (p.is_comptime) continue;
+            // Contextually type the arg from the param (so a lambda arg
+            // `|x| …` takes its param types from a `Closure(...)` param).
+            // The param type is resolved under the pack fn's OWN source
+            // a fixed-prefix type bare-visible only in the defining
+            // module must resolve there, not the caller's. The arg itself
+            // is lowered AFTER, in the caller's context.
+            const demand = lower_bound.paramDemand(self, fd, param_idx);
+            var dem = self.enterDemand(demand);
+            const arg_node = call_node.args[param_idx];
+            const declared = demand.coerceType() orelse .unresolved;
+            // An open `@Init` target (`$I/@Init($T)`) is the argument's own
+            // type, so its binder is known only from the argument.
+            const pty = if (declared == .unresolved and lower_init_plan.boundTargetNode(p.type_expr) != null)
+                self.initBinderType(p.type_expr, p.type_expr.data.type_expr.name, arg_node, self.inferExprType(arg_node)) orelse declared
+            else
+                declared;
+            // Prefix arg is a value position (see the pack-arg
+            // loop above): force block-form if/match to yield its value.
+            const saved_prefix_fbv = self.force_block_value;
+            self.force_block_value = true;
+            prefix[param_idx] = lowerPackPrefixArg(self, arg_node, pty, receiver_node != null and param_idx == 0);
+            self.force_block_value = saved_prefix_fbv;
+            dem.restore();
         }
+        for (prefix) |r| if (r) |ref| args.append(self.alloc, ref) catch return self.builder.constInt(0, .void);
     }
     self.pack_arg_types = saved_pat;
     self.pack_constraint = saved_pcon;
