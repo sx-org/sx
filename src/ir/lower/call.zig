@@ -4552,7 +4552,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         // reads the rt size table. Bounds are the caller's (same OOB rule as
         // the field family).
         if (c.args.len < 3) return self.builder.constInt(0, .any);
-        const av = self.lowerExpr(c.args[1]);
+        const av = boxedReceiver(self, c.args[1]);
         // The index lowers under its declared i64 param type — an ambient
         // `any` target (this call in return/arg position) must not leak
         // into an `xx` index argument.
