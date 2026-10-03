@@ -1457,9 +1457,10 @@ pub fn substituteComptimeNodes(self: *Lowering, node: *const Node, cpn: std.Stri
 
 /// Lower a call to a function with comptime params by inlining its body.
 /// Comptime params are substituted, `@insert` expressions are evaluated.
-pub fn lowerComptimeCall(self: *Lowering, fd: *const ast.FnDecl, call_node: *const ast.Call) Ref {
+/// `order` is the written order of a named call's argument positions.
+pub fn lowerComptimeCall(self: *Lowering, fd: *const ast.FnDecl, call_node: *const ast.Call, order: ?[]const usize) Ref {
     const body_bindings: BodyBindings = if (self.body_local_fns.contains(fd)) .ambient else .none;
-    return lowerComptimeCallArgsMode(self, fd, call_node.args, 0, false, false, body_bindings, call_node.callee.span);
+    return lowerComptimeCallArgsMode(self, fd, call_node.args, order, 0, false, false, body_bindings, call_node.callee.span);
 }
 
 /// Core of `lowerComptimeCall`, parameterized over the EFFECTIVE call-site arg
@@ -1470,7 +1471,7 @@ pub fn lowerComptimeCall(self: *Lowering, fd: *const ast.FnDecl, call_node: *con
 /// (e.g. `type_bindings` for a generic struct's `T`) before invoking this — the
 /// body lowers with whatever bindings are active.
 pub fn lowerComptimeCallArgs(self: *Lowering, fd: *const ast.FnDecl, call_args: []const *Node) Ref {
-    return lowerComptimeCallArgsMode(self, fd, call_args, 0, false, false, .ambient, fd.body.span);
+    return lowerComptimeCallArgsMode(self, fd, call_args, null, 0, false, false, .ambient, fd.body.span);
 }
 
 /// Inline a selected comptime METHOD with a hygienic call frame. `call_args`
@@ -1487,10 +1488,11 @@ pub fn lowerComptimeMethodCallArgs(
     self: *Lowering,
     fd: *const ast.FnDecl,
     call_args: []const *Node,
+    order: ?[]const usize,
     first_arg_is_receiver: bool,
     call_span: ast.Span,
 ) Ref {
-    return lowerComptimeCallArgsMode(self, fd, call_args, 0, true, first_arg_is_receiver, .ambient, call_span);
+    return lowerComptimeCallArgsMode(self, fd, call_args, order, 0, true, first_arg_is_receiver, .ambient, call_span);
 }
 
 /// Generalization of `lowerComptimeCallArgs` that skips the FIRST `skip_params`
@@ -1501,7 +1503,7 @@ pub fn lowerComptimeMethodCallArgs(
 /// `fd.params[skip_params..]`. With `skip_params == 0` this is
 /// `lowerComptimeCallArgs`.
 pub fn lowerComptimeCallArgsSkip(self: *Lowering, fd: *const ast.FnDecl, call_args: []const *Node, skip_params: usize) Ref {
-    return lowerComptimeCallArgsMode(self, fd, call_args, skip_params, false, false, .ambient, fd.body.span);
+    return lowerComptimeCallArgsMode(self, fd, call_args, null, skip_params, false, false, .ambient, fd.body.span);
 }
 
 /// The type substitution an inlined comptime body lowers under.
@@ -1704,10 +1706,28 @@ fn lowerComptimeRuntimeArg(
     return value;
 }
 
+/// Evaluates the runtime argument bound to `fd.params[param_idx]` and stages
+/// it for the callee's scope.
+fn stageRuntimeArg(
+    self: *Lowering,
+    fd: *const ast.FnDecl,
+    param_idx: usize,
+    arg_node: *const Node,
+    is_receiver: bool,
+    runtime_args: *std.ArrayList(StagedRuntimeArg),
+) void {
+    const demand = lower_bound.paramDemand(self, fd, param_idx);
+    const arg_val = lowerComptimeRuntimeArg(self, arg_node, demand, is_receiver);
+    // A callable-binder parameter's local IS the value handed to it.
+    const pty = demand.coerceType() orelse self.builder.getRefType(arg_val);
+    runtime_args.append(self.alloc, .{ .name = fd.params[param_idx].name, .ty = pty, .value = arg_val }) catch unreachable;
+}
+
 fn lowerComptimeCallArgsMode(
     self: *Lowering,
     fd: *const ast.FnDecl,
     call_args: []const *Node,
+    order: ?[]const usize,
     skip_params: usize,
     isolate_callee: bool,
     first_arg_is_receiver: bool,
@@ -1730,6 +1750,10 @@ fn lowerComptimeCallArgsMode(
     var call_arg_idx: usize = 0;
     var runtime_args = std.ArrayList(StagedRuntimeArg).empty;
     defer runtime_args.deinit(self.alloc);
+    // The parameter each call position binds to a runtime argument, for a
+    // named call to evaluate in `order` once every position is bound.
+    const ordered_params = self.alloc.alloc(?usize, if (order != null) call_args.len else 0) catch unreachable;
+    @memset(ordered_params, null);
     // When the fn declares a pack param, the slice of call-site arg nodes is
     // recorded under the pack name so the body's `args[$i]` lowering can
     // substitute the i-th arg with its concrete-typed value instead of the
@@ -1784,27 +1808,24 @@ fn lowerComptimeCallArgsMode(
             }
             break; // variadic is always the last param
         }
-        const arg_node: *const Node = if (call_arg_idx < call_args.len) blk: {
-            const node = call_args[call_arg_idx];
+        const pos = call_arg_idx;
+        const arg_node: *const Node = if (pos < call_args.len) blk: {
             call_arg_idx += 1;
-            break :blk node;
+            break :blk call_args[pos];
         } else param.default_expr orelse break;
         if (param.is_comptime) {
             self.stampCallerSource(@constCast(arg_node));
             cpn.put(param.name, arg_node) catch {};
+        } else if (order != null) {
+            ordered_params[pos] = param_idx;
         } else {
-            const demand = lower_bound.paramDemand(self, fd, param_idx);
-            const arg_val = lowerComptimeRuntimeArg(
-                self,
-                arg_node,
-                demand,
-                first_arg_is_receiver and param_idx == skip_params,
-            );
-            // A callable-binder parameter's local IS the value handed to it.
-            const pty = demand.coerceType() orelse self.builder.getRefType(arg_val);
-            runtime_args.append(self.alloc, .{ .name = param.name, .ty = pty, .value = arg_val }) catch unreachable;
+            stageRuntimeArg(self, fd, param_idx, arg_node, first_arg_is_receiver and param_idx == skip_params, &runtime_args);
         }
     }
+    if (order) |o| for (o) |pos| {
+        const param_idx = ordered_params[pos] orelse continue;
+        stageRuntimeArg(self, fd, param_idx, call_args[pos], first_arg_is_receiver and param_idx == skip_params, &runtime_args);
+    };
 
     // Runtime expressions above all saw caller bindings and no callee
     // formals. Now install the staged values in the hygienic body scope.

@@ -1,0 +1,15 @@
+// A `*T` method takes its receiver's address, and a by-value capture's member
+// has no address to give.
+@import "modules/std.sx";
+
+Cell :: struct {
+    v: i64;
+    bump :: (self: *Cell) { self.v += 1; }
+}
+
+Item :: struct { cell: Cell; }
+
+main :: () {
+    items: [1]Item = .[Item{cell = Cell{v = 0}}];
+    for e in items { e.cell.bump(); }
+}

@@ -1,0 +1,91 @@
+// A dot-call's receiver is its first argument, and every argument evaluates
+// once, in written order (specs: Named Arguments, UFCS).
+@import "modules/std.sx";
+
+mark :: (trace: *i64, digit: i64) -> i64 {
+    trace.* = trace.* * 10 + digit;
+    digit
+}
+
+Box :: struct {
+    trace: *i64;
+    combine :: (self: *Box, a: i64, b: i64 = 7, c: i64 = 0) -> i64 {
+        self.trace.* * 1000 + a * 100 + b * 10 + c
+    }
+}
+
+Cell :: struct {
+    v: i64;
+    bump :: (self: *Cell, d: i64) -> i64 {
+        self.v += d;
+        self.v
+    }
+}
+
+store :: (a: i64, cell: *Cell) {
+    cell.v = a;
+}
+
+pair :: (a: $T, b: T) -> T { a * 10 + b }
+tagged :: ($tag: string, a: i64, b: i64) -> i64 { a * 10 + b }
+packed :: (a: i64, b: i64 = 0, ..rest: i64) -> i64 { a * 10 + b }
+
+Holder :: struct { cell: Cell; }
+
+cellPair :: (trace: *i64) -> [2]Cell {
+    _ = mark(trace, 1);
+    .[Cell{v = 0}, Cell{v = 0}]
+}
+
+holder :: (trace: *i64) -> Holder {
+    _ = mark(trace, 4);
+    Holder{cell = Cell{v = 0}}
+}
+
+receiver :: (trace: *i64) -> Box {
+    _ = mark(trace, 1);
+    Box{trace = trace}
+}
+
+named :: () -> i64 {
+    trace: i64 = 0;
+    receiver(*trace).combine(c = mark(*trace, 2), a = mark(*trace, 3))
+}
+
+indexed :: () -> i64 {
+    trace: i64 = 0;
+    cells: [2]Cell = .[Cell{v = 0}, Cell{v = 0}];
+    _ = cells[mark(*trace, 1) - 1].bump(mark(*trace, 2));
+    trace
+}
+
+displaced :: () -> i64 {
+    trace: i64 = 0;
+    cells: [2]Cell = .[Cell{v = 0}, Cell{v = 0}];
+    store(cell = cells[mark(*trace, 1) - 1], a = mark(*trace, 2));
+    trace * 100 + cells[0].v
+}
+
+specialized :: () -> i64 {
+    trace: i64 = 0;
+    _ = pair(b = mark(*trace, 2), a = mark(*trace, 1));
+    _ = tagged("t", b = mark(*trace, 4), a = mark(*trace, 3));
+    _ = packed(b = mark(*trace, 6), a = mark(*trace, 5));
+    trace
+}
+
+temporary :: () -> i64 {
+    trace: i64 = 0;
+    _ = cellPair(*trace)[mark(*trace, 2) - 2].bump(mark(*trace, 3));
+    _ = holder(*trace).cell.bump(mark(*trace, 5));
+    trace
+}
+
+Folded :: @run named();
+FoldedSpecialized :: @run specialized();
+
+main :: () {
+    print("comptime={} runtime={}\n", Folded, named());
+    print("indexed={} displaced={}\n", indexed(), displaced());
+    print("specialized={} {} temporary={}\n", FoldedSpecialized, specialized(), temporary());
+}

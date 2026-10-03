@@ -2377,7 +2377,7 @@ pub fn lowerComptimeGenericInstanceMethod(
     const saved_bindings = self.type_bindings;
     self.type_bindings = combined;
     defer self.type_bindings = saved_bindings;
-    return self.lowerComptimeMethodCallArgs(fd, effective_args.items, true, call_span);
+    return self.lowerComptimeMethodCallArgs(fd, effective_args.items, null, true, call_span);
 }
 
 /// Debug invariant (CP coverage lock): the two generic-instance maps written

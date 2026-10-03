@@ -1222,8 +1222,18 @@ pub fn fixupMethodReceiver(self: *Lowering, method_args: *std.ArrayList(Ref), fu
                 obj_node.data.index_expr.object.data == .identifier and
                 self.isPackName(obj_node.data.index_expr.object.data.identifier.name);
             if (!is_pack_index and (obj_node.data == .field_access or obj_node.data == .index_expr or obj_node.data == .deref_expr)) {
-                method_args.items[0] = receiverPointer(self, self.lowerExprAsPtr(obj_node), obj_ty);
-                return;
+                if (self.nonstoreAddress(obj_node)) |placeholder| {
+                    method_args.items[0] = placeholder;
+                    return;
+                }
+                if (self.refStorageAddress(method_args.items[0])) |storage| {
+                    method_args.items[0] = receiverPointer(self, storage, obj_ty);
+                    return;
+                }
+                if (self.exprHasAddressableStorage(obj_node)) {
+                    method_args.items[0] = receiverPointer(self, self.lowerExprAsPtr(obj_node), obj_ty);
+                    return;
+                }
             }
             // General case: alloca+store the value and pass the alloca pointer
             {
@@ -3686,12 +3696,6 @@ fn errorPathContains(root: *const Node, node: *const Node) bool {
 }
 
 pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
-    // A named-argument value pre-lowered in written order by `mapNamedArgs`
-    // already produced its ref — return it; re-lowering would evaluate the
-    // value's side effects a second time.
-    if (self.precomputed_args.count() > 0) {
-        if (self.precomputed_args.get(node)) |pre| return pre;
-    }
     // A synthetic declared-default root evaluates with the callee declaration's
     // lexical authority and substitution, not the caller's local scope.
     // Keep this override for the entire recursive lowering of the default

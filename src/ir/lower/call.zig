@@ -68,6 +68,43 @@ fn selectedDispatchName(self: *Lowering, sf: *const SelectedFunc) []const u8 {
     return out.toOwnedSlice(self.alloc) catch @panic("out of memory while mangling selected function");
 }
 
+/// Whether the dispatch passes a value-receiver dot-call's object as the call's
+/// first argument: every object but a `super` or runtime-class static head, a
+/// call denoting a type, and one whose field the call invokes.
+fn receiverIsFirstArgument(self: *Lowering, c: *const ast.Call, fa: *const ast.FieldAccess) bool {
+    switch (fa.object.data) {
+        .identifier => |id| {
+            if (std.mem.eql(u8, id.name, "super")) return false;
+            if (self.program_index.lookup(.runtime_class, id.name)) |fcd| for (fcd.members) |m| switch (m) {
+                .method => |md| if (md.is_static and std.mem.eql(u8, md.name, fa.field)) return false,
+                else => {},
+            };
+        },
+        .call => switch (self.inferExprType(fa.object)) {
+            .unresolved, .type_value => return false,
+            else => {},
+        },
+        else => {},
+    }
+    return self.callableShapeOf(self.inferExprType(c.callee)) == null;
+}
+
+/// The node a method call passes as its receiver: `p.*.m()` passes the
+/// pointer itself, so mutations through `self: *T` reach its pointee.
+fn methodReceiverNode(object: *const Node) *const Node {
+    return if (object.data == .deref_expr) object.data.deref_expr.operand else object;
+}
+
+/// A named call's written `order` over an argument list with the receiver
+/// prepended: the receiver first, then the written arguments.
+fn receiverFirst(self: *Lowering, order: ?[]const usize) ?[]const usize {
+    const written = order orelse return null;
+    const shifted = self.alloc.alloc(usize, written.len + 1) catch unreachable;
+    shifted[0] = 0;
+    for (written, shifted[1..]) |k, *s| s.* = k + 1;
+    return shifted;
+}
+
 /// The ufcs function a dot-call resolves to when ANY of its parameters is
 /// destination-first (`$I/@Init(T)`), or null when the dot-call is anything else.
 /// Answers the same questions the ufcs dispatch arm asks, in the same order — the
@@ -728,11 +765,13 @@ fn comptimeMethodBindingsComplete(
 /// target-typed shorthand calls do not. The shared comptime helper stages the
 /// whole list before installing any formal, so all call forms get identical
 /// target typing, pointer adaptation, single evaluation, and body hygiene.
+/// `order` is the written order of a named call's `call_args` positions.
 fn lowerComptimePlainStructMethod(
     self: *Lowering,
     method: Lowering.PlainStructMethod,
     recv_node: ?*const Node,
     call_args: []const *Node,
+    order: ?[]const usize,
     call_span: ast.Span,
 ) Ref {
     const fd = method.fd;
@@ -753,7 +792,8 @@ fn lowerComptimePlainStructMethod(
         binding_scope = generics_mod.installTypeBindings(self, method_bindings.?);
     }
 
-    return self.lowerComptimeMethodCallArgs(fd, effective_args.items, recv_node != null, call_span);
+    const effective_order = if (recv_node != null) receiverFirst(self, order) else order;
+    return self.lowerComptimeMethodCallArgs(fd, effective_args.items, effective_order, recv_node != null, call_span);
 }
 
 pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
@@ -848,7 +888,11 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
     // `f(a, name = v)` into declaration order with defaults filled, BEFORE
     // positional default expansion (a named call never reaches it: mapping
     // fills every default itself, middle holes included).
-    if (mapNamedArgs(self, c, sel_author, qualified_author != null, if (qualified_callable) |cv| cv.global else null, author_declines)) |mapped| c = mapped;
+    var written_order: ?[]const usize = null;
+    if (mapNamedArgs(self, c, sel_author, qualified_author != null, if (qualified_callable) |cv| cv.global else null, author_declines)) |mapped| {
+        c = mapped.call;
+        written_order = mapped.order;
+    }
     // Expand default parameter values for bare identifier callees:
     // when the caller omits trailing positional args, fill them in
     // from the callee's `param: T = expr` declarations.
@@ -959,10 +1003,10 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             if (isPackFn(fd)) {
                 // Protocol packs (`..xs: P`) and comptime type-packs
                 // (`..$args`) both monomorphize per call shape.
-                return self.lowerPackFnCall(fd, c);
+                return self.lowerPackFnCall(fd, c, written_order);
             }
             if (hasComptimeParams(fd)) {
-                return self.lowerComptimeCall(fd, c);
+                return self.lowerComptimeCall(fd, c, written_order);
             }
             // Early detection of generic function calls — skip arg lowering for type params
             // because lowerGenericCall resolves type params from AST nodes, not lowered refs.
@@ -999,40 +1043,39 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 }
                 var lowered_args = std.ArrayList(Ref).empty;
                 defer lowered_args.deinit(self.alloc);
-                for (c.args, 0..) |arg, ai| {
+                lowered_args.appendNTimes(self.alloc, Ref.none, c.args.len) catch unreachable;
+                for (0..c.args.len) |n| {
+                    const ai = if (written_order) |order| order[n] else n;
+                    const arg = c.args[ai];
                     // Skip type param args only when types are passed explicitly
-                    if (types_explicit and ai < fd.params.len and isTypeParamDecl(&fd.params[ai], fd.type_params)) {
-                        lowered_args.append(self.alloc, Ref.none) catch unreachable;
-                    } else {
-                        var dem = self.enterDemand(if (ai < arg_demands.items.len) arg_demands.items[ai] else .none);
-                        defer dem.restore();
-                        const tgt: ?TypeId = self.target_type;
-                        const r = blk: {
-                            // A `$I/@Init(T)` param forms its recipe instead of
-                            // evaluating the argument (same arm as the direct
-                            // path below).
-                            if (tgt) |ptv| {
-                                if (self.initTargetOf(ptv)) |target| break :blk self.formInitPlan(arg, target);
-                                // A `$B/@BuildBlock(P)` param forms its block from
-                                // the trailing body, or takes one already formed.
-                                if (self.blockProtocolOf(ptv)) |protocol| break :blk self.formBuildBlock(arg, protocol);
-                            }
-                            // Protocol param targets erase node-aware
-                            // (same arm as the direct path).
-                            if (tgt) |ptv| {
-                                if (protocolArgErasure(self, arg, ptv)) |ib| break :blk ib;
-                            }
-                            // A `@VaList` param is the C boundary: the argument
-                            // names a live list and its PLACE crosses (same arm
-                            // as the direct path) — a cursor has no value form
-                            // for `lowerExpr` to read.
-                            if (tgt) |ptv| {
-                                if (self.boundaryCursorArg(arg, ptv)) |place| break :blk place;
-                            }
-                            break :blk self.lowerExpr(arg);
-                        };
-                        lowered_args.append(self.alloc, r) catch unreachable;
-                    }
+                    if (types_explicit and ai < fd.params.len and isTypeParamDecl(&fd.params[ai], fd.type_params)) continue;
+                    var dem = self.enterDemand(if (ai < arg_demands.items.len) arg_demands.items[ai] else .none);
+                    defer dem.restore();
+                    const tgt: ?TypeId = self.target_type;
+                    lowered_args.items[ai] = blk: {
+                        // A `$I/@Init(T)` param forms its recipe instead of
+                        // evaluating the argument (same arm as the direct
+                        // path below).
+                        if (tgt) |ptv| {
+                            if (self.initTargetOf(ptv)) |target| break :blk self.formInitPlan(arg, target);
+                            // A `$B/@BuildBlock(P)` param forms its block from
+                            // the trailing body, or takes one already formed.
+                            if (self.blockProtocolOf(ptv)) |protocol| break :blk self.formBuildBlock(arg, protocol);
+                        }
+                        // Protocol param targets erase node-aware
+                        // (same arm as the direct path).
+                        if (tgt) |ptv| {
+                            if (protocolArgErasure(self, arg, ptv)) |ib| break :blk ib;
+                        }
+                        // A `@VaList` param is the C boundary: the argument
+                        // names a live list and its PLACE crosses (same arm
+                        // as the direct path) — a cursor has no value form
+                        // for `lowerExpr` to read.
+                        if (tgt) |ptv| {
+                            if (self.boundaryCursorArg(arg, ptv)) |place| break :blk place;
+                        }
+                        break :blk self.lowerExpr(arg);
+                    };
                 }
                 return self.lowerGenericCall(fd, early_name, c, lowered_args.items);
             }
@@ -1046,9 +1089,9 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
     // distinct; comptime lowering consumes the exact declaration directly.
     if (qualified_author) |sf| {
         if (isPackFn(sf.decl))
-            return self.lowerPackFnCallNamed(sf.decl, selectedDispatchName(self, sf), c, null);
+            return self.lowerPackFnCallNamed(sf.decl, selectedDispatchName(self, sf), c, null, written_order);
         if (hasComptimeParams(sf.decl))
-            return self.lowerComptimeCall(sf.decl, c);
+            return self.lowerComptimeCall(sf.decl, c, written_order);
     }
 
     // Selected static plain-struct pack/comptime methods must dispatch before
@@ -1067,9 +1110,9 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         else => null,
     };
     if (early_static_method) |method| {
-        if (isPackFn(method.fd)) return self.lowerPackFnCallNamed(method.fd, self.plainStructMethodName(method), c, null);
+        if (isPackFn(method.fd)) return self.lowerPackFnCallNamed(method.fd, self.plainStructMethodName(method), c, null, written_order);
         if (hasComptimeParams(method.fd))
-            return lowerComptimePlainStructMethod(self, method, null, c.args, c.callee.span);
+            return lowerComptimePlainStructMethod(self, method, null, c.args, written_order, c.callee.span);
     }
 
     // Instance pack/comptime methods also own AST argument evaluation. Select
@@ -1085,10 +1128,10 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     eff_args[0] = @constCast(fa.object);
                     @memcpy(eff_args[1..], c.args);
                     const syn_call = ast.Call{ .callee = c.callee, .args = eff_args };
-                    return self.lowerPackFnCallNamed(method.fd, self.plainStructMethodName(method), &syn_call, fa.object);
+                    return self.lowerPackFnCallNamed(method.fd, self.plainStructMethodName(method), &syn_call, fa.object, receiverFirst(self, written_order));
                 }
                 if (hasComptimeParams(method.fd))
-                    return lowerComptimePlainStructMethod(self, method, fa.object, c.args, c.callee.span);
+                    return lowerComptimePlainStructMethod(self, method, fa.object, c.args, written_order, c.callee.span);
             }
             // Generic-struct instances carry a separate author stamp and are
             // intentionally absent from plainStructMethod. Select their
@@ -1200,6 +1243,15 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             target = info.optional.child;
         }
     }
+    // A dot-call's receiver is its first argument (specs: UFCS), so it
+    // evaluates before the written ones.
+    const first_receiver: ?Ref = switch (c.callee.data) {
+        .field_access => |fa| if (qualified_call_verdict == .value_receiver and receiverIsFirstArgument(self, c, &fa))
+            self.lowerExpr(methodReceiverNode(fa.object))
+        else
+            null,
+        else => null,
+    };
     // Running PARAMETER index: a spread expands one
     // AST arg into N lowered args, so the AST loop index stops matching the
     // callee's parameter positions after any spread. `param_idx` advances by
@@ -1208,7 +1260,13 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
     // index typed `f(..pair, null)`'s `null` against the wrong param (a
     // present-zero optional instead of none).
     var param_idx: usize = 0;
-    for (c.args) |arg| {
+    // A named call's arguments evaluate in written order, each landing at its
+    // parameter position; named arguments refuse a spread, so a position is
+    // one parameter.
+    if (written_order) |order| {
+        args.appendNTimes(self.alloc, Ref.none, c.args.len) catch unreachable;
+        for (order) |k| args.items[k] = lowerCallArg(self, c.args[k], k, param_types, enum_payload_ty);
+    } else for (c.args) |arg| {
         if (arg.data == .spread_expr) {
             // Pack spread `..xs` / `..xs.method` → expand to N positional
             // args here. A runtime-slice spread (`..arr`) is left as a
@@ -1246,207 +1304,8 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             param_idx += 1;
             continue;
         }
-        // Every non-spread arg consumes exactly one parameter slot — on every
-        // exit from this iteration (all the `continue`s below included).
-        defer param_idx += 1;
-        const ai = param_idx;
-        // Beyond the declared parameters the ambient target stands — a
-        // C-variadic tail types from it — and no signature rides with it.
-        var dem = self.enterDemand(if (ai < param_types.len) param_types[ai] else null);
-        defer dem.restore();
-        const pt: ?TypeId = if (ai < param_types.len) param_types[ai].coerceType() else null;
-        // `cast(T) X` — lower an integer-literal operand against the cast's
-        // target type T: otherwise the literal folds against the
-        // ambient default `i64` and a value above i64.max but within a wider
-        // target (`cast(u64) 0xcbf...`) trips the i64 fits-check before the
-        // cast ever applies — AND a same-width signed↔unsigned reinterpret
-        // (`i64 → u64`) is classified `.none`, passing the operand through with
-        // its SOURCE type so a `:=`-inferred result mis-formats as signed.
-        // Emitting the literal directly as T fixes both (the value is masked to
-        if (enum_payload_ty) |ept| {
-            if (ai == 0) self.target_type = ept;
-        }
-        // A `$I/@Init(T)` parameter is destination-first (spec §5.2): the
-        // argument is NOT evaluated at the call boundary. Form the recipe and
-        // pass it; the callee decides when — and whether — the expression runs.
-        // This precedes every value-shaped arm below, all of which would evaluate.
-        if (pt) |ptv| {
-            if (self.initTargetOf(ptv)) |target| {
-                args.append(self.alloc, self.formInitPlan(arg, target)) catch unreachable;
-                continue;
-            }
-            // A `$B/@BuildBlock(P)` parameter takes the trailing block's body
-            // (§6.2 rule 1) or a block already formed (rule 2). Neither is an
-            // ordinary value, so this precedes every value-shaped arm below.
-            if (self.blockProtocolOf(ptv)) |protocol| {
-                args.append(self.alloc, self.formBuildBlock(arg, protocol)) catch unreachable;
-                continue;
-            }
-            // A `@VaList` parameter is the C boundary: the argument names a
-            // live list and its PLACE crosses. Precedes every value-shaped arm
-            // below — a cursor has no value form for them to read.
-            if (self.boundaryCursorArg(arg, ptv)) |r| {
-                args.append(self.alloc, r) catch unreachable;
-                continue;
-            }
-        }
-        // Implicit float→int narrowing of a compile-time float argument
-        // (incl. an expanded `param: T = expr` default) follows the unified
-        // rule: an integral comptime float folds, a non-integral one errors.
-        // A runtime float / `xx` cast is unaffected and coerces as before.
-        if (pt) |ptv| {
-            if (self.foldComptimeFloatInit(arg, ptv)) |folded| {
-                args.append(self.alloc, folded) catch unreachable;
-                continue;
-            }
-        }
-        // Implicit address-of: when param expects *T and arg is an identifier
-        // with an alloca of type T, pass the alloca pointer directly (reference
-        // semantics, so mutations through the pointer are visible to the caller).
-        if (pt != null and arg.data == .identifier) {
-            const ptv = pt.?;
-            if (!ptv.isBuiltin()) {
-                const pti = self.module.types.get(ptv);
-                if (pti == .pointer) {
-                    const nm = arg.data.identifier.name;
-                    const local = if (self.scope) |scope| scope.lookup(nm) else null;
-                    if (local) |binding| {
-                        // Only apply when the binding type matches the pointee type
-                        if (binding.is_alloca and self.module.types.sameType(binding.ty, pti.pointer.pointee)) {
-                            const ptr_ty = self.module.types.ptrTo(binding.ty);
-                            args.append(self.alloc, self.builder.emit(.{ .addr_of = .{ .operand = binding.ref } }, ptr_ty)) catch unreachable;
-                            continue;
-                        }
-                    } else if (self.resolveGlobalRef(nm, null)) |gi| {
-                        // MUTABLE global arg to a `*T` param: pass the global's
-                        // LIVE address (`global_addr` via lowerExprAsPtr), not a
-                        // loaded copy the callee would mutate in vain — the
-                        // explicit-call sibling of the UFCS-receiver rule.
-                        // A `::` const global is excluded (no `*T` into `.rodata`
-                        // — would SIGBUS / slip past the const-write guard); it
-                        // falls through to the value copy below.
-                        if (self.module.types.sameType(gi.ty, pti.pointer.pointee) and !self.rootIsConstant(nm)) {
-                            const ptr_ty = self.module.types.ptrTo(gi.ty);
-                            const place = self.lowerExprAsPtr(arg);
-                            const place_ty = self.builder.getRefType(place);
-                            const r = if (place_ty == ptr_ty)
-                                place
-                            else
-                                self.builder.emit(.{ .addr_of = .{ .operand = place } }, ptr_ty);
-                            args.append(self.alloc, r) catch unreachable;
-                            continue;
-                        }
-                    }
-                }
-            }
-        }
-        // Implicit address-of for compound lvalues (field access / index /
-        // deref): when the param expects `*T` and the arg is an addressable
-        // lvalue of type `T`, pass the lvalue's real address (GEP) — same
-        // reference semantics as the identifier case above. Without this the
-        // arg would be loaded into a temporary and the callee would mutate a
-        // throwaway copy (silent data loss — e.g. `make_move(self.board, m)`).
-        if (pt != null and (arg.data == .field_access or arg.data == .index_expr or arg.data == .deref_expr or (self.fieldCall(arg) != null and self.exprHasAddressableStorage(arg)))) {
-            const ptv = pt.?;
-            if (!ptv.isBuiltin()) {
-                const pti = self.module.types.get(ptv);
-                if (pti == .pointer and self.inferExprType(arg) == pti.pointer.pointee) {
-                    // `lowerExprAsPtr` yields the lvalue's address, typed
-                    // either as `*T` already (index/deref) or as the pointee
-                    // `T` (a field "place" ref); normalize to `*T` — exactly
-                    // what `@field_access` does.
-                    const place = self.lowerExprAsPtr(arg);
-                    const place_ty = self.builder.getRefType(place);
-                    const ref: ?Ref = if (place_ty == ptv)
-                        place
-                    else if (place_ty == pti.pointer.pointee)
-                        self.builder.emit(.{ .addr_of = .{ .operand = place } }, ptv)
-                    else
-                        null;
-                    if (ref) |r| {
-                        args.append(self.alloc, r) catch unreachable;
-                        continue;
-                    }
-                }
-            }
-        }
-        // Concrete lvalue → interface param: erase NODE-AWARE so the lvalue
-        // BORROWS (`mem.free(t, gpa)` aliases gpa) — the node-less coerceCallArgs
-        // layer would misread the lvalue as an rvalue and refuse.
-        if (pt) |ptv| {
-            if (protocolArgErasure(self, arg, ptv)) |r| {
-                args.append(self.alloc, r) catch unreachable;
-                continue;
-            }
-        }
-        // Concrete lvalue → `*Protocol` param: the borrowed-VIEW coercion
-        // (erasure model). Take the lvalue's REAL address,
-        // build the borrow-mode protocol value around it (ctx = that address,
-        // so mutations through the view reach the original), spill the value
-        // to a frame slot and pass the slot's address. Mirrors the implicit
-        // address-of arms above; rvalue args never reach here (no lvalue
-        // shape) and are refused at the node-less layer (coerceCallArgs).
-        if (pt != null and (arg.data == .identifier or arg.data == .field_access or
-            arg.data == .index_expr or arg.data == .deref_expr or (self.fieldCall(arg) != null and self.exprHasAddressableStorage(arg))))
-        {
-            const ptv = pt.?;
-            if (!ptv.isBuiltin()) {
-                const pti = self.module.types.get(ptv);
-                if (pti == .pointer and self.getProtocolInfo(pti.pointer.pointee) != null) {
-                    const cty = self.inferExprType(arg);
-                    if (cty != .unresolved and !cty.isBuiltin() and cty != pti.pointer.pointee and
-                        self.getProtocolInfo(cty) == null and self.module.types.get(cty) == .@"struct")
-                    {
-                        const place = self.lowerExprAsPtr(arg);
-                        const place_ty = self.builder.getRefType(place);
-                        const addr = if (place_ty == cty)
-                            self.builder.emit(.{ .addr_of = .{ .operand = place } }, self.module.types.ptrTo(cty))
-                        else
-                            place;
-                        if (self.viewOfConcreteAddr(addr, cty, ptv)) |v| {
-                            args.append(self.alloc, v) catch unreachable;
-                            continue;
-                        }
-                    }
-                }
-            }
-        }
-        // An argument is a VALUE position: a block-form `if C { A } else { B }`
-        // / `match` used directly as an argument must yield its branch value,
-        // not be lowered as a statement-if (which returns a bare `void 0` and
-        // silently passes `0`, or overruns for a wider branch type → segfault).
-        // The `then`-form and a `let`-bound local already work
-        // because both reach `lowerIfExpr` with `force_block_value` set; a bare
-        // call argument did not. Set it here so the arg materializes its value.
-        const saved_fbv = self.force_block_value;
-        self.force_block_value = true;
-        const val = self.lowerExpr(arg);
-        self.force_block_value = saved_fbv;
-        // Passing a `*T` where a `T` value is expected — a by-reference loop
-        // capture (`for *m in xs`), a `*T` parameter, or any pointer local —
-        // otherwise slips through to LLVM as an opaque "call parameter type
-        // does not match function signature" verifier error. Flag it at the
-        // call site with a `.*` fix-it.
-        if (pt) |ptv| {
-            const vt = self.builder.getRefType(val);
-            const vti = self.module.types.get(vt);
-            if (vti == .pointer and self.module.types.sameType(vti.pointer.pointee, ptv)) {
-                if (self.diagnostics) |d| {
-                    const tn = self.formatTypeName(ptv);
-                    if (arg.data == .identifier) {
-                        const nm = arg.data.identifier.name;
-                        const lead: []const u8 = if (self.refCapturePointee(arg) != null) "by-reference loop capture" else "argument";
-                        const fix = std.fmt.allocPrint(self.alloc, "{s}.*", .{nm}) catch nm;
-                        const pid = d.addFmtId(.err, arg.span, "{s} '{s}' has type '*{s}', but '{s}' is expected here", .{ lead, nm, tn, tn });
-                        d.addHelpFmt(pid, arg.span, fix, "dereference it to pass the value: `{s}`", .{fix});
-                    } else {
-                        const pid = d.addFmtId(.err, arg.span, "this argument has type '*{s}', but '{s}' is expected here", .{ tn, tn });
-                        d.addHelpFmt(pid, arg.span, null, "dereference it with `.*` to pass the value", .{});
-                    }
-                }
-            }
-        }
-        args.append(self.alloc, val) catch unreachable;
+        args.append(self.alloc, lowerCallArg(self, arg, param_idx, param_types, enum_payload_ty)) catch unreachable;
+        param_idx += 1;
     }
 
     switch (c.callee.data) {
@@ -1591,7 +1450,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             // Check for comptime-expanded or generic functions
             if (named_fd) |fd| {
                 if (hasComptimeParams(fd)) {
-                    return self.lowerComptimeCall(fd, c);
+                    return self.lowerComptimeCall(fd, c, written_order);
                 }
                 if (fd.type_params.len > 0) {
                     // Runtime dispatch already handled above (before arg lowering)
@@ -1826,9 +1685,9 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         if (self.plainStructMethod(owner_ty, fa.field)) |method| {
                             const fd = method.fd;
                             const dispatch_name = self.plainStructMethodName(method);
-                            if (isPackFn(fd)) return self.lowerPackFnCallNamed(fd, dispatch_name, c, null);
+                            if (isPackFn(fd)) return self.lowerPackFnCallNamed(fd, dispatch_name, c, null, written_order);
                             if (hasComptimeParams(fd))
-                                return lowerComptimePlainStructMethod(self, method, null, c.args, c.callee.span);
+                                return lowerComptimePlainStructMethod(self, method, null, c.args, written_order, c.callee.span);
                             if (fd.type_params.len > 0) return self.lowerGenericCall(fd, dispatch_name, c, args.items);
                             if (self.checkCallArity(fd, dispatch_name, args.items.len, false, c.callee.span)) return Ref.none;
                             self.appendDefaultArgs(fd, &args, c.callee, null);
@@ -1918,7 +1777,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                                 .intrinsic_expr => break :gate,
                                 else => {},
                             }
-                            if (hasComptimeParams(fd)) return self.lowerComptimeCall(fd, c);
+                            if (hasComptimeParams(fd)) return self.lowerComptimeCall(fd, c, written_order);
                             if (fd.type_params.len > 0) return self.lowerGenericCall(fd, fa.field, c, args.items);
                             if (self.checkCallArity(fd, fa.field, args.items.len, false, c.callee.span)) return Ref.none;
                             var sf = SelectedFunc{ .decl = fd, .source = target.target_module_path };
@@ -1948,7 +1807,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 const effective_name = if (self.program_index.lookup(.function, qualified_name) != null) qualified_name else func_name;
                 if (self.program_index.lookup(.function, effective_name)) |fd| {
                     if (hasComptimeParams(fd)) {
-                        return self.lowerComptimeCall(fd, c);
+                        return self.lowerComptimeCall(fd, c, written_order);
                     }
                     if (fd.type_params.len > 0) {
                         return self.lowerGenericCall(fd, effective_name, c, args.items);
@@ -2026,19 +1885,9 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             }
 
             // Method call: obj.method(args) → prepend obj (or &obj for *Self receivers)
-            // For ptr.*.method(): pass the pointer directly instead of loading + re-addressing.
-            // This ensures mutations through self: *T are visible after the call.
-            var obj_ty: TypeId = undefined;
-            var obj: Ref = undefined;
-            var effective_obj_node: *const Node = fa.object;
-            if (fa.object.data == .deref_expr) {
-                effective_obj_node = fa.object.data.deref_expr.operand;
-                obj_ty = self.inferExprType(effective_obj_node);
-                obj = self.lowerExpr(effective_obj_node);
-            } else {
-                obj_ty = self.inferExprType(fa.object);
-                obj = self.lowerExpr(fa.object);
-            }
+            const effective_obj_node = methodReceiverNode(fa.object);
+            var obj_ty = self.inferExprType(effective_obj_node);
+            var obj = first_receiver orelse self.lowerExpr(effective_obj_node);
 
             // A guard-narrowed optional receiver dispatches through its
             // child implicitly — parity with field reads and the
@@ -2356,7 +2205,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         syn_args.append(self.alloc, @constCast(effective_obj_node)) catch unreachable;
                         for (c.args) |a| syn_args.append(self.alloc, a) catch unreachable;
                         const syn_call = ast.Call{ .callee = c.callee, .args = syn_args.items };
-                        return self.lowerPackFnCall(fd, &syn_call);
+                        return self.lowerPackFnCall(fd, &syn_call, receiverFirst(self, written_order));
                     }
                 }
                 // Generic ufcs target: monomorphize with the receiver's AST
@@ -2610,6 +2459,161 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             return self.builder.emit(.{ .call_indirect = .{ .callee = callee_ref, .args = owned } }, .i64);
         },
     }
+}
+
+/// Lowers the argument bound to parameter slot `ai` under that parameter's
+/// demand: its value, or what a destination-first, build-block or cursor
+/// parameter takes in place of one.
+fn lowerCallArg(self: *Lowering, arg: *const Node, ai: usize, param_types: []const ParamDemand, enum_payload_ty: ?TypeId) Ref {
+    // Beyond the declared parameters the ambient target stands — a
+    // C-variadic tail types from it — and no signature rides with it.
+    var dem = self.enterDemand(if (ai < param_types.len) param_types[ai] else null);
+    defer dem.restore();
+    const pt: ?TypeId = if (ai < param_types.len) param_types[ai].coerceType() else null;
+    if (enum_payload_ty) |ept| {
+        if (ai == 0) self.target_type = ept;
+    }
+    // A `$I/@Init(T)` parameter is destination-first (spec §5.2): the
+    // argument is NOT evaluated at the call boundary. Form the recipe and
+    // pass it; the callee decides when — and whether — the expression runs.
+    // This precedes every value-shaped arm below, all of which would evaluate.
+    if (pt) |ptv| {
+        if (self.initTargetOf(ptv)) |target| return self.formInitPlan(arg, target);
+        // A `$B/@BuildBlock(P)` parameter takes the trailing block's body
+        // (§6.2 rule 1) or a block already formed (rule 2). Neither is an
+        // ordinary value, so this precedes every value-shaped arm below.
+        if (self.blockProtocolOf(ptv)) |protocol| return self.formBuildBlock(arg, protocol);
+        // A `@VaList` parameter is the C boundary: the argument names a
+        // live list and its PLACE crosses. Precedes every value-shaped arm
+        // below — a cursor has no value form for them to read.
+        if (self.boundaryCursorArg(arg, ptv)) |r| return r;
+    }
+    // Implicit float→int narrowing of a compile-time float argument
+    // (incl. an expanded `param: T = expr` default) follows the unified
+    // rule: an integral comptime float folds, a non-integral one errors.
+    if (pt) |ptv| {
+        if (self.foldComptimeFloatInit(arg, ptv)) |folded| return folded;
+    }
+    // Implicit address-of: when param expects *T and arg is an identifier
+    // with an alloca of type T, pass the alloca pointer directly (reference
+    // semantics, so mutations through the pointer are visible to the caller).
+    if (pt != null and arg.data == .identifier) {
+        const ptv = pt.?;
+        if (!ptv.isBuiltin()) {
+            const pti = self.module.types.get(ptv);
+            if (pti == .pointer) {
+                const nm = arg.data.identifier.name;
+                const local = if (self.scope) |scope| scope.lookup(nm) else null;
+                if (local) |binding| {
+                    if (binding.is_alloca and self.module.types.sameType(binding.ty, pti.pointer.pointee)) {
+                        const ptr_ty = self.module.types.ptrTo(binding.ty);
+                        return self.builder.emit(.{ .addr_of = .{ .operand = binding.ref } }, ptr_ty);
+                    }
+                } else if (self.resolveGlobalRef(nm, null)) |gi| {
+                    // MUTABLE global arg to a `*T` param: pass the global's
+                    // LIVE address (`global_addr` via lowerExprAsPtr), not a
+                    // loaded copy the callee would mutate in vain — the
+                    // explicit-call sibling of the UFCS-receiver rule.
+                    // A `::` const global is excluded (no `*T` into `.rodata`
+                    // — would SIGBUS / slip past the const-write guard); it
+                    // falls through to the value copy below.
+                    if (self.module.types.sameType(gi.ty, pti.pointer.pointee) and !self.rootIsConstant(nm)) {
+                        const ptr_ty = self.module.types.ptrTo(gi.ty);
+                        const place = self.lowerExprAsPtr(arg);
+                        if (self.builder.getRefType(place) == ptr_ty) return place;
+                        return self.builder.emit(.{ .addr_of = .{ .operand = place } }, ptr_ty);
+                    }
+                }
+            }
+        }
+    }
+    // Implicit address-of for compound lvalues (field access / index /
+    // deref): when the param expects `*T` and the arg is an addressable
+    // lvalue of type `T`, pass the lvalue's real address (GEP) — same
+    // reference semantics as the identifier case above.
+    if (pt != null and (arg.data == .field_access or arg.data == .index_expr or arg.data == .deref_expr or (self.fieldCall(arg) != null and self.exprHasAddressableStorage(arg)))) {
+        const ptv = pt.?;
+        if (!ptv.isBuiltin()) {
+            const pti = self.module.types.get(ptv);
+            if (pti == .pointer and self.inferExprType(arg) == pti.pointer.pointee) {
+                // `lowerExprAsPtr` yields the lvalue's address, typed
+                // either as `*T` already (index/deref) or as the pointee
+                // `T` (a field "place" ref); normalize to `*T` — exactly
+                // what `@field_access` does.
+                const place = self.lowerExprAsPtr(arg);
+                const place_ty = self.builder.getRefType(place);
+                if (place_ty == ptv) return place;
+                if (place_ty == pti.pointer.pointee) return self.builder.emit(.{ .addr_of = .{ .operand = place } }, ptv);
+            }
+        }
+    }
+    // Concrete lvalue → interface param: erase NODE-AWARE so the lvalue
+    // BORROWS (`mem.free(t, gpa)` aliases gpa) — the node-less coerceCallArgs
+    // layer would misread the lvalue as an rvalue and refuse.
+    if (pt) |ptv| {
+        if (protocolArgErasure(self, arg, ptv)) |r| return r;
+    }
+    // Concrete lvalue → `*Protocol` param: the borrowed-VIEW coercion
+    // (erasure model). Take the lvalue's REAL address,
+    // build the borrow-mode protocol value around it (ctx = that address,
+    // so mutations through the view reach the original), spill the value
+    // to a frame slot and pass the slot's address. Mirrors the implicit
+    // address-of arms above; rvalue args never reach here (no lvalue
+    // shape) and are refused at the node-less layer (coerceCallArgs).
+    if (pt != null and (arg.data == .identifier or arg.data == .field_access or
+        arg.data == .index_expr or arg.data == .deref_expr or (self.fieldCall(arg) != null and self.exprHasAddressableStorage(arg))))
+    {
+        const ptv = pt.?;
+        if (!ptv.isBuiltin()) {
+            const pti = self.module.types.get(ptv);
+            if (pti == .pointer and self.getProtocolInfo(pti.pointer.pointee) != null) {
+                const cty = self.inferExprType(arg);
+                if (cty != .unresolved and !cty.isBuiltin() and cty != pti.pointer.pointee and
+                    self.getProtocolInfo(cty) == null and self.module.types.get(cty) == .@"struct")
+                {
+                    const place = self.lowerExprAsPtr(arg);
+                    const place_ty = self.builder.getRefType(place);
+                    const addr = if (place_ty == cty)
+                        self.builder.emit(.{ .addr_of = .{ .operand = place } }, self.module.types.ptrTo(cty))
+                    else
+                        place;
+                    if (self.viewOfConcreteAddr(addr, cty, ptv)) |v| return v;
+                }
+            }
+        }
+    }
+    // An argument is a VALUE position: a block-form `if C { A } else { B }`
+    // / `match` used directly as an argument yields its branch value, not a
+    // statement-if's bare `void 0`.
+    const saved_fbv = self.force_block_value;
+    self.force_block_value = true;
+    const val = self.lowerExpr(arg);
+    self.force_block_value = saved_fbv;
+    // Passing a `*T` where a `T` value is expected — a by-reference loop
+    // capture (`for *m in xs`), a `*T` parameter, or any pointer local —
+    // otherwise slips through to LLVM as an opaque "call parameter type
+    // does not match function signature" verifier error. Flag it at the
+    // call site with a `.*` fix-it.
+    if (pt) |ptv| {
+        const vt = self.builder.getRefType(val);
+        const vti = self.module.types.get(vt);
+        if (vti == .pointer and self.module.types.sameType(vti.pointer.pointee, ptv)) {
+            if (self.diagnostics) |d| {
+                const tn = self.formatTypeName(ptv);
+                if (arg.data == .identifier) {
+                    const nm = arg.data.identifier.name;
+                    const lead: []const u8 = if (self.refCapturePointee(arg) != null) "by-reference loop capture" else "argument";
+                    const fix = std.fmt.allocPrint(self.alloc, "{s}.*", .{nm}) catch nm;
+                    const pid = d.addFmtId(.err, arg.span, "{s} '{s}' has type '*{s}', but '{s}' is expected here", .{ lead, nm, tn, tn });
+                    d.addHelpFmt(pid, arg.span, fix, "dereference it to pass the value: `{s}`", .{fix});
+                } else {
+                    const pid = d.addFmtId(.err, arg.span, "this argument has type '*{s}', but '{s}' is expected here", .{ tn, tn });
+                    d.addHelpFmt(pid, arg.span, null, "dereference it with `.*` to pass the value", .{});
+                }
+            }
+        }
+    }
+    return val;
 }
 
 /// Emit a diagnostic for code that needs `Context` (allocator
@@ -5143,7 +5147,7 @@ fn isClosureSlot(self: *Lowering, pty: TypeId) bool {
 /// lowering sees each value as a plain positional node (the build aborts on
 /// the mapping diagnostic before codegen; this only prevents an
 /// unknown-node cascade).
-fn stripNamedArgs(self: *Lowering, c: *const ast.Call) *ast.Call {
+fn stripNamedArgs(self: *Lowering, c: *const ast.Call) NamedCall {
     var new_args = std.ArrayList(*Node).empty;
     for (c.args) |a| switch (a.data) {
         .named_arg => |na| new_args.append(self.alloc, na.value) catch unreachable,
@@ -5155,7 +5159,7 @@ fn stripNamedArgs(self: *Lowering, c: *const ast.Call) *ast.Call {
     };
     const new_call = self.alloc.create(ast.Call) catch unreachable;
     new_call.* = .{ .callee = c.callee, .args = new_args.toOwnedSlice(self.alloc) catch unreachable };
-    return new_call;
+    return .{ .call = new_call };
 }
 
 /// Levenshtein distance for the unknown-name did-you-mean suggestion.
@@ -5175,6 +5179,14 @@ fn editDistance(alloc: std.mem.Allocator, a: []const u8, b: []const u8) usize {
     }
     return prev[b.len];
 }
+
+/// A call rewritten into declaration order. `order` lists its argument
+/// positions in written order — unwritten defaults last — when the mapping
+/// moved a written argument ahead of one written before it.
+pub const NamedCall = struct {
+    call: *ast.Call,
+    order: ?[]const usize = null,
+};
 
 /// Named-argument mapping pass (specs: Named Arguments). Runs at `lowerCall`
 /// entry BEFORE default expansion: rewrites a call carrying `name = value`
@@ -5196,7 +5208,7 @@ pub fn mapNamedArgs(
     qualified_selected: bool,
     qualified_callable: ?GlobalInfo,
     author_declines: bool,
-) ?*ast.Call {
+) ?NamedCall {
     var any_named = false;
     var has_block = false;
     for (c.args) |a| {
@@ -5239,10 +5251,9 @@ pub fn mapNamedArgs(
     var pos: usize = off;
     var seen_named = false;
     var errored = false;
-    // Named bindings in WRITTEN order (param index + value) — consumed by
-    // the displacement check below.
-    var named_seq = std.ArrayList(struct { i: usize, v: *Node }).empty;
-    defer named_seq.deinit(self.alloc);
+    // The parameter each bound argument fills, in written order.
+    var written = std.ArrayList(usize).empty;
+    defer written.deinit(self.alloc);
     for (c.args) |a| {
         switch (a.data) {
             .named_arg => |na| {
@@ -5302,7 +5313,7 @@ pub fn mapNamedArgs(
                     continue;
                 }
                 slots[i] = na.value;
-                named_seq.append(self.alloc, .{ .i = i, .v = na.value }) catch {};
+                written.append(self.alloc, i) catch unreachable;
             },
             .spread_expr => {
                 errored = true;
@@ -5360,6 +5371,7 @@ pub fn mapNamedArgs(
                         continue;
                     }
                     slots[last] = tb.lambda;
+                    written.append(self.alloc, last) catch unreachable;
                     continue;
                 }
                 // A `$F/(…) -> R` last parameter names the block's signature in
@@ -5399,6 +5411,7 @@ pub fn mapNamedArgs(
                     continue;
                 }
                 slots[last] = tb.lambda;
+                written.append(self.alloc, last) catch unreachable;
             },
             else => {
                 if (seen_named) {
@@ -5418,50 +5431,11 @@ pub fn mapNamedArgs(
                     continue;
                 }
                 slots[pos] = a;
+                written.append(self.alloc, pos) catch unreachable;
                 pos += 1;
             },
         }
     }
-    // Evaluation order is written order. The rewrite hands the call
-    // machinery param-ordered nodes, so when the named values' param indices
-    // are not already ascending, evaluate EVERY argument now — positional
-    // and named, in written order, each typed by its param's declaration —
-    // and record node → ref; `lowerExpr` returns the recorded ref when the
-    // machinery reaches the node. Exempt shapes keep declaration-order
-    // evaluation: value-receiver calls (the receiver must evaluate first
-    // and lowers inside dispatch), and generic / comptime / pack / variadic
-    // callees (their args bind through their own dispatch machinery).
-    var displaced = false;
-    for (named_seq.items, 0..) |e, k| {
-        if (k > 0 and e.i < named_seq.items[k - 1].i) displaced = true;
-    }
-    if (!errored and displaced and off == 0 and variadic_idx == null and
-        fd.type_params.len == 0 and !hasComptimeParams(fd) and !isPackFn(fd))
-    {
-        var hoist_pos: usize = 0;
-        for (c.args) |a| {
-            // A trailing block is written last and binds the last param —
-            // never displaced; its lambda lowers at the machinery position.
-            if (a.data == .trailing_block) continue;
-            const bind: struct { i: usize, v: *Node } = switch (a.data) {
-                .named_arg => |na| blk: {
-                    for (fd.params, 0..) |p, i| {
-                        if (std.mem.eql(u8, p.name, na.name)) break :blk .{ .i = i, .v = na.value };
-                    }
-                    unreachable; // unknown names errored above
-                },
-                else => blk: {
-                    defer hoist_pos += 1;
-                    break :blk .{ .i = hoist_pos, .v = a };
-                },
-            };
-            var dem = self.enterDemand(lower_bound.paramDemand(self, fd, bind.i));
-            const ref = self.lowerExpr(bind.v);
-            dem.restore();
-            self.precomputed_args.put(bind.v, ref) catch {};
-        }
-    }
-
     // Fill skipped defaulted params; report missing required ones BY NAME.
     // This runs on the ERRORED path too: the rewritten call stays
     // arity-complete (defaults + undef holes), so the mapping diagnostic is
@@ -5513,7 +5487,20 @@ pub fn mapNamedArgs(
         bound.appendSlice(self.alloc, new_call.args) catch unreachable;
         bindSplicedDefaults(self, fd, bound.items);
     }
-    return new_call;
+    return .{ .call = new_call, .order = if (errored) null else writtenOrder(self, written.items, off, new_call.args.len) };
+}
+
+/// The positions of a mapped call's `len` arguments in written order, from the
+/// parameters `written` names (receiver parameters `off` excluded), unwritten
+/// defaults last. Null when declaration order already is written order.
+fn writtenOrder(self: *Lowering, written: []const usize, off: usize, len: usize) ?[]const usize {
+    if (std.sort.isSorted(usize, written, {}, std.sort.asc(usize))) return null;
+    var order = std.ArrayList(usize).initCapacity(self.alloc, len) catch unreachable;
+    for (written) |i| order.appendAssumeCapacity(i - off);
+    for (0..len) |pos| {
+        if (std.mem.indexOfScalar(usize, order.items[0..written.len], pos) == null) order.appendAssumeCapacity(pos);
+    }
+    return order.items;
 }
 
 /// A generic callee's spliced defaults lower under what the call binds its
