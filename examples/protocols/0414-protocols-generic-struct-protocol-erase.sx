@@ -19,7 +19,7 @@ Combined :: struct($R: Type, ..$Ts: []Type) {
 }
 impl VL($R) for Combined($R, ..$Ts) { get :: (self: *Combined) -> $R => self.value; }
 
-make :: (..sources: VL) -> VL(i64) {
+make :: (..$sources/VL) -> VL(i64) {
     c : Combined(i64, ..sources.T) = ---;
     c.value = 99;
     c.sources = .{..sources};

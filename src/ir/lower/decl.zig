@@ -3563,7 +3563,7 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
     // the VM handler the registry names.
     const is_extern_decl = fd.extern_export == .extern_ or
         isEvaluateIntrinsic(self, fd, name);
-    // A bare `..` tail binds no parameter, so `fd.params` already holds exactly
+    // A `...` tail binds no parameter, so `fd.params` already holds exactly
     // the fixed parameters and nothing is stripped.
     var is_c_variadic = fd.is_c_variadic;
     var effective_params = fd.params;
@@ -3573,6 +3573,9 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
     if (is_extern_decl and fd.params.len > 0 and fd.params[fd.params.len - 1].is_variadic) {
         is_c_variadic = true;
         effective_params = fd.params[0..ast.fixedParamCount(fd.params)];
+        // A dropped tail written as a type name must resolve to a slice.
+        const tail = &fd.params[fd.params.len - 1];
+        if (tail.type_expr.data != .slice_type_expr) _ = self.resolveParamType(tail);
     }
 
     const wants_ctx = self.funcWantsImplicitCtx(fd);
@@ -3592,7 +3595,7 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
             self.protocol_impl_receiver_types.get(fd) orelse self.resolveParamType(&p)
         else
             self.resolveParamType(&p);
-        // `..xs: P` is the comptime heterogeneous pack — each element keeps
+        // `..$xs/P` is the comptime heterogeneous pack — each element keeps
         // its concrete type and calls monomorphize, so every kind takes part.
         if (!p.is_pack and !p.is_comptime)
             _ = self.refuseValuelessProtocol(pty, p.type_expr.span, "declare a parameter of type");

@@ -1,0 +1,14 @@
+@import "modules/std.sx";
+
+Cell :: constraint(T: Type) { get :: (self: *Self) -> T; }
+IntCell :: struct { v: i64; }
+impl Cell(i64) for IntCell { get :: (self: *IntCell) -> i64 => self.v; }
+
+count :: (..$xs: Type) -> i64 { xs.len }
+sum :: (..$xs: Cell(i64)) -> i64 { xs[0].get() + xs[1].get() }
+
+main :: () -> i32 {
+    print("{}\n", count(1, "a", 2.5));
+    print("{}\n", sum(IntCell{ v = 2 }, IntCell{ v = 3 }));
+    0
+}

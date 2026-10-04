@@ -1078,7 +1078,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             self.program_index.lookup(.function, early_name);
         if (early_fd) |fd| {
             if (isPackFn(fd)) {
-                // Protocol packs (`..xs: P`) and comptime type-packs
+                // Protocol packs (`..$xs/P`) and comptime type-packs
                 // (`..$args`) both monomorphize per call shape.
                 return self.lowerPackFnCall(fd, c, written_order);
             }
@@ -4874,7 +4874,7 @@ pub fn checkCallArity(self: *Lowering, fd: *const ast.FnDecl, callee_name: []con
     // it from the arg list only in the all-slots-spelled form accepted below.
     var min: usize = 0;
     var count: usize = 0;
-    // A bare `..` binds no `Param`, so the tail shows in the signature flag
+    // A `...` binds no `Param`, so the tail shows in the signature flag
     // rather than in the loop below.
     var variadic = fd.is_c_variadic;
     for (fd.params) |p| {

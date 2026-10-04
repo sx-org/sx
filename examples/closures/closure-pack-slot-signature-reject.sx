@@ -1,4 +1,4 @@
-pf :: (..args: $Ts) -> i64 {
+pf :: (..$args) -> i64 {
     ignore := |f: Closure(..$args) -> i64| 40;
     ignore(|| -> i64 0)
 }

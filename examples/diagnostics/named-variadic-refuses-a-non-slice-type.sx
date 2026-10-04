@@ -1,0 +1,9 @@
+Count :: i64;
+
+f :: (..xs: Count) -> i64 {
+    return xs.len;
+}
+
+main :: () -> i64 {
+    return f(1, 2);
+}

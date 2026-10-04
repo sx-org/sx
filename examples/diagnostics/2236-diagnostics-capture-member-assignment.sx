@@ -27,7 +27,7 @@ Shape :: enum { box: Item; none; }
 
 takes :: (p: *i64) {}
 
-packMut :: (..xs: Item) {
+packMut :: (..$xs/Item) {
     inline for x in xs { x.n = 1; }
 }
 

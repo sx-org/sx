@@ -1,54 +1,54 @@
 error: pack 'xs' has no runtime value — a pack is comptime-only and can't be used as a value here
   --> examples/packs/0536-packs-pack-as-value.sx:14:40
    |
-14 | storage :: (..xs: Show) -> void { y := xs; _ = y; }          // A: store
+14 | storage :: (..$xs/Show) -> void { y := xs; _ = y; }          // A: store
    |                                        ^^
 
 help: to store it, materialize a tuple: `(..xs)`
    |
-14 | storage :: (..xs: Show) -> void { y := xs; _ = y; }          // A: store
+14 | storage :: (..$xs/Show) -> void { y := xs; _ = y; }          // A: store
    |                                        ^^
 
 error: pack 'xs' has no runtime value — a pack is comptime-only and can't be used as a value here
   --> examples/packs/0536-packs-pack-as-value.sx:15:40
    |
-15 | call    :: (..xs: Show) -> void { sink(xs); }                // B: pass to a call
+15 | call    :: (..$xs/Show) -> void { sink(xs); }                // B: pass to a call
    |                                        ^^
 
 help: to store runtime values, use a tuple or slice instead of a pack
    |
-15 | call    :: (..xs: Show) -> void { sink(xs); }                // B: pass to a call
+15 | call    :: (..$xs/Show) -> void { sink(xs); }                // B: pass to a call
    |                                        ^^
 
 error: pack 'xs' has no runtime value — a pack is comptime-only and can't be used as a value here
   --> examples/packs/0536-packs-pack-as-value.sx:16:42
    |
-16 | ret     :: (..xs: Show) -> i64  { return xs; }               // C: return
+16 | ret     :: (..$xs/Show) -> i64  { return xs; }               // C: return
    |                                          ^^
 
 help: to return it, return a tuple `(..xs)` and make the return type that tuple
    |
-16 | ret     :: (..xs: Show) -> i64  { return xs; }               // C: return
+16 | ret     :: (..$xs/Show) -> i64  { return xs; }               // C: return
    |                                          ^^
 
 error: pack 'xs' has no runtime value — a pack is comptime-only and can't be used as a value here
   --> examples/packs/0536-packs-pack-as-value.sx:17:44
    |
-17 | iter    :: (..xs: Show) -> void { for x in xs { _ = x; } }  // D: runtime iterate
+17 | iter    :: (..$xs/Show) -> void { for x in xs { _ = x; } }  // D: runtime iterate
    |                                            ^^
 
 help: to iterate at comptime use `inline for x in xs` (or `inline for i in 0..xs.len` for the index); for a runtime loop declare it as `..xs: []P` (an interface slice) instead of a pack
    |
-17 | iter    :: (..xs: Show) -> void { for x in xs { _ = x; } }  // D: runtime iterate
+17 | iter    :: (..$xs/Show) -> void { for x in xs { _ = x; } }  // D: runtime iterate
    |                                            ^^
 
 error: pack 'xs' has no runtime value — a pack is comptime-only and can't be used as a value here
   --> examples/packs/0536-packs-pack-as-value.sx:18:50
    |
-18 | env     :: (..xs: Show) -> void { f := ||_{ xs = xs } {}; f(); }  // E: a closure env field
+18 | env     :: (..$xs/Show) -> void { f := ||_{ xs = xs } {}; f(); }  // E: a closure env field
    |                                                  ^^
 
 help: to store runtime values, use a tuple or slice instead of a pack
    |
-18 | env     :: (..xs: Show) -> void { f := ||_{ xs = xs } {}; f(); }  // E: a closure env field
+18 | env     :: (..$xs/Show) -> void { f := ||_{ xs = xs } {}; f(); }  // E: a closure env field
    |                                                  ^^

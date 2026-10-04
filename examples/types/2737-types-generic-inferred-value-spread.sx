@@ -21,7 +21,7 @@ make :: (log: *i32, n: i32) -> Pos {
     mark(log, n);
     Pos{px = n, py = n}
 }
-packed :: (..xs: any) -> Box(i32) { Box{..xs, extra = 8} }
+packed :: (..$xs/any) -> Box(i32) { Box{..xs, extra = 8} }
 
 main :: () {
     log: i32 = 0;

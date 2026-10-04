@@ -22,7 +22,7 @@
 
 @import "modules/std.sx";
 
-printf :: (fmt: [*:0]u8, ..) -> i32 extern;
+printf :: (fmt: [*:0]u8, ...) -> i32 extern;
 c_reader :: (n: i32, ap: @VaList) -> i64 extern;
 
 // `..name: []U` is the homogeneous constraint: every tail argument takes the
@@ -91,7 +91,7 @@ noTail :: () -> i64 {
     return 0;
 }
 
-escapes :: (n: i32, ..) -> *@VaList abi(.c) {
+escapes :: (n: i32, ...) -> *@VaList abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     return *ap;
@@ -102,7 +102,7 @@ endsABorrow :: (ap: *@VaList) -> i64 {
     return 0;
 }
 
-reads :: (n: i32, ..) -> i64 abi(.c) {
+reads :: (n: i32, ...) -> i64 abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     narrow := @vaArg(u8, *ap);   // a `u8` argument sits in the slot as `i32`
@@ -121,7 +121,7 @@ reads :: (n: i32, ..) -> i64 abi(.c) {
 // A `@VaList` parameter names a place, so its argument must name one too:
 // neither a borrow nor a plain value is one. A local annotated with either
 // mis-signed function type is refused where it is written.
-boundaryActuals :: (n: i32, ..) -> i64 abi(.c) {
+boundaryActuals :: (n: i32, ...) -> i64 abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     defer @vaEnd(*ap);

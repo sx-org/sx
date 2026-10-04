@@ -17,7 +17,7 @@ apply :: (v: $T, boxed: Box($T)) -> i64 {
     bare(v) + wrapped(boxed)
 }
 
-pf :: (..args: $Ts) -> i64 {
+pf :: (..$args) -> i64 {
     invoke := |f: Closure(..$args) -> i64, a: $args[0], b: $args[1]| f(a, b);
     invoke(|a: i64, b: i32| a * b, ..args)
 }

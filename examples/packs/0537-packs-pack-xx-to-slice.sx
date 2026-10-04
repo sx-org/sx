@@ -22,8 +22,8 @@ showAll :: (items: []Show) -> i64 {
 // `..$args` pack → []any via `xx`.
 fwdAny :: (..$args) -> i64 { return countAny(xx args); }
 
-// `..xs: Show` pack → []Show via `xx`.
-fwdShow :: (..xs: Show) -> i64 { return showAll(xx xs); }
+// `..$xs/Show` pack → []Show via `xx`.
+fwdShow :: (..$xs/Show) -> i64 { return showAll(xx xs); }
 
 main :: () -> i32 {
     print("any={}\n", fwdAny(1, "hi", 2.5));     // 3

@@ -77,7 +77,7 @@ test "each cursor operation takes the local's address in every statement positio
     defer arena.deinit();
     var lowered: Lowered = undefined;
     try lower(arena.allocator(),
-        \\walk :: (n: i32, ..) -> i64 abi(.c) {
+        \\walk :: (n: i32, ...) -> i64 abi(.c) {
         \\    ap: @VaList = ---;
         \\    @vaStart(*ap);
         \\    dup: @VaList = ---;
@@ -176,7 +176,7 @@ test "a boundary argument names a place, not a borrow or a value" {
     var lowered: Lowered = undefined;
     try lower(arena.allocator(),
         \\reader :: (n: i32, ap: @VaList) -> i64 extern;
-        \\walk :: (n: i32, ..) -> i64 abi(.c) {
+        \\walk :: (n: i32, ...) -> i64 abi(.c) {
         \\    ap: @VaList = ---;
         \\    @vaStart(*ap);
         \\    defer @vaEnd(*ap);
@@ -361,7 +361,7 @@ test "an unwrapped C boundary and an internal borrow stay legal" {
         \\Api :: struct { read: Reader; }
         \\c_reader :: (n: i32, ap: @VaList) -> i64 extern;
         \\borrow :: (n: i32, ap: *@VaList) -> i64 { return c_reader(n, ap.*); }
-        \\own :: (n: i32, ..) -> i64 abi(.c) {
+        \\own :: (n: i32, ...) -> i64 abi(.c) {
         \\    ap: @VaList = ---;
         \\    @vaStart(*ap);
         \\    defer @vaEnd(*ap);
@@ -379,9 +379,9 @@ test "one C symbol's fixed and variadic views conflict, equal variadic ones shar
     var lowered: Lowered = undefined;
     try lower(arena.allocator(),
         \\fixed :: (n: i32) -> i32 extern "same";
-        \\tail  :: (n: i32, ..) -> i32 extern "same";
-        \\first  :: (n: i32, ..) -> i32 extern "other";
-        \\second :: (n: i32, ..) -> i32 extern "other";
+        \\tail  :: (n: i32, ...) -> i32 extern "same";
+        \\first  :: (n: i32, ...) -> i32 extern "other";
+        \\second :: (n: i32, ...) -> i32 extern "other";
         \\main :: () -> i32 { return tail(1, 2) + first(1, 2) + second(1, 2, 3); }
     , &lowered);
     defer lowered.module.deinit();
@@ -430,7 +430,7 @@ test "a generic monomorph keeps the declaration's convention and tail" {
     defer arena.deinit();
     var lowered: Lowered = undefined;
     try lower(arena.allocator(),
-        \\read_tail :: ($T: Type, first: $T, ..) -> i64 abi(.c) {
+        \\read_tail :: ($T: Type, first: $T, ...) -> i64 abi(.c) {
         \\    ap: @VaList = ---;
         \\    @vaStart(*ap);
         \\    defer @vaEnd(*ap);
@@ -472,18 +472,18 @@ test "a function value meets the tail rules by its signature" {
     var lowered: Lowered = undefined;
     try lower(arena.allocator(),
         \\sum_ints :: (n: i32, ..args: []i32) -> i64 extern;
-        \\take :: (n: i32, ..) -> i64 extern;
+        \\take :: (n: i32, ...) -> i64 extern;
         \\sx_cb :: (x: i64) -> i64 { return x; }
         \\c_cb  :: (x: i64) -> i64 abi(.c) { return x; }
         \\is_var :: ($F: Type, f: F) -> i64 { return 0; }
         \\fixed :: (n: i32) -> i64 abi(.c) { return 0; }
-        \\tail  :: (n: i32, ..) -> i64 abi(.c) { return 0; }
+        \\tail  :: (n: i32, ...) -> i64 abi(.c) { return 0; }
         \\main :: () -> i64 {
         \\    f := sum_ints;
         \\    ok := f(3, 10, 20, 12);
         \\    bad := take(1, sx_cb);
         \\    good := take(1, c_cb);
-        \\    return ok + bad + good + is_var((i32) -> i64 abi(.c), fixed) + is_var((i32, ..) -> i64 abi(.c), tail);
+        \\    return ok + bad + good + is_var((i32) -> i64 abi(.c), fixed) + is_var((i32, ...) -> i64 abi(.c), tail);
         \\}
     , &lowered);
     defer lowered.module.deinit();
@@ -518,7 +518,7 @@ test "a bare C-variadic function reflects with its convention and tail" {
     defer arena.deinit();
     var lowered: Lowered = undefined;
     try lower(arena.allocator(),
-        \\cb :: (x: i32, ..) -> i64 abi(.c) { return 0; }
+        \\cb :: (x: i32, ...) -> i64 abi(.c) { return 0; }
         \\taker :: (v: any) -> i64 { return 0; }
         \\main :: () -> i64 { return taker(cb); }
     , &lowered);
@@ -535,7 +535,7 @@ test "a bare C-variadic function reflects with its convention and tail" {
                 .const_string => |s| s,
                 else => continue,
             };
-            if (std.mem.eql(u8, lowered.module.types.getString(sid), "(i32, ..) -> i64 abi(.c)")) found = true;
+            if (std.mem.eql(u8, lowered.module.types.getString(sid), "(i32, ...) -> i64 abi(.c)")) found = true;
         }
     }
     try std.testing.expect(found);

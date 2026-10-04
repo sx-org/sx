@@ -1,6 +1,6 @@
 // A pack argument that doesn't conform to the constraint protocol
 // is a per-position error. `Naked` has no `impl Show`, so passing it to a
-// `..xs: Show` pack is rejected (pointing at the offending argument).
+// `..$xs/Show` pack is rejected (pointing at the offending argument).
 
 @import "modules/std.sx";
 
@@ -12,7 +12,7 @@ impl Show(i64) for IntBox { get :: (self: *IntBox) -> i64 => self.v; }
 
 Naked :: struct { x: i64; }   // intentionally NOT `impl Show`
 
-howmany :: (..xs: Show) -> i64 {
+howmany :: (..$xs/Show) -> i64 {
     return xs.len;
 }
 

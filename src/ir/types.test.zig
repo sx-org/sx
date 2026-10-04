@@ -145,11 +145,11 @@ test "a C-variadic function type spells its tail and its convention" {
     const a = arena.allocator();
 
     try std.testing.expectEqualStrings(
-        "(i32, ..) -> i64 abi(.c)",
+        "(i32, ...) -> i64 abi(.c)",
         table.formatTypeName(a, table.functionTypeVariadic(&[_]TypeId{.i32}, .i64, .c, true), null),
     );
     try std.testing.expectEqualStrings(
-        "(..) -> i64 abi(.c)",
+        "(...) -> i64 abi(.c)",
         table.formatTypeName(a, table.functionTypeVariadic(&.{}, .i64, .c, true), null),
     );
     try std.testing.expectEqualStrings(

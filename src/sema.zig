@@ -2563,8 +2563,8 @@ test "sema: a function type carries its C-variadic tail and convention" {
     const parser_mod = @import("parser.zig");
 
     const source =
-        \\take :: (cb: (n: i32, ..) -> i64 abi(.c), fx: (n: i32) -> i64 abi(.c),
-        \\         zero: (..) -> i64 abi(.c), empty: () -> i64 abi(.c),
+        \\take :: (cb: (n: i32, ...) -> i64 abi(.c), fx: (n: i32) -> i64 abi(.c),
+        \\         zero: (...) -> i64 abi(.c), empty: () -> i64 abi(.c),
         \\         sx: (n: i32) -> i64) { 0; }
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -2586,9 +2586,9 @@ test "sema: a function type carries its C-variadic tail and convention" {
     try std.testing.expectEqual(ast.ABI.default, result.symbols[5].ty.?.function_type.abi);
 
     for ([_][]const u8{
-        "(i32, ..) -> i64 abi(.c)",
+        "(i32, ...) -> i64 abi(.c)",
         "(i32) -> i64 abi(.c)",
-        "(..) -> i64 abi(.c)",
+        "(...) -> i64 abi(.c)",
         "() -> i64 abi(.c)",
         "(i32) -> i64",
     }, 1..) |want, i| {

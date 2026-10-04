@@ -764,8 +764,8 @@ pub const Function = struct {
     linkage: Linkage = .internal,
     call_conv: CallingConvention = .default,
     source_file: ?[]const u8 = null,
-    /// The C calling convention's `...` tail at the IR signature level: a bare
-    /// `..` on an effective-C signature, or an `extern` decl's `..name: []T`.
+    /// The C calling convention's `...` tail at the IR signature level: a `...`
+    /// on an effective-C signature, or an `extern` decl's `..name: []T`.
     /// An sx-side `..T` param is slice-packed before lowering and reaches IR as
     /// an ordinary parameter, so it never sets this. emit_llvm passes
     /// `is_var_arg=1` to `LLVMFunctionType`; call sites apply the C default

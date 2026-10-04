@@ -1227,13 +1227,13 @@ test "parser: a plain bodyless signature is a function-type alias" {
     try std.testing.expect(root.data.root.decls[0].data != .fn_decl);
 }
 
-test "parser: a bare `..` tail sets the signature flag and binds no parameter" {
+test "parser: a `...` tail sets the signature flag and binds no parameter" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = try Parser.init(arena.allocator(),
-        \\one :: (n: i32, ..) -> i64 abi(.c) { 0 }
-        \\zero :: (..) -> i64 abi(.c) { 0 }
-        \\imported :: (fmt: [*:0]u8, ..) -> i32 extern;
+        \\one :: (n: i32, ...) -> i64 abi(.c) { 0 }
+        \\zero :: (...) -> i64 abi(.c) { 0 }
+        \\imported :: (fmt: [*:0]u8, ...) -> i32 extern;
     );
     const root = try parser.parse();
     const decls = root.data.root.decls;
@@ -1256,8 +1256,8 @@ test "parser: a tail takes sx's ordinary trailing comma" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = try Parser.init(arena.allocator(),
-        \\one :: (n: i32, ..,) -> i64 abi(.c) { 0 }
-        \\zero :: (..,) -> i64 abi(.c) { 0 }
+        \\one :: (n: i32, ...,) -> i64 abi(.c) { 0 }
+        \\zero :: (...,) -> i64 abi(.c) { 0 }
     );
     const root = try parser.parse();
     try std.testing.expect(root.data.root.decls[0].data.fn_decl.is_c_variadic);
@@ -1269,19 +1269,17 @@ test "parser: a tail is legal only on an effective-C signature" {
     defer arena.deinit();
     const alloc = arena.allocator();
     for ([_][:0]const u8{
-        "f :: (n: i32, ..) -> i32 { 0 }", // default convention
-        "f :: (n: i32, ..) -> i32 abi(.naked) { 0 }",
-        "f :: (n: i32, .., x: i32) -> i32 abi(.c) { 0 }", // not the last entry
-        "f :: (n: i32, ..args: []i32, ..) -> i32 abi(.c) { 0 }", // two tails
-        "@f :: (n: i32, ..) -> i32;",
+        "f :: (n: i32, ...) -> i32 { 0 }", // default convention
+        "f :: (n: i32, ...) -> i32 abi(.naked) { 0 }",
+        "f :: (n: i32, ..., x: i32) -> i32 abi(.c) { 0 }", // not the last entry
+        "f :: (n: i32, ..args: []i32, ...) -> i32 abi(.c) { 0 }", // two tails
+        "@f :: (n: i32, ...) -> i32;",
     }) |src| {
         var p = try Parser.init(alloc, src);
         try std.testing.expectError(error.ParseError, p.parse());
     }
 }
 
-// A spread always carries an operand and the tail never does: one token of
-// lookahead separates them.
 test "parser: a named variadic form does not set the C-tail flag" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1301,23 +1299,23 @@ test "parser: a named variadic form does not set the C-tail flag" {
     try std.testing.expect(slice.params[1].is_variadic);
 }
 
-// sx has no three-dot token: a three-dot list is `..` then `.` — neither `)`
-// nor `,`, so it reads as a named form missing its name.
-test "parser: a three-dot parameter list is not a tail" {
+// `..` opens a named variadic form, so one with no name after it is refused as
+// that form.
+test "parser: a two-dot parameter list is not a tail" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = try Parser.init(arena.allocator(), "f :: (n: i32, ...) -> i32 abi(.c) { 0 }");
+    var parser = try Parser.init(arena.allocator(), "f :: (n: i32, ..) -> i32 abi(.c) { 0 }");
     try std.testing.expectError(error.ParseError, parser.parse());
     try std.testing.expectEqualStrings("expected parameter name", parser.err_msg.?);
 }
 
-test "parser: a function type carries the bare `..` tail" {
+test "parser: a function type carries the `...` tail" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = try Parser.init(arena.allocator(),
-        \\Callback :: (fixed: i32, ..) -> i64 abi(.c);
-        \\Zero :: (..) -> i64 abi(.c);
-        \\Comma :: (fixed: i32, ..,) -> i64 abi(.c);
+        \\Callback :: (fixed: i32, ...) -> i64 abi(.c);
+        \\Zero :: (...) -> i64 abi(.c);
+        \\Comma :: (fixed: i32, ...,) -> i64 abi(.c);
         \\Fixed :: (fixed: i32) -> i64 abi(.c);
     );
     const root = try parser.parse();
@@ -1342,10 +1340,10 @@ test "parser: a function type's tail requires abi(.c)" {
     defer arena.deinit();
     const alloc = arena.allocator();
     for ([_][:0]const u8{
-        "F :: (n: i32, ..) -> i64;",
-        "F :: (n: i32, ..) -> i64 abi(.naked);",
-        "F :: (n: i32, .., x: i32) -> i64 abi(.c);", // not the last entry
-        "F :: (.., ..) -> i64 abi(.c);", // two tails
+        "F :: (n: i32, ...) -> i64;",
+        "F :: (n: i32, ...) -> i64 abi(.naked);",
+        "F :: (n: i32, ..., x: i32) -> i64 abi(.c);", // not the last entry
+        "F :: (..., ...) -> i64 abi(.c);", // two tails
     }) |src| {
         var p = try Parser.init(alloc, src);
         try std.testing.expectError(error.ParseError, p.parse());

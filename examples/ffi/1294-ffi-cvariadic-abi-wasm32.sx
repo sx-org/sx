@@ -8,7 +8,7 @@
 
 @import "modules/std/core.sx";
 
-sumInts :: (n: i32, ..) -> i64 abi(.c) {
+sumInts :: (n: i32, ...) -> i64 abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     defer @vaEnd(*ap);
@@ -33,14 +33,14 @@ forward :: (n: i32, ap: *@VaList) -> i64 {
     return readInts(n, ap.*);
 }
 
-ownForward :: (n: i32, ..) -> i64 abi(.c) {
+ownForward :: (n: i32, ...) -> i64 abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     defer @vaEnd(*ap);
     return forward(n, *ap);
 }
 
-twice :: (n: i32, ..) -> i64 abi(.c) {
+twice :: (n: i32, ...) -> i64 abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     defer @vaEnd(*ap);
@@ -59,12 +59,12 @@ twice :: (n: i32, ..) -> i64 abi(.c) {
     return first * 100 + second;
 }
 
-Summer :: (i32, ..) -> i64 abi(.c);
+Summer :: (i32, ...) -> i64 abi(.c);
 
 // `isize` and `usize` are the target's address width, which is 32 bits here and
 // 64 on every other target in the matrix. Each crosses and is read at that
 // width, so the reader names it rather than a fixed one.
-sumAddresses :: (n: i32, ..) -> i64 abi(.c) {
+sumAddresses :: (n: i32, ...) -> i64 abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     defer @vaEnd(*ap);

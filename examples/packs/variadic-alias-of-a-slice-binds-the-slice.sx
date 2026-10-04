@@ -1,0 +1,18 @@
+@import "modules/std.sx";
+
+Ints :: []i64;
+Bytes :: @Slice(u8, u32);
+
+sum :: (..xs: Ints) -> i64 {
+    total := 0;
+    for x in xs { total += x; }
+    total
+}
+
+width :: (..xs: Bytes) -> u32 { xs.len }
+
+main :: () -> i32 {
+    print("{}\n", sum(1, 2, 3));
+    print("{}\n", width(7, 8, 9));
+    0
+}

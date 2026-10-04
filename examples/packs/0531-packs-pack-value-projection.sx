@@ -16,7 +16,7 @@ StrCell :: struct { s: string; }
 impl Box(i64) for IntCell { get :: (self: *IntCell) -> i64 => self.v; }
 impl Box(string) for StrCell { get :: (self: *StrCell) -> string => self.s; }
 
-show :: (..xs: Box) -> void {
+show :: (..$xs/Box) -> void {
     vals := xs.get;                       // tuple (i64, string)
     print("0={} 1={}\n", @field(vals, 0), @field(vals, 1));
 }
