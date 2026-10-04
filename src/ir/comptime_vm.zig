@@ -457,7 +457,7 @@ pub fn runBuildCallback(gpa: std.mem.Allocator, module: *const Module, func_id: 
 // aggregate init and projection, and calls execute over comptime memory; an op
 // with no arm bails loudly (`error.Unsupported` + `detail`), never silently.
 
-pub const Error = error{ DivisionByZero, TypeError, Unsupported, OutOfBounds };
+pub const Error = error{ DivisionByZero, IntegerOverflow, TypeError, Unsupported, OutOfBounds };
 
 fn isFloat(ty: TypeId) bool {
     return ty == .f32 or ty == .f64;
@@ -524,6 +524,8 @@ pub const Vm = struct {
     /// tag name or a one-line explanation, so the host can surface a real message,
     /// not a bare error.
     detail: ?[]const u8 = null,
+    /// The instruction a `DivisionByZero` / `IntegerOverflow` bail failed at.
+    arithmetic_fault: ?struct { source_file: ?[]const u8, span: inst_mod.Span } = null,
     /// Per-global memo of comptime-evaluated globals: `global_get` caches a
     /// global's Reg so a chain of globals
     /// reading each other doesn't re-run inits (and so each runs at most once).
@@ -841,7 +843,11 @@ pub const Vm = struct {
                     ref += 1;
                     continue;
                 }
-                const step = try self.exec(ins, ref, &frame, ref_types);
+                const step = self.exec(ins, ref, &frame, ref_types) catch |err| {
+                    if ((err == error.DivisionByZero or err == error.IntegerOverflow) and self.arithmetic_fault == null)
+                        self.arithmetic_fault = .{ .source_file = func.source_file, .span = ins.span };
+                    return err;
+                };
                 // A malformed IR (an out-of-range / `Ref.none` operand from an
                 // unresolved name) flips `frame.bad_ref` instead of panicking — bail.
                 if (frame.bad_ref) return self.badRef();
@@ -1685,6 +1691,11 @@ pub const Vm = struct {
                 if (!layout.signed) break :blk if (tag == .div) l / r else l % r;
                 const li: i64 = @bitCast(l);
                 const ri: i64 = @bitCast(r);
+                // The quotient overflows i64, and `@rem` lowers to a divide that traps on it.
+                if (li == std.math.minInt(i64) and ri == -1) {
+                    if (tag == .div) return error.IntegerOverflow;
+                    break :blk 0;
+                }
                 break :blk @bitCast(if (tag == .div) @divTrunc(li, ri) else @rem(li, ri));
             },
             else => unreachable,
