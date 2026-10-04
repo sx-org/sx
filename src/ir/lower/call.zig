@@ -68,10 +68,9 @@ fn selectedDispatchName(self: *Lowering, sf: *const SelectedFunc) []const u8 {
     return out.toOwnedSlice(self.alloc) catch @panic("out of memory while mangling selected function");
 }
 
-/// Whether the dispatch passes a value-receiver dot-call's object as the call's
-/// first argument: every object but a `super` or runtime-class static head, a
-/// call denoting a type, and one whose field the call invokes.
-fn receiverIsFirstArgument(self: *Lowering, c: *const ast.Call, fa: *const ast.FieldAccess) bool {
+/// Whether a value-receiver dot-call's object is a value the call reads: every
+/// object but a `super` or runtime-class static head and a call denoting a type.
+fn dotCallObjectIsValue(self: *Lowering, fa: *const ast.FieldAccess) bool {
     switch (fa.object.data) {
         .identifier => |id| {
             if (std.mem.eql(u8, id.name, "super")) return false;
@@ -86,7 +85,13 @@ fn receiverIsFirstArgument(self: *Lowering, c: *const ast.Call, fa: *const ast.F
         },
         else => {},
     }
-    return self.callableShapeOf(self.inferExprType(c.callee)) == null;
+    return true;
+}
+
+/// Whether the dispatch passes a value-receiver dot-call's object as the call's
+/// first argument: a value object whose field the call does not invoke.
+fn receiverIsFirstArgument(self: *Lowering, c: *const ast.Call, fa: *const ast.FieldAccess) bool {
+    return dotCallObjectIsValue(self, fa) and self.callableShapeOf(self.inferExprType(c.callee)) == null;
 }
 
 /// The node a method call passes as its receiver: `p.*.m()` passes the
@@ -473,7 +478,7 @@ fn callNominal(
 /// which selects the arity checker that shape's diagnostics come from.
 const CalleeValue = struct {
     ty: TypeId,
-    /// `Ref.none` when only `addr` is known; the shape loads it on demand.
+    /// `Ref.none` for a unique lambda's env, which is called through `addr`.
     ref: Ref,
     addr: ?Ref = null,
     node: *const Node,
@@ -492,8 +497,109 @@ const CalleeValue = struct {
     };
 };
 
-fn calleeValueRef(self: *Lowering, cv: CalleeValue) Ref {
-    return if (cv.ref.isNone()) self.builder.load(cv.addr.?, cv.ty) else cv.ref;
+/// The value a call dispatches through, read before its arguments evaluate
+/// (specs: Named Arguments — evaluation order is written order), or null when
+/// the callee is not a value. Each `lowerCall` arm that calls a value consumes
+/// this capture, so the conditions here are the ones that select that arm.
+fn calleeBeforeArgs(
+    self: *Lowering,
+    c: *const ast.Call,
+    qualified: CallResolver.QualifiedCall,
+    bare_author: Lowering.BareCallee,
+) ?CalleeValue {
+    const cv: CalleeValue = switch (c.callee.data) {
+        .identifier => |id| named: {
+            if (resolveBuiltin(id.name) != null) return null;
+            if (self.scope) |scope| if (scope.lookupNearestBoundary(id.name)) |nb| {
+                const binding = switch (nb.near) {
+                    .binding => |b| b,
+                    .local_fn => return null,
+                };
+                if (nb.crossed != .none) return null;
+                const shape = self.callableShapeOf(binding.ty) orelse return null;
+                // A fn-pointer pack-element alias dispatches through its substitution.
+                if (shape == .fn_ptr and binding.alias_node != null) return null;
+                break :named .{
+                    .ty = binding.ty,
+                    .ref = if (binding.is_alloca) Ref.none else binding.ref,
+                    .addr = if (binding.is_alloca) binding.ref else null,
+                    .node = c.callee,
+                    .name = id.name,
+                    .origin = .{ .local = binding },
+                };
+            };
+            // A module global answers only when no function does.
+            switch (bare_author) {
+                .func, .ambiguous => return null,
+                .not_callable => {},
+                .none => {
+                    const func_name = bareCalleeFnName(self, id.name);
+                    if (self.program_index.contains(.function, func_name) or self.resolveFuncByName(func_name) != null) return null;
+                },
+            }
+            const gi = self.resolveGlobalRef(id.name, c.callee.span) orelse return null;
+            break :named globalCallee(self, gi, id.name, c.callee, .bare_global) orelse return null;
+        },
+        .field_access => |fa| field: {
+            if (qualified == .callable_value) {
+                const selected = qualified.callable_value;
+                break :field globalCallee(self, selected.global, selected.member, c.callee, .value) orelse return null;
+            }
+            if (qualified != .value_receiver or !dotCallObjectIsValue(self, &fa)) return null;
+            const field_ty = self.inferExprType(c.callee);
+            const addr: ?Ref = switch (self.callableShapeOf(field_ty) orelse return null) {
+                .unique, .nominal => if (self.isLvalueExpr(c.callee)) self.lowerExprAsPtr(c.callee) else blk: {
+                    const value = self.lowerExpr(c.callee);
+                    const slot = self.builder.alloca(field_ty);
+                    self.builder.store(slot, value);
+                    break :blk slot;
+                },
+                .closure, .fn_ptr => null,
+            };
+            break :field .{
+                .ty = field_ty,
+                .ref = if (addr == null) self.lowerExpr(c.callee) else Ref.none,
+                .addr = addr,
+                .node = c.callee,
+                .name = fa.field,
+                .origin = .value,
+            };
+        },
+        .enum_literal => return null,
+        else => expr: {
+            // Unique-typed and nominal storage is written through its address,
+            // so an lvalue callee is lowered as a place — ONCE. A `_{ … }` IIFE
+            // infers as Closure and lowers as its env, so a Closure / fn-pointer
+            // callee is classified on the LOWERED ref.
+            const inferred = self.inferExprType(c.callee);
+            if (self.callableShapeOf(inferred)) |shape| switch (shape) {
+                .unique, .nominal => {
+                    const addr: ?Ref = if (self.isLvalueExpr(c.callee)) self.lowerExprAsPtr(c.callee) else null;
+                    break :expr .{
+                        .ty = inferred,
+                        .ref = if (addr == null) self.lowerExpr(c.callee) else Ref.none,
+                        .addr = addr,
+                        .node = c.callee,
+                        .origin = .value,
+                    };
+                },
+                .closure, .fn_ptr => {},
+            };
+            const callee_ref = self.lowerExpr(c.callee);
+            break :expr .{ .ty = self.builder.getRefType(callee_ref), .ref = callee_ref, .node = c.callee, .origin = .value };
+        },
+    };
+    if (!cv.ref.isNone() or self.uniqueLambdaOf(cv.ty) != null) return cv;
+    var read = cv;
+    read.ref = self.builder.load(cv.addr.?, cv.ty);
+    return read;
+}
+
+/// The function name a bare callee spelling dispatches to: a ufcs alias's
+/// target, and a nested local fn's mangled name.
+fn bareCalleeFnName(self: *Lowering, name: []const u8) []const u8 {
+    const spelled = self.ufcsAliasTarget(name) orelse name;
+    return if (self.scope) |scope| scope.lookupFn(spelled) orelse spelled else spelled;
 }
 
 /// Call a callable VALUE through the one classification `callableShapeOf`
@@ -503,16 +609,16 @@ fn callValue(self: *Lowering, cv: CalleeValue, c: *const ast.Call, args: []Ref, 
     switch (self.callableShapeOf(cv.ty) orelse return null) {
         .unique => |u| {
             if (checkCallableValueArgs(self, "closure", cv.name, args, .{ .fixed = u.params.len, .pack_start = null }, c, span)) return Ref.none;
-            const env_addr = if (cv.addr) |a|
-                uniqueEnvAddress(self, cv.ty, a, true).?
+            const env_addr = if (cv.ref.isNone())
+                uniqueEnvAddress(self, cv.ty, cv.addr.?, true).?
             else
                 uniqueEnvAddress(self, cv.ty, cv.ref, false).?;
             return callUniqueLambda(self, u, env_addr, args);
         },
-        .nominal => |cn| return callNominal(self, cn, cv.node, calleeValueRef(self, cv), cv.addr, cv.ty, args, c, span),
+        .nominal => |cn| return callNominal(self, cn, cv.node, cv.ref, cv.addr, cv.ty, args, c, span),
         .closure => |ci| {
             if (checkCallableValueArgs(self, "closure", cv.name, args, .{ .fixed = ci.params.len, .pack_start = ci.pack_start }, c, span)) return Ref.none;
-            const callee_ref = calleeValueRef(self, cv);
+            const callee_ref = cv.ref;
             coerceClosureCallArgs(self, args, ci.params);
             // Closure trampolines carry `__sx_ctx` at slot 0; emit_llvm builds
             // the call as [ctx, env, user_args].
@@ -527,10 +633,10 @@ fn callValue(self: *Lowering, cv: CalleeValue, c: *const ast.Call, args: []Ref, 
         .fn_ptr => |fi| {
             if (cv.origin == .local) {
                 if (rejectLeftoverSpreadPlaceholder(self, "a function pointer", args, c, span)) return Ref.none;
-                return indirectCallThroughLocal(self, cv.name orelse "", cv.origin.local, args, span);
+                return indirectCallThroughLocal(self, cv.name orelse "", cv.origin.local, cv.ref, args, span);
             }
             if (checkCallableValueArgs(self, "function pointer", cv.name, args, fnPointerShape(fi), c, span)) return Ref.none;
-            const callee_ref = calleeValueRef(self, cv);
+            const callee_ref = cv.ref;
             if (cv.origin == .bare_global) {
                 coerceGlobalFnPointerArgs(self, args, fi, c);
             } else {
@@ -615,12 +721,12 @@ fn uniqueEnvAddress(self: *Lowering, ty: TypeId, ref: Ref, is_alloca: bool) ?Ref
     return if (is_alloca) self.builder.load(ref, ty) else ref;
 }
 
-/// Indirect call through a local VALUE binding (fn-pointer local, or the
-/// trailing any-binding fallback). Checks arity against the fn-pointer's
-/// signature (arg coercion min()-truncates, so a wrong-arity call would
-/// otherwise silently drop args), coerces args to the param
-/// types, and prepends the implicit ctx when the pointee signature wants it.
-fn indirectCallThroughLocal(self: *Lowering, name: []const u8, binding: lower.Binding, args: []Ref, span: ast.Span) Ref {
+/// Indirect call through `callee_ref`, the value of a local binding (fn-pointer
+/// local, or the trailing any-binding fallback). Checks arity against the
+/// fn-pointer's signature (arg coercion min()-truncates, so a wrong-arity call
+/// would otherwise silently drop args), coerces args to the param types, and
+/// prepends the implicit ctx when the pointee signature wants it.
+fn indirectCallThroughLocal(self: *Lowering, name: []const u8, binding: lower.Binding, callee_ref: Ref, args: []Ref, span: ast.Span) Ref {
     // Arity: the fn TYPE's params are user-visible (no __sx_ctx slot —
     // `fnPtrTypeWantsCtx` prepends it from the calling convention) and a
     // pack-variadic signature (`pack_start != null`) binds per call shape,
@@ -642,7 +748,6 @@ fn indirectCallThroughLocal(self: *Lowering, name: []const u8, binding: lower.Bi
             }
         }
     }
-    const callee_ref = if (binding.is_alloca) self.builder.load(binding.ref, binding.ty) else binding.ref;
     const ret_ty = if (!binding.ty.isBuiltin()) blk: {
         const bti = self.module.types.get(binding.ty);
         break :blk if (bti == .function) bti.function.ret else .i64;
@@ -666,21 +771,6 @@ fn indirectCallThroughLocal(self: *Lowering, name: []const u8, binding: lower.Bi
     final_args.appendSlice(self.alloc, args) catch unreachable;
     const owned = self.alloc.dupe(Ref, final_args.items) catch unreachable;
     return self.builder.emit(.{ .call_indirect = .{ .callee = callee_ref, .args = owned } }, ret_ty);
-}
-
-/// Call an exactly-selected namespace global without round-tripping through
-/// the process-wide name map. Every callable shape keeps the same ABI, arity
-/// and coercion behavior as its bare callable-value form.
-fn callThroughSelectedGlobal(
-    self: *Lowering,
-    selected: CallResolver.CallableValue,
-    args: []Ref,
-    c: *const ast.Call,
-    span: ast.Span,
-) Ref {
-    const cv = globalCallee(self, selected.global, selected.member, c.callee, .value) orelse
-        return self.emitError(selected.member, span);
-    return callValue(self, cv, c, args, span) orelse self.emitError(selected.member, span);
 }
 
 /// Whether the callee MAY declare a slice-variadic param (`..xs: []T`).
@@ -923,13 +1013,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
 
     if (c.callee.data == .identifier) {
         const id_name = c.callee.data.identifier.name;
-        const eff_name = blk: {
-            const scoped = if (self.scope) |scope| scope.lookupFn(id_name) orelse id_name else id_name;
-            if (self.ufcsAliasTarget(id_name)) |target| {
-                break :blk if (self.scope) |scope| scope.lookupFn(target) orelse target else target;
-            }
-            break :blk scoped;
-        };
+        const eff_name = bareCalleeFnName(self, id_name);
         // C-import visibility: deny calls to C fn_decls not in the caller's module scope
         if (!self.isCImportVisible(eff_name)) {
             if (self.diagnostics) |d|
@@ -969,14 +1053,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
     // Early detection of comptime-expanded calls (e.g. print) — skip arg evaluation
     // since lowerComptimeCall re-evaluates args from AST (avoiding double evaluation)
     if (c.callee.data == .identifier) {
-        const early_name = blk: {
-            const id_name = c.callee.data.identifier.name;
-            const scoped = if (self.scope) |scope| scope.lookupFn(id_name) orelse id_name else id_name;
-            if (self.ufcsAliasTarget(id_name)) |target| {
-                break :blk if (self.scope) |scope| scope.lookupFn(target) orelse target else target;
-            }
-            break :blk scoped;
-        };
+        const early_name = bareCalleeFnName(self, c.callee.data.identifier.name);
         // The early pack/comptime/generic dispatch reads
         // the SAME author the call resolver SELECTED — not the first-wins
         // winner. A bare call selects every sx-bodied shape, so a selected
@@ -1244,7 +1321,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         }
     }
     // A dot-call's receiver is its first argument (specs: UFCS), so it
-    // evaluates before the written ones.
+    // evaluates before the written ones, and so does a callee value.
     const first_receiver: ?Ref = switch (c.callee.data) {
         .field_access => |fa| if (qualified_call_verdict == .value_receiver and receiverIsFirstArgument(self, c, &fa))
             self.lowerExpr(methodReceiverNode(fa.object))
@@ -1252,6 +1329,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             null,
         else => null,
     };
+    const callee_value = calleeBeforeArgs(self, c, qualified_call_verdict, bare_author_verdict);
     // Running PARAMETER index: a spread expands one
     // AST arg into N lowered args, so the AST loop index stops matching the
     // callee's parameter positions after any spread. `param_idx` advances by
@@ -1310,17 +1388,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
 
     switch (c.callee.data) {
         .identifier => |id| {
-            // Resolve local function name (bare → mangled) and UFCS aliases
-            const func_name = blk: {
-                // First try scope lookup for mangled local fn names
-                const scoped = if (self.scope) |scope| scope.lookupFn(id.name) orelse id.name else id.name;
-                // Then try UFCS alias on bare name
-                if (self.ufcsAliasTarget(id.name)) |target| {
-                    // Resolve the alias target through scope too (target may be mangled)
-                    break :blk if (self.scope) |scope| scope.lookupFn(target) orelse target else target;
-                }
-                break :blk scoped;
-            };
+            const func_name = bareCalleeFnName(self, id.name);
 
             // Check builtins first (these are handled natively by interpreter and emitter)
             if (resolveBuiltin(id.name)) |bid| {
@@ -1370,27 +1438,17 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                                 _ = self.diagEnclosingLocalRef(id.name, c.callee.span, nb.crossed);
                                 return Ref.none;
                             }
-                            // A callable local shadows any same-named top-level
-                            // fn: dispatch through the LOCAL before the author /
-                            // name-based program-fn paths below, otherwise an
-                            // importer's unrelated module-scope fn hijacks the
-                            // call. A fn-pointer-typed pack-element alias is
-                            // excluded — the substitution path owns it.
-                            if (self.callableShapeOf(binding.ty)) |shape| {
-                                if (shape != .fn_ptr or binding.alias_node == null) {
-                                    if (callValue(self, .{
-                                        .ty = binding.ty,
-                                        .ref = if (binding.is_alloca) Ref.none else binding.ref,
-                                        .addr = if (binding.is_alloca) binding.ref else null,
-                                        .node = c.callee,
-                                        .name = id.name,
-                                        .origin = .{ .local = binding },
-                                    }, c, args.items, c.callee.span)) |r| return r;
-                                }
-                            }
                         }
                     },
                 };
+            }
+            // A callable local shadows any same-named top-level fn: dispatch
+            // through the LOCAL before the author / name-based program-fn paths
+            // below, otherwise an importer's unrelated module-scope fn hijacks
+            // the call. A callable global is captured only when no function
+            // answers for the name.
+            if (callee_value) |cv| {
+                if (callValue(self, cv, c, args.items, c.callee.span)) |r| return r;
             }
             // A genuine flat same-name collision — bind the
             // author the call resolver selected (own-author-wins, or the single
@@ -1497,13 +1555,8 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     // slice/array spread placeholder must not reach the
                     // indirect call as undef.
                     if (rejectLeftoverSpreadPlaceholder(self, "a function pointer", args.items, c, c.callee.span)) return Ref.none;
-                    return indirectCallThroughLocal(self, id.name, binding, args.items, c.callee.span);
-                }
-            }
-            // May be a module global holding a callable value.
-            if (self.resolveGlobalRef(id.name, c.callee.span)) |gi| {
-                if (globalCallee(self, gi, id.name, c.callee, .bare_global)) |cv| {
-                    if (callValue(self, cv, c, args.items, c.callee.span)) |r| return r;
+                    const callee_ref = if (binding.is_alloca) self.builder.load(binding.ref, binding.ty) else binding.ref;
+                    return indirectCallThroughLocal(self, id.name, binding, callee_ref, args.items, c.callee.span);
                 }
             }
             // A generic type-CONSTRUCTOR head (`List(i64)`, `ModBox(V)`)
@@ -1518,8 +1571,12 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             return self.emitError(id.name, c.callee.span);
         },
         .field_access => |fa| {
-            if (qualified_callable) |selected|
-                return callThroughSelectedGlobal(self, selected, args.items, c, c.callee.span);
+            if (qualified_callable) |selected| {
+                if (callee_value) |cv| {
+                    if (callValue(self, cv, c, args.items, c.callee.span)) |r| return r;
+                }
+                return self.emitError(selected.member, c.callee.span);
+            }
 
             // `super.method(args)` from inside a `main = true` (or any
             // sx-defined `@JniClass`) bodied method. Dispatch via
@@ -1863,25 +1920,8 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 return self.emitError(func_name, c.callee.span);
             }
 
-            const field_ty = self.inferExprType(c.callee);
-            if (self.callableShapeOf(field_ty)) |shape| {
-                const addr: ?Ref = switch (shape) {
-                    .unique, .nominal => if (self.isLvalueExpr(c.callee)) self.lowerExprAsPtr(c.callee) else blk: {
-                        const value = self.lowerExpr(c.callee);
-                        const slot = self.builder.alloca(field_ty);
-                        self.builder.store(slot, value);
-                        break :blk slot;
-                    },
-                    .closure, .fn_ptr => null,
-                };
-                if (callValue(self, .{
-                    .ty = field_ty,
-                    .ref = if (addr == null) self.lowerExpr(c.callee) else Ref.none,
-                    .addr = addr,
-                    .node = c.callee,
-                    .name = fa.field,
-                    .origin = .value,
-                }, c, args.items, c.callee.span)) |r| return r;
+            if (callee_value) |cv| {
+                if (callValue(self, cv, c, args.items, c.callee.span)) |r| return r;
             }
 
             // Method call: obj.method(args) → prepend obj (or &obj for *Self receivers)
@@ -2416,47 +2456,20 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             return self.builder.enumInit(tag, payload, target);
         },
         else => {
-            // Indirect call through an expression. Unique-typed storage
-            // writes through its env address; a `_{ … }` IIFE infers as
-            // Closure and lowers as the env, so uniqueness follows the
-            // lowered ref. Closure values use `call_closure`; fn pointers
-            // use `call_indirect`.
-            const inferred = self.inferExprType(c.callee);
-            if (self.callableShapeOf(inferred)) |shape| switch (shape) {
-                // Unique-typed and nominal storage is written through its
-                // address, so an lvalue callee is lowered as a place — ONCE.
-                .unique, .nominal => {
-                    const addr: ?Ref = if (self.isLvalueExpr(c.callee)) self.lowerExprAsPtr(c.callee) else null;
-                    if (callValue(self, .{
-                        .ty = inferred,
-                        .ref = if (addr == null) self.lowerExpr(c.callee) else Ref.none,
-                        .addr = addr,
-                        .node = c.callee,
-                        .origin = .value,
-                    }, c, args.items, c.callee.span)) |r| return r;
-                },
-                // A `_{ … }` IIFE infers as Closure and lowers as its env, so a
-                // Closure / fn-pointer callee is classified on the LOWERED ref.
-                .closure, .fn_ptr => {},
-            };
-            const callee_ref = self.lowerExpr(c.callee);
-            const callee_ty = self.builder.getRefType(callee_ref);
-            if (callValue(self, .{
-                .ty = callee_ty,
-                .ref = callee_ref,
-                .node = c.callee,
-                .origin = .value,
-            }, c, args.items, c.callee.span)) |r| return r;
+            // Indirect call through an expression: closure values use
+            // `call_closure`, fn pointers `call_indirect`.
+            const cv = callee_value.?;
+            if (callValue(self, cv, c, args.items, c.callee.span)) |r| return r;
             // An unknown callee still dispatches with the fn-pointer ABI: the
             // implicit ctx is prepended when the pointee's convention wants it.
             var final_args = std.ArrayList(Ref).empty;
             defer final_args.deinit(self.alloc);
-            if (self.fnPtrTypeWantsCtx(callee_ty)) {
+            if (self.fnPtrTypeWantsCtx(cv.ty)) {
                 final_args.append(self.alloc, self.current_ctx_ref) catch unreachable;
             }
             final_args.appendSlice(self.alloc, args.items) catch unreachable;
             const owned = self.alloc.dupe(Ref, final_args.items) catch unreachable;
-            return self.builder.emit(.{ .call_indirect = .{ .callee = callee_ref, .args = owned } }, .i64);
+            return self.builder.emit(.{ .call_indirect = .{ .callee = cv.ref, .args = owned } }, .i64);
         },
     }
 }
@@ -5058,13 +5071,7 @@ fn namedCalleeDecl(
             }
             if (!author_declines) {
                 if (sel_author) |sf| return .{ .fd = sf.decl, .source = sf.source, .receiver_params = 0 };
-                const eff_name = blk: {
-                    const scoped = if (self.scope) |scope| scope.lookupFn(id.name) orelse id.name else id.name;
-                    if (self.ufcsAliasTarget(id.name)) |target| {
-                        break :blk if (self.scope) |scope| scope.lookupFn(target) orelse target else target;
-                    }
-                    break :blk scoped;
-                };
+                const eff_name = bareCalleeFnName(self, id.name);
                 if (self.program_index.lookup(.function, eff_name)) |fd| {
                     return .{ .fd = fd, .source = fd.body.source_file, .receiver_params = 0 };
                 }
@@ -5528,13 +5535,7 @@ pub fn expandCallDefaults(
     const fd = blk: {
         switch (c.callee.data) {
             .identifier => |id| {
-                const eff_name = blk2: {
-                    const scoped = if (self.scope) |scope| scope.lookupFn(id.name) orelse id.name else id.name;
-                    if (self.ufcsAliasTarget(id.name)) |target| {
-                        break :blk2 if (self.scope) |scope| scope.lookupFn(target) orelse target else target;
-                    }
-                    break :blk2 scoped;
-                };
+                const eff_name = bareCalleeFnName(self, id.name);
                 // For a genuine flat same-name
                 // collision the omitted trailing args are filled from the
                 // author the call resolver selected — its `*FnDecl` defaults —
@@ -6089,13 +6090,7 @@ pub fn resolveCallParamTypes(
             if (self.callableSigOf(binding.ty)) |sig| return coerceDemands(self, sig.params);
         }
     }
-    const name = blk: {
-        const scoped = if (self.scope) |scope| scope.lookupFn(bare_name) orelse bare_name else bare_name;
-        if (self.ufcsAliasTarget(bare_name)) |target| {
-            break :blk if (self.scope) |scope| scope.lookupFn(target) orelse target else target;
-        }
-        break :blk scoped;
-    };
+    const name = bareCalleeFnName(self, bare_name);
 
     // A genuine flat same-name collision must type this
     // call's args against the author the call resolver selected, not the
