@@ -1,4 +1,4 @@
-error: a variadic parameter is '..name: []T' (a slice), '..$name/P' (a constraint or interface pack), or '..$name' (a comptime pack)
+error: a variadic's type must be a slice
   --> examples/diagnostics/2106-diagnostics-variadic-parameter-needs-its-type.sx:6:17
    |
  6 | f :: (n: i32, ..args) -> i32 {

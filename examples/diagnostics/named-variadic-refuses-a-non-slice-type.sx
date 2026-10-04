@@ -1,0 +1,7 @@
+f :: (..xs: ?i64) -> i64 {
+    return xs.len;
+}
+
+main :: () -> i64 {
+    return f(1, 2);
+}

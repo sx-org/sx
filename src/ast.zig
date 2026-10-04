@@ -245,11 +245,11 @@ pub const Param = struct {
     type_expr: *Node,
     is_variadic: bool = false,
     is_comptime: bool = false,
-    /// Heterogeneous variadic pack bounded by a constraint or an interface:
-    /// `..$xs/P`, with `type_expr` the bound. The trailing args each conform to
-    /// it with their own type-arg — distinct from a slice variadic
-    /// (`..xs: []T`, `is_pack == false`) and from the unbounded comptime pack
-    /// (`..$xs`, `is_comptime == true`). Always implies `is_variadic`.
+    /// Heterogeneous bounded variadic pack: `..$xs/P`, with `type_expr` the
+    /// bound. The trailing args each conform to it with their own type-arg —
+    /// distinct from a slice variadic (`..xs: []T`, `is_pack == false`) and
+    /// from the unbounded comptime pack (`..$xs`, `is_comptime == true`).
+    /// Always implies `is_variadic`.
     is_pack: bool = false,
     /// Optional default value expression. When the caller omits this
     /// parameter, lowering substitutes this expression in its place.

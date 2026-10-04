@@ -2613,8 +2613,8 @@ pub const Parser = struct {
                 break;
             }
             // Leading `..` marks a variadic param at the binding site:
-            // `..$args` (heterogeneous comptime pack), `..$xs/P` (pack bounded
-            // by a constraint or an interface), `..xs: []T` (slice).
+            // `..$args` (heterogeneous comptime pack), `..$xs/P` (bounded
+            // pack), `..xs: []T` (slice).
             var is_variadic = false;
             if (self.tokens.tag(self.tok) == .dot_dot) {
                 is_variadic = true;
@@ -2635,19 +2635,19 @@ pub const Parser = struct {
             if (is_variadic and is_ct_param and self.tokens.tag(self.tok) == .slash) {
                 self.advance(); // consume '/'
                 if (self.tokens.tag(self.tok) == .l_paren) {
-                    return self.fail("a pack is bounded by a constraint or an interface");
+                    return self.fail("a pack takes no function-type bound");
                 }
                 const bound = try self.parseBoundExpr();
                 try params.append(self.allocator, .{ .name = param_name, .name_span = param_name_span, .type_expr = bound, .is_variadic = true, .is_pack = true, .is_raw = param_is_raw });
                 continue;
             }
-            const variadic_forms = "a variadic parameter is '..name: []T' (a slice), '..$name/P' (a constraint or interface pack), or '..$name' (a comptime pack)";
+            const variadic_not_slice = "a variadic's type must be a slice";
             // Optional type annotation: if no ':', infer type from context
             if (self.tokens.tag(self.tok) != .colon) {
                 // A variadic binding has no context to infer from: the slice
                 // form is its annotation, and a pack's element types come from
                 // the call.
-                if (is_variadic and !is_ct_param) return self.failAt(param_name_span, variadic_forms);
+                if (is_variadic and !is_ct_param) return self.failAt(param_name_span, variadic_not_slice);
                 const inferred_node = try self.createNode(param_name_span.start, .{ .inferred_type = {} });
                 try params.append(self.allocator, .{ .name = param_name, .name_span = param_name_span, .type_expr = inferred_node, .is_variadic = is_variadic, .is_comptime = is_ct_param, .is_raw = param_is_raw });
                 continue;
@@ -2655,7 +2655,7 @@ pub const Parser = struct {
             self.advance(); // consume ':'
             const param_type = try self.parseTypeExpr();
             if (is_variadic and !is_ct_param and param_type.data != .slice_type_expr) {
-                return self.failAt(param_type.span, variadic_forms);
+                return self.failAt(param_type.span, variadic_not_slice);
             }
             var is_comptime_param = false;
             if (is_ct_param and param_type.data == .type_expr) {
@@ -6644,15 +6644,15 @@ test "a named variadic's annotation is a slice" {
     defer arena.deinit();
     var parser = try Parser.init(arena.allocator(), "count :: (..xs: Show) -> i64 { 0 }");
     try std.testing.expectError(error.ParseError, parser.parse());
-    try std.testing.expectEqualStrings("a variadic parameter is '..name: []T' (a slice), '..$name/P' (a constraint or interface pack), or '..$name' (a comptime pack)", parser.err_msg.?);
+    try std.testing.expectEqualStrings("a variadic's type must be a slice", parser.err_msg.?);
 }
 
-test "a pack's bound is a named constraint or interface, not a callable head" {
+test "a pack takes no function-type bound" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = try Parser.init(arena.allocator(), "count :: (..$fs/(i64) -> i64) -> i64 { 0 }");
     try std.testing.expectError(error.ParseError, parser.parse());
-    try std.testing.expectEqualStrings("a pack is bounded by a constraint or an interface", parser.err_msg.?);
+    try std.testing.expectEqualStrings("a pack takes no function-type bound", parser.err_msg.?);
 }
 
 test "parse slice variadic is NOT a pack (..xs: []T)" {
