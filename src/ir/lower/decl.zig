@@ -1742,6 +1742,18 @@ fn runInitializer(self: *Lowering, vd: *const ast.VarDecl, ty: TypeId) ?*const N
 fn lowerRunGlobal(self: *Lowering, vd: *const ast.VarDecl) void {
     const gi = self.global_decl_infos.get(vd) orelse return;
     const expr = runInitializer(self, vd, gi.ty) orelse return;
+    if (gi.ty == .void) {
+        if (self.diagnostics) |d| {
+            if (vd.type_annotation) |ta| {
+                d.addFmt(.err, ta.span, "'{s}' cannot be declared 'void' — a variable holds a value", .{vd.name});
+            } else {
+                const span = vd.value.?.span;
+                const id = d.addFmtId(.err, span, "'{s}' cannot bind 'void' — this expression produces no value", .{vd.name});
+                d.addHelpFmt(id, span, null, "call it as a statement instead of binding its result", .{});
+            }
+        }
+        return;
+    }
     const func_id = self.createRunInitializer(vd.name, expr, gi.ty);
     self.module.globals.items[gi.id.index()].comptime_func = func_id;
 }
