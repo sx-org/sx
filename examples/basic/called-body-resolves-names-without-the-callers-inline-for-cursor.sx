@@ -1,0 +1,14 @@
+// A function first lowered while an `inline for` body calls it resolves its
+// names where it is declared: the caller's cursor `base` does not reach it.
+@import "modules/std.sx";
+
+base :: 6;
+
+main :: () {
+    inline for base in 0..1 {
+        print("{} {}\n", helper(), helperOf(i64));
+    }
+}
+
+helper :: () -> i64 { return base + 1; }
+helperOf :: ($T: Type) -> i64 { return base + 1; }

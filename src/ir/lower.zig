@@ -160,6 +160,14 @@ pub const ConstFoldFrame = struct {
     parent: ?*const ConstFoldFrame,
 };
 
+/// An `inline for` range cursor bound for the current iteration, innermost
+/// first.
+pub const RangeCursor = struct {
+    name: []const u8,
+    value: i64,
+    parent: ?*const RangeCursor,
+};
+
 pub fn constFoldFrameContains(frame: ?*const ConstFoldFrame, name: []const u8, environment: ?imports_mod.EnvironmentId) bool {
     var cur = frame;
     while (cur) |c| : (cur = c.parent) {
@@ -790,6 +798,10 @@ pub const Lowering = struct {
     /// decl's registration, all of which close the same loop.
     alias_cycle_diagnosed: std.AutoHashMap(usize, void) = undefined,
     resolving_type_aliases: std.AutoHashMap(imports_mod.DeclId, void),
+    /// Every name a `@run` constant declares: a global lookup of one selects its
+    /// author, so compile-time code can read the constant before pass 2.
+    comptime_global_names: std.StringHashMap(void),
+    lowering_comptime_globals: std.AutoHashMap(imports_mod.DeclId, void),
     /// The SSA `Ref`s produced by lowering a narrowed identifier — the bridge
     /// from name-keyed narrowing to the Ref-keyed `coerceMode` unwrap gate.
     /// Cleared per function body (the `Ref` space is per-function).
@@ -870,6 +882,9 @@ pub const Lowering = struct {
     struct_instance_template: std.StringHashMap([]const u8), // mangled struct name → template name
     struct_instance_author: std.StringHashMap(*const ast.StructDecl), // mangled struct name → authoring StructDecl (CP-2: body-author ≡ layout-author)
     comptime_value_bindings: ?std.StringHashMap(i64) = null, // comptime value bindings ($N → integer value: int / enum-tag / payload enum-tag)
+    /// The range cursors of the `inline for` bodies being lowered. A separately
+    /// lowered declaration starts with none.
+    range_cursor: ?*const RangeCursor = null,
     /// Comptime value params bound to a NON-scalar materialized value (a
     /// payload enum literal, a struct/array aggregate). Keyed by param name →
     /// the IR `Ref` of the materialized value (an `enum_init(tag, payload)` for
@@ -1160,6 +1175,8 @@ pub const Lowering = struct {
         module_const_frame: ?*const ConstFoldFrame,
         type_bindings: ?std.StringHashMap(TypeId),
         comptime_value_bindings: ?std.StringHashMap(i64),
+        range_cursor: ?*const RangeCursor,
+        target_type: ?TypeId,
         jni_env_base: usize,
         pack_arg_nodes: ?std.StringHashMap([]const *const Node),
         pack_param_count: ?std.StringHashMap(u32),
@@ -1188,6 +1205,8 @@ pub const Lowering = struct {
                 .module_const_frame = l.module_const_frame,
                 .type_bindings = l.type_bindings,
                 .comptime_value_bindings = l.comptime_value_bindings,
+                .range_cursor = l.range_cursor,
+                .target_type = l.target_type,
                 .jni_env_base = l.jni_env_stack_base,
                 .pack_arg_nodes = l.pack_arg_nodes,
                 .pack_param_count = l.pack_param_count,
@@ -1229,6 +1248,8 @@ pub const Lowering = struct {
             l.block_terminated = false;
             l.force_block_value = false;
             l.module_const_frame = null;
+            l.range_cursor = null;
+            l.target_type = null;
             return g;
         }
 
@@ -1247,6 +1268,8 @@ pub const Lowering = struct {
             l.module_const_frame = g.module_const_frame;
             l.type_bindings = g.type_bindings;
             l.comptime_value_bindings = g.comptime_value_bindings;
+            l.range_cursor = g.range_cursor;
+            l.target_type = g.target_type;
             l.scope = g.scope;
             l.func_defer_base = g.defer_base;
             l.block_terminated = g.block_terminated;
@@ -1311,6 +1334,7 @@ pub const Lowering = struct {
         module_const_frame: ?*const ConstFoldFrame,
         type_bindings: ?std.StringHashMap(TypeId),
         comptime_value_bindings: ?std.StringHashMap(i64),
+        range_cursor: ?*const RangeCursor,
 
         pub fn enter(l: *Lowering) NestedBodyGuard {
             const g = NestedBodyGuard{
@@ -1321,6 +1345,7 @@ pub const Lowering = struct {
                 .module_const_frame = l.module_const_frame,
                 .type_bindings = l.type_bindings,
                 .comptime_value_bindings = l.comptime_value_bindings,
+                .range_cursor = l.range_cursor,
                 .narrowed = l.narrowed,
                 .narrowed_refs = l.narrowed_refs,
                 .literal_local_refs = l.literal_local_refs,
@@ -1353,6 +1378,7 @@ pub const Lowering = struct {
             l.module_const_frame = null;
             l.type_bindings = null;
             l.comptime_value_bindings = null;
+            l.range_cursor = null;
             return g;
         }
 
@@ -1377,6 +1403,7 @@ pub const Lowering = struct {
             g.l.module_const_frame = g.module_const_frame;
             g.l.type_bindings = g.type_bindings;
             g.l.comptime_value_bindings = g.comptime_value_bindings;
+            g.l.range_cursor = g.range_cursor;
         }
     };
 
@@ -1572,6 +1599,8 @@ pub const Lowering = struct {
             .env_lambdas = std.AutoHashMap(TypeId, *const ast.Lambda).init(module.alloc),
             .alias_cycle_diagnosed = std.AutoHashMap(usize, void).init(module.alloc),
             .resolving_type_aliases = std.AutoHashMap(imports_mod.DeclId, void).init(module.alloc),
+            .comptime_global_names = std.StringHashMap(void).init(module.alloc),
+            .lowering_comptime_globals = std.AutoHashMap(imports_mod.DeclId, void).init(module.alloc),
             .narrowed_refs = std.AutoHashMap(Ref, void).init(module.alloc),
             .literal_local_refs = std.AutoHashMap(Ref, LiteralLocal).init(module.alloc),
             .convert_reentrancy = std.AutoHashMap(u64, void).init(module.alloc),
@@ -2656,6 +2685,14 @@ pub const Lowering = struct {
         order: ?@import("../name_lookup.zig").Order = null,
     };
 
+    pub fn rangeCursorValue(self: *const Lowering, name: []const u8) ?i64 {
+        var cur = self.range_cursor;
+        while (cur) |c| : (cur = c.parent) {
+            if (std.mem.eql(u8, c.name, name)) return c.value;
+        }
+        return null;
+    }
+
     pub fn lexicalContext(self: *const Lowering) LexicalContext {
         return .{ .source_file = self.current_source_file, .environment = self.current_environment, .block = self.current_lexical_block, .order = self.current_lookup_order };
     }
@@ -2879,7 +2916,7 @@ pub const Lowering = struct {
                 // Global check mirrors `resolveGlobalRef` minus its
                 // diagnostics — the ambiguous/not-visible outcomes fall to
                 // the value path, which diagnoses them exactly once.
-                if (self.program_index.lookup(.global, id.name) == null) return false;
+                if (self.lookupGlobal(id.name) == null) return false;
                 return switch (self.selectGlobalAuthor(id.name)) {
                     .resolved, .untracked => true,
                     .not_a_global, .ambiguous, .not_visible => false,
@@ -3338,9 +3375,10 @@ pub const Lowering = struct {
         if (self.pack_arg_nodes) |m| if (m.contains(name)) return true;
         if (self.pack_param_count) |m| if (m.contains(name)) return true;
         if (self.pack_arg_types) |m| if (m.contains(name)) return true;
+        if (self.rangeCursorValue(name) != null) return true;
         if (self.comptime_constants.contains(name)) return true;
 
-        if (self.program_index.lookup(.global, name) != null) {
+        if (self.lookupGlobal(name) != null) {
             switch (self.selectGlobalAuthor(name)) {
                 .resolved, .untracked => return true,
                 .not_a_global, .ambiguous, .not_visible => {},
@@ -3897,6 +3935,8 @@ pub const Lowering = struct {
     pub const selectModuleConst = lower_comptime.selectModuleConst;
     pub const GlobalAuthor = lower_comptime.GlobalAuthor;
     pub const selectGlobalAuthor = lower_comptime.selectGlobalAuthor;
+    pub const lookupGlobal = lower_comptime.lookupGlobal;
+    pub const authorGlobal = lower_comptime.authorGlobal;
     pub const visibleAuthor = lower_comptime.visibleAuthor;
     pub const foldConstAggLen = lower_comptime.foldConstAggLen;
     pub const foldFieldInt = lower_comptime.foldFieldInt;

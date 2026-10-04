@@ -1459,7 +1459,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
                     const saved_global_src = self.lexicalContext();
                     self.setAuthorContext(sel.author.id);
                     var global_info: ?program_index_mod.GlobalInfo = null;
-                    if (self.program_index.lookup(.global, sel.member)) |fallback| {
+                    if (self.lookupGlobal(sel.member)) |fallback| {
                         switch (self.selectGlobalAuthor(sel.member)) {
                             .resolved => |g| global_info = g,
                             .untracked => global_info = fallback,
@@ -1752,7 +1752,7 @@ pub fn identifierBindsValue(self: *Lowering, name: []const u8) bool {
     if (self.scope) |scope| {
         if (scope.lookup(name) != null) return true;
     }
-    if (self.program_index.lookup(.global, name) != null) return true;
+    if (self.lookupGlobal(name) != null) return true;
     if (self.program_index.lookup(.module_const, name) != null) return true;
     return false;
 }
@@ -3937,6 +3937,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                 }
             }
             // A compile-time constant answers before globals.
+            if (self.rangeCursorValue(id.name)) |v| break :blk self.builder.constInt(v, .i64);
             if (self.comptime_constants.get(id.name)) |cv| {
                 if (comptimeConstRef(self, cv)) |ref| break :blk ref;
                 if (cv == .struct_val) {
@@ -3964,7 +3965,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
             // the global registry is last-wins across modules, so select the
             // AUTHOR first and emit ITS global, never an unrelated module's
             // same-named one.
-            if (self.program_index.lookup(.global, id.name)) |gi| {
+            if (self.lookupGlobal(id.name)) |gi| {
                 switch (self.selectGlobalAuthor(id.name)) {
                     .resolved => |g| break :blk self.builder.emit(.{ .global_get = g.id }, g.ty),
                     .not_a_global => {},
@@ -4726,7 +4727,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                     break :blk binding.ref;
                 }
             }
-            if (self.program_index.lookup(.global, te.name)) |gi| {
+            if (self.lookupGlobal(te.name)) |gi| {
                 break :blk self.builder.emit(.{ .global_get = gi.id }, gi.ty);
             }
             // Type literal in expression position → first-class

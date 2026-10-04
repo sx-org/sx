@@ -17,7 +17,6 @@ const lower_error = @import("error.zig");
 const Lowering = lower.Lowering;
 const Scope = lower.Scope;
 const BindingId = lower.BindingId;
-const ComptimeValue = Lowering.ComptimeValue;
 const isTypeCategoryMatch = Lowering.isTypeCategoryMatch;
 
 // ── Flow-sensitive narrowing ───────────────────────────────────
@@ -1203,7 +1202,10 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
         break;
     }
 
-    const CursorSave = struct { name: []const u8, had_prev: bool, prev: ComptimeValue };
+    const cursors = self.alloc.alloc(lower.RangeCursor, fe.captures.len) catch return self.builder.constInt(0, .void);
+    defer self.alloc.free(cursors);
+    const outer_cursor = self.range_cursor;
+    defer self.range_cursor = outer_cursor;
 
     var i: i64 = 0;
     while (i < count) : (i += 1) {
@@ -1211,25 +1213,17 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
         const old_scope = self.scope;
         self.scope = &body_scope;
 
-        var saves = std.ArrayList(CursorSave).empty;
-        defer saves.deinit(self.alloc);
-
         for (fe.captures, 0..) |cap, ci| {
             if (cap.name.len == 0) continue;
             switch (classes.items[ci]) {
                 .range => |start| {
                     // Bind the cursor both as a runtime value (constInt, for
-                    // uses like `print(i)`) and as a comptime constant (for
+                    // uses like `print(i)`) and as a range cursor (for
                     // `xs[i]` substitution).
                     const v = start + i;
                     body_scope.put(cap.name, .{ .ref = self.builder.constInt(v, .i64), .ty = .i64, .is_alloca = false, .origin = .range_index });
-                    var save = CursorSave{ .name = cap.name, .had_prev = false, .prev = undefined };
-                    if (self.comptime_constants.get(cap.name)) |p| {
-                        save.had_prev = true;
-                        save.prev = p;
-                    }
-                    saves.append(self.alloc, save) catch {};
-                    self.comptime_constants.put(cap.name, .{ .int_val = v }) catch {};
+                    cursors[ci] = .{ .name = cap.name, .value = v, .parent = self.range_cursor };
+                    self.range_cursor = &cursors[ci];
                 },
                 .pack => |pack_name| {
                     const elem_node = packElementNode(self, pack_name, fe.iterables[ci].expr.span, i) orelse break;
@@ -1249,14 +1243,7 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
         }
 
         self.lowerBlock(fe.body);
-
-        for (saves.items) |save| {
-            if (save.had_prev) {
-                self.comptime_constants.put(save.name, save.prev) catch {};
-            } else {
-                _ = self.comptime_constants.remove(save.name);
-            }
-        }
+        self.range_cursor = outer_cursor;
 
         self.scope = old_scope;
         body_scope.deinit();

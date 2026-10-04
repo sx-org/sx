@@ -856,6 +856,10 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
     const decls = freshDecls(self, ast.scopeDeclarations(self.alloc, all_decls) catch @panic("out of memory"));
     if (decls.len == 0) return;
     registerLiteralModuleConsts(self, decls);
+    for (decls) |decl| {
+        if (decl.data == .const_decl and decl.data.const_decl.value.data == .comptime_expr)
+            self.comptime_global_names.put(decl.data.const_decl.name, {}) catch @panic("out of memory");
+    }
     // Pass 0a': const ALIASES of consts (`B :: A`, chains of any depth /
     // declaration order). A bare-identifier RHS registers here, exactly as
     // the expression spelling `B :: A + 0` does. Register it with its

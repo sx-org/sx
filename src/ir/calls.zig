@@ -832,7 +832,7 @@ pub const CallResolver = struct {
     }
 
     fn selectedGlobal(self: CallResolver, sel: Lowering.QualifiedMember) ?program_index.GlobalInfo {
-        if (self.l.program_index.get(.global, sel.author.id)) |g| return g;
+        if (self.l.authorGlobal(sel.author)) |g| return g;
         // Duplicate extern declarations may intentionally share the one
         // registered symbol.  The raw selected author still proves that this
         // fallback denotes the same global domain, rather than a same-spelled
