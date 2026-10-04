@@ -866,11 +866,11 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
         }
         try bc.setStrings(allocator, table, "targetFrameworks", fws);
         try bc.setStrings(allocator, table, "targetFrameworkPaths", merged_config.framework_paths);
-        // C companion objects / `@library` names for the sx driver's
+        // C companion objects / link libraries for the sx driver's
         // `@cObjectPaths()` / `@linkLibraries()` primitives. Slices reference
         // compileWithTimer locals that outlive the callback.
         bc.c_object_paths = c_obj_paths;
-        bc.link_libraries = libs;
+        bc.link_libraries = try linkLibraries(allocator, libs, comp.ir_module.?);
         try bc.setString(allocator, table, "outputPath", final_output);
         bc.merged_link_flags = merged_config.extra_link_flags;
         try bc.setStringIfUnset(allocator, table, "manifestPath", merged_config.manifest_path);
@@ -1107,6 +1107,17 @@ fn extractLibraries(allocator: std.mem.Allocator, root: *const sx.ast.Node) ![]c
     };
     try walker.walk(&libs, &seen, allocator, root.data.root.decls);
     return try libs.toOwnedSlice(allocator);
+}
+
+/// The program's `@library` names, plus the Objective-C runtime when its
+/// generated code calls it.
+fn linkLibraries(allocator: std.mem.Allocator, libs: []const []const u8, module: *const sx.ir.Module) ![]const []const u8 {
+    const objc = "objc";
+    if (!module.calls_objc_runtime) return libs;
+    for (libs) |lib| {
+        if (std.mem.eql(u8, lib, objc)) return libs;
+    }
+    return std.mem.concat(allocator, []const u8, &.{ libs, &.{objc} });
 }
 
 fn extractFrameworks(allocator: std.mem.Allocator, root: *const sx.ast.Node) ![]const []const u8 {
