@@ -1,0 +1,21 @@
+// A type function evaluated at type construction reads a `@run` constant
+// declared after it. The constant's initializer resolves its names where the
+// constant is declared: the type function's local `base` does not reach it.
+@import "modules/std.sx";
+
+base :: 6;
+
+pick :: () -> Type {
+    base := 0;
+    if width == 7 + base { return i64; }
+    return f64;
+}
+
+Wide :: pick();
+
+width :: @run base + 1;
+
+main :: () {
+    v : Wide = 3;
+    print("{} {}\n", v, width);
+}

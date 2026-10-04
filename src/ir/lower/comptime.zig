@@ -904,6 +904,12 @@ pub fn evalComptimeInt(self: *Lowering, node: *const Node) ?i64 {
 /// Creates a comptime function wrapping the expression (for later
 /// interpretation), plus a global constant to hold the result.
 pub fn lowerComptimeGlobal(self: *Lowering, declaration: @import("../../imports.zig").DeclId, name: []const u8, expr: *const Node, type_ann: ?*const Node) void {
+    if (self.program_index.get(.global, declaration) != null) return;
+    // A cyclic reference reaches the constant while its initializer lowers and
+    // reads no global.
+    const lowering = self.lowering_comptime_globals.getOrPut(declaration) catch @panic("out of memory");
+    if (lowering.found_existing) return;
+    defer _ = self.lowering_comptime_globals.remove(declaration);
     // When the user writes `NAME :: @run expr;` with no type annotation,
     // infer the global's type from the comptime expression's return
     // shape. `resolveType(null)` returns `.i64` — good for primitive
@@ -2850,15 +2856,43 @@ pub fn visibleAuthor(self: *Lowering, from: []const u8, name: []const u8) Visibl
 }
 
 fn globalAuthorAt(self: *Lowering, author: resolver_mod.RawAuthor) GlobalAuthor {
-    if (self.program_index.get(.global, author.id)) |g| return .{ .resolved = g };
+    if (authorGlobal(self, author)) |g| return .{ .resolved = g };
     return .not_a_global;
+}
+
+/// The global `author` declares. A read from compile-time code lowers a `@run`
+/// constant pass 2 has not reached yet, in the constant's own environment.
+/// Runtime code, which pass 1 also types, lowers none: pass 2 keeps every other
+/// `@run` in declaration order.
+pub fn authorGlobal(self: *Lowering, author: resolver_mod.RawAuthor) ?program_index_mod.GlobalInfo {
+    if (self.program_index.get(.global, author.id)) |g| return g;
+    if (self.comptime_phase == null or author.raw != .const_decl) return null;
+    const cd = author.raw.const_decl;
+    if (cd.value.data != .comptime_expr) return null;
+    var reentry = Lowering.FnBodyReentry.enterCached(self);
+    defer reentry.restore();
+    self.scope = null;
+    self.setAuthorContext(author.id);
+    self.lowerComptimeGlobal(author.id, cd.name, cd.value.data.comptime_expr.expr, cd.type_annotation);
+    return self.program_index.get(.global, author.id);
+}
+
+/// The global `name` reads: a registered one, else the one a compile-time read
+/// registers for the `@run` constant `name` selects.
+pub fn lookupGlobal(self: *Lowering, name: []const u8) ?program_index_mod.GlobalInfo {
+    if (self.program_index.lookup(.global, name)) |g| return g;
+    if (!self.comptime_global_names.contains(name)) return null;
+    return switch (self.selectGlobalAuthor(name)) {
+        .resolved => |g| g,
+        .not_a_global, .ambiguous, .not_visible, .untracked => null,
+    };
 }
 
 /// `resolveGlobalRef` without its diagnostics — the global a bare name reads,
 /// or null when no single author answers. Typing consumes this so it can never
 /// name a global the call path refuses, and never double-reports the refusal.
 pub fn globalValueRef(self: *Lowering, name: []const u8) ?program_index_mod.GlobalInfo {
-    const gi = self.program_index.lookup(.global, name) orelse return null;
+    const gi = self.lookupGlobal(name) orelse return null;
     return switch (self.selectGlobalAuthor(name)) {
         .resolved => |g| g,
         .untracked => gi,
@@ -2872,7 +2906,7 @@ pub fn globalValueRef(self: *Lowering, name: []const u8) ?program_index_mod.Glob
 /// fall-through path runs. Sites needing custom placeholder emission use
 /// `selectGlobalAuthor` directly.
 pub fn resolveGlobalRef(self: *Lowering, name: []const u8, span: ?ast.Span) ?program_index_mod.GlobalInfo {
-    const gi = self.program_index.lookup(.global, name) orelse return null;
+    const gi = self.lookupGlobal(name) orelse return null;
     switch (self.selectGlobalAuthor(name)) {
         .resolved => |g| return g,
         .not_a_global => return null,

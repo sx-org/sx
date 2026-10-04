@@ -790,6 +790,10 @@ pub const Lowering = struct {
     /// decl's registration, all of which close the same loop.
     alias_cycle_diagnosed: std.AutoHashMap(usize, void) = undefined,
     resolving_type_aliases: std.AutoHashMap(imports_mod.DeclId, void),
+    /// Every name a `@run` constant declares: a global lookup of one selects its
+    /// author, so compile-time code can read the constant before pass 2.
+    comptime_global_names: std.StringHashMap(void),
+    lowering_comptime_globals: std.AutoHashMap(imports_mod.DeclId, void),
     /// The SSA `Ref`s produced by lowering a narrowed identifier — the bridge
     /// from name-keyed narrowing to the Ref-keyed `coerceMode` unwrap gate.
     /// Cleared per function body (the `Ref` space is per-function).
@@ -1572,6 +1576,8 @@ pub const Lowering = struct {
             .env_lambdas = std.AutoHashMap(TypeId, *const ast.Lambda).init(module.alloc),
             .alias_cycle_diagnosed = std.AutoHashMap(usize, void).init(module.alloc),
             .resolving_type_aliases = std.AutoHashMap(imports_mod.DeclId, void).init(module.alloc),
+            .comptime_global_names = std.StringHashMap(void).init(module.alloc),
+            .lowering_comptime_globals = std.AutoHashMap(imports_mod.DeclId, void).init(module.alloc),
             .narrowed_refs = std.AutoHashMap(Ref, void).init(module.alloc),
             .literal_local_refs = std.AutoHashMap(Ref, LiteralLocal).init(module.alloc),
             .convert_reentrancy = std.AutoHashMap(u64, void).init(module.alloc),
@@ -2879,7 +2885,7 @@ pub const Lowering = struct {
                 // Global check mirrors `resolveGlobalRef` minus its
                 // diagnostics — the ambiguous/not-visible outcomes fall to
                 // the value path, which diagnoses them exactly once.
-                if (self.program_index.lookup(.global, id.name) == null) return false;
+                if (self.lookupGlobal(id.name) == null) return false;
                 return switch (self.selectGlobalAuthor(id.name)) {
                     .resolved, .untracked => true,
                     .not_a_global, .ambiguous, .not_visible => false,
@@ -3340,7 +3346,7 @@ pub const Lowering = struct {
         if (self.pack_arg_types) |m| if (m.contains(name)) return true;
         if (self.comptime_constants.contains(name)) return true;
 
-        if (self.program_index.lookup(.global, name) != null) {
+        if (self.lookupGlobal(name) != null) {
             switch (self.selectGlobalAuthor(name)) {
                 .resolved, .untracked => return true,
                 .not_a_global, .ambiguous, .not_visible => {},
@@ -3897,6 +3903,8 @@ pub const Lowering = struct {
     pub const selectModuleConst = lower_comptime.selectModuleConst;
     pub const GlobalAuthor = lower_comptime.GlobalAuthor;
     pub const selectGlobalAuthor = lower_comptime.selectGlobalAuthor;
+    pub const lookupGlobal = lower_comptime.lookupGlobal;
+    pub const authorGlobal = lower_comptime.authorGlobal;
     pub const visibleAuthor = lower_comptime.visibleAuthor;
     pub const foldConstAggLen = lower_comptime.foldConstAggLen;
     pub const foldFieldInt = lower_comptime.foldFieldInt;

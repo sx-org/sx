@@ -779,7 +779,7 @@ fn staticInterfaceGlobal(self: *Lowering, operand: *const Node) ?program_index_m
 }
 
 fn selectedNamespaceGlobal(self: *Lowering, sel: Lowering.QualifiedMember) ?program_index_mod.GlobalInfo {
-    if (self.program_index.get(.global, sel.author.id)) |g| return g;
+    if (self.authorGlobal(sel.author)) |g| return g;
     if (sel.author.raw == .var_decl)
         return self.program_index.lookup(.global, sel.member);
     return null;

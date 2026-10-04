@@ -1879,7 +1879,7 @@ fn qualifiedStoreTerminalSpan(node: *const Node, member: []const u8) ast.Span {
 }
 
 fn selectedQualifiedGlobal(self: *Lowering, selected: Lowering.QualifiedMember) ?program_index_mod.GlobalInfo {
-    return self.program_index.get(.global, selected.author.id);
+    return self.authorGlobal(selected.author);
 }
 
 /// Diagnostic-free preselection for a namespace-qualified mutable global. It
@@ -2160,7 +2160,7 @@ fn tryLowerQualifiedGlobalStore(
     var member_not_visible = false;
     if (!is_fn and !is_const) {
         // Mirror resolveGlobalRef's outcome mapping, minus its diagnostics.
-        if (self.program_index.lookup(.global, member)) |gi| {
+        if (self.lookupGlobal(member)) |gi| {
             switch (self.selectGlobalAuthor(member)) {
                 .resolved => |g| resolved = g,
                 .not_a_global => {},
@@ -2485,7 +2485,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
         if (!found_local) {
             // Quiet author-aware lookup (type inference only; the store
             // site diagnoses ambiguity / visibility).
-            if (self.program_index.lookup(.global, asgn.target.data.identifier.name)) |gi| {
+            if (self.lookupGlobal(asgn.target.data.identifier.name)) |gi| {
                 switch (self.selectGlobalAuthor(asgn.target.data.identifier.name)) {
                     .resolved => |g| self.target_type = g.ty,
                     .untracked => self.target_type = gi.ty,
@@ -2655,7 +2655,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                     // (`totl = 42;`) compiles and runs.
                     // `resolveGlobalRef` already diagnosed the ambiguous /
                     // not-visible outcomes itself; don't stack a second error.
-                    const already_diagnosed = self.program_index.lookup(.global, id.name) != null and
+                    const already_diagnosed = self.lookupGlobal(id.name) != null and
                         switch (self.selectGlobalAuthor(id.name)) {
                             .ambiguous, .not_visible => true,
                             else => false,
@@ -2821,7 +2821,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
 /// Author-aware global lookup that stays silent on every failing outcome, so a
 /// caller that resolves a place can report its own message.
 fn quietGlobalRef(self: *Lowering, name: []const u8) ?program_index_mod.GlobalInfo {
-    const gi = self.program_index.lookup(.global, name) orelse return null;
+    const gi = self.lookupGlobal(name) orelse return null;
     return switch (self.selectGlobalAuthor(name)) {
         .resolved => |g| g,
         .untracked => gi,
@@ -3750,7 +3750,7 @@ fn setMultiAssignTargetType(self: *Lowering, target: *const Node, value: *const 
             if (!found_local) {
                 // Quiet author-aware lookup (type inference only; the store
                 // site diagnoses ambiguity / visibility).
-                if (self.program_index.lookup(.global, id.name)) |gi| {
+                if (self.lookupGlobal(id.name)) |gi| {
                     switch (self.selectGlobalAuthor(id.name)) {
                         .resolved => |g| self.target_type = g.ty,
                         .untracked => self.target_type = gi.ty,
@@ -3949,7 +3949,7 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                         // `resolveGlobalRef` already diagnosed
                         // the ambiguous / not-visible outcomes itself; don't
                         // stack a second error.
-                        const already_diagnosed = self.program_index.lookup(.global, id.name) != null and
+                        const already_diagnosed = self.lookupGlobal(id.name) != null and
                             switch (self.selectGlobalAuthor(id.name)) {
                                 .ambiguous, .not_visible => true,
                                 else => false,
