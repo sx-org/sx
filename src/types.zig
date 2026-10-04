@@ -76,7 +76,7 @@ pub const Type = union(enum) {
         /// carries no `abi(...)`. Two signatures that differ only here are
         /// different types, so hover and completion must keep them apart.
         abi: ast.ABI,
-        /// The parameter list ends in a bare `..` C-variadic tail, whose fixed
+        /// The parameter list ends in a `...` C-variadic tail, whose fixed
         /// count is `param_types.len`.
         is_c_variadic: bool,
     };
@@ -342,7 +342,7 @@ pub const Type = union(enum) {
                 }
                 if (info.is_c_variadic) {
                     if (info.param_types.len > 0) try buf.appendSlice(allocator, ", ");
-                    try buf.appendSlice(allocator, "..");
+                    try buf.appendSlice(allocator, "...");
                 }
                 try buf.append(allocator, ')');
                 if (!std.meta.eql(info.return_type.*, Type.void_type)) {

@@ -1222,8 +1222,18 @@ pub fn fixupMethodReceiver(self: *Lowering, method_args: *std.ArrayList(Ref), fu
                 obj_node.data.index_expr.object.data == .identifier and
                 self.isPackName(obj_node.data.index_expr.object.data.identifier.name);
             if (!is_pack_index and (obj_node.data == .field_access or obj_node.data == .index_expr or obj_node.data == .deref_expr)) {
-                method_args.items[0] = receiverPointer(self, self.lowerExprAsPtr(obj_node), obj_ty);
-                return;
+                if (self.nonstoreAddress(obj_node)) |placeholder| {
+                    method_args.items[0] = placeholder;
+                    return;
+                }
+                if (self.refStorageAddress(method_args.items[0])) |storage| {
+                    method_args.items[0] = receiverPointer(self, storage, obj_ty);
+                    return;
+                }
+                if (self.exprHasAddressableStorage(obj_node)) {
+                    method_args.items[0] = receiverPointer(self, self.lowerExprAsPtr(obj_node), obj_ty);
+                    return;
+                }
             }
             // General case: alloca+store the value and pass the alloca pointer
             {
@@ -1449,7 +1459,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
                     const saved_global_src = self.lexicalContext();
                     self.setAuthorContext(sel.author.id);
                     var global_info: ?program_index_mod.GlobalInfo = null;
-                    if (self.program_index.lookup(.global, sel.member)) |fallback| {
+                    if (self.lookupGlobal(sel.member)) |fallback| {
                         switch (self.selectGlobalAuthor(sel.member)) {
                             .resolved => |g| global_info = g,
                             .untracked => global_info = fallback,
@@ -1624,6 +1634,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
             const obj_ref = self.lowerExpr(fa.object);
             const ptr_void = self.module.types.ptrTo(.void);
             const get_class_fid = self.ensureCRuntimeDecl("object_getClass", &.{ptr_void}, ptr_void);
+            self.module.calls_objc_runtime = true;
             const args = self.alloc.alloc(Ref, 1) catch unreachable;
             args[0] = obj_ref;
             return self.builder.emit(.{ .call = .{ .callee = get_class_fid, .args = args } }, ptr_void);
@@ -1742,7 +1753,7 @@ pub fn identifierBindsValue(self: *Lowering, name: []const u8) bool {
     if (self.scope) |scope| {
         if (scope.lookup(name) != null) return true;
     }
-    if (self.program_index.lookup(.global, name) != null) return true;
+    if (self.lookupGlobal(name) != null) return true;
     if (self.program_index.lookup(.module_const, name) != null) return true;
     return false;
 }
@@ -3686,12 +3697,6 @@ fn errorPathContains(root: *const Node, node: *const Node) bool {
 }
 
 pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
-    // A named-argument value pre-lowered in written order by `mapNamedArgs`
-    // already produced its ref — return it; re-lowering would evaluate the
-    // value's side effects a second time.
-    if (self.precomputed_args.count() > 0) {
-        if (self.precomputed_args.get(node)) |pre| return pre;
-    }
     // A synthetic declared-default root evaluates with the callee declaration's
     // lexical authority and substitution, not the caller's local scope.
     // Keep this override for the entire recursive lowering of the default
@@ -3933,6 +3938,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                 }
             }
             // A compile-time constant answers before globals.
+            if (self.rangeCursorValue(id.name)) |v| break :blk self.builder.constInt(v, .i64);
             if (self.comptime_constants.get(id.name)) |cv| {
                 if (comptimeConstRef(self, cv)) |ref| break :blk ref;
                 if (cv == .struct_val) {
@@ -3960,7 +3966,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
             // the global registry is last-wins across modules, so select the
             // AUTHOR first and emit ITS global, never an unrelated module's
             // same-named one.
-            if (self.program_index.lookup(.global, id.name)) |gi| {
+            if (self.lookupGlobal(id.name)) |gi| {
                 switch (self.selectGlobalAuthor(id.name)) {
                     .resolved => |g| break :blk self.builder.emit(.{ .global_get = g.id }, g.ty),
                     .not_a_global => {},
@@ -4141,8 +4147,8 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                                 // for each other.
                                 if (target_fn.is_c_variadic != tt_info.function.is_c_variadic) {
                                     if (self.diagnostics) |d| {
-                                        const want_tail = if (tt_info.function.is_c_variadic) "a C-variadic '..' tail" else "a fixed parameter list";
-                                        const have_tail = if (target_fn.is_c_variadic) "a C-variadic '..' tail" else "a fixed parameter list";
+                                        const want_tail = if (tt_info.function.is_c_variadic) "a C-variadic '...' tail" else "a fixed parameter list";
+                                        const have_tail = if (target_fn.is_c_variadic) "a C-variadic '...' tail" else "a fixed parameter list";
                                         d.addFmt(.err, node.span, "variadic-tail mismatch: '{s}' is declared with {s} but the target type expects {s}", .{ eff_fn_name, have_tail, want_tail });
                                     }
                                     break :blk self.emitPlaceholder(eff_fn_name);
@@ -4722,7 +4728,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                     break :blk binding.ref;
                 }
             }
-            if (self.program_index.lookup(.global, te.name)) |gi| {
+            if (self.lookupGlobal(te.name)) |gi| {
                 break :blk self.builder.emit(.{ .global_get = gi.id }, gi.ty);
             }
             // Type literal in expression position → first-class
@@ -5272,28 +5278,23 @@ fn staticAnswerOrFalse(self: *Lowering, subject_ty: TypeId, rhs: *const Node) bo
 }
 
 /// The runtime answer over a `Type`-valued tag: an OR-reduction over the tag
-/// set the target denotes.
+/// set the target denotes. A table-decided category is asked of the final
+/// table instead, since its set is only complete once every type is
+/// registered and the tag can name a type registered after this site lowers.
 fn runtimeIsAnswer(self: *Lowering, tag: Ref, rhs: *const Node, span: ast.Span) Ref {
     const target = self.classifyIsTarget(rhs) orelse return self.builder.constBool(false);
-    // Signedness reads the tag-indexed table rather than an OR over the tag
-    // set: the set is only complete once every type is registered, and the
-    // `{}` formatter asks this of types that register after it lowers.
     if (target == .category and std.mem.eql(u8, target.category, "unsigned")) {
         const args = self.alloc.dupe(Ref, &.{tag}) catch return self.builder.constBool(false);
         return self.builder.callBuiltin(.is_unsigned, args, .bool);
     }
-    if (target == .category and (std.mem.eql(u8, target.category, "int") or std.mem.eql(u8, target.category, "signed"))) {
+    const table_category = if (target == .category) std.meta.stringToEnum(types.TypeCategory, target.category) else null;
+    if (table_category) |category| {
         const b = &self.builder;
-        const yes = self.freshBlock("is.integer");
+        const yes = self.freshBlock("is.category");
         const no = self.freshBlock("is.other");
         const merge = self.freshBlock("is.merge");
         const slot = b.alloca(.bool);
-        var cases = [_]inst_mod.SwitchBranch.IntegerCase{
-            .{ .signed = true, .target = yes },
-            .{ .signed = false, .target = yes },
-        };
-        const count: usize = if (std.mem.eql(u8, target.category, "int")) 2 else 1;
-        b.integerSwitchBr(tag, &.{}, cases[0..count], no);
+        b.categorySwitchBr(tag, &.{}, &.{.{ .category = category, .target = yes }}, no);
         b.switchToBlock(yes);
         b.store(slot, b.constBool(true));
         b.br(merge, &.{});

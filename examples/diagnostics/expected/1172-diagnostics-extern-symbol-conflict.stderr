@@ -5,7 +5,7 @@ error: extern symbol 'getenv' is already bound with a different signature; two v
    |                                                            ^
 
 error: extern symbol 'printf' is already bound with a different signature; two views of one C symbol must declare identical types
-  --> examples/diagnostics/1172-diagnostics-extern-symbol-conflict.sx:17:63
+  --> examples/diagnostics/1172-diagnostics-extern-symbol-conflict.sx:17:64
    |
-17 | variadicView :: (fmt: [*:0]u8, ..) -> i32 extern libc "printf";
-   |                                                               ^
+17 | variadicView :: (fmt: [*:0]u8, ...) -> i32 extern libc "printf";
+   |                                                                ^

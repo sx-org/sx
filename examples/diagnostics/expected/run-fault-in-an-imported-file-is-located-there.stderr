@@ -1,0 +1,5 @@
+error: comptime init of 'Q' failed: IntegerOverflow
+  --> examples/diagnostics/run-fault-in-an-imported-file-is-located-there/quotient.sx:3:11
+   |
+ 3 | Q :: @run i64.min / minus_one();
+   |           ^^^^^^^^^^^^^^^^^^^^^

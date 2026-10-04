@@ -1,14 +1,14 @@
 // A generic definition takes the C-variadic surface like a concrete one: an
-// effective-C monomorph keeps the declaration's convention and bare `..` tail,
+// effective-C monomorph keeps the declaration's convention and `...` tail,
 // reads it through the cursor, and takes an incoming list by value. An inferred
 // binding of an extern C-variadic function carries the C convention, so an
 // indirect call crosses with no implicit context.
 
 @import "modules/std.sx";
 
-printf :: (fmt: [*:0]u8, ..) -> i32 extern;
+printf :: (fmt: [*:0]u8, ...) -> i32 extern;
 
-readTail :: ($T: Type, first: $T, ..) -> i64 abi(.c) {
+readTail :: ($T: Type, first: $T, ...) -> i64 abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     defer @vaEnd(*ap);
@@ -23,7 +23,7 @@ readList :: ($T: Type, n: i32, ap: @VaList) -> i64 abi(.c) {
     return total;
 }
 
-sum :: (n: i32, ..) -> i64 abi(.c) {
+sum :: (n: i32, ...) -> i64 abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     defer @vaEnd(*ap);

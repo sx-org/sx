@@ -317,12 +317,12 @@ writeHex :: ufcs (w: Writer, n: u64) {
     w.write(buf[i..]);
 }
 
-// The reader a definition whose parameter list ends in a bare `..` walks its
+// The reader a definition whose parameter list ends in `...` walks its
 // tail arguments with. `@VaList` is opaque: it has no fields, no size, and no
 // value form — a local declaration gives it storage, and the four operations
 // below are the only things that read or move it.
 //
-//     tally :: (n: i32, ..) -> i64 abi(.c) {
+//     tally :: (n: i32, ...) -> i64 abi(.c) {
 //         ap: @VaList = ---;
 //         @vaStart(*ap);
 //         total: i64 = 0;

@@ -35,9 +35,9 @@
 //! emission, so cross-compilation retains its target ABI.
 //!
 //! `Machine` (arena-backed memory + scalar word read/write + byte views) holds the
-//! comptime stack + heap; `Frame` is the per-call register file. A `Frame` does NOT
-//! reclaim the machine's memory on exit — a callee can return an aggregate whose
-//! register holds an `Addr` into comptime memory, and reclaiming would dangle it.
+//! comptime stack + heap; `Frame` is the per-call register file. No memory is
+//! freed before `deinit`: a returning frame copies an aggregate result out to its
+//! caller and hands its copy slots to later frames.
 
 const std = @import("std");
 const inst_mod = @import("inst.zig");
@@ -148,11 +148,7 @@ pub const Machine = struct {
     }
 };
 
-/// One call frame: a register file indexed by IR `Ref` index. It does NOT reclaim
-/// the machine stack on exit — a callee can return an aggregate whose value is an
-/// `Addr` into comptime memory, and reclaiming the callee's region would dangle it.
-/// Comptime evaluation is bounded, so all allocations live until `Vm.deinit`;
-/// `Machine.mark`/`reset` remain for explicit scoped use. The register file IS
+/// One call frame: a register file indexed by IR `Ref` index. The register file IS
 /// per-call (each `run` gets a fresh one sized to its callee's Ref space).
 pub const Frame = struct {
     regs: []Reg,
@@ -461,7 +457,7 @@ pub fn runBuildCallback(gpa: std.mem.Allocator, module: *const Module, func_id: 
 // aggregate init and projection, and calls execute over comptime memory; an op
 // with no arm bails loudly (`error.Unsupported` + `detail`), never silently.
 
-pub const Error = error{ DivisionByZero, TypeError, Unsupported, OutOfBounds };
+pub const Error = error{ DivisionByZero, IntegerOverflow, TypeError, Unsupported, OutOfBounds };
 
 fn isFloat(ty: TypeId) bool {
     return ty == .f32 or ty == .f64;
@@ -528,6 +524,8 @@ pub const Vm = struct {
     /// tag name or a one-line explanation, so the host can surface a real message,
     /// not a bare error.
     detail: ?[]const u8 = null,
+    /// The instruction a `DivisionByZero` / `IntegerOverflow` bail failed at.
+    arithmetic_fault: ?struct { source_file: ?[]const u8, span: inst_mod.Span } = null,
     /// Per-global memo of comptime-evaluated globals: `global_get` caches a
     /// global's Reg so a chain of globals
     /// reading each other doesn't re-run inits (and so each runs at most once).
@@ -559,6 +557,12 @@ pub const Vm = struct {
     /// object they materialize. The map is per-evaluation, which is exactly the
     /// scope identity dedup has: two evaluations produce distinct objects.
     image_objects: std.AutoHashMap(ObjectKey, *Value.ImageObject),
+    /// The slots the running frames copy aggregates into, innermost frame last.
+    live_slots: std.ArrayList(Slot) = .empty,
+    /// The slots of returned frames, by type, for later frames to copy into.
+    spare_slots: std.AutoHashMapUnmanaged(TypeId, std.ArrayList(Addr)) = .empty,
+
+    const Slot = struct { addr: Addr, ty: TypeId };
 
     /// A declared global's comptime instance: `size` bytes at `base`.
     pub const GlobalInstance = struct {
@@ -587,6 +591,10 @@ pub const Vm = struct {
         self.global_instances.deinit(self.gpa);
         self.image_objects.deinit();
         self.call_stack.deinit(self.gpa);
+        self.live_slots.deinit(self.gpa);
+        var spare = self.spare_slots.valueIterator();
+        while (spare.next()) |slots| slots.deinit(self.gpa);
+        self.spare_slots.deinit(self.gpa);
         self.machine.deinit();
     }
 
@@ -775,10 +783,16 @@ pub const Vm = struct {
         return null;
     }
 
-    /// Run `func` with scalar `args` (one `Reg` word each, in param order) and
-    /// return the scalar result word. `ret_void` / falling off a block with no
-    /// terminator yields 0. Aggregate args/results await the memory sub-step.
+    /// Run `func` with `args` (one `Reg` word each, in param order) and return its
+    /// result word, an aggregate result in fresh memory. `ret_void` / falling off a
+    /// block with no terminator yields 0.
     pub fn run(self: *Vm, func: *const Function, args: []const Reg) Error!Reg {
+        return self.runInto(func, args, null);
+    }
+
+    /// `run`, copying an aggregate result into `ret_slot` when one is given: the
+    /// frame's own slots pass to later frames on return.
+    fn runInto(self: *Vm, func: *const Function, args: []const Reg, ret_slot: ?Addr) Error!Reg {
         if (self.depth >= max_depth) {
             self.detail = "comptime VM: call recursion too deep";
             return error.Unsupported;
@@ -801,6 +815,8 @@ pub const Vm = struct {
 
         var frame = Frame.init(self.gpa, total);
         defer frame.deinit();
+        const live_base = self.live_slots.items.len;
+        defer self.spareSlots(live_base);
         for (args, 0..) |a, i| frame.set(i, normalizeWord(try self.requireTable(), func.params[i].ty, a));
 
         var current = BlockId.fromIndex(0);
@@ -818,13 +834,20 @@ pub const Vm = struct {
             for (blk.insts.items) |*ins| {
                 if (ins.op == .block_param) {
                     const bp = ins.op.block_param;
-                    if (bp.param_index < block_args.len)
-                        frame.set(ref, frame.get(block_args[bp.param_index].index()));
+                    if (bp.param_index < block_args.len) {
+                        const arg = frame.get(block_args[bp.param_index].index());
+                        const table = try self.requireTable();
+                        frame.set(ref, if (kindOf(table, ins.ty) == .aggregate) try self.copyAggregate(table, arg, ins.ty, self.slotFor(table, &frame, ref, ins.ty)) else arg);
+                    }
                     if (frame.bad_ref) return self.badRef();
                     ref += 1;
                     continue;
                 }
-                const step = try self.exec(ins, &frame, ref_types);
+                const step = self.exec(ins, ref, &frame, ref_types) catch |err| {
+                    if ((err == error.DivisionByZero or err == error.IntegerOverflow) and self.arithmetic_fault == null)
+                        self.arithmetic_fault = .{ .source_file = func.source_file, .span = ins.span };
+                    return err;
+                };
                 // A malformed IR (an out-of-range / `Ref.none` operand from an
                 // unresolved name) flips `frame.bad_ref` instead of panicking — bail.
                 if (frame.bad_ref) return self.badRef();
@@ -839,7 +862,11 @@ pub const Vm = struct {
                         jumped = true;
                         break;
                     },
-                    .ret => |w| return w,
+                    .ret => |w| {
+                        const table = try self.requireTable();
+                        if (kindOf(table, func.ret) != .aggregate) return w;
+                        return self.copyAggregate(table, w, func.ret, ret_slot orelse self.machine.allocBytes(table.typeSizeBytes(func.ret), table.typeAlignBytes(func.ret)));
+                    },
                     .ret_void => return 0,
                 }
             }
@@ -854,7 +881,7 @@ pub const Vm = struct {
         ret_void,
     };
 
-    fn exec(self: *Vm, ins: *const Inst, frame: *Frame, ref_types: []const TypeId) Error!Step {
+    fn exec(self: *Vm, ins: *const Inst, ref: usize, frame: *Frame, ref_types: []const TypeId) Error!Step {
         switch (ins.op) {
             // ── Constants ───────────────────────────────────────
             .const_int => |v| return .{ .value = normalizeWord(try self.requireTable(), ins.ty, @bitCast(v)) },
@@ -985,7 +1012,7 @@ pub const Vm = struct {
             },
             .load => |u| {
                 const table = try self.requireTable();
-                return .{ .value = try self.readField(table, frame.get(u.operand.index()), ins.ty) };
+                return .{ .value = try self.loadValue(table, frame.get(u.operand.index()), ins.ty, frame, ref) };
             },
             .store => |s| {
                 const table = try self.requireTable();
@@ -997,7 +1024,7 @@ pub const Vm = struct {
             // is given — so a volatile access is an ordinary load/store here.
             .volatile_load => |u| {
                 const table = try self.requireTable();
-                return .{ .value = try self.readField(table, frame.get(u.operand.index()), ins.ty) };
+                return .{ .value = try self.loadValue(table, frame.get(u.operand.index()), ins.ty, frame, ref) };
             },
             .volatile_store => |s| {
                 const table = try self.requireTable();
@@ -1011,7 +1038,7 @@ pub const Vm = struct {
             // atomics machinery.
             .atomic_load => |a| {
                 const table = try self.requireTable();
-                return .{ .value = try self.readField(table, frame.get(a.ptr.index()), ins.ty) };
+                return .{ .value = try self.loadValue(table, frame.get(a.ptr.index()), ins.ty, frame, ref) };
             },
             .atomic_store => |a| {
                 const table = try self.requireTable();
@@ -1089,11 +1116,12 @@ pub const Vm = struct {
             .struct_init => |agg| {
                 const table = try self.requireTable();
                 const sty = ins.ty;
-                // A slice and `any` are TWO-WORD aggregates (`{ptr@0, len@8}` /
-                // `{tag@0, value@8}`) — a literal like `.{ ptr = p, len = n }`
-                // struct_inits one. Lay each operand as an 8-byte word; the
-                // other builtins have no aggregate literal form.
-                if (sty == .any or table.sliceInfoOf(sty) != null) {
+                // A slice, `any` and a closure are TWO-WORD aggregates
+                // (`{ptr@0, len@8}` / `{tag@0, value@8}` / `{fnPtr@0, env@8}`) —
+                // a literal like `.{ ptr = p, len = n }` struct_inits one. Lay
+                // each operand as an 8-byte word; the other builtins have no
+                // aggregate literal form.
+                if (sty == .any or table.sliceInfoOf(sty) != null or table.get(sty) == .closure) {
                     const a = self.machine.allocBytes(16, 8);
                     for (agg.fields, 0..) |fr, i| {
                         if (i >= 2) break;
@@ -1149,7 +1177,7 @@ pub const Vm = struct {
             .index_get => |b| {
                 const table = try self.requireTable();
                 const addr = try self.elemAddr(table, (try self.refTy(ref_types, b.lhs)), frame.get(b.lhs.index()), frame.get(b.rhs.index()), table.typeSizeBytes(ins.ty));
-                return .{ .value = try self.readField(table, addr, ins.ty) };
+                return .{ .value = try self.loadValue(table, addr, ins.ty, frame, ref) };
             },
             .index_gep => |b| {
                 const table = try self.requireTable();
@@ -1476,7 +1504,7 @@ pub const Vm = struct {
 
             // ── Calls ───────────────────────────────────────────
             // Direct call: resolve the static callee `FuncId` and dispatch.
-            .call => |c| return .{ .value = try self.invoke(c.callee, c.args, frame, ref_types, ins.ty) },
+            .call => |c| return .{ .value = try self.invoke(c.callee, c.args, frame, ref, ref_types, ins.ty) },
             // Indirect call: the callee is a `func_ref` value (its `FuncId.index()`
             // as a word) in a register — e.g. an allocator protocol's `alloc_fn`.
             // A null (0) function pointer can't be dispatched → bail.
@@ -1486,7 +1514,7 @@ pub const Vm = struct {
                     self.detail = "comptime VM: call_indirect through a null function pointer";
                     return error.Unsupported;
                 };
-                return .{ .value = try self.invoke(fid, ci.args, frame, ref_types, ins.ty) };
+                return .{ .value = try self.invoke(fid, ci.args, frame, ref, ref_types, ins.ty) };
             },
             .call_closure => |ci| {
                 const module = self.module orelse return self.failMsg("comptime VM: closure call needs a module");
@@ -1509,14 +1537,20 @@ pub const Vm = struct {
                 }
                 self.call_stack.append(self.gpa, fid) catch @panic("comptime VM: out of memory (call stack)");
                 defer _ = self.call_stack.pop();
-                return .{ .value = try self.run(callee, regs) };
+                return .{ .value = try self.runInto(callee, regs, try self.retSlot(frame, ref, ins.ty)) };
             },
 
             // ── Globals / function values ───────────────────────
             // Read another comptime global by lazily evaluating its init (its
             // `comptime_func` run on this same VM, or a scalar static value),
-            // memoized.
-            .global_get => |gid| return .{ .value = try self.evalGlobal(gid) },
+            // memoized. An aggregate is read as a copy of the instance that
+            // `global_addr` hands out.
+            .global_get => |gid| {
+                const table = try self.requireTable();
+                const value = try self.evalGlobal(gid);
+                if (kindOf(table, ins.ty) != .aggregate) return .{ .value = value };
+                return .{ .value = try self.copyAggregate(table, value, ins.ty, self.slotFor(table, frame, ref, ins.ty)) };
+            },
             // `&global` — the global's declared initializer laid into comptime
             // memory, once per evaluation. The instance is VM-LOCAL: a store
             // through it lands on compile-time state that is discarded, and only
@@ -1550,7 +1584,7 @@ pub const Vm = struct {
             // `p.*` — read the pointee (like `load`); `ins.ty` is the pointee type.
             .deref => |u| {
                 const table = try self.requireTable();
-                return .{ .value = try self.readField(table, frame.get(u.operand.index()), ins.ty) };
+                return .{ .value = try self.loadValue(table, frame.get(u.operand.index()), ins.ty, frame, ref) };
             },
 
             // ── Terminators ─────────────────────────────────────
@@ -1571,12 +1605,11 @@ pub const Vm = struct {
                 for (sb.cases) |case| {
                     if (operand == case.value) return .{ .jump = .{ .target = case.target, .args = case.args } };
                 }
-                if (sb.integer_cases.len > 0) {
+                if (sb.category_cases.len > 0) {
+                    const table = try self.requireTable();
                     const tid = TypeId.fromIndex(try self.typeIdxOf(@bitCast(operand)));
-                    if ((try self.requireTable()).integerLayout(tid)) |layout| {
-                        for (sb.integer_cases) |case| {
-                            if (layout.signed == case.signed) return .{ .jump = .{ .target = case.target, .args = &.{} } };
-                        }
+                    for (sb.category_cases) |case| {
+                        if (table.inCategory(tid, case.category)) return .{ .jump = .{ .target = case.target, .args = &.{} } };
                     }
                 }
                 return .{ .jump = .{ .target = sb.default, .args = sb.default_args } };
@@ -1594,18 +1627,13 @@ pub const Vm = struct {
                 try self.machine.writeWord(addr + 8, 8, @as(Reg, ba.source_type.index()));
                 return .{ .value = addr };
             },
-            // any → T: a typed LOAD through the view's data pointer. A word
-            // target reads its scalar bytes; an aggregate target's value IS the
-            // pointed-at address (VM convention: aggregate value = its address).
+            // any → T: a typed LOAD through the view's data pointer.
             .unbox_any => |ua| {
                 const table = try self.requireTable();
                 const base = frame.get(ua.operand.index()); // Addr of the {data, typeId} view
                 const data = try self.machine.readWord(base, 8);
-                switch (kindOf(table, ins.ty)) {
-                    .word => return .{ .value = try self.readField(table, data, ins.ty) },
-                    .aggregate => return .{ .value = data },
-                    .unsupported => return self.failMsg("comptime VM: unbox_any to an unsupported target type"),
-                }
+                if (kindOf(table, ins.ty) == .unsupported) return self.failMsg("comptime VM: unbox_any to an unsupported target type");
+                return .{ .value = try self.loadValue(table, data, ins.ty, frame, ref) };
             },
             // The view's data pointer itself (no load).
             .any_data => |ua| {
@@ -1663,6 +1691,11 @@ pub const Vm = struct {
                 if (!layout.signed) break :blk if (tag == .div) l / r else l % r;
                 const li: i64 = @bitCast(l);
                 const ri: i64 = @bitCast(r);
+                // The quotient overflows i64, and `@rem` lowers to a divide that traps on it.
+                if (li == std.math.minInt(i64) and ri == -1) {
+                    if (tag == .div) return error.IntegerOverflow;
+                    break :blk 0;
+                }
                 break :blk @bitCast(if (tag == .div) @divTrunc(li, ri) else @rem(li, ri));
             },
             else => unreachable,
@@ -1788,7 +1821,7 @@ pub const Vm = struct {
     /// extern/bodyless callee routes to the native libc memory builtins (else
     /// bails); a normal callee runs on the VM. Aggregate args pass as their Addr
     /// over the shared comptime memory (no copy).
-    fn invoke(self: *Vm, fid: inst_mod.FuncId, args: []const Ref, frame: *Frame, ref_types: []const TypeId, result_ty: TypeId) Error!Reg {
+    fn invoke(self: *Vm, fid: inst_mod.FuncId, args: []const Ref, frame: *Frame, ref: usize, ref_types: []const TypeId, result_ty: TypeId) Error!Reg {
         const module = self.module orelse return self.failMsg("comptime VM: call needs a module (not provided)");
         if (fid.index() >= module.functions.items.len) return self.failMsg("comptime VM: call to an out-of-range function id");
         const callee = module.getFunction(fid);
@@ -1823,9 +1856,16 @@ pub const Vm = struct {
         }
         self.call_stack.append(self.gpa, fid) catch @panic("comptime VM: out of memory (call stack)");
         defer _ = self.call_stack.pop();
-        const result = try self.run(callee, argbuf);
+        const result = try self.runInto(callee, argbuf, try self.retSlot(frame, ref, result_ty));
         if (callee.comptime_role == .run_wrapper) try self.checkRunEscape(module, callee.ret, callee.comptime_display_name orelse callee.name, result);
         return result;
+    }
+
+    /// The slot a call at `ref` receives its `ty` result in when that is an aggregate.
+    fn retSlot(self: *Vm, frame: *Frame, ref: usize, ty: TypeId) Error!?Addr {
+        const table = try self.requireTable();
+        if (kindOf(table, ty) != .aggregate) return null;
+        return self.slotFor(table, frame, ref, ty);
     }
 
     /// Fail the evaluation when a failable `@run` wrapper returns an error,
@@ -3008,8 +3048,9 @@ pub const Vm = struct {
     /// How a value of type `ty` is held: a register word (scalar, pointer,
     /// func-ref, enum tag, error tag, pointer-child or high-bit optional) or
     /// by-address in comptime memory (struct, array, tuple, slice, string,
-    /// `any`, payload enum, any other optional). Everything else — `void`,
-    /// `noreturn`, `unresolved`, vectors — is `.unsupported`.
+    /// `{fnPtr, env}` closure, `any`, payload enum, any other optional).
+    /// Everything else — `void`, `noreturn`, `unresolved`, vectors — is
+    /// `.unsupported`.
     const Kind = enum { word, aggregate, unsupported };
 
     /// The bytes a word-kind value occupies at its address: the type's size,
@@ -3037,7 +3078,7 @@ pub const Vm = struct {
             // a struct) — same as the `enum_init` write path.
             .@"enum" => |e| if (e.hasPayload()) .aggregate else .word,
             .@"error" => .word, // the error channel is a u32 tag id — a word
-            .@"struct", .array, .slice, .failable => .aggregate,
+            .@"struct", .array, .slice, .failable, .closure => .aggregate,
             // `?T`: a one-word sentinel child is null-as-0 and a high-bit
             // optional is its storage word (word); else `{T, i1}` by-address.
             .optional => |o| if (optChildIsPtr(table, o.child) or table.optionalShape(o.child) == .high_bit) .word else .aggregate,
@@ -3147,6 +3188,46 @@ pub const Vm = struct {
         };
     }
 
+    /// Load a value of type `ty` from memory at `addr`. An aggregate is copied into
+    /// the instruction's slot, so a later store to `addr` leaves the loaded value
+    /// unchanged.
+    fn loadValue(self: *Vm, table: *const types.TypeTable, addr: Addr, ty: TypeId, frame: *Frame, ref: usize) Error!Reg {
+        if (kindOf(table, ty) != .aggregate) return self.readField(table, addr, ty);
+        const n = table.typeSizeBytes(ty);
+        const dest = self.slotFor(table, frame, ref, ty);
+        @memcpy(try self.machine.bytes(dest, n), try self.machine.bytes(addr, n));
+        return dest;
+    }
+
+    /// Copy aggregate value `val` of type `ty` into `dest`; a `null_addr` value
+    /// copies as the zero aggregate.
+    fn copyAggregate(self: *Vm, table: *const types.TypeTable, val: Reg, ty: TypeId, dest: Addr) Error!Addr {
+        if (val != dest) try self.writeField(table, dest, ty, val);
+        return dest;
+    }
+
+    /// The memory the instruction at `ref` copies its aggregate `ty` value into: the
+    /// slot its register holds from an earlier execution in `frame`, else a returned
+    /// frame's spare slot, else fresh memory.
+    fn slotFor(self: *Vm, table: *const types.TypeTable, frame: *Frame, ref: usize, ty: TypeId) Addr {
+        const held = frame.get(ref);
+        if (held != null_addr) return held;
+        const spare = if (self.spare_slots.getPtr(ty)) |slots| slots.pop() else null;
+        const slot = spare orelse self.machine.allocBytes(table.typeSizeBytes(ty), table.typeAlignBytes(ty));
+        self.live_slots.append(self.gpa, .{ .addr = slot, .ty = ty }) catch @panic("comptime VM: out of memory (live slots)");
+        return slot;
+    }
+
+    /// Hand the slots a returning frame took, those past `base`, to later frames.
+    fn spareSlots(self: *Vm, base: usize) void {
+        for (self.live_slots.items[base..]) |slot| {
+            const gop = self.spare_slots.getOrPut(self.gpa, slot.ty) catch @panic("comptime VM: out of memory (spare slots)");
+            if (!gop.found_existing) gop.value_ptr.* = .empty;
+            gop.value_ptr.append(self.gpa, slot.addr) catch @panic("comptime VM: out of memory (spare slots)");
+        }
+        self.live_slots.shrinkRetainingCapacity(base);
+    }
+
     /// Write register word `val` (of type `ty`) to comptime address `addr`: a scalar
     /// writes its bytes; an aggregate copies `sizeof(ty)` bytes from `val` (its
     /// source address) into `addr`. A `null_addr` aggregate source is the
@@ -3190,11 +3271,12 @@ pub const Vm = struct {
     /// matches the table's size computation. A string/slice is a `{ptr@0, len@8}`
     /// fat pointer (the `makeSlice` layout), accessed by field 0 (ptr) / 1 (len).
     fn fieldOffset(table: *const types.TypeTable, sty: TypeId, idx: u32) Addr {
-        // string/slice `{ptr@0, len@8}` and the boxed Any `{type_tag@0, value@8}`
-        // share the same two-8-byte-field layout.
+        // string/slice `{ptr@0, len@8}`, the boxed Any `{type_tag@0, value@8}` and
+        // a closure `{fnPtr@0, env@8}` share the same two-8-byte-field layout.
         if (sty == .any) return if (idx == 0) 0 else 8;
         switch (table.get(sty)) {
-            .slice => return if (idx == 0) 0 else 8,
+            .slice, .closure => return if (idx == 0) 0 else 8,
+            .array => |a| return @as(Addr, idx) * table.typeSizeBytes(a.element),
             .optional => |o| return if (idx == 0) 0 else table.typeSizeBytes(o.child),
             .failable => |f| {
                 const n = table.failableValueSlotCount(f);

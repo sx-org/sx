@@ -15,16 +15,16 @@
     @source "1288-ffi-cvariadic-promotion-widths.c";
 };
 
-c_probe :: (n: i32, ..) -> i64 extern;
+c_probe :: (n: i32, ...) -> i64 extern;
 
-probe :: (n: i32, ..) -> i64 abi(.c) {
+probe :: (n: i32, ...) -> i64 abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     defer @vaEnd(*ap);
     return @vaArg(i32, *ap);
 }
 
-Probe :: (i32, ..) -> i64 abi(.c);
+Probe :: (i32, ...) -> i64 abi(.c);
 
 main :: () -> i32 {
     through: Probe = probe;

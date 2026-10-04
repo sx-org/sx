@@ -17,7 +17,6 @@ const lower_error = @import("error.zig");
 const Lowering = lower.Lowering;
 const Scope = lower.Scope;
 const BindingId = lower.BindingId;
-const ComptimeValue = Lowering.ComptimeValue;
 const isTypeCategoryMatch = Lowering.isTypeCategoryMatch;
 
 // ── Flow-sensitive narrowing ───────────────────────────────────
@@ -281,10 +280,14 @@ fn lowerCondition(self: *Lowering, node: *const Node, has_binding: bool) Lowered
 
     const value = self.lowerExpr(node);
     const ty = self.inferExprType(node);
-    const is_optional = has_binding or (!ty.isBuiltin() and self.module.types.get(ty) == .optional);
+    const is_optional = !ty.isBuiltin() and self.module.types.get(ty) == .optional;
     const test_bit = if (is_optional)
         self.builder.emit(.{ .optional_has_value = .{ .operand = value } }, .bool)
-    else if (self.checkConditionType(ty, node.span))
+    else if (has_binding) blk: {
+        if (ty != .unresolved) if (self.diagnostics) |d|
+            d.addFmt(.err, node.span, "operand of an optional binding must be an optional, but has type '{s}'", .{self.formatTypeName(ty)});
+        break :blk self.builder.constBool(false);
+    } else if (self.checkConditionType(ty, node.span))
         value
     else
         self.builder.constBool(false);
@@ -1203,7 +1206,10 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
         break;
     }
 
-    const CursorSave = struct { name: []const u8, had_prev: bool, prev: ComptimeValue };
+    const cursors = self.alloc.alloc(lower.RangeCursor, fe.captures.len) catch return self.builder.constInt(0, .void);
+    defer self.alloc.free(cursors);
+    const outer_cursor = self.range_cursor;
+    defer self.range_cursor = outer_cursor;
 
     var i: i64 = 0;
     while (i < count) : (i += 1) {
@@ -1211,25 +1217,17 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
         const old_scope = self.scope;
         self.scope = &body_scope;
 
-        var saves = std.ArrayList(CursorSave).empty;
-        defer saves.deinit(self.alloc);
-
         for (fe.captures, 0..) |cap, ci| {
             if (cap.name.len == 0) continue;
             switch (classes.items[ci]) {
                 .range => |start| {
                     // Bind the cursor both as a runtime value (constInt, for
-                    // uses like `print(i)`) and as a comptime constant (for
+                    // uses like `print(i)`) and as a range cursor (for
                     // `xs[i]` substitution).
                     const v = start + i;
                     body_scope.put(cap.name, .{ .ref = self.builder.constInt(v, .i64), .ty = .i64, .is_alloca = false, .origin = .range_index });
-                    var save = CursorSave{ .name = cap.name, .had_prev = false, .prev = undefined };
-                    if (self.comptime_constants.get(cap.name)) |p| {
-                        save.had_prev = true;
-                        save.prev = p;
-                    }
-                    saves.append(self.alloc, save) catch {};
-                    self.comptime_constants.put(cap.name, .{ .int_val = v }) catch {};
+                    cursors[ci] = .{ .name = cap.name, .value = v, .parent = self.range_cursor };
+                    self.range_cursor = &cursors[ci];
                 },
                 .pack => |pack_name| {
                     const elem_node = packElementNode(self, pack_name, fe.iterables[ci].expr.span, i) orelse break;
@@ -1249,14 +1247,7 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
         }
 
         self.lowerBlock(fe.body);
-
-        for (saves.items) |save| {
-            if (save.had_prev) {
-                self.comptime_constants.put(save.name, save.prev) catch {};
-            } else {
-                _ = self.comptime_constants.remove(save.name);
-            }
-        }
+        self.range_cursor = outer_cursor;
 
         self.scope = old_scope;
         body_scope.deinit();
@@ -1291,6 +1282,13 @@ fn categoryCapture(self: *Lowering, pat: *const Node, subject: Ref, tags: []cons
         return .{ .ref = self.builder.emit(.{ .unbox_any = .{ .operand = subject } }, void_ptr_ty), .ty = void_ptr_ty };
     }
     return .{ .ref = subject, .ty = .any };
+}
+
+/// Route an arm's category to `target` for the types its lowering-time tag set
+/// misses: those registered after this match lowers.
+fn appendCategoryCase(self: *Lowering, category_cases: *std.ArrayList(inst_mod.SwitchBranch.CategoryCase), name: []const u8, target: BlockId) void {
+    const category = std.meta.stringToEnum(types.TypeCategory, name) orelse return;
+    category_cases.append(self.alloc, .{ .category = category, .target = target }) catch unreachable;
 }
 
 /// Append the switch case dispatching `value` to `target`, unless an earlier
@@ -1569,25 +1567,13 @@ pub fn lowerMatch(self: *Lowering, node: *const Node, demand: lower_stmt.TailDem
         arm_blocks.append(self.alloc, self.freshBlock("match.arm")) catch unreachable;
     }
 
-    var integer_cases = std.ArrayList(inst_mod.SwitchBranch.IntegerCase).empty;
-    defer integer_cases.deinit(self.alloc);
+    var category_cases = std.ArrayList(inst_mod.SwitchBranch.CategoryCase).empty;
+    defer category_cases.deinit(self.alloc);
     if (is_any_switch or is_type_match) {
         for (me.arms) |arm| {
             if (arm.pattern) |pat| {
                 if (pat.data == .call) _ = self.resolveTypeArg(pat);
             }
-        }
-        for (me.arms, 0..) |arm, i| {
-            const pat = arm.pattern orelse continue;
-            const name: []const u8 = switch (pat.data) {
-                .identifier => |id| id.name,
-                .type_expr => |te| te.name,
-                else => "",
-            };
-            if (std.mem.eql(u8, name, "signed") or std.mem.eql(u8, name, "int"))
-                integer_cases.append(self.alloc, .{ .signed = true, .target = arm_blocks.items[i] }) catch unreachable;
-            if (std.mem.eql(u8, name, "unsigned") or std.mem.eql(u8, name, "int"))
-                integer_cases.append(self.alloc, .{ .signed = false, .target = arm_blocks.items[i] }) catch unreachable;
         }
     }
 
@@ -1656,6 +1642,7 @@ pub fn lowerMatch(self: *Lowering, node: *const Node, demand: lower_stmt.TailDem
             }
             const raw_tags: []const u64 = blk_rt: {
                 if (cat_name.len > 0 and Lowering.isRuntimeCategoryName(cat_name)) {
+                    appendCategoryCase(self, &category_cases, cat_name, arm_blocks.items[i]);
                     break :blk_rt self.resolveTypeCategoryTags(cat_name);
                 }
                 switch (pat.data) {
@@ -1758,8 +1745,10 @@ pub fn lowerMatch(self: *Lowering, node: *const Node, demand: lower_stmt.TailDem
                         // types registered), which must not fall through
                         // to the type resolver's unknown-name error.
                         .proceed => {
-                            if (Lowering.isRuntimeCategoryName(name))
+                            if (Lowering.isRuntimeCategoryName(name)) {
+                                appendCategoryCase(self, &category_cases, name, arm_blocks.items[i]);
                                 break :blk_tv self.resolveTypeCategoryTags(name);
+                            }
                         },
                     }
                 }
@@ -1938,7 +1927,7 @@ pub fn lowerMatch(self: *Lowering, node: *const Node, demand: lower_stmt.TailDem
         };
         break :blk self.builder.enumTag(subject, tag_ty);
     };
-    self.builder.integerSwitchBr(tag, cases.items, integer_cases.items, default_bb.?);
+    self.builder.categorySwitchBr(tag, cases.items, category_cases.items, default_bb.?);
 
     // Arms are alternatives, not a sequence: each starts from the facts holding
     // at the `match`, and only the arms that reach `merge_bb` say what holds

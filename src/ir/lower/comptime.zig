@@ -19,6 +19,7 @@ const Function = inst_mod.Function;
 
 const lower = @import("../lower.zig");
 const lower_bound = @import("bound.zig");
+const lower_decl = @import("decl.zig");
 const lower_open_set = @import("open_set.zig");
 const Lowering = lower.Lowering;
 const Scope = lower.Scope;
@@ -580,7 +581,10 @@ fn staticInterfaceLeaf(self: *Lowering, expr: *const Node, expected_ty: TypeId) 
 /// a comptime struct is not a namespace.
 pub fn evalComptimeValue(self: *Lowering, node: *const Node) ?Lowering.ComptimeValue {
     switch (node.data) {
-        .identifier => |id| return self.comptime_constants.get(id.name),
+        .identifier => |id| {
+            if (self.rangeCursorValue(id.name)) |v| return .{ .int_val = v };
+            return self.comptime_constants.get(id.name);
+        },
         .call => {
             const c = self.fieldCall(node) orelse return null;
             const obj = evalComptimeValue(self, c.args[0]) orelse return null;
@@ -903,33 +907,15 @@ pub fn evalComptimeInt(self: *Lowering, node: *const Node) ?i64 {
 /// Creates a comptime function wrapping the expression (for later
 /// interpretation), plus a global constant to hold the result.
 pub fn lowerComptimeGlobal(self: *Lowering, declaration: @import("../../imports.zig").DeclId, name: []const u8, expr: *const Node, type_ann: ?*const Node) void {
-    // When the user writes `NAME :: @run expr;` with no type annotation,
-    // infer the global's type from the comptime expression's return
-    // shape. `resolveType(null)` returns `.i64` — good for primitive
-    // helpers, silently wrong for anything else.
-    const expr_ty = self.inferExprType(expr);
-    // A failable `@run` (bare, no `catch`/`??`): the comptime function
-    // returns a failable tuple so the @run site can inspect the error
-    // slot, and the GLOBAL is typed as its success value — the annotation
-    // when one is written. On a comptime error the global never
-    // materializes — emit halts with a diagnostic + trace. A handled
-    // `@run … catch/?? …` already strips the error channel, so it lands
-    // here as non-failable.
-    const channel = self.errorChannelOf(expr_ty);
-    const func_ret: TypeId = if (type_ann) |n| ret: {
-        const annotated = self.resolveTypeWithBindings(n);
-        break :ret if (channel) |ch| self.module.types.internFailable(annotated, ch) else annotated;
-    } else expr_ty;
-    // The result crosses into the runtime image, which is what makes this an
-    // escape site (specs.md §6.9).
-    const func_id = self.createComptimeFunction(name, .ordinary, expr, func_ret);
-    // The global's type is the wrapper's ret after lowering, with the error
-    // channel stripped.
-    const settled = self.module.getFunction(func_id).ret;
-    const global_ty: TypeId = if (self.errorChannelOf(settled)) |ch|
-        (if (settled == ch) TypeId.void else self.failableSuccessType(settled))
-    else
-        settled;
+    if (self.program_index.get(.global, declaration) != null) return;
+    // A cyclic reference reaches the constant while its initializer lowers and
+    // reads no global.
+    const lowering = self.lowering_comptime_globals.getOrPut(declaration) catch @panic("out of memory");
+    if (lowering.found_existing) return;
+    defer _ = self.lowering_comptime_globals.remove(declaration);
+    const declared: ?TypeId = if (type_ann) |n| self.resolveTypeWithBindings(n) else null;
+    const func_id = createRunInitializer(self, name, expr, declared);
+    const global_ty = runGlobalType(self, self.module.getFunction(func_id).ret);
 
     // Add a global constant whose initializer will be filled by the interpreter.
     const name_id = self.module.types.internString(name);
@@ -943,6 +929,30 @@ pub fn lowerComptimeGlobal(self: *Lowering, declaration: @import("../../imports.
 
     // Register for runtime lookup: identifier resolution emits global_get
     self.putGlobal(declaration, name, .{ .id = gid, .ty = global_ty });
+}
+
+/// The wrapper a global's `@run expr` initializer runs. It returns `declared`,
+/// else `expr`'s own type, settled from the lowered body when the AST cannot
+/// answer it. A failable `@run` (bare, no `catch`/`??`) keeps its error channel
+/// on the return so emit can halt on an escaping error; a handled
+/// `@run … catch/?? …` arrives already non-failable.
+pub fn createRunInitializer(self: *Lowering, name: []const u8, expr: *const Node, declared: ?TypeId) FuncId {
+    const expr_ty = self.inferExprType(expr);
+    const channel = self.errorChannelOf(expr_ty);
+    const func_ret: TypeId = if (declared) |ty|
+        (if (channel) |ch| self.module.types.internFailable(ty, ch) else ty)
+    else
+        expr_ty;
+    // The result crosses into the runtime image, which is what makes this an
+    // escape site (specs.md §6.9).
+    return self.createComptimeFunction(name, .ordinary, expr, func_ret);
+}
+
+/// The type a global holds when its `@run` wrapper returns `ret`: the success
+/// value of a failable `ret`, `void` for a bare error set.
+pub fn runGlobalType(self: *Lowering, ret: TypeId) TypeId {
+    const ch = self.errorChannelOf(ret) orelse return ret;
+    return if (ret == ch) .void else self.failableSuccessType(ret);
 }
 
 /// Lower a standalone `@run expr;` at the top level (side-effect only).
@@ -1456,9 +1466,10 @@ pub fn substituteComptimeNodes(self: *Lowering, node: *const Node, cpn: std.Stri
 
 /// Lower a call to a function with comptime params by inlining its body.
 /// Comptime params are substituted, `@insert` expressions are evaluated.
-pub fn lowerComptimeCall(self: *Lowering, fd: *const ast.FnDecl, call_node: *const ast.Call) Ref {
+/// `order` is the written order of a named call's argument positions.
+pub fn lowerComptimeCall(self: *Lowering, fd: *const ast.FnDecl, call_node: *const ast.Call, order: ?[]const usize) Ref {
     const body_bindings: BodyBindings = if (self.body_local_fns.contains(fd)) .ambient else .none;
-    return lowerComptimeCallArgsMode(self, fd, call_node.args, 0, false, false, body_bindings, call_node.callee.span);
+    return lowerComptimeCallArgsMode(self, fd, call_node.args, order, 0, false, false, body_bindings, call_node.callee.span);
 }
 
 /// Core of `lowerComptimeCall`, parameterized over the EFFECTIVE call-site arg
@@ -1469,7 +1480,7 @@ pub fn lowerComptimeCall(self: *Lowering, fd: *const ast.FnDecl, call_node: *con
 /// (e.g. `type_bindings` for a generic struct's `T`) before invoking this — the
 /// body lowers with whatever bindings are active.
 pub fn lowerComptimeCallArgs(self: *Lowering, fd: *const ast.FnDecl, call_args: []const *Node) Ref {
-    return lowerComptimeCallArgsMode(self, fd, call_args, 0, false, false, .ambient, fd.body.span);
+    return lowerComptimeCallArgsMode(self, fd, call_args, null, 0, false, false, .ambient, fd.body.span);
 }
 
 /// Inline a selected comptime METHOD with a hygienic call frame. `call_args`
@@ -1486,10 +1497,11 @@ pub fn lowerComptimeMethodCallArgs(
     self: *Lowering,
     fd: *const ast.FnDecl,
     call_args: []const *Node,
+    order: ?[]const usize,
     first_arg_is_receiver: bool,
     call_span: ast.Span,
 ) Ref {
-    return lowerComptimeCallArgsMode(self, fd, call_args, 0, true, first_arg_is_receiver, .ambient, call_span);
+    return lowerComptimeCallArgsMode(self, fd, call_args, order, 0, true, first_arg_is_receiver, .ambient, call_span);
 }
 
 /// Generalization of `lowerComptimeCallArgs` that skips the FIRST `skip_params`
@@ -1500,7 +1512,7 @@ pub fn lowerComptimeMethodCallArgs(
 /// `fd.params[skip_params..]`. With `skip_params == 0` this is
 /// `lowerComptimeCallArgs`.
 pub fn lowerComptimeCallArgsSkip(self: *Lowering, fd: *const ast.FnDecl, call_args: []const *Node, skip_params: usize) Ref {
-    return lowerComptimeCallArgsMode(self, fd, call_args, skip_params, false, false, .ambient, fd.body.span);
+    return lowerComptimeCallArgsMode(self, fd, call_args, null, skip_params, false, false, .ambient, fd.body.span);
 }
 
 /// The type substitution an inlined comptime body lowers under.
@@ -1703,10 +1715,28 @@ fn lowerComptimeRuntimeArg(
     return value;
 }
 
+/// Evaluates the runtime argument bound to `fd.params[param_idx]` and stages
+/// it for the callee's scope.
+fn stageRuntimeArg(
+    self: *Lowering,
+    fd: *const ast.FnDecl,
+    param_idx: usize,
+    arg_node: *const Node,
+    is_receiver: bool,
+    runtime_args: *std.ArrayList(StagedRuntimeArg),
+) void {
+    const demand = lower_bound.paramDemand(self, fd, param_idx);
+    const arg_val = lowerComptimeRuntimeArg(self, arg_node, demand, is_receiver);
+    // A callable-binder parameter's local IS the value handed to it.
+    const pty = demand.coerceType() orelse self.builder.getRefType(arg_val);
+    runtime_args.append(self.alloc, .{ .name = fd.params[param_idx].name, .ty = pty, .value = arg_val }) catch unreachable;
+}
+
 fn lowerComptimeCallArgsMode(
     self: *Lowering,
     fd: *const ast.FnDecl,
     call_args: []const *Node,
+    order: ?[]const usize,
     skip_params: usize,
     isolate_callee: bool,
     first_arg_is_receiver: bool,
@@ -1729,6 +1759,10 @@ fn lowerComptimeCallArgsMode(
     var call_arg_idx: usize = 0;
     var runtime_args = std.ArrayList(StagedRuntimeArg).empty;
     defer runtime_args.deinit(self.alloc);
+    // The parameter each call position binds to a runtime argument, for a
+    // named call to evaluate in `order` once every position is bound.
+    const ordered_params = self.alloc.alloc(?usize, if (order != null) call_args.len else 0) catch unreachable;
+    @memset(ordered_params, null);
     // When the fn declares a pack param, the slice of call-site arg nodes is
     // recorded under the pack name so the body's `args[$i]` lowering can
     // substitute the i-th arg with its concrete-typed value instead of the
@@ -1783,27 +1817,24 @@ fn lowerComptimeCallArgsMode(
             }
             break; // variadic is always the last param
         }
-        const arg_node: *const Node = if (call_arg_idx < call_args.len) blk: {
-            const node = call_args[call_arg_idx];
+        const pos = call_arg_idx;
+        const arg_node: *const Node = if (pos < call_args.len) blk: {
             call_arg_idx += 1;
-            break :blk node;
+            break :blk call_args[pos];
         } else param.default_expr orelse break;
         if (param.is_comptime) {
             self.stampCallerSource(@constCast(arg_node));
             cpn.put(param.name, arg_node) catch {};
+        } else if (order != null) {
+            ordered_params[pos] = param_idx;
         } else {
-            const demand = lower_bound.paramDemand(self, fd, param_idx);
-            const arg_val = lowerComptimeRuntimeArg(
-                self,
-                arg_node,
-                demand,
-                first_arg_is_receiver and param_idx == skip_params,
-            );
-            // A callable-binder parameter's local IS the value handed to it.
-            const pty = demand.coerceType() orelse self.builder.getRefType(arg_val);
-            runtime_args.append(self.alloc, .{ .name = param.name, .ty = pty, .value = arg_val }) catch unreachable;
+            stageRuntimeArg(self, fd, param_idx, arg_node, first_arg_is_receiver and param_idx == skip_params, &runtime_args);
         }
     }
+    if (order) |o| for (o) |pos| {
+        const param_idx = ordered_params[pos] orelse continue;
+        stageRuntimeArg(self, fd, param_idx, call_args[pos], first_arg_is_receiver and param_idx == skip_params, &runtime_args);
+    };
 
     // Runtime expressions above all saw caller bindings and no callee
     // formals. Now install the staged values in the hygienic body scope.
@@ -1935,10 +1966,23 @@ fn lowerComptimeCallArgsMode(
     // a `return` it generates is invisible to any pre-scan of the AST — and a
     // body with no exit context of its own emits the CALLER's `ret`.
     const ret_ty = self.resolveReturnType(fd);
-    const inline_exit = classifyInlineExit(self, ret_ty);
+    const binder = lower_decl.callableReturnBinder(fd, ret_ty);
+    const inline_exit = classifyInlineExit(self, ret_ty, binder != null);
     const saved_exit = self.inline_return_target;
     self.inline_return_target = inline_exit;
     defer self.inline_return_target = saved_exit;
+
+    // A return-position callable binder belongs to the body that declares it:
+    // the callee's is fixed by the callee's exits, and an enclosing body's is
+    // not answered by them.
+    const saved_pcr = self.pending_callable_return;
+    const saved_fcr = self.fixed_callable_ret;
+    self.pending_callable_return = binder;
+    self.fixed_callable_ret = null;
+    defer {
+        self.pending_callable_return = saved_pcr;
+        self.fixed_callable_ret = saved_fcr;
+    }
 
     // The inlined body is its own failable body: a `raise` in it exits THAT
     // function, not a `try { … }` boundary the call site happens to sit in.
@@ -1982,6 +2026,11 @@ fn lowerComptimeCallArgsMode(
             self.builder.switchToBlock(v.join);
             return self.builder.load(v.slot, ret_ty);
         },
+        .callable => |join| {
+            self.builder.switchToBlock(join);
+            const fixed = self.fixed_callable_ret orelse return self.builder.constUndef(.unresolved);
+            return self.builder.blockParam(join, 0, fixed);
+        },
         .unit => |join| {
             self.builder.switchToBlock(join);
             return self.builder.constInt(0, .void);
@@ -1999,7 +2048,8 @@ fn lowerComptimeCallArgsMode(
 /// Where an inlined callee's body exits to, read off its resolved return type.
 /// The slot and the join are materialized HERE — at the call position, before
 /// any of the body's control flow exists — so every exit finds them live.
-fn classifyInlineExit(self: *Lowering, ret_ty: TypeId) Lowering.InlineExit {
+fn classifyInlineExit(self: *Lowering, ret_ty: TypeId, binds_from_body: bool) Lowering.InlineExit {
+    if (binds_from_body) return .{ .ret_ty = ret_ty, .dest = .{ .callable = self.freshBlockWithParams("ct.ret_done", &.{ret_ty}) } };
     if (ret_ty == .noreturn) return .{ .ret_ty = ret_ty, .dest = .diverges };
     if (ret_ty == .void) return .{ .ret_ty = ret_ty, .dest = .{ .unit = self.freshBlock("ct.ret_done") } };
     if (ret_ty == .unresolved) return .{ .ret_ty = ret_ty, .dest = .{ .poison = self.freshBlock("ct.ret_done") } };
@@ -2314,6 +2364,7 @@ pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, ph
     const fn_mut = self.module.getFunctionMut(func_id);
     fn_mut.comptime_role = .run_wrapper;
     fn_mut.has_implicit_ctx = wants_ctx;
+    fn_mut.source_file = self.current_source_file;
 
     // Create entry block
     const entry_name = self.module.types.internString("entry");
@@ -2385,6 +2436,7 @@ fn lowerComptimeResult(self: *Lowering, expr: *const Node, ret_ty: TypeId) Ref {
 /// otherwise the name is a SOURCE-AWARE module const, folded with nested
 /// leaves resolved own-wins.
 pub fn comptimeIntNamed(self: *Lowering, name: []const u8) ?i128 {
+    if (self.rangeCursorValue(name)) |v| return v;
     if (self.comptime_constants.get(name)) |cv| switch (cv) {
         .int_val => |iv| return iv,
         else => {},
@@ -2809,15 +2861,43 @@ pub fn visibleAuthor(self: *Lowering, from: []const u8, name: []const u8) Visibl
 }
 
 fn globalAuthorAt(self: *Lowering, author: resolver_mod.RawAuthor) GlobalAuthor {
-    if (self.program_index.get(.global, author.id)) |g| return .{ .resolved = g };
+    if (authorGlobal(self, author)) |g| return .{ .resolved = g };
     return .not_a_global;
+}
+
+/// The global `author` declares. A read from compile-time code lowers a `@run`
+/// constant pass 2 has not reached yet, in the constant's own environment.
+/// Runtime code, which pass 1 also types, lowers none: pass 2 keeps every other
+/// `@run` in declaration order.
+pub fn authorGlobal(self: *Lowering, author: resolver_mod.RawAuthor) ?program_index_mod.GlobalInfo {
+    if (self.program_index.get(.global, author.id)) |g| return g;
+    if (self.comptime_phase == null or author.raw != .const_decl) return null;
+    const cd = author.raw.const_decl;
+    if (cd.value.data != .comptime_expr) return null;
+    var reentry = Lowering.FnBodyReentry.enterCached(self);
+    defer reentry.restore();
+    self.scope = null;
+    self.setAuthorContext(author.id);
+    self.lowerComptimeGlobal(author.id, cd.name, cd.value.data.comptime_expr.expr, cd.type_annotation);
+    return self.program_index.get(.global, author.id);
+}
+
+/// The global `name` reads: a registered one, else the one a compile-time read
+/// registers for the `@run` constant `name` selects.
+pub fn lookupGlobal(self: *Lowering, name: []const u8) ?program_index_mod.GlobalInfo {
+    if (self.program_index.lookup(.global, name)) |g| return g;
+    if (!self.comptime_global_names.contains(name)) return null;
+    return switch (self.selectGlobalAuthor(name)) {
+        .resolved => |g| g,
+        .not_a_global, .ambiguous, .not_visible, .untracked => null,
+    };
 }
 
 /// `resolveGlobalRef` without its diagnostics — the global a bare name reads,
 /// or null when no single author answers. Typing consumes this so it can never
 /// name a global the call path refuses, and never double-reports the refusal.
 pub fn globalValueRef(self: *Lowering, name: []const u8) ?program_index_mod.GlobalInfo {
-    const gi = self.program_index.lookup(.global, name) orelse return null;
+    const gi = self.lookupGlobal(name) orelse return null;
     return switch (self.selectGlobalAuthor(name)) {
         .resolved => |g| g,
         .untracked => gi,
@@ -2831,7 +2911,7 @@ pub fn globalValueRef(self: *Lowering, name: []const u8) ?program_index_mod.Glob
 /// fall-through path runs. Sites needing custom placeholder emission use
 /// `selectGlobalAuthor` directly.
 pub fn resolveGlobalRef(self: *Lowering, name: []const u8, span: ?ast.Span) ?program_index_mod.GlobalInfo {
-    const gi = self.program_index.lookup(.global, name) orelse return null;
+    const gi = self.lookupGlobal(name) orelse return null;
     switch (self.selectGlobalAuthor(name)) {
         .resolved => |g| return g,
         .not_a_global => return null,

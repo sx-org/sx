@@ -26,7 +26,7 @@ impl VL($R) for Combined($R, ..$Ts) { get :: (self: *Combined) -> $R => self.val
 // (named `zipMap`, not `map`: the prelude now exports a `map` namespace —
 // `std/map.sx`'s HashMap / IndexMap — which a bare top-level `map` here
 // would collide with.)
-zipMap :: (mapper: Closure(..sources.T) -> $R, ..sources: VL) -> VL($R) {
+zipMap :: (mapper: Closure(..sources.T) -> $R, ..$sources/VL) -> VL($R) {
     c : Combined($R, ..sources.T) = ---;
     c.sources = .{..sources};
     c.value = mapper(..sources.get);

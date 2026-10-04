@@ -1,6 +1,6 @@
 // `c.sources = .(..sources)`: materialize a pack into a
 // protocol-typed tuple field, erasing each concrete pack element to the field's
-// protocol slot. The pack `..sources: VL` holds concrete cells; `.(..sources)`
+// protocol slot. The pack `..$sources/VL` holds concrete cells; `.(..sources)`
 // into a `struct { ..VL(Ts) }` field erases each to its `VL(Ti)` value.
 
 @import "modules/std.sx";
@@ -16,7 +16,7 @@ Combined :: struct($R: Type, ..$Ts: []Type) {
     value:   $R;
 }
 
-build :: (..sources: VL) -> void {
+build :: (..$sources/VL) -> void {
     c : Combined(i64, ..sources.T) = ---;
     c.sources = .{..sources};                          // pack → tuple, per-element erase
     print("{} {}\n", @field(c.sources, 0).get(), @field(c.sources, 1).get());

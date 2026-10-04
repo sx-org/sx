@@ -783,9 +783,9 @@ pub const Parser = struct {
         // Parenthesized type list: (T, !) failable / grouping
         // Named params (documentation only): (name: Type, ...) -> ReturnType
         if (self.tokens.tag(self.tok) == .l_paren) {
-            // A bare `..` tail belongs to a function TYPE. Without a `->` these
-            // parens are a grouping, the void type, or a result list, where a
-            // `..` is the pack spread — so the tail is recognized only here.
+            // The `...` tail belongs to a function TYPE. Without a `->` these
+            // parens are a grouping, the void type, or a result list, none of
+            // which takes a tail.
             const is_fn_type = self.tagAfterParenGroup() == .arrow;
             self.advance(); // skip '('
             var param_types = std.ArrayList(*Node).empty;
@@ -804,7 +804,7 @@ pub const Parser = struct {
             // return below.
             var had_trailing_comma = false;
             var is_c_variadic = false;
-            // Span of the bare `..`, for the refusals that name it.
+            // Span of the `...`, for the refusals that name it.
             var tail_span: ast.Span = .{ .start = 0, .end = 0 };
             while (self.tokens.tag(self.tok) != .r_paren and self.tokens.tag(self.tok) != .eof) {
                 if (param_types.items.len > 0) {
@@ -817,20 +817,16 @@ pub const Parser = struct {
                 if (saw_error_type) {
                     return self.fail("error type '!' must be the last element of a result list");
                 }
-                // The bare `..` C-variadic tail — one token of lookahead
-                // separates it from every pack spread, which always carries an
-                // operand. It is the last entry, so an ordinary trailing comma
-                // may follow it and nothing else may.
-                if (self.tokens.tag(self.tok) == .dot_dot and is_fn_type and
-                    (self.peekTag(1) == .r_paren or self.peekTag(1) == .comma))
-                {
+                // The C-variadic tail is the last entry, so an ordinary
+                // trailing comma may follow it and nothing else may.
+                if (self.tokens.tag(self.tok) == .dot_dot_dot and is_fn_type) {
                     const dots = self.tokens.token(self.tok).loc;
                     is_c_variadic = true;
                     tail_span = .{ .start = dots.start, .end = dots.end };
                     self.advance();
                     if (self.tokens.tag(self.tok) == .comma) self.advance();
                     if (self.tokens.tag(self.tok) != .r_paren) {
-                        return self.failAt(tail_span, "a C-variadic '..' tail must be the last parameter entry");
+                        return self.failAt(tail_span, "a C-variadic '...' tail must be the last parameter entry");
                     }
                     break;
                 }
@@ -885,10 +881,10 @@ pub const Parser = struct {
                 // that gives the tail its C signature.
                 if (is_c_variadic) {
                     if (abi == .naked) {
-                        return self.failAt(tail_span, "a C-variadic '..' tail cannot use explicit ABI '.naked'; use 'abi(.c)'");
+                        return self.failAt(tail_span, "a C-variadic '...' tail cannot use explicit ABI '.naked'; use 'abi(.c)'");
                     }
                     if (abi != .c) {
-                        return self.failAt(tail_span, "a C-variadic '..' tail requires 'abi(.c)'");
+                        return self.failAt(tail_span, "a C-variadic '...' tail requires 'abi(.c)'");
                     }
                 }
                 return try self.createNode(start, .{ .function_type_expr = .{
@@ -2575,12 +2571,12 @@ pub const Parser = struct {
     }
 
     /// A parsed parameter list: its fixed parameters, and whether it ends in a
-    /// bare `..` C-variadic tail (which binds no name and no type, so it is a
-    /// flag rather than a `Param`).
+    /// `...` C-variadic tail (which binds no name and no type, so it is a flag
+    /// rather than a `Param`).
     const ParamList = struct {
         params: []const ast.Param,
         is_c_variadic: bool = false,
-        /// Span of the bare `..`, for the refusals that name it.
+        /// Span of the `...`, for the refusals that name it.
         tail_span: ast.Span = .{ .start = 0, .end = 0 },
     };
 
@@ -2603,27 +2599,26 @@ pub const Parser = struct {
                 try self.expect(.comma);
                 if (self.tokens.tag(self.tok) == close) break;
             }
+            // The C-variadic tail is the last entry, so an ordinary trailing
+            // comma may follow it and nothing else may.
+            if (self.tokens.tag(self.tok) == .dot_dot_dot) {
+                const dots = self.tokens.token(self.tok).loc;
+                is_c_variadic = true;
+                tail_span = .{ .start = dots.start, .end = dots.end };
+                self.advance();
+                if (self.tokens.tag(self.tok) == .comma) self.advance();
+                if (self.tokens.tag(self.tok) != close) {
+                    return self.failAt(tail_span, "a C-variadic '...' tail must be the last parameter entry");
+                }
+                break;
+            }
             // Leading `..` marks a variadic param at the binding site:
-            // `..$args` (heterogeneous comptime pack), `..xs: []T` (slice),
-            // `..xs: P` (protocol-constrained pack).
+            // `..$args` (heterogeneous comptime pack), `..$xs/P` (bounded
+            // pack), `..xs: []T` (slice).
             var is_variadic = false;
             if (self.tokens.tag(self.tok) == .dot_dot) {
-                const dots = self.tokens.token(self.tok).loc;
                 is_variadic = true;
                 self.advance();
-                // A bare `..` — one token of lookahead separates the C-variadic
-                // tail from every named form: the tail carries no operand. It
-                // is the last entry, so an ordinary trailing comma may follow
-                // it and nothing else may.
-                if (self.tokens.tag(self.tok) == close or self.tokens.tag(self.tok) == .comma) {
-                    is_c_variadic = true;
-                    tail_span = .{ .start = dots.start, .end = dots.end };
-                    if (self.tokens.tag(self.tok) == .comma) self.advance();
-                    if (self.tokens.tag(self.tok) != close) {
-                        return self.failAt(tail_span, "a C-variadic '..' tail must be the last parameter entry");
-                    }
-                    break;
-                }
             }
             var is_ct_param = false;
             if (self.tokens.tag(self.tok) == .dollar) {
@@ -2637,23 +2632,34 @@ pub const Parser = struct {
             const param_name_span = ast.Span{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) };
             const param_is_raw = self.tokens.flagsOf(self.tok).is_raw;
             self.advance();
+            if (is_variadic and is_ct_param and self.tokens.tag(self.tok) == .slash) {
+                self.advance(); // consume '/'
+                if (self.tokens.tag(self.tok) == .l_paren) {
+                    return self.fail("a pack takes no function-type bound");
+                }
+                const bound = try self.parseBoundExpr();
+                try params.append(self.allocator, .{ .name = param_name, .name_span = param_name_span, .type_expr = bound, .is_variadic = true, .is_pack = true, .is_raw = param_is_raw });
+                continue;
+            }
+            const variadic_not_slice = "a variadic's type must be a slice";
             // Optional type annotation: if no ':', infer type from context
             if (self.tokens.tag(self.tok) != .colon) {
                 // A variadic binding has no context to infer from: the slice
-                // and constraint or interface forms are their annotation, and `..$name` is a
-                // comptime pack whose types come from the call.
-                if (is_variadic and !is_ct_param) {
-                    return self.failAt(
-                        param_name_span,
-                        "a variadic parameter carries its type: '..name: []T' binds a slice, '..name: P' a constraint or interface pack, '..$name' a comptime pack",
-                    );
-                }
+                // form is its annotation, and a pack's element types come from
+                // the call.
+                if (is_variadic and !is_ct_param) return self.failAt(param_name_span, variadic_not_slice);
                 const inferred_node = try self.createNode(param_name_span.start, .{ .inferred_type = {} });
                 try params.append(self.allocator, .{ .name = param_name, .name_span = param_name_span, .type_expr = inferred_node, .is_variadic = is_variadic, .is_comptime = is_ct_param, .is_raw = param_is_raw });
                 continue;
             }
             self.advance(); // consume ':'
             const param_type = try self.parseTypeExpr();
+            // A type name may resolve to a slice; lowering refuses one that does not.
+            if (is_variadic and !is_ct_param) switch (param_type.data) {
+                .slice_type_expr, .parameterized_type_expr => {},
+                .type_expr => |te| if (te.is_generic) return self.failAt(param_type.span, variadic_not_slice),
+                else => return self.failAt(param_type.span, variadic_not_slice),
+            };
             var is_comptime_param = false;
             if (is_ct_param and param_type.data == .type_expr) {
                 const constraint_name = param_type.data.type_expr.name;
@@ -2675,11 +2681,8 @@ pub const Parser = struct {
                 defer self.in_param_default = saved_in_default;
                 default_expr = try self.parseBinary(Prec.none, if (close == .pipe) PipeRole.closer else .bit_or);
             }
-            // Protocol-constrained variadic pack: `..xs: Protocol` — a bare
-            // type (not a slice/array) on a non-comptime variadic param. The
-            // trailing args each conform to the protocol with their own
-            // type-arg. Slice variadics (`..xs: []T`) keep `is_pack == false`.
-            const is_pack = is_variadic and !is_comptime_param and switch (param_type.data) {
+            // `..$xs: Type` and `..$xs: P(T)` bind a pack.
+            const is_pack = is_variadic and is_ct_param and !is_comptime_param and switch (param_type.data) {
                 .type_expr, .parameterized_type_expr => true,
                 else => false,
             };
@@ -2690,10 +2693,10 @@ pub const Parser = struct {
                 return self.fail("variadic parameter must be the last parameter");
             }
         }
-        // One tail per signature: a named `..name: []T` and a bare `..` state
-        // two different contracts over the same argument positions.
+        // One tail per signature: a named `..name: []T` and a `...` state two
+        // different contracts over the same argument positions.
         if (is_c_variadic and params.items.len > 0 and params.items[params.items.len - 1].is_variadic) {
-            return self.failAt(tail_span, "a signature has one variadic tail: '..name: []T' or bare '..'");
+            return self.failAt(tail_span, "a signature has one variadic tail: '..name: []T' or '...'");
         }
         try self.expect(close);
         return .{
@@ -2838,7 +2841,7 @@ pub const Parser = struct {
     fn parseAtFnDecl(self: *Parser, name: []const u8, name_span: ast.Span, start_pos: u32, name_is_raw: bool) anyerror!*Node {
         const list = try self.parseParams();
         if (list.is_c_variadic) {
-            return self.failAt(list.tail_span, "a C-variadic '..' tail requires 'abi(.c)', 'extern', or 'export'");
+            return self.failAt(list.tail_span, "a C-variadic '...' tail requires 'abi(.c)', 'extern', or 'export'");
         }
         const params = list.params;
 
@@ -2914,15 +2917,15 @@ pub const Parser = struct {
             return self.fail("conflicting linkage: 'extern' and 'export' cannot be combined — a declaration is either an import ('extern') or a definition ('export')");
         }
 
-        // A bare `..` tail is legal only on an EFFECTIVE-C SIGNATURE: a
+        // A `...` tail is legal only on an EFFECTIVE-C SIGNATURE: a
         // definition carrying `abi(.c)` or `export`, or an `extern` declaration.
         // Every one of those emits the C shape with no implicit sx context.
         if (param_list.is_c_variadic) {
             if (abi == .naked) {
-                return self.failAt(param_list.tail_span, "a C-variadic '..' tail cannot use explicit ABI '.naked'; use 'abi(.c)' or omit it on an 'extern' or 'export'");
+                return self.failAt(param_list.tail_span, "a C-variadic '...' tail cannot use explicit ABI '.naked'; use 'abi(.c)' or omit it on an 'extern' or 'export'");
             }
             if (abi != .c and extern_export == .none) {
-                return self.failAt(param_list.tail_span, "a C-variadic '..' tail requires 'abi(.c)', 'extern', or 'export'");
+                return self.failAt(param_list.tail_span, "a C-variadic '...' tail requires 'abi(.c)', 'extern', or 'export'");
             }
         }
 
@@ -3068,7 +3071,7 @@ pub const Parser = struct {
             self.advance();
             const param_list = try self.parseParamsUntil(.pipe);
             if (param_list.is_c_variadic) {
-                return self.failAt(param_list.tail_span, "C-variadic function pointers use '(fixed, ..) -> R abi(.c)'; Closure values carry an sx environment");
+                return self.failAt(param_list.tail_span, "C-variadic function pointers use '(fixed, ...) -> R abi(.c)'; Closure values carry an sx environment");
             }
             params = param_list.params;
             env = try self.parseEnv();
@@ -4860,7 +4863,7 @@ pub const Parser = struct {
         // A closure carries an sx environment, so it has no C signature to hang
         // a tail on; the C-variadic function pointer is a function TYPE.
         if (param_list.is_c_variadic) {
-            return self.failAt(param_list.tail_span, "C-variadic function pointers use '(fixed, ..) -> R abi(.c)'; Closure values carry an sx environment");
+            return self.failAt(param_list.tail_span, "C-variadic function pointers use '(fixed, ...) -> R abi(.c)'; Closure values carry an sx environment");
         }
         const params = param_list.params;
         const env = try self.parseEnv();
@@ -5189,6 +5192,7 @@ pub const Parser = struct {
             .comma,
             .dot,
             .dot_dot,
+            .dot_dot_dot,
             .dot_dot_eq,
             .dot_dot_lt,
             .lt_dot_dot,
@@ -5405,6 +5409,7 @@ pub const Parser = struct {
             .comma,
             .dot,
             .dot_dot,
+            .dot_dot_dot,
             .dot_dot_eq,
             .dot_dot_lt,
             .lt_dot_dot,
@@ -6625,8 +6630,8 @@ test "integer literal overflow error" {
     try std.testing.expectEqualStrings("integer literal overflow", parser.err_msg.?);
 }
 
-test "parse pack-constrained variadic parameter (..xs: Protocol)" {
-    const source = "map :: (..sources: ValueListenable) => sources;";
+test "parse a bounded pack parameter (..$xs/P)" {
+    const source = "map :: (..$sources/ValueListenable) => sources;";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = try Parser.init(arena.allocator(), source);
@@ -6635,12 +6640,27 @@ test "parse pack-constrained variadic parameter (..xs: Protocol)" {
     try std.testing.expectEqual(@as(usize, 1), params.len);
     const p = params[0];
     try std.testing.expect(p.is_variadic);
-    try std.testing.expect(p.is_pack); // protocol-constrained pack
+    try std.testing.expect(p.is_pack);
     try std.testing.expect(!p.is_comptime);
     try std.testing.expectEqualStrings("sources", p.name);
-    // The constraint is a bare type reference, not a slice.
     try std.testing.expect(p.type_expr.data == .type_expr);
     try std.testing.expectEqualStrings("ValueListenable", p.type_expr.data.type_expr.name);
+}
+
+test "a named variadic's annotation is a slice" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), "count :: (..xs: ?i64) -> i64 { 0 }");
+    try std.testing.expectError(error.ParseError, parser.parse());
+    try std.testing.expectEqualStrings("a variadic's type must be a slice", parser.err_msg.?);
+}
+
+test "a pack takes no function-type bound" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), "count :: (..$fs/(i64) -> i64) -> i64 { 0 }");
+    try std.testing.expectError(error.ParseError, parser.parse());
+    try std.testing.expectEqualStrings("a pack takes no function-type bound", parser.err_msg.?);
 }
 
 test "parse slice variadic is NOT a pack (..xs: []T)" {

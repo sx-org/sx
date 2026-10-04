@@ -1,12 +1,12 @@
-// A C-variadic FUNCTION TYPE ends its parameter list in a bare `..`:
-// `(fixed, ..) -> R abi(.c)` names a pointer to a C-variadic function, and
-// `(..) -> R abi(.c)` one that fixes no parameter at all. `abi(.c)` is required
+// A C-variadic FUNCTION TYPE ends its parameter list in `...`:
+// `(fixed, ...) -> R abi(.c)` names a pointer to a C-variadic function, and
+// `(...) -> R abi(.c)` one that fixes no parameter at all. `abi(.c)` is required
 // — a type carries no linkage slot, so it is the only spelling that gives the
 // tail its C signature.
 //
 // The tail is part of the type's identity. A fixed signature and the otherwise
 // identical variadic one are different types, and so are `() -> R abi(.c)` and
-// `(..) -> R abi(.c)`: each holds only its own functions.
+// `(...) -> R abi(.c)`: each holds only its own functions.
 //
 // A call through such a value states the fixed arguments and then as many tail
 // arguments as it likes. Each tail argument crosses under the default argument
@@ -20,9 +20,9 @@
     @source "1235-ffi-cvariadic-function-type.c";
 };
 
-c_sum_ints :: (n: i32, ..) -> i64 extern;
+c_sum_ints :: (n: i32, ...) -> i64 extern;
 
-sumInts :: (n: i32, ..) -> i64 abi(.c) {
+sumInts :: (n: i32, ...) -> i64 abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     defer @vaEnd(*ap);
@@ -33,7 +33,7 @@ sumInts :: (n: i32, ..) -> i64 abi(.c) {
     return total;
 }
 
-constant :: (..) -> i64 abi(.c) {
+constant :: (...) -> i64 abi(.c) {
     return 7;
 }
 
@@ -45,9 +45,9 @@ fixedOne :: (n: i32) -> i64 abi(.c) {
     return n;
 }
 
-Summer :: (n: i32, ..) -> i64 abi(.c);
+Summer :: (n: i32, ...) -> i64 abi(.c);
 Fixed  :: (n: i32) -> i64 abi(.c);
-Zero   :: (..) -> i64 abi(.c);
+Zero   :: (...) -> i64 abi(.c);
 Empty  :: () -> i64 abi(.c);
 
 Table :: struct {
