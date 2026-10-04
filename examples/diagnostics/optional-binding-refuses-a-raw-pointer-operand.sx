@@ -1,0 +1,4 @@
+main :: () {
+    p : *i64 = null;
+    if value := p { value.* = 1; }
+}
