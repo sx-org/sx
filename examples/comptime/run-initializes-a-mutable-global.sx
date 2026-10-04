@@ -1,0 +1,16 @@
+@import "modules/std.sx";
+
+Point :: struct { x: i64; y: i64; }
+
+make :: (n: i64) -> Point { Point{ x = n, y = n * 2 } }
+three :: () -> i64 { 3 }
+
+origin : Point = @run make(21);
+count := @run three();
+
+main :: () {
+    print("{} {} {}\n", origin.x, origin.y, count);
+    origin.x = 1;
+    count += 1;
+    print("{} {} {}\n", origin.x, origin.y, count);
+}
