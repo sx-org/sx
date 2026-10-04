@@ -344,7 +344,7 @@ pub const GenericResolver = struct {
     /// expression). Strategy 2: infer from value params that use `T`
     /// (`a: $T`, `items: []$T`), picking the widest match.
     /// Whether a generic call spells its type arguments. Exact arity answers on
-    /// its own; a bare `..` tail or omitted defaulted trailing params keep the
+    /// its own; a `...` tail or omitted defaulted trailing params keep the
     /// arity open, so the answer comes from what stands in the type-parameter
     /// positions. `args_ast` is parallel to `fd.params` (dot-call callers
     /// prepend the receiver's node).

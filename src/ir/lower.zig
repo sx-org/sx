@@ -759,7 +759,7 @@ pub const Lowering = struct {
     materializing_lambda: ?TypeId = null,
     current_runtime_class: ?*const ast.RuntimeClassDecl = null, // set while lowering a `main = true` (or any sx-defined `@JniClass`) bodied method — `super.method(args)` dispatch resolves the parent class against this fcd's `extends =`
     current_runtime_method: ?ast.RuntimeMethodDecl = null, // the specific method whose body is being lowered; `super.<same_name>(...)` reuses its signature
-    current_fn_decl: ?*const ast.FnDecl = null, // the declaration whose body is being lowered; `@vaStart` reads its `..` tail from it
+    current_fn_decl: ?*const ast.FnDecl = null, // the declaration whose body is being lowered; `@vaStart` reads its `...` tail from it
     /// A RETURN-position callable binder (`-> $F/(i64) -> i64`), while the type
     /// it names is still unknown. Nothing at a call decides that binder, so the
     /// value the body hands back fixes the function's return type.
@@ -969,7 +969,7 @@ pub const Lowering = struct {
     /// before the mono's scope is set up.
     pack_arg_types: ?std.StringHashMap([]const TypeId) = null,
     /// Active during a protocol-pack mono's body lowering: pack-param name →
-    /// constraint protocol name (`..xs: Box` ⇒ `xs` → `"Box"`). Lets
+    /// constraint protocol name (`..$xs/Box` ⇒ `xs` → `"Box"`). Lets
     /// `lowerFieldAccess` enforce the interface-only rule — a member access
     /// `xs[i].<m>` is rejected unless `<m>` is one of the protocol's methods.
     /// Null / absent for the comptime `..$args` pack (no constraint).

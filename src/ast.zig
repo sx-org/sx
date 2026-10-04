@@ -213,8 +213,8 @@ pub const FnDecl = struct {
     /// no real field matches. Takes the `self` receiver plus exactly one value
     /// parameter and returns void.
     is_set: bool = false,
-    /// The parameter list ends in a bare `..` — a C-variadic tail, which binds
-    /// no name and no type and is therefore a signature flag rather than a
+    /// The parameter list ends in `...` — a C-variadic tail, which binds no
+    /// name and no type and is therefore a signature flag rather than a
     /// `Param`. Legal only on an effective-C signature: a definition carrying
     /// `abi(.c)` or `export`, or an `extern` declaration. `params` holds only
     /// the fixed parameters, so the fixed count is `params.len`.
@@ -223,15 +223,15 @@ pub const FnDecl = struct {
 
 /// True when `fd` declares an EFFECTIVE-C SIGNATURE: a definition carrying
 /// `abi(.c)` or `export`, or an `extern` declaration. Each emits the C shape
-/// with no implicit sx context, so the C-only signature spellings — the bare
-/// `..` tail and the by-value `@VaList` parameter — belong exactly here.
+/// with no implicit sx context, so the C-only signature spellings — the `...`
+/// tail and the by-value `@VaList` parameter — belong exactly here.
 pub fn isEffectiveCSignature(fd: *const FnDecl) bool {
     return fd.abi == .c or fd.extern_export != .none;
 }
 
 /// The number of fixed parameters a signature declares — the argument index at
 /// which its variadic tail begins. The two tail forms hold their tail
-/// differently: a bare `..` binds no `Param`, while `..name: []U` keeps its
+/// differently: `...` binds no `Param`, while `..name: []U` keeps its
 /// final one. The count may be zero, so no caller has a last fixed parameter to
 /// anchor on.
 pub fn fixedParamCount(params: []const Param) usize {
@@ -245,10 +245,10 @@ pub const Param = struct {
     type_expr: *Node,
     is_variadic: bool = false,
     is_comptime: bool = false,
-    /// Heterogeneous protocol-constrained variadic pack: `..xs: Protocol`
-    /// (no `[]`, no `$`). The annotation is a bare protocol the trailing args
-    /// each conform to with their own type-arg — distinct from a slice variadic
-    /// (`..xs: []T`, `is_pack == false`) and from the comptime type-pack
+    /// Heterogeneous variadic pack bounded by a constraint or an interface:
+    /// `..$xs/P`, with `type_expr` the bound. The trailing args each conform to
+    /// it with their own type-arg — distinct from a slice variadic
+    /// (`..xs: []T`, `is_pack == false`) and from the unbounded comptime pack
     /// (`..$xs`, `is_comptime == true`). Always implies `is_variadic`.
     is_pack: bool = false,
     /// Optional default value expression. When the caller omits this
@@ -1055,9 +1055,9 @@ pub const FunctionTypeExpr = struct {
     param_names: ?[]const ?[]const u8 = null, // optional documentation names
     return_type: ?*Node, // null = void return
     abi: ABI = .default,
-    /// The parameter list ends in a bare `..` — a C-variadic tail, which binds
-    /// no name and no type and is therefore a signature flag rather than an
-    /// entry of `param_types`. Legal only with `abi(.c)`, so the fixed count is
+    /// The parameter list ends in `...` — a C-variadic tail, which binds no
+    /// name and no type and is therefore a signature flag rather than an entry
+    /// of `param_types`. Legal only with `abi(.c)`, so the fixed count is
     /// `param_types.len` and may be zero.
     is_c_variadic: bool = false,
 };

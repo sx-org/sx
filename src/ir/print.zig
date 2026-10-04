@@ -519,7 +519,7 @@ fn writeType(id: TypeId, tt: *const TypeTable, writer: Writer) !void {
             }
             if (f.is_c_variadic) {
                 if (f.params.len > 0) try writer.writeAll(", ");
-                try writer.writeAll("..");
+                try writer.writeAll("...");
             }
             try writer.writeAll(") -> ");
             try writeType(f.ret, tt, writer);

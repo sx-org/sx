@@ -79,7 +79,7 @@ fn typeContainsUnresolved(table: *const types.TypeTable, ty: TypeId) bool {
 /// Protocol / impl LOOKUP + REGISTRATION. Owns:
 ///   - read-only conformance queries: `getProtocolInfo` (is a type a registered
 ///     protocol + its method table), `packArgConformsTo` (impl-declaration
-///     conformance for protocol-pack `..xs: P` elements),
+///     conformance for protocol-pack `..$xs/P` elements),
 ///   - registration: `registerProtocolDecl` (protocol struct + method table +
 ///     vtable type), `registerImplBlock` / `registerParamImpl` (populate the
 ///     impl maps + the `0410`/`0411`/`0412` visibility/duplicate diagnostics),
@@ -339,7 +339,7 @@ pub const ProtocolResolver = struct {
 
     /// Does `ty` conform to protocol `p_name` (under SOME type-args for a
     /// parameterised protocol)? Used to check protocol-pack elements
-    /// (`..xs: P`), where each element's protocol type-args are inferred from
+    /// (`..$xs/P`), where each element's protocol type-args are inferred from
     /// its impl rather than written out.
     ///
     /// Conformance is queried at the IMPL-DECLARATION level (not via

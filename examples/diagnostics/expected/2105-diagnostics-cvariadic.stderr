@@ -83,10 +83,10 @@ error: cannot declare a return of type '@VaList' — a C-variadic cursor has no 
    |                                   ^^^^^^^
 
 error: cannot declare a return of type '*@VaList' — a C-variadic cursor cannot outlive the call frame whose tail it reads
-  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:94:28
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:94:29
    |
-94 | escapes :: (n: i32, ..) -> *@VaList abi(.c) {
-   |                            ^^^^^^^^
+94 | escapes :: (n: i32, ...) -> *@VaList abi(.c) {
+   |                             ^^^^^^^^
 
 error: cannot declare a global of type '[1]@VaList' — it holds a '@VaList', which has no value form
   --> examples/diagnostics/2105-diagnostics-cvariadic.sx:58:16
@@ -112,7 +112,7 @@ error: cannot declare a global of type '*@VaList' — a C-variadic cursor cannot
 84 | storedBorrow: *@VaList = ---;
    |               ^^^^^^^^
 
-error: '@vaStart' needs a C-variadic tail to open — end this definition's parameter list in '..' (`(fixed, ..) -> R abi(.c)`)
+error: '@vaStart' needs a C-variadic tail to open — end this definition's parameter list in '...' (`(fixed, ...) -> R abi(.c)`)
   --> examples/diagnostics/2105-diagnostics-cvariadic.sx:136:5
     |
 136 |     @vaStart(*ap);
@@ -262,7 +262,7 @@ error: cannot read '[1]@VaList' — it holds a '@VaList', which has no value for
 116 |     kept := ||_{ rows = rows } -> i64 { return rows.len; }; // a wrapper carries the same tail
     |                                                ^^^^
 
-error: '@vaStart' needs a C-variadic tail to open — end this definition's parameter list in '..' (`(fixed, ..) -> R abi(.c)`)
+error: '@vaStart' needs a C-variadic tail to open — end this definition's parameter list in '...' (`(fixed, ...) -> R abi(.c)`)
   --> examples/diagnostics/2105-diagnostics-cvariadic.sx:90:5
    |
 90 |     @vaStart(*ap);

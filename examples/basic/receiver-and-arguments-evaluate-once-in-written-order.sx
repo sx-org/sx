@@ -28,7 +28,7 @@ store :: (a: i64, cell: *Cell) {
 
 pair :: (a: $T, b: T) -> T { a * 10 + b }
 tagged :: ($tag: string, a: i64, b: i64) -> i64 { a * 10 + b }
-packed :: (a: i64, b: i64 = 0, ..rest: i64) -> i64 { a * 10 + b }
+packed :: (a: i64, b: i64 = 0, ..$rest/i64) -> i64 { a * 10 + b }
 
 Holder :: struct { cell: Cell; }
 

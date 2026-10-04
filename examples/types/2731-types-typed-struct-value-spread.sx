@@ -16,7 +16,7 @@ make :: (log: *i32, n: i32) -> Sprite {
     mark(log, n);
     Sprite{px = n, py = n, r = n, scale = n}
 }
-from_pack :: (..xs: any) -> Sprite { Sprite{..xs, scale = 9} }
+from_pack :: (..$xs/any) -> Sprite { Sprite{..xs, scale = 9} }
 
 main :: () {
     pos := Pos{px = 3, py = 4};

@@ -286,6 +286,10 @@ pub const Lexer = struct {
             '.' => {
                 if (self.peek() == '.') {
                     self.index += 1;
+                    if (self.peek() == '.') {
+                        self.index += 1;
+                        return self.makeToken(.dot_dot_dot, start, self.index);
+                    }
                     if (self.peek() == '=') {
                         self.index += 1;
                         return self.makeToken(.dot_dot_eq, start, self.index);

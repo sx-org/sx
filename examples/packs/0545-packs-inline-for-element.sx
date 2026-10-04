@@ -17,37 +17,37 @@ StrBox :: struct { s: string; }
 impl Show for IntBox { show :: (self: *IntBox) -> string { intToString(self.v) } }
 impl Show for StrBox { show :: (self: *StrBox) -> string { self.s } }
 
-bare :: (..xs: Show) {
+bare :: (..$xs/Show) {
     inline for x in xs {
         print("bare: {}\n", x.show());
     }
 }
-elemAndIndex :: (..xs: Show) {
+elemAndIndex :: (..$xs/Show) {
     inline for x, i in xs, 0.. {
         print("{}: {}\n", i, x.show());
     }
 }
-rangeDriver :: (..xs: Show) {
+rangeDriver :: (..$xs/Show) {
     inline for i, x in 0..xs.len, xs {
         print("r{}: {}\n", i, x.show());
     }
 }
-offsetIndex :: (..xs: Show) {
+offsetIndex :: (..$xs/Show) {
     inline for x, i in xs, 10.. {
         print("{} -> {}\n", i, x.show());
     }
 }
-captureless :: (..xs: Show) {
+captureless :: (..$xs/Show) {
     n := 0;
     inline for xs { n += 1; }
     print("ran {}\n", n);
 }
-valuePos :: (..xs: Show) {
+valuePos :: (..$xs/Show) {
     inline for x in xs {
         print("val: {}\n", x);
     }
 }
-empty :: (..xs: Show) {
+empty :: (..$xs/Show) {
     inline for x in xs { print("never\n"); }
     print("empty ok\n");
 }

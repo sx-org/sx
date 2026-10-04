@@ -50,6 +50,16 @@ test "`?!` is one token and `? !` is two" {
     try std.testing.expectEqualSlices(Tag, &.{ .question, .bang, .eof }, spaced.tags);
 }
 
+test "`...` is one token and `.. .` is two" {
+    var glued = try lexT("...{");
+    defer deinitT(&glued);
+    try std.testing.expectEqualSlices(Tag, &.{ .dot_dot_dot, .l_brace, .eof }, glued.tags);
+
+    var spaced = try lexT(".. .{");
+    defer deinitT(&spaced);
+    try std.testing.expectEqualSlices(Tag, &.{ .dot_dot, .dot, .l_brace, .eof }, spaced.tags);
+}
+
 test "a `.` between digits lexes as one float literal" {
     var tl = try lexT("0.3 42 0.9");
     defer deinitT(&tl);

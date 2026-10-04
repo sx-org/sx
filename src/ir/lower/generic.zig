@@ -153,8 +153,8 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
     self.builder.currentFunc().is_naked = (fd.abi == .naked);
     self.builder.currentFunc().is_get = fd.is_get;
     self.builder.currentFunc().is_set = fd.is_set;
-    // A monomorph keeps the declaration's C shape: the convention, the bare
-    // `..` tail, and the declaration itself, which `@vaStart` reads its tail
+    // A monomorph keeps the declaration's C shape: the convention, the `...`
+    // tail, and the declaration itself, which `@vaStart` reads its tail
     // requirement from.
     self.builder.currentFunc().call_conv = if (ast.isEffectiveCSignature(fd)) .c else .default;
     self.builder.currentFunc().is_c_variadic = fd.is_c_variadic;

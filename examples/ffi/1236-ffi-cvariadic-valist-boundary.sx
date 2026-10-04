@@ -2,7 +2,7 @@
 // parameter rather than opening one over a tail of their own. That parameter is
 // written BY VALUE as `ap: @VaList`, and only in an effective-C signature: an
 // `abi(.c)` or `export` definition, an `extern` declaration, or an `abi(.c)`
-// function type. It needs no `..` tail of its own.
+// function type. It needs no `...` tail of its own.
 //
 // The parameter is PLACE-ONLY. A call names a live list — `f(fmt, ap)` from a
 // `@VaList` local or parameter, `f(fmt, ap.*)` from a `*@VaList` borrow — and
@@ -34,14 +34,14 @@ c_sum_ints    :: (n: i32, ap: @VaList) -> i64 extern;
 c_sum_doubles :: (n: i32, ap: @VaList) -> f64 extern;
 c_total_text  :: (n: i32, ap: @VaList) -> i64 extern;
 c_twice       :: (n: i32, ap: @VaList) -> i64 extern;
-c_twice_tail  :: (n: i32, ..) -> i64 extern;
+c_twice_tail  :: (n: i32, ...) -> i64 extern;
 
 // The C owners, which open a list over their own tail and call back into the sx
 // exports below.
-c_calls_sx_ints    :: (n: i32, ..) -> i64 extern;
-c_calls_sx_doubles :: (n: i32, ..) -> f64 extern;
-c_calls_sx_text    :: (n: i32, ..) -> i64 extern;
-c_calls_sx_twice   :: (n: i32, ..) -> i64 extern;
+c_calls_sx_ints    :: (n: i32, ...) -> i64 extern;
+c_calls_sx_doubles :: (n: i32, ...) -> f64 extern;
+c_calls_sx_text    :: (n: i32, ...) -> i64 extern;
+c_calls_sx_twice   :: (n: i32, ...) -> i64 extern;
 
 vmprintf     :: (fmt: [*:0]u8, ap: @VaList) -> ?[*:0]u8 extern;
 xvsnprintf   :: (size: i32, out: [*]u8, fmt: [*:0]u8, ap: @VaList) -> [*]u8 extern;
@@ -99,14 +99,14 @@ sx_twice :: (n: i32, ap: @VaList) -> i64 export {
     return first * 100 + second;
 }
 
-ownInts :: (n: i32, ..) -> i64 abi(.c) {
+ownInts :: (n: i32, ...) -> i64 abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     defer @vaEnd(*ap);
     return c_sum_ints(n, ap);
 }
 
-ownDoubles :: (n: i32, ..) -> f64 abi(.c) {
+ownDoubles :: (n: i32, ...) -> f64 abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     defer @vaEnd(*ap);
@@ -117,14 +117,14 @@ borrowText :: (n: i32, ap: *@VaList) -> i64 {
     return c_total_text(n, ap.*);
 }
 
-ownText :: (n: i32, ..) -> i64 abi(.c) {
+ownText :: (n: i32, ...) -> i64 abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     defer @vaEnd(*ap);
     return borrowText(n, *ap);
 }
 
-ownTwice :: (n: i32, ..) -> i64 abi(.c) {
+ownTwice :: (n: i32, ...) -> i64 abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     defer @vaEnd(*ap);
@@ -136,49 +136,49 @@ ownTwice :: (n: i32, ..) -> i64 abi(.c) {
     return first * 100 + second;
 }
 
-ownForwardTwice :: (n: i32, ..) -> i64 abi(.c) {
+ownForwardTwice :: (n: i32, ...) -> i64 abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     defer @vaEnd(*ap);
     return sx_twice(n, ap);
 }
 
-formatDirect :: (fmt: [*:0]u8, ..) -> ?[*:0]u8 abi(.c) {
+formatDirect :: (fmt: [*:0]u8, ...) -> ?[*:0]u8 abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     defer @vaEnd(*ap);
     return vmprintf(fmt, ap);
 }
 
-intoDirect :: (out: [*]u8, fmt: [*:0]u8, ..) -> [*]u8 abi(.c) {
+intoDirect :: (out: [*]u8, fmt: [*:0]u8, ...) -> [*]u8 abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     defer @vaEnd(*ap);
     return xvsnprintf(64, out, fmt, ap);
 }
 
-appendDirect :: (s: *sqlite3Str, fmt: [*:0]u8, ..) -> void abi(.c) {
+appendDirect :: (s: *sqlite3Str, fmt: [*:0]u8, ...) -> void abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     defer @vaEnd(*ap);
     str_vappendf(s, fmt, ap);
 }
 
-formatField :: (api: *Api, fmt: [*:0]u8, ..) -> ?[*:0]u8 abi(.c) {
+formatField :: (api: *Api, fmt: [*:0]u8, ...) -> ?[*:0]u8 abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     defer @vaEnd(*ap);
     return api.mprintf(fmt, ap);
 }
 
-intoField :: (api: *Api, out: [*]u8, fmt: [*:0]u8, ..) -> [*]u8 abi(.c) {
+intoField :: (api: *Api, out: [*]u8, fmt: [*:0]u8, ...) -> [*]u8 abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     defer @vaEnd(*ap);
     return api.snprint(64, out, fmt, ap);
 }
 
-appendField :: (api: *Api, s: *sqlite3Str, fmt: [*:0]u8, ..) -> void abi(.c) {
+appendField :: (api: *Api, s: *sqlite3Str, fmt: [*:0]u8, ...) -> void abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     defer @vaEnd(*ap);

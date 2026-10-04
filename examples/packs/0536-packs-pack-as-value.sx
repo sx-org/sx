@@ -11,11 +11,11 @@ impl Show for A { show :: (self: *A) -> string => "A"; }
 
 sink :: (v: i64) -> void { _ = v; }
 
-storage :: (..xs: Show) -> void { y := xs; _ = y; }          // A: store
-call    :: (..xs: Show) -> void { sink(xs); }                // B: pass to a call
-ret     :: (..xs: Show) -> i64  { return xs; }               // C: return
-iter    :: (..xs: Show) -> void { for x in xs { _ = x; } }  // D: runtime iterate
-env     :: (..xs: Show) -> void { f := ||_{ xs = xs } {}; f(); }  // E: a closure env field
+storage :: (..$xs/Show) -> void { y := xs; _ = y; }          // A: store
+call    :: (..$xs/Show) -> void { sink(xs); }                // B: pass to a call
+ret     :: (..$xs/Show) -> i64  { return xs; }               // C: return
+iter    :: (..$xs/Show) -> void { for x in xs { _ = x; } }  // D: runtime iterate
+env     :: (..$xs/Show) -> void { f := ||_{ xs = xs } {}; f(); }  // E: a closure env field
 
 main :: () -> i32 {
     storage(A{});

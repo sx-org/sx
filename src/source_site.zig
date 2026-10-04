@@ -468,7 +468,7 @@ fn spellType(alloc: std.mem.Allocator, node: *const Node) anyerror![]const u8 {
             }
             if (f.is_c_variadic) {
                 if (f.param_types.len > 0) try out.append(alloc, ',');
-                try out.appendSlice(alloc, "..");
+                try out.appendSlice(alloc, "...");
             }
             try out.appendSlice(alloc, ")->");
             if (f.return_type) |r| try out.appendSlice(alloc, try spellType(alloc, r)) else try out.appendSlice(alloc, "void");

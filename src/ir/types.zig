@@ -351,7 +351,7 @@ pub const TypeInfo = union(enum) {
         /// per-call-site type list binds the remainder. `pack_start == 0`
         /// with `params.len == 0` denotes `fn(..$args)`.
         pack_start: ?u32 = null,
-        /// The signature ends in a bare `..` C-variadic tail: `params` is the
+        /// The signature ends in a `...` C-variadic tail: `params` is the
         /// fixed prefix and the C ABI carries the rest. Part of the type's
         /// identity — a fixed signature and the otherwise identical variadic one
         /// are different ABIs, and neither stands in for the other.
@@ -1649,7 +1649,7 @@ pub const TypeTable = struct {
         return self.functionTypeVariadic(params, ret, cc, false);
     }
 
-    /// `params` is the FIXED prefix when `is_c_variadic` is set — the bare `..`
+    /// `params` is the FIXED prefix when `is_c_variadic` is set — the `...`
     /// tail binds no slot of its own.
     pub fn functionTypeVariadic(self: *TypeTable, params: []const TypeId, ret: TypeId, cc: TypeInfo.CallConv, is_c_variadic: bool) TypeId {
         const owned_params = self.slice_arena.allocator().dupe(TypeId, params) catch unreachable;
@@ -2406,7 +2406,7 @@ pub const TypeTable = struct {
                 }
                 if (f.is_c_variadic) {
                     if (f.params.len > 0) buf.appendSlice(alloc, ", ") catch break :blk "(?)";
-                    buf.appendSlice(alloc, "..") catch break :blk "(?)";
+                    buf.appendSlice(alloc, "...") catch break :blk "(?)";
                 }
                 buf.append(alloc, ')') catch break :blk "(?)";
                 if (f.ret != .void) {

@@ -19,14 +19,14 @@ impl Box(i64) for Dbl { get :: (self: *Dbl) -> i64 => self.n * 2; }
 
 // Product type `struct { ..xs.T }` — heterogeneous (i64, string), matched by the
 // value-projection `.(..xs.get)`.
-snap :: (..xs: Box) -> void {
+snap :: (..$xs/Box) -> void {
     t : struct { ..xs.T } = .{..xs.get};
     print("0={} 1={}\n", @field(t, 0), @field(t, 1));
 }
 
 // Closure signature `Closure(..xs.T) -> i64` — here `Closure(i64, i64) -> i64`.
 // The closure literal's params are contextually typed from the projection.
-fold :: (..xs: Box) -> i64 {
+fold :: (..$xs/Box) -> i64 {
     cb : Closure(..xs.T) -> i64 = |a, b| a + b;
     return cb(xs[0].get(), xs[1].get());
 }

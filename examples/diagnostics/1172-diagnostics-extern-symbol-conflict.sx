@@ -14,10 +14,10 @@ libc :: @library "c";
 getenvOpt :: (name: [*]u8) -> ?[*:0]u8 extern libc "getenv";
 
 fixedView    :: (fmt: [*:0]u8) -> i32 extern libc "printf";
-variadicView :: (fmt: [*:0]u8, ..) -> i32 extern libc "printf";
+variadicView :: (fmt: [*:0]u8, ...) -> i32 extern libc "printf";
 
-tailView   :: (fmt: [*:0]u8, ..) -> i32 extern libc "fprintf";
-sameTail   :: (fmt: [*:0]u8, ..) -> i32 extern libc "fprintf";
+tailView   :: (fmt: [*:0]u8, ...) -> i32 extern libc "fprintf";
+sameTail   :: (fmt: [*:0]u8, ...) -> i32 extern libc "fprintf";
 
 main :: () -> i32 {
     p := getenvOpt("PATH");

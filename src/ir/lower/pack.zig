@@ -977,7 +977,7 @@ pub fn lowerPackFnCallNamed(
     var pack_arg_types = std.ArrayList(TypeId).empty;
     defer pack_arg_types.deinit(self.alloc);
     var pack_start: usize = call_node.args.len;
-    // Constraint protocol of the pack param (`..xs: P`), if any. The
+    // Constraint protocol of the pack param (`..$xs/P`), if any. The
     // comptime type-pack `..$args` has no constraint to check.
     var pack_protocol: ?[]const u8 = null;
     var pack_is_comptime = false;
@@ -1478,7 +1478,7 @@ pub fn isPackFn(fd: *const ast.FnDecl) bool {
 }
 
 /// A trailing pack parameter: the comptime type-pack `..$args`
-/// (`is_comptime`) or the protocol-constrained pack `..xs: P` (`is_pack`).
+/// (`is_comptime`) or the protocol-constrained pack `..$xs/P` (`is_pack`).
 /// Both monomorphize per call shape via `lowerPackFnCall`; the slice
 /// variadic (`..xs: []T`) is neither and stays a runtime slice.
 pub fn isPackParam(p: ast.Param) bool {

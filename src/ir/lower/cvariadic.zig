@@ -427,13 +427,13 @@ pub fn tryLowerIntrinsic(self: *Lowering, name: []const u8, c: *const ast.Call) 
 }
 
 /// `@vaStart` opens a cursor over the enclosing call's tail, so it needs one:
-/// the definition being lowered must end its parameter list in a bare `..`.
+/// the definition being lowered must end its parameter list in `...`.
 fn requireVariadicDefinition(self: *Lowering, name: []const u8, span: ast.Span) void {
     if (self.current_fn_decl) |fd| {
         if (fd.is_c_variadic and fd.extern_export != .extern_) return;
     }
     if (self.diagnostics) |d|
-        d.addFmt(.err, span, "'{s}' needs a C-variadic tail to open — end this definition's parameter list in '..' (`(fixed, ..) -> R abi(.c)`)", .{name});
+        d.addFmt(.err, span, "'{s}' needs a C-variadic tail to open — end this definition's parameter list in '...' (`(fixed, ...) -> R abi(.c)`)", .{name});
 }
 
 /// The address of a cursor this function OWNS: `*name`, where `name` is a local

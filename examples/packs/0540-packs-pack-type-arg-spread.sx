@@ -15,7 +15,7 @@ Combined :: struct($R: Type, ..$Ts: []Type) {
     value:   $R;
 }
 
-make :: (..sources: VL) -> i64 {
+make :: (..$sources/VL) -> i64 {
     c : Combined(i64, ..sources.T) = ---;   // instantiate with the spread type-arg
     s0 := sources[0];
     @field(c.sources, 0) = s0;

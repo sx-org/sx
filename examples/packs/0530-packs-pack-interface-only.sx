@@ -12,7 +12,7 @@ Box :: constraint(T: Type) {
 IntCell :: struct { v: i64; }
 impl Box(i64) for IntCell { get :: (self: *IntCell) -> i64 => self.v; }
 
-leak :: (..xs: Box) -> i64 {
+leak :: (..$xs/Box) -> i64 {
     return xs[0].v;   // `v` is not part of Box — error
 }
 
