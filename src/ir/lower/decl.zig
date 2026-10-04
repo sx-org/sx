@@ -1664,9 +1664,10 @@ pub fn registerTopLevelGlobal(self: *Lowering, vd: *const ast.VarDecl) void {
     // because their type can't be inferred without an initializer.
     const var_ty: TypeId = if (vd.type_annotation) |ta|
         self.resolveType(ta)
-    else if (vd.value) |val|
-        self.inferExprType(val)
-    else blk: {
+    else if (vd.value) |val| switch (val.data) {
+        .comptime_expr => |ce| self.runGlobalType(self.inferExprType(ce.expr)),
+        else => self.inferExprType(val),
+    } else blk: {
         if (self.diagnostics) |d|
             d.addFmt(.err, null, "top-level var '{s}' has no type annotation and no initializer to infer from", .{vd.name});
         break :blk .void;
@@ -1720,7 +1721,29 @@ fn initializeTopLevelGlobal(self: *Lowering, vd: *const ast.VarDecl) void {
         else => return,
     };
     if (gi.id.index() >= self.module.globals.items.len) return;
+    if (runInitializer(self, vd, gi.ty) != null) return;
     self.module.globals.items[gi.id.index()].init_val = self.globalInitValue(vd, gi.ty);
+}
+
+/// The expression a global's `@run` initializer evaluates for the global's
+/// value. An interface handle global, bare or optional, is built from its
+/// written initializer, which refuses `@run`; a global of unresolved type has
+/// no type to evaluate against.
+fn runInitializer(self: *Lowering, vd: *const ast.VarDecl, ty: TypeId) ?*const Node {
+    const v = vd.value orelse return null;
+    if (v.data != .comptime_expr or ty == .unresolved) return null;
+    const handle_ty = if (!ty.isBuiltin() and self.module.types.get(ty) == .optional) self.module.types.get(ty).optional.child else ty;
+    if (self.isErasedProtocolType(handle_ty)) return null;
+    return v.data.comptime_expr.expr;
+}
+
+/// Give a `@run`-initialized global the wrapper emit evaluates for its value;
+/// the scan leaves its payload to it.
+fn lowerRunGlobal(self: *Lowering, vd: *const ast.VarDecl) void {
+    const gi = self.global_decl_infos.get(vd) orelse return;
+    const expr = runInitializer(self, vd, gi.ty) orelse return;
+    const func_id = self.createRunInitializer(vd.name, expr, gi.ty);
+    self.module.globals.items[gi.id.index()].comptime_func = func_id;
 }
 
 /// Serialize a top-level global's initializer into a static `ConstantValue`.
@@ -2503,6 +2526,7 @@ pub fn lowerMainAndComptime(self: *Lowering, authored: []const *const Node) void
                     self.lazyLowerFunction(fd.name);
                 }
             },
+            .var_decl => lowerRunGlobal(self, &decl.data.var_decl),
             .comptime_expr => |ct| {
                 self.lowerComptimeSideEffect(ct.expr);
             },

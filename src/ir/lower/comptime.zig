@@ -913,33 +913,9 @@ pub fn lowerComptimeGlobal(self: *Lowering, declaration: @import("../../imports.
     const lowering = self.lowering_comptime_globals.getOrPut(declaration) catch @panic("out of memory");
     if (lowering.found_existing) return;
     defer _ = self.lowering_comptime_globals.remove(declaration);
-    // When the user writes `NAME :: @run expr;` with no type annotation,
-    // infer the global's type from the comptime expression's return
-    // shape. `resolveType(null)` returns `.i64` — good for primitive
-    // helpers, silently wrong for anything else.
-    const expr_ty = self.inferExprType(expr);
-    // A failable `@run` (bare, no `catch`/`??`): the comptime function
-    // returns a failable tuple so the @run site can inspect the error
-    // slot, and the GLOBAL is typed as its success value — the annotation
-    // when one is written. On a comptime error the global never
-    // materializes — emit halts with a diagnostic + trace. A handled
-    // `@run … catch/?? …` already strips the error channel, so it lands
-    // here as non-failable.
-    const channel = self.errorChannelOf(expr_ty);
-    const func_ret: TypeId = if (type_ann) |n| ret: {
-        const annotated = self.resolveTypeWithBindings(n);
-        break :ret if (channel) |ch| self.module.types.internFailable(annotated, ch) else annotated;
-    } else expr_ty;
-    // The result crosses into the runtime image, which is what makes this an
-    // escape site (specs.md §6.9).
-    const func_id = self.createComptimeFunction(name, .ordinary, expr, func_ret);
-    // The global's type is the wrapper's ret after lowering, with the error
-    // channel stripped.
-    const settled = self.module.getFunction(func_id).ret;
-    const global_ty: TypeId = if (self.errorChannelOf(settled)) |ch|
-        (if (settled == ch) TypeId.void else self.failableSuccessType(settled))
-    else
-        settled;
+    const declared: ?TypeId = if (type_ann) |n| self.resolveTypeWithBindings(n) else null;
+    const func_id = createRunInitializer(self, name, expr, declared);
+    const global_ty = runGlobalType(self, self.module.getFunction(func_id).ret);
 
     // Add a global constant whose initializer will be filled by the interpreter.
     const name_id = self.module.types.internString(name);
@@ -953,6 +929,30 @@ pub fn lowerComptimeGlobal(self: *Lowering, declaration: @import("../../imports.
 
     // Register for runtime lookup: identifier resolution emits global_get
     self.putGlobal(declaration, name, .{ .id = gid, .ty = global_ty });
+}
+
+/// The wrapper a global's `@run expr` initializer runs. It returns `declared`,
+/// else `expr`'s own type, settled from the lowered body when the AST cannot
+/// answer it. A failable `@run` (bare, no `catch`/`??`) keeps its error channel
+/// on the return so emit can halt on an escaping error; a handled
+/// `@run … catch/?? …` arrives already non-failable.
+pub fn createRunInitializer(self: *Lowering, name: []const u8, expr: *const Node, declared: ?TypeId) FuncId {
+    const expr_ty = self.inferExprType(expr);
+    const channel = self.errorChannelOf(expr_ty);
+    const func_ret: TypeId = if (declared) |ty|
+        (if (channel) |ch| self.module.types.internFailable(ty, ch) else ty)
+    else
+        expr_ty;
+    // The result crosses into the runtime image, which is what makes this an
+    // escape site (specs.md §6.9).
+    return self.createComptimeFunction(name, .ordinary, expr, func_ret);
+}
+
+/// The type a global holds when its `@run` wrapper returns `ret`: the success
+/// value of a failable `ret`, `void` for a bare error set.
+pub fn runGlobalType(self: *Lowering, ret: TypeId) TypeId {
+    const ch = self.errorChannelOf(ret) orelse return ret;
+    return if (ret == ch) .void else self.failableSuccessType(ret);
 }
 
 /// Lower a standalone `@run expr;` at the top level (side-effect only).

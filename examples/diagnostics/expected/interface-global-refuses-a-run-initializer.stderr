@@ -1,0 +1,5 @@
+error: 'shown' is a 'Show' value, which borrows its receiver — its initializer must NAME a global instance to borrow ('shown : Show = the_instance;'), and this expression has no address to point at
+  --> examples/diagnostics/interface-global-refuses-a-run-initializer.sx:11:16
+   |
+11 | shown : Show = @run origin;
+   |                ^^^^^^^^^^^

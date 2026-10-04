@@ -1,0 +1,15 @@
+// An interface-typed global borrows the global its initializer names; a `@run`
+// initializer names none.
+@import "modules/std.sx";
+
+Show :: interface { show :: (self: *Self) -> i64; }
+
+Point :: struct { x: i64; }
+impl Show for Point { show :: (self: *Point) -> i64 { self.x } }
+
+origin : Point = .{ x = 3 };
+shown : Show = @run origin;
+
+main :: () {
+    print("{}\n", shown.show());
+}
