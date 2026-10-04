@@ -1371,7 +1371,7 @@ fn recoveringConversion(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool {
 /// The SOURCE-LEVEL signature type of the lowered function `fid`: the implicit
 /// `__sx_ctx` parameter dropped and the declared calling convention and C tail
 /// kept, so it interns to the same `TypeId` as the equivalent written annotation
-/// (`(i64) -> i64`, `(i64) -> i64 abi(.c)`, `(i64, ..) -> i64 abi(.c)`). A
+/// (`(i64) -> i64`, `(i64) -> i64 abi(.c)`, `(i64, ...) -> i64 abi(.c)`). A
 /// parameter with a default is an ordinary parameter here — a default is a
 /// call-site convenience, not part of the value's signature.
 pub fn functionSignatureType(self: *Lowering, fid: inst_mod.FuncId) ?TypeId {

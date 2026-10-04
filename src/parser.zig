@@ -2678,7 +2678,12 @@ pub const Parser = struct {
                 defer self.in_param_default = saved_in_default;
                 default_expr = try self.parseBinary(Prec.none, if (close == .pipe) PipeRole.closer else .bit_or);
             }
-            try params.append(self.allocator, .{ .name = param_name, .name_span = param_name_span, .type_expr = param_type, .is_variadic = is_variadic, .is_comptime = is_comptime_param, .default_expr = default_expr, .is_raw = param_is_raw });
+            // `..$xs: Type` and `..$xs: P(T)` bind a pack.
+            const is_pack = is_variadic and !is_comptime_param and switch (param_type.data) {
+                .type_expr, .parameterized_type_expr => true,
+                else => false,
+            };
+            try params.append(self.allocator, .{ .name = param_name, .name_span = param_name_span, .type_expr = param_type, .is_variadic = is_variadic, .is_comptime = is_comptime_param, .is_pack = is_pack, .default_expr = default_expr, .is_raw = param_is_raw });
         }
         for (params.items, 0..) |param, i| {
             if (param.is_variadic and i != params.items.len - 1) {
