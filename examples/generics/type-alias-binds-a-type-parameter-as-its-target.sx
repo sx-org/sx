@@ -1,0 +1,14 @@
+// A type alias in a `$T: Type` argument slot binds the type it names.
+@import "modules/std.sx";
+
+Handle :: *i32;
+Int :: i32;
+
+size :: ($T: Type) -> i64 { @sizeOf(T) }
+name :: ($T: Type) -> string { @typeName(T) }
+scaled :: ($T: Type, n: i64 = 2) -> i64 { @sizeOf(T) * n }
+holds :: ($T: Type, x: T) -> string { @typeName(T) }
+
+main :: () {
+    print("{} {} {} {}\n", size(Handle), name(*Int), scaled(Handle), holds(Int, 5));
+}
