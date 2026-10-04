@@ -280,10 +280,14 @@ fn lowerCondition(self: *Lowering, node: *const Node, has_binding: bool) Lowered
 
     const value = self.lowerExpr(node);
     const ty = self.inferExprType(node);
-    const is_optional = has_binding or (!ty.isBuiltin() and self.module.types.get(ty) == .optional);
+    const is_optional = !ty.isBuiltin() and self.module.types.get(ty) == .optional;
     const test_bit = if (is_optional)
         self.builder.emit(.{ .optional_has_value = .{ .operand = value } }, .bool)
-    else if (self.checkConditionType(ty, node.span))
+    else if (has_binding) blk: {
+        if (ty != .unresolved) if (self.diagnostics) |d|
+            d.addFmt(.err, node.span, "operand of an optional binding must be an optional, but has type '{s}'", .{self.formatTypeName(ty)});
+        break :blk self.builder.constBool(false);
+    } else if (self.checkConditionType(ty, node.span))
         value
     else
         self.builder.constBool(false);

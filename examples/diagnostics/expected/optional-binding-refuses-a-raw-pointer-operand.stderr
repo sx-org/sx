@@ -1,0 +1,5 @@
+error: operand of an optional binding must be an optional, but has type '*i64'
+  --> examples/diagnostics/optional-binding-refuses-a-raw-pointer-operand.sx:3:17
+   |
+ 3 |     if value := p { value.* = 1; }
+   |                 ^
