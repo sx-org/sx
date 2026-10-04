@@ -16,8 +16,9 @@
 @import "modules/std/list.sx";
 
 // The C companion object files for this build (`@import c { @source ... }`,
-// compiled to `.o`) and the `@library` link names. The sx driver passes them to
-// the linker. Answered from the compiler's accumulated build state.
+// compiled to `.o`) and the link libraries: the `@library` names, plus `objc`
+// when generated code calls the Objective-C runtime. The sx driver passes them
+// to the linker. Answered from the compiler's accumulated build state.
 @cObjectPaths :: () -> List(string);
 @linkLibraries :: () -> List(string);
 

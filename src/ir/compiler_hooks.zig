@@ -34,7 +34,7 @@ pub const BuildConfig = struct {
     post_link_takes_options: bool = false,
 
     /// C companion object files (`@import c { @source ... }`, compiled to `.o`)
-    /// and `@library` link names, forwarded by main.zig before the post-link
+    /// and link libraries, forwarded by main.zig before the post-link
     /// callback so the sx-driven build pipeline can read them via the
     /// `@cObjectPaths()` / `@linkLibraries()` compiler primitives and pass them
     /// to `@link`. Slices reference compiler-owned memory that outlives the

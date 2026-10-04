@@ -104,6 +104,7 @@ pub fn getSelRegisterNameFid(self: *Lowering) FuncId {
     const func = self.module.getFunctionMut(fid);
     func.call_conv = .c;
     self.sel_register_name_fid = fid;
+    self.module.calls_objc_runtime = true;
     return fid;
 }
 

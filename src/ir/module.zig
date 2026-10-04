@@ -87,6 +87,8 @@ pub const Module = struct {
     /// A compile-time evaluation reached the host, so reusing this product
     /// would skip that work.
     comptime_host_effects: bool = false,
+    /// Generated code calls the Objective-C runtime, so the build links it.
+    calls_objc_runtime: bool = false,
 
     /// One member of one open set — the key of the set's own tag space.
     pub const OpenSetMember = struct { set: TypeId, member: TypeId };
@@ -168,6 +170,7 @@ pub const Module = struct {
 
     pub fn appendObjcSelector(self: *Module, sel: []const u8, slot: GlobalId) void {
         self.objc_selector_cache.append(self.alloc, .{ .sel = sel, .slot = slot }) catch unreachable;
+        self.calls_objc_runtime = true;
     }
 
     /// Linear scan — same rationale as `lookupObjcSelector`.
@@ -180,6 +183,7 @@ pub const Module = struct {
 
     pub fn appendObjcClass(self: *Module, name: []const u8, slot: GlobalId) void {
         self.objc_class_cache.append(self.alloc, .{ .name = name, .slot = slot }) catch unreachable;
+        self.calls_objc_runtime = true;
     }
 
     /// Linear scan over sx-defined Obj-C classes.
@@ -223,6 +227,7 @@ pub const Module = struct {
 
     pub fn appendObjcDefinedClass(self: *Module, name: []const u8, decl: *const ast.RuntimeClassDecl) void {
         self.objc_defined_class_cache.append(self.alloc, .{ .name = name, .decl = decl }) catch unreachable;
+        self.calls_objc_runtime = true;
     }
 
     /// Attach derived method-registration data to an existing

@@ -1634,6 +1634,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
             const obj_ref = self.lowerExpr(fa.object);
             const ptr_void = self.module.types.ptrTo(.void);
             const get_class_fid = self.ensureCRuntimeDecl("object_getClass", &.{ptr_void}, ptr_void);
+            self.module.calls_objc_runtime = true;
             const args = self.alloc.alloc(Ref, 1) catch unreachable;
             args[0] = obj_ref;
             return self.builder.emit(.{ .call = .{ .callee = get_class_fid, .args = args } }, ptr_void);

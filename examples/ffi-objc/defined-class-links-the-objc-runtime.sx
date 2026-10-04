@@ -1,0 +1,24 @@
+// A built program that defines an Objective-C class and declares no library
+// links the runtime its class registration and dispatch call.
+@import "modules/std.sx";
+
+SxCounter :: @ObjcClass("SxCounter") export {
+    count: i32;
+
+    alloc :: () -> *SxCounter;
+
+    bump :: (self: *Self) {
+        self.count += 1;
+    }
+
+    get :: (self: *Self) -> i32 {
+        return self.count;
+    }
+}
+
+main :: () {
+    counter := SxCounter.alloc();
+    counter.bump();
+    counter.bump();
+    print("count: {}\n", counter.get());
+}
