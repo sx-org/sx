@@ -2654,9 +2654,12 @@ pub const Parser = struct {
             }
             self.advance(); // consume ':'
             const param_type = try self.parseTypeExpr();
-            if (is_variadic and !is_ct_param and param_type.data != .slice_type_expr) {
-                return self.failAt(param_type.span, variadic_not_slice);
-            }
+            // A type name may resolve to a slice; lowering refuses one that does not.
+            if (is_variadic and !is_ct_param) switch (param_type.data) {
+                .slice_type_expr, .parameterized_type_expr => {},
+                .type_expr => |te| if (te.is_generic) return self.failAt(param_type.span, variadic_not_slice),
+                else => return self.failAt(param_type.span, variadic_not_slice),
+            };
             var is_comptime_param = false;
             if (is_ct_param and param_type.data == .type_expr) {
                 const constraint_name = param_type.data.type_expr.name;
@@ -2679,7 +2682,7 @@ pub const Parser = struct {
                 default_expr = try self.parseBinary(Prec.none, if (close == .pipe) PipeRole.closer else .bit_or);
             }
             // `..$xs: Type` and `..$xs: P(T)` bind a pack.
-            const is_pack = is_variadic and !is_comptime_param and switch (param_type.data) {
+            const is_pack = is_variadic and is_ct_param and !is_comptime_param and switch (param_type.data) {
                 .type_expr, .parameterized_type_expr => true,
                 else => false,
             };
@@ -6647,7 +6650,7 @@ test "parse a bounded pack parameter (..$xs/P)" {
 test "a named variadic's annotation is a slice" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = try Parser.init(arena.allocator(), "count :: (..xs: Show) -> i64 { 0 }");
+    var parser = try Parser.init(arena.allocator(), "count :: (..xs: ?i64) -> i64 { 0 }");
     try std.testing.expectError(error.ParseError, parser.parse());
     try std.testing.expectEqualStrings("a variadic's type must be a slice", parser.err_msg.?);
 }

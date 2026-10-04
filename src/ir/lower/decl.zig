@@ -3573,6 +3573,9 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
     if (is_extern_decl and fd.params.len > 0 and fd.params[fd.params.len - 1].is_variadic) {
         is_c_variadic = true;
         effective_params = fd.params[0..ast.fixedParamCount(fd.params)];
+        // A dropped tail written as a type name must resolve to a slice.
+        const tail = &fd.params[fd.params.len - 1];
+        if (tail.type_expr.data != .slice_type_expr) _ = self.resolveParamType(tail);
     }
 
     const wants_ctx = self.funcWantsImplicitCtx(fd);

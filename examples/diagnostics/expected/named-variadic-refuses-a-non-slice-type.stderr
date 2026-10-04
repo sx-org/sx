@@ -1,5 +1,5 @@
 error: a variadic's type must be a slice
-  --> examples/diagnostics/named-variadic-refuses-a-non-slice-type.sx:1:13
+  --> examples/diagnostics/named-variadic-refuses-a-non-slice-type.sx:3:13
    |
- 1 | f :: (..xs: ?i64) -> i64 {
-   |             ^^^^
+ 3 | f :: (..xs: Count) -> i64 {
+   |             ^^^^^

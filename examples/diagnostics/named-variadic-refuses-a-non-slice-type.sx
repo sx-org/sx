@@ -1,4 +1,6 @@
-f :: (..xs: ?i64) -> i64 {
+Count :: i64;
+
+f :: (..xs: Count) -> i64 {
     return xs.len;
 }
 

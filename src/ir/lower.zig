@@ -1775,6 +1775,16 @@ pub const Lowering = struct {
             //     caller's argument-marshal pack produces a `[]T` that
             //     doesn't match the callee's stored param shape.
             if (self.module.types.sliceInfoOf(declared_ty) != null) return declared_ty;
+            // `..xs: Name` is a slice only when `Name` resolves to one.
+            const names_its_slice = !p.is_comptime and !p.is_pack and switch (p.type_expr.data) {
+                .type_expr, .parameterized_type_expr => true,
+                else => false,
+            };
+            if (names_its_slice) {
+                if (declared_ty != .unresolved) if (self.diagnostics) |d|
+                    d.addFmt(.err, p.type_expr.span, "a variadic's type must be a slice", .{});
+                return .unresolved;
+            }
             return self.module.types.sliceOf(declared_ty);
         }
         return declared_ty;

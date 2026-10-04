@@ -380,12 +380,16 @@ pub fn packVariadicCallArgs(self: *Lowering, fd: *const ast.FnDecl, c: *const as
     // sees T in both cases.
     var variadic_idx: ?usize = null;
     var elem_ty: TypeId = .any;
+    var len_ty: TypeId = .i64;
     for (fd.params, 0..) |p, i| {
         if (p.is_variadic) {
             variadic_idx = i;
             const declared = self.resolveTypeWithBindings(p.type_expr);
             elem_ty = declared;
-            if (self.module.types.sliceInfoOf(declared)) |declared_slice| elem_ty = declared_slice.element;
+            if (self.module.types.sliceInfoOf(declared)) |declared_slice| {
+                elem_ty = declared_slice.element;
+                len_ty = declared_slice.len_type;
+            }
             break;
         }
     }
@@ -394,7 +398,7 @@ pub fn packVariadicCallArgs(self: *Lowering, fd: *const ast.FnDecl, c: *const as
     // Number of non-variadic args
     const fixed_count = vi;
     const variadic_count = if (args.items.len > fixed_count) args.items.len - fixed_count else 0;
-    const slice_ty = self.module.types.sliceOf(elem_ty);
+    const slice_ty = self.module.types.sliceOfLen(elem_ty, len_ty);
 
     // Check for spread operator: sum(..arr) — single spread arg becomes the slice directly.
     // Only a SLICE/ARRAY operand passes through whole: a tuple operand was
@@ -435,11 +439,11 @@ pub fn packVariadicCallArgs(self: *Lowering, fd: *const ast.FnDecl, c: *const as
                     d.addFmt(.err, arg_node.span, "cannot spread a value of type '{s}' — '..' expects a comptime pack, a tuple, an array, or a slice", .{self.formatTypeName(arr_ty)});
                 }
                 const null_ptr = self.builder.constNull(self.module.types.ptrTo(elem_ty));
-                const zero_len = self.builder.constInt(0, .i64);
+                const zero_len = self.builder.constInt(0, len_ty);
                 const slice_slot = self.builder.alloca(slice_ty);
                 const ptr_gep = self.builder.structGepTyped(slice_slot, 0, self.module.types.ptrTo(elem_ty), slice_ty);
                 self.builder.store(ptr_gep, null_ptr);
-                const len_gep = self.builder.structGepTyped(slice_slot, 1, .i64, slice_ty);
+                const len_gep = self.builder.structGepTyped(slice_slot, 1, len_ty, slice_ty);
                 self.builder.store(len_gep, zero_len);
                 args.shrinkRetainingCapacity(fixed_count);
                 args.append(self.alloc, self.builder.load(slice_slot, slice_ty)) catch unreachable;
@@ -453,11 +457,11 @@ pub fn packVariadicCallArgs(self: *Lowering, fd: *const ast.FnDecl, c: *const as
     if (variadic_count == 0) {
         // Empty slice
         const null_ptr = self.builder.constNull(self.module.types.ptrTo(elem_ty));
-        const zero_len = self.builder.constInt(0, .i64);
+        const zero_len = self.builder.constInt(0, len_ty);
         const slice_slot = self.builder.alloca(slice_ty);
         const ptr_gep = self.builder.structGepTyped(slice_slot, 0, self.module.types.ptrTo(elem_ty), slice_ty);
         self.builder.store(ptr_gep, null_ptr);
-        const len_gep = self.builder.structGepTyped(slice_slot, 1, .i64, slice_ty);
+        const len_gep = self.builder.structGepTyped(slice_slot, 1, len_ty, slice_ty);
         self.builder.store(len_gep, zero_len);
         const slice_val = self.builder.load(slice_slot, slice_ty);
         // Replace args: keep fixed args, append slice
@@ -554,10 +558,10 @@ pub fn packVariadicCallArgs(self: *Lowering, fd: *const ast.FnDecl, c: *const as
     const slice_slot = self.builder.alloca(slice_ty);
     const zero = self.builder.constInt(0, .i64);
     const data_ptr = self.builder.emit(.{ .index_gep = .{ .lhs = array_slot, .rhs = zero } }, self.module.types.ptrTo(array_elem));
-    const len_ref = self.builder.constInt(@intCast(variadic_count), .i64);
+    const len_ref = self.builder.constInt(@intCast(variadic_count), len_ty);
     const ptr_gep = self.builder.structGepTyped(slice_slot, 0, self.module.types.ptrTo(array_elem), slice_ty);
     self.builder.store(ptr_gep, data_ptr);
-    const len_gep = self.builder.structGepTyped(slice_slot, 1, .i64, slice_ty);
+    const len_gep = self.builder.structGepTyped(slice_slot, 1, len_ty, slice_ty);
     self.builder.store(len_gep, len_ref);
     const slice_val = self.builder.load(slice_slot, slice_ty);
 
