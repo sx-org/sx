@@ -1556,8 +1556,9 @@ pub const Ops = struct {
                 self.e.mapRef(self.e.valueToLLVMConst(result, instruction.ty, fname));
                 return;
             }
-            std.debug.print(
-                "error: comptime init of '{s}' failed: {s}\n",
+            self.e.reportComptimeFailure(
+                evaluation,
+                "comptime init of '{s}' failed: {s}",
                 .{ fname, comptime_vm.last_bail_reason orelse "<unknown>" },
             );
             self.e.comptime_failed = true;

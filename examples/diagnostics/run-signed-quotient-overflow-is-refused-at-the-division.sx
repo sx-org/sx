@@ -1,0 +1,5 @@
+divide :: (a: i64, b: i64) -> i64 { a / b }
+
+main :: () {
+    quotient :: @run divide(i64.min, -1);
+}

@@ -2364,6 +2364,7 @@ pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, ph
     const fn_mut = self.module.getFunctionMut(func_id);
     fn_mut.comptime_role = .run_wrapper;
     fn_mut.has_implicit_ctx = wants_ctx;
+    fn_mut.source_file = self.current_source_file;
 
     // Create entry block
     const entry_name = self.module.types.internString("entry");
