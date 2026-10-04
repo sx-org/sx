@@ -1746,10 +1746,7 @@ pub const Ops = struct {
                         continue;
                     }
                     var llvm_pty = raw_struct;
-                    if (fp_is_c_abi and c.LLVMGetTypeKind(raw_struct) == c.LLVMArrayTypeKind) {
-                        // C array parameters decay to pointers.
-                        llvm_pty = self.e.cached_ptr;
-                    } else if (fp_is_c_abi) {
+                    if (fp_is_c_abi) {
                         // Mirror declareFunction's C-ABI classification for an
                         // sx-defined abi(.c) callee. is_extern_c_api=false is
                         // the fn-pointer contract (the block-trampoline

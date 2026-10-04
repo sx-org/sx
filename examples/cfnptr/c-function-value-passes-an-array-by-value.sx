@@ -1,0 +1,13 @@
+// A call through a C-convention function value passes a by-value array
+// parameter the way the direct call does.
+@import "modules/std.sx";
+
+F :: ([2]i64) -> i64 abi(.c);
+
+sum :: (values: [2]i64) -> i64 abi(.c) { values[0] + values[1] }
+
+main :: () {
+    values: [2]i64 = .[17, 25];
+    indirect: F = sum;
+    print("{} {}\n", sum(values), indirect(values));
+}
