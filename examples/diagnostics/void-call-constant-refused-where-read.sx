@@ -1,6 +1,6 @@
 // A module constant whose call produces no value is refused at its initializer
-// where it is read; the unread one is never checked, and a void initializer
-// that is not a call binds.
+// where it is read; the unread one is never checked, and a void field read
+// binds, `@field` included.
 @import "modules/std.sx";
 hello :: () { print("hi\n"); }
 S :: struct { v: void; }
@@ -9,4 +9,5 @@ Unread :: hello();
 Statement :: hello();
 Argument :: hello();
 Field :: s.v;
-main :: () { Statement; Field; print("{}\n", Argument); }
+Projection :: @field(s, 0);
+main :: () { Statement; Field; Projection; print("{}\n", Argument); }
