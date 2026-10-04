@@ -887,6 +887,8 @@ fn lowerComptimePlainStructMethod(
 }
 
 pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
+    self.openCall(c_in);
+    defer _ = self.open_calls.pop();
     var c = c_in;
     // A bare reserved-type-name spelling in call position parses as a
     // `.type_expr` (e.g. `i8(4)`), but if a function of that name is in
@@ -923,6 +925,11 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
     // specialized/generic lowering and final dispatch all consume this exact
     // `FnDecl` + source pair rather than re-looking up a collapsed global name.
     var qualified_call_verdict = self.callResolver().classifyQualifiedCall(c);
+    if (c.callee.data == .field_access) {
+        const fa = &c.callee.data.field_access;
+        if (qualified_call_verdict == .value_receiver and receiverIsFirstArgument(self, c, fa))
+            self.open_calls.items[self.open_calls.items.len - 1].receiver = fa.object;
+    }
     var bare_author_verdict: Lowering.BareCallee = switch (qualified_call_verdict) {
         .never_qualified, .value_receiver => self.callResolver().selectedFreeAuthor(c),
         .type_prefix, .func, .callable_value, .non_callable, .missing, .not_visible, .ambiguous => .none,

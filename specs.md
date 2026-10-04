@@ -2246,6 +2246,13 @@ Reassignment kills narrowing.
 A guard proves the *binding* it names, so a declaration shadowing a narrowed
 name starts with no proof of presence.
 
+A proof made inside one argument of a call does not reach the call's other
+arguments, whose evaluation order is unspecified (§Function Call). With
+`x: ?Cell`:
+```sx
+pick(x.value, { if x == null { return -1; } Cell{ value = 1 } });  // error at `x.value`: `x` may be null
+```
+
 #### Struct Field Defaults
 Optional fields in structs default to `null`:
 ```sx
