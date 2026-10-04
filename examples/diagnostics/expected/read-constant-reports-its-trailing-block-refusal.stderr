@@ -1,0 +1,10 @@
+error: 'mk' cannot take a trailing block — its last parameter 'v' is 'i64', which is neither `$F/(…) -> R` nor `@BuildBlock(P)`
+  --> examples/diagnostics/read-constant-reports-its-trailing-block-refusal.sx:6:15
+   |
+ 6 | Read :: mk(2) {};
+   |               ^^
+
+help: declare 'v' as `$F/(…) -> R` to receive the block as a closure, or as `@BuildBlock(P)` to receive it as a build block
+   |
+ 6 | Read :: mk(2) {};
+   |               ^^

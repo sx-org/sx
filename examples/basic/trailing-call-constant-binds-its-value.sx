@@ -1,0 +1,5 @@
+// A module constant initialized by a trailing-block call binds the call's value.
+@import "modules/std.sx";
+apply :: (v: i64, f: $F/(i64) -> i64) -> i64 { f(v) }
+X :: apply(1) { |n| n + 2 };
+main :: () { print("{}\n", X); }

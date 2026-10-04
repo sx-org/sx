@@ -1,0 +1,5 @@
+error: 'X' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/modules/flat-imported-call-constant-is-ambiguous.sx:5:28
+   |
+ 5 | main :: () { print("{}\n", X); }
+   |                            ^
