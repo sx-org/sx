@@ -101,5 +101,6 @@ main :: () {
     // next() is evaluated ONCE — not again in the generic-instance comptime
     // helper.
     box := Box(i64){ value = 20 };
-    print("generic={} calls={}\n", box.add(next(), .one), calls);
+    added := box.add(next(), .one);
+    print("generic={} calls={}\n", added, calls);
 }

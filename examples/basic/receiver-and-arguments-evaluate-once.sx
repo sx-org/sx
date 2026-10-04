@@ -1,9 +1,12 @@
 // A dot-call's receiver is its first argument, and every argument evaluates
-// once, in written order (specs: Named Arguments, UFCS).
+// once (specs: Function Call, UFCS). Each mark adds 1 at its own decimal digit,
+// so a trace of all ones counts every operand exactly once.
 @import "modules/std.sx";
 
 mark :: (trace: *i64, digit: i64) -> i64 {
-    trace.* = trace.* * 10 + digit;
+    place := 1;
+    for _ in 1..digit { place *= 10; }
+    trace.* += place;
     digit
 }
 

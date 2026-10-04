@@ -62,7 +62,8 @@ main :: () -> i32 {
     source := Label{ text = "label", n = 1 };
     // Formation: the member's bytes are copied into an independent slot.
     v: View = source;
-    print("label {} {} {}\n", v.render(), v.bump(10), v.bump(10));
+    bumped := v.bump(10);
+    print("label {} {} {}\n", v.render(), bumped, v.bump(10));
     // The slot was mutated twice; the value it was formed from was not.
     print("source {}\n", source.n);
 

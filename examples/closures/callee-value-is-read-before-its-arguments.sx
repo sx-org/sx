@@ -1,6 +1,6 @@
-// A call reads its callee value before the arguments evaluate (specs: Named
-// Arguments). A `call` taking `self: *T` reads its receiver through that
-// address, after them.
+// A call reads its callee value before the arguments evaluate (specs: Function
+// Call). A `call` taking `self: *T` reads its receiver through that address,
+// after them.
 @import "modules/std.sx";
 
 add :: (x: i64) -> i64 { x + 10 }

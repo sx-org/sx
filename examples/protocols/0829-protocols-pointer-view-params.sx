@@ -46,7 +46,8 @@ main :: () {
 
     // a mutating method through *P writes back into the original
     c := Clock{ n = 0 };
-    print("mutating: {} {}\n", tickit(c), c.n);
+    ticked := tickit(c);
+    print("mutating: {} {}\n", ticked, c.n);
 
     // decl-position view
     pv : *Sizable = w;

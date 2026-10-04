@@ -498,9 +498,9 @@ const CalleeValue = struct {
 };
 
 /// The value a call dispatches through, read before its arguments evaluate
-/// (specs: Named Arguments — evaluation order is written order), or null when
-/// the callee is not a value. Each `lowerCall` arm that calls a value consumes
-/// this capture, so the conditions here are the ones that select that arm.
+/// (specs: Function Call), or null when the callee is not a value. Each
+/// `lowerCall` arm that calls a value consumes this capture, so the conditions
+/// here are the ones that select that arm.
 fn calleeBeforeArgs(
     self: *Lowering,
     c: *const ast.Call,
@@ -1320,8 +1320,8 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             target = info.optional.child;
         }
     }
-    // A dot-call's receiver is its first argument (specs: UFCS), so it
-    // evaluates before the written ones, and so does a callee value.
+    // A dot-call's receiver is its first argument (specs: UFCS); it and a
+    // callee value evaluate before the written ones.
     const first_receiver: ?Ref = switch (c.callee.data) {
         .field_access => |fa| if (qualified_call_verdict == .value_receiver and receiverIsFirstArgument(self, c, &fa))
             self.lowerExpr(methodReceiverNode(fa.object))
