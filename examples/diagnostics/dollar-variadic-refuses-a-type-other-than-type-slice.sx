@@ -1,0 +1,7 @@
+count :: (..$xs: Type) -> i64 {
+    return xs.len;
+}
+
+main :: () -> i64 {
+    return count(1, 2);
+}

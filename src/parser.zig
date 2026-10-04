@@ -2613,8 +2613,8 @@ pub const Parser = struct {
                 break;
             }
             // Leading `..` marks a variadic param at the binding site:
-            // `..$args` (heterogeneous comptime pack), `..$xs/P` (bounded
-            // pack), `..xs: []T` (slice).
+            // `..$args` (heterogeneous comptime pack), `..$ts: []Type` (type
+            // pack), `..$xs/P` (bounded pack), `..xs: []T` (slice).
             var is_variadic = false;
             if (self.tokens.tag(self.tok) == .dot_dot) {
                 is_variadic = true;
@@ -2660,6 +2660,7 @@ pub const Parser = struct {
                 .type_expr => |te| if (te.is_generic) return self.failAt(param_type.span, variadic_not_slice),
                 else => return self.failAt(param_type.span, variadic_not_slice),
             };
+            if (is_variadic and is_ct_param and !isTypeSlice(param_type)) return self.failAt(param_type.span, "a pack's type must be '[]Type'");
             var is_comptime_param = false;
             if (is_ct_param and param_type.data == .type_expr) {
                 const constraint_name = param_type.data.type_expr.name;
@@ -2681,12 +2682,7 @@ pub const Parser = struct {
                 defer self.in_param_default = saved_in_default;
                 default_expr = try self.parseBinary(Prec.none, if (close == .pipe) PipeRole.closer else .bit_or);
             }
-            // `..$xs: Type` and `..$xs: P(T)` bind a pack.
-            const is_pack = is_variadic and is_ct_param and !is_comptime_param and switch (param_type.data) {
-                .type_expr, .parameterized_type_expr => true,
-                else => false,
-            };
-            try params.append(self.allocator, .{ .name = param_name, .name_span = param_name_span, .type_expr = param_type, .is_variadic = is_variadic, .is_comptime = is_comptime_param, .is_pack = is_pack, .default_expr = default_expr, .is_raw = param_is_raw });
+            try params.append(self.allocator, .{ .name = param_name, .name_span = param_name_span, .type_expr = param_type, .is_variadic = is_variadic, .is_comptime = is_comptime_param, .default_expr = default_expr, .is_raw = param_is_raw });
         }
         for (params.items, 0..) |param, i| {
             if (param.is_variadic and i != params.items.len - 1) {
@@ -2704,6 +2700,14 @@ pub const Parser = struct {
             .is_c_variadic = is_c_variadic,
             .tail_span = tail_span,
         };
+    }
+
+    fn isTypeSlice(node: *const Node) bool {
+        if (node.data != .slice_type_expr) return false;
+        const slice = node.data.slice_type_expr;
+        if (slice.sentinel != null or slice.element_type.data != .type_expr) return false;
+        const elem = slice.element_type.data.type_expr;
+        return !elem.is_generic and !elem.is_raw and std.mem.eql(u8, elem.name, "Type");
     }
 
     /// Recursively find all generic type names ($T) in a type expression tree.
@@ -6661,6 +6665,18 @@ test "a pack takes no function-type bound" {
     var parser = try Parser.init(arena.allocator(), "count :: (..$fs/(i64) -> i64) -> i64 { 0 }");
     try std.testing.expectError(error.ParseError, parser.parse());
     try std.testing.expectEqualStrings("a pack takes no function-type bound", parser.err_msg.?);
+}
+
+test "a pack's type is []Type" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var accepted = try Parser.init(arena.allocator(), "count :: (..$ts: []Type) -> i64 { 0 }");
+    const p = (try accepted.parse()).data.root.decls[0].data.fn_decl.params[0];
+    try std.testing.expect(p.is_variadic and !p.is_pack and !p.is_comptime);
+    try std.testing.expect(p.type_expr.data == .slice_type_expr);
+    var refused = try Parser.init(arena.allocator(), "count :: (..$xs: Cell(i64)) -> i64 { 0 }");
+    try std.testing.expectError(error.ParseError, refused.parse());
+    try std.testing.expectEqualStrings("a pack's type must be '[]Type'", refused.err_msg.?);
 }
 
 test "parse slice variadic is NOT a pack (..xs: []T)" {
