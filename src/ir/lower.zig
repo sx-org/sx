@@ -1776,7 +1776,7 @@ pub const Lowering = struct {
             //     doesn't match the callee's stored param shape.
             if (self.module.types.sliceInfoOf(declared_ty) != null) return declared_ty;
             // `..xs: Name` is a slice only when `Name` resolves to one.
-            const names_its_slice = !p.is_comptime and !p.is_pack and switch (p.type_expr.data) {
+            const names_its_slice = !p.is_pack and switch (p.type_expr.data) {
                 .type_expr, .parameterized_type_expr => true,
                 else => false,
             };

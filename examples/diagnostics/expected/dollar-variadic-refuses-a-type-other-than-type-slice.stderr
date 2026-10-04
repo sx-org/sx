@@ -1,0 +1,5 @@
+error: a pack's type must be '[]Type'
+  --> examples/diagnostics/dollar-variadic-refuses-a-type-other-than-type-slice.sx:1:18
+   |
+ 1 | count :: (..$xs: Type) -> i64 {
+   |                  ^^^^
