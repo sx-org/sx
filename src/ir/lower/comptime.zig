@@ -581,7 +581,10 @@ fn staticInterfaceLeaf(self: *Lowering, expr: *const Node, expected_ty: TypeId) 
 /// a comptime struct is not a namespace.
 pub fn evalComptimeValue(self: *Lowering, node: *const Node) ?Lowering.ComptimeValue {
     switch (node.data) {
-        .identifier => |id| return self.comptime_constants.get(id.name),
+        .identifier => |id| {
+            if (self.rangeCursorValue(id.name)) |v| return .{ .int_val = v };
+            return self.comptime_constants.get(id.name);
+        },
         .call => {
             const c = self.fieldCall(node) orelse return null;
             const obj = evalComptimeValue(self, c.args[0]) orelse return null;
@@ -2432,6 +2435,7 @@ fn lowerComptimeResult(self: *Lowering, expr: *const Node, ret_ty: TypeId) Ref {
 /// otherwise the name is a SOURCE-AWARE module const, folded with nested
 /// leaves resolved own-wins.
 pub fn comptimeIntNamed(self: *Lowering, name: []const u8) ?i128 {
+    if (self.rangeCursorValue(name)) |v| return v;
     if (self.comptime_constants.get(name)) |cv| switch (cv) {
         .int_val => |iv| return iv,
         else => {},

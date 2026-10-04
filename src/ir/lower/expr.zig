@@ -3937,6 +3937,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                 }
             }
             // A compile-time constant answers before globals.
+            if (self.rangeCursorValue(id.name)) |v| break :blk self.builder.constInt(v, .i64);
             if (self.comptime_constants.get(id.name)) |cv| {
                 if (comptimeConstRef(self, cv)) |ref| break :blk ref;
                 if (cv == .struct_val) {
