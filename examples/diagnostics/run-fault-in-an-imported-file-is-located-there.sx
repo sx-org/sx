@@ -1,0 +1,3 @@
+quotient :: @import "run-fault-in-an-imported-file-is-located-there/quotient.sx";
+
+main :: () -> i32 { return quotient.Q.(i32); }
