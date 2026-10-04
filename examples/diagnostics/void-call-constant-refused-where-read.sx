@@ -1,0 +1,8 @@
+// A module constant whose call produces no value is refused at its initializer
+// where it is read; the unread one is never checked.
+@import "modules/std.sx";
+hello :: () { print("hi\n"); }
+Unread :: hello();
+Statement :: hello();
+Argument :: hello();
+main :: () { Statement; print("{}\n", Argument); }

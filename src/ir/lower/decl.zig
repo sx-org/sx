@@ -4284,7 +4284,11 @@ pub fn emitModuleConst(self: *Lowering, name: []const u8, ci: ModuleConstInfo, e
             const untyped = ci.declared_type == null and program_index_mod.untypedConst(ci.value, self) != null;
             var demand = self.enterDemand(if (ci.declared_type) |ty| .{ .coerce = ty } else if (untyped) null else .{ .inferred = ci.ty });
             defer demand.restore();
-            return self.lowerExpr(ci.value);
+            const ref = self.lowerExpr(ci.value);
+            if (self.builder.getRefType(ref) != .void or errorCount(self) != errors_before) return ref;
+            if (self.diagnostics) |d|
+                d.addFmt(.err, ci.value.span, "'{s}' cannot bind 'void' — this expression produces no value", .{name});
+            return self.emitPlaceholder(name);
         },
     }
 }
