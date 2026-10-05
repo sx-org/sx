@@ -179,7 +179,13 @@ pub fn enterArgument(self: *Lowering, node: *const Node) ArgumentEntry {
         if (argumentIndex(open, node)) |index|
             self.argument_path.append(self.alloc, .{ .call = open.id, .index = index }) catch unreachable;
     }
-    return .{ .depth = depth, .proofs = if (self.argument_path.items.len > depth) self.narrowSnapshot() else .empty };
+    var proofs = std.ArrayList(Narrowing).empty;
+    if (self.argument_path.items.len > depth) {
+        var it = self.narrowed.iterator();
+        while (it.next()) |e| if (self.proofReaches(e.value_ptr.*))
+            proofs.append(self.alloc, .{ .binding = e.key_ptr.*, .within = e.value_ptr.* }) catch unreachable;
+    }
+    return .{ .depth = depth, .proofs = proofs };
 }
 
 /// A binding proven both where an argument begins and where it ends keeps the
