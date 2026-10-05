@@ -1,0 +1,5 @@
+error: enum literal '.green' has no destination type to resolve against
+  --> examples/diagnostics/run-constant-is-typed-by-its-own-declaration.sx:16:15
+   |
+16 | shade :: @run .green;
+   |               ^^^^^^

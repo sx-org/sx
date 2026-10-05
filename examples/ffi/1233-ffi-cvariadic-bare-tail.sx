@@ -1,7 +1,7 @@
-// A C-variadic signature ends its parameter list in a bare `..`. The tail binds
-// no name and no type, so it is a property of the signature rather than a
+// A C-variadic signature ends its parameter list in `...`. The tail binds no
+// name and no type, so it is a property of the signature rather than a
 // parameter, and the fixed count is the number of entries before it — zero
-// when the list is just `(..)`.
+// when the list is just `(...)`.
 //
 // The tail is legal on an effective-C signature only: a definition carrying
 // `abi(.c)` or `export`, or an `extern` declaration. Each emits the C shape
@@ -29,26 +29,26 @@
     @source "1233-ffi-cvariadic-bare-tail.c";
 };
 
-printf :: (fmt: [*:0]u8, ..) -> i32 extern;
+printf :: (fmt: [*:0]u8, ...) -> i32 extern;
 
-c_sum_ints :: (n: i32, ..) -> i64 extern;
-c_sum_doubles :: (n: i32, ..) -> f64 extern;
-c_total_text :: (n: i32, ..) -> i64 extern;
-c_twice :: (n: i32, ..) -> i64 extern;
+c_sum_ints :: (n: i32, ...) -> i64 extern;
+c_sum_doubles :: (n: i32, ...) -> f64 extern;
+c_total_text :: (n: i32, ...) -> i64 extern;
+c_twice :: (n: i32, ...) -> i64 extern;
 
-tally :: (n: i32, ..) -> i64 abi(.c) {
+tally :: (n: i32, ...) -> i64 abi(.c) {
     return n;
 }
 
 // Zero fixed parameters: every argument is a tail argument, and a call with
 // none at all passes an empty tail.
-constant :: (..) -> i64 abi(.c) {
+constant :: (...) -> i64 abi(.c) {
     return 7;
 }
 
 // The cursor argument is the local's address in every statement position — a
 // direct `@vaEnd` here, a deferred one in `sumDoubles`.
-sumInts :: (n: i32, ..) -> i64 abi(.c) {
+sumInts :: (n: i32, ...) -> i64 abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     total: i64 = 0;
@@ -59,7 +59,7 @@ sumInts :: (n: i32, ..) -> i64 abi(.c) {
     return total;
 }
 
-sumDoubles :: (n: i32, ..) -> f64 abi(.c) {
+sumDoubles :: (n: i32, ...) -> f64 abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     defer @vaEnd(*ap);
@@ -76,7 +76,7 @@ takeText :: (ap: *@VaList) -> i64 {
     return @vaArg([*:0]u8, ap)[0..].len;
 }
 
-totalText :: (n: i32, ..) -> i64 abi(.c) {
+totalText :: (n: i32, ...) -> i64 abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     defer @vaEnd(*ap);
@@ -89,7 +89,7 @@ totalText :: (n: i32, ..) -> i64 abi(.c) {
 
 // `@vaCopy` forks an independent cursor at the original's position, so the two
 // traversals read the same arguments. Both are ended.
-twice :: (n: i32, ..) -> i64 abi(.c) {
+twice :: (n: i32, ...) -> i64 abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     dup: @VaList = ---;

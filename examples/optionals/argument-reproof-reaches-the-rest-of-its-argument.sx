@@ -1,0 +1,13 @@
+// A guard inside a nested call's argument proves `x` for the rest of the
+// enclosing argument, though a sibling argument guards `x` too.
+@import "modules/std.sx";
+
+Cell :: struct { value: i64; }
+two :: (a: i64, b: i64) -> i64 { a + b }
+id :: (a: i64) -> i64 { a }
+
+f :: (x: ?Cell) -> i64 {
+    two({ if x == null { return -1; } 1 }, id({ if x == null { return -1; } 1 }) + x.value)
+}
+
+main :: () { print("{} {}\n", f(Cell{ value = 16 }), f(null)); }

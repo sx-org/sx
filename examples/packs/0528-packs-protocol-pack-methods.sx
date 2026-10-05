@@ -1,6 +1,6 @@
 // Protocol-interface method calls on heterogeneous pack elements.
 //
-// `..xs: Greeter` binds per call shape; each `xs[i]` is the concrete element,
+// `..$xs/Greeter` binds per call shape; each `xs[i]` is the concrete element,
 // and calling the protocol's own method `greet()` on it dispatches to that
 // element's impl. Elements may be DIFFERENT concrete types (Dog, Cat) as long
 // as each conforms to Greeter — this is the protocol-interface access the
@@ -17,7 +17,7 @@ Cat :: struct { lives: i64; }
 impl Greeter for Dog { greet :: (self: *Dog) -> i64 => self.age; }
 impl Greeter for Cat { greet :: (self: *Cat) -> i64 => self.lives * 100; }
 
-pairSum :: (..xs: Greeter) -> i64 {
+pairSum :: (..$xs/Greeter) -> i64 {
     return xs[0].greet() + xs[1].greet();
 }
 

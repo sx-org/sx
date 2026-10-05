@@ -1,0 +1,11 @@
+error: 'Statement' cannot bind 'void' — this expression produces no value
+  --> examples/diagnostics/void-call-constant-refused-where-read.sx:9:14
+   |
+ 9 | Statement :: hello();
+   |              ^^^^^^^
+
+error: 'Argument' cannot bind 'void' — this expression produces no value
+  --> examples/diagnostics/void-call-constant-refused-where-read.sx:10:13
+   |
+10 | Argument :: hello();
+   |             ^^^^^^^

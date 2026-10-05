@@ -1,0 +1,25 @@
+// A type function evaluated at type construction reads a `@run` constant
+// declared after it. The constant's initializer resolves its names where the
+// constant is declared: neither the type function's local `base` nor its
+// `inline for` cursor `step` reaches it.
+@import "modules/std.sx";
+
+base :: 6;
+step :: 1;
+
+pick :: () -> Type {
+    base := 0;
+    inline for step in 0..1 {
+        if width == 7 + base + step { return i64; }
+    }
+    return f64;
+}
+
+Wide :: pick();
+
+width :: @run base + step;
+
+main :: () {
+    v : Wide = 3;
+    print("{} {}\n", v, width);
+}

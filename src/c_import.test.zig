@@ -163,7 +163,7 @@ fn isCursorParam(p: ast.Param) bool {
         std.mem.eql(u8, p.type_expr.data.type_expr.name, "@VaList");
 }
 
-test "processCImport: a variadic prototype imports with the bare `..` tail" {
+test "processCImport: a variadic prototype imports with the `...` tail" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();

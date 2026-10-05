@@ -1,0 +1,65 @@
+// A call reads its callee value before the arguments evaluate (specs: Function
+// Call). A `call` taking `self: *T` reads its receiver through that address,
+// after them.
+@import "modules/std.sx";
+
+add :: (x: i64) -> i64 { x + 10 }
+other :: (x: i64) -> i64 { x + 100 }
+
+pick :: (slot: *((i64) -> i64), trace: *i64) -> (i64) -> i64 {
+    trace.* = trace.* * 10 + 1;
+    slot.*
+}
+
+replace :: (slot: *((i64) -> i64), trace: *i64) -> i64 {
+    trace.* = trace.* * 10 + 2;
+    slot.* = other;
+    1
+}
+
+Scale :: struct { by: i64; }
+impl (i64) -> i64 for Scale {
+    call :: (self: Scale, x: i64) -> i64 { self.by * x }
+}
+
+Acc :: struct { total: i64; }
+impl (i64) -> i64 for Acc {
+    call :: (self: *Acc, x: i64) -> i64 { self.total += x; self.total }
+}
+
+rescale :: (s: *Scale) -> i64 { s.by = 100; 1 }
+reset :: (a: *Acc) -> i64 { a.total = 1000; 1 }
+
+Outcome :: struct { trace: i64; result: i64; after: i64; }
+
+picked :: () -> Outcome {
+    f: (i64) -> i64 = add;
+    trace: i64 = 0;
+    result := pick(*f, *trace)(replace(*f, *trace));
+    Outcome{trace = trace, result = result, after = f(1)}
+}
+
+held :: () -> i64 {
+    f: (i64) -> i64 = add;
+    trace: i64 = 0;
+    f(replace(*f, *trace))
+}
+
+byValue :: () -> i64 {
+    s := Scale{by = 2};
+    s(rescale(*s))
+}
+
+byPointer :: () -> i64 {
+    a := Acc{total = 0};
+    a(reset(*a))
+}
+
+Folded :: @run picked();
+
+main :: () {
+    o := picked();
+    print("picked trace={} result={} after={}\n", o.trace, o.result, o.after);
+    print("folded trace={} result={} after={}\n", Folded.trace, Folded.result, Folded.after);
+    print("held={} byValue={} byPointer={}\n", held(), byValue(), byPointer());
+}

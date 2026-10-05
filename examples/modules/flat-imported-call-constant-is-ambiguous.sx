@@ -1,0 +1,5 @@
+// A call-initialized constant flat-imported beside a same-named constant makes the bare read ambiguous.
+@import "modules/std.sx";
+@import "flat-imported-call-constant-is-ambiguous/a.sx";
+@import "flat-imported-call-constant-is-ambiguous/b.sx";
+main :: () { print("{}\n", X); }

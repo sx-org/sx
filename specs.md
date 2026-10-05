@@ -344,6 +344,7 @@ ordinary comparisons. Native codegen and the comptime interpreter agree on this.
 | `=>`   | expression body of a function declaration |
 | `$`    | generic type parameter introduction   |
 | `---`  | undefined value                      |
+| `...`  | C-variadic tail                      |
 | `()`   | grouping / params                    |
 | `\|…\|` | closure literal parameters           |
 | `_{}`  | closure literal captures             |
@@ -355,7 +356,8 @@ A line break is ordinary space; `;` is what ends a statement.
 
 Two glyph pairs are one token each: `_{`, the closure-literal env — `_ {` with
 a space is an identifier and a brace instead — and `?!`, the postfix
-force-unwrap, which `? !` does not spell.
+force-unwrap, which `? !` does not spell. Three dots are one token, `...`, so a
+spread of a dot-led literal takes a space: `.. .{ a = 1 }`.
 
 **Position — `-` and `*` are infix wherever a left operand is complete.** Both
 glyphs also have a prefix reading (negation, address-of), and position decides
@@ -1471,7 +1473,7 @@ thread when the ambient one does not.
   `xs[i].method()` dispatches dynamically. The array is call-scoped; the
   handles do not invent referents — each element is already an lvalue, a
   `*T`, or a handle.
-- `..xs: I` and `..xs: C` (comptime heterogeneous pack): each element
+- `..$xs/I` and `..$xs/C` (comptime heterogeneous pack): each element
   keeps its concrete type and calls monomorphize. A pack head may be
   either declaration. An element already typed as the head interface
   copies (identity); it does not require `impl I for I`.
@@ -2244,6 +2246,13 @@ Reassignment kills narrowing.
 A guard proves the *binding* it names, so a declaration shadowing a narrowed
 name starts with no proof of presence.
 
+A proof made inside one argument of a call does not reach the call's other
+arguments, whose evaluation order is unspecified (§Function Call). With
+`x: ?Cell`:
+```sx
+pick(x.value, { if x == null { return -1; } Cell{ value = 1 } });  // error at `x.value`: `x` may be null
+```
+
 #### Struct Field Defaults
 Optional fields in structs default to `null`:
 ```sx
@@ -2610,7 +2619,7 @@ pathJoin :: (..parts: []string) -> string { ... }
   not invent referents — and a constraint element type is refused as a
   storable position) and is packed into a runtime `[N]I`.
   `xs[runtimeI].method()` then dispatches through the handle — this is the
-  **runtime** counterpart to the comptime heterogeneous pack `..xs: I`. A
+  **runtime** counterpart to the comptime heterogeneous pack `..$xs/I`. A
   `..` spread of an existing slice into `[]I` coerces per element the same
   way.
 - A `..` spread at the call site unpacks an existing slice/array into the variadic
@@ -2620,23 +2629,23 @@ pathJoin :: (..parts: []string) -> string { ... }
 
 ### The C-Variadic Tail
 
-A parameter list may end in a bare `..`, the C `...`:
+A parameter list may end in `...`, C's variadic tail:
 
 ```sx
-printf :: (fmt: [*:0]u8, ..) -> i32 extern;
-tally  :: (n: i32, ..) -> i64 abi(.c) { ... }
+printf :: (fmt: [*:0]u8, ...) -> i32 extern;
+tally  :: (n: i32, ...) -> i64 abi(.c) { ... }
 ```
 
 The tail binds no name and no type, so it is a property of the signature rather
 than a parameter, and the **fixed count** is the number of entries before it —
-zero when the list is just `(..)`. It is legal on an **effective-C signature**
+zero when the list is just `(...)`. It is legal on an **effective-C signature**
 only: a definition carrying `abi(.c)` or `export`, an `extern` declaration, or an
 `abi(.c)` function type. Each states the C shape with no implicit sx context, so
 the LLVM type is exactly what a C compiler builds for the same prototype.
 `abi(.naked)` and a `Closure` literal carry no such shape and refuse the tail.
 
 A C prototype imported by `@import c { @include … }` keeps its tail: a
-declaration ending in `...` synthesizes an `extern` ending in `..`, over the
+declaration ending in `...` synthesizes an `extern` ending in `...`, over the
 fixed parameters C wrote — none of them where C23 states no named parameter
 before the tail.
 
@@ -2669,8 +2678,8 @@ A function TYPE takes the same tail, and `abi(.c)` is the only spelling that
 gives it its C signature — a type carries no linkage slot:
 
 ```sx
-Callback :: (fixed: i32, ..) -> i64 abi(.c);
-Zero     :: (..) -> i64 abi(.c);
+Callback :: (fixed: i32, ...) -> i64 abi(.c);
+Zero     :: (...) -> i64 abi(.c);
 ```
 
 A signature with a body is a definition and a bodyless one is a function-type
@@ -2678,8 +2687,8 @@ alias. `abi(...)` states a convention rather than a body, so it appears on
 both.
 
 The tail joins the type's identity. `(fixed: i32) -> i64 abi(.c)` and
-`(fixed: i32, ..) -> i64 abi(.c)` are different types, and so are
-`() -> i64 abi(.c)` and `(..) -> i64 abi(.c)`; a function binds only to the one
+`(fixed: i32, ...) -> i64 abi(.c)` are different types, and so are
+`() -> i64 abi(.c)` and `(...) -> i64 abi(.c)`; a function binds only to the one
 that states its own tail. A call through such a value states the fixed arguments
 and then as many tail arguments as it likes, each crossing under the promotions
 and the admissibility rule above. Every other function type is exact-arity.
@@ -2700,7 +2709,7 @@ operations that walk it are compiler-maintained contracts declared by
 ```
 
 ```sx
-sum :: (n: i32, ..) -> i64 abi(.c) {
+sum :: (n: i32, ...) -> i64 abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     defer @vaEnd(*ap);
@@ -2711,7 +2720,7 @@ sum :: (n: i32, ..) -> i64 abi(.c) {
 ```
 
 `@vaStart` opens a cursor over the arguments past the fixed count; it is legal
-only inside a definition whose parameter list ends in `..`. `@vaArg` reads the
+only inside a definition whose parameter list ends in `...`. `@vaArg` reads the
 next argument and advances, `@vaCopy` forks a second cursor at the first's
 position, and `@vaEnd` closes one. Every cursor a `@vaStart` or a `@vaCopy`
 opens is closed exactly once.
@@ -2745,7 +2754,7 @@ its own signature is the callee's storage and carries nothing.
 
 C's own tail readers take the list as a parameter — `vprintf`, `vsnprintf`,
 `sqlite3_vmprintf`. That parameter is written **by value** as `ap: @VaList`, and
-only in an effective-C signature. The rule is independent of a bare `..` tail —
+only in an effective-C signature. The rule is independent of a `...` tail —
 a signature that takes a list needs none of its own:
 
 ```sx
@@ -2772,7 +2781,7 @@ from an `ap: @VaList` local or parameter, `f(fmt, ap.*)` from an internal
 value copy:
 
 ```sx
-relay :: (fmt: [*:0]u8, ..) -> i32 abi(.c) {
+relay :: (fmt: [*:0]u8, ...) -> i32 abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     defer @vaEnd(*ap);
@@ -2803,12 +2812,12 @@ The full family of variadic/pack forms and how they differ:
 | `..xs: []T` | one uniform `T` | **runtime** (slice) | runtime or comptime | `T` | runtime |
 | `..xs: []any` | mixed, **boxed** to `any` | **runtime** (slice) | runtime or comptime | `any` (match/unwrap to use) | runtime |
 | `..xs: []I` *(I an interface)* | mixed, **erased** to the `I` handle | **runtime** (slice) | runtime or comptime | `I` (call interface methods) | runtime |
-| `..xs: P` *(pack)* | per-position **concrete**, each conforms to `P` — a constraint or an interface | **comptime** (no runtime value) | comptime only (literal / `inline for` cursor) | the concrete element, **viewed through `P`** | comptime int |
+| `..$xs/P` *(pack)* | per-position **concrete**, each conforms to `P` — a constraint or an interface | **comptime** (no runtime value) | comptime only (literal / `inline for` cursor) | the concrete element, **viewed through `P`** | comptime int |
 | `..$args` / `..$xs: []Type` | per-position comptime **types** | **comptime** | comptime only | element value/type (reflection) | comptime int |
-| `..` *(the C tail)* | none — the C ABI's variadic slots | **runtime** (the callee's frame) | no index | `@vaArg(T, *ap)` reads the next | no length |
+| `...` *(the C tail)* | none — the C ABI's variadic slots | **runtime** (the callee's frame) | no index | `@vaArg(T, *ap)` reads the next | no length |
 
 Key axis — **concrete vs erased, comptime vs runtime**:
-- `..xs: P` (pack) keeps each element's *concrete* type but is **comptime-only**:
+- `..$xs/P` (pack) keeps each element's *concrete* type but is **comptime-only**:
   `xs[i]` needs a compile-time index (a literal or an `inline for` cursor); a
   runtime index is an error (a pack has no runtime representation). Use it when
   you need per-position types (monomorphization, `xs.T` / `xs.value` projection).
@@ -2817,8 +2826,8 @@ Key axis — **concrete vs erased, comptime vs runtime**:
   you need to iterate the args at runtime and only the interface matters. It is
   the runtime counterpart to the pack.
 
-The heterogeneous pack (`..xs: P`) is what powers `map :: (mapper: ...,
-..sources: ValueListenable) -> ...`: it accepts any number of trailing args,
+The heterogeneous pack (`..$xs/P`) is what powers `map :: (mapper: …,
+..$sources/ValueListenable) -> …`: it accepts any number of trailing args,
 each some `ValueListenable(T)` for a possibly-different `T`.
 
 A pack is **not a runtime value** — it lowers to N typed positional parameters
@@ -2895,7 +2904,7 @@ suggestion:
 
 - storing/binding it (`x := xs;`, `self.f = xs;`) → materialize it (`.{..xs}`);
 - passing it to a runtime call (`f(xs)`) → declare the parameter as a *slice*
-  variadic `..xs: []I` (a runtime slice) instead of a pack `..xs: P`;
+  variadic `..xs: []I` (a runtime slice) instead of a pack `..$xs/P`;
 - returning it (`return xs;`) → return a materialized `.{..xs}` (and make the
   return a multi-return of those slots, or a `struct { ..P(Ts) }` field);
 - iterating it (`for x in xs`, `xs[runtimeI]`) → `inline for x in xs` (or
@@ -2931,7 +2940,7 @@ Combined :: struct($R: Type, ..$Ts: []Type) {
   }
 }
 
-map :: (mapper: Closure(..sources.T) -> $R, ..sources: ValueListenable)
+map :: (mapper: Closure(..sources.T) -> $R, ..$sources/ValueListenable)
        -> ValueListenable($R) {
   c := mem.create(context.allocator, Combined($R, ..sources.T));
   c.ownAllocator = context.allocator;
@@ -4753,10 +4762,9 @@ match lowers to nothing (the runtime form's skip-to-merge, statically). A
 `@error(…)` arm fires only when SELECTED — the un-selected case is
 the target-match discipline. The static classifier mirrors the runtime tag
 switch arm for arm, and `case interface:` claims the interface types.
-A constraint matches no arm of either classifier. Inline branches lower in
-statement position (like `inline if @host.os`), so value-producing arms use
-explicit `return`. A NON-inline type match keeps its runtime tag-switch
-semantics.
+A constraint matches no arm of either classifier. The selected arm lowers in
+statement position, so value-producing arms use explicit `return`. A
+NON-inline type match keeps its runtime tag-switch semantics.
 
 ### While Loop
 ```sx
@@ -5189,6 +5197,8 @@ callee(args)
 compute(6)
 print("hello")
 ```
+A call evaluates its callee before its arguments, and its arguments in an
+unspecified order.
 
 ### Named Arguments
 ```sx
@@ -5215,10 +5225,6 @@ scaffold(chatListClosure, fab = fabButton);           // positional, then named
   name; named arguments may appear in any order among themselves. Each
   parameter binds **at most once** — naming a parameter a positional argument
   already filled is the duplicate-binding error.
-- **Evaluation order is written order**: arguments evaluate left-to-right
-  exactly as written; mapping to parameter positions happens afterwards.
-  Side effects observe the call site's textual order, never the declaration
-  order.
 - **Defaults become reachable anywhere**: a named argument can skip any
   defaulted parameter, including ones in the middle of the list. Purely
   positional calls keep the existing rule — only a *trailing* run of
@@ -5892,6 +5898,12 @@ compiles for every target). The condition folds for comparisons, `and` / `or`,
 (`ENABLED :: false`), and a field read of a comptime struct; an unfoldable
 condition falls back to a runtime `if`, where both branches are checked as
 usual.
+
+In value position a folded `inline if` produces its taken arm's value:
+
+```sx
+w := { inline if @host.pointerSize == 8 { 64 } else { 32 } };   // 64 on a 64-bit target
+```
 
 ---
 
@@ -6612,9 +6624,9 @@ v3      := try foo() ?? try bar();      // chain: foo fails → try bar
 return try transform(try parse(s));     // nests in any value position
 ```
 
-Evaluation is left-to-right and short-circuits on the first failure, so no
-partial aggregate is ever built. `try` never binds the error — that is
-`catch`'s job.
+Evaluation is left-to-right (a call's arguments aside, §Function Call) and
+short-circuits on the first failure, so no partial aggregate is ever built.
+`try` never binds the error — that is `catch`'s job.
 
 ### `try { block }`
 
@@ -7008,7 +7020,7 @@ union_members   = (union_member (';' union_member)* ';'? )?
 union_member    = IDENT ':' type | 'struct' '{' struct_members '}'
 params          = param (',' param)* (',' c_tail)? ','?
                 | c_tail ','?
-c_tail          = '..'              // the C-variadic tail; binds no name and no
+c_tail          = '...'             // the C-variadic tail; binds no name and no
                                     // type, is the last entry, and needs an
                                     // effective-C signature (`abi(.c)`,
                                     // `export`, or `extern`)

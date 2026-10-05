@@ -1085,6 +1085,22 @@ pub const LLVMEmitter = struct {
         std.debug.print("help: handle it at the `@run` site — `@run <expr> catch |e| {{ ... }}` or `@run <expr> ?? <default>`\n", .{});
     }
 
+    /// Report a bailed evaluation: located at its arithmetic fault when it
+    /// has one, a bare line otherwise.
+    pub fn reportComptimeFailure(self: *LLVMEmitter, evaluation: *const comptime_vm.Evaluation, comptime fmt: []const u8, args: anytype) void {
+        const fault = evaluation.vm.arithmetic_fault orelse {
+            std.debug.print("error: " ++ fmt ++ "\n", args);
+            return;
+        };
+        const file = fault.source_file orelse self.main_file;
+        var diagnostics = errors.DiagnosticList.init(self.alloc, self.sourceForFile(file), file);
+        defer diagnostics.deinit();
+        const message = std.fmt.allocPrint(self.alloc, fmt, args) catch unreachable;
+        defer self.alloc.free(message);
+        diagnostics.add(.err, message, .{ .start = fault.span.start, .end = fault.span.end });
+        diagnostics.renderStderr();
+    }
+
     /// Run comptime side-effect functions (e.g., `@run main();` at top level).
     /// These are functions marked `is_comptime = true` with void return that
     /// aren't associated with any global. They produce compile-time output.
@@ -1106,7 +1122,7 @@ pub const LLVMEmitter = struct {
             const evaluation = comptime_vm.tryEval(self.alloc, self.ir_mod, func_id, &self.build_config, self.import_sources, null);
             defer evaluation.destroy();
             const result = evaluation.completed() orelse {
-                std.debug.print("error: comptime `@run` ({s}) failed: {s}\n", .{ fname, comptime_vm.last_bail_reason orelse "<unknown>" });
+                self.reportComptimeFailure(evaluation, "comptime `@run` ({s}) failed: {s}", .{ fname, comptime_vm.last_bail_reason orelse "<unknown>" });
                 self.comptime_failed = true;
                 continue;
             };
@@ -1227,7 +1243,7 @@ pub const LLVMEmitter = struct {
         defer evaluation.destroy();
         const gname = self.ir_mod.types.getString(global_name);
         const result = evaluation.completed() orelse {
-            std.debug.print("error: comptime init of '{s}' failed: {s}\n", .{ gname, comptime_vm.last_bail_reason orelse "<unknown>" });
+            self.reportComptimeFailure(evaluation, "comptime init of '{s}' failed: {s}", .{ gname, comptime_vm.last_bail_reason orelse "<unknown>" });
             self.comptime_failed = true;
             return null;
         };
@@ -1848,7 +1864,7 @@ pub const LLVMEmitter = struct {
                     },
                     .switch_br => |sw| {
                         for (sw.cases) |case| self.markReachable(case.target, seen, &stack);
-                        for (sw.integer_cases) |case| self.markReachable(case.target, seen, &stack);
+                        for (sw.category_cases) |case| self.markReachable(case.target, seen, &stack);
                         self.markReachable(sw.default, seen, &stack);
                     },
                     else => {},

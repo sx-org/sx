@@ -28,7 +28,9 @@ reach :: (c: *Cell) -> i64 => c.value();
 
 main :: () -> i32 {
     c: Cell = Number{ n = 6 };
-    print("value {} scaled {} again {}\n", c.value(), c.scale(7), c.value());
+    before := c.value();
+    scaled := c.scale(7);
+    print("value {} scaled {} again {}\n", before, scaled, c.value());
     print("through a pointer {}\n", reach(*c));
     // The slot is one tag plus the member: 8 + 8.
     print("layout {} member {}\n", @sizeOf(Cell), @sizeOf(Number));

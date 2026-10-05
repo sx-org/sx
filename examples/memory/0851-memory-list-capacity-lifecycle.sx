@@ -20,7 +20,8 @@ main :: () {
     taken := xs.remove(1);
     print("removed {}: {}\n", taken, xs.items);
 
-    print("popped {} then {}\n", xs.pop(), xs.pop());
+    last := xs.pop();
+    print("popped {} then {}\n", last, xs.pop());
 
     xs.clear();
     print("cleared: len={} cap={} pop={}\n", xs.len, xs.cap, xs.pop());

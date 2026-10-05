@@ -17,7 +17,8 @@ const lower_error = @import("error.zig");
 const Lowering = lower.Lowering;
 const Scope = lower.Scope;
 const BindingId = lower.BindingId;
-const ComptimeValue = Lowering.ComptimeValue;
+const CallArgument = lower.CallArgument;
+const Narrowing = lower.Narrowing;
 const isTypeCategoryMatch = Lowering.isTypeCategoryMatch;
 
 // ── Flow-sensitive narrowing ───────────────────────────────────
@@ -86,44 +87,55 @@ pub fn collectPresentIfFalse(self: *Lowering, cond: *const Node, out: *std.Array
 
 /// Snapshot the currently-narrowed bindings so a region (block / branch) can
 /// restore them on exit. Returns a list the caller must `deinit`.
-pub fn narrowSnapshot(self: *Lowering) std.ArrayList(BindingId) {
-    var list = std.ArrayList(BindingId).empty;
-    var it = self.narrowed.keyIterator();
-    while (it.next()) |k| list.append(self.alloc, k.*) catch {};
+pub fn narrowSnapshot(self: *Lowering) std.ArrayList(Narrowing) {
+    var list = std.ArrayList(Narrowing).empty;
+    var it = self.narrowed.iterator();
+    while (it.next()) |e| list.append(self.alloc, .{ .binding = e.key_ptr.*, .within = e.value_ptr.* }) catch {};
     return list;
 }
 
-/// Replace the narrowed set with exactly `bindings`.
-pub fn narrowSet(self: *Lowering, bindings: []const BindingId) void {
+/// Replace the narrowed set with exactly `facts`.
+pub fn narrowSet(self: *Lowering, facts: []const Narrowing) void {
     self.narrowed.clearRetainingCapacity();
-    for (bindings) |b| self.narrowed.put(b, {}) catch {};
+    for (facts) |f| self.narrowed.put(f.binding, f.within) catch {};
 }
 
-fn narrowsBinding(bindings: []const BindingId, binding: BindingId) bool {
-    for (bindings) |b| if (b == binding) return true;
-    return false;
+fn proofOf(facts: []const Narrowing, binding: BindingId) ?[]const CallArgument {
+    for (facts) |f| if (f.binding == binding) return f.within;
+    return null;
 }
 
 /// Leave a lexical region: the narrowing it proved goes out of scope, while a
 /// reassignment inside it stays killed — the set becomes `saved` minus
-/// everything no longer narrowed. Consumes `saved`.
-pub fn narrowRestore(self: *Lowering, saved: *std.ArrayList(BindingId)) void {
+/// everything no longer narrowed, each with the proof standing now. Consumes
+/// `saved`.
+pub fn narrowRestore(self: *Lowering, saved: *std.ArrayList(Narrowing)) void {
     var i: usize = 0;
     while (i < saved.items.len) {
-        if (self.narrowed.contains(saved.items[i])) i += 1 else _ = saved.swapRemove(i);
+        if (self.narrowed.get(saved.items[i].binding)) |within| {
+            saved.items[i].within = within;
+            i += 1;
+        } else _ = saved.swapRemove(i);
     }
     self.narrowSet(saved.items);
     saved.deinit(self.alloc);
 }
 
 /// Fold one edge arriving at a merge into the facts that hold there: the first
-/// edge seeds them, every later edge intersects. Consumes `edge`.
-fn joinNarrowEdge(self: *Lowering, merged: *?std.ArrayList(BindingId), edge: std.ArrayList(BindingId)) void {
+/// edge seeds them, every later edge intersects, and a fact reaches only where
+/// every edge's proof of it reaches. Consumes `edge`.
+fn joinNarrowEdge(self: *Lowering, merged: *?std.ArrayList(Narrowing), edge: std.ArrayList(Narrowing)) void {
     var incoming = edge;
     if (merged.*) |*m| {
         var i: usize = 0;
         while (i < m.items.len) {
-            if (narrowsBinding(incoming.items, m.items[i])) i += 1 else _ = m.swapRemove(i);
+            const fact = &m.items[i];
+            const other = proofOf(incoming.items, fact.binding) orelse {
+                _ = m.swapRemove(i);
+                continue;
+            };
+            if (other.ptr != fact.within.ptr) fact.within = std.mem.concat(self.alloc, CallArgument, &.{ fact.within, other }) catch unreachable;
+            i += 1;
         }
         incoming.deinit(self.alloc);
     } else {
@@ -132,9 +144,70 @@ fn joinNarrowEdge(self: *Lowering, merged: *?std.ArrayList(BindingId), edge: std
 }
 
 /// Mark every binding in `bindings` as narrowed (proven present) in the
-/// current set.
+/// current set. A proof that already reaches here stands.
 pub fn applyNarrowing(self: *Lowering, bindings: []const BindingId) void {
-    for (bindings) |b| self.narrowed.put(b, {}) catch {};
+    for (bindings) |b| {
+        const entry = self.narrowed.getOrPut(b) catch unreachable;
+        if (entry.found_existing and self.proofReaches(entry.value_ptr.*)) continue;
+        entry.value_ptr.* = self.alloc.dupe(CallArgument, self.argument_path.items) catch unreachable;
+    }
+}
+
+/// Whether a proof made within the arguments `within` holds where lowering
+/// stands: never in another argument of one of those calls.
+pub fn proofReaches(self: *Lowering, within: []const CallArgument) bool {
+    for (within) |proof| for (self.argument_path.items) |here| {
+        if (here.call == proof.call and here.index != proof.index) return false;
+    };
+    return true;
+}
+
+/// Open a call for the lowering of its arguments; the caller pops it when the
+/// call is lowered.
+pub fn openCall(self: *Lowering, call: *const ast.Call) void {
+    self.open_calls.append(self.alloc, .{ .id = self.next_call, .call = call }) catch unreachable;
+    self.next_call += 1;
+}
+
+pub const ArgumentEntry = struct { depth: usize, proofs: std.ArrayList(Narrowing) };
+
+/// Stand in `node` as an argument of each open call that passes it, until
+/// `leaveArgument`.
+pub fn enterArgument(self: *Lowering, node: *const Node) ArgumentEntry {
+    const depth = self.argument_path.items.len;
+    for (self.open_calls.items) |open| {
+        if (argumentIndex(open, node)) |index|
+            self.argument_path.append(self.alloc, .{ .call = open.id, .index = index }) catch unreachable;
+    }
+    var proofs = std.ArrayList(Narrowing).empty;
+    if (self.argument_path.items.len > depth) {
+        var it = self.narrowed.iterator();
+        while (it.next()) |e| if (self.proofReaches(e.value_ptr.*))
+            proofs.append(self.alloc, .{ .binding = e.key_ptr.*, .within = e.value_ptr.* }) catch unreachable;
+    }
+    return .{ .depth = depth, .proofs = proofs };
+}
+
+/// A binding proven both where an argument begins and where it ends keeps the
+/// proof made before it.
+pub fn leaveArgument(self: *Lowering, entry: ArgumentEntry) void {
+    var proofs = entry.proofs;
+    for (proofs.items) |proof| {
+        if (self.narrowed.getPtr(proof.binding)) |within| within.* = proof.within;
+    }
+    proofs.deinit(self.alloc);
+    self.argument_path.shrinkRetainingCapacity(entry.depth);
+}
+
+/// Where `node` stands among the call's arguments; the receiver follows the
+/// written ones.
+fn argumentIndex(open: lower.OpenCall, node: *const Node) ?u32 {
+    for (open.call.args, 0..) |arg, i| {
+        if (arg == node or (arg.data == .named_arg and arg.data.named_arg.value == node)) return @intCast(i);
+    }
+    const receiver = open.receiver orelse return null;
+    if (node == receiver or (receiver.data == .deref_expr and node == receiver.data.deref_expr.operand)) return @intCast(open.call.args.len);
+    return null;
 }
 
 /// Peel trivial single-block wrappers: a `match`-arm body is a block whose sole
@@ -281,10 +354,14 @@ fn lowerCondition(self: *Lowering, node: *const Node, has_binding: bool) Lowered
 
     const value = self.lowerExpr(node);
     const ty = self.inferExprType(node);
-    const is_optional = has_binding or (!ty.isBuiltin() and self.module.types.get(ty) == .optional);
+    const is_optional = !ty.isBuiltin() and self.module.types.get(ty) == .optional;
     const test_bit = if (is_optional)
         self.builder.emit(.{ .optional_has_value = .{ .operand = value } }, .bool)
-    else if (self.checkConditionType(ty, node.span))
+    else if (has_binding) blk: {
+        if (ty != .unresolved) if (self.diagnostics) |d|
+            d.addFmt(.err, node.span, "operand of an optional binding must be an optional, but has type '{s}'", .{self.formatTypeName(ty)});
+        break :blk self.builder.constBool(false);
+    } else if (self.checkConditionType(ty, node.span))
         value
     else
         self.builder.constBool(false);
@@ -369,12 +446,9 @@ pub fn lowerIfExpr(self: *Lowering, node: *const Node, demand: lower_stmt.TailDe
     // inline if: evaluate condition at compile time, only lower taken branch
     if (ie.is_comptime) {
         if (self.evalComptimeCondition(ie.condition)) |is_true| {
-            if (is_true) {
-                return lowerSelectedBranch(self, ie.then_branch, demand);
-            } else if (ie.else_branch) |eb| {
-                return lowerSelectedBranch(self, eb, demand);
-            }
-            return self.builder.constInt(0, .void);
+            const taken = if (is_true) ie.then_branch else ie.else_branch orelse return self.builder.constInt(0, .void);
+            if (self.force_block_value) return self.lowerReachedOperand(node, taken);
+            return lowerSelectedBranch(self, taken, demand);
         }
         // Condition couldn't be evaluated — fall through to runtime
     }
@@ -546,7 +620,7 @@ pub fn lowerIfExpr(self: *Lowering, node: *const Node, demand: lower_stmt.TailDe
     // is what lets `if x == null { return; }` prove `x` present afterwards.
     var entry_snap = self.narrowSnapshot();
     defer entry_snap.deinit(self.alloc);
-    var merged: ?std.ArrayList(BindingId) = null;
+    var merged: ?std.ArrayList(Narrowing) = null;
     self.applyNarrowing(present_true.items);
     if (is_value) {
         var v = if (result_type == .unresolved) self.lowerReachedOperand(node, ie.then_branch) else self.lowerExpr(ie.then_branch);
@@ -1203,7 +1277,10 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
         break;
     }
 
-    const CursorSave = struct { name: []const u8, had_prev: bool, prev: ComptimeValue };
+    const cursors = self.alloc.alloc(lower.RangeCursor, fe.captures.len) catch return self.builder.constInt(0, .void);
+    defer self.alloc.free(cursors);
+    const outer_cursor = self.range_cursor;
+    defer self.range_cursor = outer_cursor;
 
     var i: i64 = 0;
     while (i < count) : (i += 1) {
@@ -1211,25 +1288,17 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
         const old_scope = self.scope;
         self.scope = &body_scope;
 
-        var saves = std.ArrayList(CursorSave).empty;
-        defer saves.deinit(self.alloc);
-
         for (fe.captures, 0..) |cap, ci| {
             if (cap.name.len == 0) continue;
             switch (classes.items[ci]) {
                 .range => |start| {
                     // Bind the cursor both as a runtime value (constInt, for
-                    // uses like `print(i)`) and as a comptime constant (for
+                    // uses like `print(i)`) and as a range cursor (for
                     // `xs[i]` substitution).
                     const v = start + i;
                     body_scope.put(cap.name, .{ .ref = self.builder.constInt(v, .i64), .ty = .i64, .is_alloca = false, .origin = .range_index });
-                    var save = CursorSave{ .name = cap.name, .had_prev = false, .prev = undefined };
-                    if (self.comptime_constants.get(cap.name)) |p| {
-                        save.had_prev = true;
-                        save.prev = p;
-                    }
-                    saves.append(self.alloc, save) catch {};
-                    self.comptime_constants.put(cap.name, .{ .int_val = v }) catch {};
+                    cursors[ci] = .{ .name = cap.name, .value = v, .parent = self.range_cursor };
+                    self.range_cursor = &cursors[ci];
                 },
                 .pack => |pack_name| {
                     const elem_node = packElementNode(self, pack_name, fe.iterables[ci].expr.span, i) orelse break;
@@ -1249,14 +1318,7 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
         }
 
         self.lowerBlock(fe.body);
-
-        for (saves.items) |save| {
-            if (save.had_prev) {
-                self.comptime_constants.put(save.name, save.prev) catch {};
-            } else {
-                _ = self.comptime_constants.remove(save.name);
-            }
-        }
+        self.range_cursor = outer_cursor;
 
         self.scope = old_scope;
         body_scope.deinit();
@@ -1291,6 +1353,13 @@ fn categoryCapture(self: *Lowering, pat: *const Node, subject: Ref, tags: []cons
         return .{ .ref = self.builder.emit(.{ .unbox_any = .{ .operand = subject } }, void_ptr_ty), .ty = void_ptr_ty };
     }
     return .{ .ref = subject, .ty = .any };
+}
+
+/// Route an arm's category to `target` for the types its lowering-time tag set
+/// misses: those registered after this match lowers.
+fn appendCategoryCase(self: *Lowering, category_cases: *std.ArrayList(inst_mod.SwitchBranch.CategoryCase), name: []const u8, target: BlockId) void {
+    const category = std.meta.stringToEnum(types.TypeCategory, name) orelse return;
+    category_cases.append(self.alloc, .{ .category = category, .target = target }) catch unreachable;
 }
 
 /// Append the switch case dispatching `value` to `target`, unless an earlier
@@ -1569,25 +1638,13 @@ pub fn lowerMatch(self: *Lowering, node: *const Node, demand: lower_stmt.TailDem
         arm_blocks.append(self.alloc, self.freshBlock("match.arm")) catch unreachable;
     }
 
-    var integer_cases = std.ArrayList(inst_mod.SwitchBranch.IntegerCase).empty;
-    defer integer_cases.deinit(self.alloc);
+    var category_cases = std.ArrayList(inst_mod.SwitchBranch.CategoryCase).empty;
+    defer category_cases.deinit(self.alloc);
     if (is_any_switch or is_type_match) {
         for (me.arms) |arm| {
             if (arm.pattern) |pat| {
                 if (pat.data == .call) _ = self.resolveTypeArg(pat);
             }
-        }
-        for (me.arms, 0..) |arm, i| {
-            const pat = arm.pattern orelse continue;
-            const name: []const u8 = switch (pat.data) {
-                .identifier => |id| id.name,
-                .type_expr => |te| te.name,
-                else => "",
-            };
-            if (std.mem.eql(u8, name, "signed") or std.mem.eql(u8, name, "int"))
-                integer_cases.append(self.alloc, .{ .signed = true, .target = arm_blocks.items[i] }) catch unreachable;
-            if (std.mem.eql(u8, name, "unsigned") or std.mem.eql(u8, name, "int"))
-                integer_cases.append(self.alloc, .{ .signed = false, .target = arm_blocks.items[i] }) catch unreachable;
         }
     }
 
@@ -1656,6 +1713,7 @@ pub fn lowerMatch(self: *Lowering, node: *const Node, demand: lower_stmt.TailDem
             }
             const raw_tags: []const u64 = blk_rt: {
                 if (cat_name.len > 0 and Lowering.isRuntimeCategoryName(cat_name)) {
+                    appendCategoryCase(self, &category_cases, cat_name, arm_blocks.items[i]);
                     break :blk_rt self.resolveTypeCategoryTags(cat_name);
                 }
                 switch (pat.data) {
@@ -1758,8 +1816,10 @@ pub fn lowerMatch(self: *Lowering, node: *const Node, demand: lower_stmt.TailDem
                         // types registered), which must not fall through
                         // to the type resolver's unknown-name error.
                         .proceed => {
-                            if (Lowering.isRuntimeCategoryName(name))
+                            if (Lowering.isRuntimeCategoryName(name)) {
+                                appendCategoryCase(self, &category_cases, name, arm_blocks.items[i]);
                                 break :blk_tv self.resolveTypeCategoryTags(name);
+                            }
                         },
                     }
                 }
@@ -1938,14 +1998,14 @@ pub fn lowerMatch(self: *Lowering, node: *const Node, demand: lower_stmt.TailDem
         };
         break :blk self.builder.enumTag(subject, tag_ty);
     };
-    self.builder.integerSwitchBr(tag, cases.items, integer_cases.items, default_bb.?);
+    self.builder.categorySwitchBr(tag, cases.items, category_cases.items, default_bb.?);
 
     // Arms are alternatives, not a sequence: each starts from the facts holding
     // at the `match`, and only the arms that reach `merge_bb` say what holds
     // there.
     var entry_snap = self.narrowSnapshot();
     defer entry_snap.deinit(self.alloc);
-    var merged: ?std.ArrayList(BindingId) = null;
+    var merged: ?std.ArrayList(Narrowing) = null;
     for (me.arms, 0..) |arm, i| {
         self.builder.switchToBlock(arm_blocks.items[i]);
         self.narrowSet(entry_snap.items);

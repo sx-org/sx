@@ -16,8 +16,8 @@ impl Box(i64) for Dbl { get :: (self: *Dbl) -> i64 => self.n * 2; }
 add2 :: (a: i64, b: i64) -> i64 { return a + b; }
 add3 :: (a: i64, b: i64, c: i64) -> i64 { return a + b + c; }
 
-via2 :: (..xs: Box) -> i64 { return add2(..xs.get); }
-via3 :: (..xs: Box) -> i64 { return add3(..xs.get); }
+via2 :: (..$xs/Box) -> i64 { return add2(..xs.get); }
+via3 :: (..$xs/Box) -> i64 { return add3(..xs.get); }
 
 main :: () -> i32 {
     print("two={}\n", via2(IntCell{ v = 10 }, Dbl{ n = 5 }));            // 10 + 10 = 20

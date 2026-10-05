@@ -8,7 +8,7 @@
 View :: struct { w: i64; }
 Pair :: struct($A: Type, $B: Type) { a: A; b: B; }
 
-total :: (..xs: $T) -> i64 {
+total :: (..$xs) -> i64 {
     sum := 0;
     inline for x: i64 in xs { sum += x; }
     sum

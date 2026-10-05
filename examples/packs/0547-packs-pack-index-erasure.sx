@@ -8,7 +8,7 @@ VL :: interface(T: Type) { get :: (self: *Self) -> T; }
 IntCell :: struct { v: i64; }
 impl VL(i64) for IntCell { get :: (self: *IntCell) -> i64 => self.v; }
 
-first :: (..sources: VL) -> i64 {
+first :: (..$sources/VL) -> i64 {
     s := sources[0];
     x := s.(VL(i64));
     return x.get();

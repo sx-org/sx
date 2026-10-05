@@ -15,7 +15,7 @@ impl Show for A { show :: (self: *A) -> string => "A"; }
 impl Show for B { show :: (self: *B) -> string => "B"; }
 
 // Comptime-unrolled iteration over a pack; cursor `i` indexes the pack.
-each :: (..xs: Show) -> void {
+each :: (..$xs/Show) -> void {
     inline for i in 0..xs.len {
         print("[{}]={}\n", i, xs[i].show());
     }

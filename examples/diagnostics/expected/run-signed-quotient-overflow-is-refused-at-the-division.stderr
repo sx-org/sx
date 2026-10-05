@@ -1,0 +1,5 @@
+error: comptime init of 'quotient' failed: IntegerOverflow
+  --> examples/diagnostics/run-signed-quotient-overflow-is-refused-at-the-division.sx:1:37
+   |
+ 1 | divide :: (a: i64, b: i64) -> i64 { a / b }
+   |                                     ^^^^^

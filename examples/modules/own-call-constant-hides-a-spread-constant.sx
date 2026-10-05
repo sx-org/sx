@@ -1,0 +1,4 @@
+// A module's own call-initialized constant hides the same-named constant its spread brings in.
+@import "modules/std.sx";
+@import "own-call-constant-hides-a-spread-constant/b.sx";
+main :: () { print("{}\n", X); }

@@ -432,8 +432,8 @@ fn printInst(instruction: *const Inst, ref_idx: u32, tt: *const TypeTable, write
                 if (i > 0) try writer.writeAll(", ");
                 try writer.print("{d} -> bb{d}", .{ case.value, case.target.index() });
             }
-            for (sb.integer_cases) |case| {
-                try writer.print(" integer(signed={}) -> bb{d}", .{ case.signed, case.target.index() });
+            for (sb.category_cases) |case| {
+                try writer.print(" category({s}) -> bb{d}", .{ @tagName(case.category), case.target.index() });
             }
             try writer.print("] default bb{d}\n", .{sb.default.index()});
             return;
@@ -519,7 +519,7 @@ fn writeType(id: TypeId, tt: *const TypeTable, writer: Writer) !void {
             }
             if (f.is_c_variadic) {
                 if (f.params.len > 0) try writer.writeAll(", ");
-                try writer.writeAll("..");
+                try writer.writeAll("...");
             }
             try writer.writeAll(") -> ");
             try writeType(f.ret, tt, writer);

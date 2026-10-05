@@ -160,6 +160,14 @@ pub const ConstFoldFrame = struct {
     parent: ?*const ConstFoldFrame,
 };
 
+/// An `inline for` range cursor bound for the current iteration, innermost
+/// first.
+pub const RangeCursor = struct {
+    name: []const u8,
+    value: i64,
+    parent: ?*const RangeCursor,
+};
+
 pub fn constFoldFrameContains(frame: ?*const ConstFoldFrame, name: []const u8, environment: ?imports_mod.EnvironmentId) bool {
     var cur = frame;
     while (cur) |c| : (cur = c.parent) {
@@ -252,6 +260,17 @@ pub const SourceConstCtx = struct {
 /// present, never a spelling, so a declaration shadowing a proven name has no
 /// proof of its own.
 pub const BindingId = enum(u64) { _ };
+
+/// One argument of a call being lowered. `call` numbers that lowering, so two
+/// lowerings of one call site never share it.
+pub const CallArgument = struct { call: u32, index: u32 };
+
+/// A binding proven present, with the call arguments the proof was made in.
+pub const Narrowing = struct { binding: BindingId, within: []const CallArgument };
+
+/// A call being lowered; `receiver` is the dot-call object it passes as its
+/// first argument.
+pub const OpenCall = struct { id: u32, call: *const ast.Call, receiver: ?*const ast.Node = null };
 
 pub const LiteralLocal = struct {
     binding: BindingId,
@@ -600,14 +619,6 @@ pub const Lowering = struct {
     /// `lowerExpr` temporarily hide the caller scope for these roots while the
     /// node's source pin remains active through all recursive children.
     authored_call_defaults: std.AutoHashMap(*const Node, AuthoredDefault),
-    /// Named-argument pin (specs: Named Arguments): argument values
-    /// PRE-LOWERED in written order by `mapNamedArgs` when the mapped
-    /// declaration order would displace evaluation. `lowerExpr` returns the
-    /// recorded ref instead of re-lowering the node, so each value evaluates
-    /// exactly once, at its written position. Entries are overwritten by the
-    /// next mapping of the same call node (per monomorphization), never
-    /// consumed across function bodies.
-    precomputed_args: std.AutoHashMap(*const Node, Ref),
     /// The generic-instantiation call-site chain active while a monomorphized
     /// body lowers (outermost first). A `@error` that survives comptime
     /// pruning inside a mono anchors its diagnostic at the OUTERMOST site —
@@ -756,7 +767,7 @@ pub const Lowering = struct {
     materializing_lambda: ?TypeId = null,
     current_runtime_class: ?*const ast.RuntimeClassDecl = null, // set while lowering a `main = true` (or any sx-defined `@JniClass`) bodied method — `super.method(args)` dispatch resolves the parent class against this fcd's `extends =`
     current_runtime_method: ?ast.RuntimeMethodDecl = null, // the specific method whose body is being lowered; `super.<same_name>(...)` reuses its signature
-    current_fn_decl: ?*const ast.FnDecl = null, // the declaration whose body is being lowered; `@vaStart` reads its `..` tail from it
+    current_fn_decl: ?*const ast.FnDecl = null, // the declaration whose body is being lowered; `@vaStart` reads its `...` tail from it
     /// A RETURN-position callable binder (`-> $F/(i64) -> i64`), while the type
     /// it names is still unknown. Nothing at a call decides that binder, so the
     /// value the body hands back fixes the function's return type.
@@ -779,7 +790,14 @@ pub const Lowering = struct {
     /// Consulted at the implicit `?T → concrete` unwrap (`coerceMode`):
     /// a non-narrowed unwrap is REJECTED instead of silently yielding the zero
     /// payload of a null optional.
-    narrowed: std.AutoHashMap(BindingId, void) = undefined,
+    /// A call's arguments evaluate in an unspecified order, so a proof made
+    /// inside one argument does not reach that call's other arguments.
+    narrowed: std.AutoHashMap(BindingId, []const CallArgument) = undefined,
+    /// The calls being lowered, innermost last.
+    open_calls: std.ArrayList(OpenCall) = .empty,
+    /// The arguments of `open_calls` the lowering stands in.
+    argument_path: std.ArrayList(CallArgument) = .empty,
+    next_call: u32 = 0,
     /// Dedupe for the "nested fn references enclosing local"
     /// diagnostic, keyed `"<fn-index>:<name>"`. The boundary guard fires at
     /// EVERY resolution layer (identifier read, getExprAlloca fast path,
@@ -795,6 +813,10 @@ pub const Lowering = struct {
     /// decl's registration, all of which close the same loop.
     alias_cycle_diagnosed: std.AutoHashMap(usize, void) = undefined,
     resolving_type_aliases: std.AutoHashMap(imports_mod.DeclId, void),
+    /// Every name a `@run` constant declares: a global lookup of one selects its
+    /// author, so compile-time code can read the constant before pass 2.
+    comptime_global_names: std.StringHashMap(void),
+    lowering_comptime_globals: std.AutoHashMap(imports_mod.DeclId, void),
     /// The SSA `Ref`s produced by lowering a narrowed identifier — the bridge
     /// from name-keyed narrowing to the Ref-keyed `coerceMode` unwrap gate.
     /// Cleared per function body (the `Ref` space is per-function).
@@ -875,6 +897,9 @@ pub const Lowering = struct {
     struct_instance_template: std.StringHashMap([]const u8), // mangled struct name → template name
     struct_instance_author: std.StringHashMap(*const ast.StructDecl), // mangled struct name → authoring StructDecl (CP-2: body-author ≡ layout-author)
     comptime_value_bindings: ?std.StringHashMap(i64) = null, // comptime value bindings ($N → integer value: int / enum-tag / payload enum-tag)
+    /// The range cursors of the `inline for` bodies being lowered. A separately
+    /// lowered declaration starts with none.
+    range_cursor: ?*const RangeCursor = null,
     /// Comptime value params bound to a NON-scalar materialized value (a
     /// payload enum literal, a struct/array aggregate). Keyed by param name →
     /// the IR `Ref` of the materialized value (an `enum_init(tag, payload)` for
@@ -959,7 +984,7 @@ pub const Lowering = struct {
     /// before the mono's scope is set up.
     pack_arg_types: ?std.StringHashMap([]const TypeId) = null,
     /// Active during a protocol-pack mono's body lowering: pack-param name →
-    /// constraint protocol name (`..xs: Box` ⇒ `xs` → `"Box"`). Lets
+    /// constraint protocol name (`..$xs/Box` ⇒ `xs` → `"Box"`). Lets
     /// `lowerFieldAccess` enforce the interface-only rule — a member access
     /// `xs[i].<m>` is rejected unless `<m>` is one of the protocol's methods.
     /// Null / absent for the comptime `..$args` pack (no constraint).
@@ -1101,6 +1126,8 @@ pub const Lowering = struct {
     ///
     /// The partition is total, and `slot` exists exactly for `value`:
     ///   - a material value, tuple or error set → `value`
+    ///   - a return-position callable binder    → `callable`: the join's one
+    ///     parameter, typed by the first exit that hands a value back
     ///   - `void`                               → `unit`
     ///   - a return type that never resolved    → `poison`
     ///   - `noreturn`                           → `diverges`
@@ -1108,6 +1135,7 @@ pub const Lowering = struct {
         ret_ty: TypeId,
         dest: union(enum) {
             value: struct { slot: Ref, join: BlockId },
+            callable: BlockId,
             unit: BlockId,
             poison: BlockId,
             diverges,
@@ -1162,13 +1190,17 @@ pub const Lowering = struct {
         module_const_frame: ?*const ConstFoldFrame,
         type_bindings: ?std.StringHashMap(TypeId),
         comptime_value_bindings: ?std.StringHashMap(i64),
+        range_cursor: ?*const RangeCursor,
+        target_type: ?TypeId,
         jni_env_base: usize,
         pack_arg_nodes: ?std.StringHashMap([]const *const Node),
         pack_param_count: ?std.StringHashMap(u32),
         pack_arg_types: ?std.StringHashMap([]const TypeId),
         inline_return_target: ?InlineExit,
         error_boundary: ?ErrorBoundary,
-        narrowed: std.AutoHashMap(BindingId, void),
+        narrowed: std.AutoHashMap(BindingId, []const CallArgument),
+        open_calls: std.ArrayList(OpenCall),
+        argument_path: std.ArrayList(CallArgument),
         narrowed_refs: std.AutoHashMap(Ref, void),
         literal_local_refs: std.AutoHashMap(Ref, LiteralLocal),
         break_target: ?BlockId,
@@ -1190,6 +1222,8 @@ pub const Lowering = struct {
                 .module_const_frame = l.module_const_frame,
                 .type_bindings = l.type_bindings,
                 .comptime_value_bindings = l.comptime_value_bindings,
+                .range_cursor = l.range_cursor,
+                .target_type = l.target_type,
                 .jni_env_base = l.jni_env_stack_base,
                 .pack_arg_nodes = l.pack_arg_nodes,
                 .pack_param_count = l.pack_param_count,
@@ -1200,6 +1234,8 @@ pub const Lowering = struct {
                 // (closure / local-fn) lowering starts with a fresh, empty
                 // narrowing state and the outer state is restored after.
                 .narrowed = l.narrowed,
+                .open_calls = l.open_calls,
+                .argument_path = l.argument_path,
                 .narrowed_refs = l.narrowed_refs,
                 .literal_local_refs = l.literal_local_refs,
                 // Loop targets and build replays are lexical to one body for
@@ -1209,7 +1245,9 @@ pub const Lowering = struct {
                 .loop_defer_base = l.loop_defer_base,
                 .build_scopes = l.build_scopes,
             };
-            l.narrowed = std.AutoHashMap(BindingId, void).init(l.alloc);
+            l.narrowed = std.AutoHashMap(BindingId, []const CallArgument).init(l.alloc);
+            l.open_calls = .empty;
+            l.argument_path = .empty;
             l.narrowed_refs = std.AutoHashMap(Ref, void).init(l.alloc);
             l.literal_local_refs = std.AutoHashMap(Ref, LiteralLocal).init(l.alloc);
             l.break_target = null;
@@ -1231,6 +1269,8 @@ pub const Lowering = struct {
             l.block_terminated = false;
             l.force_block_value = false;
             l.module_const_frame = null;
+            l.range_cursor = null;
+            l.target_type = null;
             return g;
         }
 
@@ -1249,6 +1289,8 @@ pub const Lowering = struct {
             l.module_const_frame = g.module_const_frame;
             l.type_bindings = g.type_bindings;
             l.comptime_value_bindings = g.comptime_value_bindings;
+            l.range_cursor = g.range_cursor;
+            l.target_type = g.target_type;
             l.scope = g.scope;
             l.func_defer_base = g.defer_base;
             l.block_terminated = g.block_terminated;
@@ -1264,6 +1306,10 @@ pub const Lowering = struct {
             l.error_boundary = g.error_boundary;
             l.narrowed.deinit();
             l.narrowed = g.narrowed;
+            l.open_calls.deinit(l.alloc);
+            l.open_calls = g.open_calls;
+            l.argument_path.deinit(l.alloc);
+            l.argument_path = g.argument_path;
             l.narrowed_refs.deinit();
             l.narrowed_refs = g.narrowed_refs;
             l.literal_local_refs.deinit();
@@ -1297,7 +1343,9 @@ pub const Lowering = struct {
     ///   in the nested body would store and branch across a function boundary.
     pub const NestedBodyGuard = struct {
         l: *Lowering,
-        narrowed: std.AutoHashMap(BindingId, void),
+        narrowed: std.AutoHashMap(BindingId, []const CallArgument),
+        open_calls: std.ArrayList(OpenCall),
+        argument_path: std.ArrayList(CallArgument),
         narrowed_refs: std.AutoHashMap(Ref, void),
         literal_local_refs: std.AutoHashMap(Ref, LiteralLocal),
         break_target: ?BlockId,
@@ -1313,6 +1361,7 @@ pub const Lowering = struct {
         module_const_frame: ?*const ConstFoldFrame,
         type_bindings: ?std.StringHashMap(TypeId),
         comptime_value_bindings: ?std.StringHashMap(i64),
+        range_cursor: ?*const RangeCursor,
 
         pub fn enter(l: *Lowering) NestedBodyGuard {
             const g = NestedBodyGuard{
@@ -1323,7 +1372,10 @@ pub const Lowering = struct {
                 .module_const_frame = l.module_const_frame,
                 .type_bindings = l.type_bindings,
                 .comptime_value_bindings = l.comptime_value_bindings,
+                .range_cursor = l.range_cursor,
                 .narrowed = l.narrowed,
+                .open_calls = l.open_calls,
+                .argument_path = l.argument_path,
                 .narrowed_refs = l.narrowed_refs,
                 .literal_local_refs = l.literal_local_refs,
                 .break_target = l.break_target,
@@ -1334,7 +1386,9 @@ pub const Lowering = struct {
                 .error_boundary = l.error_boundary,
                 .current_fn_decl = l.current_fn_decl,
             };
-            l.narrowed = std.AutoHashMap(BindingId, void).init(l.alloc);
+            l.narrowed = std.AutoHashMap(BindingId, []const CallArgument).init(l.alloc);
+            l.open_calls = .empty;
+            l.argument_path = .empty;
             l.narrowed_refs = std.AutoHashMap(Ref, void).init(l.alloc);
             l.literal_local_refs = std.AutoHashMap(Ref, LiteralLocal).init(l.alloc);
             l.break_target = null;
@@ -1355,12 +1409,17 @@ pub const Lowering = struct {
             l.module_const_frame = null;
             l.type_bindings = null;
             l.comptime_value_bindings = null;
+            l.range_cursor = null;
             return g;
         }
 
         pub fn restore(g: NestedBodyGuard) void {
             g.l.narrowed.deinit();
             g.l.narrowed = g.narrowed;
+            g.l.open_calls.deinit(g.l.alloc);
+            g.l.open_calls = g.open_calls;
+            g.l.argument_path.deinit(g.l.alloc);
+            g.l.argument_path = g.argument_path;
             g.l.narrowed_refs.deinit();
             g.l.narrowed_refs = g.narrowed_refs;
             g.l.literal_local_refs.deinit();
@@ -1379,6 +1438,7 @@ pub const Lowering = struct {
             g.l.module_const_frame = g.module_const_frame;
             g.l.type_bindings = g.type_bindings;
             g.l.comptime_value_bindings = g.comptime_value_bindings;
+            g.l.range_cursor = g.range_cursor;
         }
     };
 
@@ -1501,7 +1561,6 @@ pub const Lowering = struct {
             .alloc = module.alloc,
             .lowered_functions = std.StringHashMap(void).init(module.alloc),
             .authored_call_defaults = std.AutoHashMap(*const Node, AuthoredDefault).init(module.alloc),
-            .precomputed_args = std.AutoHashMap(*const Node, Ref).init(module.alloc),
             .mono_sites = std.ArrayList(DefaultCallSite).empty,
             .fn_decl_fids = std.AutoHashMap(imports_mod.DeclId, FuncId).init(module.alloc),
             .runtime_binding_fids = std.StringHashMap(FuncId).init(module.alloc),
@@ -1568,13 +1627,15 @@ pub const Lowering = struct {
             .comptime_constants = std.StringHashMap(ComptimeValue).init(module.alloc),
             .comptime_type_lists = std.StringHashMap([]const TypeId).init(module.alloc),
             .comptime_type_list_aliases = std.StringHashMap([]const u8).init(module.alloc),
-            .narrowed = std.AutoHashMap(BindingId, void).init(module.alloc),
+            .narrowed = std.AutoHashMap(BindingId, []const CallArgument).init(module.alloc),
             .diag_enclosing_seen = std.StringHashMap(void).init(module.alloc),
             .lambda_env_types = std.AutoHashMap(LambdaKey, TypeId).init(module.alloc),
             .init_recipe_owners = std.AutoHashMap(FuncId, ?FuncId).init(module.alloc),
             .env_lambdas = std.AutoHashMap(TypeId, *const ast.Lambda).init(module.alloc),
             .alias_cycle_diagnosed = std.AutoHashMap(usize, void).init(module.alloc),
             .resolving_type_aliases = std.AutoHashMap(imports_mod.DeclId, void).init(module.alloc),
+            .comptime_global_names = std.StringHashMap(void).init(module.alloc),
+            .lowering_comptime_globals = std.AutoHashMap(imports_mod.DeclId, void).init(module.alloc),
             .narrowed_refs = std.AutoHashMap(Ref, void).init(module.alloc),
             .literal_local_refs = std.AutoHashMap(Ref, LiteralLocal).init(module.alloc),
             .convert_reentrancy = std.AutoHashMap(u64, void).init(module.alloc),
@@ -1749,6 +1810,16 @@ pub const Lowering = struct {
             //     caller's argument-marshal pack produces a `[]T` that
             //     doesn't match the callee's stored param shape.
             if (self.module.types.sliceInfoOf(declared_ty) != null) return declared_ty;
+            // `..xs: Name` is a slice only when `Name` resolves to one.
+            const names_its_slice = !p.is_pack and switch (p.type_expr.data) {
+                .type_expr, .parameterized_type_expr => true,
+                else => false,
+            };
+            if (names_its_slice) {
+                if (declared_ty != .unresolved) if (self.diagnostics) |d|
+                    d.addFmt(.err, p.type_expr.span, "a variadic's type must be a slice", .{});
+                return .unresolved;
+            }
             return self.module.types.sliceOf(declared_ty);
         }
         return declared_ty;
@@ -2659,6 +2730,14 @@ pub const Lowering = struct {
         order: ?@import("../name_lookup.zig").Order = null,
     };
 
+    pub fn rangeCursorValue(self: *const Lowering, name: []const u8) ?i64 {
+        var cur = self.range_cursor;
+        while (cur) |c| : (cur = c.parent) {
+            if (std.mem.eql(u8, c.name, name)) return c.value;
+        }
+        return null;
+    }
+
     pub fn lexicalContext(self: *const Lowering) LexicalContext {
         return .{ .source_file = self.current_source_file, .environment = self.current_environment, .block = self.current_lexical_block, .order = self.current_lookup_order };
     }
@@ -2882,7 +2961,7 @@ pub const Lowering = struct {
                 // Global check mirrors `resolveGlobalRef` minus its
                 // diagnostics — the ambiguous/not-visible outcomes fall to
                 // the value path, which diagnoses them exactly once.
-                if (self.program_index.lookup(.global, id.name) == null) return false;
+                if (self.lookupGlobal(id.name) == null) return false;
                 return switch (self.selectGlobalAuthor(id.name)) {
                     .resolved, .untracked => true,
                     .not_a_global, .ambiguous, .not_visible => false,
@@ -2982,7 +3061,8 @@ pub const Lowering = struct {
         if (self.narrowed.count() == 0) return false;
         const scope = self.scope orelse return false;
         const id = scope.bindingId(name) orelse return false;
-        return self.narrowed.contains(id);
+        const within = self.narrowed.get(id) orelse return false;
+        return self.proofReaches(within);
     }
 
     pub fn killNarrowing(self: *Lowering, name: []const u8) void {
@@ -3341,9 +3421,10 @@ pub const Lowering = struct {
         if (self.pack_arg_nodes) |m| if (m.contains(name)) return true;
         if (self.pack_param_count) |m| if (m.contains(name)) return true;
         if (self.pack_arg_types) |m| if (m.contains(name)) return true;
+        if (self.rangeCursorValue(name) != null) return true;
         if (self.comptime_constants.contains(name)) return true;
 
-        if (self.program_index.lookup(.global, name) != null) {
+        if (self.lookupGlobal(name) != null) {
             switch (self.selectGlobalAuthor(name)) {
                 .resolved, .untracked => return true,
                 .not_a_global, .ambiguous, .not_visible => {},
@@ -3857,6 +3938,8 @@ pub const Lowering = struct {
     pub const runComptimeTypeFunc = lower_comptime.runComptimeTypeFunc;
     pub const renameNominalType = lower_comptime.renameNominalType;
     pub const lowerComptimeGlobal = lower_comptime.lowerComptimeGlobal;
+    pub const createRunInitializer = lower_comptime.createRunInitializer;
+    pub const runGlobalType = lower_comptime.runGlobalType;
     pub const lowerComptimeSideEffect = lower_comptime.lowerComptimeSideEffect;
     pub const lowerComptimeCall = lower_comptime.lowerComptimeCall;
     pub const lowerComptimeCallArgs = lower_comptime.lowerComptimeCallArgs;
@@ -3900,6 +3983,8 @@ pub const Lowering = struct {
     pub const selectModuleConst = lower_comptime.selectModuleConst;
     pub const GlobalAuthor = lower_comptime.GlobalAuthor;
     pub const selectGlobalAuthor = lower_comptime.selectGlobalAuthor;
+    pub const lookupGlobal = lower_comptime.lookupGlobal;
+    pub const authorGlobal = lower_comptime.authorGlobal;
     pub const visibleAuthor = lower_comptime.visibleAuthor;
     pub const foldConstAggLen = lower_comptime.foldConstAggLen;
     pub const foldFieldInt = lower_comptime.foldFieldInt;
@@ -3942,6 +4027,7 @@ pub const Lowering = struct {
     pub const lowerUnionLiteral = lower_stmt.lowerUnionLiteral;
     pub const diagPayloadVariantWrite = lower_stmt.diagPayloadVariantWrite;
     pub const lowerExprAsPtr = lower_stmt.lowerExprAsPtr;
+    pub const nonstoreAddress = lower_stmt.nonstoreAddress;
     pub const rootIsConstant = lower_stmt.rootIsConstant;
     pub const constantRoot = lower_stmt.constantRoot;
     pub const storeOrCompound = lower_stmt.storeOrCompound;
@@ -3989,6 +4075,10 @@ pub const Lowering = struct {
     pub const narrowSet = lower_control_flow.narrowSet;
     pub const narrowRestore = lower_control_flow.narrowRestore;
     pub const applyNarrowing = lower_control_flow.applyNarrowing;
+    pub const proofReaches = lower_control_flow.proofReaches;
+    pub const openCall = lower_control_flow.openCall;
+    pub const enterArgument = lower_control_flow.enterArgument;
+    pub const leaveArgument = lower_control_flow.leaveArgument;
     pub const tryConstBoolCondition = lower_control_flow.tryConstBoolCondition;
     pub const staticIsCondition = lower_control_flow.staticIsCondition;
     pub const lowerWhile = lower_control_flow.lowerWhile;

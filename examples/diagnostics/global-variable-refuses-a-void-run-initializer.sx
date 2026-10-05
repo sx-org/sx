@@ -1,0 +1,10 @@
+// A global variable holds a value: a `@run` initializer that produces none, or a
+// `void` annotation, is refused.
+@import "modules/std.sx";
+
+announce :: () { print("announced\n"); }
+
+g := @run announce();
+h : void = @run announce();
+
+main :: () {}

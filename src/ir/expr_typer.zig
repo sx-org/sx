@@ -352,7 +352,7 @@ pub const ExprTyper = struct {
                                 const saved_src = self.l.lexicalContext();
                                 self.l.setAuthorContext(sel.author.id);
                                 var global_info: ?program_index_mod.GlobalInfo = null;
-                                if (self.l.program_index.lookup(.global, sel.member)) |fallback| {
+                                if (self.l.lookupGlobal(sel.member)) |fallback| {
                                     switch (self.l.selectGlobalAuthor(sel.member)) {
                                         .resolved => |g| global_info = g,
                                         .untracked => global_info = fallback,
@@ -394,7 +394,7 @@ pub const ExprTyper = struct {
                 // source-aware: infer the AUTHOR's global type,
                 // never an unrelated module's same-named one. `.not_a_global`
                 // falls through to the const / fn arms below.
-                if (self.l.program_index.lookup(.global, id.name)) |gi| {
+                if (self.l.lookupGlobal(id.name)) |gi| {
                     switch (self.l.selectGlobalAuthor(id.name)) {
                         .resolved => |g| return g.ty,
                         .untracked => return gi.ty,

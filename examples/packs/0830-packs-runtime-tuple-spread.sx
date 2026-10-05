@@ -18,22 +18,22 @@ join :: (s: string, n: i64) -> string { return format("{}-{}", s, n); }
 sum  :: (..xs: []i64) -> i64 { s := 0; for x in xs { s = s + x; } return s; }
 
 // pack → tuple → re-spread (the spec's `stored := .(..xs); f(..stored)` shape)
-respread :: (..xs: any) -> i64 {
+respread :: (..$xs/any) -> i64 {
     stored := .{..xs};
     return add2(..stored);
 }
 
 // pack captured into a closure that OUTLIVES the spawner's frame
-makeThunk :: (..args: any) -> Closure() -> i64 {
+makeThunk :: (..$args/any) -> Closure() -> i64 {
     return mem.closure(||_{ args = .{..args} } -> i64 add2(..args));
 }
 
 // pack captured into a closure: spread AND comptime-indexed
-captureBoth :: (dst: *string, ..args: any) {
+captureBoth :: (dst: *string, ..$args/any) {
     captured := ||_{ dst = dst, args = .{..args} } { dst.* = join(..args); };
     captured();
 }
-captureIndex :: (po: *i64, ..args: any) {
+captureIndex :: (po: *i64, ..$args/any) {
     captured := ||_{ po = po, args = .{..args} } { po.* = @field(args, 0) + @field(args, 1); };
     captured();
 }

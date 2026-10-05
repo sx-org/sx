@@ -17,7 +17,7 @@ E :: error { Bad; Empty }
 
 must :: (n: i32) -> !E { if n == 0 { raise .Empty; } return; }
 
-packMut :: (..xs: i64) {
+packMut :: (..$xs/i64) {
     inline for x in xs { x = 999; }          // pack-element alias — immutable
 }
 

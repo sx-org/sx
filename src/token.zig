@@ -65,6 +65,7 @@ pub const Tag = enum(u8) {
     comma, // ,
     dot, // .
     dot_dot, // ..
+    dot_dot_dot, // ...
     dot_dot_eq, // ..=
     dot_dot_lt, // ..<
     lt_dot_dot, // <..
@@ -154,6 +155,7 @@ pub const Tag = enum(u8) {
             .comma => ",",
             .dot => ".",
             .dot_dot => "..",
+            .dot_dot_dot => "...",
             .dot_dot_eq => "..=",
             .dot_dot_lt => "..<",
             .lt_dot_dot => "<..",
@@ -336,6 +338,7 @@ pub const Tag = enum(u8) {
             .comma,
             .dot,
             .dot_dot,
+            .dot_dot_dot,
             .dot_dot_eq,
             .dot_dot_lt,
             .lt_dot_dot,
@@ -418,6 +421,7 @@ pub const Tag = enum(u8) {
             .comma,
             .dot,
             .dot_dot,
+            .dot_dot_dot,
             .dot_dot_eq,
             .dot_dot_lt,
             .lt_dot_dot,

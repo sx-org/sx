@@ -1,10 +1,10 @@
 // A C prototype keeps its variadicness through `@import c`. The declaration the
-// block synthesizes from a header ends in the bare `..` tail, so an imported
+// block synthesizes from a header ends in the `...` tail, so an imported
 // `int printf(const char *, ...)` is callable as one — no hand-written extern
 // beside the import, no fixed-arity stub.
 //
 // C23 permits a variadic prototype with no named parameter, so
-// `long long sum_all(...)` fixes nothing at all and imports as `(..)`. The count
+// `long long sum_all(...)` fixes nothing at all and imports as `(...)`. The count
 // then rides in the tail with the values, and `-std=c23` is what admits the
 // prototype — the flag reaches the header parse and the source compile alike.
 //
@@ -27,20 +27,20 @@
     @flags   "-std=c23";
 };
 
-SumAll   :: (..) -> i64 abi(.c);
-ScaleAll :: (..) -> f64 abi(.c);
-Tally    :: (i32, ..) -> i64 abi(.c);
+SumAll   :: (...) -> i64 abi(.c);
+ScaleAll :: (...) -> f64 abi(.c);
+Tally    :: (i32, ...) -> i64 abi(.c);
 Fixed    :: (i32) -> i64 abi(.c);
 Relay    :: (i32, @VaList) -> i64 abi(.c);
 
-own :: (n: i32, ..) -> i64 abi(.c) {
+own :: (n: i32, ...) -> i64 abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     defer @vaEnd(*ap);
     return relay(n, ap);
 }
 
-ownThrough :: (read: Relay, n: i32, ..) -> i64 abi(.c) {
+ownThrough :: (read: Relay, n: i32, ...) -> i64 abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     defer @vaEnd(*ap);

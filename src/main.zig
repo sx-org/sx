@@ -40,7 +40,7 @@ pub fn main(init: std.process.Init) !void {
             i += 1;
             if (i >= args.len) {
                 std.debug.print("error: --target requires a value\n", .{});
-                return;
+                std.process.exit(1);
             }
             const raw = args[i];
             // Shorthand aliases for common targets
@@ -81,32 +81,32 @@ pub fn main(init: std.process.Init) !void {
             i += 1;
             if (i >= args.len) {
                 std.debug.print("error: --cpu requires a value\n", .{});
-                return;
+                std.process.exit(1);
             }
             target_config.cpu = (try allocator.dupeZ(u8, args[i])).ptr;
         } else if (std.mem.eql(u8, arg, "--opt")) {
             i += 1;
             if (i >= args.len) {
                 std.debug.print("error: --opt requires a value\n", .{});
-                return;
+                std.process.exit(1);
             }
             target_config.opt_level = parseOptLevel(args[i]) orelse {
                 std.debug.print("error: invalid --opt value '{s}' (expected: none/0, less/1, default/2, aggressive/3)\n", .{args[i]});
-                return;
+                std.process.exit(1);
             };
             explicit_opt = true;
         } else if (std.mem.eql(u8, arg, "-o")) {
             i += 1;
             if (i >= args.len) {
                 std.debug.print("error: -o requires a value\n", .{});
-                return;
+                std.process.exit(1);
             }
             target_config.output_path = args[i];
         } else if (std.mem.eql(u8, arg, "--linker")) {
             i += 1;
             if (i >= args.len) {
                 std.debug.print("error: --linker requires a value\n", .{});
-                return;
+                std.process.exit(1);
             }
             target_config.linker = args[i];
         } else if (std.mem.eql(u8, arg, "--self-contained")) {
@@ -117,63 +117,63 @@ pub fn main(init: std.process.Init) !void {
             i += 1;
             if (i >= args.len) {
                 std.debug.print("error: --sysroot requires a value\n", .{});
-                return;
+                std.process.exit(1);
             }
             target_config.sysroot = args[i];
         } else if (std.mem.eql(u8, arg, "--bundle")) {
             i += 1;
             if (i >= args.len) {
                 std.debug.print("error: --bundle requires a path (e.g. MyApp.app)\n", .{});
-                return;
+                std.process.exit(1);
             }
             target_config.bundle_path = args[i];
         } else if (std.mem.eql(u8, arg, "--apk")) {
             i += 1;
             if (i >= args.len) {
                 std.debug.print("error: --apk requires a path (e.g. out.apk)\n", .{});
-                return;
+                std.process.exit(1);
             }
             target_config.apk_path = args[i];
         } else if (std.mem.eql(u8, arg, "--manifest")) {
             i += 1;
             if (i >= args.len) {
                 std.debug.print("error: --manifest requires a path\n", .{});
-                return;
+                std.process.exit(1);
             }
             target_config.manifest_path = args[i];
         } else if (std.mem.eql(u8, arg, "--keystore")) {
             i += 1;
             if (i >= args.len) {
                 std.debug.print("error: --keystore requires a path\n", .{});
-                return;
+                std.process.exit(1);
             }
             target_config.keystore_path = args[i];
         } else if (std.mem.eql(u8, arg, "--bundle-id")) {
             i += 1;
             if (i >= args.len) {
                 std.debug.print("error: --bundle-id requires a value (e.g. co.swipelab.myapp)\n", .{});
-                return;
+                std.process.exit(1);
             }
             target_config.bundle_id = args[i];
         } else if (std.mem.eql(u8, arg, "--codesign-identity")) {
             i += 1;
             if (i >= args.len) {
                 std.debug.print("error: --codesign-identity requires a value\n", .{});
-                return;
+                std.process.exit(1);
             }
             target_config.codesign_identity = args[i];
         } else if (std.mem.eql(u8, arg, "--provisioning-profile")) {
             i += 1;
             if (i >= args.len) {
                 std.debug.print("error: --provisioning-profile requires a path\n", .{});
-                return;
+                std.process.exit(1);
             }
             target_config.provisioning_profile = args[i];
         } else if (std.mem.eql(u8, arg, "--entitlements")) {
             i += 1;
             if (i >= args.len) {
                 std.debug.print("error: --entitlements requires a path\n", .{});
-                return;
+                std.process.exit(1);
             }
             target_config.entitlements_path = args[i];
         } else if (std.mem.eql(u8, arg, "--time")) {
@@ -189,7 +189,7 @@ pub fn main(init: std.process.Init) !void {
                 i += 1;
                 if (i >= args.len) {
                     std.debug.print("error: -L requires a value\n", .{});
-                    return;
+                    std.process.exit(1);
                 }
                 try lib_paths.append(allocator, args[i]);
             }
@@ -200,7 +200,7 @@ pub fn main(init: std.process.Init) !void {
                 i += 1;
                 if (i >= args.len) {
                     std.debug.print("error: -F requires a value\n", .{});
-                    return;
+                    std.process.exit(1);
                 }
                 try framework_paths.append(allocator, args[i]);
             }
@@ -208,14 +208,14 @@ pub fn main(init: std.process.Init) !void {
             i += 1;
             if (i >= args.len) {
                 std.debug.print("error: --lflags requires a value\n", .{});
-                return;
+                std.process.exit(1);
             }
             try link_flags.append(allocator, args[i]);
         } else if (!std.mem.startsWith(u8, arg, "-")) {
             input_path = arg;
         } else {
             std.debug.print("error: unknown flag '{s}'\n", .{arg});
-            return;
+            std.process.exit(1);
         }
     }
 
@@ -241,7 +241,7 @@ pub fn main(init: std.process.Init) !void {
 
     const raw_input = input_path orelse {
         printUsage();
-        return;
+        std.process.exit(1);
     };
     // Canonicalize the entry path the same way `@import`-resolved paths are
     // keyed: an absolute entry that lives under the CWD becomes
@@ -273,7 +273,7 @@ pub fn main(init: std.process.Init) !void {
     } else if (std.mem.eql(u8, command, "run")) {
         if (target_config.isWasm()) {
             std.debug.print("error: 'run' is not supported for wasm targets. Use 'build' instead.\n", .{});
-            return;
+            std.process.exit(1);
         }
         // Default to -O0 for run (faster compile) unless user explicitly set --opt
         if (!explicit_opt) target_config.opt_level = .none;
@@ -418,6 +418,7 @@ pub fn main(init: std.process.Init) !void {
         if (exit_code != 0) std.process.exit(exit_code);
     } else {
         printUsage();
+        std.process.exit(1);
     }
 }
 
@@ -865,11 +866,11 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
         }
         try bc.setStrings(allocator, table, "targetFrameworks", fws);
         try bc.setStrings(allocator, table, "targetFrameworkPaths", merged_config.framework_paths);
-        // C companion objects / `@library` names for the sx driver's
+        // C companion objects / link libraries for the sx driver's
         // `@cObjectPaths()` / `@linkLibraries()` primitives. Slices reference
         // compileWithTimer locals that outlive the callback.
         bc.c_object_paths = c_obj_paths;
-        bc.link_libraries = libs;
+        bc.link_libraries = try linkLibraries(allocator, libs, comp.ir_module.?);
         try bc.setString(allocator, table, "outputPath", final_output);
         bc.merged_link_flags = merged_config.extra_link_flags;
         try bc.setStringIfUnset(allocator, table, "manifestPath", merged_config.manifest_path);
@@ -1106,6 +1107,17 @@ fn extractLibraries(allocator: std.mem.Allocator, root: *const sx.ast.Node) ![]c
     };
     try walker.walk(&libs, &seen, allocator, root.data.root.decls);
     return try libs.toOwnedSlice(allocator);
+}
+
+/// The program's `@library` names, plus the Objective-C runtime when its
+/// generated code calls it.
+fn linkLibraries(allocator: std.mem.Allocator, libs: []const []const u8, module: *const sx.ir.Module) ![]const []const u8 {
+    const objc = "objc";
+    if (!module.calls_objc_runtime) return libs;
+    for (libs) |lib| {
+        if (std.mem.eql(u8, lib, objc)) return libs;
+    }
+    return std.mem.concat(allocator, []const u8, &.{ libs, &.{objc} });
 }
 
 fn extractFrameworks(allocator: std.mem.Allocator, root: *const sx.ast.Node) ![]const []const u8 {

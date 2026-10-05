@@ -10,15 +10,15 @@ Show :: constraint { show :: (self: *Self) -> string; }
 IntBox :: struct { v: i64; }
 impl Show for IntBox { show :: (self: *IntBox) -> string { intToString(self.v) } }
 
-leak :: (..xs: Show) {
+leak :: (..$xs/Show) {
     inline for x in xs {
         print("{}\n", x.v);
     }
 }
-borrow :: (..xs: Show) {
+borrow :: (..$xs/Show) {
     inline for *x in xs { }
 }
-short :: (..xs: Show) {
+short :: (..$xs/Show) {
     inline for i, x in 0..5, xs { }
 }
 

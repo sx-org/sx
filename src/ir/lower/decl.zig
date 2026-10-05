@@ -856,6 +856,10 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
     const decls = freshDecls(self, ast.scopeDeclarations(self.alloc, all_decls) catch @panic("out of memory"));
     if (decls.len == 0) return;
     registerLiteralModuleConsts(self, decls);
+    for (decls) |decl| {
+        if (decl.data == .const_decl and decl.data.const_decl.value.data == .comptime_expr)
+            self.comptime_global_names.put(decl.data.const_decl.name, {}) catch @panic("out of memory");
+    }
     // Pass 0a': const ALIASES of consts (`B :: A`, chains of any depth /
     // declaration order). A bare-identifier RHS registers here, exactly as
     // the expression spelling `B :: A + 0` does. Register it with its
@@ -1334,6 +1338,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
         if (!recv_is_agg) continue;
         self.putModuleConst(self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), cd.name, .{ .value = cd.value, .ty = .i64 });
     }
+    registerCallConsts(self, decls);
     // Pass 2c: the const-alias fixpoint again. Its pass-0a' run can only see
     // the LITERAL consts pass 0 registers; an aggregate const (`C :: S{…}`,
     // `A :: .[…]`) does not reach `module_const_map` until pass 1/2, so an
@@ -1464,6 +1469,46 @@ pub fn registerConstAliases(self: *Lowering, decls: []const *const Node) void {
             changed = true;
         }
     }
+}
+
+/// Fixpoint over the untyped consts whose initializer calls a function
+/// returning a value (`X :: f(1)`) and the aliases naming them. A call
+/// registers once its type resolves, so one typed by an argument naming another
+/// such const waits for it. The stored value node stays the call, so each read
+/// lowers it; a call that never types registers last, untyped, and its read
+/// reports the call's own error.
+fn registerCallConsts(self: *Lowering, decls: []const *const Node) void {
+    var changed = true;
+    while (changed) {
+        changed = false;
+        registerConstAliases(self, decls);
+        for (decls) |decl| {
+            const cd = enterValueCallConst(self, decl) orelse continue;
+            const id = self.declId(.{ .const_decl = cd }, decl.source_file);
+            if (self.program_index.get(.module_const, id) != null) continue;
+            const ty = self.inferExprType(cd.value);
+            if (ty == .unresolved) continue;
+            self.putModuleConst(id, cd.name, .{ .value = cd.value, .ty = ty });
+            changed = true;
+        }
+    }
+    for (decls) |decl| {
+        const cd = enterValueCallConst(self, decl) orelse continue;
+        const id = self.declId(.{ .const_decl = cd }, decl.source_file);
+        if (self.program_index.get(.module_const, id) == null)
+            self.putModuleConst(id, cd.name, .{ .value = cd.value, .ty = .unresolved });
+    }
+}
+
+/// Enter `decl`'s declaration context and answer its const when it is untyped
+/// and its initializer calls a function returning a value.
+fn enterValueCallConst(self: *Lowering, decl: *const Node) ?*const ast.ConstDecl {
+    if (decl.data != .const_decl) return null;
+    const cd = &decl.data.const_decl;
+    if (cd.type_annotation != null or cd.value.data != .call) return null;
+    self.setDeclarationContext(decl);
+    const source = self.current_source_file orelse self.main_file orelse return null;
+    return if (valueMayBindType(self, cd.value, source)) null else cd;
 }
 
 /// Register a typed module-level value constant (`AF_INET :i32: 2`). Run in
@@ -1660,9 +1705,10 @@ pub fn registerTopLevelGlobal(self: *Lowering, vd: *const ast.VarDecl) void {
     // because their type can't be inferred without an initializer.
     const var_ty: TypeId = if (vd.type_annotation) |ta|
         self.resolveType(ta)
-    else if (vd.value) |val|
-        self.inferExprType(val)
-    else blk: {
+    else if (vd.value) |val| switch (val.data) {
+        .comptime_expr => |ce| self.runGlobalType(self.inferExprType(ce.expr)),
+        else => self.inferExprType(val),
+    } else blk: {
         if (self.diagnostics) |d|
             d.addFmt(.err, null, "top-level var '{s}' has no type annotation and no initializer to infer from", .{vd.name});
         break :blk .void;
@@ -1716,7 +1762,41 @@ fn initializeTopLevelGlobal(self: *Lowering, vd: *const ast.VarDecl) void {
         else => return,
     };
     if (gi.id.index() >= self.module.globals.items.len) return;
+    if (runInitializer(self, vd, gi.ty) != null) return;
     self.module.globals.items[gi.id.index()].init_val = self.globalInitValue(vd, gi.ty);
+}
+
+/// The expression a global's `@run` initializer evaluates for the global's
+/// value. An interface handle global, bare or optional, is built from its
+/// written initializer, which refuses `@run`; a global of unresolved type has
+/// no type to evaluate against.
+fn runInitializer(self: *Lowering, vd: *const ast.VarDecl, ty: TypeId) ?*const Node {
+    const v = vd.value orelse return null;
+    if (v.data != .comptime_expr or ty == .unresolved) return null;
+    const handle_ty = if (!ty.isBuiltin() and self.module.types.get(ty) == .optional) self.module.types.get(ty).optional.child else ty;
+    if (self.isErasedProtocolType(handle_ty)) return null;
+    return v.data.comptime_expr.expr;
+}
+
+/// Give a `@run`-initialized global the wrapper emit evaluates for its value;
+/// the scan leaves its payload to it.
+fn lowerRunGlobal(self: *Lowering, vd: *const ast.VarDecl) void {
+    const gi = self.global_decl_infos.get(vd) orelse return;
+    const expr = runInitializer(self, vd, gi.ty) orelse return;
+    if (gi.ty == .void) {
+        if (self.diagnostics) |d| {
+            if (vd.type_annotation) |ta| {
+                d.addFmt(.err, ta.span, "'{s}' cannot be declared 'void' — a variable holds a value", .{vd.name});
+            } else {
+                const span = vd.value.?.span;
+                const id = d.addFmtId(.err, span, "'{s}' cannot bind 'void' — this expression produces no value", .{vd.name});
+                d.addHelpFmt(id, span, null, "call it as a statement instead of binding its result", .{});
+            }
+        }
+        return;
+    }
+    const func_id = self.createRunInitializer(vd.name, expr, gi.ty);
+    self.module.globals.items[gi.id.index()].comptime_func = func_id;
 }
 
 /// Serialize a top-level global's initializer into a static `ConstantValue`.
@@ -2499,6 +2579,7 @@ pub fn lowerMainAndComptime(self: *Lowering, authored: []const *const Node) void
                     self.lazyLowerFunction(fd.name);
                 }
             },
+            .var_decl => lowerRunGlobal(self, &decl.data.var_decl),
             .comptime_expr => |ct| {
                 self.lowerComptimeSideEffect(ct.expr);
             },
@@ -3523,7 +3604,7 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
     // the VM handler the registry names.
     const is_extern_decl = fd.extern_export == .extern_ or
         isEvaluateIntrinsic(self, fd, name);
-    // A bare `..` tail binds no parameter, so `fd.params` already holds exactly
+    // A `...` tail binds no parameter, so `fd.params` already holds exactly
     // the fixed parameters and nothing is stripped.
     var is_c_variadic = fd.is_c_variadic;
     var effective_params = fd.params;
@@ -3533,6 +3614,9 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
     if (is_extern_decl and fd.params.len > 0 and fd.params[fd.params.len - 1].is_variadic) {
         is_c_variadic = true;
         effective_params = fd.params[0..ast.fixedParamCount(fd.params)];
+        // A dropped tail written as a type name must resolve to a slice.
+        const tail = &fd.params[fd.params.len - 1];
+        if (tail.type_expr.data != .slice_type_expr) _ = self.resolveParamType(tail);
     }
 
     const wants_ctx = self.funcWantsImplicitCtx(fd);
@@ -3552,7 +3636,7 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
             self.protocol_impl_receiver_types.get(fd) orelse self.resolveParamType(&p)
         else
             self.resolveParamType(&p);
-        // `..xs: P` is the comptime heterogeneous pack — each element keeps
+        // `..$xs/P` is the comptime heterogeneous pack — each element keeps
         // its concrete type and calls monomorphize, so every kind takes part.
         if (!p.is_pack and !p.is_comptime)
             _ = self.refuseValuelessProtocol(pty, p.type_expr.span, "declare a parameter of type");
@@ -4200,7 +4284,11 @@ pub fn emitModuleConst(self: *Lowering, name: []const u8, ci: ModuleConstInfo, e
             const untyped = ci.declared_type == null and program_index_mod.untypedConst(ci.value, self) != null;
             var demand = self.enterDemand(if (ci.declared_type) |ty| .{ .coerce = ty } else if (untyped) null else .{ .inferred = ci.ty });
             defer demand.restore();
-            return self.lowerExpr(ci.value);
+            const ref = self.lowerExpr(ci.value);
+            if (ci.value.data != .call or self.fieldCall(ci.value) != null or self.builder.getRefType(ref) != .void or errorCount(self) != errors_before) return ref;
+            if (self.diagnostics) |d|
+                d.addFmt(.err, ci.value.span, "'{s}' cannot bind 'void' — this expression produces no value", .{name});
+            return self.emitPlaceholder(name);
         },
     }
 }

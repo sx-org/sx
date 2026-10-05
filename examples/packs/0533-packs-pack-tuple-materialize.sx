@@ -13,7 +13,7 @@ StrCell :: struct { s: string; }
 impl Box(i64) for IntCell { get :: (self: *IntCell) -> i64 => self.v; }
 impl Box(string) for StrCell { get :: (self: *StrCell) -> string => self.s; }
 
-snapshot :: (..xs: Box) -> void {
+snapshot :: (..$xs/Box) -> void {
     t := .{..xs.get};                 // tuple (i64, string) materialized from the pack
     print("0={} 1={}\n", @field(t, 0), @field(t, 1));
 }

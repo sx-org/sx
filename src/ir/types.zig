@@ -190,6 +190,24 @@ pub const FloatText = struct {
     }
 };
 
+/// A category word whose members the type table decides by each type's own
+/// kind (`TypeTable.inCategory`).
+pub const TypeCategory = enum {
+    int,
+    signed,
+    unsigned,
+    @"struct",
+    @"enum",
+    @"union",
+    slice,
+    array,
+    pointer,
+    vector,
+    optional,
+    @"error",
+    closure,
+};
+
 // ── TypeInfo ────────────────────────────────────────────────────────────
 // Resolved type information stored in the TypeTable.
 // Unlike the AST-level `types.Type` which uses string names for references,
@@ -333,7 +351,7 @@ pub const TypeInfo = union(enum) {
         /// per-call-site type list binds the remainder. `pack_start == 0`
         /// with `params.len == 0` denotes `fn(..$args)`.
         pack_start: ?u32 = null,
-        /// The signature ends in a bare `..` C-variadic tail: `params` is the
+        /// The signature ends in a `...` C-variadic tail: `params` is the
         /// fixed prefix and the C ABI carries the rest. Part of the type's
         /// identity — a fixed signature and the otherwise identical variadic one
         /// are different ABIs, and neither stands in for the other.
@@ -996,7 +1014,7 @@ pub const TypeTable = struct {
         if (self.anon_struct_map.get(key.items)) |existing| return existing;
         const id = TypeId.fromIndex(@intCast(self.infos.items.len));
         self.infos.append(self.alloc, info) catch unreachable;
-        const owned_key = self.alloc.dupe(u8, key.items) catch unreachable;
+        const owned_key = self.slice_arena.allocator().dupe(u8, key.items) catch unreachable;
         self.anon_struct_map.put(owned_key, id) catch unreachable;
         self.recordCanonicalType(id, info, true);
         return id;
@@ -1631,7 +1649,7 @@ pub const TypeTable = struct {
         return self.functionTypeVariadic(params, ret, cc, false);
     }
 
-    /// `params` is the FIXED prefix when `is_c_variadic` is set — the bare `..`
+    /// `params` is the FIXED prefix when `is_c_variadic` is set — the `...`
     /// tail binds no slot of its own.
     pub fn functionTypeVariadic(self: *TypeTable, params: []const TypeId, ret: TypeId, cc: TypeInfo.CallConv, is_c_variadic: bool) TypeId {
         const owned_params = self.slice_arena.allocator().dupe(TypeId, params) catch unreachable;
@@ -2039,6 +2057,34 @@ pub const TypeTable = struct {
         return !layout.signed;
     }
 
+    /// Whether `ty` belongs to `category`. An interface's backing struct is not
+    /// a `struct`, and a container over `.unresolved` is the residue of a failed
+    /// resolution that no value has, so it belongs to no category.
+    pub fn inCategory(self: *const TypeTable, ty: TypeId, category: TypeCategory) bool {
+        const info = self.get(ty);
+        return switch (category) {
+            .int => self.integerLayout(ty) != null,
+            .signed, .unsigned => if (self.integerLayout(ty)) |layout| layout.signed == (category == .signed) else false,
+            .@"struct" => info == .@"struct" and !info.@"struct".is_protocol,
+            .@"enum" => info == .@"enum",
+            .@"union" => info == .@"union",
+            .slice => info == .slice and info.slice.element != .unresolved,
+            .array => info == .array and info.array.element != .unresolved,
+            .pointer => switch (info) {
+                .pointer => |p| p.pointee != .unresolved,
+                .many_pointer => |m| m.element != .unresolved,
+                else => false,
+            },
+            .vector => info == .vector,
+            .optional => info == .optional and info.optional.child != .unresolved,
+            .@"error" => info == .@"error",
+            .closure => switch (info) {
+                .closure => |c| c.ret != .unresolved and std.mem.indexOfScalar(TypeId, c.params, .unresolved) == null,
+                else => false,
+            },
+        };
+    }
+
     pub fn typeSizeBytes(self: *const TypeTable, ty: TypeId) usize {
         const ptr_size: usize = self.pointer_size;
         if (ty == .void) return 0;
@@ -2360,7 +2406,7 @@ pub const TypeTable = struct {
                 }
                 if (f.is_c_variadic) {
                     if (f.params.len > 0) buf.appendSlice(alloc, ", ") catch break :blk "(?)";
-                    buf.appendSlice(alloc, "..") catch break :blk "(?)";
+                    buf.appendSlice(alloc, "...") catch break :blk "(?)";
                 }
                 buf.append(alloc, ')') catch break :blk "(?)";
                 if (f.ret != .void) {

@@ -1,0 +1,21 @@
+// A type function's typed local reads a `@run` constant declared after it. The
+// constant takes its type from its own declaration, never from the reader's
+// destination, so its enum literal has none.
+@import "modules/std.sx";
+
+Color :: enum { red; green; }
+
+pick :: () -> Type {
+    c : Color = shade;
+    if c == .green { return i64; }
+    return f64;
+}
+
+Wide :: pick();
+
+shade :: @run .green;
+
+main :: () {
+    v : Wide = 3;
+    print("{}\n", v);
+}

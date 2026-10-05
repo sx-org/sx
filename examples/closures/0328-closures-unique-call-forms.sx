@@ -23,7 +23,8 @@ main :: () -> (i64, !) {
 
     counter := |x: i64|_{ total = 0 } -> i64 { total += x; total };
     arr := .[counter];
-    print("index {} {}\n", arr[0](1), arr[0](0));
+    first := arr[0](1);
+    print("index {} {}\n", first, arr[0](0));
 
     return 0;
 }

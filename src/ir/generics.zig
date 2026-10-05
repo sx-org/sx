@@ -330,12 +330,43 @@ pub const GenericResolver = struct {
         return type_bridge.typeInfoProjection(aliased) != null;
     }
 
+    /// A bare name the call site resolves to a type, an alias (`Handle :: *i32`)
+    /// included. A local of that name is a value.
+    fn argNamesType(self: GenericResolver, arg: *const Node) bool {
+        if (arg.data != .identifier) return false;
+        const name = arg.data.identifier.name;
+        if (self.l.scope) |scope| if (scope.lookup(name) != null) return false;
+        return self.l.selectHeadType(name) == .resolved;
+    }
+
+    /// Whether `arg` spells a type a `$T: Type` slot binds from. A prefix `*`
+    /// over one is its pointer type.
+    fn argIsType(self: GenericResolver, arg: *const Node) bool {
+        if (arg.data == .unary_op and arg.data.unary_op.op == .address_of)
+            return self.argIsType(arg.data.unary_op.operand);
+        return type_bridge.isTypeShapedAstNode(arg, &self.l.module.types) or
+            self.l.isTypeReturningCallNode(arg) or
+            self.l.isGenericTypeConstructorCallNode(arg) or
+            self.argIsBoundTypeParam(arg) or
+            self.argIsAliasedMemberType(arg) or
+            self.argNamesType(arg);
+    }
+
+    /// A runtime `Type` value — `@typeOf` of an `any`, or a member type
+    /// projected from one — fills a type slot but binds nothing at the call.
+    fn argIsRuntimeType(self: GenericResolver, arg: *const Node) bool {
+        return switch (arg.data) {
+            .call, .field_access => !self.l.isStaticTypeArg(arg),
+            else => false,
+        };
+    }
+
     /// Build the `$T → concrete TypeId` bindings for a generic call site.
     /// Strategy 1: explicit type args (the param named `$T` IS a type
     /// expression). Strategy 2: infer from value params that use `T`
     /// (`a: $T`, `items: []$T`), picking the widest match.
     /// Whether a generic call spells its type arguments. Exact arity answers on
-    /// its own; a bare `..` tail or omitted defaulted trailing params keep the
+    /// its own; a `...` tail or omitted defaulted trailing params keep the
     /// arity open, so the answer comes from what stands in the type-parameter
     /// positions. `args_ast` is parallel to `fd.params` (dot-call callers
     /// prepend the receiver's node).
@@ -350,12 +381,7 @@ pub const GenericResolver = struct {
                 continue;
             }
             if (!Lowering.isTypeParamDecl(param, fd.type_params)) continue;
-            const node = args_ast[pi];
-            if (!(type_bridge.isTypeShapedAstNode(node, &self.l.module.types) or
-                self.l.isTypeReturningCallNode(node) or
-                self.l.isGenericTypeConstructorCallNode(node) or
-                self.argIsBoundTypeParam(node) or
-                self.argIsAliasedMemberType(node))) return false;
+            if (!self.argIsType(args_ast[pi])) return false;
         }
         return true;
     }
@@ -391,7 +417,7 @@ pub const GenericResolver = struct {
             if (types_passed_explicitly) {
                 for (fd.params, 0..) |param, pi| {
                     if (std.mem.eql(u8, param.name, tp.name)) {
-                        if (pi < args_ast.len and (type_bridge.isTypeShapedAstNode(args_ast[pi], &self.l.module.types) or self.l.isTypeReturningCallNode(args_ast[pi]) or self.l.isGenericTypeConstructorCallNode(args_ast[pi]) or self.argIsBoundTypeParam(args_ast[pi]) or self.argIsAliasedMemberType(args_ast[pi]))) {
+                        if (pi < args_ast.len and !self.argIsRuntimeType(args_ast[pi]) and self.argIsType(args_ast[pi])) {
                             const ty = self.l.resolveTypeArg(args_ast[pi]);
                             bindings.put(tp.name, ty) catch {};
                             found = true;

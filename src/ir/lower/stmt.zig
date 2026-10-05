@@ -449,6 +449,7 @@ pub fn emitBodyExit(self: *Lowering, value: ?Ref, ret_ty: TypeId, form: ExitForm
                 if (carried) |ref| self.builder.store(v.slot, ref);
                 self.builder.br(v.join, &.{});
             },
+            .callable => |join| if (carried) |ref| self.builder.br(join, &.{ref}) else self.builder.br(join, &.{}),
             .unit, .poison => |join| self.builder.br(join, &.{}),
             // A `-> noreturn` body has no continuation to reach: the exit ends
             // where it stands, exactly as the real body's does.
@@ -1399,7 +1400,11 @@ fn fixCallableReturn(self: *Lowering, ret_val: Ref) ?TypeId {
         return fixed;
     }
     self.fixed_callable_ret = ty;
-    self.builder.currentFunc().ret = ty;
+    // While inlining, `currentFunc()` is the caller; the inlined exit is this body's.
+    if (self.inline_return_target) |*exit| {
+        exit.ret_ty = ty;
+        self.setMergeParamType(exit.dest.callable, ty);
+    } else self.builder.currentFunc().ret = ty;
     const bound = Lowering.callableBound(binder) orelse return ty;
     self.checkCallableBound(bound, binder.data.type_expr.name, ty);
     return ty;
@@ -1874,7 +1879,7 @@ fn qualifiedStoreTerminalSpan(node: *const Node, member: []const u8) ast.Span {
 }
 
 fn selectedQualifiedGlobal(self: *Lowering, selected: Lowering.QualifiedMember) ?program_index_mod.GlobalInfo {
-    return self.program_index.get(.global, selected.author.id);
+    return self.authorGlobal(selected.author);
 }
 
 /// Diagnostic-free preselection for a namespace-qualified mutable global. It
@@ -2155,7 +2160,7 @@ fn tryLowerQualifiedGlobalStore(
     var member_not_visible = false;
     if (!is_fn and !is_const) {
         // Mirror resolveGlobalRef's outcome mapping, minus its diagnostics.
-        if (self.program_index.lookup(.global, member)) |gi| {
+        if (self.lookupGlobal(member)) |gi| {
             switch (self.selectGlobalAuthor(member)) {
                 .resolved => |g| resolved = g,
                 .not_a_global => {},
@@ -2480,7 +2485,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
         if (!found_local) {
             // Quiet author-aware lookup (type inference only; the store
             // site diagnoses ambiguity / visibility).
-            if (self.program_index.lookup(.global, asgn.target.data.identifier.name)) |gi| {
+            if (self.lookupGlobal(asgn.target.data.identifier.name)) |gi| {
                 switch (self.selectGlobalAuthor(asgn.target.data.identifier.name)) {
                     .resolved => |g| self.target_type = g.ty,
                     .untracked => self.target_type = gi.ty,
@@ -2650,7 +2655,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                     // (`totl = 42;`) compiles and runs.
                     // `resolveGlobalRef` already diagnosed the ambiguous /
                     // not-visible outcomes itself; don't stack a second error.
-                    const already_diagnosed = self.program_index.lookup(.global, id.name) != null and
+                    const already_diagnosed = self.lookupGlobal(id.name) != null and
                         switch (self.selectGlobalAuthor(id.name)) {
                             .ambiguous, .not_visible => true,
                             else => false,
@@ -2816,7 +2821,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
 /// Author-aware global lookup that stays silent on every failing outcome, so a
 /// caller that resolves a place can report its own message.
 fn quietGlobalRef(self: *Lowering, name: []const u8) ?program_index_mod.GlobalInfo {
-    const gi = self.program_index.lookup(.global, name) orelse return null;
+    const gi = self.lookupGlobal(name) orelse return null;
     return switch (self.selectGlobalAuthor(name)) {
         .resolved => |g| g,
         .untracked => gi,
@@ -3323,11 +3328,12 @@ pub fn diagPayloadVariantWrite(self: *Lowering, obj_ty: TypeId, field: []const u
     return true;
 }
 
-/// Get the pointer (alloca ref) for an lvalue expression, without loading.
-/// A field/index chain rooted at a storage-less binding has no slot to GEP.
-/// A chain that itself types `.unresolved` already carries the diagnostic for
-/// why; naming its root would bury that one.
-pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
+/// Diagnoses taking the address of a member or element chain rooted at a
+/// binding with no storage of its own; the placeholder stands in for the
+/// address. Null when the chain may be addressed. A chain that itself types
+/// `.unresolved` already carries the diagnostic for why; naming its root
+/// would bury that one.
+pub fn nonstoreAddress(self: *Lowering, node: *const Node) ?Ref {
     if ((node.data == .field_access or node.data == .index_expr or self.fieldCall(node) != null) and
         self.inferExprType(node) != .unresolved)
     {
@@ -3336,6 +3342,14 @@ pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
             return self.emitPlaceholder("addr_of_nonstore");
         }
     }
+    return null;
+}
+
+/// Get the pointer (alloca ref) for an lvalue expression, without loading.
+pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
+    const argument = self.enterArgument(node);
+    defer self.leaveArgument(argument);
+    if (nonstoreAddress(self, node)) |placeholder| return placeholder;
     switch (node.data) {
         .identifier => |id| {
             // An lvalue reached only ACROSS a nested-fn boundary is the
@@ -3738,7 +3752,7 @@ fn setMultiAssignTargetType(self: *Lowering, target: *const Node, value: *const 
             if (!found_local) {
                 // Quiet author-aware lookup (type inference only; the store
                 // site diagnoses ambiguity / visibility).
-                if (self.program_index.lookup(.global, id.name)) |gi| {
+                if (self.lookupGlobal(id.name)) |gi| {
                     switch (self.selectGlobalAuthor(id.name)) {
                         .resolved => |g| self.target_type = g.ty,
                         .untracked => self.target_type = gi.ty,
@@ -3937,7 +3951,7 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                         // `resolveGlobalRef` already diagnosed
                         // the ambiguous / not-visible outcomes itself; don't
                         // stack a second error.
-                        const already_diagnosed = self.program_index.lookup(.global, id.name) != null and
+                        const already_diagnosed = self.lookupGlobal(id.name) != null and
                             switch (self.selectGlobalAuthor(id.name)) {
                                 .ambiguous, .not_visible => true,
                                 else => false,

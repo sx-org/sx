@@ -1,0 +1,16 @@
+error: 'g' cannot bind 'void' — this expression produces no value
+  --> examples/diagnostics/global-variable-refuses-a-void-run-initializer.sx:7:6
+   |
+ 7 | g := @run announce();
+   |      ^^^^^^^^^^^^^^^
+
+help: call it as a statement instead of binding its result
+   |
+ 7 | g := @run announce();
+   |      ^^^^^^^^^^^^^^^
+
+error: 'h' cannot be declared 'void' — a variable holds a value
+  --> examples/diagnostics/global-variable-refuses-a-void-run-initializer.sx:8:5
+   |
+ 8 | h : void = @run announce();
+   |     ^^^^

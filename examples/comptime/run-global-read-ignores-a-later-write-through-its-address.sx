@@ -1,0 +1,18 @@
+@import "modules/std.sx";
+
+Box :: struct { value: i32; }
+
+Seen :: struct { box: Box; bumped: i32; }
+
+g : Box = Box{value = 42};
+
+bump :: (box: *Box) -> i32 { box.value = 100; 1 }
+
+value :: () -> i32 {
+    seen := Seen{ box = g, bumped = bump(*g) };
+    seen.box.value + seen.bumped
+}
+
+Folded :: @run value();
+
+main :: () { print("{} {}\n", Folded, value()); }
