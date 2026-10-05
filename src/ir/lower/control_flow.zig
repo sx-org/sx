@@ -446,12 +446,9 @@ pub fn lowerIfExpr(self: *Lowering, node: *const Node, demand: lower_stmt.TailDe
     // inline if: evaluate condition at compile time, only lower taken branch
     if (ie.is_comptime) {
         if (self.evalComptimeCondition(ie.condition)) |is_true| {
-            if (is_true) {
-                return lowerSelectedBranch(self, ie.then_branch, demand);
-            } else if (ie.else_branch) |eb| {
-                return lowerSelectedBranch(self, eb, demand);
-            }
-            return self.builder.constInt(0, .void);
+            const taken = if (is_true) ie.then_branch else ie.else_branch orelse return self.builder.constInt(0, .void);
+            if (self.force_block_value) return self.lowerReachedOperand(node, taken);
+            return lowerSelectedBranch(self, taken, demand);
         }
         // Condition couldn't be evaluated — fall through to runtime
     }

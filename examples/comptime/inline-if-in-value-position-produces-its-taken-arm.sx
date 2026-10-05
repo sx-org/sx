@@ -1,0 +1,10 @@
+@import "modules/std.sx";
+
+K :: 3;
+
+main :: () {
+    z := { inline if K > 2 { 70 } else { 80 } };
+    print("{}\n", z);
+    w := { inline if @host.pointerSize == 8 { 64 } else { 32 } };
+    print("{}\n", w);
+}
