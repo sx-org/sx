@@ -1,6 +1,6 @@
-// A shift's amount is a separate operand: neither the shift's destination nor
-// a cast of the shift types it. A vector shift's amount takes the vector's
-// type.
+// A scalar shift's amount is a separate operand: neither the shift's
+// destination nor a cast of the shift types it. A vector shift's amount takes
+// the shift's destination, as a vector operator's operands do.
 
 @import "modules/std.sx";
 
@@ -13,5 +13,6 @@ main :: () -> i32 {
     lanes : @Vector(4, u32) = .[1, 1, 1, 1];
     w : @Vector(4, u32) = lanes << .[1, 2, 3, 4];
     print("{}\n", w);
+    print("{}\n", lanes << xx x);
     return 0;
 }

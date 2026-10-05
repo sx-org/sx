@@ -5544,7 +5544,7 @@ pub fn lowerBinaryOp(self: *Lowering, node: *const Node) Ref {
         if (lhs_info == .optional and (bop.op == .eq or bop.op == .neq)) break :peer lhs_info.optional.child;
         break :peer if (rhs_untyped) lhs_ty else null;
     };
-    if (shift) self.target_type = if (self.isVectorType(lhs_ty)) lhs_ty else null else if (rhs_peer_tt) |ty| self.target_type = ty else self.reachOperand(node, bop.rhs);
+    if (shift and !self.isVectorType(lhs_ty)) self.target_type = null else if (rhs_peer_tt) |ty| self.target_type = ty else self.reachOperand(node, bop.rhs);
     // In a comparison, an anonymous positional literal on the RHS is typed
     // from the LHS just like an enum shorthand. This also keeps the following
     // `{` available as the if body.
