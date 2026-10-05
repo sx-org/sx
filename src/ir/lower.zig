@@ -487,6 +487,11 @@ pub fn nameVisibleOverEdges(
     return false;
 }
 
+/// The operand of an explicit `.(T)` or `xx`, which the cast converts. Only an
+/// untyped constant operand truncates by request; a literal inside a typed
+/// operand must fit the type it takes.
+pub const CastOperand = enum { typed, untyped };
+
 // ── Lowering ────────────────────────────────────────────────────────────
 
 /// A literal belongs to its source function's specialization, including inside initializer thunks.
@@ -500,9 +505,7 @@ pub const Lowering = struct {
     break_target: ?BlockId = null,
     continue_target: ?BlockId = null,
     loop_defer_base: usize = 0, // defer-stack height at the innermost loop's body start (break/continue drain to here)
-    /// Lowering the untyped constant an explicit `.(T)` or `xx` converts: its
-    /// literals truncate by request instead of fit-checking.
-    cast_truncates: bool = false,
+    cast_operand: ?CastOperand = null,
     /// The node a cast's destination reaches as its target: a typed cast
     /// operand, and each operand a reached node computes its value from at its
     /// own target (see `reachOperand`).
@@ -1192,6 +1195,7 @@ pub const Lowering = struct {
         comptime_value_bindings: ?std.StringHashMap(i64),
         range_cursor: ?*const RangeCursor,
         target_type: ?TypeId,
+        cast_operand: ?CastOperand,
         jni_env_base: usize,
         pack_arg_nodes: ?std.StringHashMap([]const *const Node),
         pack_param_count: ?std.StringHashMap(u32),
@@ -1224,6 +1228,7 @@ pub const Lowering = struct {
                 .comptime_value_bindings = l.comptime_value_bindings,
                 .range_cursor = l.range_cursor,
                 .target_type = l.target_type,
+                .cast_operand = l.cast_operand,
                 .jni_env_base = l.jni_env_stack_base,
                 .pack_arg_nodes = l.pack_arg_nodes,
                 .pack_param_count = l.pack_param_count,
@@ -1271,6 +1276,7 @@ pub const Lowering = struct {
             l.module_const_frame = null;
             l.range_cursor = null;
             l.target_type = null;
+            l.cast_operand = null;
             return g;
         }
 
@@ -1291,6 +1297,7 @@ pub const Lowering = struct {
             l.comptime_value_bindings = g.comptime_value_bindings;
             l.range_cursor = g.range_cursor;
             l.target_type = g.target_type;
+            l.cast_operand = g.cast_operand;
             l.scope = g.scope;
             l.func_defer_base = g.defer_base;
             l.block_terminated = g.block_terminated;
@@ -1362,6 +1369,7 @@ pub const Lowering = struct {
         type_bindings: ?std.StringHashMap(TypeId),
         comptime_value_bindings: ?std.StringHashMap(i64),
         range_cursor: ?*const RangeCursor,
+        cast_operand: ?CastOperand,
 
         pub fn enter(l: *Lowering) NestedBodyGuard {
             const g = NestedBodyGuard{
@@ -1385,6 +1393,7 @@ pub const Lowering = struct {
                 .inline_return_target = l.inline_return_target,
                 .error_boundary = l.error_boundary,
                 .current_fn_decl = l.current_fn_decl,
+                .cast_operand = l.cast_operand,
             };
             l.narrowed = std.AutoHashMap(BindingId, []const CallArgument).init(l.alloc);
             l.open_calls = .empty;
@@ -1401,6 +1410,7 @@ pub const Lowering = struct {
             l.pending_callable_return = null;
             l.fixed_callable_ret = null;
             l.lambda_sig_target = null;
+            l.cast_operand = null;
             return g;
         }
 
@@ -1439,6 +1449,7 @@ pub const Lowering = struct {
             g.l.type_bindings = g.type_bindings;
             g.l.comptime_value_bindings = g.comptime_value_bindings;
             g.l.range_cursor = g.range_cursor;
+            g.l.cast_operand = g.cast_operand;
         }
     };
 
@@ -3679,7 +3690,7 @@ pub const Lowering = struct {
     /// in `ty` (REJECTED PATTERNS: no silent wrap). The constant is still
     /// emitted by the caller so lowering continues and surfaces further errors.
     pub fn checkIntLiteralFits(self: *Lowering, value: i128, ty: TypeId, span: ast.Span) void {
-        if (self.cast_truncates) return;
+        if (self.cast_operand == .untyped) return;
         const r = self.intLiteralRange(ty) orelse return;
         if (value < r.min or value > r.max) {
             if (self.diagnostics) |d| {
@@ -3696,7 +3707,7 @@ pub const Lowering = struct {
     /// `'raw'` is included so the user sees which literal overflowed. The
     /// constant is still emitted by the caller so lowering continues.
     pub fn checkCharLiteralFits(self: *Lowering, cl: ast.CharLiteral, ty: TypeId, span: ast.Span) void {
-        if (self.cast_truncates) return;
+        if (self.cast_operand == .untyped) return;
         const r = self.intLiteralRange(ty) orelse return;
         if (cl.value < r.min or cl.value > r.max) {
             if (self.diagnostics) |d| {

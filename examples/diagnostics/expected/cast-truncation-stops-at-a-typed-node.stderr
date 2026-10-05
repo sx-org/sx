@@ -1,5 +1,5 @@
-error: integer literal 300 does not fit in i8 (range -128..127) — use an explicit `.(i8)` to truncate
-  --> examples/diagnostics/cast-truncation-stops-at-a-typed-node.sx:12:14
+error: integer literal 300 does not fit in u8 (range 0..255) — use an explicit `.(u8)` to truncate
+  --> examples/diagnostics/cast-truncation-stops-at-a-typed-node.sx:8:30
    |
-12 |     k : i8 = 300;
-   |              ^^^
+ 8 |     print("{}\n", (1 << (n + 300)).(u8));
+   |                              ^^^
