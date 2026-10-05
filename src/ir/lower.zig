@@ -1202,6 +1202,8 @@ pub const Lowering = struct {
         inline_return_target: ?InlineExit,
         error_boundary: ?ErrorBoundary,
         narrowed: std.AutoHashMap(BindingId, []const CallArgument),
+        open_calls: std.ArrayList(OpenCall),
+        argument_path: std.ArrayList(CallArgument),
         narrowed_refs: std.AutoHashMap(Ref, void),
         literal_local_refs: std.AutoHashMap(Ref, LiteralLocal),
         break_target: ?BlockId,
@@ -1235,6 +1237,8 @@ pub const Lowering = struct {
                 // (closure / local-fn) lowering starts with a fresh, empty
                 // narrowing state and the outer state is restored after.
                 .narrowed = l.narrowed,
+                .open_calls = l.open_calls,
+                .argument_path = l.argument_path,
                 .narrowed_refs = l.narrowed_refs,
                 .literal_local_refs = l.literal_local_refs,
                 // Loop targets and build replays are lexical to one body for
@@ -1245,6 +1249,8 @@ pub const Lowering = struct {
                 .build_scopes = l.build_scopes,
             };
             l.narrowed = std.AutoHashMap(BindingId, []const CallArgument).init(l.alloc);
+            l.open_calls = .empty;
+            l.argument_path = .empty;
             l.narrowed_refs = std.AutoHashMap(Ref, void).init(l.alloc);
             l.literal_local_refs = std.AutoHashMap(Ref, LiteralLocal).init(l.alloc);
             l.break_target = null;
@@ -1303,6 +1309,10 @@ pub const Lowering = struct {
             l.error_boundary = g.error_boundary;
             l.narrowed.deinit();
             l.narrowed = g.narrowed;
+            l.open_calls.deinit(l.alloc);
+            l.open_calls = g.open_calls;
+            l.argument_path.deinit(l.alloc);
+            l.argument_path = g.argument_path;
             l.narrowed_refs.deinit();
             l.narrowed_refs = g.narrowed_refs;
             l.literal_local_refs.deinit();
@@ -1337,6 +1347,8 @@ pub const Lowering = struct {
     pub const NestedBodyGuard = struct {
         l: *Lowering,
         narrowed: std.AutoHashMap(BindingId, []const CallArgument),
+        open_calls: std.ArrayList(OpenCall),
+        argument_path: std.ArrayList(CallArgument),
         narrowed_refs: std.AutoHashMap(Ref, void),
         literal_local_refs: std.AutoHashMap(Ref, LiteralLocal),
         break_target: ?BlockId,
@@ -1365,6 +1377,8 @@ pub const Lowering = struct {
                 .comptime_value_bindings = l.comptime_value_bindings,
                 .range_cursor = l.range_cursor,
                 .narrowed = l.narrowed,
+                .open_calls = l.open_calls,
+                .argument_path = l.argument_path,
                 .narrowed_refs = l.narrowed_refs,
                 .literal_local_refs = l.literal_local_refs,
                 .break_target = l.break_target,
@@ -1376,6 +1390,8 @@ pub const Lowering = struct {
                 .current_fn_decl = l.current_fn_decl,
             };
             l.narrowed = std.AutoHashMap(BindingId, []const CallArgument).init(l.alloc);
+            l.open_calls = .empty;
+            l.argument_path = .empty;
             l.narrowed_refs = std.AutoHashMap(Ref, void).init(l.alloc);
             l.literal_local_refs = std.AutoHashMap(Ref, LiteralLocal).init(l.alloc);
             l.break_target = null;
@@ -1403,6 +1419,10 @@ pub const Lowering = struct {
         pub fn restore(g: NestedBodyGuard) void {
             g.l.narrowed.deinit();
             g.l.narrowed = g.narrowed;
+            g.l.open_calls.deinit(g.l.alloc);
+            g.l.open_calls = g.open_calls;
+            g.l.argument_path.deinit(g.l.alloc);
+            g.l.argument_path = g.argument_path;
             g.l.narrowed_refs.deinit();
             g.l.narrowed_refs = g.narrowed_refs;
             g.l.literal_local_refs.deinit();

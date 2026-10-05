@@ -1,0 +1,13 @@
+// A generic instance called from an argument narrows its own parameters.
+@import "modules/std.sx";
+
+Cell :: struct { value: i64; }
+two :: (a: i64, b: i64) -> i64 { a * 10 + b }
+
+depth :: ($T: Type, x: ?Cell, n: i64) -> i64 {
+    if x == null { return -1; }
+    if n == 0 { return x.value; }
+    two(x.value, depth(i32, x, n - 1))
+}
+
+main :: () { print("{} {}\n", depth(i64, Cell{ value = 7 }, 2), depth(i64, null, 2)); }
