@@ -122,7 +122,7 @@ fn receiverPlace(self: *Lowering, node: *const Node) ?Ref {
     };
     if (self.program_index.lookup(.runtime_class, self.module.types.getString(name)) != null) return null;
     if (node.data == .field_access) {
-        if (self.pointerReadRoot(&node.data.field_access)) |root| return self.pointerReadAddress(&node.data.field_access, root).ptr;
+        if (self.fieldReadRoot(&node.data.field_access)) |root| return self.fieldReadAddress(&node.data.field_access, root).ptr;
     }
     if (!self.exprHasAddressableStorage(node)) return null;
     return self.lowerExprAsPtr(node);

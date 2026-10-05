@@ -219,7 +219,6 @@ entry:
   %mem = alloca { { [128 x i8], i32 }, i1 }, align 8
   %allocaN = alloca { [128 x i8], i32 }, align 8
   %allocaN = alloca i1, align 1
-  %memN = alloca { [128 x i8], i32 }, align 8
   br i1 false, label %if.then.0, label %if.merge.1
 
 if.then.0:                                        ; preds = %entry
@@ -270,18 +269,18 @@ if.then.14:                                       ; preds = %if.merge.13
 if.merge.15:                                      ; preds = %if.merge.13
   %call = call { i16, i16, i32, i64 } @sockaddrIn(ptr @kDefaultContext, i64 8080, i32 0)
   store { i16, i16, i32, i64 } %call, ptr %alloca, align 8
-  %load = load { i16, i16, i32, i64 }, ptr %alloca, align 8
-  %sg = extractvalue { i16, i16, i32, i64 } %load, 0
-  %icmp = icmp ne i16 %sg, 2
+  %gep = getelementptr inbounds nuw { i16, i16, i32, i64 }, ptr %alloca, i32 0, i32 0
+  %load = load i16, ptr %gep, align 2
+  %icmp = icmp ne i16 %load, 2
   br i1 %icmp, label %if.then.16, label %if.merge.17
 
 if.then.16:                                       ; preds = %if.merge.15
   ret i32 9
 
 if.merge.17:                                      ; preds = %if.merge.15
-  %loadN = load { i16, i16, i32, i64 }, ptr %alloca, align 8
-  %sgN = extractvalue { i16, i16, i32, i64 } %loadN, 1
-  %icmpN = icmp ne i16 %sgN, -28641
+  %gepN = getelementptr inbounds nuw { i16, i16, i32, i64 }, ptr %alloca, i32 0, i32 1
+  %loadN = load i16, ptr %gepN, align 2
+  %icmpN = icmp ne i16 %loadN, -28641
   br i1 %icmpN, label %if.then.18, label %if.merge.19
 
 if.then.18:                                       ; preds = %if.merge.17
@@ -336,8 +335,8 @@ if.merge.33:                                      ; preds = %if.merge.31
   store ptr %allocaN, ptr %allocaN, align 8
   %loadN = load i64, ptr %allocaN, align 8
   store i64 %loadN, ptr %allocaN, align 8
-  %gep = getelementptr inbounds nuw { i32, i32, i32, i32, i32, i64, i64, i64 }, ptr %allocaN, i32 0, i32 4
-  store ptr %gep, ptr %allocaN, align 8
+  %gepN = getelementptr inbounds nuw { i32, i32, i32, i32, i32, i64, i64, i64 }, ptr %allocaN, i32 0, i32 4
+  store ptr %gepN, ptr %allocaN, align 8
   %loadN = load i64, ptr %allocaN, align 8
   store i64 %loadN, ptr %allocaN, align 8
   %gepN = getelementptr inbounds nuw { i32, i32, i32, i32, i32, i64, i64, i64 }, ptr %allocaN, i32 0, i32 5
@@ -395,18 +394,18 @@ if.merge.41:                                      ; preds = %if.merge.39
   store [16 x i8] undef, ptr %allocaN, align 1
   %callN = call { i16, i16, i32, [16 x i8], i32 } @sockaddrIn6(ptr @kDefaultContext, i64 8080, ptr %allocaN)
   store { i16, i16, i32, [16 x i8], i32 } %callN, ptr %allocaN, align 4
-  %loadN = load { i16, i16, i32, [16 x i8], i32 }, ptr %allocaN, align 4
-  %sgN = extractvalue { i16, i16, i32, [16 x i8], i32 } %loadN, 0
-  %icmpN = icmp ne i16 %sgN, 10
+  %gepN = getelementptr inbounds nuw { i16, i16, i32, [16 x i8], i32 }, ptr %allocaN, i32 0, i32 0
+  %loadN = load i16, ptr %gepN, align 2
+  %icmpN = icmp ne i16 %loadN, 10
   br i1 %icmpN, label %if.then.42, label %if.merge.43
 
 if.then.42:                                       ; preds = %if.merge.41
   ret i32 22
 
 if.merge.43:                                      ; preds = %if.merge.41
-  %loadN = load { i16, i16, i32, [16 x i8], i32 }, ptr %allocaN, align 4
-  %sgN = extractvalue { i16, i16, i32, [16 x i8], i32 } %loadN, 1
-  %icmpN = icmp ne i16 %sgN, -28641
+  %gepN = getelementptr inbounds nuw { i16, i16, i32, [16 x i8], i32 }, ptr %allocaN, i32 0, i32 1
+  %loadN = load i16, ptr %gepN, align 2
+  %icmpN = icmp ne i16 %loadN, -28641
   br i1 %icmpN, label %if.then.44, label %if.merge.45
 
 if.then.44:                                       ; preds = %if.merge.43
@@ -435,10 +434,9 @@ if.then.55:                                       ; preds = %if.merge.54
   ret i32 25
 
 if.merge.56:                                      ; preds = %if.merge.54
-  call void @llvm.memcpy.p0.p0.i64(ptr align 4 %memN, ptr align 4 %allocaN, i64 132, i1 false)
-  %partN = getelementptr inbounds nuw { [128 x i8], i32 }, ptr %memN, i32 0, i32 1
-  %partN = load i32, ptr %partN, align 4
-  %icmpN = icmp ne i32 %partN, 14
+  %gepN = getelementptr inbounds nuw { [128 x i8], i32 }, ptr %allocaN, i32 0, i32 1
+  %loadN = load i32, ptr %gepN, align 4
+  %icmpN = icmp ne i32 %loadN, 14
   br i1 %icmpN, label %if.then.57, label %if.merge.58
 
 if.then.57:                                       ; preds = %if.merge.56

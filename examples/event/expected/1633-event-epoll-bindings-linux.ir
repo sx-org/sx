@@ -26,9 +26,9 @@ define internal i1 @evReadable(ptr %0, { i32, i32, i32 } %1) #0 {
 entry:
   %alloca = alloca { i32, i32, i32 }, align 8
   store { i32, i32, i32 } %1, ptr %alloca, align 4
-  %load = load { i32, i32, i32 }, ptr %alloca, align 4
-  %sg = extractvalue { i32, i32, i32 } %load, 0
-  %and = and i32 %sg, 1
+  %gep = getelementptr inbounds nuw { i32, i32, i32 }, ptr %alloca, i32 0, i32 0
+  %load = load i32, ptr %gep, align 4
+  %and = and i32 %load, 1
   %icmp = icmp ne i32 %and, 0
   ret i1 %icmp
 }
@@ -38,9 +38,9 @@ define internal i1 @evWritable(ptr %0, { i32, i32, i32 } %1) #0 {
 entry:
   %alloca = alloca { i32, i32, i32 }, align 8
   store { i32, i32, i32 } %1, ptr %alloca, align 4
-  %load = load { i32, i32, i32 }, ptr %alloca, align 4
-  %sg = extractvalue { i32, i32, i32 } %load, 0
-  %and = and i32 %sg, 4
+  %gep = getelementptr inbounds nuw { i32, i32, i32 }, ptr %alloca, i32 0, i32 0
+  %load = load i32, ptr %gep, align 4
+  %and = and i32 %load, 4
   %icmp = icmp ne i32 %and, 0
   ret i1 %icmp
 }
@@ -50,9 +50,9 @@ define internal i1 @evEof(ptr %0, { i32, i32, i32 } %1) #0 {
 entry:
   %alloca = alloca { i32, i32, i32 }, align 8
   store { i32, i32, i32 } %1, ptr %alloca, align 4
-  %load = load { i32, i32, i32 }, ptr %alloca, align 4
-  %sg = extractvalue { i32, i32, i32 } %load, 0
-  %and = and i32 %sg, 8208
+  %gep = getelementptr inbounds nuw { i32, i32, i32 }, ptr %alloca, i32 0, i32 0
+  %load = load i32, ptr %gep, align 4
+  %and = and i32 %load, 8208
   %icmp = icmp ne i32 %and, 0
   ret i1 %icmp
 }
@@ -62,9 +62,9 @@ define internal i1 @evErr(ptr %0, { i32, i32, i32 } %1) #0 {
 entry:
   %alloca = alloca { i32, i32, i32 }, align 8
   store { i32, i32, i32 } %1, ptr %alloca, align 4
-  %load = load { i32, i32, i32 }, ptr %alloca, align 4
-  %sg = extractvalue { i32, i32, i32 } %load, 0
-  %and = and i32 %sg, 8
+  %gep = getelementptr inbounds nuw { i32, i32, i32 }, ptr %alloca, i32 0, i32 0
+  %load = load i32, ptr %gep, align 4
+  %and = and i32 %load, 8
   %icmp = icmp ne i32 %and, 0
   ret i1 %icmp
 }
@@ -74,9 +74,9 @@ define internal i32 @evFd(ptr %0, { i32, i32, i32 } %1) #0 {
 entry:
   %alloca = alloca { i32, i32, i32 }, align 8
   store { i32, i32, i32 } %1, ptr %alloca, align 4
-  %load = load { i32, i32, i32 }, ptr %alloca, align 4
-  %sg = extractvalue { i32, i32, i32 } %load, 1
-  ret i32 %sg
+  %gep = getelementptr inbounds nuw { i32, i32, i32 }, ptr %alloca, i32 0, i32 1
+  %load = load i32, ptr %gep, align 4
+  ret i32 %load
 }
 
 ; Function Attrs: nounwind

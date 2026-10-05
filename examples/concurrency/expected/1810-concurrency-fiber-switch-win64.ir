@@ -181,25 +181,17 @@ entry:
   call void @boot(ptr %0, ptr %allocaN)
   %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %allocaN, i32 0, i32 0
   call void @swap_good(ptr %alloca, ptr %gepN)
-  %memN = alloca { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, align 8
-  call void @llvm.memcpy.p0.p0.i64(ptr align 8 %memN, ptr align 8 %allocaN, i64 280, i1 false)
-  %part = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %memN, i32 0, i32 5
-  %partN = load i64, ptr %part, align 8
-  %memN = alloca { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, align 8
-  call void @llvm.memcpy.p0.p0.i64(ptr align 8 %memN, ptr align 8 %allocaN, i64 280, i1 false)
-  %partN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %memN, i32 0, i32 5
-  %partN = load i64, ptr %partN, align 8
-  %add = add i64 %partN, %partN
+  %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %allocaN, i32 0, i32 5
+  %load = load i64, ptr %gepN, align 8
+  %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %allocaN, i32 0, i32 5
+  %loadN = load i64, ptr %gepN, align 8
+  %add = add i64 %load, %loadN
   %shl = shl i64 %add, 16
-  %memN = alloca { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, align 8
-  call void @llvm.memcpy.p0.p0.i64(ptr align 8 %memN, ptr align 8 %allocaN, i64 280, i1 false)
-  %partN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %memN, i32 0, i32 4
-  %partN = load i64, ptr %partN, align 8
-  %memN = alloca { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, align 8
-  call void @llvm.memcpy.p0.p0.i64(ptr align 8 %memN, ptr align 8 %allocaN, i64 280, i1 false)
-  %partN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %memN, i32 0, i32 4
-  %partN = load i64, ptr %partN, align 8
-  %addN = add i64 %partN, %partN
+  %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %allocaN, i32 0, i32 4
+  %loadN = load i64, ptr %gepN, align 8
+  %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %allocaN, i32 0, i32 4
+  %loadN = load i64, ptr %gepN, align 8
+  %addN = add i64 %loadN, %loadN
   %or = or i64 %shl, %addN
   ret i64 %or
 }
@@ -342,6 +334,3 @@ if.merge.14:                                      ; preds = %if.else.13, %if.the
   call void @ExitProcess(i32 0)
   ret i32 0
 }
-
-; Function Attrs: nocallback nofree nounwind willreturn memory(argmem: readwrite)
-declare void @llvm.memcpy.p0.p0.i64(ptr noalias writeonly captures(none), ptr noalias readonly captures(none), i64, i1 immarg) #2
