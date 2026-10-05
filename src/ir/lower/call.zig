@@ -100,6 +100,42 @@ fn methodReceiverNode(object: *const Node) *const Node {
     return if (object.data == .deref_expr) object.data.deref_expr.operand else object;
 }
 
+/// A dot-call's receiver as it evaluates: its value, or the place of an
+/// aggregate the callee may take by address, so the value is read only by a
+/// callee that takes it by value.
+const Receiver = union(enum) { value: Ref, place: Ref };
+
+fn lowerReceiver(self: *Lowering, node: *const Node) Receiver {
+    if (receiverPlace(self, node)) |place| return .{ .place = place };
+    return .{ .value = self.lowerExpr(node) };
+}
+
+/// The storage of a struct or union receiver read through a pointer or held
+/// in addressable storage; null for any other receiver.
+fn receiverPlace(self: *Lowering, node: *const Node) ?Ref {
+    const ty = self.inferExprType(node);
+    if (ty.isBuiltin()) return null;
+    const name = switch (self.module.types.get(ty)) {
+        .@"struct" => |st| if (st.is_protocol) return null else st.name,
+        .@"union" => |u| u.name,
+        else => return null,
+    };
+    if (self.program_index.lookup(.runtime_class, self.module.types.getString(name)) != null) return null;
+    if (node.data == .field_access) {
+        if (self.pointerReadRoot(&node.data.field_access)) |root| return self.pointerReadAddress(&node.data.field_access, root).ptr;
+    }
+    if (!self.exprHasAddressableStorage(node)) return null;
+    return self.lowerExprAsPtr(node);
+}
+
+/// The receiver's value, read from its place the first time a path needs it.
+fn receiverValue(self: *Lowering, obj: *Ref, place: ?Ref, ty: TypeId) Ref {
+    if (obj.isNone()) {
+        if (place) |p| obj.* = self.builder.load(p, ty);
+    }
+    return obj.*;
+}
+
 /// A named call's written `order` over an argument list with the receiver
 /// prepended: the receiver first, then the written arguments.
 fn receiverFirst(self: *Lowering, order: ?[]const usize) ?[]const usize {
@@ -1329,9 +1365,9 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
     }
     // A dot-call's receiver is its first argument (specs: UFCS); it and a
     // callee value evaluate before the written ones.
-    const first_receiver: ?Ref = switch (c.callee.data) {
+    const first_receiver: ?Receiver = switch (c.callee.data) {
         .field_access => |fa| if (qualified_call_verdict == .value_receiver and receiverIsFirstArgument(self, c, &fa))
-            self.lowerExpr(methodReceiverNode(fa.object))
+            lowerReceiver(self, methodReceiverNode(fa.object))
         else
             null,
         else => null,
@@ -1934,7 +1970,15 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             // Method call: obj.method(args) → prepend obj (or &obj for *Self receivers)
             const effective_obj_node = methodReceiverNode(fa.object);
             var obj_ty = self.inferExprType(effective_obj_node);
-            var obj = first_receiver orelse self.lowerExpr(effective_obj_node);
+            const receiver = first_receiver orelse Receiver{ .value = self.lowerExpr(effective_obj_node) };
+            const recv_place: ?Ref = switch (receiver) {
+                .value => null,
+                .place => |p| p,
+            };
+            var obj = switch (receiver) {
+                .value => |v| v,
+                .place => Ref.none,
+            };
 
             // A guard-narrowed optional receiver dispatches through its
             // child implicitly — parity with field reads and the
@@ -1954,7 +1998,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             if (openSetReceiver(self, obj_ty)) |set_ty| {
                 if (self.openSetOf(set_ty)) |set| {
                     if (lower_open_set.requiredMethod(set, fa.field)) |method| {
-                        const addr = openSetReceiverAddress(self, obj, obj_ty, set_ty, fa.object);
+                        const addr = openSetReceiverAddress(self, receiverValue(self, &obj, recv_place, obj_ty), obj_ty, set_ty, fa.object);
                         return self.emitOpenSetDispatch(addr, set, method, args.items, c.callee.span);
                     }
                 }
@@ -1967,7 +2011,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             // protocol value as its first param).
             if (self.getProtocolInfo(obj_ty)) |proto_info| {
                 if (protocolHasMethod(proto_info, fa.field)) {
-                    return self.emitProtocolDispatch(obj, proto_info, fa.field, args.items, c.callee.span);
+                    return self.emitProtocolDispatch(receiverValue(self, &obj, recv_place, obj_ty), proto_info, fa.field, args.items, c.callee.span);
                 }
             }
 
@@ -1999,7 +2043,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     const pay_ty = opt_info.optional.child;
                     if (self.getProtocolInfo(pay_ty)) |proto_info| {
                         if (protocolHasMethod(proto_info, fa.field)) {
-                            return self.emitProtocolDispatch(obj, proto_info, fa.field, args.items, c.callee.span);
+                            return self.emitProtocolDispatch(receiverValue(self, &obj, recv_place, obj_ty), proto_info, fa.field, args.items, c.callee.span);
                         }
                     }
                     // `?*P` (optional VIEW): the optional of a
@@ -2035,7 +2079,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             const struct_name = self.getStructTypeName(obj_ty);
             if (struct_name) |sname_for_runtime| {
                 if (self.program_index.lookup(.runtime_class, sname_for_runtime)) |fcd| {
-                    return self.lowerRuntimeMethodCall(fcd, fa.field, obj, args.items, c.callee.span);
+                    return self.lowerRuntimeMethodCall(fcd, fa.field, receiverValue(self, &obj, recv_place, obj_ty), args.items, c.callee.span);
                 }
             }
 
@@ -2070,13 +2114,14 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         defer eff_args.deinit(self.alloc);
                         eff_args.append(self.alloc, effective_obj_node) catch unreachable;
                         for (c.args) |a| eff_args.append(self.alloc, a) catch unreachable;
+                        method_args.items[0] = receiverValue(self, &obj, recv_place, obj_ty);
                         var gbindings = callBindings(self, gm.fd, fa.field, c.callee.span, eff_args.items, method_args.items) orelse return Ref.none;
                         defer gbindings.deinit();
                         const base = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ gm.inst_name, self.accessorEffName(gm.fd) }) catch fa.field;
                         const gmangled = self.genericResolver().mangleGenericName(base, gm.fd, &gbindings);
                         if (self.monomorphizeFunction(gm.fd, gmangled, &gbindings)) |fid| {
                             const func = &self.module.functions.items[@intFromEnum(fid)];
-                            self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty, null);
+                            self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty, recv_place);
                             self.appendDefaultArgs(gm.fd, &method_args, c.callee, gbindings);
                             const final_args = self.prependCtxIfNeeded(func, method_args.items);
                             self.coerceCallArgs(final_args, func.params);
@@ -2087,7 +2132,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         const func = &self.module.functions.items[@intFromEnum(fid)];
                         const ret_ty = func.ret;
                         const params = func.params;
-                        self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty, null);
+                        self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty, recv_place);
                         self.appendDefaultArgs(gm.fd, &method_args, c.callee, gm.bindings);
                         const final_args = self.prependCtxIfNeeded(func, method_args.items);
                         self.coerceCallArgs(final_args, params);
@@ -2112,6 +2157,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         eff_args.append(self.alloc, effective_obj_node) catch unreachable;
                         for (c.args) |a| eff_args.append(self.alloc, a) catch unreachable;
 
+                        method_args.items[0] = receiverValue(self, &obj, recv_place, obj_ty);
                         var gbindings = callBindings(self, gen_fd, fa.field, c.callee.span, eff_args.items, method_args.items) orelse return Ref.none;
                         defer gbindings.deinit();
 
@@ -2142,7 +2188,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                                 }
                                 arg_idx += 1;
                             }
-                            self.fixupMethodReceiver(&gvalue_args, gfunc, effective_obj_node, obj_ty, null);
+                            self.fixupMethodReceiver(&gvalue_args, gfunc, effective_obj_node, obj_ty, recv_place);
                             const final_args = self.prependCtxIfNeeded(gfunc, gvalue_args.items);
                             self.coerceCallArgs(final_args, gparams);
                             return self.builder.call(gfid, final_args, gret_ty);
@@ -2163,7 +2209,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     const ret_ty = func.ret;
                     const params = func.params;
                     const has_ctx = func.has_implicit_ctx;
-                    self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty, null);
+                    self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty, recv_place);
                     self.appendDefaultArgs(fd, &method_args, c.callee, null);
                     const final_args = blk: {
                         if (!has_ctx) break :blk method_args.items;
@@ -2190,7 +2236,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         const ret_ty = func.ret;
                         const params = func.params;
                         const has_ctx = func.has_implicit_ctx;
-                        self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty, null);
+                        self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty, recv_place);
                         if (plain_method_fd) |fd| self.appendDefaultArgs(fd, &method_args, c.callee, null);
                         // coerceCallArgs can trigger protocol thunk creation
                         // (module.addFunction), invalidating func pointer.
@@ -2279,6 +2325,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         // Nothing more specific applies now: a receiver already
                         // lowered cannot reach a destination-first parameter.
                         if (refuseDestinationFirstDispatch(self, fd, fa.field, obj_ty, c.callee.span)) return Ref.none;
+                        method_args.items[0] = receiverValue(self, &obj, recv_place, obj_ty);
                         var gbindings = callBindings(self, fd, eff_field, c.callee.span, eff_args.items, method_args.items) orelse return Ref.none;
                         defer gbindings.deinit();
                         const gmangled = self.genericResolver().mangleGenericName(eff_field, fd, &gbindings);
@@ -2308,7 +2355,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                                 }
                                 arg_idx += 1;
                             }
-                            self.fixupMethodReceiver(&gvalue_args, gfunc, effective_obj_node, obj_ty, null);
+                            self.fixupMethodReceiver(&gvalue_args, gfunc, effective_obj_node, obj_ty, recv_place);
                             const final_args = self.prependCtxIfNeeded(gfunc, gvalue_args.items);
                             self.coerceCallArgs(final_args, gparams);
                             return self.builder.call(gfid, final_args, gret_ty);
@@ -2341,7 +2388,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     // Same implicit address-of as a struct-defined method: if the
                     // free function's first param is `*T` and the receiver is a
                     // value `T`, pass its address instead of a by-value copy
-                    self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty, null);
+                    self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty, recv_place);
                     if (ufcs_arity_fd) |fd| self.appendDefaultArgs(fd, &method_args, c.callee, null);
                     const final_args = self.prependCtxIfNeeded(func, method_args.items);
                     self.coerceCallArgs(final_args, params);
