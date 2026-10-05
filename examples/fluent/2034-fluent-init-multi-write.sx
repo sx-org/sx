@@ -59,6 +59,7 @@ main :: () -> i32 {
     print("skipped {} evaluations {}\n", skip(Label{ text = nextText() }), evaluations);
 
     evaluations = 0;
-    print("wrote {} evaluations {}\n", repeat(Label{ text = nextText() }, 3), evaluations);
+    wrote := repeat(Label{ text = nextText() }, 3);
+    print("wrote {} evaluations {}\n", wrote, evaluations);
     0
 }

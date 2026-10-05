@@ -1,0 +1,21 @@
+// A proof made inside one argument of a call does not reach the call's other
+// arguments, which evaluate in an unspecified order (specs: Flow-Sensitive
+// Narrowing, Function Call).
+@import "modules/std.sx";
+
+Value :: interface { get :: (self: *Self) -> i64; }
+Cell :: struct { value: i64; }
+impl Value for Cell { get :: (self: *Cell) -> i64 => self.value; }
+
+pick :: (first: i64, ..$items/Value) -> i64 { first }
+two :: (first: Cell, second: i64) -> i64 { second }
+
+packed :: (x: ?Cell) -> i64 {
+    pick(x.value, { if x == null { return -1; } Cell{ value = 1 } })
+}
+
+ordinary :: (x: ?Cell) -> i64 {
+    two({ if x == null { return -1; } Cell{ value = 1 } }, x.value)
+}
+
+main :: () { print("{} {}\n", packed(null), ordinary(null)); }

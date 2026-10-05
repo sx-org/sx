@@ -498,9 +498,9 @@ const CalleeValue = struct {
 };
 
 /// The value a call dispatches through, read before its arguments evaluate
-/// (specs: Named Arguments — evaluation order is written order), or null when
-/// the callee is not a value. Each `lowerCall` arm that calls a value consumes
-/// this capture, so the conditions here are the ones that select that arm.
+/// (specs: Function Call), or null when the callee is not a value. Each
+/// `lowerCall` arm that calls a value consumes this capture, so the conditions
+/// here are the ones that select that arm.
 fn calleeBeforeArgs(
     self: *Lowering,
     c: *const ast.Call,
@@ -887,6 +887,8 @@ fn lowerComptimePlainStructMethod(
 }
 
 pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
+    self.openCall(c_in);
+    defer _ = self.open_calls.pop();
     var c = c_in;
     // A bare reserved-type-name spelling in call position parses as a
     // `.type_expr` (e.g. `i8(4)`), but if a function of that name is in
@@ -923,6 +925,11 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
     // specialized/generic lowering and final dispatch all consume this exact
     // `FnDecl` + source pair rather than re-looking up a collapsed global name.
     var qualified_call_verdict = self.callResolver().classifyQualifiedCall(c);
+    if (c.callee.data == .field_access) {
+        const fa = &c.callee.data.field_access;
+        if (qualified_call_verdict == .value_receiver and receiverIsFirstArgument(self, c, fa))
+            self.open_calls.items[self.open_calls.items.len - 1].receiver = fa.object;
+    }
     var bare_author_verdict: Lowering.BareCallee = switch (qualified_call_verdict) {
         .never_qualified, .value_receiver => self.callResolver().selectedFreeAuthor(c),
         .type_prefix, .func, .callable_value, .non_callable, .missing, .not_visible, .ambiguous => .none,
@@ -1320,8 +1327,8 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             target = info.optional.child;
         }
     }
-    // A dot-call's receiver is its first argument (specs: UFCS), so it
-    // evaluates before the written ones, and so does a callee value.
+    // A dot-call's receiver is its first argument (specs: UFCS); it and a
+    // callee value evaluate before the written ones.
     const first_receiver: ?Ref = switch (c.callee.data) {
         .field_access => |fa| if (qualified_call_verdict == .value_receiver and receiverIsFirstArgument(self, c, &fa))
             self.lowerExpr(methodReceiverNode(fa.object))

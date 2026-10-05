@@ -750,12 +750,15 @@ main :: () {
         stateJ1 : i32 = 0;
         pJ1 := *stateJ1;
         incJ1 := ||_{ pJ1 = pJ1 } -> i32 { pJ1.* += 1; return pJ1.*; };
-        print("closure-counter: {} {} {}\n", incJ1(), incJ1(), incJ1());
+        firstJ1 := incJ1();
+        secondJ1 := incJ1();
+        print("closure-counter: {} {} {}\n", firstJ1, secondJ1, incJ1());
 
         stateJ2 : i32 = 100;
         pJ2 := *stateJ2;
         accJ2 := |x: i32|_{ pJ2 = pJ2 } -> i32 { pJ2.* += x; return pJ2.*; };
-        print("closure-acc: {} {}\n", accJ2(5), accJ2(10));
+        firstJ2 := accJ2(5);
+        print("closure-acc: {} {}\n", firstJ2, accJ2(10));
 
         baseK2 : i32 = 100;
         sumFn := |items: [*]i32, cnt: i64|_{ baseK2 = baseK2 } -> i32 {

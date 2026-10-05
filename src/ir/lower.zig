@@ -261,6 +261,17 @@ pub const SourceConstCtx = struct {
 /// proof of its own.
 pub const BindingId = enum(u64) { _ };
 
+/// One argument of a call being lowered. `call` numbers that lowering, so two
+/// lowerings of one call site never share it.
+pub const CallArgument = struct { call: u32, index: u32 };
+
+/// A binding proven present, with the call arguments the proof was made in.
+pub const Narrowing = struct { binding: BindingId, within: []const CallArgument };
+
+/// A call being lowered; `receiver` is the dot-call object it passes as its
+/// first argument.
+pub const OpenCall = struct { id: u32, call: *const ast.Call, receiver: ?*const ast.Node = null };
+
 pub const LiteralLocal = struct {
     binding: BindingId,
     name: []const u8,
@@ -782,7 +793,14 @@ pub const Lowering = struct {
     /// Consulted at the implicit `?T → concrete` unwrap (`coerceMode`):
     /// a non-narrowed unwrap is REJECTED instead of silently yielding the zero
     /// payload of a null optional.
-    narrowed: std.AutoHashMap(BindingId, void) = undefined,
+    /// A call's arguments evaluate in an unspecified order, so a proof made
+    /// inside one argument does not reach that call's other arguments.
+    narrowed: std.AutoHashMap(BindingId, []const CallArgument) = undefined,
+    /// The calls being lowered, innermost last.
+    open_calls: std.ArrayList(OpenCall) = .empty,
+    /// The arguments of `open_calls` the lowering stands in.
+    argument_path: std.ArrayList(CallArgument) = .empty,
+    next_call: u32 = 0,
     /// Dedupe for the "nested fn references enclosing local"
     /// diagnostic, keyed `"<fn-index>:<name>"`. The boundary guard fires at
     /// EVERY resolution layer (identifier read, getExprAlloca fast path,
@@ -1183,7 +1201,9 @@ pub const Lowering = struct {
         pack_arg_types: ?std.StringHashMap([]const TypeId),
         inline_return_target: ?InlineExit,
         error_boundary: ?ErrorBoundary,
-        narrowed: std.AutoHashMap(BindingId, void),
+        narrowed: std.AutoHashMap(BindingId, []const CallArgument),
+        open_calls: std.ArrayList(OpenCall),
+        argument_path: std.ArrayList(CallArgument),
         narrowed_refs: std.AutoHashMap(Ref, void),
         literal_local_refs: std.AutoHashMap(Ref, LiteralLocal),
         break_target: ?BlockId,
@@ -1217,6 +1237,8 @@ pub const Lowering = struct {
                 // (closure / local-fn) lowering starts with a fresh, empty
                 // narrowing state and the outer state is restored after.
                 .narrowed = l.narrowed,
+                .open_calls = l.open_calls,
+                .argument_path = l.argument_path,
                 .narrowed_refs = l.narrowed_refs,
                 .literal_local_refs = l.literal_local_refs,
                 // Loop targets and build replays are lexical to one body for
@@ -1226,7 +1248,9 @@ pub const Lowering = struct {
                 .loop_defer_base = l.loop_defer_base,
                 .build_scopes = l.build_scopes,
             };
-            l.narrowed = std.AutoHashMap(BindingId, void).init(l.alloc);
+            l.narrowed = std.AutoHashMap(BindingId, []const CallArgument).init(l.alloc);
+            l.open_calls = .empty;
+            l.argument_path = .empty;
             l.narrowed_refs = std.AutoHashMap(Ref, void).init(l.alloc);
             l.literal_local_refs = std.AutoHashMap(Ref, LiteralLocal).init(l.alloc);
             l.break_target = null;
@@ -1285,6 +1309,10 @@ pub const Lowering = struct {
             l.error_boundary = g.error_boundary;
             l.narrowed.deinit();
             l.narrowed = g.narrowed;
+            l.open_calls.deinit(l.alloc);
+            l.open_calls = g.open_calls;
+            l.argument_path.deinit(l.alloc);
+            l.argument_path = g.argument_path;
             l.narrowed_refs.deinit();
             l.narrowed_refs = g.narrowed_refs;
             l.literal_local_refs.deinit();
@@ -1318,7 +1346,9 @@ pub const Lowering = struct {
     ///   in the nested body would store and branch across a function boundary.
     pub const NestedBodyGuard = struct {
         l: *Lowering,
-        narrowed: std.AutoHashMap(BindingId, void),
+        narrowed: std.AutoHashMap(BindingId, []const CallArgument),
+        open_calls: std.ArrayList(OpenCall),
+        argument_path: std.ArrayList(CallArgument),
         narrowed_refs: std.AutoHashMap(Ref, void),
         literal_local_refs: std.AutoHashMap(Ref, LiteralLocal),
         break_target: ?BlockId,
@@ -1347,6 +1377,8 @@ pub const Lowering = struct {
                 .comptime_value_bindings = l.comptime_value_bindings,
                 .range_cursor = l.range_cursor,
                 .narrowed = l.narrowed,
+                .open_calls = l.open_calls,
+                .argument_path = l.argument_path,
                 .narrowed_refs = l.narrowed_refs,
                 .literal_local_refs = l.literal_local_refs,
                 .break_target = l.break_target,
@@ -1357,7 +1389,9 @@ pub const Lowering = struct {
                 .error_boundary = l.error_boundary,
                 .current_fn_decl = l.current_fn_decl,
             };
-            l.narrowed = std.AutoHashMap(BindingId, void).init(l.alloc);
+            l.narrowed = std.AutoHashMap(BindingId, []const CallArgument).init(l.alloc);
+            l.open_calls = .empty;
+            l.argument_path = .empty;
             l.narrowed_refs = std.AutoHashMap(Ref, void).init(l.alloc);
             l.literal_local_refs = std.AutoHashMap(Ref, LiteralLocal).init(l.alloc);
             l.break_target = null;
@@ -1385,6 +1419,10 @@ pub const Lowering = struct {
         pub fn restore(g: NestedBodyGuard) void {
             g.l.narrowed.deinit();
             g.l.narrowed = g.narrowed;
+            g.l.open_calls.deinit(g.l.alloc);
+            g.l.open_calls = g.open_calls;
+            g.l.argument_path.deinit(g.l.alloc);
+            g.l.argument_path = g.argument_path;
             g.l.narrowed_refs.deinit();
             g.l.narrowed_refs = g.narrowed_refs;
             g.l.literal_local_refs.deinit();
@@ -1592,7 +1630,7 @@ pub const Lowering = struct {
             .comptime_constants = std.StringHashMap(ComptimeValue).init(module.alloc),
             .comptime_type_lists = std.StringHashMap([]const TypeId).init(module.alloc),
             .comptime_type_list_aliases = std.StringHashMap([]const u8).init(module.alloc),
-            .narrowed = std.AutoHashMap(BindingId, void).init(module.alloc),
+            .narrowed = std.AutoHashMap(BindingId, []const CallArgument).init(module.alloc),
             .diag_enclosing_seen = std.StringHashMap(void).init(module.alloc),
             .lambda_env_types = std.AutoHashMap(LambdaKey, TypeId).init(module.alloc),
             .init_recipe_owners = std.AutoHashMap(FuncId, ?FuncId).init(module.alloc),
@@ -3026,7 +3064,8 @@ pub const Lowering = struct {
         if (self.narrowed.count() == 0) return false;
         const scope = self.scope orelse return false;
         const id = scope.bindingId(name) orelse return false;
-        return self.narrowed.contains(id);
+        const within = self.narrowed.get(id) orelse return false;
+        return self.proofReaches(within);
     }
 
     pub fn killNarrowing(self: *Lowering, name: []const u8) void {
@@ -4039,6 +4078,10 @@ pub const Lowering = struct {
     pub const narrowSet = lower_control_flow.narrowSet;
     pub const narrowRestore = lower_control_flow.narrowRestore;
     pub const applyNarrowing = lower_control_flow.applyNarrowing;
+    pub const proofReaches = lower_control_flow.proofReaches;
+    pub const openCall = lower_control_flow.openCall;
+    pub const enterArgument = lower_control_flow.enterArgument;
+    pub const leaveArgument = lower_control_flow.leaveArgument;
     pub const tryConstBoolCondition = lower_control_flow.tryConstBoolCondition;
     pub const staticIsCondition = lower_control_flow.staticIsCondition;
     pub const lowerWhile = lower_control_flow.lowerWhile;

@@ -3732,6 +3732,8 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
     // the body's defining-module pin for the whole recursive lowering.
     const author = Lowering.AuthorScope.enter(self, node);
     defer author.leave();
+    const argument = self.enterArgument(node);
+    defer self.leaveArgument(argument);
     if (self.isScopeDesignator(node)) {
         if (self.diagnostics) |d| d.add(.err, "a scope is not a value", node.span);
         const name = imports_mod.aliasPath(self.alloc, node).?;

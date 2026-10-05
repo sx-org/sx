@@ -56,7 +56,8 @@ main :: () -> i32 {
     t := Tally{};
     print("{} {} {} {} {}\n", bare(1), open(l), fixed(l), nested(l), sunk(*t));
     print("{}\n", block() { Label{ text = "in a block" }; });
-    print("count {} {}\n", countInto(*t, 3), countInto(*t, 4));
+    counted := countInto(*t, 3);
+    print("count {} {}\n", counted, countInto(*t, 4));
     print("lift {} {}\n", lift(Label, l), l.draw());
     0
 }

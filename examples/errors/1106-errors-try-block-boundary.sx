@@ -116,8 +116,10 @@ main :: () -> i32 {
     print("boundaryArgErr={}\n", boundaryArg(-1));
 
     seen: i32 = 0;
-    print("deferErr={} seen={}\n", withDefer(-1, *seen), seen);
-    print("deferOk={} seen={}\n", withDefer(6, *seen), seen);
+    deferErr := withDefer(-1, *seen);
+    print("deferErr={} seen={}\n", deferErr, seen);
+    deferOk := withDefer(6, *seen);
+    print("deferOk={} seen={}\n", deferOk, seen);
 
     print("pure={}\n", pure(-1));
     print("nestedErr={}\n", nested(-1));

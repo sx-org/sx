@@ -27,7 +27,10 @@ main :: () {
 
     // A field the body writes is the value's own storage, across calls.
     counter := |x: i64|_{ total = 0 } -> i64 { total += x; total };
-    print("write-through {} {} {}\n", counter(1), counter(2), counter(3));
+    w1 := counter(1);
+    w2 := counter(2);
+    w3 := counter(3);
+    print("write-through {} {} {}\n", w1, w2, w3);
 
     // A copy carries its own fields — the two run independently.
     fork := counter;
@@ -35,7 +38,8 @@ main :: () {
 
     // A pointer names one env, so both spellings reach the same fields.
     p := *counter;
-    print("shared {} {}\n", p(100), counter(0));                // 126 126
+    shared := p(100);
+    print("shared {} {}\n", shared, counter(0));                // 126 126
 
     // Two fields are two i64s.
     k := 100;

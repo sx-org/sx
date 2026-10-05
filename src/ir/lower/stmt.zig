@@ -3347,6 +3347,8 @@ pub fn nonstoreAddress(self: *Lowering, node: *const Node) ?Ref {
 
 /// Get the pointer (alloca ref) for an lvalue expression, without loading.
 pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
+    const argument = self.enterArgument(node);
+    defer self.leaveArgument(argument);
     if (nonstoreAddress(self, node)) |placeholder| return placeholder;
     switch (node.data) {
         .identifier => |id| {

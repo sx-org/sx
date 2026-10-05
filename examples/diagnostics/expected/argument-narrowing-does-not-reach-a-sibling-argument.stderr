@@ -1,0 +1,11 @@
+error: field 'value' not found on type '?Cell'
+  --> examples/diagnostics/argument-narrowing-does-not-reach-a-sibling-argument.sx:14:10
+   |
+14 |     pick(x.value, { if x == null { return -1; } Cell{ value = 1 } })
+   |          ^^^^^^^
+
+error: field 'value' not found on type '?Cell'
+  --> examples/diagnostics/argument-narrowing-does-not-reach-a-sibling-argument.sx:18:60
+   |
+18 |     two({ if x == null { return -1; } Cell{ value = 1 } }, x.value)
+   |                                                            ^^^^^^^

@@ -2246,6 +2246,13 @@ Reassignment kills narrowing.
 A guard proves the *binding* it names, so a declaration shadowing a narrowed
 name starts with no proof of presence.
 
+A proof made inside one argument of a call does not reach the call's other
+arguments, whose evaluation order is unspecified (§Function Call). With
+`x: ?Cell`:
+```sx
+pick(x.value, { if x == null { return -1; } Cell{ value = 1 } });  // error at `x.value`: `x` may be null
+```
+
 #### Struct Field Defaults
 Optional fields in structs default to `null`:
 ```sx
@@ -5191,6 +5198,8 @@ callee(args)
 compute(6)
 print("hello")
 ```
+A call evaluates its callee before its arguments, and its arguments in an
+unspecified order.
 
 ### Named Arguments
 ```sx
@@ -5217,10 +5226,6 @@ scaffold(chatListClosure, fab = fabButton);           // positional, then named
   name; named arguments may appear in any order among themselves. Each
   parameter binds **at most once** — naming a parameter a positional argument
   already filled is the duplicate-binding error.
-- **Evaluation order is written order**: arguments evaluate left-to-right
-  exactly as written; mapping to parameter positions happens afterwards.
-  Side effects observe the call site's textual order, never the declaration
-  order.
 - **Defaults become reachable anywhere**: a named argument can skip any
   defaulted parameter, including ones in the middle of the list. Purely
   positional calls keep the existing rule — only a *trailing* run of
@@ -6614,9 +6619,9 @@ v3      := try foo() ?? try bar();      // chain: foo fails → try bar
 return try transform(try parse(s));     // nests in any value position
 ```
 
-Evaluation is left-to-right and short-circuits on the first failure, so no
-partial aggregate is ever built. `try` never binds the error — that is
-`catch`'s job.
+Evaluation is left-to-right (a call's arguments aside, §Function Call) and
+short-circuits on the first failure, so no partial aggregate is ever built.
+`try` never binds the error — that is `catch`'s job.
 
 ### `try { block }`
 
