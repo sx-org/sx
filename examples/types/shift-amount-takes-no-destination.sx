@@ -1,0 +1,13 @@
+// A shift's amount is a separate operand: neither the shift's destination nor
+// a cast of the shift types it.
+
+@import "modules/std.sx";
+
+main :: () -> i32 {
+    c := true;
+    x : i64 = 3;
+    v : u8 = 1 << (if c then x else 2);
+    print("{}\n", v);
+    print("{}\n", (1 << ({ 300 } - 295)).(u8));
+    return 0;
+}
