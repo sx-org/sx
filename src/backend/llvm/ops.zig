@@ -902,7 +902,7 @@ pub const Ops = struct {
         // Same predicate as the plain-extern-call path so the
         // two arms stay in lockstep.
         const raw_ret_ty = self.e.toLLVMType(instruction.ty);
-        const uses_sret = self.e.needsByval(instruction.ty, raw_ret_ty);
+        const uses_sret = self.e.needsByval(instruction.ty, raw_ret_ty, true);
         const ret_ty = if (uses_sret) self.e.cached_void else raw_ret_ty;
 
         // Slot layout:
@@ -939,7 +939,7 @@ pub const Ops = struct {
             // reference: caller copy + ptr — same marshaling as the abi(.c)
             // fn-pointer path. coerceArg can't spill these
             // (its struct→ptr arm is the 2-field fat-pointer decay only).
-            if (self.e.needsByval(raw_ty, raw_llvm)) {
+            if (self.e.needsByval(raw_ty, raw_llvm, true)) {
                 param_types[slot] = self.e.cached_ptr;
                 call_args[slot] = self.e.materializeByvalArg(self.e.resolveRef(arg_ref), raw_ty);
                 continue;
@@ -1594,7 +1594,7 @@ pub const Ops = struct {
         const callee_needs_c_abi = callee_func.is_extern or callee_func.call_conv == .c;
         const callee_raw_ret = self.e.toLLVMType(callee_func.ret);
         const callee_uses_sret = !std.mem.eql(u8, self.e.ir_mod.types.getString(callee_func.name), "main") and
-            self.e.returnsThroughSret(callee_func.ret, callee_needs_c_abi);
+            self.e.returnsThroughSret(callee_func.ret, callee_needs_c_abi, callee_func.is_extern);
 
         // When the callee uses sret, prepend an alloca for the result.
         // Index alignment: actual_args[0] = sret_slot; actual_args[i+1] = sx arg i.
@@ -1627,7 +1627,7 @@ pub const Ops = struct {
                 if (callee_needs_c_abi and fn_param_idx < callee_func.params.len) {
                     const ir_ty = callee_func.params[fn_param_idx].ty;
                     const raw_struct = self.e.toLLVMType(ir_ty);
-                    if (self.e.needsByval(ir_ty, raw_struct)) {
+                    if (self.e.needsByval(ir_ty, raw_struct, callee_func.is_extern)) {
                         args[j] = self.e.materializeByvalArg(args[j], ir_ty);
                         continue;
                     }
@@ -1721,7 +1721,7 @@ pub const Ops = struct {
 
         // Mirror the callee declaration's hidden out-pointer at arg 0.
         const ret_ir = ir_ret orelse instruction.ty;
-        const uses_sret = (fp_is_c_abi and ir_ret != null and self.e.needsByval(ir_ret.?, raw_ret_ty)) or
+        const uses_sret = (fp_is_c_abi and ir_ret != null and self.e.needsByval(ir_ret.?, raw_ret_ty, false)) or
             (!fp_is_c_abi and self.e.isMemoryResident(ret_ir));
         const sret_off: usize = if (uses_sret) 1 else 0;
 
@@ -1761,7 +1761,7 @@ pub const Ops = struct {
                 const fp_idx = i - fp_ctx_slots;
                 if (fp_idx < fp.len) {
                     const raw_struct = self.e.toLLVMType(fp[fp_idx]);
-                    if (fp_is_c_abi and self.e.needsByval(fp[fp_idx], raw_struct)) {
+                    if (fp_is_c_abi and self.e.needsByval(fp[fp_idx], raw_struct, false)) {
                         args[j] = self.e.materializeByvalArg(args[j], fp[fp_idx]);
                         param_tys[j] = self.e.cached_ptr;
                         continue;
@@ -2902,7 +2902,7 @@ pub const Ops = struct {
         // prepended ptr sret param. Write the value through
         // the sret slot and emit ret void.
         const needs_c_abi = func.is_extern or func.call_conv == .c;
-        if (!self.e.current_func_is_main and self.e.returnsThroughSret(func.ret, needs_c_abi)) {
+        if (!self.e.current_func_is_main and self.e.returnsThroughSret(func.ret, needs_c_abi, func.is_extern)) {
             const llvm_func2 = c.LLVMGetBasicBlockParent(c.LLVMGetInsertBlock(self.e.builder));
             const sret_ptr = c.LLVMGetParam(llvm_func2, 0);
             if (self.e.isMemoryResident(func.ret)) {

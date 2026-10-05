@@ -1662,7 +1662,7 @@ pub const LLVMEmitter = struct {
         // The caller allocates the result, passes its address as a hidden
         // first argument with `sret(<T>)`, and the function writes through it
         // and returns void.
-        const uses_sret = !is_main and self.returnsThroughSret(func.ret, needs_c_abi);
+        const uses_sret = !is_main and self.returnsThroughSret(func.ret, needs_c_abi, func.is_extern);
         const ret_ty = if (is_main) self.cached_i32 else if (uses_sret) self.cached_void else if (needs_c_abi) self.abiCoerceParamTypeEx(func.ret, raw_ret_ty, func.is_extern) else raw_ret_ty;
 
         // Build parameter types.
@@ -1783,7 +1783,7 @@ pub const LLVMEmitter = struct {
         // pointer as its first argument. Must mirror declareFunction's
         // classification exactly.
         const needs_c_abi_sig = func.is_extern or func.call_conv == .c;
-        const fn_uses_sret = !self.current_func_is_main and self.returnsThroughSret(func.ret, needs_c_abi_sig);
+        const fn_uses_sret = !self.current_func_is_main and self.returnsThroughSret(func.ret, needs_c_abi_sig, func.is_extern);
         const param_sret_offset: usize = if (fn_uses_sret) 1 else 0;
         self.indexRefTypes(func);
         self.undef_refs.clearRetainingCapacity();
@@ -1817,7 +1817,7 @@ pub const LLVMEmitter = struct {
             c.LLVMPositionBuilderAtEnd(self.builder, entry_bb);
             for (func.params, 0..) |param, pi| {
                 const raw_llvm_ty = self.toLLVMType(param.ty);
-                if (!self.isMemoryResident(param.ty) and self.needsByval(param.ty, raw_llvm_ty)) {
+                if (!self.isMemoryResident(param.ty) and self.needsByval(param.ty, raw_llvm_ty, func.is_extern)) {
                     const ptr_val = c.LLVMGetParam(llvm_func, @intCast(pi + param_sret_offset));
                     const loaded = c.LLVMBuildLoad2(self.builder, raw_llvm_ty, ptr_val, "byval.load");
                     self.ref_map.put(@intCast(pi), loaded) catch unreachable;
@@ -2479,8 +2479,8 @@ pub const LLVMEmitter = struct {
     /// Whether a `ret`-typed result returns through a hidden `sret` pointer at
     /// parameter 0: a memory-resident result in either convention, and every
     /// result the C ABI returns indirectly.
-    pub fn returnsThroughSret(self: *LLVMEmitter, ret: TypeId, c_abi: bool) bool {
-        if (c_abi) return self.needsByval(ret, self.toLLVMType(ret));
+    pub fn returnsThroughSret(self: *LLVMEmitter, ret: TypeId, c_abi: bool, is_extern: bool) bool {
+        if (c_abi) return self.needsByval(ret, self.toLLVMType(ret), is_extern);
         return self.isMemoryResident(ret);
     }
 
@@ -3222,8 +3222,8 @@ pub const LLVMEmitter = struct {
         return self.abiLowering().abiCoerceDefaultParamType(ir_ty, llvm_ty);
     }
 
-    pub fn needsByval(self: *LLVMEmitter, ir_ty: TypeId, raw_llvm_ty: c.LLVMTypeRef) bool {
-        return self.abiLowering().needsByval(ir_ty, raw_llvm_ty);
+    pub fn needsByval(self: *LLVMEmitter, ir_ty: TypeId, raw_llvm_ty: c.LLVMTypeRef, is_extern_c_api: bool) bool {
+        return self.abiLowering().needsByval(ir_ty, raw_llvm_ty, is_extern_c_api);
     }
 
     pub fn materializeByvalArg(self: *LLVMEmitter, val: c.LLVMValueRef, ir_ty: TypeId) c.LLVMValueRef {

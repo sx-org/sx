@@ -3,6 +3,7 @@ const llvm = @import("../../llvm_api.zig");
 const c = llvm.c;
 const ir_types = @import("../../ir/types.zig");
 const emit = @import("../../ir/emit_llvm.zig");
+const llvm_types = @import("types.zig");
 
 const TypeId = ir_types.TypeId;
 const LLVMEmitter = emit.LLVMEmitter;
@@ -58,6 +59,7 @@ pub const AbiLowering = struct {
         // genuinely 64-bit values (SDL_WindowFlags, timestamps, etc.).
         if (self.e.target_config.isWasm32()) {
             if (ir_ty == .usize or ir_ty == .isize) return self.e.cached_i32;
+            if (self.wasmPassesIndirectly(llvm_ty)) return self.e.cached_ptr;
             return llvm_ty;
         }
 
@@ -124,18 +126,31 @@ pub const AbiLowering = struct {
         return all_float or all_double;
     }
 
-    pub fn needsByval(self: AbiLowering, ir_ty: TypeId, raw_llvm_ty: c.LLVMTypeRef) bool {
+    /// Whether a C-boundary value of `ir_ty` passes as a pointer to a copy the
+    /// callee owns, and returns through `sret`. `is_extern_c_api` is
+    /// `abiCoerceParamTypeEx`'s: an extern's slice is the pointer it collapses to.
+    pub fn needsByval(self: AbiLowering, ir_ty: TypeId, raw_llvm_ty: c.LLVMTypeRef, is_extern_c_api: bool) bool {
         if (self.e.isMemoryResident(ir_ty)) return true;
-        if (self.e.target_config.isWasm32()) return false;
         if (self.e.ir_mod.types.isCVariadicCursor(ir_ty)) return false;
+        const wasm32 = self.e.target_config.isWasm32();
         switch (self.e.ir_mod.types.get(ir_ty)) {
-            .slice => return false,
+            .slice => if (is_extern_c_api or !wasm32) return false,
             else => {},
         }
+        if (wasm32) return self.wasmPassesIndirectly(raw_llvm_ty);
         if (c.LLVMGetTypeKind(raw_llvm_ty) != c.LLVMStructTypeKind) return false;
         if (self.isHfa(raw_llvm_ty)) return false;
         const size = c.LLVMABISizeOfType(c.LLVMGetModuleDataLayout(self.e.llvm_module), raw_llvm_ty);
         return size > 16;
+    }
+
+    /// The wasm32 C ABI passes and returns every struct indirectly but an empty
+    /// or single-element one, which it passes as that element.
+    fn wasmPassesIndirectly(self: AbiLowering, llvm_ty: c.LLVMTypeRef) bool {
+        if (c.LLVMGetTypeKind(llvm_ty) != c.LLVMStructTypeKind) return false;
+        const dl = c.LLVMGetModuleDataLayout(self.e.llvm_module);
+        if (c.LLVMABISizeOfType(dl, llvm_ty) == 0) return false;
+        return !llvm_types.TypeLowering.isSingleElementStruct(dl, llvm_ty);
     }
 
     /// The copy of a by-value C argument its callee owns.
