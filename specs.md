@@ -4762,10 +4762,9 @@ match lowers to nothing (the runtime form's skip-to-merge, statically). A
 `@error(…)` arm fires only when SELECTED — the un-selected case is
 the target-match discipline. The static classifier mirrors the runtime tag
 switch arm for arm, and `case interface:` claims the interface types.
-A constraint matches no arm of either classifier. Inline branches lower in
-statement position (like `inline if @host.os`), so value-producing arms use
-explicit `return`. A NON-inline type match keeps its runtime tag-switch
-semantics.
+A constraint matches no arm of either classifier. The selected arm lowers in
+statement position, so value-producing arms use explicit `return`. A
+NON-inline type match keeps its runtime tag-switch semantics.
 
 ### While Loop
 ```sx
@@ -5899,6 +5898,12 @@ compiles for every target). The condition folds for comparisons, `and` / `or`,
 (`ENABLED :: false`), and a field read of a comptime struct; an unfoldable
 condition falls back to a runtime `if`, where both branches are checked as
 usual.
+
+In value position a folded `inline if` produces its taken arm's value:
+
+```sx
+w := { inline if @host.pointerSize == 8 { 64 } else { 32 } };   // 64 on a 64-bit target
+```
 
 ---
 
