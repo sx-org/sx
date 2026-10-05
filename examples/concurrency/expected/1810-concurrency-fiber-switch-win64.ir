@@ -43,12 +43,12 @@ entry:
   %load = load ptr, ptr %alloca, align 8
   %gep = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %load, i32 0, i32 0
   %loadN = load ptr, ptr %alloca, align 8
-  %loadN = load { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %loadN, align 8
-  %sg = extractvalue { { [30 x i64] }, ptr, ptr, i64, i64, i64 } %loadN, 1
+  %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %loadN, i32 0, i32 1
+  %loadN = load ptr, ptr %gepN, align 8
   %loadN = load ptr, ptr %alloca, align 8
-  %loadN = load { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %loadN, align 8
-  %sgN = extractvalue { { [30 x i64] }, ptr, ptr, i64, i64, i64 } %loadN, 3
-  %call = call i64 @scribble_verify(ptr %gep, ptr %sg, i64 %sgN)
+  %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %loadN, i32 0, i32 3
+  %loadN = load i64, ptr %gepN, align 8
+  %call = call i64 @scribble_verify(ptr %gep, ptr %loadN, i64 %loadN)
   %allocaN = alloca i64, align 8
   store i64 %call, ptr %allocaN, align 8
   %loadN = load i64, ptr %allocaN, align 8
@@ -65,9 +65,9 @@ entry:
   %loadN = load ptr, ptr %alloca, align 8
   %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %loadN, i32 0, i32 0
   %loadN = load ptr, ptr %alloca, align 8
-  %loadN = load { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %loadN, align 8
-  %sgN = extractvalue { { [30 x i64] }, ptr, ptr, i64, i64, i64 } %loadN, 2
-  call void @swap_good(ptr %gepN, ptr %sgN)
+  %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %loadN, i32 0, i32 2
+  %loadN = load ptr, ptr %gepN, align 8
+  call void @swap_good(ptr %gepN, ptr %loadN)
   ret void
 }
 
