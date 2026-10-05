@@ -19,13 +19,21 @@ entry:
 }
 
 ; Function Attrs: nounwind
-define internal { { [128 x i8], i32 }, i1 } @addrUnix(ptr %0, { ptr, i64 } %1) #0 {
+define internal void @addrUnix(ptr sret({ { [128 x i8], i32 }, i1 }) %0, ptr %1, { ptr, i64 } %2) #0 {
 entry:
   %alloca = alloca { ptr, i64 }, align 8
+  %memN = alloca { [128 x i8], i32 }, align 8
+  %memN = alloca { { [128 x i8], i32 }, i1 }, align 8
   %allocaN = alloca i64, align 8
-  store { ptr, i64 } %1, ptr %alloca, align 8
+  %memN = alloca { [128 x i8], i32 }, align 8
+  %memN = alloca { { [128 x i8], i32 }, i1 }, align 8
+  store { ptr, i64 } %2, ptr %alloca, align 8
   %allocaN = alloca { [128 x i8], i32 }, align 8
-  store { [128 x i8], i32 } { [128 x i8] undef, i32 0 }, ptr %allocaN, align 4
+  %mem = alloca [128 x i8], align 1
+  %memN = alloca { [128 x i8], i32 }, align 8
+  %part = getelementptr inbounds nuw { [128 x i8], i32 }, ptr %memN, i32 0, i32 1
+  store i32 0, ptr %part, align 4
+  call void @llvm.memcpy.p0.p0.i64(ptr align 4 %allocaN, ptr align 4 %memN, i64 132, i1 false)
   %load = load { ptr, i64 }, ptr %alloca, align 8
   %len = extractvalue { ptr, i64 } %load, 1
   %icmp = icmp eq i64 %len, 0
@@ -42,10 +50,13 @@ or.merge.47:                                      ; preds = %or.rhs.46, %entry
   br i1 %bp, label %if.then.48, label %if.merge.49
 
 if.then.48:                                       ; preds = %or.merge.47
-  %loadN = load { [128 x i8], i32 }, ptr %allocaN, align 4
-  %si = insertvalue { { [128 x i8], i32 }, i1 } undef, { [128 x i8], i32 } %loadN, 0
-  %siN = insertvalue { { [128 x i8], i32 }, i1 } %si, i1 false, 1
-  ret { { [128 x i8], i32 }, i1 } %siN
+  call void @llvm.memcpy.p0.p0.i64(ptr align 4 %memN, ptr align 4 %allocaN, i64 132, i1 false)
+  %partN = getelementptr inbounds nuw { { [128 x i8], i32 }, i1 }, ptr %memN, i32 0, i32 0
+  call void @llvm.memcpy.p0.p0.i64(ptr align 4 %partN, ptr align 4 %memN, i64 132, i1 false)
+  %partN = getelementptr inbounds nuw { { [128 x i8], i32 }, i1 }, ptr %memN, i32 0, i32 1
+  store i1 false, ptr %partN, align 1
+  call void @llvm.memcpy.p0.p0.i64(ptr align 4 %0, ptr align 4 %memN, i64 136, i1 false)
+  ret void
 
 if.merge.49:                                      ; preds = %or.merge.47
   %loadN = load { ptr, i64 }, ptr %alloca, align 8
@@ -53,7 +64,7 @@ if.merge.49:                                      ; preds = %or.merge.47
   %add = add i64 2, %lenN
   %addN = add i64 %add, 1
   %trunc = trunc i64 %addN to i8
-  call void @unHeader(ptr %0, ptr %allocaN, i8 %trunc)
+  call void @unHeader(ptr %1, ptr %allocaN, i8 %trunc)
   store i64 0, ptr %allocaN, align 8
   br label %while.hdr.50
 
@@ -85,8 +96,8 @@ while.exit.52:                                    ; preds = %while.hdr.50
   %lenN = extractvalue { ptr, i64 } %loadN, 1
   %addN = add i64 2, %lenN
   %gepN = getelementptr inbounds nuw { [128 x i8], i32 }, ptr %allocaN, i32 0, i32 0
-  %igp.ptr25 = getelementptr i8, ptr %gepN, i64 %addN
-  store i8 0, ptr %igp.ptr25, align 1
+  %igp.ptr28 = getelementptr i8, ptr %gepN, i64 %addN
+  store i8 0, ptr %igp.ptr28, align 1
   %loadN = load { ptr, i64 }, ptr %alloca, align 8
   %lenN = extractvalue { ptr, i64 } %loadN, 1
   %addN = add i64 2, %lenN
@@ -94,10 +105,13 @@ while.exit.52:                                    ; preds = %while.hdr.50
   %truncN = trunc i64 %addN to i32
   %gepN = getelementptr inbounds nuw { [128 x i8], i32 }, ptr %allocaN, i32 0, i32 1
   store i32 %truncN, ptr %gepN, align 4
-  %loadN = load { [128 x i8], i32 }, ptr %allocaN, align 4
-  %siN = insertvalue { { [128 x i8], i32 }, i1 } undef, { [128 x i8], i32 } %loadN, 0
-  %siN = insertvalue { { [128 x i8], i32 }, i1 } %siN, i1 true, 1
-  ret { { [128 x i8], i32 }, i1 } %siN
+  call void @llvm.memcpy.p0.p0.i64(ptr align 4 %memN, ptr align 4 %allocaN, i64 132, i1 false)
+  %partN = getelementptr inbounds nuw { { [128 x i8], i32 }, i1 }, ptr %memN, i32 0, i32 0
+  call void @llvm.memcpy.p0.p0.i64(ptr align 4 %partN, ptr align 4 %memN, i64 132, i1 false)
+  %partN = getelementptr inbounds nuw { { [128 x i8], i32 }, i1 }, ptr %memN, i32 0, i32 1
+  store i1 true, ptr %partN, align 1
+  call void @llvm.memcpy.p0.p0.i64(ptr align 4 %0, ptr align 4 %memN, i64 136, i1 false)
+  ret void
 }
 
 ; Function Attrs: nounwind
@@ -202,8 +216,10 @@ entry:
   %allocaN = alloca ptr, align 8
   %allocaN = alloca [16 x i8], align 1
   %allocaN = alloca { i16, i16, i32, [16 x i8], i32 }, align 8
+  %mem = alloca { { [128 x i8], i32 }, i1 }, align 8
   %allocaN = alloca { [128 x i8], i32 }, align 8
   %allocaN = alloca i1, align 1
+  %memN = alloca { [128 x i8], i32 }, align 8
   br i1 false, label %if.then.0, label %if.merge.1
 
 if.then.0:                                        ; preds = %entry
@@ -397,11 +413,12 @@ if.then.44:                                       ; preds = %if.merge.43
   ret i32 23
 
 if.merge.45:                                      ; preds = %if.merge.43
-  %callN = call { { [128 x i8], i32 }, i1 } @addrUnix(ptr @kDefaultContext, { ptr, i64 } { ptr @str, i64 11 })
-  %sgN = extractvalue { { [128 x i8], i32 }, i1 } %callN, 0
-  store { [128 x i8], i32 } %sgN, ptr %allocaN, align 4
-  %sgN = extractvalue { { [128 x i8], i32 }, i1 } %callN, 1
-  store i1 %sgN, ptr %allocaN, align 1
+  call void @addrUnix(ptr sret({ { [128 x i8], i32 }, i1 }) %mem, ptr @kDefaultContext, { ptr, i64 } { ptr @str, i64 11 })
+  %part = getelementptr inbounds nuw { { [128 x i8], i32 }, i1 }, ptr %mem, i32 0, i32 0
+  call void @llvm.memcpy.p0.p0.i64(ptr align 4 %allocaN, ptr align 4 %part, i64 132, i1 false)
+  %partN = getelementptr inbounds nuw { { [128 x i8], i32 }, i1 }, ptr %mem, i32 0, i32 1
+  %partN = load i1, ptr %partN, align 1
+  store i1 %partN, ptr %allocaN, align 1
   %loadN = load i1, ptr %allocaN, align 1
   %lnotN = xor i1 %loadN, true
   br i1 %lnotN, label %if.then.53, label %if.merge.54
@@ -418,9 +435,10 @@ if.then.55:                                       ; preds = %if.merge.54
   ret i32 25
 
 if.merge.56:                                      ; preds = %if.merge.54
-  %loadN = load { [128 x i8], i32 }, ptr %allocaN, align 4
-  %sgN = extractvalue { [128 x i8], i32 } %loadN, 1
-  %icmpN = icmp ne i32 %sgN, 14
+  call void @llvm.memcpy.p0.p0.i64(ptr align 4 %memN, ptr align 4 %allocaN, i64 132, i1 false)
+  %partN = getelementptr inbounds nuw { [128 x i8], i32 }, ptr %memN, i32 0, i32 1
+  %partN = load i32, ptr %partN, align 4
+  %icmpN = icmp ne i32 %partN, 14
   br i1 %icmpN, label %if.then.57, label %if.merge.58
 
 if.then.57:                                       ; preds = %if.merge.56
@@ -429,3 +447,6 @@ if.then.57:                                       ; preds = %if.merge.56
 if.merge.58:                                      ; preds = %if.merge.56
   ret i32 0
 }
+
+; Function Attrs: nocallback nofree nounwind willreturn memory(argmem: readwrite)
+declare void @llvm.memcpy.p0.p0.i64(ptr noalias writeonly captures(none), ptr noalias readonly captures(none), i64, i1 immarg) #1

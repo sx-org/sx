@@ -46,6 +46,7 @@ pub const AbiLowering = struct {
         // target — the size buckets below would classify the cursor's storage
         // instead, and land on `byval` where clang passes a plain pointer.
         if (self.e.ir_mod.types.isCVariadicCursor(ir_ty)) return self.e.cached_ptr;
+        if (self.e.isMemoryResident(ir_ty)) return self.e.cached_ptr;
 
         if (is_extern_c_api) switch (self.e.ir_mod.types.get(ir_ty)) {
             .slice => return self.e.cached_ptr,
@@ -91,6 +92,7 @@ pub const AbiLowering = struct {
     /// HFAs, mid-size, and large structs as their raw LLVM types — those
     /// paths are already correct without C-style register packing.
     pub fn abiCoerceDefaultParamType(self: AbiLowering, ir_ty: TypeId, llvm_ty: c.LLVMTypeRef) c.LLVMTypeRef {
+        if (self.e.isMemoryResident(ir_ty)) return self.e.cached_ptr;
         if (self.e.target_config.isWasm32()) return llvm_ty;
         switch (self.e.ir_mod.types.get(ir_ty)) {
             .slice => return llvm_ty,
@@ -123,6 +125,7 @@ pub const AbiLowering = struct {
     }
 
     pub fn needsByval(self: AbiLowering, ir_ty: TypeId, raw_llvm_ty: c.LLVMTypeRef) bool {
+        if (self.e.isMemoryResident(ir_ty)) return true;
         if (self.e.target_config.isWasm32()) return false;
         if (self.e.ir_mod.types.isCVariadicCursor(ir_ty)) return false;
         switch (self.e.ir_mod.types.get(ir_ty)) {
@@ -135,9 +138,14 @@ pub const AbiLowering = struct {
         return size > 16;
     }
 
-    pub fn materializeByvalArg(self: AbiLowering, val: c.LLVMValueRef, struct_ty: c.LLVMTypeRef) c.LLVMValueRef {
-        const tmp = self.e.buildEntryAlloca(struct_ty, "byval.tmp");
-        _ = c.LLVMBuildStore(self.e.builder, val, tmp);
+    /// The copy of a by-value C argument its callee owns.
+    pub fn materializeByvalArg(self: AbiLowering, val: c.LLVMValueRef, ir_ty: TypeId) c.LLVMValueRef {
+        const tmp = self.e.residentSlot(ir_ty);
+        if (self.e.isMemoryResident(ir_ty)) {
+            self.e.copyResident(tmp, val, ir_ty);
+        } else {
+            _ = c.LLVMBuildStore(self.e.builder, val, tmp);
+        }
         return tmp;
     }
 };

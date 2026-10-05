@@ -280,6 +280,16 @@ pub const LLVMEmitter = struct {
 
     // Maps IR Ref → LLVM Value for the current function
     ref_map: std.AutoHashMap(u32, c.LLVMValueRef),
+    // The IR type of every ref of `ref_types_func`, indexed by ref.
+    ref_types: std.ArrayList(?TypeId),
+    ref_types_func: ?u32 = null,
+    // Refs of the current function that hold `---`: storage nothing writes.
+    undef_refs: std.AutoHashMap(u32, void),
+    // The storage each memory-resident block parameter of the current
+    // function owns, keyed by `makeBlockKey(block, param_index)`.
+    param_slots: std.AutoHashMap(u64, c.LLVMValueRef),
+    // `TypeLowering.isMemoryResident` per IR type.
+    resident_types: std.AutoHashMap(u32, bool),
 
     // Maps IR FuncId → LLVM function value
     func_map: std.AutoHashMap(u32, c.LLVMValueRef),
@@ -511,6 +521,10 @@ pub const LLVMEmitter = struct {
             .ir_mod = ir_mod,
             .alloc = alloc,
             .ref_map = std.AutoHashMap(u32, c.LLVMValueRef).init(alloc),
+            .ref_types = std.ArrayList(?TypeId).empty,
+            .undef_refs = std.AutoHashMap(u32, void).init(alloc),
+            .param_slots = std.AutoHashMap(u64, c.LLVMValueRef).init(alloc),
+            .resident_types = std.AutoHashMap(u32, bool).init(alloc),
             .func_map = std.AutoHashMap(u32, c.LLVMValueRef).init(alloc),
             .global_map = std.AutoHashMap(u32, c.LLVMValueRef).init(alloc),
             .block_map = std.AutoHashMap(u64, c.LLVMBasicBlockRef).init(alloc),
@@ -542,6 +556,10 @@ pub const LLVMEmitter = struct {
     pub fn deinit(self: *LLVMEmitter) void {
         if (self.reach) |*r| r.deinit();
         self.ref_map.deinit();
+        self.ref_types.deinit(self.alloc);
+        self.undef_refs.deinit();
+        self.param_slots.deinit();
+        self.resident_types.deinit();
         self.func_map.deinit();
         var jni_it = self.jni_slots.keyIterator();
         while (jni_it.next()) |k| self.alloc.free(k.*);
@@ -663,8 +681,10 @@ pub const LLVMEmitter = struct {
         // Finder/`open` launches the binary with CWD=/.
         self.emitMacosBundleChdir();
 
-        // Pass 3: Verify typeSizeBytes matches LLVM's ABI sizes
+        // Pass 3: Verify typeSizeBytes matches LLVM's ABI sizes, and that
+        // memory-resident values never appear first-class.
         self.verifySizes();
+        self.verifyMemoryResidence();
 
         // Pass 4: Resolve DWARF temporary metadata. Must come after all
         // DISubprograms / DILocations are created and before the module
@@ -971,6 +991,33 @@ pub const LLVMEmitter = struct {
         c.LLVMSetLinkage(fn_val, c.LLVMExternalLinkage);
         self.objc_msg_send_value = fn_val;
         return fn_val;
+    }
+
+    /// No instruction yields, stores, returns or passes a first-class value of
+    /// a memory-resident type. One that does is a compiler bug in the op that
+    /// emitted it, and the function and type are what locate it.
+    fn verifyMemoryResidence(self: *LLVMEmitter) void {
+        var func = c.LLVMGetFirstFunction(self.llvm_module);
+        while (func != null) : (func = c.LLVMGetNextFunction(func)) {
+            var bb = c.LLVMGetFirstBasicBlock(func);
+            while (bb != null) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+                var inst = c.LLVMGetFirstInstruction(bb);
+                while (inst != null) : (inst = c.LLVMGetNextInstruction(inst)) {
+                    var ty = c.LLVMTypeOf(inst);
+                    var i: c_int = 0;
+                    const operands = c.LLVMGetNumOperands(inst);
+                    while (!self.typeLowering().isMemoryResident(ty) and i < operands) : (i += 1) {
+                        ty = c.LLVMTypeOf(c.LLVMGetOperand(inst, @intCast(i)));
+                    }
+                    if (!self.typeLowering().isMemoryResident(ty)) continue;
+                    var len: usize = 0;
+                    const name = c.LLVMGetValueName2(func, &len);
+                    const ty_text = c.LLVMPrintTypeToString(ty);
+                    defer c.LLVMDisposeMessage(ty_text);
+                    std.debug.panic("memory-resident '{s}' is a first-class value in '{s}'", .{ std.mem.span(ty_text), name[0..len] });
+                }
+            }
+        }
     }
 
     /// Compare IR typeSizeBytes against LLVMABISizeOfType for all user-defined types.
@@ -1612,19 +1659,18 @@ pub const LLVMEmitter = struct {
         // main always returns i32 at the LLVM level (JIT expects it)
         const raw_ret_ty = self.toLLVMType(func.ret);
         const needs_c_abi = func.is_extern or func.call_conv == .c;
-        // sret return: C-ABI functions returning a >16 B non-HFA struct
-        // use the indirect-return convention (caller allocates space,
-        // passes its pointer as a hidden first arg with `sret(<T>)`,
-        // function writes through and returns void). Distinct from
-        // small-struct register coercion (i64 / [2 x i64]) and HFA.
-        const uses_sret = needs_c_abi and !is_main and self.needsByval(func.ret, raw_ret_ty);
+        // The caller allocates the result, passes its address as a hidden
+        // first argument with `sret(<T>)`, and the function writes through it
+        // and returns void.
+        const uses_sret = !is_main and self.returnsThroughSret(func.ret, needs_c_abi);
         const ret_ty = if (is_main) self.cached_i32 else if (uses_sret) self.cached_void else if (needs_c_abi) self.abiCoerceParamTypeEx(func.ret, raw_ret_ty, func.is_extern) else raw_ret_ty;
 
         // Build parameter types.
         // C ABI (extern / abi(.c)): full size-bucket coercion (string→ptr, ≤8→i64, …).
         // Default sx ABI: still pack ≤8-byte non-HFA structs into i64 so AArch64
         // does not expand `{i8×4}` (e.g. Color) into four i8 args that mis-spill
-        // when a second such param overflows the integer registers.
+        // when a second such param overflows the integer registers. A
+        // memory-resident param is the address of its storage in both.
         // When uses_sret, prepend the sret pointer at index 0.
         const sret_offset: usize = if (uses_sret) 1 else 0;
         const param_count: c_uint = @intCast(func.params.len + sret_offset);
@@ -1703,12 +1749,10 @@ pub const LLVMEmitter = struct {
             }
         }
 
-        // Apple ARM64 ABI for >16B non-HFA composites: pass by reference
-        // via a pointer in the next int register (NOT via LLVM's `byval`
-        // attribute, which lowers the struct on the stack — incompatible
-        // with what `clang` emits and what extern C callees expect).
-        // abiCoerceParamType returned `ptr` for these slots, so the formal
-        // param IS a plain pointer; the prologue loads the struct back.
+        // A C-ABI aggregate `needsByval` selects passes as a pointer to a copy
+        // the callee owns, with no LLVM `byval` attribute: `byval` lowers the
+        // copy onto the stack, where clang's AArch64 and Win64 callees expect
+        // the pointer in a register.
 
         self.func_map.put(func_idx, llvm_func) catch unreachable;
     }
@@ -1739,9 +1783,11 @@ pub const LLVMEmitter = struct {
         // pointer as its first argument. Must mirror declareFunction's
         // classification exactly.
         const needs_c_abi_sig = func.is_extern or func.call_conv == .c;
-        const fn_uses_sret = needs_c_abi_sig and !self.current_func_is_main and
-            self.needsByval(func.ret, self.toLLVMType(func.ret));
+        const fn_uses_sret = !self.current_func_is_main and self.returnsThroughSret(func.ret, needs_c_abi_sig);
         const param_sret_offset: usize = if (fn_uses_sret) 1 else 0;
+        self.indexRefTypes(func);
+        self.undef_refs.clearRetainingCapacity();
+        self.param_slots.clearRetainingCapacity();
         for (0..func.params.len) |pi| {
             const param_val = c.LLVMGetParam(llvm_func, @intCast(pi + param_sret_offset));
             self.mapRef(param_val);
@@ -1763,15 +1809,15 @@ pub const LLVMEmitter = struct {
             self.block_map.put(block_key, bb) catch unreachable;
         }
 
-        // byval params arrive as `ptr` in LLVM but the IR body expects struct values.
-        // At entry, load each byval param into a struct SSA value and re-map its ref.
+        // A byval param arrives as a pointer to the callee's copy. A
+        // memory-resident one IS that storage; any other is loaded at entry.
         if (needs_c_abi_sig and func.blocks.items.len > 0) {
             const entry_key = makeBlockKey(func_idx, 0);
             const entry_bb = self.block_map.get(entry_key) orelse unreachable;
             c.LLVMPositionBuilderAtEnd(self.builder, entry_bb);
             for (func.params, 0..) |param, pi| {
                 const raw_llvm_ty = self.toLLVMType(param.ty);
-                if (self.needsByval(param.ty, raw_llvm_ty)) {
+                if (!self.isMemoryResident(param.ty) and self.needsByval(param.ty, raw_llvm_ty)) {
                     const ptr_val = c.LLVMGetParam(llvm_func, @intCast(pi + param_sret_offset));
                     const loaded = c.LLVMBuildLoad2(self.builder, raw_llvm_ty, ptr_val, "byval.load");
                     self.ref_map.put(@intCast(pi), loaded) catch unreachable;
@@ -1883,7 +1929,7 @@ pub const LLVMEmitter = struct {
 
     /// After emitting all blocks, fill in PHI incoming values from branch args.
     fn fixupPhiNodes(self: *LLVMEmitter, func: *const Function, func_idx: u32) void {
-        if (self.pending_phis.items.len == 0) return;
+        if (self.pending_phis.items.len == 0 and self.param_slots.count() == 0) return;
 
         for (func.blocks.items, 0..) |block, bi| {
             const src_key = makeBlockKey(func_idx, @intCast(bi));
@@ -1892,25 +1938,94 @@ pub const LLVMEmitter = struct {
             // block into a sub-CFG (string `==`, value `match`, …).
             const src_bb = self.term_block_map.get(src_key) orelse continue;
 
+            // LLVM numbers a terminator's successors: `br`'s then/else in
+            // order, a switch's default first and its cases after it.
             for (block.insts.items) |instruction| {
                 switch (instruction.op) {
                     .br => |branch| {
-                        self.addPhiIncoming(branch.target, branch.args, src_bb);
+                        self.addEdge(func, func_idx, src_bb, 0, branch.target, branch.args);
                     },
                     .cond_br => |cb| {
-                        self.addPhiIncoming(cb.then_target, cb.then_args, src_bb);
-                        self.addPhiIncoming(cb.else_target, cb.else_args, src_bb);
+                        self.addEdge(func, func_idx, src_bb, 0, cb.then_target, cb.then_args);
+                        self.addEdge(func, func_idx, src_bb, 1, cb.else_target, cb.else_args);
                     },
                     .switch_br => |sw| {
-                        for (sw.cases) |case| {
-                            self.addPhiIncoming(case.target, case.args, src_bb);
+                        for (sw.cases, 1..) |case, si| {
+                            self.addEdge(func, func_idx, src_bb, @intCast(si), case.target, case.args);
                         }
-                        self.addPhiIncoming(sw.default, sw.default_args, src_bb);
+                        self.addEdge(func, func_idx, src_bb, 0, sw.default, sw.default_args);
                     },
                     else => {},
                 }
             }
         }
+    }
+
+    /// One edge into `target`. A memory-resident parameter owns its storage, so
+    /// the edge copies its argument in: on a block of its own, which the
+    /// terminator's successor `succ` is redirected to, so no other edge out of
+    /// `src_bb` runs the copy.
+    fn addEdge(self: *LLVMEmitter, func: *const Function, func_idx: u32, src_bb: c.LLVMBasicBlockRef, succ: c_uint, target: BlockId, args: []const Ref) void {
+        const params = func.blocks.items[target.index()].params;
+        var resident = false;
+        for (args, 0..) |_, pi| {
+            if (pi < params.len and self.isMemoryResident(params[pi])) resident = true;
+        }
+        if (!resident) return self.addPhiIncoming(target, args, src_bb);
+
+        const target_bb = self.getBlock(func_idx, target);
+        const edge_bb = c.LLVMAppendBasicBlockInContext(self.context, c.LLVMGetBasicBlockParent(src_bb), "edge");
+        c.LLVMMoveBasicBlockAfter(edge_bb, src_bb);
+        c.LLVMSetSuccessor(c.LLVMGetBasicBlockTerminator(src_bb), succ, edge_bb);
+        c.LLVMPositionBuilderAtEnd(self.builder, edge_bb);
+
+        // An argument inside another of `target`'s parameter slots would be
+        // overwritten by that parameter's copy, so it moves to a temporary first.
+        const sources = self.alloc.alloc(c.LLVMValueRef, args.len) catch unreachable;
+        defer self.alloc.free(sources);
+        for (args, 0..) |arg, pi| {
+            sources[pi] = null;
+            if (pi >= params.len or !self.isMemoryResident(params[pi]) or self.undef_refs.contains(arg.index())) continue;
+            const src = self.resolveRef(arg);
+            const own = self.blockParamSlot(target, @intCast(pi), params[pi]);
+            for (params, 0..) |pty, pj| {
+                if (!self.isMemoryResident(pty)) continue;
+                const other = self.blockParamSlot(target, @intCast(pj), pty);
+                if (other == own and src == own) continue;
+                if (!storageWithin(src, other)) continue;
+                const tmp = self.residentSlot(params[pi]);
+                self.copyResident(tmp, src, params[pi]);
+                sources[pi] = tmp;
+                break;
+            }
+            if (sources[pi] == null) sources[pi] = src;
+        }
+        for (sources, 0..) |src, pi| {
+            const from = src orelse continue;
+            const own = self.blockParamSlot(target, @intCast(pi), params[pi]);
+            if (from != own) self.copyResident(own, from, params[pi]);
+        }
+        _ = c.LLVMBuildBr(self.builder, target_bb);
+        self.addPhiIncoming(target, args, edge_bb);
+    }
+
+    /// Whether the address `val` lies inside the storage `slot`: `slot` itself,
+    /// a GEP into it, or a select that may yield either.
+    fn storageWithin(val: c.LLVMValueRef, slot: c.LLVMValueRef) bool {
+        if (val == slot) return true;
+        if (c.LLVMIsAGetElementPtrInst(val) != null) return storageWithin(c.LLVMGetOperand(val, 0), slot);
+        if (c.LLVMIsASelectInst(val) != null)
+            return storageWithin(c.LLVMGetOperand(val, 1), slot) or storageWithin(c.LLVMGetOperand(val, 2), slot);
+        return false;
+    }
+
+    /// The storage memory-resident parameter `index` of `block` owns.
+    pub fn blockParamSlot(self: *LLVMEmitter, block: BlockId, index: u32, ty: TypeId) c.LLVMValueRef {
+        const key = makeBlockKey(block.index(), index);
+        if (self.param_slots.get(key)) |slot| return slot;
+        const slot = self.residentSlot(ty);
+        self.param_slots.put(key, slot) catch unreachable;
+        return slot;
     }
 
     fn addPhiIncoming(self: *LLVMEmitter, target: BlockId, args: []const Ref, src_bb: c.LLVMBasicBlockRef) void {
@@ -2250,6 +2365,132 @@ pub const LLVMEmitter = struct {
         return ty;
     }
 
+    // ── Memory-resident values ─────────────────────────────────────────
+    // `TypeLowering.isMemoryResident` states the rule. A memory-resident
+    // value maps to the address of storage holding it: a producer writes a
+    // fresh entry-block slot that only it writes, a constant is a private
+    // constant global, and every copy into memory is an `llvm.memcpy`.
+
+    pub fn isMemoryResident(self: *LLVMEmitter, ty: TypeId) bool {
+        if (ty.isBuiltin()) return false;
+        switch (self.ir_mod.types.get(self.ir_mod.types.canonicalType(ty))) {
+            .@"struct", .@"union", .array, .@"enum", .optional, .failable, .@"error" => {},
+            else => return false,
+        }
+        if (self.resident_types.get(ty.index())) |known| return known;
+        const resident = self.typeLowering().isMemoryResident(self.toLLVMType(ty));
+        self.resident_types.put(ty.index(), resident) catch unreachable;
+        return resident;
+    }
+
+    pub fn isMemoryResidentRef(self: *LLVMEmitter, ref: Ref) bool {
+        return self.isMemoryResident(self.getRefIRType(ref) orelse return false);
+    }
+
+    fn indexRefTypes(self: *LLVMEmitter, func: *const Function) void {
+        var count: usize = func.params.len;
+        for (func.blocks.items) |block| count = @max(count, block.first_ref + block.insts.items.len);
+        self.ref_types.clearRetainingCapacity();
+        self.ref_types.appendNTimes(self.alloc, null, count) catch unreachable;
+        for (func.params, 0..) |param, i| self.ref_types.items[i] = param.ty;
+        for (func.blocks.items) |block| {
+            for (block.insts.items, 0..) |instruction, i| self.ref_types.items[block.first_ref + i] = instruction.ty;
+        }
+        self.ref_types_func = self.current_func_idx;
+    }
+
+    /// Fresh entry-block storage for one `ty` value.
+    pub fn residentSlot(self: *LLVMEmitter, ty: TypeId) c.LLVMValueRef {
+        const slot = self.buildEntryAlloca(self.toLLVMType(ty), "mem");
+        const alignment: c_uint = @intCast(self.ir_mod.types.typeAlignBytes(ty));
+        if (alignment > c.LLVMGetAlignment(slot)) c.LLVMSetAlignment(slot, alignment);
+        return slot;
+    }
+
+    /// Copy a `ty` value from the storage at `src` into `dst`.
+    pub fn copyResident(self: *LLVMEmitter, dst: c.LLVMValueRef, src: c.LLVMValueRef, ty: TypeId) void {
+        self.copyBytes(dst, src, self.toLLVMType(ty), false);
+    }
+
+    /// Copy one `llvm_ty` object between storage. A volatile copy is one the
+    /// optimizer may not elide, duplicate, or fuse.
+    pub fn copyBytes(self: *LLVMEmitter, dst: c.LLVMValueRef, src: c.LLVMValueRef, llvm_ty: c.LLVMTypeRef, is_volatile: bool) void {
+        const dl = c.LLVMGetModuleDataLayout(self.llvm_module);
+        const size = c.LLVMConstInt(self.cached_i64, c.LLVMABISizeOfType(dl, llvm_ty), 0);
+        const alignment = c.LLVMABIAlignmentOfType(dl, llvm_ty);
+        if (!is_volatile) {
+            _ = c.LLVMBuildMemCpy(self.builder, dst, alignment, src, alignment, size);
+            return;
+        }
+        const name = "llvm.memcpy";
+        var overloads = [_]c.LLVMTypeRef{ self.cached_ptr, self.cached_ptr, self.cached_i64 };
+        const id = c.LLVMLookupIntrinsicID(name, name.len);
+        const decl = c.LLVMGetIntrinsicDeclaration(self.llvm_module, id, &overloads, overloads.len);
+        var args = [_]c.LLVMValueRef{ dst, src, size, c.LLVMConstInt(self.cached_i1, 1, 0) };
+        _ = c.LLVMBuildCall2(self.builder, c.LLVMIntrinsicGetType(self.context, id, &overloads, overloads.len), decl, &args, args.len, "");
+    }
+
+    /// Write the memory-resident value `ref` holds into `dst`. A `---` value
+    /// writes nothing.
+    pub fn writeResident(self: *LLVMEmitter, dst: c.LLVMValueRef, ref: Ref, ty: TypeId) void {
+        if (self.undef_refs.contains(ref.index())) return;
+        self.copyResident(dst, self.resolveRef(ref), ty);
+    }
+
+    /// The storage of a memory-resident constant.
+    pub fn residentConstant(self: *LLVMEmitter, ty: TypeId, value: c.LLVMValueRef) c.LLVMValueRef {
+        const g = c.LLVMAddGlobal(self.llvm_module, c.LLVMTypeOf(value), "mem.const");
+        c.LLVMSetInitializer(g, value);
+        c.LLVMSetGlobalConstant(g, 1);
+        c.LLVMSetLinkage(g, c.LLVMPrivateLinkage);
+        c.LLVMSetUnnamedAddress(g, c.LLVMGlobalUnnamedAddr);
+        const alignment: c_uint = @intCast(self.ir_mod.types.typeAlignBytes(ty));
+        if (alignment > c.LLVMGetAlignment(g)) c.LLVMSetAlignment(g, alignment);
+        return g;
+    }
+
+    /// `value`, a constant of type `ty`, as the value an IR ref of `ty` maps to.
+    pub fn constantOf(self: *LLVMEmitter, ty: TypeId, value: c.LLVMValueRef) c.LLVMValueRef {
+        return if (self.isMemoryResident(ty)) self.residentConstant(ty, value) else value;
+    }
+
+    /// An undefined `ty` value: fresh storage when `ty` is memory-resident.
+    pub fn undefOf(self: *LLVMEmitter, ty: TypeId) c.LLVMValueRef {
+        if (self.isMemoryResident(ty)) return self.residentSlot(ty);
+        return c.LLVMGetUndef(self.toLLVMType(if (ty == .void) .i64 else ty));
+    }
+
+    /// The address of part `index` of the `agg_llvm` aggregate at `base`.
+    pub fn residentPartAddr(self: *LLVMEmitter, base: c.LLVMValueRef, agg_llvm: c.LLVMTypeRef, index: c.LLVMValueRef) c.LLVMValueRef {
+        if (c.LLVMGetTypeKind(agg_llvm) == c.LLVMStructTypeKind)
+            return c.LLVMBuildStructGEP2(self.builder, agg_llvm, base, @intCast(c.LLVMConstIntGetZExtValue(index)), "part");
+        var indices = [_]c.LLVMValueRef{ c.LLVMConstInt(self.cached_i64, 0, 0), index };
+        return c.LLVMBuildGEP2(self.builder, agg_llvm, base, &indices, 2, "part");
+    }
+
+    /// A `ty` part read at `addr` inside memory-resident storage: the part's
+    /// address when it is memory-resident itself, else the part loaded.
+    pub fn residentPart(self: *LLVMEmitter, addr: c.LLVMValueRef, ty: TypeId) c.LLVMValueRef {
+        if (ty == .void) return c.LLVMGetUndef(self.cached_i64);
+        if (self.isMemoryResident(ty)) return addr;
+        return self.ops().buildLoad(ty, addr, "part", false);
+    }
+
+    /// Whether a `ret`-typed result returns through a hidden `sret` pointer at
+    /// parameter 0: a memory-resident result in either convention, and every
+    /// result the C ABI returns indirectly.
+    pub fn returnsThroughSret(self: *LLVMEmitter, ret: TypeId, c_abi: bool) bool {
+        if (c_abi) return self.needsByval(ret, self.toLLVMType(ret));
+        return self.isMemoryResident(ret);
+    }
+
+    /// Mark the sret parameter of `call` with `sret(<ret_llvm>)`.
+    pub fn markSretArg(self: *LLVMEmitter, call: c.LLVMValueRef, ret_llvm: c.LLVMTypeRef) void {
+        const sret_kind = c.LLVMGetEnumAttributeKindForName("sret", 4);
+        const param1_idx: c.LLVMAttributeIndex = @bitCast(@as(i32, 1));
+        c.LLVMAddCallSiteAttribute(call, param1_idx, c.LLVMCreateTypeAttribute(self.context, sret_kind, ret_llvm));
+    }
+
     // ── Comparison helpers ────────────────────────────────────────────
 
     /// The discriminant of a payload-carrying error channel; any other value
@@ -2257,7 +2498,15 @@ pub const LLVMEmitter = struct {
     pub fn channelTag(self: *LLVMEmitter, val: c.LLVMValueRef, ty: ?TypeId) c.LLVMValueRef {
         const chan = ty orelse return val;
         if (!self.ir_mod.types.isPayloadCarryingChannel(chan)) return val;
+        if (self.isMemoryResident(chan)) return self.residentTag(val, chan);
         return c.LLVMBuildExtractValue(self.builder, val, 0, "channel.tag");
+    }
+
+    /// The tag word heading the memory-resident `ty` value at `val`.
+    fn residentTag(self: *LLVMEmitter, val: c.LLVMValueRef, ty: TypeId) c.LLVMValueRef {
+        const llvm_ty = self.toLLVMType(ty);
+        const tag_ty = c.LLVMStructGetTypeAtIndex(llvm_ty, 0);
+        return c.LLVMBuildLoad2(self.builder, tag_ty, c.LLVMBuildStructGEP2(self.builder, llvm_ty, val, 0, "tag.p"), "tag");
     }
 
     /// A `channel_llvm`-typed channel carrying `tag` over a zeroed payload area.
@@ -2283,27 +2532,39 @@ pub const LLVMEmitter = struct {
     /// `payload_ptr`.
     fn channelOverPayload(self: *LLVMEmitter, channel: TypeId, tag: c.LLVMValueRef, payload_ptr: c.LLVMValueRef, payload_align: c_uint, bytes: u64) c.LLVMValueRef {
         const channel_llvm = self.toLLVMType(channel);
-        const slot = self.buildEntryAlloca(channel_llvm, "channel.slot");
-        _ = c.LLVMBuildStore(self.builder, c.LLVMConstNull(channel_llvm), slot);
+        const resident = self.isMemoryResident(channel);
+        const slot = if (resident) self.residentSlot(channel) else self.buildEntryAlloca(channel_llvm, "channel.slot");
+        if (resident) {
+            const dl = c.LLVMGetModuleDataLayout(self.llvm_module);
+            _ = c.LLVMBuildMemSet(self.builder, slot, c.LLVMConstInt(self.cached_i8, 0, 0), c.LLVMConstInt(self.cached_i64, c.LLVMABISizeOfType(dl, channel_llvm), 0), self.channelAlign(channel));
+        } else {
+            _ = c.LLVMBuildStore(self.builder, c.LLVMConstNull(channel_llvm), slot);
+        }
         if (bytes > 0) {
             const area = c.LLVMBuildStructGEP2(self.builder, channel_llvm, slot, 1, "channel.area");
             _ = c.LLVMBuildMemCpy(self.builder, area, self.channelAlign(channel), payload_ptr, payload_align, c.LLVMConstInt(self.cached_i64, bytes, 0));
         }
         const tag_ptr = c.LLVMBuildStructGEP2(self.builder, channel_llvm, slot, 0, "channel.tagp");
         _ = c.LLVMBuildStore(self.builder, self.coerceArg(tag, self.cached_i32), tag_ptr);
+        if (resident) return slot;
         return c.LLVMBuildLoad2(self.builder, channel_llvm, slot, "channel.val");
     }
 
-    /// A `channel` value carrying `tag` over a copy of `payload`.
-    pub fn channelWithPayload(self: *LLVMEmitter, channel: TypeId, tag: c.LLVMValueRef, payload: c.LLVMValueRef) c.LLVMValueRef {
+    /// A `channel` value carrying `tag` over a copy of `payload`'s value.
+    pub fn channelWithPayload(self: *LLVMEmitter, channel: TypeId, tag: c.LLVMValueRef, payload: Ref) c.LLVMValueRef {
         const dl = c.LLVMGetModuleDataLayout(self.llvm_module);
-        const payload_llvm = c.LLVMTypeOf(payload);
-        return self.channelOverPayload(channel, tag, self.spill(payload, "channel.pay"), c.LLVMABIAlignmentOfType(dl, payload_llvm), c.LLVMABISizeOfType(dl, payload_llvm));
+        const val = self.resolveRef(payload);
+        const payload_ty = self.getRefIRType(payload) orelse .void;
+        const payload_llvm = self.toLLVMType(payload_ty);
+        const addr = if (self.isMemoryResident(payload_ty)) val else self.spill(val, "channel.pay");
+        return self.channelOverPayload(channel, tag, addr, c.LLVMABIAlignmentOfType(dl, payload_llvm), c.LLVMABISizeOfType(dl, payload_llvm));
     }
 
-    /// The address of `channel_val`'s payload area, over a spilled copy.
+    /// The address of `channel_val`'s payload area: inside its storage when
+    /// it is memory-resident, else over a spilled copy.
     pub fn channelPayloadAddr(self: *LLVMEmitter, channel: TypeId, channel_val: c.LLVMValueRef) c.LLVMValueRef {
-        return c.LLVMBuildStructGEP2(self.builder, self.toLLVMType(channel), self.spill(channel_val, "channel.view"), 1, "channel.area");
+        const storage = if (self.isMemoryResident(channel)) channel_val else self.spill(channel_val, "channel.view");
+        return c.LLVMBuildStructGEP2(self.builder, self.toLLVMType(channel), storage, 1, "channel.area");
     }
 
     /// `channel_val`'s payload area read as `payload_llvm`.
@@ -2321,8 +2582,12 @@ pub const LLVMEmitter = struct {
     pub fn channelRetype(self: *LLVMEmitter, val: c.LLVMValueRef, from: TypeId, to: TypeId) c.LLVMValueRef {
         const table = &self.ir_mod.types;
         const tag = self.channelTag(val, from);
-        if (!table.isPayloadCarryingChannel(from)) return self.channelFromTag(self.toLLVMType(to), tag);
-        const area = c.LLVMBuildStructGEP2(self.builder, self.toLLVMType(from), self.spill(val, "channel.src"), 1, "channel.area");
+        if (!table.isPayloadCarryingChannel(from)) {
+            if (self.isMemoryResident(to)) return self.channelOverPayload(to, tag, null, 1, 0);
+            return self.channelFromTag(self.toLLVMType(to), tag);
+        }
+        const source = if (self.isMemoryResident(from)) val else self.spill(val, "channel.src");
+        const area = c.LLVMBuildStructGEP2(self.builder, self.toLLVMType(from), source, 1, "channel.area");
         const bytes = @min(table.channelPayloadBytes(from), table.channelPayloadBytes(to));
         return self.channelOverPayload(to, tag, area, self.channelAlign(from), bytes);
     }
@@ -2340,6 +2605,9 @@ pub const LLVMEmitter = struct {
     pub fn emitCmp(self: *LLVMEmitter, bin: ir_inst.BinOp, _: TypeId, int_pred: c_uint, float_pred: c_uint) void {
         var lhs = self.resolveRef(bin.lhs);
         var rhs = self.resolveRef(bin.rhs);
+        // A memory-resident operand compares by the tag word heading it.
+        if (self.isMemoryResidentRef(bin.lhs)) lhs = self.residentTag(lhs, self.getRefIRType(bin.lhs).?);
+        if (self.isMemoryResidentRef(bin.rhs)) rhs = self.residentTag(rhs, self.getRefIRType(bin.rhs).?);
         if (self.getRefIRType(bin.lhs) == .type_value and self.getRefIRType(bin.rhs) == .type_value) {
             lhs = self.ops().scalarTableRead(.canonical_type, lhs);
             rhs = self.ops().scalarTableRead(.canonical_type, rhs);
@@ -2851,8 +3119,12 @@ pub const LLVMEmitter = struct {
 
     /// Look up the IR type of a Ref in the current function (for store coercion).
     pub fn getRefIRType(self: *LLVMEmitter, ref: Ref) ?TypeId {
-        const func = &self.ir_mod.functions.items[self.current_func_idx];
+        if (ref.isNone()) return null;
         const idx = ref.index();
+        if (self.ref_types_func == self.current_func_idx) {
+            return if (idx < self.ref_types.items.len) self.ref_types.items[idx] else null;
+        }
+        const func = &self.ir_mod.functions.items[self.current_func_idx];
         // Check if it's a function param (refs 0..N-1)
         if (idx < func.params.len) return func.params[idx].ty;
         for (func.blocks.items) |blk| {
@@ -2954,8 +3226,8 @@ pub const LLVMEmitter = struct {
         return self.abiLowering().needsByval(ir_ty, raw_llvm_ty);
     }
 
-    pub fn materializeByvalArg(self: *LLVMEmitter, val: c.LLVMValueRef, struct_ty: c.LLVMTypeRef) c.LLVMValueRef {
-        return self.abiLowering().materializeByvalArg(val, struct_ty);
+    pub fn materializeByvalArg(self: *LLVMEmitter, val: c.LLVMValueRef, ir_ty: TypeId) c.LLVMValueRef {
+        return self.abiLowering().materializeByvalArg(val, ir_ty);
     }
 
     // ── Cached composite types ──────────────────────────────────────
