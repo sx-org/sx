@@ -1,0 +1,10 @@
+// A cast truncates the untyped constant it converts; its shift amount is no
+// part of that constant.
+
+@import "modules/std.sx";
+
+main :: () -> i32 {
+    n : u8 = 1;
+    print("{}\n", (1 << (n + 300)).(u8));
+    return 0;
+}

@@ -3697,6 +3697,11 @@ fn errorPathContains(root: *const Node, node: *const Node) bool {
 }
 
 pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
+    // A typed node beneath an untyped cast operand (a shift amount) is no part
+    // of the constant the cast truncates.
+    const saved_operand = self.cast_operand;
+    defer self.cast_operand = saved_operand;
+    if (saved_operand == .untyped and program_index_mod.untypedConst(node, self) == null) self.cast_operand = .typed;
     // A synthetic declared-default root evaluates with the callee declaration's
     // lexical authority and substitution, not the caller's local scope.
     // Keep this override for the entire recursive lowering of the default
@@ -5539,7 +5544,7 @@ pub fn lowerBinaryOp(self: *Lowering, node: *const Node) Ref {
         if (lhs_info == .optional and (bop.op == .eq or bop.op == .neq)) break :peer lhs_info.optional.child;
         break :peer if (rhs_untyped) lhs_ty else null;
     };
-    if (rhs_peer_tt) |ty| self.target_type = ty else self.reachOperand(node, bop.rhs);
+    if (shift and !self.isVectorType(lhs_ty)) self.target_type = null else if (rhs_peer_tt) |ty| self.target_type = ty else self.reachOperand(node, bop.rhs);
     // In a comparison, an anonymous positional literal on the RHS is typed
     // from the LHS just like an enum shorthand. This also keeps the following
     // `{` available as the if body.

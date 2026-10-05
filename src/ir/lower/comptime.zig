@@ -1990,6 +1990,11 @@ fn lowerComptimeCallArgsMode(
     self.error_boundary = null;
     defer self.error_boundary = saved_boundary;
 
+    // A caller's cast converts the call's value; the body lowers as without it.
+    const saved_cast_operand = self.cast_operand;
+    self.cast_operand = null;
+    defer self.cast_operand = saved_cast_operand;
+
     // `block_terminated` says the enclosing FUNCTION's control flow ended. The
     // enclosing function here is the callee, and control resumes in the caller
     // at the join — a `return` inside the inlined body must not make the

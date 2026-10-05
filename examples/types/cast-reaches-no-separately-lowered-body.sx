@@ -1,0 +1,25 @@
+// A cast converts its operand's value; a body the operand calls, a function's
+// or a closure's, lowers as without the cast. The untyped constant the cast
+// converts still truncates.
+
+@import "modules/std.sx";
+
+main :: () -> i32 {
+    c := true;
+    n := 0;
+    print("{}\n", later(c).(u8));
+    print("{}\n", keyed("a", c).(u8));
+    print("{}\n", (|| -> i64 { b := true; y : i8 = if b then 5 else 6; return y; })().(u8));
+    print("{}\n", (300 << n).(u8));
+    return 0;
+}
+
+later :: (c: bool) -> i64 {
+    x : i8 = if c then 5 else 6;
+    x
+}
+
+keyed :: ($key: string, c: bool) -> i64 {
+    x : i8 = if c then 6 else 7;
+    x
+}
