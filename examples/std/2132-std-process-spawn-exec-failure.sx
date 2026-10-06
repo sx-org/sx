@@ -1,16 +1,15 @@
-// `spawn` succeeds even when the program does not exist: the fork happened,
-// and it is the CHILD's failed execvp that exits 127 — which the parent
-// learns only by reaping. `stderr = .null` wires the child's error slot to
-// /dev/null.
+// `spawn` raises `.Exec` when the child cannot exec the program: it reaps the
+// child, and errno holds the child's execvp error. An absolute path skips the
+// PATH search, so that error is ENOENT on every host.
 @import "modules/std.sx";
 
 main :: () -> i32 {
-    child, e := process.spawn(.["sx-no-such-program-anywhere"], .{ stderr = .null });
-    if e { print("spawn failed\n"); return 1; }
-
-    code := child.wait(true);
-    if code == null { print("wait produced no status\n"); return 1; }
-    print("exec failure: {}\n", code?!);
-    if code?! != 127 { return 1; }
+    _, e := process.spawn(.["/sx-no-such-program-anywhere"], .{ stderr = .null });
+    errno := posix.errno();
+    if e != .Exec { print("spawn: {}\n", e); return 1; }
+    if errno != posix.ENOENT { print("errno: {}\n", errno); return 1; }
+    raw : i32 = 0;
+    if c.waitpid(-1, *raw, process.WNOHANG) >= 0 { print("a child remains\n"); return 1; }
+    print("spawn: {}, ENOENT, no child\n", e);
     return 0;
 }
