@@ -20,5 +20,6 @@ main :: () -> i32 {
     empty := fs.File{};
     if empty.isValid() or empty.close() { return 5; }
     if fs.setModifiedSeconds("C:\\sx-stdlib-fs-definitely-missing", 0) { return 6; }
+    if fs.realPath("C:\\sx-stdlib-fs-definitely-missing") != null { return 7; }
     0
 }
