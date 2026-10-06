@@ -169,13 +169,15 @@ process :: scope {
             return c.kill(self.pid, sig);
         }
 
-        // Sends sig to every process in the child's group. An exited leader stays a zombie
-        // until wait reaps it, holding its group id from reuse, so killGroup reaches surviving
-        // members until wait and raises .NoGroup after it: clear a finished child's leftovers
-        // before wait. A forked pid exceeds 1, so -pid never means kill(0) or kill(-1).
+        // Sends sig to every process in the child's group, its unreaped leader included. An
+        // exited leader stays a zombie until wait reaps it, holding its group id from reuse,
+        // so until wait killGroup succeeds and reaches any surviving members, and after it
+        // raises .NoGroup: clear a finished child's leftovers before wait. A forked pid
+        // exceeds 1, so -pid never means kill(0) or kill(-1).
         killGroup :: (self: *Child, sig: i32) -> !KillErr {
             if !self.leadsGroup or self.pid <= 0 { raise .NoGroup; }
-            if c.kill(-self.pid, sig) != 0 { raise .Signal; }
+            // Darwin's kill(-pid) fails on a group whose only member is the zombie leader.
+            if c.kill(-self.pid, sig) != 0 and c.kill(self.pid, sig) != 0 { raise .Signal; }
         }
 
         // A reaped child answers from stored status because the kernel reuses pids.

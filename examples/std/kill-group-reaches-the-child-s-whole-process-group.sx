@@ -1,8 +1,9 @@
 // A child spawned with `newGroup` leads a process group of its own, and
 // `killGroup` signals every member: the grandchild the child backgrounds, which
-// holds the stdout pipe, dies with it, so the pipe reaches EOF. Once `wait` has
-// reaped the child, and for a child spawned without `newGroup`, `killGroup`
-// raises `.NoGroup`.
+// holds the stdout pipe, dies with it, so the pipe reaches EOF. Until `wait`,
+// `killGroup` succeeds on a leader that exited with no other member left. Once
+// `wait` has reaped the child, and for a child spawned without `newGroup`,
+// `killGroup` raises `.NoGroup`.
 @import "modules/std.sx";
 
 main :: () -> i32 {
@@ -27,6 +28,17 @@ main :: () -> i32 {
 
     reaped := child.killGroup(process.SIGTERM);
     print("after the reap: {}\n", reaped);
+
+    alone, ae := process.spawn(.["/bin/sh", "-c", "exit 0"], .{ stdout = .pipe, newGroup = true });
+    if ae { print("spawn failed: {}\n", ae); return 1; }
+    // EOF on stdout: the child has exited and is not yet reaped.
+    eof := alone.stdoutRead(buf);
+    alone.stdoutClose();
+    if eof != 0 { print("read: {}\n", eof); return 1; }
+    left := alone.killGroup(process.SIGTERM);
+    alone.wait(true);
+    if left { print("exited alone: {}\n", left); return 1; }
+    print("exited alone: signaled\n");
 
     plain, pe := process.spawn(.["/bin/sh", "-c", "exit 0"], .{});
     if pe { print("spawn failed: {}\n", pe); return 1; }
