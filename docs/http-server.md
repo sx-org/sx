@@ -609,7 +609,9 @@ subprocess-isolated, on macOS and validated end-to-end on aarch64-Linux.
   content decoding, and truncated responses surfaced as errors — never a
   padded body. `ClientOpts.acceptCompression=false` retains the coded
   representation instead.
-  `Client.fetch(method, url, …)` adds URL parsing and redirect following
+  `Client.fetch(method, url, extraHeaders, body, …)` adds URL parsing,
+  caller header lines on every hop (validated; `Authorization` and
+  `Cookie` go only to the first URL's origin) and redirect following
   (301/302/303 → GET, 307/308 preserve, capped by
   `ClientOpts.maxRedirects`; https targets require a configured dialer);
   `ClientPool` adds single-threaded keep-alive reuse with a one-shot

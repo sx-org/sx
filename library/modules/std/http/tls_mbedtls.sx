@@ -17,7 +17,7 @@ private clib    :: @import "modules/std/c.sx";
 private tlsBioSend :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
     s : *TlsSession = ctx.(*TlsSession);
     while true {
-        n := socket.write(s.fd, buf, len.(i64));
+        n := socket.sendNoSigpipe(s.fd, buf, len.(i64));
         if n >= 0 { return n.(i32); }
         e := socket.errno();
         if e == posix.EINTR { continue; }

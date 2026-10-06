@@ -36,8 +36,8 @@ while.hdr.13:                                     ; preds = %if.merge.17, %entry
 
 while.body.14:                                    ; preds = %while.hdr.13
   %loadN = load ptr, ptr %alloca, align 8
-  %loadN = load { i32 }, ptr %loadN, align 4
-  %sg = extractvalue { i32 } %loadN, 0
+  %gep = getelementptr inbounds nuw { i32 }, ptr %loadN, i32 0, i32 0
+  %loadN = load i32, ptr %gep, align 4
   %loadN = load i64, ptr %allocaN, align 8
   %loadN = load { ptr, i64 }, ptr %allocaN, align 8
   %igp.data = extractvalue { ptr, i64 } %loadN, 0
@@ -46,7 +46,7 @@ while.body.14:                                    ; preds = %while.hdr.13
   %lenN = extractvalue { ptr, i64 } %loadN, 1
   %loadN = load i64, ptr %allocaN, align 8
   %sub = sub i64 %lenN, %loadN
-  %call = call i64 @write(i32 %sg, ptr %igp.ptr, i64 %sub)
+  %call = call i64 @write(i32 %loadN, ptr %igp.ptr, i64 %sub)
   store i64 %call, ptr %allocaN, align 8
   %loadN = load i64, ptr %allocaN, align 8
   %icmpN = icmp sle i64 %loadN, 0

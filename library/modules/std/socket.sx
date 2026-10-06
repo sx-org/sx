@@ -386,6 +386,23 @@ socket :: scope {
 
         accept4 :: (fd: i32, addr: *SockAddr, addrlen: *u32, flags: i32) -> i32 extern libc;
 
+        // ── per-OS SIGPIPE suppression ─────────────────────────────
+        // The Linux family suppresses per write: a send with MSG_NOSIGNAL to
+        // a peer that has gone fails with EPIPE instead of raising SIGPIPE.
+        MSG_NOSIGNAL :i32: 0x4000;
+
+        send :: (fd: i32, buf: [*]u8, len: i64, flags: i32) -> isize extern libc;
+
+        // Nothing to set: sendNoSigpipe suppresses SIGPIPE on every write.
+        setNoSigpipe :: (fd: i32) -> bool {
+            return true;
+        }
+
+        // write(2) on a socket, failing with EPIPE where the peer has gone.
+        sendNoSigpipe :: (fd: i32, buf: [*]u8, len: i64) -> isize {
+            return send(fd, buf, len, MSG_NOSIGNAL);
+        }
+
         // accept one pending connection with O_NONBLOCK + FD_CLOEXEC
         // already applied — accept4 does both ATOMICALLY (no fd ever exists
         // without CLOEXEC, so a concurrent fork/exec on another thread can't
@@ -490,18 +507,37 @@ socket :: scope {
             aiNext:      usize = 0;   // *addrinfo
         }
 
-        // accept one pending connection with O_NONBLOCK + FD_CLOEXEC
-        // applied. darwin has NO accept4, so this is accept + two fcntls —
-        // NOT atomic w.r.t. a concurrent fork/exec on another thread (the
-        // fd exists briefly without CLOEXEC); the best darwin offers. A
-        // fcntl failure closes the fd and reports Fault — never returns a
-        // half-configured socket. Same error contract as acceptNb.
+        // ── per-OS SIGPIPE suppression ─────────────────────────────
+        // darwin suppresses per socket: once SO_NOSIGPIPE is set, a write to
+        // a peer that has gone fails with EPIPE instead of raising SIGPIPE.
+        SO_NOSIGPIPE :i32: 0x1022;
+
+        // Set SO_NOSIGPIPE on `fd`. False when setsockopt refuses.
+        setNoSigpipe :: (fd: i32) -> bool {
+            one : i32 = 1;
+            return setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, *one, 4) == 0;
+        }
+
+        // write(2) on a socket, failing with EPIPE where the peer has gone
+        // once setNoSigpipe has run on it.
+        sendNoSigpipe :: (fd: i32, buf: [*]u8, len: i64) -> isize {
+            return clib.c.write(fd, buf, len);
+        }
+
+        // accept one pending connection with O_NONBLOCK, FD_CLOEXEC and
+        // SO_NOSIGPIPE applied. darwin has NO accept4, so this is accept +
+        // two fcntls + a setsockopt — NOT atomic w.r.t. a concurrent
+        // fork/exec on another thread (the fd exists briefly without
+        // CLOEXEC); the best darwin offers. A failure of any of the three
+        // closes the fd and reports Fault — never returns a half-configured
+        // socket. Same error contract as acceptNb.
         acceptConnNb :: (fd: i32) -> (i32, !Error) {
             c, ae := acceptNb(fd);
             if ae == .WouldBlock { raise .WouldBlock; }
             if ae { raise .Fault; }
             if fcntl(c, F_SETFD, FD_CLOEXEC) < 0 { clib.c.close(c); raise .Fault; }
             if !setNonblocking(c) { clib.c.close(c); raise .Fault; }
+            if !setNoSigpipe(c) { clib.c.close(c); raise .Fault; }
             return c;
         }
     }
@@ -589,7 +625,7 @@ socket :: scope {
     // fewer — the caller continues from there on the next writability).
     writeNb :: (fd: i32, buf: [*]u8, len: i64) -> (i64, !Error) {
         while true {
-            n := clib.c.write(fd, buf, len);
+            n := sendNoSigpipe(fd, buf, len);
             if n >= 0 { return n; }
             e := errno();
             if e == posix.EINTR { continue; }

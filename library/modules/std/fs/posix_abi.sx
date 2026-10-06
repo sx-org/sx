@@ -9,6 +9,13 @@ FsPosixTimespec :: fsPosixC.c.Timespec;
 fsPosixUtimensat :: (directory: i32, path: [*:0]u8, times: *void, flags: i32) -> i32 extern fsPosixLibc "utimensat";
 fsPosixFtruncate :: (fd: i32, len: i64) -> i32 extern fsPosixLibc "ftruncate";
 
+// The Darwin SDK's realpath is the realpath$DARWIN_EXTSN symbol.
+inline match @host.os {
+    case .macos: fsPosixRealpath :: (path: [*:0]u8, resolved: [*]u8) -> ?[*:0]u8 extern fsPosixLibc "realpath$DARWIN_EXTSN";
+    case .ios:   fsPosixRealpath :: (path: [*:0]u8, resolved: [*]u8) -> ?[*:0]u8 extern fsPosixLibc "realpath$DARWIN_EXTSN";
+    else:        fsPosixRealpath :: (path: [*:0]u8, resolved: [*]u8) -> ?[*:0]u8 extern fsPosixLibc "realpath";
+}
+
 // Linux, Android, and Emscripten use the Linux asm-generic open flag values;
 // Darwin uses the BSD values. Unsupported targets fail closed here.
 inline match @host.os {

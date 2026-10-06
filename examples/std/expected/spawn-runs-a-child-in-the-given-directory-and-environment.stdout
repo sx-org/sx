@@ -1,0 +1,3 @@
+cwd and env: / inherited set added unset
+PATH in env: .sx-tmp/spawn-runs-a-child-in-the-given-directory-and-environment/sx-spawn-probe
+unenterable cwd: SpawnErr.Cwd

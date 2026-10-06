@@ -438,7 +438,7 @@ private codingQuality :: (accept: *AcceptEncoding, coding: string) -> i64 {
     0
 }
 
-private isTchar :: (c: u8) -> bool {
+isTchar :: (c: u8) -> bool {
     if c >= 'a' and c <= 'z' { return true; }
     if c >= 'A' and c <= 'Z' { return true; }
     if c >= '0' and c <= '9' { return true; }

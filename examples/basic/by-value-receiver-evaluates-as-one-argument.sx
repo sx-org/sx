@@ -1,0 +1,26 @@
+// A dot-call's receiver is one of its arguments, which evaluate in an
+// unspecified order, each whole (specs: Function Call). `retarget` points `p`
+// at `b` and overwrites `a`, so the by-value receiver reads 1 in either order:
+// from `a` before the overwrite, or from `b` after the retarget.
+@import "modules/std.sx";
+
+Cell :: struct {
+    v: i64;
+    get :: (self: Cell, x: i64) -> i64 { self.v + x }
+}
+
+Holder :: struct { cell: Cell; }
+
+retarget :: (pp: **Holder, fresh: *Holder) -> i64 {
+    old := pp.*;
+    pp.* = fresh;
+    old.cell.v = 999;
+    0
+}
+
+main :: () {
+    a := Holder{ cell = Cell{ v = 1 } };
+    b := Holder{ cell = Cell{ v = 1 } };
+    p := *a;
+    print("{}\n", p.cell.get(retarget(*p, *b)));
+}

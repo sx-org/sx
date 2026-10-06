@@ -737,13 +737,13 @@ test "emit: needsByval only for > 16-byte non-HFA structs" {
     var emitter = LLVMEmitter.init(alloc, &module, "test_byval", .{});
     defer emitter.deinit();
 
-    try std.testing.expect(emitter.needsByval(big, emitter.toLLVMType(big))); // > 16
-    try std.testing.expect(!emitter.needsByval(small, emitter.toLLVMType(small)));
-    try std.testing.expect(!emitter.needsByval(mid, emitter.toLLVMType(mid))); // exactly 16
-    try std.testing.expect(!emitter.needsByval(hfa_d, emitter.toLLVMType(hfa_d))); // HFA
-    try std.testing.expect(!emitter.needsByval(.string, emitter.toLLVMType(.string)));
-    try std.testing.expect(!emitter.needsByval(sl, emitter.toLLVMType(sl)));
-    try std.testing.expect(!emitter.needsByval(.i32, emitter.toLLVMType(.i32))); // non-struct
+    try std.testing.expect(emitter.needsByval(big, emitter.toLLVMType(big), true)); // > 16
+    try std.testing.expect(!emitter.needsByval(small, emitter.toLLVMType(small), true));
+    try std.testing.expect(!emitter.needsByval(mid, emitter.toLLVMType(mid), true)); // exactly 16
+    try std.testing.expect(!emitter.needsByval(hfa_d, emitter.toLLVMType(hfa_d), true)); // HFA
+    try std.testing.expect(!emitter.needsByval(.string, emitter.toLLVMType(.string), true));
+    try std.testing.expect(!emitter.needsByval(sl, emitter.toLLVMType(sl), true));
+    try std.testing.expect(!emitter.needsByval(.i32, emitter.toLLVMType(.i32), true)); // non-struct
 }
 
 // A C `va_list` parameter is one pointer-shaped word on every supported target,
@@ -762,7 +762,7 @@ test "emit: a C-variadic cursor parameter is a plain pointer at every width" {
 
     for ([_]TypeId{ one_word, sysv, aapcs }) |cursor| {
         try std.testing.expect(emitter.abiCoerceParamType(cursor, emitter.toLLVMType(cursor)) == emitter.cached_ptr);
-        try std.testing.expect(!emitter.needsByval(cursor, emitter.toLLVMType(cursor)));
+        try std.testing.expect(!emitter.needsByval(cursor, emitter.toLLVMType(cursor), true));
     }
 }
 

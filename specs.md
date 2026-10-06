@@ -6353,6 +6353,7 @@ arity-switched cdecl trampoline).
 | `fs.setMode(path, mode) -> bool` | `chmod` |
 | `fs.exists(path) -> bool` | `access(F_OK)` |
 | `fs.basename(p) -> string` / `fs.dirname(p) -> string` | text-only path split |
+| `fs.realPath(path) -> ?string` | `realpath`: absolute, with `.`, `..` and symlinks resolved (null if it does not resolve) |
 
 `fs.File` is a small value-typed handle wrapping a POSIX fd, with
 methods `isValid / close / read / write / seek`. Higher-level helpers

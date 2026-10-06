@@ -1,0 +1,22 @@
+// On wasm32 a struct crosses the C boundary as clang passes it: one with more
+// than one element as a pointer to a copy the callee owns, returned through
+// `sret`, and a single-element struct as itself. An extern's `string` is the
+// pointer it collapses to; an sx-defined `abi(.c)` function's `string` is a
+// two-field struct, passed indirectly.
+
+@import "modules/std/core.sx";
+
+Pair :: struct { a: i64; b: i64; }
+Cell :: struct { v: i32; }
+
+cPair :: (p: Pair) -> Pair extern;
+cCell :: (c: Cell) -> Cell extern;
+cLen :: (s: string) -> i64 extern;
+
+sxLen :: (s: string) -> i64 abi(.c) { s.len }
+
+main :: () -> i32 {
+    p := cPair(Pair{ a = 1, b = 2 });
+    c := cCell(Cell{ v = 3 });
+    return (p.a + c.v.(i64) + cLen("x") + sxLen("yz")).(i32);
+}

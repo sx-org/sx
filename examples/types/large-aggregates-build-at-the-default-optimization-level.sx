@@ -1,0 +1,62 @@
+// An aggregate over 64 bytes lives in memory: it returns through a hidden
+// pointer, copies as storage, and reads a part at a time. A program moving
+// 48 KB values through failable returns, a union field, the C ABI and a
+// pointer builds at the default optimization level.
+
+@import "modules/std.sx";
+
+N :: 24572;
+
+E :: error { Negative; }
+
+Inflate :: struct { n: i64; window: [N]i16; }
+Deflate :: struct { n: i64; window: [N]i16; }
+
+Storage :: union {
+    inflate: Inflate;
+    deflate: Deflate;
+}
+
+Codec :: struct {
+    kind: i64;
+    storage: Storage;
+}
+
+mkInflate :: (n: i64) -> (Inflate, !E) {
+    if n < 0 { raise .Negative; }
+    r : Inflate = ---;
+    r.n = n;
+    r.window[N - 1] = 7;
+    return r;
+}
+
+mkCodec :: (n: i64) -> (Codec, !E) {
+    r : Codec = ---;
+    r.kind = 1;
+    r.storage.inflate = try mkInflate(n);
+    return r;
+}
+
+mkDeflate :: (n: i64) -> Deflate abi(.c) {
+    r : Deflate = ---;
+    r.n = n;
+    r.window[0] = 5;
+    return r;
+}
+
+sumDeflate :: (d: Deflate) -> i64 abi(.c) {
+    return d.n + d.window[0];
+}
+
+windowEnd :: (c: *Codec) -> i64 {
+    return c.storage.inflate.n + c.storage.inflate.window[N - 1];
+}
+
+main :: () -> i32 {
+    c, e := mkCodec(3);
+    if e { return 1; }
+    _, bad := mkCodec(-1);
+    d := mkDeflate(2);
+    print("{} {} {}\n", windowEnd(*c), sumDeflate(d), bad == .Negative);
+    0
+}

@@ -1682,6 +1682,11 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
         }
     }
 
+    if (fieldReadRoot(self, fa)) |root| {
+        const field = fieldReadAddress(self, fa, root);
+        return self.builder.load(field.ptr, field.ty);
+    }
+
     var obj = self.lowerExpr(fa.object);
     var obj_ty = self.inferExprType(fa.object);
 
@@ -1735,6 +1740,82 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
     }
 
     return self.lowerFieldAccessOnType(obj, obj_ty, fa.field, span);
+}
+
+/// A member a field read addresses: a plain struct field, or a union member,
+/// that no other reading of `field` on `agg_ty` claims.
+const FieldReadStep = struct { index: u32, ty: TypeId, in_union: bool };
+
+pub const FieldRead = struct { ptr: Ref, ty: TypeId };
+
+fn fieldReadStep(self: *Lowering, agg_ty: TypeId, field: []const u8) ?FieldReadStep {
+    if (agg_ty.isBuiltin() or self.module.types.isCVariadicCursor(agg_ty)) return null;
+    if (self.getAccessorFor(agg_ty, field) != null or self.errorViewFieldType(agg_ty, field) != null) return null;
+    switch (self.module.types.get(agg_ty)) {
+        .@"struct" => |s| {
+            if (self.program_index.lookup(.runtime_class, self.module.types.getString(s.name)) != null) return null;
+            return switch (self.lookupField(agg_ty, field)) {
+                .hit => |h| .{ .index = h.index, .ty = h.ty, .in_union = false },
+                .private, .missing => null,
+            };
+        },
+        .@"union" => |u| {
+            const name = self.module.types.internString(field);
+            for (u.fields, 0..) |f, i| {
+                if (f.name == name) return .{ .index = @intCast(i), .ty = f.ty, .in_union = true };
+            }
+            return null;
+        },
+        else => return null,
+    }
+}
+
+/// Whether the chain under `node` starts at a value rather than a namespace
+/// or type name.
+fn chainRootIsValue(self: *Lowering, node: *const Node) bool {
+    var cur = node;
+    while (cur.data == .field_access) cur = cur.data.field_access.object;
+    if (cur.data != .identifier) return true;
+    const name = cur.data.identifier.name;
+    if (self.scope) |scope| {
+        if (scope.lookup(name)) |binding| return binding.alias_node == null;
+    }
+    return self.identifierBindsVisibleValue(name);
+}
+
+/// Where `fa` reads its field from: the nearest object in its chain with
+/// pointer type, or the chain's addressable storage, every member access from
+/// there to `fa` a `fieldReadStep`. Null when the chain reaches neither.
+pub fn fieldReadRoot(self: *Lowering, fa: *const ast.FieldAccess) ?*const Node {
+    if (fa.is_optional) return null;
+    const obj_ty = self.inferExprType(fa.object);
+    if (obj_ty.isBuiltin()) return null;
+    const info = self.module.types.get(obj_ty);
+    const agg_ty = if (info == .pointer) info.pointer.pointee else obj_ty;
+    if (fieldReadStep(self, agg_ty, fa.field) == null) return null;
+    if (info == .pointer) return if (chainRootIsValue(self, fa.object)) fa.object else null;
+    if (fa.object.data == .field_access) return fieldReadRoot(self, &fa.object.data.field_access);
+    return if (self.exprHasAddressableStorage(fa.object) and chainRootIsValue(self, fa.object)) fa.object else null;
+}
+
+/// The address of the field `fa` reads, GEPed down from `root`, so no
+/// aggregate around the field is loaded.
+pub fn fieldReadAddress(self: *Lowering, fa: *const ast.FieldAccess, root: *const Node) FieldRead {
+    const obj_ty = self.inferExprType(fa.object);
+    const info = self.module.types.get(obj_ty);
+    const base: Ref, const agg_ty: TypeId = if (fa.object != root)
+        .{ fieldReadAddress(self, &fa.object.data.field_access, root).ptr, obj_ty }
+    else if (info == .pointer)
+        .{ self.lowerExpr(root), info.pointer.pointee }
+    else
+        .{ self.lowerExprAsPtr(root), obj_ty };
+    const step = fieldReadStep(self, agg_ty, fa.field).?;
+    const ptr_ty = self.module.types.ptrTo(step.ty);
+    const ptr = if (step.in_union)
+        self.builder.emit(.{ .union_gep = .{ .base = base, .field_index = step.index, .base_type = agg_ty } }, ptr_ty)
+    else
+        self.builder.structGepTyped(base, step.index, ptr_ty, agg_ty);
+    return .{ .ptr = ptr, .ty = step.ty };
 }
 
 /// True when an `.identifier` receiver text resolves to an in-scope VALUE

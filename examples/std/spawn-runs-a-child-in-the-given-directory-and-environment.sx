@@ -1,0 +1,41 @@
+// `spawn` runs the child in `cwd` under the caller's environment overlaid by
+// `env`: a NAME=value entry sets NAME, a bare NAME unsets it, and argv[0]
+// resolves through the PATH that results. A `cwd` the child cannot enter
+// raises `.Cwd`.
+@import "modules/std.sx";
+
+setenv :: (name: [*:0]u8, value: [*:0]u8, overwrite: i32) -> i32 extern;
+
+BIN   :: ".sx-tmp/spawn-runs-a-child-in-the-given-directory-and-environment";
+PROBE :: ".sx-tmp/spawn-runs-a-child-in-the-given-directory-and-environment/sx-spawn-probe";
+
+show :: (label: string, argv: []string, opts: process.SpawnOpts) -> bool {
+    child, e := process.spawn(argv, opts);
+    if e { print("{}: {}\n", label, e); return false; }
+    buf := allocString(256);
+    got := child.stdoutRead(buf);
+    child.stdoutClose();
+    code := child.wait(true);
+    if got <= 0 or code?! != 0 { print("{}: read {}, exit {}\n", label, got, code); return false; }
+    print("{}: {}", label, buf[0 .. got.(i64)]);
+    true
+}
+
+main :: () -> i32 {
+    setenv("SX_SPAWN_KEPT", "inherited", 1);
+    setenv("SX_SPAWN_SET", "inherited", 1);
+    setenv("SX_SPAWN_UNSET", "inherited", 1);
+    script := "echo \"$(pwd -P) $SX_SPAWN_KEPT $SX_SPAWN_SET $SX_SPAWN_ADDED ${SX_SPAWN_UNSET-unset}\"";
+    vars := .["SX_SPAWN_SET=set", "SX_SPAWN_ADDED=added", "SX_SPAWN_UNSET"];
+    if !show("cwd and env", .["/bin/sh", "-c", script], .{ stdout = .pipe, cwd = "/", env = vars }) { return 1; }
+
+    if !fs.createDirAll(BIN) or !fs.writeFile(PROBE, "#!/bin/sh\necho \"$0\"\n") or !fs.setMode(PROBE, 0o755) {
+        print("probe setup failed\n");
+        return 1;
+    }
+    if !show("PATH in env", .["sx-spawn-probe"], .{ stdout = .pipe, env = .[concat("PATH=", BIN)] }) { return 1; }
+
+    _, e := process.spawn(.["/bin/sh", "-c", "exit 0"], .{ cwd = "/sx-no-such-directory" });
+    print("unenterable cwd: {}\n", e);
+    return if e == .Cwd then 0 else 1;
+}

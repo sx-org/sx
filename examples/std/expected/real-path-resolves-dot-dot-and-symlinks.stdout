@@ -1,0 +1,4 @@
+.sx-tmp/real-path-resolves-dot-dot-and-symlinks is absolute: true
+ws/repo/../repo: ws/repo
+ws/escape: outside
+ws/missing: null

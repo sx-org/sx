@@ -102,12 +102,35 @@ process :: scope {
         null;
     }
 
-    SpawnErr :: error { EmptyArgv; Pipe; Fork }
+    // Cwd and Exec: the child cannot enter opts.cwd or exec argv[0]. spawn has reaped
+    // it, and posix.errno() reads the errno of its failed chdir or execvp.
+    SpawnErr :: error { EmptyArgv; Pipe; Fork; Cwd; Exec }
+
+    // NoGroup: the child was spawned without newGroup or has been reaped.
+    // Signal: kill failed, and posix.errno() reads why.
+    KillErr :: error { NoGroup; Signal }
 
     SpawnOpts :: struct {
         stdin:  Stdio = .inherit;
         stdout: Stdio = .inherit;
         stderr: Stdio = .inherit;
+        // The child's working directory; null keeps the caller's.
+        cwd:    ?string = null;
+        // Overlaid on the caller's environment: NAME=value sets NAME, a bare NAME unsets
+        // it, and the last entry naming a variable wins. argv[0]'s PATH search uses the result.
+        env:    ?[]string = null;
+        // The child leads a new process group whose id is its pid, for Child.killGroup.
+        newGroup: bool = false;
+    }
+
+    // Ends with a null pointer; glibc's and musl's clearenv set environ itself to null.
+    environ : ?[*]?[*:0]u8 extern;
+
+    // A forked child that cannot run argv[0] reports the failed step and its errno.
+    ChildStep :: enum i32 { cwd; exec; }
+    ChildFailure :: struct {
+        step:  ChildStep;
+        errno: i32;
     }
 
     // A reaped pid and closed or unpiped descriptors are -1.
@@ -117,6 +140,8 @@ process :: scope {
         stdout: i32 = -1;
         stderr: i32 = -1;
         status: ?i32 = null;
+        // Spawned with SpawnOpts.newGroup.
+        leadsGroup: bool = false;
 
         stdinWrite :: (self: *Child, line: []u8) -> isize {
             return c.write(self.stdin, line.ptr, line.len);
@@ -144,6 +169,17 @@ process :: scope {
             return c.kill(self.pid, sig);
         }
 
+        // Sends sig to every process in the child's group, its unreaped leader included. An
+        // exited leader stays a zombie until wait reaps it, holding its group id from reuse,
+        // so until wait killGroup succeeds and reaches any surviving members, and after it
+        // raises .NoGroup: clear a finished child's leftovers before wait. A forked pid
+        // exceeds 1, so -pid never means kill(0) or kill(-1).
+        killGroup :: (self: *Child, sig: i32) -> !KillErr {
+            if !self.leadsGroup or self.pid <= 0 { raise .NoGroup; }
+            // Darwin's kill(-pid) fails on a group whose only member is the zombie leader.
+            if c.kill(-self.pid, sig) != 0 and c.kill(self.pid, sig) != 0 { raise .Signal; }
+        }
+
         // A reaped child answers from stored status because the kernel reuses pids.
         wait :: (self: *Child, block: bool) -> ?i32 {
             if self.pid <= 0 { return self.status; }
@@ -164,9 +200,13 @@ process :: scope {
     }
 
     // Call from one thread: pipe + FD_CLOEXEC is not atomic with a concurrent fork.
-    // The caller must reap the returned child with wait.
+    // spawn returns once the child has exec'd argv[0]; the caller must reap it with wait.
     spawn :: (argv: []string, opts: SpawnOpts = .{}) -> (Child, !SpawnErr) {
         if argv.len == 0 { raise .EmptyArgv; }
+
+        // Runs after the deferred cleanup below, so no libc call overwrites the child's errno.
+        childErrno : ?i32 = null;
+        defer { if n := childErrno { posix.setErrno(n); } }
 
         vec : [*]?[*:0]u8 = mem.alloc(context.allocator, ?[*:0]u8, argv.len + 1).ptr;
         i := 0;
@@ -176,6 +216,10 @@ process :: scope {
         }
         vec[argv.len] = null;
         file := vec[0]?!;
+        cwdZ : ?[:0]u8 = null;
+        if dir := opts.cwd { cwdZ = mem.cloneZ(dir); }
+        envp : ?[]?[*:0]u8 = null;
+        if vars := opts.env { envp = childEnv(vars); }
 
         // child ends map to standard slots; parent ends belong to the returned Child.
         child  : [3]i32 = .[-1, -1, -1];
@@ -189,6 +233,8 @@ process :: scope {
                 s += 1;
             }
             freeArgv(vec, argv.len);
+            if dir := cwdZ { mem.free(dir); }
+            if p := envp { freeArgv(p.ptr, p.len); }
         }
 
         slot := 0;
@@ -224,28 +270,55 @@ process :: scope {
         // Lift pipe ends above 0/1/2 so dup2 cannot overwrite another source or retain CLOEXEC.
         slot = 0;
         while slot < 3 {
-            if child[slot] >= 0 and child[slot] < 3 {
-                lifted := c.fcntl(child[slot], F_DUPFD_CLOEXEC, 3);
-                if lifted < 0 { raise .Pipe; }
-                c.close(child[slot]);
-                child[slot] = lifted;
-            }
+            if child[slot] >= 0 and !liftAboveStdio(*child[slot]) { raise .Pipe; }
             slot += 1;
         }
 
+        // The child writes a ChildFailure to report, lifted clear of the dup2 targets;
+        // a successful exec closes it instead.
+        reportPipe : [2]c.Fd = ---;
+        if c.pipe(*reportPipe) != 0 { raise .Pipe; }
+        defer c.close(reportPipe[0]);
+        report : i32 = reportPipe[1];
+        if !setCloexec(reportPipe[0]) or !setCloexec(report) or !liftAboveStdio(*report) {
+            c.close(report);
+            raise .Pipe;
+        }
+
         pid := c.fork();
-        if pid < 0 { raise .Fork; }
         // Only async-signal-safe calls: allocator locks may belong to threads absent in the child.
         if pid == 0 {
+            // A fork child is not a session leader, so setpgid cannot fail.
+            if opts.newGroup { c.setpgid(0, 0); }
             if child[0] >= 0 { c.dup2(child[0], 0); }
             if child[1] >= 0 { c.dup2(child[1], 1); }
             if child[2] >= 0 { c.dup2(child[2], 2); }
+            if dir := cwdZ {
+                if c.chdir(dir) != 0 { failChild(report, .cwd); }
+            }
+            if p := envp { environ = p.ptr; }
             c.execvp(file, vec);
-            c.exit(127);
+            failChild(report, .exec);
+        }
+        c.close(report);
+        if pid < 0 { raise .Fork; }
+
+        failure : ChildFailure = ---;
+        got : isize = 0;
+        while true {
+            got = c.read(reportPipe[0], @reinterpret([*]u8, *failure), @sizeOf(ChildFailure));
+            if got >= 0 or posix.errno() != posix.EINTR { break; }
+        }
+        if got == @sizeOf(ChildFailure) {
+            raw : i32 = 0;
+            while c.waitpid(pid, *raw, 0) < 0 and posix.errno() == posix.EINTR {}
+            childErrno = failure.errno;
+            if failure.step == .cwd { raise .Cwd; }
+            raise .Exec;
         }
 
         handedOff = true;
-        return Child{ pid = pid, stdin = parent[0], stdout = parent[1], stderr = parent[2] };
+        return Child{ pid = pid, stdin = parent[0], stdout = parent[1], stderr = parent[2], leadsGroup = opts.newGroup };
     }
 
     // SIGPIPE disposition is process-wide.
@@ -255,6 +328,62 @@ process :: scope {
 
     setCloexec :: (fd: i32) -> bool {
         return c.fcntl(fd, F_SETFD, FD_CLOEXEC) >= 0;
+    }
+
+    // Moves a descriptor in 0..2 to the lowest free one above 2, close-on-exec.
+    liftAboveStdio :: (fd: *i32) -> bool {
+        if fd.* > 2 { return true; }
+        lifted := c.fcntl(fd.*, F_DUPFD_CLOEXEC, 3);
+        if lifted < 0 { return false; }
+        c.close(fd.*);
+        fd.* = lifted;
+        true
+    }
+
+    // Writes step and errno to fd, then exits 127. One write keeps the record whole:
+    // a pipe write under PIPE_BUF is atomic.
+    failChild :: (fd: i32, step: ChildStep) -> noreturn {
+        failure := ChildFailure{ step = step, errno = posix.errno() };
+        c.write(fd, @reinterpret([*]u8, *failure), @sizeOf(ChildFailure));
+        c.exit(127)
+    }
+
+    // The caller's environ overlaid by vars, as SpawnOpts.env describes. The entries are
+    // owned copies, and a null pointer follows the last one.
+    childEnv :: (vars: []string) -> []?[*:0]u8 {
+        inherited : []?[*:0]u8 = .[];
+        if all := environ {
+            k := 0;
+            while all[k] != null { k += 1; }
+            inherited = all[0 .. k];
+        }
+        out := mem.alloc(context.allocator, ?[*:0]u8, inherited.len + vars.len + 1);
+        n := 0;
+        for e in inherited {
+            entry := e?![0..];
+            if !namedIn(vars, envName(entry)) { out[n] = mem.cloneZ(entry); n += 1; }
+        }
+        i := 0;
+        while i < vars.len {
+            name := envName(vars[i]);
+            if name.len < vars[i].len and !namedIn(vars[i + 1 ..], name) { out[n] = mem.cloneZ(vars[i]); n += 1; }
+            i += 1;
+        }
+        out[n] = null;
+        out[0 .. n]
+    }
+
+    // The text before an entry's first '='; a bare entry is all name.
+    envName :: (entry: string) -> string {
+        i := 0;
+        while i < entry.len and entry[i] != '=' { i += 1; }
+        entry[0 .. i]
+    }
+
+    // Whether an entry of vars, bare or NAME=value, names the variable name.
+    namedIn :: (vars: []string, name: string) -> bool {
+        for v in vars { if envName(v) == name { return true; } }
+        false
     }
 
     freeArgv :: (vec: [*]?[*:0]u8, n: i64) {

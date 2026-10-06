@@ -9,6 +9,7 @@ FsWindowsFileTime :: struct { low: u32; high: u32; }
 FsWindowsWidePath :: struct { ptr: [*]u16 = null; heap: *void = null; }
 
 fsWindowsMultiByteToWideChar :: (codePage: u32, flags: u32, input: [*]u8, inputLen: i32, output: [*]u16, outputLen: i32) -> i32 extern fsWindowsKernel32 "MultiByteToWideChar";
+fsWindowsWideCharToMultiByte :: (codePage: u32, flags: u32, input: [*]u16, inputLen: i32, output: [*]u8, outputLen: i32, defaultChar: *u8, usedDefault: *i32) -> i32 extern fsWindowsKernel32 "WideCharToMultiByte";
 fsWindowsGetProcessHeap :: () -> *void extern fsWindowsKernel32 "GetProcessHeap";
 fsWindowsHeapAlloc :: (heap: *void, flags: u32, bytes: u64) -> *void extern fsWindowsKernel32 "HeapAlloc";
 fsWindowsHeapFree :: (heap: *void, flags: u32, memory: *void) -> i32 extern fsWindowsKernel32 "HeapFree";
@@ -25,6 +26,7 @@ fsWindowsCreateDirectoryW :: (name: [*]u16, security: *void) -> i32 extern fsWin
 fsWindowsMoveFileExW :: (oldName: [*]u16, newName: [*]u16, flags: u32) -> i32 extern fsWindowsKernel32 "MoveFileExW";
 fsWindowsCopyFileW :: (oldName: [*]u16, newName: [*]u16, failIfExists: i32) -> i32 extern fsWindowsKernel32 "CopyFileW";
 fsWindowsSetFileAttributesW :: (name: [*]u16, attributes: u32) -> i32 extern fsWindowsKernel32 "SetFileAttributesW";
+fsWindowsGetFinalPathNameByHandleW :: (handle: *void, output: [*]u16, outputLen: u32, flags: u32) -> u32 extern fsWindowsKernel32 "GetFinalPathNameByHandleW";
 fsWindowsGetFileTime :: (handle: *void, created: *void, accessed: *void, written: *FsWindowsFileTime) -> i32 extern fsWindowsKernel32 "GetFileTime";
 fsWindowsSetFileTime :: (handle: *void, created: *void, accessed: *void, written: *FsWindowsFileTime) -> i32 extern fsWindowsKernel32 "SetFileTime";
 
@@ -38,5 +40,8 @@ FS_WINDOWS_OPEN_EXISTING         :u32: 3;
 FS_WINDOWS_OPEN_ALWAYS           :u32: 4;
 FS_WINDOWS_FILE_ATTRIBUTE_NORMAL :u32: 0x80;
 FS_WINDOWS_FILE_ATTRIBUTE_READONLY :u32: 0x01;
+FS_WINDOWS_FILE_FLAG_BACKUP_SEMANTICS :u32: 0x02000000;
+FS_WINDOWS_FILE_NAME_NORMALIZED  :u32: 0x0;
+FS_WINDOWS_VOLUME_NAME_DOS       :u32: 0x0;
 FS_WINDOWS_INVALID_ATTRIBUTES    :u32: 0xffffffff;
 FS_WINDOWS_MOVEFILE_REPLACE_EXISTING :u32: 0x01;
