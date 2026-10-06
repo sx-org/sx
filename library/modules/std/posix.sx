@@ -57,6 +57,7 @@ posix :: scope {
     }
 
     // Errno values that are uniform across Darwin, Linux, Android, and Emscripten.
-    EINTR :i32: 4;
-    EPIPE :i32: 32;
+    ENOENT :i32: 2;
+    EINTR  :i32: 4;
+    EPIPE  :i32: 32;
 }
