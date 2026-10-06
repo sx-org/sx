@@ -106,6 +106,10 @@ process :: scope {
     // it, and posix.errno() reads the errno of its failed chdir or execvp.
     SpawnErr :: error { EmptyArgv; Pipe; Fork; Cwd; Exec }
 
+    // NoGroup: the child was spawned without newGroup or has been reaped.
+    // Signal: kill failed, and posix.errno() reads why.
+    KillErr :: error { NoGroup; Signal }
+
     SpawnOpts :: struct {
         stdin:  Stdio = .inherit;
         stdout: Stdio = .inherit;
@@ -115,6 +119,8 @@ process :: scope {
         // Overlaid on the caller's environment: NAME=value sets NAME, a bare NAME unsets
         // it, and the last entry naming a variable wins. argv[0]'s PATH search uses the result.
         env:    ?[]string = null;
+        // The child leads a new process group whose id is its pid, for Child.killGroup.
+        newGroup: bool = false;
     }
 
     // Ends with a null pointer; glibc's and musl's clearenv set environ itself to null.
@@ -134,6 +140,8 @@ process :: scope {
         stdout: i32 = -1;
         stderr: i32 = -1;
         status: ?i32 = null;
+        // Spawned with SpawnOpts.newGroup.
+        leadsGroup: bool = false;
 
         stdinWrite :: (self: *Child, line: []u8) -> isize {
             return c.write(self.stdin, line.ptr, line.len);
@@ -159,6 +167,17 @@ process :: scope {
         kill :: (self: *Child, sig: i32) -> i32 {
             if self.pid <= 0 { return -1; }
             return c.kill(self.pid, sig);
+        }
+
+        // Sends sig to every process in the child's group, its unreaped leader included. An
+        // exited leader stays a zombie until wait reaps it, holding its group id from reuse,
+        // so until wait killGroup succeeds and reaches any surviving members, and after it
+        // raises .NoGroup: clear a finished child's leftovers before wait. A forked pid
+        // exceeds 1, so -pid never means kill(0) or kill(-1).
+        killGroup :: (self: *Child, sig: i32) -> !KillErr {
+            if !self.leadsGroup or self.pid <= 0 { raise .NoGroup; }
+            // Darwin's kill(-pid) fails on a group whose only member is the zombie leader.
+            if c.kill(-self.pid, sig) != 0 and c.kill(self.pid, sig) != 0 { raise .Signal; }
         }
 
         // A reaped child answers from stored status because the kernel reuses pids.
@@ -269,6 +288,8 @@ process :: scope {
         pid := c.fork();
         // Only async-signal-safe calls: allocator locks may belong to threads absent in the child.
         if pid == 0 {
+            // A fork child is not a session leader, so setpgid cannot fail.
+            if opts.newGroup { c.setpgid(0, 0); }
             if child[0] >= 0 { c.dup2(child[0], 0); }
             if child[1] >= 0 { c.dup2(child[1], 1); }
             if child[2] >= 0 { c.dup2(child[2], 2); }
@@ -297,7 +318,7 @@ process :: scope {
         }
 
         handedOff = true;
-        return Child{ pid = pid, stdin = parent[0], stdout = parent[1], stderr = parent[2] };
+        return Child{ pid = pid, stdin = parent[0], stdout = parent[1], stderr = parent[2], leadsGroup = opts.newGroup };
     }
 
     // SIGPIPE disposition is process-wide.
