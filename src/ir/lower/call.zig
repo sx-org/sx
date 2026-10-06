@@ -2774,17 +2774,17 @@ fn protocolHasMethod(proto_info: anytype, name: []const u8) bool {
 }
 
 /// The IR function a name denotes. The name selects ONE declaration and that
-/// declaration owns its function, so two same-spelled declarations can never
-/// answer for each other. A name no declaration owns — a monomorph instance, a
-/// thunk, a renamed C symbol — is answered by the module's own symbol index.
+/// declaration owns its function, so two same-spelled declarations, or an sx
+/// function and the C symbol a renamed extern binds, never answer for each
+/// other. A name no declaration owns — a monomorph instance, a thunk — is
+/// answered by the module's own symbol index, under its C symbol when it names
+/// a renamed extern.
 pub fn resolveFuncByName(self: *Lowering, name: []const u8) ?FuncId {
-    // A rename (`extern … "abs"`) declares under the C symbol, so that is the
-    // spelling both lookups take.
-    const effective_name = self.extern_name_map.get(name) orelse name;
-    if (self.program_index.lookup(.function, effective_name)) |fd| {
+    if (self.program_index.lookup(.function, name)) |fd| {
         if (self.declFuncId(fd)) |fid| return fid;
     }
-    return self.module.funcIdByName(self.module.types.internString(effective_name));
+    const symbol = self.extern_name_map.get(name) orelse name;
+    return self.module.funcIdByName(self.module.types.internString(symbol));
 }
 
 /// The `BuiltinId` (IR op tag) a call lowers to, or null when the name has no
