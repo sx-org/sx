@@ -2455,13 +2455,19 @@ pub const Ops = struct {
     }
 
     // ── Union ops ────────────────────────────────────────────
+    /// Whether the members of `agg` overlay its payload area at field 1, as a
+    /// payload enum's do, rather than its whole storage, as a union's do.
+    fn membersInPayloadArea(self: Ops, agg: TypeId) bool {
+        const table = &self.e.ir_mod.types;
+        return table.get(table.canonicalType(agg)) == .@"enum";
+    }
+
     pub fn emitUnionGet(self: Ops, instruction: *const Inst, fa: FieldAccess) void {
+        const agg_ir = self.e.getRefIRType(fa.base).?;
         if (self.e.isMemoryResidentRef(fa.base)) {
-            const agg = self.e.toLLVMType(self.e.getRefIRType(fa.base).?);
+            const agg = self.e.toLLVMType(agg_ir);
             const storage = self.e.resolveRef(fa.base);
-            // A payload enum's members overlay its payload area; a union's,
-            // its whole storage.
-            const member = if (c.LLVMGetTypeKind(agg) == c.LLVMStructTypeKind)
+            const member = if (self.membersInPayloadArea(agg_ir))
                 c.LLVMBuildStructGEP2(self.e.builder, agg, storage, 1, "ug.pp")
             else
                 storage;
@@ -2471,15 +2477,14 @@ pub const Ops = struct {
         const result_ty = self.e.toLLVMType(instruction.ty);
         // Union field access: reinterpret the union's data area as the target type
         const base_ty = c.LLVMTypeOf(base);
-        const kind = c.LLVMGetTypeKind(base_ty);
-        if (kind == c.LLVMStructTypeKind) {
+        if (self.membersInPayloadArea(agg_ir)) {
             // Payload enum { header, payload_bytes } — access payload at field 1
             const tmp = self.e.buildEntryAlloca(base_ty, "ug.tmp");
             _ = c.LLVMBuildStore(self.e.builder, base, tmp);
             const payload_ptr = c.LLVMBuildStructGEP2(self.e.builder, base_ty, tmp, 1, "ug.pp");
             self.e.mapRef(c.LLVMBuildLoad2(self.e.builder, result_ty, payload_ptr, "ug.val"));
         } else {
-            // Union [N x i8] — alloca, store, reinterpret-load
+            // Union — alloca, store, reinterpret-load
             const tmp = self.e.buildEntryAlloca(base_ty, "ug.tmp");
             const dl = c.LLVMGetModuleDataLayout(self.e.llvm_module);
             c.LLVMSetAlignment(tmp, @max(c.LLVMABIAlignmentOfType(dl, base_ty), c.LLVMABIAlignmentOfType(dl, result_ty)));
@@ -2503,8 +2508,8 @@ pub const Ops = struct {
                 self.e.failGepTypeResolution("union_gep", fa.base);
                 return;
             }
-            const st_kind = c.LLVMGetTypeKind(union_llvm_ty);
-            if (st_kind == c.LLVMStructTypeKind) {
+            const agg_ir = self.e.resolveAggregate(fa.base_type orelse self.e.getRefIRType(fa.base).?);
+            if (self.membersInPayloadArea(agg_ir)) {
                 // Payload enum — payload is at field 1
                 const payload_ptr = c.LLVMBuildStructGEP2(self.e.builder, union_llvm_ty, base_ptr, 1, "ugep.pp");
                 self.e.mapRef(payload_ptr);

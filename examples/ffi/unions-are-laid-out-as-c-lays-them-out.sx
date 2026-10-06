@@ -1,0 +1,26 @@
+@import "modules/std.sx";
+
+@import c {
+    @source "unions-are-laid-out-as-c-lays-them-out.c";
+};
+
+V :: union { a: i32; b: f32; }
+S2 :: struct { c: u8; v: V; }
+
+W :: union { a: [3]u8; b: i16; }
+S3 :: struct { c: u8; w: W; d: u8; }
+
+s2Size :: () -> i64 extern;
+s2Fields :: (s: *S2) -> i64 extern;
+wSize :: () -> i64 extern;
+s3Size :: () -> i64 extern;
+s3Fields :: (s: *S3) -> i64 extern;
+
+main :: () -> i32 {
+    s2 : S2 = .{ c = 3, v = .{ a = 1234 } };
+    print("S2 {} {} {}\n", @sizeOf(S2), s2Size(), s2Fields(*s2));
+    print("W {} {} {}\n", @sizeOf(W), @alignOf(W), wSize());
+    s3 : S3 = .{ c = 4, w = .{ b = 515 }, d = 6 };
+    print("S3 {} {} {}\n", @sizeOf(S3), s3Size(), s3Fields(*s3));
+    0
+}

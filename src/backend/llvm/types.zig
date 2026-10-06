@@ -103,6 +103,25 @@ pub const TypeLowering = struct {
         }
     }
 
+    /// Whether a value of `llvm_ty` holds every byte of its storage, so a load
+    /// and a store copy them all: no padding, and no integer, float or vector
+    /// narrower than its storage.
+    fn holdsEveryByte(dl: c.LLVMTargetDataRef, llvm_ty: c.LLVMTypeRef) bool {
+        switch (c.LLVMGetTypeKind(llvm_ty)) {
+            c.LLVMArrayTypeKind => return holdsEveryByte(dl, c.LLVMGetElementType(llvm_ty)),
+            c.LLVMStructTypeKind => {
+                var end: c_ulonglong = 0;
+                for (0..c.LLVMCountStructElementTypes(llvm_ty)) |i| {
+                    const field = c.LLVMStructGetTypeAtIndex(llvm_ty, @intCast(i));
+                    if (c.LLVMOffsetOfElement(dl, llvm_ty, @intCast(i)) != end or !holdsEveryByte(dl, field)) return false;
+                    end += c.LLVMABISizeOfType(dl, field);
+                }
+                return end == c.LLVMABISizeOfType(dl, llvm_ty);
+            },
+            else => return c.LLVMSizeOfTypeInBits(dl, llvm_ty) == 8 * c.LLVMABISizeOfType(dl, llvm_ty),
+        }
+    }
+
     fn intLLVMType(self: TypeLowering, width: u8) c.LLVMTypeRef {
         return switch (width) {
             1 => self.e.cached_i1,
@@ -171,14 +190,22 @@ pub const TypeLowering = struct {
                 return c.LLVMStructTypeInContext(self.e.context, field_llvm_types.ptr, n, 0);
             },
             .@"union" => |u| {
-                // Union — just [N x i8]
-                var max_size: usize = 0;
-                for (u.fields) |field| {
-                    const sz = self.e.ir_mod.types.typeSizeBytes(field.ty);
-                    if (sz > max_size) max_size = sz;
-                }
-                if (max_size == 0) max_size = 8;
-                return c.LLVMArrayType2(self.e.cached_i8, @intCast(max_size));
+                // clang's form: the storage member, then bytes up to the union's
+                // size. A storage member whose value leaves bytes of its storage
+                // out gives way to an integer or byte vector of the union's
+                // alignment, so a union value carries every member's bytes.
+                const layout = self.e.ir_mod.types.unionLayout(u.fields) orelse return c.LLVMArrayType2(self.e.cached_i8, 8);
+                const dl = c.LLVMGetModuleDataLayout(self.e.llvm_module);
+                const member = self.fieldLLVMType(u.fields[layout.storage].ty);
+                const head = if (holdsEveryByte(dl, member))
+                    member
+                else if (layout.alignment <= 8)
+                    c.LLVMIntTypeInContext(self.e.context, @intCast(layout.alignment * 8))
+                else
+                    c.LLVMVectorType(self.e.cached_i8, @intCast(layout.alignment));
+                const pad = layout.size - c.LLVMABISizeOfType(dl, head);
+                var field_types: [2]c.LLVMTypeRef = .{ head, c.LLVMArrayType2(self.e.cached_i8, pad) };
+                return c.LLVMStructTypeInContext(self.e.context, &field_types, if (pad == 0) 1 else 2, 0);
             },
             .@"enum" => |u| {
                 // A payload-free enum is its tag word. A payload-carrying one is

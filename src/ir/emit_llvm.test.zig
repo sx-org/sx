@@ -648,7 +648,7 @@ test "emit: a payload-carrying error channel lowers to { tag, payload } and its 
 const llvm = @import("../llvm_api.zig");
 const cc = llvm.c;
 
-fn internStruct(module: *Module, name: []const u8, field_tys: []const TypeId) TypeId {
+fn ownedFields(module: *Module, field_tys: []const TypeId) []const types.TypeInfo.StructInfo.Field {
     var fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
     defer fields.deinit(std.testing.allocator);
     for (field_tys, 0..) |fty, i| {
@@ -656,10 +656,13 @@ fn internStruct(module: *Module, name: []const u8, field_tys: []const TypeId) Ty
         const fname = std.fmt.bufPrint(&nb, "f{d}", .{i}) catch unreachable;
         fields.append(std.testing.allocator, .{ .name = str(module, fname), .ty = fty }) catch unreachable;
     }
-    // Dupe into the module arena so the interned struct's field slice lives for
+    // Dupe into the module arena so the interned type's field slice lives for
     // the module's lifetime (freed at module.deinit) — no testing-allocator leak.
-    const owned = module.slice_arena.allocator().dupe(types.TypeInfo.StructInfo.Field, fields.items) catch unreachable;
-    return module.types.intern(.{ .@"struct" = .{ .name = str(module, name), .fields = owned } });
+    return module.slice_arena.allocator().dupe(types.TypeInfo.StructInfo.Field, fields.items) catch unreachable;
+}
+
+fn internStruct(module: *Module, name: []const u8, field_tys: []const TypeId) TypeId {
+    return module.types.intern(.{ .@"struct" = .{ .name = str(module, name), .fields = ownedFields(module, field_tys) } });
 }
 
 test "emit: abiCoerceParamType coerces C-ABI structs by size bucket" {
@@ -1024,13 +1027,15 @@ test "emit: union_get (reinterpret union field)" {
 
     var b = Builder.init(&module);
 
-    // func f() -> i64 { d = Data.as_int(42); return union_get(d, 0) as i64; }
+    // func f() -> i64 { d : Data = .{ as_int = 42 }; return d.as_int; }
     _ = b.beginFunction(str(&module, "ugfn"), &.{}, .i64);
     const entry = b.appendBlock(str(&module, "entry"), &.{});
     b.switchToBlock(entry);
 
-    const val = b.constInt(42, .i64);
-    const d = b.enumInit(0, val, data_ty);
+    const slot = b.alloca(data_ty);
+    const as_int = b.emit(.{ .union_gep = .{ .base = slot, .field_index = 0, .base_type = data_ty } }, module.types.ptrTo(.i64));
+    b.store(as_int, b.constInt(42, .i64));
+    const d = b.load(slot, data_ty);
     const got = b.emit(.{ .union_get = .{ .base = d, .field_index = 0 } }, .i64);
     b.ret(got, .i64);
     b.finalize();
@@ -1042,9 +1047,34 @@ test "emit: union_get (reinterpret union field)" {
     try std.testing.expect(emitter.verify());
 
     const ir_str = emitter.dumpToString();
-    // Should contain alloca + store + GEP + load pattern
+    // Should contain alloca + store + load pattern
     try std.testing.expect(std.mem.indexOf(u8, ir_str, "alloca") != null);
     try std.testing.expect(std.mem.indexOf(u8, ir_str, "load") != null);
+}
+
+test "emit: a union whose storage member leaves bytes out leads with an integer or byte vector of its alignment" {
+    const alloc = std.testing.allocator;
+    var module = Module.init(alloc);
+    defer module.deinit();
+
+    const padded = internStruct(&module, "Padded", &.{ .u8, .i32 });
+    const v3 = module.types.vectorOf(.f32, 3);
+    const by_padded = module.types.intern(.{ .@"union" = .{
+        .name = str(&module, "ByPadded"),
+        .fields = ownedFields(&module, &.{ padded, module.types.arrayOf(.u8, 8) }),
+    } });
+    const by_v3 = module.types.intern(.{ .@"union" = .{
+        .name = str(&module, "ByV3"),
+        .fields = ownedFields(&module, &.{ v3, module.types.arrayOf(.u8, 16) }),
+    } });
+
+    var emitter = LLVMEmitter.init(alloc, &module, "test_union_head", .{});
+    defer emitter.deinit();
+
+    var int_head = [_]c.LLVMTypeRef{ emitter.cached_i32, c.LLVMArrayType2(emitter.cached_i8, 4) };
+    try std.testing.expect(emitter.toLLVMType(by_padded) == c.LLVMStructTypeInContext(emitter.context, &int_head, 2, 0));
+    var vector_head = [_]c.LLVMTypeRef{c.LLVMVectorType(emitter.cached_i8, 16)};
+    try std.testing.expect(emitter.toLLVMType(by_v3) == c.LLVMStructTypeInContext(emitter.context, &vector_head, 1, 0));
 }
 
 // ── Array/Slice tests ───────────────────────────────────────────────
