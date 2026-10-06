@@ -28,7 +28,8 @@ ClientErr :: error {
     Connect;    // socket()/connect()/resolve failed; or the connect timed out
     Tls;        // the TLS dial failed (setup/handshake/VERIFICATION); or an
                 // https URL was fetched without a dialer configured
-    Send;       // write() failed (an expired io timeout included)
+    Send;       // write() failed: the server has gone, an io timeout expired,
+                // or the socket faulted
     Recv;       // read() failed or timed out; the peer closed before a full
                 // response; or chunked framing was malformed
     TooLarge;   // the response did not fit the caller's buffer
@@ -90,6 +91,7 @@ private openAddr :: (a: *socket.Addr, opts: ClientOpts) -> (ClientConn, !ClientE
     c : ClientConn = .{};
     fd := socket.socket(socket.addrFamily(a), socket.SOCK_STREAM, 0);
     if fd < 0 { raise .Connect; }
+    if !socket.setNoSigpipe(fd) { socket.close(fd); raise .Connect; }
     if opts.connectTimeoutMs > 0 {
         if !socket.connectTimed(fd, a, opts.connectTimeoutMs) {
             socket.close(fd);
@@ -143,8 +145,8 @@ private connWriteStep :: (c: *ClientConn, buf: [*]u8, len: i64) -> i64 {
         if step == TlsStep.Done { return n; }
         return -1;
     }
-    n := socket.write(c.fd, buf, len);
-    while n < 0 and socket.errno() == posix.EINTR { n = socket.write(c.fd, buf, len); }
+    n := socket.sendNoSigpipe(c.fd, buf, len);
+    while n < 0 and socket.errno() == posix.EINTR { n = socket.sendNoSigpipe(c.fd, buf, len); }
     if n <= 0 { return -1; }
     return n;
 }

@@ -1,0 +1,37 @@
+// A client that leaves mid-response does not end the server: the write to the
+// gone peer fails and the server drops the connection, where SIGPIPE at its
+// default disposition would end the process. Built AOT: `sx run`'s own
+// process catches SIGPIPE.
+@import "modules/std.sx";
+@import "modules/std/http.sx";
+
+BIG :: 4 * 1048576;
+LOOPBACK :u32: 0x0100007F;
+
+body : string = "";
+
+answer :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    resp.body = body;
+}
+
+main :: () -> i32 {
+    body = allocString(BIG);
+    c.memset(body.ptr, 'x', BIG);
+    srv, se := http.Server.init(.{ port = 0 }, answer, 0);
+    if se { print("server init failed\n"); return 1; }
+    fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+    addr := socket.sockaddrIn(srv.cfg.port, LOOPBACK);
+    if socket.connect(fd, *addr, 16) != 0 { print("connect failed\n"); return 1; }
+    req := "GET / HTTP/1.1\r\nHost: t\r\n\r\n";
+    if socket.write(fd, req.ptr, req.len) != req.len { print("request write failed\n"); return 1; }
+    i := 0;
+    while i < 20 { srv.tick(5) catch {}; i += 1; }
+    // The unread response bytes make this close a reset.
+    socket.close(fd);
+    c.usleep(50000);
+    i = 0;
+    while i < 20 { srv.tick(5) catch {}; i += 1; }
+    print("server outlived the client\n");
+    srv.close();
+    0
+}
