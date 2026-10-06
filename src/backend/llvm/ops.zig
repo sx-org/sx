@@ -82,8 +82,10 @@ pub const Ops = struct {
                 c.LLVMConstInt(c.LLVMStructGetTypeAtIndex(ty, 0), @bitCast(val), 1),
                 c.LLVMConstNull(c.LLVMStructGetTypeAtIndex(ty, 1)),
             };
-            break :blk c.LLVMConstStructInContext(self.e.context, &elems, 2, 0);
-        } else
+            break :blk self.e.constantOf(instruction.ty, c.LLVMConstStructInContext(self.e.context, &elems, 2, 0));
+        } else if (self.e.isMemoryResident(instruction.ty))
+            self.e.undefOf(instruction.ty)
+        else
             // void or other non-integer type: emit i64 0 as unused placeholder
             c.LLVMConstInt(c.LLVMInt64TypeInContext(self.e.context), 0, 0);
         self.e.mapRef(llvm_val);
@@ -130,7 +132,7 @@ pub const Ops = struct {
     pub fn emitConstString(self: Ops, instruction: *const Inst, str_id: StringId) void {
         const str = self.e.ir_mod.types.getString(str_id);
         if (!instruction.ty.isBuiltin() and self.e.ir_mod.types.get(instruction.ty) == .array) {
-            self.e.mapRef(self.e.emitTerminatedBytes(str));
+            self.e.mapRef(self.e.constantOf(instruction.ty, self.e.emitTerminatedBytes(str)));
             return;
         }
         self.e.mapRef(self.e.emitStringConstant(str));
@@ -142,11 +144,14 @@ pub const Ops = struct {
             const child = self.e.ir_mod.types.get(instruction.ty).optional.child;
             return self.e.mapRef(c.LLVMConstInt(ty, self.e.ir_mod.types.optionalNullWord(child), 0));
         }
-        self.e.mapRef(c.LLVMConstNull(ty));
+        self.e.mapRef(self.e.constantOf(instruction.ty, c.LLVMConstNull(ty)));
     }
 
     pub fn emitConstUndef(self: Ops, instruction: *const Inst) void {
-        if (instruction.ty == .void) {
+        if (self.e.isMemoryResident(instruction.ty)) {
+            self.e.undef_refs.put(self.e.ref_counter, {}) catch unreachable;
+            self.e.mapRef(self.e.residentSlot(instruction.ty));
+        } else if (instruction.ty == .void) {
             // void has no value — map to undef i64 as placeholder
             self.e.mapRef(c.LLVMGetUndef(self.e.cached_i64));
         } else {
@@ -197,7 +202,7 @@ pub const Ops = struct {
 
     pub fn emitOpenSetTypeId(self: Ops, instruction: *const Inst, t: OpenSetTypeId) void {
         const llvm_global = self.e.global_map.get(t.table.index()) orelse {
-            self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
+            self.e.mapRef(self.e.undefOf(instruction.ty));
             return;
         };
         const tag = self.e.resolveRef(t.tag);
@@ -421,7 +426,12 @@ pub const Ops = struct {
 
     /// A load of a `ty` from `ptr`. A narrow integer reads its whole storage
     /// word.
-    fn buildLoad(self: Ops, ty: TypeId, ptr: c.LLVMValueRef, name: [*c]const u8, is_volatile: bool) c.LLVMValueRef {
+    pub fn buildLoad(self: Ops, ty: TypeId, ptr: c.LLVMValueRef, name: [*c]const u8, is_volatile: bool) c.LLVMValueRef {
+        if (self.e.isMemoryResident(ty)) {
+            const slot = self.e.residentSlot(ty);
+            self.e.copyBytes(slot, ptr, self.e.toLLVMType(ty), is_volatile);
+            return slot;
+        }
         const llvm_ty = self.e.toLLVMType(ty);
         const word_ty = self.storageWordType(ty);
         const load = c.LLVMBuildLoad2(self.e.builder, word_ty orelse llvm_ty, ptr, if (word_ty == null) name else "word");
@@ -451,7 +461,7 @@ pub const Ops = struct {
         if (ptr_kind == c.LLVMPointerTypeKind and instruction.ty != .void) {
             self.e.mapRef(self.buildLoad(instruction.ty, ptr, "load", false));
         } else {
-            self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(if (instruction.ty == .void) .i64 else instruction.ty)));
+            self.e.mapRef(self.e.undefOf(instruction.ty));
         }
     }
 
@@ -472,6 +482,13 @@ pub const Ops = struct {
                 .pointer => |p| p.pointee,
                 else => null,
             } else null;
+            if (self.e.getRefIRType(st.val)) |val_ty| {
+                if (self.e.isMemoryResident(val_ty)) {
+                    self.e.writeResident(ptr, st.val, val_ty);
+                    self.e.advanceRefCounter();
+                    return;
+                }
+            }
             if (pointee) |ty| {
                 val = self.e.coerceArg(val, self.e.toLLVMType(ty));
                 _ = self.buildStore(ty, val, ptr);
@@ -493,7 +510,7 @@ pub const Ops = struct {
         if (ptr_kind == c.LLVMPointerTypeKind and instruction.ty != .void) {
             self.e.mapRef(self.buildLoad(instruction.ty, ptr, "volatile_load", true));
         } else {
-            self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(if (instruction.ty == .void) .i64 else instruction.ty)));
+            self.e.mapRef(self.e.undefOf(instruction.ty));
         }
     }
 
@@ -507,8 +524,12 @@ pub const Ops = struct {
             // the width. The address expression may carry a different pointee
             // type — that is the caller's view of the memory, not the access
             // size, and narrowing to it would disagree with the matching load.
-            val = self.e.coerceArg(val, self.e.toLLVMType(st.val_ty));
-            c.LLVMSetVolatile(self.buildStore(st.val_ty, val, ptr), 1);
+            if (self.e.isMemoryResident(st.val_ty)) {
+                if (!self.e.undef_refs.contains(st.val.index())) self.e.copyBytes(ptr, val, self.e.toLLVMType(st.val_ty), true);
+            } else {
+                val = self.e.coerceArg(val, self.e.toLLVMType(st.val_ty));
+                c.LLVMSetVolatile(self.buildStore(st.val_ty, val, ptr), 1);
+            }
         }
         self.e.advanceRefCounter();
     }
@@ -637,7 +658,7 @@ pub const Ops = struct {
                 raw;
             self.e.mapRef(result);
         } else {
-            self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(if (instruction.ty == .void) .i64 else instruction.ty)));
+            self.e.mapRef(self.e.undefOf(instruction.ty));
         }
     }
 
@@ -670,7 +691,7 @@ pub const Ops = struct {
             const result = c.LLVMBuildAtomicRMW(self.e.builder, rmwBinOp(a.kind, is_unsigned), ptr, val, llvmOrdering(a.ordering), 0);
             self.e.mapRef(result);
         } else {
-            self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(if (instruction.ty == .void) .i64 else instruction.ty)));
+            self.e.mapRef(self.e.undefOf(instruction.ty));
         }
     }
 
@@ -711,7 +732,7 @@ pub const Ops = struct {
             result = c.LLVMBuildInsertValue(self.e.builder, result, has, 1, "cas.opt");
             self.e.mapRef(result);
         } else {
-            self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(if (instruction.ty == .void) .i64 else instruction.ty)));
+            self.e.mapRef(self.e.undefOf(instruction.ty));
         }
     }
 
@@ -761,7 +782,7 @@ pub const Ops = struct {
     // ── Globals ───────────────────────────────────────────
     pub fn emitGlobalGet(self: Ops, instruction: *const Inst, gid: GlobalId) void {
         const llvm_global = self.e.global_map.get(gid.index()) orelse {
-            self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
+            self.e.mapRef(self.e.undefOf(instruction.ty));
             return;
         };
         self.e.mapRef(self.buildLoad(instruction.ty, llvm_global, "gload", false));
@@ -790,8 +811,12 @@ pub const Ops = struct {
             self.e.advanceRefCounter();
             return;
         };
-        const val = self.e.resolveRef(gs.value);
-        _ = self.buildStore(self.e.ir_mod.globals.items[gs.global.index()].ty, val, llvm_global);
+        const global_ty = self.e.ir_mod.globals.items[gs.global.index()].ty;
+        if (self.e.isMemoryResident(global_ty)) {
+            self.e.writeResident(llvm_global, gs.value, global_ty);
+        } else {
+            _ = self.buildStore(global_ty, self.e.resolveRef(gs.value), llvm_global);
+        }
         self.e.advanceRefCounter();
     }
 
@@ -877,7 +902,7 @@ pub const Ops = struct {
         // Same predicate as the plain-extern-call path so the
         // two arms stay in lockstep.
         const raw_ret_ty = self.e.toLLVMType(instruction.ty);
-        const uses_sret = self.e.needsByval(instruction.ty, raw_ret_ty);
+        const uses_sret = self.e.needsByval(instruction.ty, raw_ret_ty, true);
         const ret_ty = if (uses_sret) self.e.cached_void else raw_ret_ty;
 
         // Slot layout:
@@ -892,7 +917,7 @@ pub const Ops = struct {
 
         var sret_slot: c.LLVMValueRef = null;
         if (uses_sret) {
-            sret_slot = self.e.buildEntryAlloca(raw_ret_ty, "objc.sret");
+            sret_slot = self.e.residentSlot(instruction.ty);
             param_types[0] = self.e.cached_ptr;
             call_args[0] = sret_slot;
         }
@@ -914,9 +939,9 @@ pub const Ops = struct {
             // reference: caller copy + ptr — same marshaling as the abi(.c)
             // fn-pointer path. coerceArg can't spill these
             // (its struct→ptr arm is the 2-field fat-pointer decay only).
-            if (self.e.needsByval(raw_ty, raw_llvm)) {
+            if (self.e.needsByval(raw_ty, raw_llvm, true)) {
                 param_types[slot] = self.e.cached_ptr;
-                call_args[slot] = self.e.materializeByvalArg(self.e.resolveRef(arg_ref), raw_llvm);
+                call_args[slot] = self.e.materializeByvalArg(self.e.resolveRef(arg_ref), raw_ty);
                 continue;
             }
             const coerced_ty = self.e.abiCoerceParamType(raw_ty, raw_llvm);
@@ -931,11 +956,8 @@ pub const Ops = struct {
             // Tag the call's arg 0 (sret slot) with the sret
             // attribute so the AArch64 / SysV backends route
             // through the x8 / hidden-pointer convention.
-            const sret_kind = c.LLVMGetEnumAttributeKindForName("sret", 4);
-            const sret_attr = c.LLVMCreateTypeAttribute(self.e.context, sret_kind, raw_ret_ty);
-            const param1_idx: c.LLVMAttributeIndex = @bitCast(@as(i32, 1));
-            c.LLVMAddCallSiteAttribute(result, param1_idx, sret_attr);
-            result = c.LLVMBuildLoad2(self.e.builder, raw_ret_ty, sret_slot, "objc.sret.load");
+            self.e.markSretArg(result, raw_ret_ty);
+            result = self.e.residentPart(sret_slot, instruction.ty);
         }
         // Always mapRef — the IR Ref counter for this
         // instruction advances regardless of return type,
@@ -977,7 +999,7 @@ pub const Ops = struct {
         else
             .instance;
         const call_method_offset: u32 = emit.Jni.callMethodSlot(ret_ty_id, is_pointer_ret, call_kind) orelse {
-            self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
+            self.e.mapRef(self.e.undefOf(instruction.ty));
             return;
         };
         const get_mid_offset: u32 = if (msg.is_static) emit.Jni.GetStaticMethodID else emit.Jni.GetMethodID;
@@ -1506,7 +1528,7 @@ pub const Ops = struct {
             std.debug.print("error: '{s}' runs only at compile time — it cannot be called from the runtime call graph (use it inside @run or a comptime '::')\n", .{fname});
             self.reportRuntimePath(fname);
             self.e.comptime_failed = true;
-            self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
+            self.e.mapRef(self.e.undefOf(instruction.ty));
             return;
         }
         // A comptime-only callee (compiler-API or compiler-domain) reached here from
@@ -1516,7 +1538,7 @@ pub const Ops = struct {
         // AOT linker). The comptime VALUE is produced by the VM, not this dead
         // body.
         if (callee_func.intrinsic != null) {
-            self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
+            self.e.mapRef(self.e.undefOf(instruction.ty));
             return;
         }
 
@@ -1550,10 +1572,10 @@ pub const Ops = struct {
             defer evaluation.destroy();
             if (evaluation.completed()) |result| {
                 if (self.e.checkComptimeFailable(result, callee_func.ret, fname) == null) {
-                    self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
+                    self.e.mapRef(self.e.undefOf(instruction.ty));
                     return;
                 }
-                self.e.mapRef(self.e.valueToLLVMConst(result, instruction.ty, fname));
+                self.e.mapRef(self.e.constantOf(instruction.ty, self.e.valueToLLVMConst(result, instruction.ty, fname)));
                 return;
             }
             self.e.reportComptimeFailure(
@@ -1562,16 +1584,17 @@ pub const Ops = struct {
                 .{ fname, comptime_vm.last_bail_reason orelse "<unknown>" },
             );
             self.e.comptime_failed = true;
-            self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
+            self.e.mapRef(self.e.undefOf(instruction.ty));
             return;
         }
         const callee = self.e.func_map.get(call_op.callee.index()) orelse {
-            self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
+            self.e.mapRef(self.e.undefOf(instruction.ty));
             return;
         };
         const callee_needs_c_abi = callee_func.is_extern or callee_func.call_conv == .c;
         const callee_raw_ret = self.e.toLLVMType(callee_func.ret);
-        const callee_uses_sret = callee_needs_c_abi and self.e.needsByval(callee_func.ret, callee_raw_ret);
+        const callee_uses_sret = !std.mem.eql(u8, self.e.ir_mod.types.getString(callee_func.name), "main") and
+            self.e.returnsThroughSret(callee_func.ret, callee_needs_c_abi, callee_func.is_extern);
 
         // When the callee uses sret, prepend an alloca for the result.
         // Index alignment: actual_args[0] = sret_slot; actual_args[i+1] = sx arg i.
@@ -1581,7 +1604,7 @@ pub const Ops = struct {
         defer self.e.alloc.free(args);
         var sret_slot: c.LLVMValueRef = null;
         if (callee_uses_sret) {
-            sret_slot = self.e.buildEntryAlloca(callee_raw_ret, "sret.slot");
+            sret_slot = self.e.residentSlot(callee_func.ret);
             args[0] = sret_slot;
         }
         for (call_op.args, 0..) |arg_ref, j| {
@@ -1604,8 +1627,8 @@ pub const Ops = struct {
                 if (callee_needs_c_abi and fn_param_idx < callee_func.params.len) {
                     const ir_ty = callee_func.params[fn_param_idx].ty;
                     const raw_struct = self.e.toLLVMType(ir_ty);
-                    if (self.e.needsByval(ir_ty, raw_struct)) {
-                        args[j] = self.e.materializeByvalArg(args[j], raw_struct);
+                    if (self.e.needsByval(ir_ty, raw_struct, callee_func.is_extern)) {
+                        args[j] = self.e.materializeByvalArg(args[j], ir_ty);
                         continue;
                     }
                 }
@@ -1620,12 +1643,8 @@ pub const Ops = struct {
         if (callee_uses_sret) {
             // Mirror the function-decl `sret(<T>)` attribute on the call site so the
             // LLVM backend lowers arg 0 via x8 (AAPCS64) / hidden ptr (SysV AMD64).
-            const sret_kind = c.LLVMGetEnumAttributeKindForName("sret", 4);
-            const sret_attr = c.LLVMCreateTypeAttribute(self.e.context, sret_kind, callee_raw_ret);
-            const param1_idx: c.LLVMAttributeIndex = @bitCast(@as(i32, 1));
-            c.LLVMAddCallSiteAttribute(result, param1_idx, sret_attr);
-            // Load the actual struct value the callee wrote into the slot.
-            result = c.LLVMBuildLoad2(self.e.builder, callee_raw_ret, sret_slot, "sret.load");
+            self.e.markSretArg(result, callee_raw_ret);
+            result = self.e.residentPart(sret_slot, callee_func.ret);
         } else if (!call_is_void_like and callee_func.is_extern) {
             // Coerce ABI return value (e.g. i64 / [2 x i64]) back to IR struct type if needed
             const expected_ty = self.e.toLLVMType(instruction.ty);
@@ -1700,9 +1719,10 @@ pub const Ops = struct {
         } else null;
         const raw_ret_ty = self.e.toLLVMType(ir_ret orelse instruction.ty);
 
-        // An abi(.c) callee returning a >16 B non-HFA struct is declared
-        // sret (hidden out-pointer at arg 0, void return); mirror it here.
-        const uses_sret = fp_is_c_abi and ir_ret != null and self.e.needsByval(ir_ret.?, raw_ret_ty);
+        // Mirror the callee declaration's hidden out-pointer at arg 0.
+        const ret_ir = ir_ret orelse instruction.ty;
+        const uses_sret = (fp_is_c_abi and ir_ret != null and self.e.needsByval(ir_ret.?, raw_ret_ty, false)) or
+            (!fp_is_c_abi and self.e.isMemoryResident(ret_ir));
         const sret_off: usize = if (uses_sret) 1 else 0;
 
         const total_args = call_op.args.len + sret_off;
@@ -1711,7 +1731,7 @@ pub const Ops = struct {
         defer self.e.alloc.free(args);
         var sret_slot: c.LLVMValueRef = null;
         if (uses_sret) {
-            sret_slot = self.e.buildEntryAlloca(raw_ret_ty, "sret.slot");
+            sret_slot = self.e.residentSlot(ret_ir);
             args[0] = sret_slot;
         }
         for (call_op.args, 0..) |arg_ref, j| {
@@ -1741,8 +1761,8 @@ pub const Ops = struct {
                 const fp_idx = i - fp_ctx_slots;
                 if (fp_idx < fp.len) {
                     const raw_struct = self.e.toLLVMType(fp[fp_idx]);
-                    if (fp_is_c_abi and self.e.needsByval(fp[fp_idx], raw_struct)) {
-                        args[j] = self.e.materializeByvalArg(args[j], raw_struct);
+                    if (fp_is_c_abi and self.e.needsByval(fp[fp_idx], raw_struct, false)) {
+                        args[j] = self.e.materializeByvalArg(args[j], fp[fp_idx]);
                         param_tys[j] = self.e.cached_ptr;
                         continue;
                     }
@@ -1784,16 +1804,13 @@ pub const Ops = struct {
         if (uses_sret) {
             // Mirror the decl-side `sret(<T>)` attribute on the call site so
             // the backend routes arg 0 via x8 (AAPCS64) / hidden ptr (SysV).
-            const sret_kind = c.LLVMGetEnumAttributeKindForName("sret", 4);
-            const sret_attr = c.LLVMCreateTypeAttribute(self.e.context, sret_kind, raw_ret_ty);
-            const param1_idx: c.LLVMAttributeIndex = @bitCast(@as(i32, 1));
-            c.LLVMAddCallSiteAttribute(result, param1_idx, sret_attr);
-            result = c.LLVMBuildLoad2(self.e.builder, raw_ret_ty, sret_slot, "sret.load");
+            self.e.markSretArg(result, raw_ret_ty);
+            result = self.e.residentPart(sret_slot, ret_ir);
         }
 
         // Coerce call result to instruction's expected type
         const expected_ty = self.e.toLLVMType(instruction.ty);
-        if (!icall_void_like and c.LLVMTypeOf(result) != expected_ty) {
+        if (!icall_void_like and !self.e.isMemoryResident(instruction.ty) and c.LLVMTypeOf(result) != expected_ty) {
             result = self.e.coerceArg(result, expected_ty);
         }
         self.e.mapRef(result);
@@ -2040,8 +2057,7 @@ pub const Ops = struct {
                 var indices = [2]c.LLVMValueRef{ zero, tag };
                 const slot = c.LLVMBuildInBoundsGEP2(self.e.builder, master_ty, master, &indices, 2, "ti.slot");
                 const rec_ptr = c.LLVMBuildLoad2(self.e.builder, self.e.cached_ptr, slot, "ti.rec");
-                const ti_llvm = self.e.toLLVMType(instruction.ty);
-                self.e.mapRef(c.LLVMBuildLoad2(self.e.builder, ti_llvm, rec_ptr, "ti.val"));
+                self.e.mapRef(self.buildLoad(instruction.ty, rec_ptr, "ti.val", false));
             },
             .rt_type_eq => {
                 const ta = self.reflectArgTypeId(bi.args[0], "@typeEq");
@@ -2050,7 +2066,7 @@ pub const Ops = struct {
             },
             else => {
                 // @sizeOf, cast — handled by lowering or codegen glue
-                self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
+                self.e.mapRef(self.e.undefOf(instruction.ty));
             },
         }
     }
@@ -2071,7 +2087,7 @@ pub const Ops = struct {
         const closure = self.e.resolveRef(call_op.callee);
         const cl_kind = c.LLVMGetTypeKind(c.LLVMTypeOf(closure));
         if (cl_kind != c.LLVMStructTypeKind) {
-            self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
+            self.e.mapRef(self.e.undefOf(instruction.ty));
             return;
         }
         const fn_ptr = c.LLVMBuildExtractValue(self.e.builder, closure, 0, "cl.fn");
@@ -2090,13 +2106,16 @@ pub const Ops = struct {
         const has_ctx = self.e.ir_mod.has_implicit_ctx;
         const user_args_offset_in_op: usize = if (has_ctx) 1 else 0;
         const user_args_count: usize = call_op.args.len -| user_args_offset_in_op;
-        const ctx_slots: usize = if (has_ctx) 1 else 0;
-        const total_args = ctx_slots + 1 + user_args_count; // [ctx?] + env + user_args
+        const uses_sret = self.e.isMemoryResident(instruction.ty);
+        const ctx_slots: usize = (if (has_ctx) @as(usize, 1) else 0) + (if (uses_sret) @as(usize, 1) else 0);
+        const total_args = ctx_slots + 1 + user_args_count; // [sret?] + [ctx?] + env + user_args
 
         const args = self.e.alloc.alloc(c.LLVMValueRef, total_args) catch unreachable;
         defer self.e.alloc.free(args);
+        const sret_slot: c.LLVMValueRef = if (uses_sret) self.e.residentSlot(instruction.ty) else null;
+        if (uses_sret) args[0] = sret_slot;
         if (has_ctx) {
-            args[0] = self.e.resolveRef(call_op.args[0]); // ctx
+            args[ctx_slots - 1] = self.e.resolveRef(call_op.args[0]); // ctx
         }
         args[ctx_slots] = env_ptr;
         for (0..user_args_count) |j| {
@@ -2106,10 +2125,10 @@ pub const Ops = struct {
         // Build function type using declared param types (not arg types).
         // closure_params is user-visible (no ctx, no env), so they line
         // up with args[ctx_slots+1..].
-        const ret_ty = self.e.toLLVMType(instruction.ty);
+        const ret_ty = if (uses_sret) self.e.cached_void else self.e.toLLVMType(instruction.ty);
         const param_tys = self.e.alloc.alloc(c.LLVMTypeRef, total_args) catch unreachable;
         defer self.e.alloc.free(param_tys);
-        if (has_ctx) param_tys[0] = self.e.cached_ptr; // __sx_ctx
+        for (param_tys[0..ctx_slots]) |*ty| ty.* = self.e.cached_ptr; // sret, __sx_ctx
         param_tys[ctx_slots] = self.e.cached_ptr; // env
         if (closure_params) |cp| {
             for (0..user_args_count) |j| {
@@ -2133,8 +2152,11 @@ pub const Ops = struct {
         const fn_ty = c.LLVMFunctionType(ret_ty, param_tys.ptr, @intCast(total_args), 0);
 
         const is_void = instruction.ty == .void;
-        const result = c.LLVMBuildCall2(self.e.builder, fn_ty, fn_ptr, args.ptr, @intCast(total_args), if (is_void) "" else "ccall");
-        if (!is_void) {
+        const result = c.LLVMBuildCall2(self.e.builder, fn_ty, fn_ptr, args.ptr, @intCast(total_args), if (is_void or uses_sret) "" else "ccall");
+        if (uses_sret) {
+            self.e.markSretArg(result, self.e.toLLVMType(instruction.ty));
+            self.e.mapRef(sret_slot);
+        } else if (!is_void) {
             self.e.mapRef(result);
         } else {
             self.e.advanceRefCounter();
@@ -2144,6 +2166,7 @@ pub const Ops = struct {
     // ── Struct ops ────────────────────────────────────────────
     pub fn emitStructInit(self: Ops, instruction: *const Inst, agg: Aggregate) void {
         const struct_ty = self.e.toLLVMType(instruction.ty);
+        if (self.e.isMemoryResident(instruction.ty)) return self.emitResidentInit(instruction.ty, struct_ty, agg);
         const type_kind = c.LLVMGetTypeKind(struct_ty);
         // For vector types, use InsertElement instead of InsertValue
         const is_vector = type_kind == c.LLVMVectorTypeKind or type_kind == c.LLVMScalableVectorTypeKind;
@@ -2211,11 +2234,38 @@ pub const Ops = struct {
         self.e.mapRef(result);
     }
 
+    /// A memory-resident aggregate built field by field in its own storage.
+    fn emitResidentInit(self: Ops, ty: TypeId, llvm_ty: c.LLVMTypeRef, agg: Aggregate) void {
+        const slot = self.e.residentSlot(ty);
+        // An aggregate built from no fields is undefined, as `---` is.
+        if (agg.fields.len == 0) self.e.undef_refs.put(self.e.ref_counter, {}) catch unreachable;
+        const is_struct = c.LLVMGetTypeKind(llvm_ty) == c.LLVMStructTypeKind;
+        for (agg.fields, 0..) |field_ref, i| {
+            const field_ty = self.e.getRefIRType(field_ref) orelse continue;
+            if (field_ty == .void or self.e.undef_refs.contains(field_ref.index())) continue;
+            const slot_ty = if (is_struct) c.LLVMStructGetTypeAtIndex(llvm_ty, @intCast(i)) else c.LLVMGetElementType(llvm_ty);
+            if (c.LLVMGetTypeKind(slot_ty) == c.LLVMArrayTypeKind and c.LLVMGetArrayLength2(slot_ty) == 0) continue;
+            const addr = self.e.residentPartAddr(slot, llvm_ty, c.LLVMConstInt(self.e.cached_i64, i, 0));
+            const val = self.e.resolveRef(field_ref);
+            if (self.e.isMemoryResident(field_ty)) {
+                self.e.copyBytes(addr, val, slot_ty, false);
+            } else {
+                _ = c.LLVMBuildStore(self.e.builder, self.e.coerceArg(val, slot_ty), addr);
+            }
+        }
+        self.e.mapRef(slot);
+    }
+
     pub fn emitStructGet(self: Ops, instruction: *const Inst, fa: FieldAccess) void {
+        if (self.e.isMemoryResidentRef(fa.base)) {
+            const base_llvm = self.e.toLLVMType(self.e.getRefIRType(fa.base).?);
+            const addr = self.e.residentPartAddr(self.e.resolveRef(fa.base), base_llvm, c.LLVMConstInt(self.e.cached_i64, fa.field_index, 0));
+            return self.e.mapRef(self.e.residentPart(addr, instruction.ty));
+        }
         const base = self.e.resolveRef(fa.base);
         // Safety: null base means unresolved reference — emit undef
         if (base == null) {
-            self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
+            self.e.mapRef(self.e.undefOf(instruction.ty));
         } else {
             // Safety: check that base is an aggregate type (struct/array/vector), not scalar
             const base_ty = c.LLVMTypeOf(base);
@@ -2231,14 +2281,14 @@ pub const Ops = struct {
                 // Check builder has valid insert point
                 const insert_bb = c.LLVMGetInsertBlock(self.e.builder);
                 if (insert_bb == null or (n_fields == 0 and base_ty_kind == c.LLVMStructTypeKind) or (n_fields > 0 and fa.field_index >= n_fields)) {
-                    self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
+                    self.e.mapRef(self.e.undefOf(instruction.ty));
                 } else {
                     const result = c.LLVMBuildExtractValue(self.e.builder, base, @intCast(fa.field_index), "sg");
                     self.e.mapRef(result);
                 }
             } else {
                 // Base is not an aggregate (e.g., placeholder undef of scalar type)
-                self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
+                self.e.mapRef(self.e.undefOf(instruction.ty));
             }
         }
     }
@@ -2291,6 +2341,11 @@ pub const Ops = struct {
             if (ty_kind == c.LLVMIntegerTypeKind) {
                 // Plain enum or builtin integer → integer constant
                 self.e.mapRef(c.LLVMConstInt(ty, @bitCast(ei.tag), 0));
+            } else if (self.e.isMemoryResident(instruction.ty)) {
+                const slot = self.e.residentSlot(instruction.ty);
+                const header_ty = c.LLVMStructGetTypeAtIndex(ty, 0);
+                _ = c.LLVMBuildStore(self.e.builder, c.LLVMConstInt(header_ty, @bitCast(ei.tag), 0), c.LLVMBuildStructGEP2(self.e.builder, ty, slot, 0, "ei.tagp"));
+                self.e.mapRef(slot);
             } else if (ty_kind == c.LLVMStructTypeKind) {
                 // Payload enum with no payload — header field 0 holds the tag
                 const header_ty = c.LLVMStructGetTypeAtIndex(ty, 0);
@@ -2303,7 +2358,21 @@ pub const Ops = struct {
             }
         } else if (self.e.ir_mod.types.isPayloadCarryingChannel(instruction.ty)) {
             const tag = c.LLVMConstInt(self.e.cached_i32, @bitCast(ei.tag), 0);
-            self.e.mapRef(self.e.channelWithPayload(instruction.ty, tag, self.e.resolveRef(ei.payload)));
+            self.e.mapRef(self.e.channelWithPayload(instruction.ty, tag, ei.payload));
+        } else if (self.e.isMemoryResident(instruction.ty)) {
+            const union_ty = self.e.toLLVMType(instruction.ty);
+            const slot = self.e.residentSlot(instruction.ty);
+            const header_ty = c.LLVMStructGetTypeAtIndex(union_ty, 0);
+            _ = c.LLVMBuildStore(self.e.builder, c.LLVMConstInt(header_ty, @bitCast(ei.tag), 0), c.LLVMBuildStructGEP2(self.e.builder, union_ty, slot, 0, "ei.tagp"));
+            const payload_ptr = c.LLVMBuildStructGEP2(self.e.builder, union_ty, slot, 1, "ei.pp");
+            if (self.e.getRefIRType(ei.payload)) |payload_ty| {
+                if (self.e.isMemoryResident(payload_ty)) {
+                    self.e.writeResident(payload_ptr, ei.payload, payload_ty);
+                } else if (!self.e.undef_refs.contains(ei.payload.index())) {
+                    _ = c.LLVMBuildStore(self.e.builder, self.e.resolveRef(ei.payload), payload_ptr);
+                }
+            }
+            self.e.mapRef(slot);
         } else {
             // Payload enum with payload — { header, payload_bytes }
             const union_ty = self.e.toLLVMType(instruction.ty);
@@ -2326,6 +2395,14 @@ pub const Ops = struct {
     }
 
     pub fn emitEnumTag(self: Ops, instruction: *const Inst, un: UnaryOp) void {
+        if (self.e.isMemoryResidentRef(un.operand)) {
+            const agg = self.e.toLLVMType(self.e.getRefIRType(un.operand).?);
+            const header_ty = c.LLVMStructGetTypeAtIndex(agg, 0);
+            var tag = c.LLVMBuildLoad2(self.e.builder, header_ty, c.LLVMBuildStructGEP2(self.e.builder, agg, self.e.resolveRef(un.operand), 0, "etag.p"), "etag");
+            const target_ty = self.e.toLLVMType(instruction.ty);
+            if (c.LLVMGetIntTypeWidth(target_ty) < c.LLVMGetIntTypeWidth(header_ty)) tag = c.LLVMBuildTrunc(self.e.builder, tag, target_ty, "etag.trunc");
+            return self.e.mapRef(tag);
+        }
         const val = self.e.resolveRef(un.operand);
         // Check if this is a plain enum (integer) or payload enum (struct with tag at 0)
         const val_ty = c.LLVMTypeOf(val);
@@ -2350,6 +2427,11 @@ pub const Ops = struct {
     }
 
     pub fn emitEnumPayload(self: Ops, instruction: *const Inst, fa: FieldAccess) void {
+        if (self.e.isMemoryResidentRef(fa.base)) {
+            const agg = self.e.toLLVMType(self.e.getRefIRType(fa.base).?);
+            const area = c.LLVMBuildStructGEP2(self.e.builder, agg, self.e.resolveRef(fa.base), 1, "ep.pp");
+            return self.e.mapRef(self.e.residentPart(area, instruction.ty));
+        }
         const base = self.e.resolveRef(fa.base);
         if (self.e.getRefIRType(fa.base)) |base_ir_ty| {
             if (self.e.ir_mod.types.isPayloadCarryingChannel(base_ir_ty)) {
@@ -2374,6 +2456,17 @@ pub const Ops = struct {
 
     // ── Union ops ────────────────────────────────────────────
     pub fn emitUnionGet(self: Ops, instruction: *const Inst, fa: FieldAccess) void {
+        if (self.e.isMemoryResidentRef(fa.base)) {
+            const agg = self.e.toLLVMType(self.e.getRefIRType(fa.base).?);
+            const storage = self.e.resolveRef(fa.base);
+            // A payload enum's members overlay its payload area; a union's,
+            // its whole storage.
+            const member = if (c.LLVMGetTypeKind(agg) == c.LLVMStructTypeKind)
+                c.LLVMBuildStructGEP2(self.e.builder, agg, storage, 1, "ug.pp")
+            else
+                storage;
+            return self.e.mapRef(self.e.residentPart(member, instruction.ty));
+        }
         const base = self.e.resolveRef(fa.base);
         const result_ty = self.e.toLLVMType(instruction.ty);
         // Union field access: reinterpret the union's data area as the target type
@@ -2432,6 +2525,10 @@ pub const Ops = struct {
         }
         const base = self.e.resolveRef(bin.lhs);
         const idx = self.e.resolveRef(bin.rhs);
+        if (self.e.isMemoryResidentRef(bin.lhs)) {
+            const agg = self.e.toLLVMType(self.e.getRefIRType(bin.lhs).?);
+            return self.e.mapRef(self.e.residentPart(self.e.residentPartAddr(base, agg, idx), instruction.ty));
+        }
         const base_ty = c.LLVMTypeOf(base);
         const kind = c.LLVMGetTypeKind(base_ty);
         if (kind == c.LLVMVectorTypeKind or kind == c.LLVMScalableVectorTypeKind) {
@@ -2462,13 +2559,19 @@ pub const Ops = struct {
             self.e.mapRef(self.buildLoad(instruction.ty, ptr, "ig.val", false));
         } else {
             // Non-aggregate base (lowering error) — emit undef
-            self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
+            self.e.mapRef(self.e.undefOf(instruction.ty));
         }
     }
 
     pub fn emitIndexGep(self: Ops, instruction: *const Inst, bin: BinOp) void {
         const base = self.e.resolveRef(bin.lhs);
         const idx = self.e.resolveRef(bin.rhs);
+        if (self.e.isMemoryResidentRef(bin.lhs)) {
+            const arr_ty = self.e.getRefIRType(bin.lhs).?;
+            const agg = self.e.toLLVMType(arr_ty);
+            var indices = [_]c.LLVMValueRef{ c.LLVMConstInt(self.e.cached_i64, 0, 0), idx };
+            return self.e.mapRef(c.LLVMBuildGEP2(self.e.builder, agg, self.residentCopy(base, arr_ty), &indices, 2, "igp.ptr"));
+        }
         const base_ty = c.LLVMTypeOf(base);
         const kind = c.LLVMGetTypeKind(base_ty);
         if (kind == c.LLVMArrayTypeKind) {
@@ -2509,6 +2612,16 @@ pub const Ops = struct {
         }
     }
 
+    /// Storage of its own holding a copy of the memory-resident `ty` value at
+    /// `val`, for an address writes may go through: a constant is already
+    /// storage that is never written.
+    fn residentCopy(self: Ops, val: c.LLVMValueRef, ty: TypeId) c.LLVMValueRef {
+        if (c.LLVMIsAGlobalVariable(val) != null) return val;
+        const slot = self.e.residentSlot(ty);
+        self.e.copyResident(slot, val, ty);
+        return slot;
+    }
+
     /// The written N of an array-typed ref, which `[N:X]T`'s storage exceeds by
     /// the terminator. Null when the ref's IR type is not an array — a union
     /// and a payload-carrying error set also lower to LLVM array shapes.
@@ -2521,7 +2634,7 @@ pub const Ops = struct {
 
     pub fn emitLength(self: Ops, un: UnaryOp) void {
         const val = self.e.resolveRef(un.operand);
-        const val_ty = c.LLVMTypeOf(val);
+        const val_ty = if (self.e.isMemoryResidentRef(un.operand)) self.e.toLLVMType(self.e.getRefIRType(un.operand).?) else c.LLVMTypeOf(val);
         const kind = c.LLVMGetTypeKind(val_ty);
         if (kind == c.LLVMArrayTypeKind) {
             const len = self.writtenArrayLen(un.operand) orelse c.LLVMGetArrayLength2(val_ty);
@@ -2540,6 +2653,9 @@ pub const Ops = struct {
 
     pub fn emitDataPtr(self: Ops, un: UnaryOp) void {
         const val = self.e.resolveRef(un.operand);
+        if (self.e.isMemoryResidentRef(un.operand)) {
+            return self.e.mapRef(self.residentCopy(val, self.e.getRefIRType(un.operand).?));
+        }
         const val_ty = c.LLVMTypeOf(val);
         const kind = c.LLVMGetTypeKind(val_ty);
         if (kind == c.LLVMStructTypeKind) {
@@ -2575,7 +2691,8 @@ pub const Ops = struct {
         if (c.LLVMTypeOf(hi) != self.e.cached_i64) {
             hi = c.LLVMBuildZExt(self.e.builder, hi, self.e.cached_i64, "ss.hi64");
         }
-        const base_ty = c.LLVMTypeOf(base);
+        const resident = self.e.isMemoryResidentRef(ss.base);
+        const base_ty = if (resident) self.e.toLLVMType(self.e.getRefIRType(ss.base).?) else c.LLVMTypeOf(base);
         const base_kind = c.LLVMGetTypeKind(base_ty);
         const slice_ty = self.e.toLLVMType(instruction.ty);
         // Resolve element type from the result slice type for correct GEP stride
@@ -2598,8 +2715,8 @@ pub const Ops = struct {
             self.e.mapRef(result);
         } else if (base_kind == c.LLVMArrayTypeKind) {
             // Array: alloca, GEP to element at lo, compute len
-            const tmp = self.e.buildEntryAlloca(base_ty, "ss.arr");
-            _ = c.LLVMBuildStore(self.e.builder, base, tmp);
+            const tmp = if (resident) self.residentCopy(base, self.e.getRefIRType(ss.base).?) else self.e.buildEntryAlloca(base_ty, "ss.arr");
+            if (!resident) _ = c.LLVMBuildStore(self.e.builder, base, tmp);
             var indices = [_]c.LLVMValueRef{ c.LLVMConstInt(self.e.cached_i64, 0, 0), lo };
             const new_ptr = c.LLVMBuildGEP2(self.e.builder, base_ty, tmp, &indices, 2, "ss.ptr");
             const new_len = self.fitLenWord(instruction.ty, c.LLVMBuildSub(self.e.builder, hi, lo, "ss.len"));
@@ -2626,12 +2743,13 @@ pub const Ops = struct {
 
     pub fn emitArrayToSlice(self: Ops, instruction: *const Inst, un: UnaryOp) void {
         const arr = self.e.resolveRef(un.operand);
-        const arr_ty = c.LLVMTypeOf(arr);
+        const resident = self.e.isMemoryResidentRef(un.operand);
+        const arr_ty = if (resident) self.e.toLLVMType(self.e.getRefIRType(un.operand).?) else c.LLVMTypeOf(arr);
         const arr_kind = c.LLVMGetTypeKind(arr_ty);
         if (arr_kind == c.LLVMArrayTypeKind) {
             const len = self.writtenArrayLen(un.operand) orelse c.LLVMGetArrayLength2(arr_ty);
-            const tmp = self.e.buildEntryAlloca(arr_ty, "a2s.tmp");
-            _ = c.LLVMBuildStore(self.e.builder, arr, tmp);
+            const tmp = if (resident) self.residentCopy(arr, self.e.getRefIRType(un.operand).?) else self.e.buildEntryAlloca(arr_ty, "a2s.tmp");
+            if (!resident) _ = c.LLVMBuildStore(self.e.builder, arr, tmp);
             var indices = [_]c.LLVMValueRef{ c.LLVMConstInt(self.e.cached_i64, 0, 0), c.LLVMConstInt(self.e.cached_i64, 0, 0) };
             const elem_ptr = c.LLVMBuildGEP2(self.e.builder, arr_ty, tmp, &indices, 2, "a2s.ptr");
             const slice_ty = self.e.toLLVMType(instruction.ty);
@@ -2642,7 +2760,7 @@ pub const Ops = struct {
             result = c.LLVMBuildInsertValue(self.e.builder, result, len_val, 1, "a2s.wlen");
             self.e.mapRef(result);
         } else {
-            self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
+            self.e.mapRef(self.e.undefOf(instruction.ty));
         }
     }
 
@@ -2685,6 +2803,18 @@ pub const Ops = struct {
             .high_bit => return self.e.mapRef(c.LLVMBuildZExt(self.e.builder, val, opt_ty, "ow.word")),
             .flag => {},
         }
+        if (self.e.isMemoryResident(instruction.ty)) {
+            const slot = self.e.residentSlot(instruction.ty);
+            const payload = c.LLVMBuildStructGEP2(self.e.builder, opt_ty, slot, 0, "ow.val");
+            const child_ty = self.e.ir_mod.types.get(instruction.ty).optional.child;
+            if (self.e.isMemoryResident(child_ty)) {
+                self.e.writeResident(payload, un.operand, child_ty);
+            } else if (child_ty != .void) {
+                _ = c.LLVMBuildStore(self.e.builder, self.e.coerceArg(val, c.LLVMStructGetTypeAtIndex(opt_ty, 0)), payload);
+            }
+            _ = c.LLVMBuildStore(self.e.builder, c.LLVMConstInt(self.e.cached_i1, 1, 0), c.LLVMBuildStructGEP2(self.e.builder, opt_ty, slot, 1, "ow.has"));
+            return self.e.mapRef(slot);
+        }
         const inner_ty = c.LLVMStructGetTypeAtIndex(opt_ty, 0);
         var result = c.LLVMGetUndef(opt_ty);
         result = c.LLVMBuildInsertValue(self.e.builder, result, self.e.coerceArg(val, inner_ty), 0, "ow.val");
@@ -2692,9 +2822,18 @@ pub const Ops = struct {
         self.e.mapRef(result);
     }
 
+    /// The payload and the presence flag of a memory-resident `?T` at `val`.
+    fn residentOptional(self: Ops, val: c.LLVMValueRef, opt_ty: TypeId) struct { c.LLVMValueRef, c.LLVMValueRef } {
+        const llvm_ty = self.e.toLLVMType(opt_ty);
+        const child_ty = self.e.ir_mod.types.get(opt_ty).optional.child;
+        const has = c.LLVMBuildLoad2(self.e.builder, self.e.cached_i1, c.LLVMBuildStructGEP2(self.e.builder, llvm_ty, val, 1, "oh.p"), "oh.has");
+        return .{ self.e.residentPart(c.LLVMBuildStructGEP2(self.e.builder, llvm_ty, val, 0, "ou.p"), child_ty), has };
+    }
+
     pub fn emitOptionalUnwrap(self: Ops, un: UnaryOp) void {
         const val = self.e.resolveRef(un.operand);
         const opt_ty = self.e.getRefIRType(un.operand);
+        if (self.e.isMemoryResidentRef(un.operand)) return self.e.mapRef(self.residentOptional(val, opt_ty.?)[0]);
         self.e.mapRef(switch (self.optionalShape(opt_ty)) {
             .pointer_word => val,
             .high_bit => self.highBitPayload(opt_ty.?, val),
@@ -2704,6 +2843,7 @@ pub const Ops = struct {
 
     pub fn emitOptionalHasValue(self: Ops, un: UnaryOp) void {
         const val = self.e.resolveRef(un.operand);
+        if (self.e.isMemoryResidentRef(un.operand)) return self.e.mapRef(self.residentOptional(val, self.e.getRefIRType(un.operand).?)[1]);
         self.e.mapRef(switch (self.optionalShape(self.e.getRefIRType(un.operand))) {
             .pointer_word => self.sentinelPresent(val, "oh.nn"),
             .high_bit => self.highBitPresent(val, "oh.clear"),
@@ -2716,7 +2856,10 @@ pub const Ops = struct {
         const a = self.e.resolveRef(bin.lhs);
         var b_val = self.e.resolveRef(bin.rhs);
         const opt_ty = self.e.getRefIRType(bin.lhs);
-        const has, const unwrapped = switch (self.optionalShape(opt_ty)) {
+        const has, const unwrapped = if (self.e.isMemoryResidentRef(bin.lhs)) blk: {
+            const payload, const present = self.residentOptional(a, opt_ty.?);
+            break :blk .{ present, payload };
+        } else switch (self.optionalShape(opt_ty)) {
             .pointer_word => .{ self.sentinelPresent(a, "oc.nn"), a },
             .high_bit => .{ self.highBitPresent(a, "oc.clear"), self.highBitPayload(opt_ty.?, a) },
             .flag => .{
@@ -2756,14 +2899,17 @@ pub const Ops = struct {
         }
         // sret-shaped function: declared return-type-in-IR is
         // the struct, but the LLVM signature is void with a
-        // prepended ptr sret param. Store the value through
+        // prepended ptr sret param. Write the value through
         // the sret slot and emit ret void.
         const needs_c_abi = func.is_extern or func.call_conv == .c;
-        const raw_ret = self.e.toLLVMType(func.ret);
-        if (needs_c_abi and self.e.needsByval(func.ret, raw_ret)) {
+        if (!self.e.current_func_is_main and self.e.returnsThroughSret(func.ret, needs_c_abi, func.is_extern)) {
             const llvm_func2 = c.LLVMGetBasicBlockParent(c.LLVMGetInsertBlock(self.e.builder));
             const sret_ptr = c.LLVMGetParam(llvm_func2, 0);
-            _ = c.LLVMBuildStore(self.e.builder, val, sret_ptr);
+            if (self.e.isMemoryResident(func.ret)) {
+                self.e.writeResident(sret_ptr, un.operand, func.ret);
+            } else {
+                _ = c.LLVMBuildStore(self.e.builder, val, sret_ptr);
+            }
             _ = c.LLVMBuildRetVoid(self.e.builder);
             self.e.advanceRefCounter();
             return;
@@ -2866,7 +3012,7 @@ pub const Ops = struct {
             const ptr = c.LLVMBuildIntToPtr(self.e.builder, raw, self.e.cached_ptr, "ua.ptr");
             self.e.mapRef(self.buildLoad(instruction.ty, ptr, "ua.load", false));
         } else {
-            self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
+            self.e.mapRef(self.e.undefOf(instruction.ty));
         }
     }
 
@@ -3076,6 +3222,9 @@ pub const Ops = struct {
 
     // ── Block params ───────────────────────────────────────
     pub fn emitBlockParam(self: Ops, instruction: *const Inst, bp: BlockParam) void {
+        if (self.e.isMemoryResident(instruction.ty)) {
+            return self.e.mapRef(self.e.blockParamSlot(bp.block, bp.param_index, instruction.ty));
+        }
         // Create a PHI node — incoming values are filled in by fixupPhiNodes
         const ty = self.e.toLLVMType(instruction.ty);
         const phi = c.LLVMBuildPhi(self.e.builder, ty, "bp");
@@ -3089,6 +3238,6 @@ pub const Ops = struct {
 
     // ── Misc ───────────────────────────────────────────────
     pub fn emitPlaceholder(self: Ops, instruction: *const Inst) void {
-        self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
+        self.e.mapRef(self.e.undefOf(instruction.ty));
     }
 };

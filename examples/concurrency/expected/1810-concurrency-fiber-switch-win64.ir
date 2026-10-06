@@ -43,12 +43,12 @@ entry:
   %load = load ptr, ptr %alloca, align 8
   %gep = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %load, i32 0, i32 0
   %loadN = load ptr, ptr %alloca, align 8
-  %loadN = load { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %loadN, align 8
-  %sg = extractvalue { { [30 x i64] }, ptr, ptr, i64, i64, i64 } %loadN, 1
+  %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %loadN, i32 0, i32 1
+  %loadN = load ptr, ptr %gepN, align 8
   %loadN = load ptr, ptr %alloca, align 8
-  %loadN = load { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %loadN, align 8
-  %sgN = extractvalue { { [30 x i64] }, ptr, ptr, i64, i64, i64 } %loadN, 3
-  %call = call i64 @scribble_verify(ptr %gep, ptr %sg, i64 %sgN)
+  %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %loadN, i32 0, i32 3
+  %loadN = load i64, ptr %gepN, align 8
+  %call = call i64 @scribble_verify(ptr %gep, ptr %loadN, i64 %loadN)
   %allocaN = alloca i64, align 8
   store i64 %call, ptr %allocaN, align 8
   %loadN = load i64, ptr %allocaN, align 8
@@ -65,9 +65,9 @@ entry:
   %loadN = load ptr, ptr %alloca, align 8
   %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %loadN, i32 0, i32 0
   %loadN = load ptr, ptr %alloca, align 8
-  %loadN = load { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %loadN, align 8
-  %sgN = extractvalue { { [30 x i64] }, ptr, ptr, i64, i64, i64 } %loadN, 2
-  call void @swap_good(ptr %gepN, ptr %sgN)
+  %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %loadN, i32 0, i32 2
+  %loadN = load ptr, ptr %gepN, align 8
+  call void @swap_good(ptr %gepN, ptr %loadN)
   ret void
 }
 
@@ -157,13 +157,13 @@ declare ptr @VirtualAlloc(ptr, i64, i32, i32) #0
 define internal i64 @run(ptr %0) #0 {
 entry:
   %alloca = alloca { [30 x i64] }, align 8
-  store { [30 x i64] } undef, ptr %alloca, align 8
+  %mem = alloca { [30 x i64] }, align 8
   %allocaN = alloca { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, align 8
-  store { { [30 x i64] }, ptr, ptr, i64, i64, i64 } undef, ptr %allocaN, align 8
+  %memN = alloca { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, align 8
   %gep = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %allocaN, i32 0, i32 3
   store i64 20480, ptr %gep, align 8
   %allocaN = alloca { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, align 8
-  store { { [30 x i64] }, ptr, ptr, i64, i64, i64 } undef, ptr %allocaN, align 8
+  %memN = alloca { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, align 8
   %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %allocaN, i32 0, i32 3
   store i64 24576, ptr %gepN, align 8
   %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %allocaN, i32 0, i32 0
@@ -181,17 +181,17 @@ entry:
   call void @boot(ptr %0, ptr %allocaN)
   %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %allocaN, i32 0, i32 0
   call void @swap_good(ptr %alloca, ptr %gepN)
-  %load = load { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %allocaN, align 8
-  %sg = extractvalue { { [30 x i64] }, ptr, ptr, i64, i64, i64 } %load, 5
-  %loadN = load { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %allocaN, align 8
-  %sgN = extractvalue { { [30 x i64] }, ptr, ptr, i64, i64, i64 } %loadN, 5
-  %add = add i64 %sg, %sgN
+  %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %allocaN, i32 0, i32 5
+  %load = load i64, ptr %gepN, align 8
+  %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %allocaN, i32 0, i32 5
+  %loadN = load i64, ptr %gepN, align 8
+  %add = add i64 %load, %loadN
   %shl = shl i64 %add, 16
-  %loadN = load { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %allocaN, align 8
-  %sgN = extractvalue { { [30 x i64] }, ptr, ptr, i64, i64, i64 } %loadN, 4
-  %loadN = load { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %allocaN, align 8
-  %sgN = extractvalue { { [30 x i64] }, ptr, ptr, i64, i64, i64 } %loadN, 4
-  %addN = add i64 %sgN, %sgN
+  %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %allocaN, i32 0, i32 4
+  %loadN = load i64, ptr %gepN, align 8
+  %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %allocaN, i32 0, i32 4
+  %loadN = load i64, ptr %gepN, align 8
+  %addN = add i64 %loadN, %loadN
   %or = or i64 %shl, %addN
   ret i64 %or
 }

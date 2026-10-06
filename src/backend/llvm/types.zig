@@ -55,6 +55,54 @@ pub const TypeLowering = struct {
         return lowered;
     }
 
+    /// An aggregate (struct, union, array, payload enum, optional, failable)
+    /// whose ABI size exceeds 64 bytes is memory-resident unless it is a
+    /// single-element struct: an IR value of the type is the address of storage
+    /// holding it, never a first-class LLVM value. 64 bytes lies past every
+    /// supported target's register-passing limit (an AArch64 HFA/HVA is at most
+    /// 64 bytes; SysV x86_64, Win64 and AAPCS64 pass larger aggregates in
+    /// memory; the wasm32 C ABI passes every aggregate but a single-element
+    /// struct indirectly), so such a value never crosses a C boundary in
+    /// registers.
+    pub fn isMemoryResident(self: TypeLowering, llvm_ty: c.LLVMTypeRef) bool {
+        switch (c.LLVMGetTypeKind(llvm_ty)) {
+            c.LLVMStructTypeKind, c.LLVMArrayTypeKind => {},
+            else => return false,
+        }
+        const dl = c.LLVMGetModuleDataLayout(self.e.llvm_module);
+        if (c.LLVMABISizeOfType(dl, llvm_ty) <= 64) return false;
+        return !isSingleElementStruct(dl, llvm_ty);
+    }
+
+    /// A struct with one field that, through nested single-field structs and
+    /// one-element arrays, reaches a scalar, pointer or vector leaf filling the
+    /// struct. C passes it as that leaf.
+    pub fn isSingleElementStruct(dl: c.LLVMTargetDataRef, llvm_ty: c.LLVMTypeRef) bool {
+        if (c.LLVMGetTypeKind(llvm_ty) != c.LLVMStructTypeKind) return false;
+        var cur = llvm_ty;
+        while (true) {
+            switch (c.LLVMGetTypeKind(cur)) {
+                c.LLVMStructTypeKind => {
+                    if (c.LLVMCountStructElementTypes(cur) != 1) return false;
+                    cur = c.LLVMStructGetTypeAtIndex(cur, 0);
+                },
+                c.LLVMArrayTypeKind => {
+                    if (c.LLVMGetArrayLength2(cur) != 1) return false;
+                    cur = c.LLVMGetElementType(cur);
+                },
+                c.LLVMIntegerTypeKind,
+                c.LLVMHalfTypeKind,
+                c.LLVMFloatTypeKind,
+                c.LLVMDoubleTypeKind,
+                c.LLVMFP128TypeKind,
+                c.LLVMPointerTypeKind,
+                c.LLVMVectorTypeKind,
+                => return c.LLVMABISizeOfType(dl, cur) == c.LLVMABISizeOfType(dl, llvm_ty),
+                else => return false,
+            }
+        }
+    }
+
     fn intLLVMType(self: TypeLowering, width: u8) c.LLVMTypeRef {
         return switch (width) {
             1 => self.e.cached_i1,
