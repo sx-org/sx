@@ -72,6 +72,9 @@ fs :: scope {
     copyFile :: (source: string, destination: string) -> bool { fsCopyFile(source, destination) }
     basename :: (path: string) -> string { fsBasename(path) }
     dirname :: (path: string) -> string { fsDirname(path) }
+    // The absolute path with `.`, `..` and every symlink resolved; null when
+    // path does not exist or cannot be traversed.
+    realPath :: (path: string) -> ?string { fsRealPath(path) }
 
     // Whole-second modification timestamps. These are deliberately small
     // portable adapters rather than public platform stat/FileTime layouts.

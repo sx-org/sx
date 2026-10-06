@@ -210,6 +210,44 @@ fsDirname :: (path: string) -> string {
     "."
 }
 
+fsWindowsWideHasPrefix :: (wide: [*]u16, len: i64, prefix: string) -> bool {
+    if len < prefix.len { return false; }
+    at := 0;
+    while at < prefix.len {
+        if wide[at] != prefix[at] { return false; }
+        at += 1;
+    }
+    true
+}
+
+// GetFinalPathNameByHandleW answers in the \\?\ namespace. The result drops
+// that prefix and spells \\?\UNC\server\share as \\server\share.
+fsRealPath :: (path: string) -> ?string {
+    wide := fsWindowsWidePath(path); if wide.ptr == null { return null; }
+    handle := fsWindowsCreateFileW(wide.ptr, 0, FS_WINDOWS_FILE_SHARE_ALL, null, FS_WINDOWS_OPEN_EXISTING, FS_WINDOWS_FILE_FLAG_BACKUP_SEMANTICS, null);
+    fsWindowsWideFree(wide); bits : i64 = @reinterpret(isize, handle);
+    if !fsFileIsValid(bits) { return null; }
+    flags := FS_WINDOWS_FILE_NAME_NORMALIZED | FS_WINDOWS_VOLUME_NAME_DOS;
+    capacity := fsWindowsGetFinalPathNameByHandleW(handle, null, 0, flags);
+    if capacity == 0 { fsWindowsCloseHandle(handle); return null; }
+    final := mem.alloc(context.allocator, u16, capacity.(i64));
+    made := fsWindowsGetFinalPathNameByHandleW(handle, final.ptr, capacity, flags).(i64);
+    fsWindowsCloseHandle(handle);
+    if made == 0 or made >= capacity { mem.free(final); return null; }
+    start := 0;
+    if fsWindowsWideHasPrefix(final.ptr, made, "\\\\?\\UNC\\") { start = 6; final[6] = '\\'; }
+    else if fsWindowsWideHasPrefix(final.ptr, made, "\\\\?\\") { start = 4; }
+    size := fsWindowsWideCharToMultiByte(FS_WINDOWS_CP_UTF8, 0, *final[start], (made - start).(i32), null, 0, null, null);
+    result : ?string = null;
+    if size > 0 {
+        text := mem.allocString(size);
+        if fsWindowsWideCharToMultiByte(FS_WINDOWS_CP_UTF8, 0, *final[start], (made - start).(i32), text.ptr, size, null, null) == size { result = text; }
+        else { mem.free(text); }
+    }
+    mem.free(final);
+    result
+}
+
 fsModifiedSecondsHandle :: (handle: i64) -> (i64, bool) {
     if !fsFileIsValid(handle) { return 0, false; }
     value : FsWindowsFileTime = ---;

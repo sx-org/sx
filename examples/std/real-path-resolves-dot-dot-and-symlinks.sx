@@ -1,0 +1,36 @@
+// `fs.realPath` answers a path absolute, with `..` and symlinks resolved, and
+// null when the path does not exist. Each answer prints relative to the
+// canonical scratch root.
+@import "modules/std.sx";
+
+symlink :: (target: [*:0]u8, link: [*:0]u8) -> i32 extern;
+
+ROOT :: ".sx-tmp/real-path-resolves-dot-dot-and-symlinks";
+
+show :: (root: string, path: string) {
+    resolved := fs.realPath(pathJoin(ROOT, path));
+    if resolved == null { print("{}: null\n", path); return; }
+    got := resolved?!;
+    if got.len > root.len and got[0 .. root.len] == root and got[root.len] == '/' {
+        print("{}: {}\n", path, got[root.len + 1 ..]);
+    } else {
+        print("{}: {} is outside the root\n", path, got);
+    }
+}
+
+main :: () -> i32 {
+    fs.deleteFile(pathJoin(ROOT, "ws/escape"));
+    if !fs.createDirAll(pathJoin(ROOT, "ws/repo")) or !fs.createDirAll(pathJoin(ROOT, "outside"))
+        or symlink("../outside", mem.cloneZ(pathJoin(ROOT, "ws/escape"))) != 0 {
+        print("setup failed\n");
+        return 1;
+    }
+    resolved := fs.realPath(ROOT);
+    if resolved == null { print("{}: null\n", ROOT); return 1; }
+    root := resolved?!;
+    print("{} is absolute: {}\n", ROOT, root[0] == '/');
+    show(root, "ws/repo/../repo");
+    show(root, "ws/escape");
+    show(root, "ws/missing");
+    0
+}
