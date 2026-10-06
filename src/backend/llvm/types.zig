@@ -190,9 +190,9 @@ pub const TypeLowering = struct {
                 return c.LLVMStructTypeInContext(self.e.context, field_llvm_types.ptr, n, 0);
             },
             .@"union" => |u| {
-                // clang's form: the storage member, then bytes up to the union's
-                // size. A storage member whose value leaves bytes of its storage
-                // out gives way to an integer or byte vector of the union's
+                // The storage member, then bytes up to the union's size. A
+                // storage member whose value leaves bytes of its storage out
+                // gives way to an integer or byte vector of the union's
                 // alignment, so a union value carries every member's bytes.
                 const layout = self.e.ir_mod.types.unionLayout(u.fields) orelse return c.LLVMArrayType2(self.e.cached_i8, 8);
                 const dl = c.LLVMGetModuleDataLayout(self.e.llvm_module);

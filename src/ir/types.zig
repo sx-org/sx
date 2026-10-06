@@ -2091,8 +2091,8 @@ pub const TypeTable = struct {
         size: usize,
         /// The largest member alignment.
         alignment: usize,
-        /// Index of the storage member, the one clang's LLVM type leads with:
-        /// the largest alignment, the larger on a tie, the first on a full tie.
+        /// Index of the storage member: the largest alignment, the larger on a
+        /// tie, the first on a full tie.
         storage: usize,
     };
 
