@@ -26,19 +26,7 @@ pub const FfiCtors = struct {
         // Lazy-declare sel_registerName for the constructor body —
         // lower.zig only declares it when a non-literal selector
         // appears, which the constructor doesn't depend on.
-        const sel_reg_name = "sel_registerName";
-        const sel_reg_z = self.e.alloc.dupeZ(u8, sel_reg_name) catch unreachable;
-        defer self.e.alloc.free(sel_reg_z);
-        var sel_reg_fn = c.LLVMGetNamedFunction(self.e.llvm_module, sel_reg_z.ptr);
-        var sel_reg_ty: c.LLVMTypeRef = undefined;
-        if (sel_reg_fn == null) {
-            var params: [1]c.LLVMTypeRef = .{self.e.cached_ptr};
-            sel_reg_ty = c.LLVMFunctionType(self.e.cached_ptr, &params, 1, 0);
-            sel_reg_fn = c.LLVMAddFunction(self.e.llvm_module, sel_reg_z.ptr, sel_reg_ty);
-            c.LLVMSetLinkage(sel_reg_fn, c.LLVMExternalLinkage);
-        } else {
-            sel_reg_ty = c.LLVMGlobalGetValueType(sel_reg_fn);
-        }
+        const sel_reg_fn, const sel_reg_ty = self.e.lazyDeclareCRuntime("sel_registerName", &[_]c.LLVMTypeRef{self.e.cached_ptr}, self.e.cached_ptr, 0);
 
         // Constructor: void __sx_objc_selector_init().
         var no_params: [0]c.LLVMTypeRef = .{};
@@ -108,19 +96,7 @@ pub const FfiCtors = struct {
         if (self.e.ir_mod.objc_class_cache.items.len == 0) return;
 
         // Lazy-declare objc_getClass(name: *u8) -> *void.
-        const get_class_name = "objc_getClass";
-        const get_class_z = self.e.alloc.dupeZ(u8, get_class_name) catch unreachable;
-        defer self.e.alloc.free(get_class_z);
-        var get_class_fn = c.LLVMGetNamedFunction(self.e.llvm_module, get_class_z.ptr);
-        var get_class_ty: c.LLVMTypeRef = undefined;
-        if (get_class_fn == null) {
-            var params: [1]c.LLVMTypeRef = .{self.e.cached_ptr};
-            get_class_ty = c.LLVMFunctionType(self.e.cached_ptr, &params, 1, 0);
-            get_class_fn = c.LLVMAddFunction(self.e.llvm_module, get_class_z.ptr, get_class_ty);
-            c.LLVMSetLinkage(get_class_fn, c.LLVMExternalLinkage);
-        } else {
-            get_class_ty = c.LLVMGlobalGetValueType(get_class_fn);
-        }
+        const get_class_fn, const get_class_ty = self.e.lazyDeclareCRuntime("objc_getClass", &[_]c.LLVMTypeRef{self.e.cached_ptr}, self.e.cached_ptr, 0);
 
         // Constructor: void __sx_objc_class_init().
         var no_params: [0]c.LLVMTypeRef = .{};

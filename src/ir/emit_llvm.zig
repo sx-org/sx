@@ -714,20 +714,27 @@ pub const LLVMEmitter = struct {
         return "";
     }
 
+    /// The module's function for the C symbol `name`, declared as `fn_ty` when
+    /// absent. The symbol always takes its exact name: an internal function
+    /// holding it yields, renamed to a dotted name no C identifier can be, and
+    /// every reference follows because references hold the function value.
+    pub fn cFunction(self: *LLVMEmitter, name: [:0]const u8, fn_ty: c.LLVMTypeRef) c.LLVMValueRef {
+        const holder = c.LLVMGetNamedFunction(self.llvm_module, name.ptr) orelse
+            return c.LLVMAddFunction(self.llvm_module, name.ptr, fn_ty);
+        if (c.LLVMGetLinkage(holder) != c.LLVMInternalLinkage) return holder;
+        c.LLVMSetValueName2(holder, "", 0);
+        const symbol = c.LLVMAddFunction(self.llvm_module, name.ptr, fn_ty);
+        // Reclaiming a taken name uniquifies it as `name.N`.
+        c.LLVMSetValueName2(holder, name.ptr, name.len);
+        return symbol;
+    }
+
     /// Lazy-declare an extern C runtime function. Returns (fn-value, fn-type).
     pub fn lazyDeclareCRuntime(self: *LLVMEmitter, name: []const u8, params: []const c.LLVMTypeRef, ret_ty: c.LLVMTypeRef, is_var_arg: c_int) struct { c.LLVMValueRef, c.LLVMTypeRef } {
         const name_z = self.alloc.dupeZ(u8, name) catch unreachable;
         defer self.alloc.free(name_z);
-        var fn_value = c.LLVMGetNamedFunction(self.llvm_module, name_z.ptr);
-        var fn_ty: c.LLVMTypeRef = undefined;
-        if (fn_value == null) {
-            fn_ty = c.LLVMFunctionType(ret_ty, @constCast(params.ptr), @intCast(params.len), is_var_arg);
-            fn_value = c.LLVMAddFunction(self.llvm_module, name_z.ptr, fn_ty);
-            c.LLVMSetLinkage(fn_value, c.LLVMExternalLinkage);
-        } else {
-            fn_ty = c.LLVMGlobalGetValueType(fn_value);
-        }
-        return .{ fn_value, fn_ty };
+        const fn_value = self.cFunction(name_z, c.LLVMFunctionType(ret_ty, @constCast(params.ptr), @intCast(params.len), is_var_arg));
+        return .{ fn_value, c.LLVMGlobalGetValueType(fn_value) };
     }
 
     /// Emit a private constant C string global. Used for class names,
@@ -866,23 +873,19 @@ pub const LLVMEmitter = struct {
         // Declare libc externs (re-use if already declared).
         var ns_params: [2]c.LLVMTypeRef = .{ ptr_ty, ptr_ty };
         const ns_ty = c.LLVMFunctionType(i32_ty, &ns_params, 2, 0);
-        var ns_fn = c.LLVMGetNamedFunction(self.llvm_module, "_NSGetExecutablePath");
-        if (ns_fn == null) ns_fn = c.LLVMAddFunction(self.llvm_module, "_NSGetExecutablePath", ns_ty);
+        const ns_fn = self.cFunction("_NSGetExecutablePath", ns_ty);
 
         var chdir_params: [1]c.LLVMTypeRef = .{ptr_ty};
         const chdir_ty = c.LLVMFunctionType(i32_ty, &chdir_params, 1, 0);
-        var chdir_fn = c.LLVMGetNamedFunction(self.llvm_module, "chdir");
-        if (chdir_fn == null) chdir_fn = c.LLVMAddFunction(self.llvm_module, "chdir", chdir_ty);
+        const chdir_fn = self.cFunction("chdir", chdir_ty);
 
         var ss_params: [2]c.LLVMTypeRef = .{ ptr_ty, ptr_ty };
         const ss_ty = c.LLVMFunctionType(ptr_ty, &ss_params, 2, 0);
-        var ss_fn = c.LLVMGetNamedFunction(self.llvm_module, "strstr");
-        if (ss_fn == null) ss_fn = c.LLVMAddFunction(self.llvm_module, "strstr", ss_ty);
+        const ss_fn = self.cFunction("strstr", ss_ty);
 
         var sc_params: [2]c.LLVMTypeRef = .{ ptr_ty, ptr_ty };
         const sc_ty = c.LLVMFunctionType(ptr_ty, &sc_params, 2, 0);
-        var sc_fn = c.LLVMGetNamedFunction(self.llvm_module, "strcpy");
-        if (sc_fn == null) sc_fn = c.LLVMAddFunction(self.llvm_module, "strcpy", sc_ty);
+        const sc_fn = self.cFunction("strcpy", sc_ty);
 
         var no_params: [0]c.LLVMTypeRef = .{};
         const ctor_ty = c.LLVMFunctionType(void_ty, &no_params, 0, 0);
@@ -978,17 +981,10 @@ pub const LLVMEmitter = struct {
     /// underlying function value is just an opaque `ptr` symbol.
     pub fn getObjcMsgSendValue(self: *LLVMEmitter) c.LLVMValueRef {
         if (self.objc_msg_send_value) |v| return v;
-        const name_z = "objc_msgSend";
-        if (c.LLVMGetNamedFunction(self.llvm_module, name_z)) |existing| {
-            self.objc_msg_send_value = existing;
-            return existing;
-        }
         // Seed with a `(ptr, ptr) -> ptr` shape; opaque pointers mean
         // each call site can override.
         var params: [2]c.LLVMTypeRef = .{ self.cached_ptr, self.cached_ptr };
-        const fn_ty = c.LLVMFunctionType(self.cached_ptr, &params, 2, 0);
-        const fn_val = c.LLVMAddFunction(self.llvm_module, name_z, fn_ty);
-        c.LLVMSetLinkage(fn_val, c.LLVMExternalLinkage);
+        const fn_val = self.cFunction("objc_msgSend", c.LLVMFunctionType(self.cached_ptr, &params, 2, 0));
         self.objc_msg_send_value = fn_val;
         return fn_val;
     }
@@ -1690,7 +1686,10 @@ pub const LLVMEmitter = struct {
         const name_z = self.alloc.dupeZ(u8, name) catch unreachable;
         defer self.alloc.free(name_z);
 
-        const llvm_func = c.LLVMAddFunction(self.llvm_module, name_z.ptr, fn_type);
+        const llvm_func = if (func.linkage == .external)
+            self.cFunction(name_z, fn_type)
+        else
+            c.LLVMAddFunction(self.llvm_module, name_z.ptr, fn_type);
 
         // sret(<RetType>) attribute on the prepended pointer param.
         // LLVMAttributeIndex 1 = first parameter (0 = return value).
@@ -2719,7 +2718,6 @@ pub const LLVMEmitter = struct {
         const b = self.builder;
         const i32_ty = c.LLVMInt32TypeInContext(self.context);
         const i1_ty = c.LLVMInt1TypeInContext(self.context);
-        const ptr_ty = c.LLVMPointerTypeInContext(self.context, 0);
 
         // Extract ptr and len from both fat pointers
         const lhs_ptr = c.LLVMBuildExtractValue(b, lhs, 0, "str.lp");
@@ -2744,11 +2742,7 @@ pub const LLVMEmitter = struct {
 
         // memcmp block
         c.LLVMPositionBuilderAtEnd(b, memcmp_bb);
-        const memcmp_fn = c.LLVMGetNamedFunction(self.llvm_module, "memcmp") orelse blk: {
-            var params = [_]c.LLVMTypeRef{ ptr_ty, ptr_ty, size_ty };
-            const fn_type = c.LLVMFunctionType(i32_ty, &params, 3, 0);
-            break :blk c.LLVMAddFunction(self.llvm_module, "memcmp", fn_type);
-        };
+        const memcmp_fn = self.getOrDeclareMemcmp();
         const cmp_len = if (cmp.elem_size == 1)
             lhs_n
         else
@@ -2832,15 +2826,11 @@ pub const LLVMEmitter = struct {
     // ── Malloc/Free declarations ────────────────────────────────────
 
     fn getOrDeclareMalloc(self: *LLVMEmitter) c.LLVMValueRef {
-        if (c.LLVMGetNamedFunction(self.llvm_module, "malloc")) |f| return f;
-        const fn_ty = self.getMallocType();
-        return c.LLVMAddFunction(self.llvm_module, "malloc", fn_ty);
+        return self.cFunction("malloc", self.getMallocType());
     }
 
     fn getOrDeclareFree(self: *LLVMEmitter) c.LLVMValueRef {
-        if (c.LLVMGetNamedFunction(self.llvm_module, "free")) |f| return f;
-        const fn_ty = self.getFreeType();
-        return c.LLVMAddFunction(self.llvm_module, "free", fn_ty);
+        return self.cFunction("free", self.getFreeType());
     }
 
     /// Returns the LLVM type for C `size_t`: i32 on wasm32, i64 on 64-bit targets (including wasm64).
@@ -2861,8 +2851,7 @@ pub const LLVMEmitter = struct {
     }
 
     fn getOrDeclareMemcpy(self: *LLVMEmitter) c.LLVMValueRef {
-        if (c.LLVMGetNamedFunction(self.llvm_module, "memcpy")) |f| return f;
-        return c.LLVMAddFunction(self.llvm_module, "memcpy", self.getMemcpyType());
+        return self.cFunction("memcpy", self.getMemcpyType());
     }
 
     fn getMemcpyType(self: *LLVMEmitter) c.LLVMTypeRef {
@@ -2872,8 +2861,7 @@ pub const LLVMEmitter = struct {
     }
 
     fn getOrDeclareMemset(self: *LLVMEmitter) c.LLVMValueRef {
-        if (c.LLVMGetNamedFunction(self.llvm_module, "memset")) |f| return f;
-        return c.LLVMAddFunction(self.llvm_module, "memset", self.getMemsetType());
+        return self.cFunction("memset", self.getMemsetType());
     }
 
     fn getMemsetType(self: *LLVMEmitter) c.LLVMTypeRef {
@@ -2883,15 +2871,14 @@ pub const LLVMEmitter = struct {
     }
 
     pub fn getOrDeclareMathF64(self: *LLVMEmitter, id: ir_inst.BuiltinId) c.LLVMValueRef {
-        const name: [*:0]const u8 = switch (id) {
+        const name: [:0]const u8 = switch (id) {
             .sqrt => "sqrt",
             .sin => "sin",
             .cos => "cos",
             .floor => "floor",
             else => unreachable,
         };
-        if (c.LLVMGetNamedFunction(self.llvm_module, name)) |f| return f;
-        return c.LLVMAddFunction(self.llvm_module, name, self.getMathF64Type());
+        return self.cFunction(name, self.getMathF64Type());
     }
 
     pub fn getMathF64Type(self: *LLVMEmitter) c.LLVMTypeRef {
@@ -2900,15 +2887,14 @@ pub const LLVMEmitter = struct {
     }
 
     pub fn getOrDeclareMathF32(self: *LLVMEmitter, id: ir_inst.BuiltinId) c.LLVMValueRef {
-        const name: [*:0]const u8 = switch (id) {
+        const name: [:0]const u8 = switch (id) {
             .sqrt => "sqrtf",
             .sin => "sinf",
             .cos => "cosf",
             .floor => "floorf",
             else => unreachable,
         };
-        if (c.LLVMGetNamedFunction(self.llvm_module, name)) |f| return f;
-        return c.LLVMAddFunction(self.llvm_module, name, self.getMathF32Type());
+        return self.cFunction(name, self.getMathF32Type());
     }
 
     pub fn getMathF32Type(self: *LLVMEmitter) c.LLVMTypeRef {
@@ -2917,16 +2903,13 @@ pub const LLVMEmitter = struct {
     }
 
     fn getOrDeclareMemcmp(self: *LLVMEmitter) c.LLVMValueRef {
-        if (c.LLVMGetNamedFunction(self.llvm_module, "memcmp")) |f| return f;
         // memcmp(ptr, ptr, size_t) → i32
         var param_types = [_]c.LLVMTypeRef{ self.cached_ptr, self.cached_ptr, self.sizeType() };
-        const fn_ty = c.LLVMFunctionType(self.cached_i32, &param_types, 3, 0);
-        return c.LLVMAddFunction(self.llvm_module, "memcmp", fn_ty);
+        return self.cFunction("memcmp", c.LLVMFunctionType(self.cached_i32, &param_types, 3, 0));
     }
 
     pub fn getOrDeclareWrite(self: *LLVMEmitter) c.LLVMValueRef {
-        if (c.LLVMGetNamedFunction(self.llvm_module, "write")) |f| return f;
-        return c.LLVMAddFunction(self.llvm_module, "write", self.getWriteType());
+        return self.cFunction("write", self.getWriteType());
     }
 
     pub fn getWriteType(self: *LLVMEmitter) c.LLVMTypeRef {
@@ -2937,8 +2920,7 @@ pub const LLVMEmitter = struct {
     }
 
     pub fn getOrDeclareRead(self: *LLVMEmitter) c.LLVMValueRef {
-        if (c.LLVMGetNamedFunction(self.llvm_module, "read")) |f| return f;
-        return c.LLVMAddFunction(self.llvm_module, "read", self.getReadType());
+        return self.cFunction("read", self.getReadType());
     }
 
     pub fn getReadType(self: *LLVMEmitter) c.LLVMTypeRef {
@@ -2949,8 +2931,7 @@ pub const LLVMEmitter = struct {
     }
 
     fn getOrDeclareSnprintf(self: *LLVMEmitter) c.LLVMValueRef {
-        if (c.LLVMGetNamedFunction(self.llvm_module, "snprintf")) |f| return f;
-        return c.LLVMAddFunction(self.llvm_module, "snprintf", self.getSnprintfType());
+        return self.cFunction("snprintf", self.getSnprintfType());
     }
 
     fn getSnprintfType(self: *LLVMEmitter) c.LLVMTypeRef {

@@ -3512,17 +3512,19 @@ fn returnGenericLeaf(node: *const Node) ?[]const u8 {
 /// Declare a function as an extern stub (signature only, no body).
 /// The same C SYMBOL declared more than once (two modules binding the same
 /// libc function, or a rename colliding with an existing binding) shares the
-/// first registration; a CONFLICTING signature is diagnosed —
-/// silently letting the first registration win mis-types every call through
-/// the later declaration (a `-> string` view of a symbol registered `-> *u8`
-/// reads the wrong shape). The C-variadic tail is part of that equality: a
-/// fixed prototype and a variadic one are different ABIs, and sharing the fixed
-/// registration would emit calls whose argument count its signature refuses.
+/// first external-linkage registration, an `extern` or an `export`; an sx
+/// function of that name is internal and never one. A CONFLICTING signature
+/// is diagnosed — silently letting the first registration win mis-types every
+/// call through the later declaration (a `-> string` view of a symbol
+/// registered `-> *u8` reads the wrong shape). The C-variadic tail is part of
+/// that equality: a fixed prototype and a variadic one are different ABIs, and
+/// sharing the fixed registration would emit calls whose argument count its
+/// signature refuses.
 /// True = handled (shared, and diagnosed on a conflict), caller must not
 /// declare again.
 pub fn dedupeExternSymbol(self: *Lowering, fd: *const ast.FnDecl, sym_name: StringId, params: []const Function.Param, ret_ty: TypeId, is_c_variadic: bool) bool {
     for (self.module.functions.items, 0..) |*func, i| {
-        if (func.name != sym_name or !func.is_extern) continue;
+        if (func.name != sym_name or func.linkage != .external) continue;
         var same = self.module.types.sameType(func.ret, ret_ty) and func.params.len == params.len and func.is_c_variadic == is_c_variadic;
         if (same) {
             for (func.params, params) |a, b| {
@@ -3688,6 +3690,7 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
     if (is_extern_decl and self.dedupeExternSymbol(fd, name_id, params.items, ret_ty, is_c_variadic)) return;
     const fid = self.builder.declareExtern(name_id, params.items, ret_ty);
     const func = self.module.getFunctionMut(fid);
+    if (fd.extern_export == .none and !isExportedEntryName(name)) func.linkage = .internal;
     func.call_conv = cc;
     func.source_file = self.current_source_file;
     func.is_c_variadic = is_c_variadic;
