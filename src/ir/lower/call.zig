@@ -104,16 +104,16 @@ fn methodReceiverNode(object: *const Node) *const Node {
 /// method it dispatches to takes it by address.
 const Receiver = union(enum) { value: Ref, place: Ref };
 
-fn lowerReceiver(self: *Lowering, fa: *const ast.FieldAccess, sel_author: ?*SelectedFunc) Receiver {
+fn lowerReceiver(self: *Lowering, fa: *const ast.FieldAccess, args: []const *Node, sel_author: ?*SelectedFunc) Receiver {
     const node = methodReceiverNode(fa.object);
-    if (receiverPlace(self, node, fa.field, sel_author)) |place| return .{ .place = place };
+    if (receiverPlace(self, node, fa.field, args, sel_author)) |place| return .{ .place = place };
     return .{ .value = self.lowerExpr(node) };
 }
 
 /// The storage of a struct or union receiver read through a pointer or held
 /// in addressable storage, when its method takes it by address; null for any
 /// other receiver.
-fn receiverPlace(self: *Lowering, node: *const Node, method: []const u8, sel_author: ?*SelectedFunc) ?Ref {
+fn receiverPlace(self: *Lowering, node: *const Node, method: []const u8, args: []const *Node, sel_author: ?*SelectedFunc) ?Ref {
     const ty = self.inferExprType(node);
     if (ty.isBuiltin()) return null;
     const name = switch (self.module.types.get(ty)) {
@@ -122,7 +122,7 @@ fn receiverPlace(self: *Lowering, node: *const Node, method: []const u8, sel_aut
         else => return null,
     };
     if (self.program_index.lookup(.runtime_class, self.module.types.getString(name)) != null) return null;
-    const fd = receiverMethodDecl(self, ty, method, sel_author) orelse return null;
+    const fd = receiverMethodDecl(self, node, ty, method, args, sel_author) orelse return null;
     if (fd.params.len == 0 or fd.params[0].type_expr.data != .pointer_type_expr) return null;
     if (node.data == .field_access) {
         if (self.fieldReadRoot(&node.data.field_access)) |root| return self.fieldReadAddress(&node.data.field_access, root).ptr;
@@ -132,9 +132,10 @@ fn receiverPlace(self: *Lowering, node: *const Node, method: []const u8, sel_aut
 }
 
 /// The declaration a dot-call on a struct or union receiver dispatches to,
-/// looked up in the dispatch's order; null for an open set receiver, a pack or
-/// generic ufcs function, and a function lowered without a declaration.
-fn receiverMethodDecl(self: *Lowering, ty: TypeId, method: []const u8, sel_author: ?*SelectedFunc) ?*const ast.FnDecl {
+/// looked up in the dispatch's order; null for an open set receiver, a pack
+/// ufcs function, an ambiguous generic ufcs call, and a function lowered
+/// without a declaration.
+fn receiverMethodDecl(self: *Lowering, node: *const Node, ty: TypeId, method: []const u8, args: []const *Node, sel_author: ?*SelectedFunc) ?*const ast.FnDecl {
     if (openSetReceiver(self, ty) != null) return null;
     if (self.getStructTypeName(ty)) |sname| {
         if (self.genericInstanceMethod(sname, method)) |gm| return gm.fd;
@@ -146,10 +147,20 @@ fn receiverMethodDecl(self: *Lowering, ty: TypeId, method: []const u8, sel_autho
         }
     }
     const alias_target = self.ufcsAliasTarget(method);
-    const ufcs_fd = self.ufcsFunction(alias_target orelse method);
+    const eff_method = alias_target orelse method;
+    const ufcs_fd = self.ufcsFunction(eff_method);
     if (alias_target == null and !(ufcs_fd != null and ufcs_fd.?.is_ufcs)) return null;
     if (ufcs_fd) |fd| {
-        if (isPackFn(fd) or fd.type_params.len > 0) return null;
+        if (isPackFn(fd)) return null;
+        if (fd.type_params.len > 0) {
+            const eff_args = self.alloc.alloc(*const Node, args.len + 1) catch unreachable;
+            defer self.alloc.free(eff_args);
+            eff_args[0] = node;
+            for (args, eff_args[1..]) |a, *e| e.* = a;
+            var amb = false;
+            const selected = self.selectUfcsGenericByReceiver(eff_method, eff_args, &amb);
+            return if (amb) null else selected orelse fd;
+        }
     }
     return if (sel_author) |sf| sf.decl else ufcs_fd;
 }
@@ -1385,7 +1396,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
     // callee value evaluate before the written ones.
     const first_receiver: ?Receiver = switch (c.callee.data) {
         .field_access => |fa| if (qualified_call_verdict == .value_receiver and receiverIsFirstArgument(self, c, &fa))
-            lowerReceiver(self, &fa, sel_author)
+            lowerReceiver(self, &fa, c.args, sel_author)
         else
             null,
         else => null,

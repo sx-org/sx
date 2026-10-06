@@ -2436,6 +2436,47 @@ test "a guard-narrowed method receiver addresses the optional payload with its d
     try std.testing.expect(found);
 }
 
+test "a dot-call to a by-address generic ufcs function never reads its receiver as a value" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source = try alloc.dupeZ(u8,
+        \\B :: struct { v: i64; }
+        \\H :: struct { pad: i64; b: B; }
+        \\gua :: ufcs (c: *$T, x: i64) -> i64 { c.v + x }
+        \\run :: (h: *H) -> i64 { h.b.gua(2) }
+        \\main :: () -> i64 {
+        \\    h := H{ pad = 0, b = B{ v = 5 } };
+        \\    run(*h)
+        \\}
+        \\
+    );
+    var p = try parser.Parser.init(alloc, source);
+    const root = try p.parse();
+    var table = imports.DeclTable.init(alloc);
+    const file = try table.internEnvironment("test.sx", &.{});
+    for (root.data.root.decls) |decl| try std.testing.expect(try table.claim(file, decl));
+    var module = ir_mod.Module.init(alloc);
+    defer module.deinit();
+    var diagnostics = errors.DiagnosticList.init(alloc, source, "test.sx");
+    var lowering = Lowering.init(&module);
+    lowering.main_file = "test.sx";
+    lowering.program_index.decl_table = &table;
+    lowering.diagnostics = &diagnostics;
+    lowering.lowerRoot(root);
+    try std.testing.expect(!diagnostics.hasErrors());
+
+    const b_ty = module.types.findByName(module.types.internString("B")).?;
+    var called = false;
+    for (module.getFunction(lowering.resolveFuncByName("run").?).blocks.items) |block| {
+        for (block.insts.items) |inst| {
+            try std.testing.expect(inst.ty != b_ty);
+            if (inst.op == .call) called = true;
+        }
+    }
+    try std.testing.expect(called);
+}
+
 test "scope: lookupNearest resolves by depth across both local namespaces" {
     // `lookup` / `lookupFn` each walk the WHOLE chain of one namespace, so
     // neither can say which declaration is nearest when a value binding and
