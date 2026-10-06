@@ -10,8 +10,9 @@
 //     always bounded by the caller's buffer.
 //   • `send` builds the request through `context.allocator` and does not free
 //     it; drive a long-lived client under an arena (or reset per request).
-//   • `method`/`path`/`host`/`extraHeaders` are sent verbatim (no CRLF
-//     sanitisation) — pass trusted values.
+//   • `method` and the `path`/`host`/`extraHeaders` of `send`/`sendOn`/
+//     `request` are sent verbatim (no CRLF sanitisation) — pass trusted
+//     values. `fetch` validates its `extraHeaders`.
 @import "modules/std/http/wire.sx";
 @import "modules/std/core.sx";         // Allocator
 @import "modules/std/fmt.sx";          // concat, intToString
@@ -42,6 +43,8 @@ ClientErr :: error {
                 // signature (the pool's ONLY safe retry window besides a send
                 // fault: the request provably never executed)
     Allocation; // content-decoder state could not be allocated
+    Header;     // fetch: a caller header line is malformed or names a field
+                // fetch writes itself (see `fetch`)
 }
 
 // ── sessions ──────────────────────────────────────────────────
@@ -273,8 +276,9 @@ private recv :: (fd: i32, buf: [*]u8, cap: i64, requestMethod: string = "GET") -
 // Send one HTTP/1.1 request on an open ClientConn (TLS-aware `send`).
 // The request is built into ONE allocation and freed before returning — no
 // arena required, nothing retained (a concat chain would leak every
-// intermediate into the caller's context).
-private sendOn :: (c: *ClientConn, method: string, path: string, host: string, extraHeaders: string, body: string) -> !ClientErr {
+// intermediate into the caller's context). `credentials` false leaves the
+// Authorization and Cookie lines of `extraHeaders` out.
+private sendOn :: (c: *ClientConn, method: string, path: string, host: string, extraHeaders: string, body: string, credentials: bool = true) -> !ClientErr {
     advertise := c.acceptCompression
         and !hasHeader(extraHeaders, "accept-encoding")
         and !hasHeader(extraHeaders, "range");
@@ -308,7 +312,8 @@ private sendOn :: (c: *ClientConn, method: string, path: string, host: string, e
         while cli < cln { p[w] = clbuf[cli]; w += 1; cli += 1; }
         w = put(p, w, "\r\n");
     }
-    w = put(p, w, extraHeaders);
+    if credentials { w = put(p, w, extraHeaders); }
+    else { w = putWithoutCredentials(p, w, extraHeaders); }
     if advertise { w = put(p, w, HDR_ACCEPT_ENCODING); }
     w = put(p, w, "\r\n");
     w = put(p, w, body);
@@ -330,6 +335,44 @@ private sendOn :: (c: *ClientConn, method: string, path: string, host: string, e
 private put :: (p: [*]u8, w: i64, s: string) -> i64 {
     if s.len > 0 { clib.c.memcpy(*p[w], s.ptr, s.len); }
     return w + s.len;
+}
+
+// `put` for the lines of a `validFetchHeaders` block not named
+// Authorization or Cookie.
+private putWithoutCredentials :: (p: [*]u8, w: i64, block: string) -> i64 {
+    out := w;
+    at : i64 = 0;
+    while at < block.len {
+        colon := at;
+        while block[colon] != ':' { colon += 1; }
+        end := colon;
+        while block[end] != '\n' { end += 1; }
+        end += 1;
+        name := block[at..colon];
+        if !ceAsciiIeq(name, "authorization") and !ceAsciiIeq(name, "cookie") {
+            out = put(p, out, block[at..end]);
+        }
+        at = end;
+    }
+    out
+}
+
+// Whether `block` is an `extraHeaders` block `fetch` accepts.
+private validFetchHeaders :: (block: string) -> bool {
+    at : i64 = 0;
+    while at < block.len {
+        colon := at;
+        while colon < block.len and isTchar(block[colon]) { colon += 1; }
+        if colon == at or colon >= block.len or block[colon] != ':' { return false; }
+        name := block[at..colon];
+        if ceAsciiIeq(name, "host") or ceAsciiIeq(name, "content-length")
+            or ceAsciiIeq(name, "transfer-encoding") { return false; }
+        end := colon + 1;
+        while end < block.len and block[end] != '\r' and block[end] != '\n' and block[end] != 0 { end += 1; }
+        if end + 1 >= block.len or block[end] != '\r' or block[end + 1] != '\n' { return false; }
+        at = end + 2;
+    }
+    true
 }
 
 // ── URL fetch + redirects ─────────────────────────────────────
@@ -417,10 +460,16 @@ private parseUrl :: (url: string) -> (Url, bool) {
     return u, true;
 }
 
+// Whether a fetch hop to `u` carries the caller's credential lines: only
+// when it shares the first URL's origin (scheme, host, port).
+private sameOrigin :: (origin: Url, u: Url) -> bool {
+    return origin.https == u.https and origin.port == u.port and ceAsciiIeq(origin.host, u.host);
+}
+
 // One request against a parsed URL over a FRESH connection; the conn is
 // returned (still open) alongside the response for the caller to reuse or
 // close. `verifyHost` is the TLS name ("" = the URL host).
-private fetchHop :: (u: Url, method: string, body: string, opts: ClientOpts, verifyHost: string, buf: [*]u8, cap: i64) -> (ClientConn, ClientResponse, !ClientErr) {
+private fetchHop :: (u: Url, method: string, extraHeaders: string, credentials: bool, body: string, opts: ClientOpts, verifyHost: string, buf: [*]u8, cap: i64) -> (ClientConn, ClientResponse, !ClientErr) {
     o := opts;
     if u.https {
         if o.tls == null { raise .Tls; }   // never plaintext to an https target
@@ -431,7 +480,7 @@ private fetchHop :: (u: Url, method: string, body: string, opts: ClientOpts, ver
     }
     c, oe := open(u.host, u.port, o);
     if oe { raise oe; }
-    se := sendOn(*c, method, u.path, u.host, "", body);
+    se := sendOn(*c, method, u.path, u.host, extraHeaders, body, credentials);
     if se { closeConn(*c); raise se; }
     r, re := recvOn(*c, buf, cap);
     if re { closeConn(*c); raise re; }
@@ -504,7 +553,14 @@ private isRedirect :: (status: i64) -> bool {
 // untrusted); http→https needs opts.tls (`ClientErr.Tls` mid-chain otherwise).
 // Timeouts are per OPERATION per HOP — a full chain can take up to
 // (maxRedirects + 1) × (connect + io) timeouts.
-private fetch :: (method: string, url: string, body: string, opts: ClientOpts, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
+//
+// `extraHeaders` is preformatted "Name: value\r\n" lines (may be "") sent on
+// every hop, except that Authorization and Cookie lines go only to hops on
+// the first URL's origin (scheme, host, port). A line that is not
+// `token ":" value CRLF`, holds CR, LF or NUL inside its value, or names
+// Host, Content-Length or Transfer-Encoding raises `ClientErr.Header`
+// before any connection opens.
+private fetch :: (method: string, url: string, extraHeaders: string, body: string, opts: ClientOpts, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
     // Owned copies of the current target — Location views the response
     // buffer, which the next hop overwrites.
     hostb : [256]u8 = ---;
@@ -513,6 +569,8 @@ private fetch :: (method: string, url: string, body: string, opts: ClientOpts, b
 
     u, ok := parseUrl(url);
     if !ok { raise .Url; }
+    if !validFetchHeaders(extraHeaders) { raise .Header; }
+    origin := u;
     m := method;
     b := body;
     hops : i64 = 0;
@@ -530,7 +588,7 @@ private fetch :: (method: string, url: string, body: string, opts: ClientOpts, b
         hu := u;
 
         vh := if first then opts.tlsHost else "";
-        c, r, he := fetchHop(hu, m, b, opts, vh, buf, cap);
+        c, r, he := fetchHop(hu, m, extraHeaders, sameOrigin(origin, hu), b, opts, vh, buf, cap);
         if he { if freeing { context.allocator.deallocBytes(pathp); } raise he; }
 
         if !isRedirect(r.status) or opts.maxRedirects <= 0 {
@@ -1039,10 +1097,13 @@ ClientPool :: struct {
     }
 
     // Fetch through the pool. Redirect hops are followed with the SAME
-    // pooling (each hop reuses/creates its host's entry).
-    fetch :: (self: *ClientPool, method: string, url: string, body: string, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
+    // pooling (each hop reuses/creates its host's entry). `extraHeaders`
+    // is validated and sent as by the free `fetch`.
+    fetch :: (self: *ClientPool, method: string, url: string, extraHeaders: string, body: string, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
         u, ok := parseUrl(url);
         if !ok { raise .Url; }
+        if !validFetchHeaders(extraHeaders) { raise .Header; }
+        origin := u;
         m := method;
         b := body;
         hostb : [256]u8 = ---;
@@ -1057,7 +1118,7 @@ ClientPool :: struct {
                 clib.c.memcpy(hbp, u.host.ptr, u.host.len);
                 u.host = string{ ptr = hbp, len = u.host.len };
             }
-            r, he := self.hop(u, m, b, first, buf, cap);
+            r, he := self.hop(u, m, extraHeaders, sameOrigin(origin, u), b, first, buf, cap);
             if he { if freeing { context.allocator.deallocBytes(pathp); } raise he; }
             if !isRedirect(r.status) or self.opts.maxRedirects <= 0 {
                 if freeing { context.allocator.deallocBytes(pathp); }
@@ -1105,7 +1166,7 @@ ClientPool :: struct {
     // alive signature). Every receipt failure after bytes arrived
     // (TooLarge/BadStatus/Recv) propagates AS ITSELF: the server may have
     // executed the request, and re-sending would double side effects.
-    hop :: (self: *ClientPool, u: Url, method: string, body: string, first: bool, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
+    hop :: (self: *ClientPool, u: Url, method: string, extraHeaders: string, credentials: bool, body: string, first: bool, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
         idx := self.find(u);
         reused := idx >= 0 and self.entries.items[idx].live;
         attempt : i64 = 0;
@@ -1117,7 +1178,7 @@ ClientPool :: struct {
                 reused = false;
             }
             e: *PoolEntry = *self.entries.items[idx];
-            se := sendOn(*e.conn, method, u.path, u.host, "", body);
+            se := sendOn(*e.conn, method, u.path, u.host, extraHeaders, body, credentials);
             if se {
                 self.drop(idx);
                 idx = -1;
@@ -1247,7 +1308,7 @@ Client :: struct {
     }
     closeConn :: (c: *ClientConn) { closeConn(c); }
     // ── (see the free `fetch`) ─────────────────────────────────
-    fetch :: (method: string, url: string, body: string, opts: ClientOpts, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
-        return fetch(method, url, body, opts, buf, cap);
+    fetch :: (method: string, url: string, extraHeaders: string, body: string, opts: ClientOpts, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
+        return fetch(method, url, extraHeaders, body, opts, buf, cap);
     }
 }
