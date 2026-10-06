@@ -1,0 +1,37 @@
+// A child spawned with `newGroup` leads a process group of its own, and
+// `killGroup` signals every member: the grandchild the child backgrounds, which
+// holds the stdout pipe, dies with it, so the pipe reaches EOF. Once `wait` has
+// reaped the child, and for a child spawned without `newGroup`, `killGroup`
+// raises `.NoGroup`.
+@import "modules/std.sx";
+
+main :: () -> i32 {
+    child, e := process.spawn(.["/bin/sh", "-c", "sleep 300 & echo started; wait"], .{ stdout = .pipe, newGroup = true });
+    if e { print("spawn failed: {}\n", e); return 1; }
+    buf := allocString(64);
+    got := child.stdoutRead(buf);
+    if got <= 0 { print("read: {}\n", got); return 1; }
+    print("child: {}", buf[0 .. got.(i64)]);
+
+    invalid := child.killGroup(999);
+    print("invalid signal: {}\n", invalid);
+    term := child.killGroup(process.SIGTERM);
+    if term { print("killGroup: {}\n", term); return 1; }
+    print("exit: {}\n", child.wait(true)?!);
+
+    n := child.stdoutRead(buf);
+    while n > 0 { n = child.stdoutRead(buf); }
+    child.stdoutClose();
+    if n < 0 { print("read: {}\n", n); return 1; }
+    print("stdout: EOF\n");
+
+    reaped := child.killGroup(process.SIGTERM);
+    print("after the reap: {}\n", reaped);
+
+    plain, pe := process.spawn(.["/bin/sh", "-c", "exit 0"], .{});
+    if pe { print("spawn failed: {}\n", pe); return 1; }
+    ungrouped := plain.killGroup(process.SIGTERM);
+    plain.wait(true);
+    print("without newGroup: {}\n", ungrouped);
+    return if invalid == .Signal and reaped == .NoGroup and ungrouped == .NoGroup then 0 else 1;
+}

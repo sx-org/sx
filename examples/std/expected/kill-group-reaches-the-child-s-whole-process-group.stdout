@@ -1,0 +1,6 @@
+child: started
+invalid signal: KillErr.Signal
+exit: 143
+stdout: EOF
+after the reap: KillErr.NoGroup
+without newGroup: KillErr.NoGroup
