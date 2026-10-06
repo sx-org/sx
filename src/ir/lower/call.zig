@@ -100,19 +100,20 @@ fn methodReceiverNode(object: *const Node) *const Node {
     return if (object.data == .deref_expr) object.data.deref_expr.operand else object;
 }
 
-/// A dot-call's receiver as it evaluates: its value, or the place of an
-/// aggregate the callee may take by address, so the value is read only by a
-/// callee that takes it by value.
+/// A dot-call's receiver as it evaluates: its value, or its place when the
+/// method it dispatches to takes it by address.
 const Receiver = union(enum) { value: Ref, place: Ref };
 
-fn lowerReceiver(self: *Lowering, node: *const Node) Receiver {
-    if (receiverPlace(self, node)) |place| return .{ .place = place };
+fn lowerReceiver(self: *Lowering, fa: *const ast.FieldAccess, sel_author: ?*SelectedFunc) Receiver {
+    const node = methodReceiverNode(fa.object);
+    if (receiverPlace(self, node, fa.field, sel_author)) |place| return .{ .place = place };
     return .{ .value = self.lowerExpr(node) };
 }
 
 /// The storage of a struct or union receiver read through a pointer or held
-/// in addressable storage; null for any other receiver.
-fn receiverPlace(self: *Lowering, node: *const Node) ?Ref {
+/// in addressable storage, when its method takes it by address; null for any
+/// other receiver.
+fn receiverPlace(self: *Lowering, node: *const Node, method: []const u8, sel_author: ?*SelectedFunc) ?Ref {
     const ty = self.inferExprType(node);
     if (ty.isBuiltin()) return null;
     const name = switch (self.module.types.get(ty)) {
@@ -121,6 +122,8 @@ fn receiverPlace(self: *Lowering, node: *const Node) ?Ref {
         else => return null,
     };
     if (self.program_index.lookup(.runtime_class, self.module.types.getString(name)) != null) return null;
+    const fd = receiverMethodDecl(self, ty, method, sel_author) orelse return null;
+    if (fd.params.len == 0 or fd.params[0].type_expr.data != .pointer_type_expr) return null;
     if (node.data == .field_access) {
         if (self.fieldReadRoot(&node.data.field_access)) |root| return self.fieldReadAddress(&node.data.field_access, root).ptr;
     }
@@ -128,12 +131,27 @@ fn receiverPlace(self: *Lowering, node: *const Node) ?Ref {
     return self.lowerExprAsPtr(node);
 }
 
-/// The receiver's value, read from its place the first time a path needs it.
-fn receiverValue(self: *Lowering, obj: *Ref, place: ?Ref, ty: TypeId) Ref {
-    if (obj.isNone()) {
-        if (place) |p| obj.* = self.builder.load(p, ty);
+/// The declaration a dot-call on a struct or union receiver dispatches to,
+/// looked up in the dispatch's order; null for an open set receiver, a pack or
+/// generic ufcs function, and a function lowered without a declaration.
+fn receiverMethodDecl(self: *Lowering, ty: TypeId, method: []const u8, sel_author: ?*SelectedFunc) ?*const ast.FnDecl {
+    if (openSetReceiver(self, ty) != null) return null;
+    if (self.getStructTypeName(ty)) |sname| {
+        if (self.genericInstanceMethod(sname, method)) |gm| return gm.fd;
+        if (self.plainStructMethod(ty, method)) |m| return m.fd;
+        if (!self.hasPlainStructAuthor(ty)) {
+            const qualified = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ sname, method }) catch unreachable;
+            if (self.program_index.lookup(.function, qualified)) |fd| return fd;
+            if (self.resolveFuncByName(qualified) != null) return null;
+        }
     }
-    return obj.*;
+    const alias_target = self.ufcsAliasTarget(method);
+    const ufcs_fd = self.ufcsFunction(alias_target orelse method);
+    if (alias_target == null and !(ufcs_fd != null and ufcs_fd.?.is_ufcs)) return null;
+    if (ufcs_fd) |fd| {
+        if (isPackFn(fd) or fd.type_params.len > 0) return null;
+    }
+    return if (sel_author) |sf| sf.decl else ufcs_fd;
 }
 
 /// A named call's written `order` over an argument list with the receiver
@@ -1367,7 +1385,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
     // callee value evaluate before the written ones.
     const first_receiver: ?Receiver = switch (c.callee.data) {
         .field_access => |fa| if (qualified_call_verdict == .value_receiver and receiverIsFirstArgument(self, c, &fa))
-            lowerReceiver(self, methodReceiverNode(fa.object))
+            lowerReceiver(self, &fa, sel_author)
         else
             null,
         else => null,
@@ -1976,8 +1994,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 .place => |p| p,
             };
             var obj = switch (receiver) {
-                .value => |v| v,
-                .place => Ref.none,
+                .value, .place => |r| r,
             };
 
             // A guard-narrowed optional receiver dispatches through its
@@ -1998,7 +2015,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             if (openSetReceiver(self, obj_ty)) |set_ty| {
                 if (self.openSetOf(set_ty)) |set| {
                     if (lower_open_set.requiredMethod(set, fa.field)) |method| {
-                        const addr = openSetReceiverAddress(self, receiverValue(self, &obj, recv_place, obj_ty), obj_ty, set_ty, fa.object);
+                        const addr = openSetReceiverAddress(self, obj, obj_ty, set_ty, fa.object);
                         return self.emitOpenSetDispatch(addr, set, method, args.items, c.callee.span);
                     }
                 }
@@ -2011,7 +2028,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             // protocol value as its first param).
             if (self.getProtocolInfo(obj_ty)) |proto_info| {
                 if (protocolHasMethod(proto_info, fa.field)) {
-                    return self.emitProtocolDispatch(receiverValue(self, &obj, recv_place, obj_ty), proto_info, fa.field, args.items, c.callee.span);
+                    return self.emitProtocolDispatch(obj, proto_info, fa.field, args.items, c.callee.span);
                 }
             }
 
@@ -2043,7 +2060,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     const pay_ty = opt_info.optional.child;
                     if (self.getProtocolInfo(pay_ty)) |proto_info| {
                         if (protocolHasMethod(proto_info, fa.field)) {
-                            return self.emitProtocolDispatch(receiverValue(self, &obj, recv_place, obj_ty), proto_info, fa.field, args.items, c.callee.span);
+                            return self.emitProtocolDispatch(obj, proto_info, fa.field, args.items, c.callee.span);
                         }
                     }
                     // `?*P` (optional VIEW): the optional of a
@@ -2079,7 +2096,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             const struct_name = self.getStructTypeName(obj_ty);
             if (struct_name) |sname_for_runtime| {
                 if (self.program_index.lookup(.runtime_class, sname_for_runtime)) |fcd| {
-                    return self.lowerRuntimeMethodCall(fcd, fa.field, receiverValue(self, &obj, recv_place, obj_ty), args.items, c.callee.span);
+                    return self.lowerRuntimeMethodCall(fcd, fa.field, obj, args.items, c.callee.span);
                 }
             }
 
@@ -2114,7 +2131,6 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         defer eff_args.deinit(self.alloc);
                         eff_args.append(self.alloc, effective_obj_node) catch unreachable;
                         for (c.args) |a| eff_args.append(self.alloc, a) catch unreachable;
-                        method_args.items[0] = receiverValue(self, &obj, recv_place, obj_ty);
                         var gbindings = callBindings(self, gm.fd, fa.field, c.callee.span, eff_args.items, method_args.items) orelse return Ref.none;
                         defer gbindings.deinit();
                         const base = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ gm.inst_name, self.accessorEffName(gm.fd) }) catch fa.field;
@@ -2157,7 +2173,6 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         eff_args.append(self.alloc, effective_obj_node) catch unreachable;
                         for (c.args) |a| eff_args.append(self.alloc, a) catch unreachable;
 
-                        method_args.items[0] = receiverValue(self, &obj, recv_place, obj_ty);
                         var gbindings = callBindings(self, gen_fd, fa.field, c.callee.span, eff_args.items, method_args.items) orelse return Ref.none;
                         defer gbindings.deinit();
 
@@ -2325,7 +2340,6 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         // Nothing more specific applies now: a receiver already
                         // lowered cannot reach a destination-first parameter.
                         if (refuseDestinationFirstDispatch(self, fd, fa.field, obj_ty, c.callee.span)) return Ref.none;
-                        method_args.items[0] = receiverValue(self, &obj, recv_place, obj_ty);
                         var gbindings = callBindings(self, fd, eff_field, c.callee.span, eff_args.items, method_args.items) orelse return Ref.none;
                         defer gbindings.deinit();
                         const gmangled = self.genericResolver().mangleGenericName(eff_field, fd, &gbindings);

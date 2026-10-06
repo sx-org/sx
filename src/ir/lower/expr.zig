@@ -1153,12 +1153,6 @@ fn diagConstantReceiver(self: *Lowering, name: []const u8, span: ast.Span) Ref {
 pub fn fixupMethodReceiver(self: *Lowering, method_args: *std.ArrayList(Ref), func: *const Function, obj_node: *const Node, obj_ty: TypeId, place: ?Ref) void {
     // Skip the implicit __sx_ctx param when inspecting the receiver slot.
     const skip: usize = if (func.has_implicit_ctx) 1 else 0;
-    const by_address = func.params.len > skip and !func.params[skip].ty.isBuiltin() and
-        self.module.types.get(func.params[skip].ty) == .pointer;
-    // A receiver that arrived as its place is read only by a by-value callee.
-    if (!by_address and method_args.items[0].isNone()) {
-        if (place) |p| method_args.items[0] = self.builder.load(p, obj_ty);
-    }
     if (func.params.len <= skip) return;
     const first_param_ty = func.params[skip].ty;
     // Check if first param expects a pointer
