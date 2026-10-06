@@ -2085,6 +2085,42 @@ pub const TypeTable = struct {
         };
     }
 
+    /// A union's layout, as C lays it out.
+    pub const UnionLayout = struct {
+        /// The largest member size rounded up to `alignment`.
+        size: usize,
+        /// The largest member alignment.
+        alignment: usize,
+        /// Index of the storage member: the largest alignment, the larger on a
+        /// tie, the first on a full tie.
+        storage: usize,
+    };
+
+    /// The layout of a union with `fields`; null when no member has a size,
+    /// and such a union is an 8-byte `[8 x i8]` aligned to 1.
+    pub fn unionLayout(self: *const TypeTable, fields: []const TypeInfo.StructInfo.Field) ?UnionLayout {
+        var max_size: usize = 0;
+        var storage: usize = 0;
+        var storage_size: usize = 0;
+        var storage_align: usize = 0;
+        for (fields, 0..) |f, i| {
+            const fs = self.typeSizeBytes(f.ty);
+            const fa = self.typeAlignBytes(f.ty);
+            max_size = @max(max_size, fs);
+            if (fa > storage_align or (fa == storage_align and fs > storage_size)) {
+                storage = i;
+                storage_size = fs;
+                storage_align = fa;
+            }
+        }
+        if (max_size == 0) return null;
+        return .{
+            .size = (max_size + storage_align - 1) & ~(storage_align - 1),
+            .alignment = storage_align,
+            .storage = storage,
+        };
+    }
+
     pub fn typeSizeBytes(self: *const TypeTable, ty: TypeId) usize {
         const ptr_size: usize = self.pointer_size;
         if (ty == .void) return 0;
@@ -2127,14 +2163,7 @@ pub const TypeTable = struct {
                 }
                 break :blk if (offset == 0) 0 else (offset + max_a - 1) & ~(max_a - 1);
             },
-            .@"union" => |u| blk: {
-                var max_payload: usize = 0;
-                for (u.fields) |f| {
-                    const fs = self.typeSizeBytes(f.ty);
-                    if (fs > max_payload) max_payload = fs;
-                }
-                break :blk if (max_payload == 0) 8 else max_payload;
-            },
+            .@"union" => |u| if (self.unionLayout(u.fields)) |l| l.size else 8,
 
             .array => |a| blk: {
                 const elem_size = self.typeSizeBytes(a.element);
@@ -2222,7 +2251,7 @@ pub const TypeTable = struct {
                 }
                 break :blk max_a;
             },
-            .@"union" => 8,
+            .@"union" => |u| if (self.unionLayout(u.fields)) |l| l.alignment else 1,
             .@"error" => 4, // the tag word; a payload area does not raise it
             // A stated layout IS the enum's shape, so its alignment is the
             // enum's — that is how an open set delivers its declared payload

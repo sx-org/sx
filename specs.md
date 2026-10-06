@@ -673,7 +673,7 @@ print("{}", s);  // .circle(3.140000)
 ```
 
 ### Union Types
-C-style unions for zero-cost memory overlays (type punning). All fields share the same memory — no tag, no runtime overhead. The LLVM representation is `[max_field_size x i8]`.
+C-style unions for zero-cost memory overlays (type punning). All fields share the same memory — no tag, no runtime overhead. A union is laid out as C lays it out: it aligns to its largest member alignment, and its size is its largest member size rounded up to that alignment.
 
 #### Declaration
 ```sx

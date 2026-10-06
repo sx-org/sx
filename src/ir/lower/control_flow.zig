@@ -1490,7 +1490,7 @@ pub fn lowerMatch(self: *Lowering, node: *const Node, demand: lower_stmt.TailDem
     // a discriminant — an enum tag, an error tag, an optional's
     // has_value bit, an integer/bool value, or a type id. Any other subject has
     // no valid switch scrutinee, and letting it through hands the backend
-    // invalid IR (a raw `[8 x i8]` union scrutinee, `switch ptr`, or
+    // invalid IR (a raw union scrutinee, `switch ptr`, or
     // `switch double` against integer case constants). Reject up front with a
     // located diagnostic and bail — the arms are never lowered.
     //

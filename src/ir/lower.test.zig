@@ -2164,7 +2164,7 @@ test "lower: match on union subject (no binding) is diagnosed, not invalid IR" {
 
     // main :: (s: Shape) { r := match s { case .circle: { } case .rect: { } }; }
     // NO payload binding — slipping past the arm-level guard reaches the
-    // backend as a switch on the raw `[8 x i8]` union storage against `i0`
+    // backend as a switch on the raw union storage against `i0`
     // case constants (LLVM verifier failure, no diagnostic).
     var shape_type = Node{ .span = span, .data = .{ .type_expr = .{ .name = "Shape", .is_generic = false } } };
     var s_ident = Node{ .span = span, .data = .{ .identifier = .{ .name = "s" } } };

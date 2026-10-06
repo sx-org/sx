@@ -5748,9 +5748,8 @@ fn lowerBinaryValues(self: *Lowering, op: ast.BinaryOp.Op, lhs_value: Ref, lhs_t
     }
 
     // A `union`'s inactive-variant and padding bytes are unspecified, so it has
-    // no value-equality: a byte-wise `icmp` over its `[N x i8]` storage is both
-    // wrong and rejected by the LLVM verifier. Reject at lower time, where the
-    // span and the named type are available.
+    // no value-equality. Reject at lower time, where the span and the named
+    // type are available.
     if ((op == .eq or op == .neq) and !ty.isBuiltin()) {
         if (self.module.types.get(ty) == .@"union") {
             if (self.diagnostics) |d| {
