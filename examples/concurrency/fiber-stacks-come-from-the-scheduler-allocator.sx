@@ -1,0 +1,27 @@
+// Each fiber's guarded stack is a block from the allocator the scheduler
+// captured at init, and reaping the fiber returns it there.
+@import "modules/std.sx";
+@import "modules/std/sched.sx";
+
+main :: () -> i64 {
+    tracker := mem.TrackingAllocator.init(context.allocator);
+    ran := 0;
+    liveBytes := 0;
+    outstandingAfterRun := 0;
+    push .{ allocator = tracker } {
+        s := sched.Scheduler.init();
+        ps := *s;
+        pran := *ran;
+        ps.spawn(||_{ ps, pran } { pran.* += 1; ps.yieldNow(); pran.* += 1; });
+        ps.spawn(||_{ pran } { pran.* += 1; });
+        liveBytes = tracker.totalAllocBytes;
+        s.run();
+        outstandingAfterRun = tracker.leakCount();
+        s.deinit();
+    }
+    print("ran: {}\n", ran);
+    print("two stacks funded by the allocator: {}\n", liveBytes >= 2 * sched.STACK);
+    print("outstanding after run: {}\n", outstandingAfterRun);
+    print("outstanding after deinit: {}\n", tracker.leakCount());
+    return 0;
+}

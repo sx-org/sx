@@ -1,6 +1,6 @@
 // The M:1 cooperative fiber scheduler core, in pure
 // sx over `swapContext` (proven in 1807-1809). `Scheduler` drives N fibers,
-// each running a `body: Closure() -> void` on its own guarded `mmap` stack;
+// each running a `body: Closure() -> void` on its own guarded stack;
 // fibers cooperate by calling `yieldNow`, which round-robins control back
 // through the scheduler loop.
 //
@@ -19,9 +19,8 @@
 // shared `Shared` struct), since closure capture-by-value does not write back.
 // Every fiber must reach `.done` (asserted via a per-fiber done flag).
 //
-// aarch64-macOS-pinned (the scheduler's asm + guard-page mmap constants are
-// per-arch / Apple-specific): runs end-to-end on a matching host, ir-only on a
-// mismatch.
+// aarch64-macOS-pinned (the scheduler's asm is per-arch): runs end-to-end on a
+// matching host, ir-only on a mismatch.
 @import "modules/std.sx";
 @import "modules/std/sched.sx";
 

@@ -17,7 +17,7 @@
 // double/spurious/stale wake a safe no-op. `suspended-left: 0` confirms every
 // park was balanced by a wake (an orphaned park would abort the scheduler).
 //
-// aarch64-macOS-pinned (the scheduler's per-arch asm + Apple mmap constants):
+// aarch64-macOS-pinned (the scheduler's per-arch asm):
 // runs end-to-end on a matching host, ir-only on a mismatch.
 @import "modules/std.sx";
 @import "modules/std/sched.sx";
