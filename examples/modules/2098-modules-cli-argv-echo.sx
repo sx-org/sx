@@ -5,7 +5,8 @@
 
 main :: () {
     tracker := mem.TrackingAllocator.init(context.allocator);
-    args := cli.osArgs(tracker);
+    args : []string = ---;
+    push .{ allocator = tracker } { args = cli.osArgs(); }
 
     print("argc={}\n", cli.osArgc());
     print("filled={}\n", args.len);

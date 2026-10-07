@@ -5,8 +5,8 @@
 // committed byte. Insert over a live mark discards the mark without reporting
 // a composition, while commitMarked splices those same bytes in and reports
 // them as text. Backspace takes a whole UTF-8 scalar wherever it lands and a
-// selection whole. The document's bytes grow through the allocator the
-// session was given, and `deinit` returns them.
+// selection whole. The document's bytes grow through the allocator current
+// when the session is initialized, and `deinit` returns them.
 @import "modules/std.sx";
 @import "modules/ui/input.sx";
 
@@ -31,7 +31,8 @@ report :: (q: *InputQueue) {
 main :: () -> i32 {
     queue := InputQueue.init(context.allocator);
     tracker := mem.TrackingAllocator.init(context.allocator);
-    session := TextInputSession.init(*queue, tracker);
+    session : TextInputSession = ---;
+    push .{ allocator = tracker } { session = TextInputSession.init(*queue); }
     doc := *session;
 
     // Unmarked, text lands at the caret.

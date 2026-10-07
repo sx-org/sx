@@ -1,7 +1,7 @@
-// MEMORY: route registration captures the Router's owning allocator
-// (init) and grows the route table through it — the table outlives any
-// transient per-request scope, per the long-lived-container rule; `deinit`
-// returns it. Path params, query pairs, form pairs and decoded query/form
+// MEMORY: `init` captures `context.allocator` as the Router's own and the
+// route table grows through it — the table outlives any transient
+// per-request scope, per the long-lived-container rule; `deinit` returns
+// it. Path params, query pairs, form pairs and decoded query/form
 // tokens (percent/`+` decoding needs fresh bytes) live in the RouteCtx's
 // lists, grown through the allocator current at dispatch (the server's
 // per-request arena) and returned to it when the handler returns.
@@ -309,12 +309,12 @@ private needsDecode :: (s: string) -> bool {
 // ── pattern matching ─────────────────────────────────────────────────
 
 // Match `path` (already stripped of any query) against `pattern`,
-// appending its ":name" segments to `params`, grown through `a`. Both are
-// split on '/'. On a mismatch `params` is left empty.
+// appending its ":name" segments to `rc.params`. Both are split on '/'. On
+// a mismatch `rc.params` is left empty.
 // Trailing-slash insensitive: "/users" matches "/users/" (empty trailing
 // segments are ignored on both sides).
-private matchPattern :: (pattern: string, path: string, params: *List(KV), a: Allocator) -> bool {
-    params.clear();
+private matchPattern :: (pattern: string, path: string, rc: *RouteCtx) -> bool {
+    rc.params.clear();
     pi := 0;   // pattern cursor
     xi := 0;   // path cursor
     while true {
@@ -324,7 +324,7 @@ private matchPattern :: (pattern: string, path: string, params: *List(KV), a: Al
         patEnd := pi >= pattern.len;
         pathEnd := xi >= path.len;
         if patEnd and pathEnd { return true; }
-        if patEnd or pathEnd { params.clear(); return false; }
+        if patEnd or pathEnd { rc.params.clear(); return false; }
         // grab one segment from each
         ps := pi;
         while pi < pattern.len and pattern[pi] != '/' { pi += 1; }
@@ -334,9 +334,9 @@ private matchPattern :: (pattern: string, path: string, params: *List(KV), a: Al
         xseg := string{ ptr = *path[xs], len = xi - xs };
         if pseg.len > 0 and pseg[0] == ':' {   // param segment
             name := string{ ptr = *pseg[1], len = pseg.len - 1 };
-            params.append(KV{ name = name, value = xseg }, a);
+            rc.params.append(KV{ name = name, value = xseg }, rc.a);
         } else {
-            if !strEq(pseg, xseg) { params.clear(); return false; }
+            if !strEq(pseg, xseg) { rc.params.clear(); return false; }
         }
     }
     return false;
@@ -351,11 +351,11 @@ Router :: struct {
     notFound: RouteHandler = null; // optional custom 404 handler
 
     // Initialize with the app's own ctx word (whatever route handlers want
-    // — a store handle, config). The route table grows through `a`, which
-    // must outlive the Router. Bind the result to a local; `router` is the
-    // ctx.
-    init :: (appCtx: usize, a: Allocator = context.allocator) -> Router {
-        Router{ a = a, appCtx = appCtx }
+    // — a store handle, config). The route table grows through the
+    // `context.allocator` current here, which must outlive the Router. Bind
+    // the result to a local; `router` is the ctx.
+    init :: (appCtx: usize) -> Router {
+        Router{ a = context.allocator, appCtx = appCtx }
     }
 
     deinit :: (self: *Router) {
@@ -393,7 +393,7 @@ dispatch :: (req: *Request, resp: *Response, ctx: usize) {
 
     // First pass: find an exact (method, pattern) match.
     for r in self.routes.items {
-        if ciEq(r.method, req.method) and matchPattern(r.pattern, path, *rc.params, rc.a) {
+        if ciEq(r.method, req.method) and matchPattern(r.pattern, path, *rc) {
             h := r.handler;
             h(*rc);
             return;
@@ -408,7 +408,7 @@ dispatch :: (req: *Request, resp: *Response, ctx: usize) {
     // awareness.
     if ciEq(req.method, "HEAD") {
         for r in self.routes.items {
-            if ciEq(r.method, "GET") and matchPattern(r.pattern, path, *rc.params, rc.a) {
+            if ciEq(r.method, "GET") and matchPattern(r.pattern, path, *rc) {
                 h := r.handler;
                 h(*rc);
                 return;
@@ -423,7 +423,7 @@ dispatch :: (req: *Request, resp: *Response, ctx: usize) {
     hasGet := false;
     hasHead := false;
     for r in self.routes.items {
-        if matchPattern(r.pattern, path, *rc.params, rc.a) {
+        if matchPattern(r.pattern, path, *rc) {
             pathMatched = true;
             if allow.len == 0 { allow = r.method; }
             else { allow = concat(allow, concat(", ", r.method)); }

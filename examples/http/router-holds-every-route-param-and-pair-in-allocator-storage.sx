@@ -1,5 +1,5 @@
-// A Router keeps every route it is given in a table from the allocator it was
-// initialized with, and each dispatch keeps every path param, query pair and
+// A Router keeps every route it is given in a table from the allocator current
+// at its init, and each dispatch keeps every path param, query pair and
 // decoded token in lists from the allocator current at dispatch. `deinit`
 // returns the table; the lists are returned when the handler returns.
 @import "modules/std.sx";
@@ -43,7 +43,8 @@ main :: () -> i32 {
 
     tableTracker := mem.TrackingAllocator.init(context.allocator);
     requestTracker := mem.TrackingAllocator.init(context.allocator);
-    router := http.Router.init(0, tableTracker);
+    router : http.Router = ---;
+    push .{ allocator = tableTracker } { router = http.Router.init(0); }
     i = 0;
     while i < 200 {
         router.get("/other", other);

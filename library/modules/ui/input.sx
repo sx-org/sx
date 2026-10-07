@@ -242,12 +242,12 @@ InputQueue :: struct {
 //
 // Committed text, the selection and the IME's marked (preedit) run. The
 // committed and marked bytes live in lists grown through the session's
-// allocator, which `deinit` returns. The marked run is NOT part of
-// committed, and an empty marked run is "not composing". Every offset is a
-// UTF-8 byte offset — `anchor` and `caret` into committed,
-// markedSelStart/markedSelEnd into marked. The selection is
-// [anchor, caret); anchor == caret is a bare caret, and every edit
-// collapses it there.
+// allocator, the `context.allocator` current at `init`, which `deinit`
+// returns. The marked run is NOT part of committed, and an empty marked run
+// is "not composing". Every offset is a UTF-8 byte offset — `anchor` and
+// `caret` into committed, markedSelStart/markedSelEnd into marked. The
+// selection is [anchor, caret); anchor == caret is a bare caret, and every
+// edit collapses it there.
 //
 // The session is the SOLE author of the events it publishes on
 // `queue`: that queue is its REPORT channel to everyone else, never a
@@ -266,8 +266,8 @@ TextInputSession :: struct {
     fieldFrame: Frame = .{ origin = .{ x = 0.0, y = 0.0 }, size = .{ width = 0.0, height = 0.0 } };
     caretFrame: Frame = .{ origin = .{ x = 0.0, y = 0.0 }, size = .{ width = 0.0, height = 0.0 } };
 
-    init :: (queue: *InputQueue, a: Allocator = context.allocator) -> TextInputSession {
-        TextInputSession{ queue = queue, a = a }
+    init :: (queue: *InputQueue) -> TextInputSession {
+        TextInputSession{ queue = queue, a = context.allocator }
     }
 
     deinit :: (self: *TextInputSession) {

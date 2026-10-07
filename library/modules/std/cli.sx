@@ -1,8 +1,8 @@
 // =====================================================================
 // cli.sx — process command-line argument accessor (macOS, Linux), pure sx.
 //
-// `osArgs(a)` returns the real OS-level process argv as a `[]string` from
-// the allocator `a`, which the caller frees; each element is a VIEW over
+// `osArgs()` returns the real OS-level process argv as a `[]string` from
+// `context.allocator`, which the caller frees; each element is a VIEW over
 // storage that lives for the whole process, so the views never dangle.
 //
 // `sx run <prog.sx> ...` reality — READ THIS BEFORE CONSUMING:
@@ -160,14 +160,14 @@ cli :: scope {
     }
 
     // The process argv: `osArgc()` VIEWS into the backend's process-lifetime
-    // storage, in a slice from `a` that the caller frees. No per-argument
-    // bytes are copied.
-    osArgs :: (a: Allocator = context.allocator) -> []string {
+    // storage, in a slice from `context.allocator` that the caller frees. No
+    // per-argument bytes are copied.
+    osArgs :: () -> []string {
         inline match @host.os {
             case .macos: {
                 argc := (nsGetArgc().*).(i64);
                 argv : [*]i64 = @reinterpret([*]i64, nsGetArgv().*);
-                args := mem.alloc(a, string, argc);
+                args := mem.alloc(context.allocator, string, argc);
                 i := 0;
                 while i < argc {
                     cstr : [*]u8 = @reinterpret([*]u8, argv[i]);
@@ -180,7 +180,7 @@ cli :: scope {
             }
             case .linux: {
                 cmdlineLoad();
-                args := mem.alloc(a, string, cmdlineArgc);
+                args := mem.alloc(context.allocator, string, cmdlineArgc);
                 i := 0;
                 at := 0;
                 while i < cmdlineArgc {
@@ -236,8 +236,9 @@ cli :: scope {
     //   - group / command / every flag value / every `rest` operand are VIEWS
     //     (slices) into the caller's `args` — never copied.
     //   - `Parsed` is a by-value struct the caller binds; flag presence/values
-    //     live in one slice from the allocator `parse` is given, indexed
-    //     positionally by the matched command's spec, which `deinit` returns.
+    //     live in one slice from the `context.allocator` current at `parse`,
+    //     indexed positionally by the matched command's spec, which `deinit`
+    //     returns.
     //     A raising `parse` has already returned it.
     //   - The flag-spec list and the command table are caller storage passed
     //     as VIEWS.
@@ -341,7 +342,7 @@ cli :: scope {
     // Parse `args` (the logical argv) against the `commands` table, writing
     // the offending token into `diag` on the error path. See the section
     // header for grammar, failure contract, and ownership.
-    parse :: (args: []string, commands: []Command, diag: *Diag, a: Allocator = context.allocator) -> (Parsed, !Error) {
+    parse :: (args: []string, commands: []Command, diag: *Diag) -> (Parsed, !Error) {
         // ── Dispatch: match (args[0], args[1]) against the command table ──
         if args.len < 2 {
             diag.index = if args.len == 0 then -1 else 0;
@@ -372,8 +373,8 @@ cli :: scope {
         result.json = false;
         result.spec = spec;
         result.rest = args[args.len ..];
-        result.a = a;
-        result.values = mem.alloc(a, FlagValue, spec.len);
+        result.a = context.allocator;
+        result.values = mem.alloc(context.allocator, FlagValue, spec.len);
         j := 0;
         while j < spec.len {
             result.values[j] = .{};
