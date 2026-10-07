@@ -1,0 +1,68 @@
+// A Router keeps every route it is given in a table from the allocator it was
+// initialized with, and each dispatch keeps every path param, query pair and
+// decoded token in lists from the allocator current at dispatch. `deinit`
+// returns the table; the lists are returned when the handler returns.
+@import "modules/std.sx";
+@import "modules/std/http.sx";
+
+Seen :: struct {
+    called: bool = false;
+    lastParam: bool = false;
+    lastPair: bool = false;
+    decoded: bool = false;
+}
+
+seen : Seen = .{};
+
+other :: (rc: *http.RouteCtx) {}
+
+deep :: (rc: *http.RouteCtx) {
+    seen.called = true;
+    seen.lastParam = rc.param("p16") == "x16";
+    seen.lastPair = rc.queryGet("k39") == "v39";
+    seen.decoded = rc.queryGet("sp") == "a b";
+}
+
+main :: () -> i32 {
+    pattern := StringBuilder.init();
+    path := StringBuilder.init();
+    pattern.write("/deep");
+    path.write("/deep");
+    i := 0;
+    while i < 17 {
+        pattern.write(format("/:p{}", i));
+        path.write(format("/x{}", i));
+        i += 1;
+    }
+    path.write("?sp=a+b");
+    i = 0;
+    while i < 40 {
+        path.write(format("&k{}=v{}", i, i));
+        i += 1;
+    }
+
+    tableTracker := mem.TrackingAllocator.init(context.allocator);
+    requestTracker := mem.TrackingAllocator.init(context.allocator);
+    router := http.Router.init(0, tableTracker);
+    i = 0;
+    while i < 200 {
+        router.get("/other", other);
+        i += 1;
+    }
+    router.get(pattern.finish(), deep);
+
+    req : http.Request = .{ method = "GET", path = path.finish() };
+    resp : http.Response = .{};
+    push .{ allocator = requestTracker } {
+        http.dispatch(*req, *resp, @reinterpret(usize, *router));
+    }
+    router.deinit();
+
+    print("route 201 dispatched: {}\n", seen.called);
+    print("17th path param: {}\n", seen.lastParam);
+    print("40th query pair: {}\n", seen.lastPair);
+    print("decoded pair: {}\n", seen.decoded);
+    print("route table allocated: {}, outstanding: {}\n", tableTracker.allocCount > 0, tableTracker.leakCount());
+    print("request lists allocated: {}, outstanding: {}\n", requestTracker.allocCount > 0, requestTracker.leakCount());
+    0
+}
