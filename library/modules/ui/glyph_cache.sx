@@ -212,8 +212,8 @@ GlyphCache :: struct {
 
         // Load font file
         fileSize : i32 = 0;
-        pathZ := mem.cloneZ(path);
-        defer mem.free(pathZ);
+        pathZ := context.allocator.cloneZ(path);
+        defer context.allocator.free(pathZ);
         fontData := file_utils.read_file_bytes(pathZ, *fileSize);
         if fontData == null {
             @printf("Failed to load font: ");

@@ -1,5 +1,5 @@
-// std intentionally authors a GPA alias, so
-// bare `GPA.init()` remains part of the supported prelude surface.
+// std.sx spreads the mem scope, so a static method head on mem's GPA
+// resolves bare: `GPA.init()`.
 
 @import "modules/std.sx";
 

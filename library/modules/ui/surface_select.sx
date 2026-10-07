@@ -14,14 +14,14 @@
 
 openPixelSurface :: (w: i32, h: i32) -> ?PixelSurface {
     inline if @host.os == .macos {
-        g := mem.make(context.allocator, MetalOffscreen{});
-        if !g.open(w, h) { mem.destroy(context.allocator, g); return null; }
+        g := context.allocator.make(MetalOffscreen{});
+        if !g.open(w, h) { context.allocator.free(g); return null; }
         setGlobalFont(*g.font);
         return g.(PixelSurface);
     }
     inline if @host.os != .ios and @host.os != .macos {
-        g := mem.make(context.allocator, GlOffscreen{});
-        if !g.open(w, h) { mem.destroy(context.allocator, g); return null; }
+        g := context.allocator.make(GlOffscreen{});
+        if !g.open(w, h) { context.allocator.free(g); return null; }
         setGlobalFont(*g.font);
         return g.(PixelSurface);
     }

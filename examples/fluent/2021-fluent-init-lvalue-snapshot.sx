@@ -32,7 +32,7 @@ main :: () -> i32 {
     copy.label = "written through";
     print("source unaffected: {}\n", a.label);
 
-    mem.destroy(context.allocator, copy);
+    mem.free(context.allocator, copy);
     0
 }
 

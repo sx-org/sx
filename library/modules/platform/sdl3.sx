@@ -217,8 +217,8 @@ impl Platform for SdlPlatform {
             windowFlags |= SDL_WINDOW_METAL;
         }
 
-        titleZ := mem.cloneZ(title);
-        defer mem.free(titleZ);
+        titleZ := context.allocator.cloneZ(title);
+        defer context.allocator.free(titleZ);
         self.window = SDL_CreateWindow(titleZ, initW, initH, windowFlags);
         if self.window == null { return false; }
 

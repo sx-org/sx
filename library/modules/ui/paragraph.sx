@@ -242,9 +242,9 @@ ParagraphCache :: struct {
             self.drop(e);
         }
         self.misses += 1;
-        e := mem.create(self.gpa, ParaEntry);
+        e := self.gpa.create(ParaEntry);
         e.key = key;
-        e.text = mem.clone(text, self.gpa);
+        e.text = self.gpa.clone(text);
         e.para = layoutParagraph(e.text, fontSize, maxWidth, self.gpa);
         e.bytes = text.len + e.para.glyphs.len * @sizeOf(PositionedGlyph) + e.para.lines.len * @sizeOf(ParaLine);
         e.frame = self.frame;
@@ -281,8 +281,8 @@ ParagraphCache :: struct {
 
     release :: (self: *ParagraphCache, e: *ParaEntry) {
         e.para.deinit(self.gpa);
-        mem.free(e.text, self.gpa);
-        mem.destroy(self.gpa, e);
+        self.gpa.free(e.text);
+        self.gpa.free(e);
     }
 
     deinit :: (self: *ParagraphCache) {
@@ -310,7 +310,7 @@ paragraphFor :: (text: string, fontSize: f32, maxWidth: ?f32) -> *Paragraph {
     if cache := context.paragraphs {
         return cache.get(text, fontSize, maxWidth);
     }
-    p := mem.create(context.allocator, Paragraph);
+    p := context.allocator.create(Paragraph);
     p.* = layoutParagraph(text, fontSize, maxWidth, context.allocator);
     p
 }

@@ -1,21 +1,10 @@
-// Trailing parameter defaults must expand for a GENERIC callee reached
-// through dot-dispatch — both the ufcs form (`xs.free()`) and a generic
-// method on a struct (`b.bump(x)`).
-//
-// The value-arg list of a generic dot-call is built by walking the
-// declaration's params and skipping the type-decl slots, so a param index is
-// not an arg index and `appendDefaultArgs` (which assumes they match) cannot
-// serve it: each omitted slot is filled by parameter index instead. Without
-// that fill, `xs.free()` against
-// `free :: ufcs (x: $T, a: Allocator = context.allocator)` emits a 2-arg
-// call into the 3-param monomorph — an LLVM verifier abort ("Incorrect
-// number of arguments passed to called function"), no diagnostic. The
-// direct-call forms (`free(xs)`, `gfn(xs)`) are unaffected: their
-// defaults splice into the AST args before dispatch.
+// Trailing parameter defaults expand for a GENERIC callee reached through
+// dot-dispatch — both the ufcs form (`xs.release()`) and a generic method on
+// a struct (`b.bump(x)`). The value-arg list of a generic dot-call skips the
+// declaration's type-decl slots, so each omitted slot is filled by parameter
+// index, not argument index.
 
 @import "modules/std.sx";
-@import "modules/std/mem.sx";
-..mem;
 
 Tracker :: struct {
     allocs: i64;
@@ -30,6 +19,10 @@ impl Allocator for Tracker {
         self.deallocs += 1;
         c.free(ptr);
     }
+}
+
+release :: ufcs (xs: []$T, a: Allocator = context.allocator) {
+    a.free(xs);
 }
 
 // A default that owes nothing to the context: it pins the general mechanism
@@ -53,12 +46,12 @@ main :: () {
     push .{ allocator = t } {
         // Defaulted spelling: the allocator arrives through the default.
         xs := context.allocator.alloc(i64, 3);
-        xs.free();
+        xs.release();
         dfltA = t.allocs; dfltD = t.deallocs;
 
         // Explicit spelling: the same call with the allocator written out.
         ys := context.allocator.alloc(i64, 3);
-        ys.free(context.allocator);
+        ys.release(context.allocator);
         explA = t.allocs - dfltA; explD = t.deallocs - dfltD;
     }
     print("defaulted: {}/{}\n", dfltA, dfltD);
@@ -72,5 +65,5 @@ main :: () {
     b := Box{ base = 1 };
     print("bump: {} {} {}\n", b.bump(zs), b.bump(zs, 5), b.bump(zs, 2));
 
-    zs.free();
+    context.allocator.free(zs);
 }

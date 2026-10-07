@@ -1,7 +1,7 @@
 // An imported pack function whose fixed-prefix param
 // type is visible only in its defining module must resolve during pack
 // monomorphization. `lib.sx` imports `dep.sx` (which defines `Needs`) and
-// exposes `make() -> Needs` plus `usePack(n: Needs, ..$args)`. `main` imports
+// exposes `makeNeeds() -> Needs` plus `usePack(n: Needs, ..$args)`. `main` imports
 // ONLY `lib.sx`, so `Needs` is two flat hops away and not bare-visible here —
 // main never names it.
 //
@@ -14,7 +14,7 @@
 @import "0544-packs-imported-pack-fn-fixed-param-source-pin/lib.sx";
 
 main :: () -> i32 {
-    x := make();
+    x := makeNeeds();
     print("plain {}\n", usePlain(x));
     print("pack {}\n", usePack(x, 1, 2));
     return 0;

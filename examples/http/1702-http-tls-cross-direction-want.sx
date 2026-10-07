@@ -166,7 +166,7 @@ impl http.TlsConn for FakeConn {
 
     close :: (self: *FakeConn) {
         a := self.a;
-        mem.destroy(a, self);
+        mem.free(a, self);
     }
 }
 

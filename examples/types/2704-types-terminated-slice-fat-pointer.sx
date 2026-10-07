@@ -14,11 +14,11 @@ main :: () -> i32 {
     s :: "hi";
     print("{} {}\n", @typeName(@typeOf(s)), strlen(s));
 
-    c : [:0]u8 = mem.cloneZ("hi");
+    c : [:0]u8 = mem.cloneZ(context.allocator, "hi");
     print("{} {} {}\n", c.len, c == "hi", c == s);
 
     view : string = c;
-    print("{} {}\n", view.len, mem.clone(c).len);
+    print("{} {}\n", view.len, mem.clone(context.allocator, c).len);
 
     absent : ?[:0]u8 = null;
     present : ?[:0]u8 = c;

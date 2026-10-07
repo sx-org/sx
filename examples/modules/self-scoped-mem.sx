@@ -7,6 +7,6 @@ main :: () {
     values := mem.alloc(gpa, i64, 1);
     values[0] = 42;
     print("value={}\n", values[0]);
-    mem.free(values, gpa);
+    mem.free(gpa, values);
     print("allocations={}\n", gpa.allocCount);
 }

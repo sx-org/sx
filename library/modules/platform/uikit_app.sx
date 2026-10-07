@@ -155,7 +155,7 @@ sxDocument :: (doc: *TextInputSession) -> string {
     committed := doc.committedText();
     marked := doc.markedText();
     at := doc.caret;
-    s := mem.alloc(doc.a, u8, committed.len + marked.len);
+    s := doc.a.alloc(u8, committed.len + marked.len);
     if at > 0 { c.memcpy(s.ptr, committed.ptr, at); }
     if marked.len > 0 { c.memcpy(*s[at], marked.ptr, marked.len); }
     tail := committed.len - at;
@@ -188,7 +188,7 @@ sxIsBackward :: (direction: i64) -> bool =>
 // Outside the document there is no position, which is how UIKit reads nil.
 sxStep :: (doc: *TextInputSession, at: i64, units: i64) -> ?*UITextPosition {
     s := sxDocument(doc);
-    defer mem.free(s, doc.a);
+    defer doc.a.free(s);
     target := bytesToUtf16Offset(s, at) + units;
     if target < 0 { return null; }
     if target > bytesToUtf16Offset(s, s.len) { return null; }
@@ -273,7 +273,7 @@ SxView :: @ObjcClass("SxView", extends = UIView, implements = .[UITextInput]) ex
     textInRange :: (self: *Self, range: *void) -> ?*NSString {
         if doc := sxSession() {
             s := sxDocument(doc);
-            defer mem.free(s, doc.a);
+            defer doc.a.free(s);
             lo := sxClamp(sxLoOf(range), 0, s.len);
             hi := sxClamp(sxHiOf(range), lo, s.len);
             return nsstring(s[lo..hi]);
@@ -352,7 +352,7 @@ SxView :: @ObjcClass("SxView", extends = UIView, implements = .[UITextInput]) ex
     offsetFromPosition_toPosition :: (self: *Self, fromPosition: *void, toPosition: *void) -> i64 {
         if doc := sxSession() {
             s := sxDocument(doc);
-            defer mem.free(s, doc.a);
+            defer doc.a.free(s);
             return bytesToUtf16Offset(s, sxOffsetOf(toPosition)) - bytesToUtf16Offset(s, sxOffsetOf(fromPosition));
         }
         0
@@ -381,7 +381,7 @@ SxView :: @ObjcClass("SxView", extends = UIView, implements = .[UITextInput]) ex
         if doc := sxSession() {
             at := sxOffsetOf(position);
             s := sxDocument(doc);
-            defer mem.free(s, doc.a);
+            defer doc.a.free(s);
             units := bytesToUtf16Offset(s, at);
             if sxIsBackward(direction) {
                 return sxRange(utf16OffsetToBytes(s, if units > 0 then units - 1 else 0), at);

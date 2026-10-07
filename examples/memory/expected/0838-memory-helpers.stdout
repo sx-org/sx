@@ -4,6 +4,7 @@ dot-create: 2
 alloc: 10 40 len=4
 clone: 10 (orig 99)
 cloneZ: [:0]i64 99 len=4 end=0
+allocStringZ: [:0]u8 len=3 first=0 end=0
 resize: 20 60 len=6
 shrink: 99 20 len=2
 realloc: 1234

@@ -12,7 +12,7 @@ PROBE :: ".sx-tmp/spawn-runs-a-child-in-the-given-directory-and-environment/sx-s
 show :: (label: string, argv: []string, opts: process.SpawnOpts) -> bool {
     child, e := process.spawn(argv, opts);
     if e { print("{}: {}\n", label, e); return false; }
-    buf := allocString(256);
+    buf := allocStringZ(256);
     got := child.stdoutRead(buf);
     child.stdoutClose();
     code := child.wait(true);

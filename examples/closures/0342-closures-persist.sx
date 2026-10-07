@@ -53,9 +53,9 @@ main :: () {
     w := Widget{ onTap = tap };
     if h := w.onTap { h(9); }
 
-    mem.free(tap);
-    mem.free(lam);
-    mem.free(fp);
-    mem.free(nom);
-    mem.free(empty);
+    mem.free(context.allocator, tap);
+    mem.free(context.allocator, lam);
+    mem.free(context.allocator, fp);
+    mem.free(context.allocator, nom);
+    mem.free(context.allocator, empty);
 }

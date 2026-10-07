@@ -75,7 +75,7 @@ RouteCtx :: struct {
     decoded: List(string) = .{};
 
     deinit :: (self: *RouteCtx) {
-        for t in self.decoded.items { mem.free(t, self.a); }
+        for t in self.decoded.items { mem.free(self.a, t); }
         self.decoded.deinit(self.a);
         self.params.deinit(self.a);
         self.query.deinit(self.a);

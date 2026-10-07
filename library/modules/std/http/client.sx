@@ -219,7 +219,7 @@ ClientResponse :: struct {
     a: Allocator;
 
     deinit :: (self: *ClientResponse) {
-        mem.free(self.storage, self.a);
+        mem.free(self.a, self.storage);
     }
 
     // Case-insensitive header lookup (`name` lowercase); "" when absent.
@@ -589,7 +589,7 @@ private fetch :: (method: string, url: string, extraHeaders: string, body: strin
     origin := u;
     // The current target's host and path, once a redirect has named it.
     target : ?[]u8 = null;
-    defer if t := target { mem.free(t); };
+    defer if t := target { mem.free(context.allocator, t); };
     req : ClientRequest = .{ method = method, path = u.path, host = u.host, extraHeaders = extraHeaders, body = body };
     hops : i64 = 0;
     first := true;
@@ -609,7 +609,7 @@ private fetch :: (method: string, url: string, extraHeaders: string, body: strin
         owned, text, oe := ownUrl(nu);
         r.deinit();
         if oe { raise oe; }
-        if t := target { mem.free(t); }
+        if t := target { mem.free(context.allocator, t); }
         target = text;
         u = owned;
         req.path = u.path;
@@ -667,7 +667,7 @@ private growResponse :: (buf: []u8, want: i64, limit: ?i64) -> ([]u8, !ClientErr
         if want > l { raise .TooLarge; }
         if n > l { n = l; }
     }
-    grown := mem.resize(buf, context.allocator, n);
+    grown := mem.resize(context.allocator, buf, n);
     if grown == null { raise .Allocation; }
     return grown;
 }
@@ -935,7 +935,7 @@ private recvOn :: (c: *ClientConn) -> (ClientResponse, !ClientErr) {
     buf := mem.alloc(context.allocator, u8, firstCap);
     if buf.ptr == null and firstCap > 0 { raise .Allocation; }
     kept := false;
-    defer if !kept mem.free(buf);
+    defer if !kept mem.free(context.allocator, buf);
     total : i64 = 0;
     headEnd : i64 = -1;
     headerStart : i64 = 0;
@@ -1123,7 +1123,7 @@ ClientPool :: struct {
         if !validFetchHeaders(extraHeaders) { raise .Header; }
         origin := u;
         target : ?[]u8 = null;
-        defer if t := target { mem.free(t); };
+        defer if t := target { mem.free(context.allocator, t); };
         req : ClientRequest = .{ method = method, path = u.path, host = u.host, extraHeaders = extraHeaders, body = body };
         hops : i64 = 0;
         first := true;
@@ -1140,7 +1140,7 @@ ClientPool :: struct {
             owned, text, oe := ownUrl(nu);
             r.deinit();
             if oe { raise oe; }
-            if t := target { mem.free(t); }
+            if t := target { mem.free(context.allocator, t); }
             target = text;
             u = owned;
             req.path = u.path;
@@ -1230,10 +1230,10 @@ ClientPool :: struct {
             if !self.entries.items[i].live { break; }
             i += 1;
         }
-        ne : PoolEntry = .{ host = mem.clone(u.host, self.a), port = u.port,
+        ne : PoolEntry = .{ host = mem.clone(self.a, u.host), port = u.port,
                             https = u.https, conn = c, live = true };
         if i < self.entries.len {
-            mem.free(self.entries.items[i].host, self.a);
+            mem.free(self.a, self.entries.items[i].host);
             self.entries.items[i] = ne;
         } else {
             self.entries.append(ne, self.a);
@@ -1254,7 +1254,7 @@ ClientPool :: struct {
         while i < self.entries.len {
             e: *PoolEntry = *self.entries.items[i];
             if e.live { closeConn(*e.conn); e.live = false; }
-            mem.free(e.host, self.a);
+            mem.free(self.a, e.host);
             i += 1;
         }
         self.entries.deinit(self.a);

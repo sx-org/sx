@@ -15,7 +15,7 @@
 
 main :: () {
     args := cli.osArgs();
-    defer mem.free(args);
+    defer mem.free(context.allocator, args);
 
     if args.len >= 1 { print("argc>=1: ok\n"); }
     else { print("argc>=1: FAIL ({})\n", args.len); }

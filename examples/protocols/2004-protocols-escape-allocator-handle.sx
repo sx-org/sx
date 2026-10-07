@@ -26,10 +26,10 @@ main :: () {
     p := mem.create(H.a, i64);
     p.* = 41 + H.k;
     print("{}\n", p.*);
-    mem.destroy(H.a, p);
+    mem.free(H.a, p);
 
     xs := mem.alloc(A, i64, 3);
     for i in 0..3 { xs[i] = i * 2; }
     print("{} {} {}\n", xs[0], xs[1], xs[2]);
-    mem.free(xs, A);
+    mem.free(A, xs);
 }

@@ -23,7 +23,7 @@ runCatch :: (worker: Closure() -> (i64, !)) {
         print("ok {}\n", v);
     });
     b.run();
-    mem.free(b.run);
+    mem.free(context.allocator, b.run);
 }
 
 // `try` path: the nested closure is itself failable and propagates.
@@ -41,6 +41,6 @@ main :: () -> i64 {
     t := mkTrier(|| -> (i64, !) { 5 });
     r := t() catch { return 1; };
     print("try {}\n", r);                          // try 105
-    mem.free(t);
+    mem.free(context.allocator, t);
     return 0;
 }

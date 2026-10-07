@@ -36,11 +36,11 @@ main :: () -> i32 {
 
     b := store(Button{ label = "Play", alpha = alpha });
     print("stored: {} {}\n", b.label, b.alpha);
-    mem.destroy(context.allocator, b);
+    mem.free(context.allocator, b);
 
     f := storeVia(Button{ label = "Forwarded" });
     print("forwarded: {} {}\n", f.label, f.alpha);
-    mem.destroy(context.allocator, f);
+    mem.free(context.allocator, f);
 
     print("declined: {}\n", countOnly(Button{ label = "never built" }));
     0

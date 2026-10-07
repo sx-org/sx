@@ -32,7 +32,7 @@ Echo :: struct {
         value.write(dest);
         print("  expression #{} -> {}\n", self.n, dest.draw());
         self.n += 1;
-        mem.destroy(context.allocator, dest);
+        mem.free(context.allocator, dest);
     }
 }
 

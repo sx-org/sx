@@ -3,4 +3,4 @@ many=1
 slice-ptr=1
 back=7
 copy=3
-destroy=ok
+free=ok

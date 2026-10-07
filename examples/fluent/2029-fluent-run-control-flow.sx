@@ -36,7 +36,7 @@ Roster :: struct {
             print("  line {} ordinal {} occurrence {} -> {}\n", s?!.line, s?!.ordinal, self.seen, dest.draw());
         }
         self.seen += 1;
-        mem.destroy(context.allocator, dest);
+        mem.free(context.allocator, dest);
     }
 }
 

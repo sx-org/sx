@@ -21,7 +21,7 @@ show :: (root: string, path: string) {
 main :: () -> i32 {
     fs.deleteFile(pathJoin(ROOT, "ws/escape"));
     if !fs.createDirAll(pathJoin(ROOT, "ws/repo")) or !fs.createDirAll(pathJoin(ROOT, "outside"))
-        or symlink("../outside", mem.cloneZ(pathJoin(ROOT, "ws/escape"))) != 0 {
+        or symlink("../outside", mem.cloneZ(context.allocator, pathJoin(ROOT, "ws/escape"))) != 0 {
         print("setup failed\n");
         return 1;
     }

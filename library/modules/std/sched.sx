@@ -894,7 +894,7 @@ T
             print("sched: mprotect(PROT_RW) failed to disarm the stack guard page\n");
             c.abort();
         }
-        mem.free(f.stack, self.ownAllocator);
+        mem.free(self.ownAllocator, f.stack);
         self.ownAllocator.deallocBytes(f);
     }
 

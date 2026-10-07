@@ -88,7 +88,7 @@ impl http.TlsConn for TlsSession {
         _ := mbedtls.mbedtls_ssl_close_notify(*self.ssl);
         mbedtls.mbedtls_ssl_free(*self.ssl);
         a := self.a;
-        mem.destroy(a, self);
+        mem.free(a, self);
     }
 }
 
@@ -280,7 +280,7 @@ TlsServer :: struct {
         if !ok {
             mbedtls.mbedtls_x509_crt_free(*e.cert);
             mbedtls.mbedtls_pk_free(*e.pkey);
-            mem.destroy(self.a, e);
+            mem.free(self.a, e);
             return false;
         }
 
@@ -384,7 +384,7 @@ TlsServer :: struct {
             mbedtls.mbedtls_x509_crt_free(*e.cert);
             mbedtls.mbedtls_pk_free(*e.pkey);
             self.a.deallocBytes(e.name);
-            mem.destroy(self.a, e);
+            mem.free(self.a, e);
             i += 1;
         }
         self.sni.deinit(self.a);
@@ -459,7 +459,7 @@ impl http.TlsAcceptor for TlsServer {
         mbedtls.mbedtls_ssl_init(*s.ssl);
         if mbedtls.mbedtls_ssl_setup(*s.ssl, *self.conf) != 0 {
             mbedtls.mbedtls_ssl_free(*s.ssl);
-            mem.destroy(self.a, s);
+            mem.free(self.a, s);
             return null;
         }
         s.fd = fd;
@@ -569,12 +569,12 @@ impl http.TlsDialer for TlsClientConfig {
         mbedtls.mbedtls_ssl_init(*s.ssl);
         if mbedtls.mbedtls_ssl_setup(*s.ssl, *self.conf) != 0 {
             mbedtls.mbedtls_ssl_free(*s.ssl);
-            mem.destroy(self.a, s);
+            mem.free(self.a, s);
             return null;
         }
         if mbedtls.mbedtls_ssl_set_hostname(*s.ssl, *hb[0]) != 0 {
             mbedtls.mbedtls_ssl_free(*s.ssl);
-            mem.destroy(self.a, s);
+            mem.free(self.a, s);
             return null;
         }
         s.fd = fd;
@@ -586,7 +586,7 @@ impl http.TlsDialer for TlsClientConfig {
         // the dial (timeout, refusal, verification).
         if mbedtls.mbedtls_ssl_handshake(*s.ssl) != 0 {
             mbedtls.mbedtls_ssl_free(*s.ssl);
-            mem.destroy(self.a, s);
+            mem.free(self.a, s);
             return null;
         }
         return s;

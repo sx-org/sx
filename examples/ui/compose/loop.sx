@@ -114,7 +114,7 @@ FrameLoop :: struct {
         .{ root = root, build = build, buildAllocator = buildAllocator };
 
     deinit :: (self: *FrameLoop) {
-        mem.free(self.build, self.buildAllocator)
+        mem.free(self.buildAllocator, self.build)
     }
 
     frame :: (self: *FrameLoop) {

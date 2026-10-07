@@ -31,6 +31,6 @@ main :: () {
 
     s := mem.create(context.allocator, i64);
     s.* = 9;
-    mem.destroy(context.allocator, s);
-    print("destroy=ok\n");
+    mem.free(context.allocator, s);
+    print("free=ok\n");
 }

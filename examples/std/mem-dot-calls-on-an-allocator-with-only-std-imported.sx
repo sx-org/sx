@@ -1,0 +1,10 @@
+// std.sx spreads the mem scope, so mem's ufcs functions dot-call on an
+// Allocator with no other import.
+@import "modules/std.sx";
+main :: () -> i32 {
+    p := context.allocator.create(i64);
+    p.* = 7;
+    print("{}\n", p.*);
+    context.allocator.free(p);
+    0
+}

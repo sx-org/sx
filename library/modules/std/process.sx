@@ -24,8 +24,8 @@ process :: scope {
     // cmd is interpreted by /bin/sh; callers quote shell metacharacters.
     // Null means popen or pclose failed.
     run :: (cmd: string) -> ?ProcessResult {
-        z := mem.cloneZ(cmd);
-        defer mem.free(z);
+        z := mem.cloneZ(context.allocator, cmd);
+        defer mem.free(context.allocator, z);
         f := popen(z, "r");
         if f == null { return null; }
 
@@ -39,7 +39,7 @@ process :: scope {
         out := sb.finish();
         rawStatus := pclose(f);
         if rawStatus < 0 {
-            mem.free(out);
+            mem.free(context.allocator, out);
             return null;
         }
         ProcessResult{ exitCode = decodeStatus(rawStatus), stdout = out }
@@ -55,11 +55,11 @@ process :: scope {
 
     // Copy getenv's buffer because setenv can invalidate it.
     env :: (name: string) -> ?string {
-        z := mem.cloneZ(name);
-        defer mem.free(z);
+        z := mem.cloneZ(context.allocator, name);
+        defer mem.free(context.allocator, z);
         p := getenv(z);
         if p == null { return null; }
-        mem.clone(p[0..])
+        mem.clone(context.allocator, p[0..])
     }
 
     // name must be shell-safe for command -v.
@@ -211,13 +211,13 @@ process :: scope {
         vec : [*]?[*:0]u8 = mem.alloc(context.allocator, ?[*:0]u8, argv.len + 1).ptr;
         i := 0;
         while i < argv.len {
-            vec[i] = mem.cloneZ(argv[i]);
+            vec[i] = mem.cloneZ(context.allocator, argv[i]);
             i += 1;
         }
         vec[argv.len] = null;
         file := vec[0]?!;
         cwdZ : ?[:0]u8 = null;
-        if dir := opts.cwd { cwdZ = mem.cloneZ(dir); }
+        if dir := opts.cwd { cwdZ = mem.cloneZ(context.allocator, dir); }
         envp : ?[]?[*:0]u8 = null;
         if vars := opts.env { envp = childEnv(vars); }
 
@@ -233,7 +233,7 @@ process :: scope {
                 s += 1;
             }
             freeArgv(vec, argv.len);
-            if dir := cwdZ { mem.free(dir); }
+            if dir := cwdZ { mem.free(context.allocator, dir); }
             if p := envp { freeArgv(p.ptr, p.len); }
         }
 
@@ -361,12 +361,12 @@ process :: scope {
         n := 0;
         for e in inherited {
             entry := e?![0..];
-            if !namedIn(vars, envName(entry)) { out[n] = mem.cloneZ(entry); n += 1; }
+            if !namedIn(vars, envName(entry)) { out[n] = mem.cloneZ(context.allocator, entry); n += 1; }
         }
         i := 0;
         while i < vars.len {
             name := envName(vars[i]);
-            if name.len < vars[i].len and !namedIn(vars[i + 1 ..], name) { out[n] = mem.cloneZ(vars[i]); n += 1; }
+            if name.len < vars[i].len and !namedIn(vars[i + 1 ..], name) { out[n] = mem.cloneZ(context.allocator, vars[i]); n += 1; }
             i += 1;
         }
         out[n] = null;

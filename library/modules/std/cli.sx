@@ -97,7 +97,7 @@ cli :: scope {
                         cmdline = read;
                         break;
                     }
-                    mem.free(blob, mem.cAllocator);
+                    mem.free(mem.cAllocator, blob);
                     cap = cap * 2;
                 }
                 k := 0;
@@ -307,7 +307,7 @@ cli :: scope {
         a: Allocator;
 
         deinit :: (self: *Parsed) {
-            mem.free(self.values, self.a);
+            mem.free(self.a, self.values);
         }
 
         // Presence of a declared flag (boolean or value-taking). False for an

@@ -2091,9 +2091,9 @@ Conversion discipline:
   to one, takes either shape.
 - A value whose type carries no terminator does NOT coerce to either,
   whatever its bytes hold — a `string` window, a plain `[N]T`, a `[*]T`.
-  `mem.cloneZ(s, a = context.allocator)` makes an owned `[:0]T` copy,
-  which `mem.free` releases. Library APIs take `string` and terminate at
-  their own C calls: `z := mem.cloneZ(s); defer mem.free(z);`.
+  `mem.cloneZ(a, s)` makes an owned `[:0]T` copy, which `mem.free(a, z)`
+  releases. Library APIs take `string` and terminate at their own C calls:
+  `z := mem.cloneZ(context.allocator, s); defer mem.free(context.allocator, z);`.
 - Dropping the guarantee is implicit: `[:0]u8` → `string` is the
   `[:X]T` → `[]T` arm, so `string` methods take a `[:0]u8` receiver.
 - `[*:0]u8` does not coerce to `[:0]u8` implicitly — the length is an
@@ -3633,9 +3633,9 @@ button := store(Button{ label = "Play" });
 
 ```sx
 mem :: scope {
-    make    :: ufcs (a: Allocator, value: $I/@Init($T)) -> *T;
-    create  :: ufcs (a: Allocator, $T: Type) -> *T;
-    destroy :: ufcs (a: Allocator, p: *$T);
+    make   :: ufcs (a: Allocator, value: $I/@Init($T)) -> *T;
+    create :: ufcs (a: Allocator, $T: Type) -> *T;
+    free   :: ufcs (a: Allocator, x: $T);
 }
 ```
 
@@ -4747,11 +4747,12 @@ therefore use kind-specific operations that would not type-check for other
 kinds (`x.len` in a slice arm, `x.(@Interface)` in an interface arm):
 
 ```sx
-free :: ufcs (x: $T, a: Allocator = context.allocator) {
+free :: ufcs (a: Allocator, x: $T) {
     inline match T {
         case closure:  { env := @reinterpret(@Closure, x).env; if env != null { a.deallocBytes(env); } }
-        case slice:    a.deallocBytes(@reinterpret([*]u8, x.ptr));
-        else:          @error("free expects a closure or a slice");
+        case slice:    a.deallocBytes(x.ptr);
+        case pointer:  a.deallocBytes(x);
+        else:          @error("free expects a closure, a slice or a pointer");
     }
 }
 ```
@@ -5134,7 +5135,7 @@ mem :: scope {
   allocates nothing; `deallocBytes(null)` is a no-op.
   `p := mem.make(alloc, @envOf(f))` is null for a 0-sized env, so an erased empty
   lambda carries a null env word and funds nothing.
-- `mem.free(cl)` / `mem.free(cl, alloc)` releases the env the same allocator funded.
+- `mem.free(alloc, cl)` releases the env through the allocator that funded it.
 
 #### Factory Functions
 A factory either returns the unique lambda or erases it, and the return type says
@@ -5758,11 +5759,12 @@ inline match @host.os {
   only for the instantiations that actually select the arm:
 
 ```sx
-free :: ufcs (x: $T, a: Allocator = context.allocator) {
+free :: ufcs (a: Allocator, x: $T) {
     inline match T {
         case closure:  { ... }
-        case slice:    a.deallocBytes(@reinterpret([*]u8, x.ptr));
-        else:          @error("free expects a closure or a slice");
+        case slice:    a.deallocBytes(x.ptr);
+        case pointer:  a.deallocBytes(x);
+        else:          @error("free expects a closure, a slice or a pointer");
     }
 }
 ```
@@ -6194,11 +6196,39 @@ vendors/              vendored C libraries; the bindings sqlite, mbedtls,
                       gives sqlite.Sqlite
 ```
 
-`@import "modules/std.sx"` gives every prelude name bare, plus `mem.GPA`,
-`json.parse`, `fs.exists`, `hash.sha256Hex`, `log.warn`, ... through the
-carried namespace tail. A self-scoped file supplies its scope on direct
-import: `@import "modules/std/mem.sx";` exposes `mem.GPA`. Unscoped files
-provide bare access, such as `List` from `modules/std/list.sx`.
+`@import "modules/std.sx"` gives every prelude name bare, plus `json.parse`,
+`fs.exists`, `hash.sha256Hex`, `log.warn`, ... through the carried namespace
+tail. std.sx spreads the `mem` scope (`..mem;`), so its surface carries `mem`
+and each of its members bare (`GPA`, `Arena`, `create`, `free`, ...). A
+self-scoped file supplies its scope on direct import:
+`@import "modules/std/mem.sx";` exposes `mem.GPA`. Unscoped files provide bare
+access, such as `List` from `modules/std/list.sx`.
+
+A `ufcs` function of `mem` that allocates or frees takes the allocator as its
+first parameter, with no default, so its dot spelling is a call on the
+allocator wherever mem is spread, std.sx included; a caller wanting the current
+one passes `context.allocator`:
+
+```sx
+mem :: scope {
+    create  :: ufcs (a: Allocator, $T: Type) -> *T;
+    make    :: ufcs (a: Allocator, value: $I/@Init($T)) -> *T;
+    alloc   :: ufcs (a: Allocator, $T: Type, count: i64) -> []T;
+    free    :: ufcs (a: Allocator, x: $T);
+    clone   :: ufcs (a: Allocator, src: []$T) -> []T;
+    cloneZ  :: ufcs (a: Allocator, src: []$T) -> [:0]T;
+    resize  :: ufcs (a: Allocator, slice: []$T, newCount: i64) -> ?[]T;
+    realloc :: ufcs (a: Allocator, ptr: *void, old: i64, new: i64, align: i64) -> *void;
+}
+
+xs := context.allocator.alloc(i64, 4);
+ys := context.allocator.clone(xs);
+context.allocator.free(ys);
+```
+
+`free` releases one item from `create` or `make` (a pointer), a slice, or a
+closure's environment. `allocStringZ :: (size: i64) -> [:0]u8` takes `size`
+zeroed bytes from `context.allocator`.
 
 `modules/std/http.sx` is a scope facade:
 

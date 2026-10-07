@@ -16,23 +16,15 @@ mem :: scope {
         p
     }
 
-    destroy :: ufcs (a: Allocator, ptr: *$T) {
-        a.deallocBytes(ptr);
-    }
-
     alloc :: ufcs (a: Allocator, $T: Type, count: i64) -> []T {
         raw := a.allocBytes(count * @sizeOf(T));
         .{ ptr = raw.([*]T), len = count }
     }
 
-    // The zeroed buffer includes a NUL byte beyond its reported length.
-    allocString :: (size: i64) -> string {
+    allocStringZ :: (size: i64) -> [:0]u8 {
         raw := context.allocator.allocBytes(size + 1);
         c.memset(raw, 0, size + 1);
-        s : string = ---;
-        s.ptr = raw.([*]u8);
-        s.len = size;
-        s
+        .{ ptr = raw.([*]u8), len = size }
     }
 
     allocSlice :: ($T: Type, count: i64) -> []T {
@@ -55,27 +47,27 @@ mem :: scope {
         }
     }
 
-    // The default allocator is the one current at the free, which may differ from the allocator that funded x.
-    free :: ufcs (x: $T, a: Allocator = context.allocator) {
+    free :: ufcs (a: Allocator, x: $T) {
         inline match T {
             case interface:
-                @error("free on an interface handle — a handle borrows its referent and owns nothing; free the referent where it lives ('mem.destroy' for one made by 'mem.make')");
+                @error("free on an interface handle — a handle borrows its referent and owns nothing; free the referent where it lives (for one made by 'mem.make', the pointer it returned)");
             case closure: {
                 env := @reinterpret(@Closure, x).env;
                 if env != null { a.deallocBytes(env); }
             }
             case slice:    a.deallocBytes(x.ptr);
-            else:          @error("free expects a closure or a slice");
+            case pointer:  a.deallocBytes(x);
+            else:          @error("free expects a closure, a slice or a pointer");
         }
     }
 
-    clone :: ufcs (src: []$T, a: Allocator = context.allocator) -> []T {
+    clone :: ufcs (a: Allocator, src: []$T) -> []T {
         raw := a.allocBytes(src.len * @sizeOf(T));
         c.memcpy(raw, src.ptr, src.len * @sizeOf(T));
         .{ ptr = raw.([*]T), len = src.len }
     }
 
-    cloneZ :: ufcs (src: []$T, a: Allocator = context.allocator) -> [:0]T {
+    cloneZ :: ufcs (a: Allocator, src: []$T) -> [:0]T {
         raw := a.allocBytes((src.len + 1) * @sizeOf(T));
         c.memcpy(raw, src.ptr, src.len * @sizeOf(T));
         p := raw.([*]T);
@@ -84,7 +76,7 @@ mem :: scope {
     }
 
     // Failure leaves the original slice live and owned by the caller.
-    resize :: ufcs (slice: []$T, a: Allocator, newCount: i64) -> ?[]T {
+    resize :: ufcs (a: Allocator, slice: []$T, newCount: i64) -> ?[]T {
         raw := a.allocBytes(newCount * @sizeOf(T));
         if raw == null { return null; }
         n := if slice.len < newCount then slice.len else newCount;
@@ -94,7 +86,7 @@ mem :: scope {
     }
 
     // Failure preserves ptr. Alignment beyond the heap's natural alignment is not supported.
-    memRealloc :: ufcs (a: Allocator, ptr: *void, old: i64, new: i64, align: i64) -> *void {
+    realloc :: ufcs (a: Allocator, ptr: *void, old: i64, new: i64, align: i64) -> *void {
         raw := a.allocBytes(new);
         if raw == null { return null; }
         n := if old < new then old else new;

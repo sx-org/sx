@@ -1,14 +1,12 @@
 // Typed allocation helpers over the Allocator protocol (std/mem.sx):
-// create/destroy (one T), alloc/free (slices), clone, cloneZ, resize, and the
-// bytes-level memRealloc. Declared `ufcs` — the dot spelling
+// create (one T), alloc (slices), free (either), clone, cloneZ, resize, and the
+// bytes-level realloc. Declared `ufcs` — the dot spelling
 // (`context.allocator.create(Session)`) and the direct call both hit the
 // same generic machinery. Contents are UNINITIALISED by design
 // (Zig-aligned): assign before reading. TrackingAllocator balances to
 // zero across every pair.
 
 @import "modules/std.sx";
-@import "modules/std/mem.sx";
-..mem;
 
 Session :: struct { id: i64; score: i64; }
 
@@ -17,23 +15,23 @@ main :: () {
     tracker := mem.TrackingAllocator.init(gpa);
     a : Allocator = tracker;
 
-    // create / destroy — direct spelling
+    // create / free — direct spelling
     s := mem.create(a, Session);
     s.id = 7; s.score = 42;
     print("create: {} {}\n", s.id, s.score);
-    mem.destroy(a, s);
+    mem.free(a, s);
 
     // create — dot spelling on a local Allocator
     p := a.create(Session);
     p.id = 1;
     print("local-dot-create: {}\n", p.id);
-    a.destroy(p);
+    a.free(p);
 
     // create — canonical dot spelling on context.allocator
     q := context.allocator.create(Session);
     q.id = 2;
     print("dot-create: {}\n", q.id);
-    context.allocator.destroy(q);
+    context.allocator.free(q);
 
     // alloc / free — typed slice
     xs := a.alloc(i64, 4);
@@ -41,34 +39,39 @@ main :: () {
     print("alloc: {} {} len={}\n", xs[0], xs[3], xs.len);
 
     // clone — independent copy (canonical dot spelling)
-    ys := xs.clone(a);
+    ys := a.clone(xs);
     xs[0] = 99;
     print("clone: {} (orig {})\n", ys[0], xs[0]);
-    ys.free(a);
+    a.free(ys);
 
     // cloneZ — the copy's terminator lies one past its length
-    zt := xs.cloneZ(a);
+    zt := a.cloneZ(xs);
     print("cloneZ: {} {} len={} end={}\n", @typeName(@typeOf(zt)), zt[0], zt.len, zt.ptr[zt.len]);
-    zt.free(a);
+    a.free(zt);
+
+    // allocStringZ — zeroed bytes from context.allocator, terminated past its length
+    t := mem.allocStringZ(3);
+    print("allocStringZ: {} len={} first={} end={}\n", @typeName(@typeOf(t)), t.len, t[0], t.ptr[t.len]);
+    mem.free(context.allocator, t);
 
     // resize — grow (copies, old backing freed); null when the allocation fails
-    grown := xs.resize(a, 6);
+    grown := a.resize(xs, 6);
     if grown == null { return; }
     zs : []i64 = grown;
     zs[5] = 60;
     print("resize: {} {} len={}\n", zs[1], zs[5], zs.len);
     // resize — shrink
-    shrunk := zs.resize(a, 2);
+    shrunk := a.resize(zs, 2);
     if shrunk == null { return; }
     ws : []i64 = shrunk;
     print("shrink: {} {} len={}\n", ws[0], ws[1], ws.len);
-    ws.free(a);
+    a.free(ws);
 
-    // memRealloc — bytes level
+    // realloc — bytes level
     raw := a.allocBytes(8);
     q : *i64 = raw;
     q.* = 1234;
-    raw2 := mem.memRealloc(a, raw, 8, 16, 8);
+    raw2 := mem.realloc(a, raw, 8, 16, 8);
     q2 : *i64 = raw2;
     print("realloc: {}\n", q2.*);
     a.deallocBytes(raw2);
