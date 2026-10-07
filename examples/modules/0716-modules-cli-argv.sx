@@ -6,16 +6,16 @@
 // pin exact strings:
 //   - argc >= 1            (every process has argv[0])
 //   - argv[0] is non-empty (the executable path)
-//   - osArgc() agrees with the filled slice length (no truncation)
+//   - osArgc() agrees with the slice length
 //
-// `buf` is a stack `[64]string`; `osArgs` fills it with zero-copy views
-// over the C runtime's argv block — no heap, no per-arg allocation.
+// `osArgs` returns zero-copy views over the C runtime's argv block, in a
+// slice from `context.allocator` that the caller frees.
 
 @import "modules/std.sx";
 
 main :: () {
-    buf : [64]string = ---;
-    args := cli.osArgs(buf[0..64]);
+    args := cli.osArgs();
+    defer mem.free(args);
 
     if args.len >= 1 { print("argc>=1: ok\n"); }
     else { print("argc>=1: FAIL ({})\n", args.len); }
