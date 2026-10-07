@@ -5,16 +5,16 @@
 //
 // The blocking surface:
 //   • `recv`/`recvOn` read Content-Length, close-delimited, or chunked
-//     responses into storage from the allocator they are given, which the
+//     responses into storage from `context.allocator`, which the
 //     ClientResponse holds until `deinit` returns it. Chunk framing is
 //     removed, and gzip/deflate is decoded incrementally unless
 //     ClientOpts.acceptCompression is false. ClientOpts.maxResponseBytes
 //     bounds the bytes a response buffers.
 //   • `send`/`sendOn` build each request in one allocation from
 //     `context.allocator` and free it before returning.
-//   • `method` and the `path`/`host`/`extraHeaders` of `send`/`sendOn`/
-//     `request` are sent verbatim (no CRLF sanitisation) — pass trusted
-//     values. `fetch` validates its `extraHeaders`.
+//   • A ClientRequest's `method`, `path`, `host` and `extraHeaders` are
+//     sent verbatim (no CRLF sanitisation) — pass trusted values. `fetch`
+//     validates its `extraHeaders`.
 @import "modules/std/http/wire.sx";
 @import "modules/std/core.sx";         // Allocator
 @import "modules/std/fmt.sx";          // concat, intToString
@@ -192,6 +192,17 @@ private connReadStep :: (c: *ClientConn, buf: [*]u8, cap: i64) -> i64 {
     return n;
 }
 
+// One HTTP/1.1 request, as `send`, `sendOn` and `request` write it.
+// `extraHeaders` is preformatted "Name: value\r\n" lines (may be ""); a
+// Content-Length is added automatically for a non-empty `body`.
+ClientRequest :: struct {
+    method: string = "GET";
+    path: string = "/";
+    host: string = "";
+    extraHeaders: string = "";
+    body: string = "";
+}
+
 // A parsed HTTP response. `headersRaw` is the raw block between the status
 // line and the body; `body` is the entity body. Every view points into
 // `storage`, from `a`, until `deinit` returns it.
@@ -230,12 +241,10 @@ private dial :: (ip: u32, port: i64) -> (i32, !ClientErr) {
     return c.fd;
 }
 
-// Send one HTTP/1.1 request on `fd`. `extraHeaders` is preformatted
-// "Name: value\r\n" lines (may be ""); a Content-Length is added automatically
-// for a non-empty `body`.
-private send :: (fd: i32, method: string, path: string, host: string, extraHeaders: string, body: string) -> !ClientErr {
+// Send one HTTP/1.1 request on `fd`.
+private send :: (fd: i32, req: ClientRequest) -> !ClientErr {
     conn : ClientConn = .{ fd = fd };
-    return sendOn(*conn, method, path, host, extraHeaders, body);
+    return sendOn(*conn, req);
 }
 
 // Parse the status code out of a status line "HTTP/1.1 200 OK". Returns
@@ -259,57 +268,57 @@ private parseStatusLine :: (line: string) -> (i64, string) {
     return code, reason;
 }
 
-// Read a full response on `fd` into storage from `a`, using the same
-// transfer/content decoding as recvOn.
-private recv :: (fd: i32, requestMethod: string = "GET", maxResponseBytes: ?i64 = null, a: Allocator = context.allocator) -> (ClientResponse, !ClientErr) {
+// Read a full response on `fd`, using the same transfer/content decoding as
+// recvOn.
+private recv :: (fd: i32, requestMethod: string = "GET", maxResponseBytes: ?i64 = null) -> (ClientResponse, !ClientErr) {
     conn : ClientConn = .{ fd = fd, requestWasHead = ceAsciiIeq(requestMethod, "head"), maxResponseBytes = maxResponseBytes };
-    recvOn(*conn, a)
+    recvOn(*conn)
 }
 
 // Send one HTTP/1.1 request on an open ClientConn (TLS-aware `send`).
 // The request is built into ONE allocation and freed before returning — no
 // arena required, nothing retained (a concat chain would leak every
 // intermediate into the caller's context). `credentials` false leaves the
-// Authorization and Cookie lines of `extraHeaders` out.
-private sendOn :: (c: *ClientConn, method: string, path: string, host: string, extraHeaders: string, body: string, credentials: bool = true) -> !ClientErr {
+// Authorization and Cookie lines of `req.extraHeaders` out.
+private sendOn :: (c: *ClientConn, req: ClientRequest, credentials: bool = true) -> !ClientErr {
     advertise := c.acceptCompression
-        and !hasHeader(extraHeaders, "accept-encoding")
-        and !hasHeader(extraHeaders, "range");
+        and !hasHeader(req.extraHeaders, "accept-encoding")
+        and !hasHeader(req.extraHeaders, "range");
     // Content-Length digits on the stack.
     clbuf : [20]u8 = ---;
     cln : i64 = 0;
-    if body.len > 0 {
-        v := body.len;
+    if req.body.len > 0 {
+        v := req.body.len;
         tmp : [20]u8 = ---;
         tn : i64 = 0;
         while v > 0 { tmp[tn] = ('0' + v % 10).(u8); v = v / 10; tn += 1; }
         while tn > 0 { tn -= 1; clbuf[cln] = tmp[tn]; cln += 1; }
     }
-    total := method.len + 1 + path.len + 11            // "<m> <p> HTTP/1.1\r\n"
-           + 6 + host.len + 2;                         // "Host: <h>\r\n"
-    if body.len > 0 { total += 16 + cln + 2; }         // "Content-Length: <n>\r\n"
+    total := req.method.len + 1 + req.path.len + 11            // "<m> <p> HTTP/1.1\r\n"
+           + 6 + req.host.len + 2;                             // "Host: <h>\r\n"
+    if req.body.len > 0 { total += 16 + cln + 2; }             // "Content-Length: <n>\r\n"
     if advertise { total += HDR_ACCEPT_ENCODING.len; }
-    total += extraHeaders.len + 2 + body.len;         // "<extra>\r\n<body>"
+    total += req.extraHeaders.len + 2 + req.body.len;          // "<extra>\r\n<body>"
     p : [*]u8 = mem.alloc(context.allocator, u8, total).ptr;
     w : i64 = 0;
-    w = put(p, w, method);
+    w = put(p, w, req.method);
     p[w] = ' '; w += 1;
-    w = put(p, w, path);
+    w = put(p, w, req.path);
     w = put(p, w, " HTTP/1.1\r\n");
     w = put(p, w, "Host: ");
-    w = put(p, w, host);
+    w = put(p, w, req.host);
     w = put(p, w, "\r\n");
-    if body.len > 0 {
+    if req.body.len > 0 {
         w = put(p, w, "Content-Length: ");
         cli : i64 = 0;
         while cli < cln { p[w] = clbuf[cli]; w += 1; cli += 1; }
         w = put(p, w, "\r\n");
     }
-    if credentials { w = put(p, w, extraHeaders); }
-    else { w = putWithoutCredentials(p, w, extraHeaders); }
+    if credentials { w = put(p, w, req.extraHeaders); }
+    else { w = putWithoutCredentials(p, w, req.extraHeaders); }
     if advertise { w = put(p, w, HDR_ACCEPT_ENCODING); }
     w = put(p, w, "\r\n");
-    w = put(p, w, body);
+    w = put(p, w, req.body);
 
     sent : i64 = 0;
     failed := false;
@@ -320,7 +329,7 @@ private sendOn :: (c: *ClientConn, method: string, path: string, host: string, e
     }
     context.allocator.deallocBytes(p);
     if failed { raise .Send; }
-    c.requestWasHead = ceAsciiIeq(method, "head");
+    c.requestWasHead = ceAsciiIeq(req.method, "head");
     return;
 }
 
@@ -443,10 +452,10 @@ private parseUrl :: (url: string) -> (Url, bool) {
     return u, true;
 }
 
-// `u` with its host and path copied into `text`, one allocation from `a`
-// that the caller frees.
-private ownUrl :: (u: Url, a: Allocator) -> (Url, []u8, !ClientErr) {
-    text := mem.alloc(a, u8, u.host.len + u.path.len);
+// `u` with its host and path copied into `text`, one allocation from
+// `context.allocator` that the caller frees.
+private ownUrl :: (u: Url) -> (Url, []u8, !ClientErr) {
+    text := mem.alloc(context.allocator, u8, u.host.len + u.path.len);
     if text.ptr == null { raise .Allocation; }
     put(text.ptr, put(text.ptr, 0, u.host), u.path);
     o := u;
@@ -461,10 +470,10 @@ private sameOrigin :: (origin: Url, u: Url) -> bool {
     return origin.https == u.https and origin.port == u.port and ceAsciiIeq(origin.host, u.host);
 }
 
-// One request against a parsed URL over a FRESH connection; the conn is
-// returned (still open) alongside the response for the caller to reuse or
-// close. `verifyHost` is the TLS name ("" = the URL host).
-private fetchHop :: (u: Url, method: string, extraHeaders: string, credentials: bool, body: string, opts: ClientOpts, verifyHost: string, a: Allocator) -> (ClientConn, ClientResponse, !ClientErr) {
+// `req` sent to `u` over a FRESH connection; the conn is returned (still
+// open) alongside the response for the caller to reuse or close.
+// `verifyHost` is the TLS name ("" = the URL host).
+private fetchHop :: (u: Url, req: ClientRequest, credentials: bool, opts: ClientOpts, verifyHost: string) -> (ClientConn, ClientResponse, !ClientErr) {
     o := opts;
     if u.https {
         if o.tls == null { raise .Tls; }   // never plaintext to an https target
@@ -475,9 +484,9 @@ private fetchHop :: (u: Url, method: string, extraHeaders: string, credentials: 
     }
     c, oe := open(u.host, u.port, o);
     if oe { raise oe; }
-    se := sendOn(*c, method, u.path, u.host, extraHeaders, body, credentials);
+    se := sendOn(*c, req, credentials);
     if se { closeConn(*c); raise se; }
-    r, re := recvOn(*c, a);
+    r, re := recvOn(*c);
     if re { closeConn(*c); raise re; }
     return c, r;
 }
@@ -570,24 +579,23 @@ private isRedirect :: (status: i64) -> bool {
 // Host, Content-Length or Transfer-Encoding raises `ClientErr.Header`
 // before any connection opens.
 //
-// Each hop's response is read into storage from `a`; a redirect's is
-// returned to `a` once its Location is copied, and the returned response
-// holds its own until `deinit`.
-private fetch :: (method: string, url: string, extraHeaders: string, body: string, opts: ClientOpts, a: Allocator = context.allocator) -> (ClientResponse, !ClientErr) {
+// Each hop's response is read into storage from `context.allocator`; a
+// redirect's is returned once its Location is copied, and the returned
+// response holds its own until `deinit`.
+private fetch :: (method: string, url: string, extraHeaders: string, body: string, opts: ClientOpts) -> (ClientResponse, !ClientErr) {
     u, ok := parseUrl(url);
     if !ok { raise .Url; }
     if !validFetchHeaders(extraHeaders) { raise .Header; }
     origin := u;
     // The current target's host and path, once a redirect has named it.
     target : ?[]u8 = null;
-    defer if t := target { mem.free(t, a); };
-    m := method;
-    b := body;
+    defer if t := target { mem.free(t); };
+    req : ClientRequest = .{ method = method, path = u.path, host = u.host, extraHeaders = extraHeaders, body = body };
     hops : i64 = 0;
     first := true;
     while true {
         vh := if first then opts.tlsHost else "";
-        c, r, he := fetchHop(u, m, extraHeaders, sameOrigin(origin, u), b, opts, vh, a);
+        c, r, he := fetchHop(u, req, sameOrigin(origin, u), opts, vh);
         if he { raise he; }
         closeConn(*c);
         if !isRedirect(r.status) or opts.maxRedirects <= 0 { return r; }
@@ -598,15 +606,17 @@ private fetch :: (method: string, url: string, extraHeaders: string, body: strin
         if hops > opts.maxRedirects { r.deinit(); raise .Redirect; }
         nu := resolveLocation(u, loc);
         if nu == null { r.deinit(); raise .Url; }
-        owned, text, oe := ownUrl(nu, a);
+        owned, text, oe := ownUrl(nu);
         r.deinit();
         if oe { raise oe; }
-        if t := target { mem.free(t, a); }
+        if t := target { mem.free(t); }
         target = text;
         u = owned;
+        req.path = u.path;
+        req.host = u.host;
         if status == 301 or status == 302 or status == 303 {
-            m = "GET";
-            b = "";
+            req.method = "GET";
+            req.body = "";
         }
         first = false;
     }
@@ -649,7 +659,7 @@ private finishContentDecoder :: (decoder: *Decoder, output: string) -> (i64, boo
 
 // `buf` grown to at least `want` bytes and at most `limit`, doubling its
 // length and keeping its bytes. `.TooLarge` when `want` passes `limit`.
-private growResponse :: (buf: []u8, want: i64, limit: ?i64, a: Allocator) -> ([]u8, !ClientErr) {
+private growResponse :: (buf: []u8, want: i64, limit: ?i64) -> ([]u8, !ClientErr) {
     if want <= buf.len { return buf; }
     n := buf.len * 2;
     if n < want { n = want; }
@@ -657,17 +667,17 @@ private growResponse :: (buf: []u8, want: i64, limit: ?i64, a: Allocator) -> ([]
         if want > l { raise .TooLarge; }
         if n > l { n = l; }
     }
-    grown := mem.resize(buf, a, n);
+    grown := mem.resize(buf, context.allocator, n);
     if grown == null { raise .Allocation; }
     return grown;
 }
 
 // The unwritten tail of `buf.*` from `at`, grown first when it is empty;
 // "" once `buf.*` has reached `limit`.
-private outputWindow :: (buf: *[]u8, at: i64, limit: ?i64, a: Allocator) -> (string, !ClientErr) {
+private outputWindow :: (buf: *[]u8, at: i64, limit: ?i64) -> (string, !ClientErr) {
     if at >= buf.len {
         if l := limit { if buf.len >= l { return ""; } }
-        buf.* = try growResponse(buf.*, at + 1, limit, a);
+        buf.* = try growResponse(buf.*, at + 1, limit);
     }
     return buf.*[at ..];
 }
@@ -707,12 +717,12 @@ private normalizeDecodedHeaders :: (raw: [*]u8, len: i64) -> i64 {
 // close-delimited responses do not require buffering their encoded form.
 // `initial` is the body prefix that arrived with the header read and is
 // copied before output can overwrite it.
-private recvEncodedBody :: (c: *ClientConn, buf: *[]u8, limit: ?i64, a: Allocator, headEnd: i64,
+private recvEncodedBody :: (c: *ClientConn, buf: *[]u8, limit: ?i64, headEnd: i64,
                       initial: string, contentLen: i64, chunked: bool,
                       contentEncoding: Encoding) -> (i64, !ClientErr) {
     outputCap : i64 = i64.max;
     if l := limit { outputCap = l - headEnd; }
-    decoder := Decoder.init(contentEncoding, outputCap, a) catch |e| {
+    decoder := Decoder.init(contentEncoding, outputCap, context.allocator) catch |e| {
         if e == .AllocationFailed { raise .Allocation; }
         raise .Recv;
     };
@@ -761,7 +771,7 @@ private recvEncodedBody :: (c: *ClientConn, buf: *[]u8, limit: ?i64, a: Allocato
             if contentLen >= 0 and take > fixedLeft { take = fixedLeft; }
             if decoderDone and take > 0 { raise .Recv; }
             while take > 0 {
-                output := try outputWindow(buf, headEnd + outputAt, limit, a);
+                output := try outputWindow(buf, headEnd + outputAt, limit);
                 consumed, produced, done := try feedContentDecoder(*decoder,
                     string{ ptr = *wire[wireAt], len = take }, output);
                 wireAt += consumed;
@@ -786,7 +796,7 @@ private recvEncodedBody :: (c: *ClientConn, buf: *[]u8, limit: ?i64, a: Allocato
             take := if available < chunkLeft then available else chunkLeft;
             if decoderDone and take > 0 { raise .Recv; }
             while take > 0 {
-                output := try outputWindow(buf, headEnd + outputAt, limit, a);
+                output := try outputWindow(buf, headEnd + outputAt, limit);
                 consumed, produced, done := try feedContentDecoder(*decoder,
                     string{ ptr = *wire[wireAt], len = take }, output);
                 wireAt += consumed;
@@ -881,7 +891,7 @@ private recvEncodedBody :: (c: *ClientConn, buf: *[]u8, limit: ?i64, a: Allocato
     }
 
     while !decoderDone {
-        output := try outputWindow(buf, headEnd + outputAt, limit, a);
+        output := try outputWindow(buf, headEnd + outputAt, limit);
         produced, done := try finishContentDecoder(*decoder, output);
         outputAt += produced;
         decoderDone = done;
@@ -918,14 +928,14 @@ private responseHeadEnd :: (buf: [*]u8, len: i64) -> i64 {
     -1
 }
 
-private recvOn :: (c: *ClientConn, a: Allocator = context.allocator) -> (ClientResponse, !ClientErr) {
+private recvOn :: (c: *ClientConn) -> (ClientResponse, !ClientErr) {
     limit := c.maxResponseBytes;
     firstCap : i64 = CLIENT_WIRE_PIECE;
     if l := limit { if l < firstCap { firstCap = l; } }
-    buf := mem.alloc(a, u8, firstCap);
+    buf := mem.alloc(context.allocator, u8, firstCap);
     if buf.ptr == null and firstCap > 0 { raise .Allocation; }
     kept := false;
-    defer if !kept mem.free(buf, a);
+    defer if !kept mem.free(buf);
     total : i64 = 0;
     headEnd : i64 = -1;
     headerStart : i64 = 0;
@@ -996,7 +1006,7 @@ private recvOn :: (c: *ClientConn, a: Allocator = context.allocator) -> (ClientR
                         if encoding == .unacceptable { raise .Recv; }
                     }
                     if encoding != .identity {
-                        decoded = try recvEncodedBody(c, *buf, limit, a, headEnd,
+                        decoded = try recvEncodedBody(c, *buf, limit, headEnd,
                             buf[headEnd .. total], contentLen, chunked, encoding);
                         decodedFrom = if encoding == .gzip then ContentCoding.gzip else ContentCoding.deflate;
                         normalizedHeadersLen = normalizeDecodedHeaders(*buf[headerStart], headEnd - 2 - headerStart);
@@ -1028,7 +1038,7 @@ private recvOn :: (c: *ClientConn, a: Allocator = context.allocator) -> (ClientR
             }
         }
 
-        buf = try growResponse(buf, total + 1, limit, a);
+        buf = try growResponse(buf, total + 1, limit);
         room := buf.len - total;
         if headEnd < 0 and room > CLIENT_WIRE_PIECE { room = CLIENT_WIRE_PIECE; }
         n := connReadStep(c, *buf[total], room);
@@ -1061,17 +1071,17 @@ private recvOn :: (c: *ClientConn, a: Allocator = context.allocator) -> (ClientR
         body = buf[headEnd .. headEnd + bodyLen],
         decodedFrom = decodedFrom,
         storage = buf,
-        a = a,
+        a = context.allocator,
     };
 }
 
-// Convenience: dial ip:port, send the request, read the response into
-// storage from `a`, close the connection. One blocking round-trip.
-private request :: (ip: u32, port: i64, method: string, path: string, host: string, extraHeaders: string, body: string, maxResponseBytes: ?i64 = null, a: Allocator = context.allocator) -> (ClientResponse, !ClientErr) {
+// Convenience: dial ip:port, send `req`, read the response, close the
+// connection. One blocking round-trip.
+private request :: (ip: u32, port: i64, req: ClientRequest, maxResponseBytes: ?i64 = null) -> (ClientResponse, !ClientErr) {
     fd := try dial(ip, port);
     defer socket.close(fd);
-    try send(fd, method, path, host, extraHeaders, body);
-    return recv(fd, method, maxResponseBytes, a);
+    try send(fd, req);
+    return recv(fd, req.method, maxResponseBytes);
 }
 
 // ── keep-alive connection pool ────────────────────────────────
@@ -1105,20 +1115,20 @@ ClientPool :: struct {
     // Fetch through the pool. Redirect hops are followed with the SAME
     // pooling (each hop reuses/creates its host's entry). `extraHeaders`
     // is validated, `method`, `extraHeaders` and `body` are sent, and each
-    // response is read into storage from `a`, as by the free `fetch`.
-    fetch :: (self: *ClientPool, method: string, url: string, extraHeaders: string, body: string, a: Allocator = context.allocator) -> (ClientResponse, !ClientErr) {
+    // response is read into storage from `context.allocator`, as by the
+    // free `fetch`.
+    fetch :: (self: *ClientPool, method: string, url: string, extraHeaders: string, body: string) -> (ClientResponse, !ClientErr) {
         u, ok := parseUrl(url);
         if !ok { raise .Url; }
         if !validFetchHeaders(extraHeaders) { raise .Header; }
         origin := u;
         target : ?[]u8 = null;
-        defer if t := target { mem.free(t, a); };
-        m := method;
-        b := body;
+        defer if t := target { mem.free(t); };
+        req : ClientRequest = .{ method = method, path = u.path, host = u.host, extraHeaders = extraHeaders, body = body };
         hops : i64 = 0;
         first := true;
         while true {
-            r := try self.hop(u, m, extraHeaders, sameOrigin(origin, u), b, first, a);
+            r := try self.hop(u, req, sameOrigin(origin, u), first);
             if !isRedirect(r.status) or self.opts.maxRedirects <= 0 { return r; }
             loc := r.header("location");
             if loc.len == 0 { return r; }
@@ -1127,15 +1137,17 @@ ClientPool :: struct {
             if hops > self.opts.maxRedirects { r.deinit(); raise .Redirect; }
             nu := resolveLocation(u, loc);
             if nu == null { r.deinit(); raise .Url; }
-            owned, text, oe := ownUrl(nu, a);
+            owned, text, oe := ownUrl(nu);
             r.deinit();
             if oe { raise oe; }
-            if t := target { mem.free(t, a); }
+            if t := target { mem.free(t); }
             target = text;
             u = owned;
+            req.path = u.path;
+            req.host = u.host;
             if status == 301 or status == 302 or status == 303 {
-                m = "GET";
-                b = "";
+                req.method = "GET";
+                req.body = "";
             }
             first = false;
         }
@@ -1149,7 +1161,7 @@ ClientPool :: struct {
     // alive signature). Every receipt failure after bytes arrived
     // (TooLarge/BadStatus/Recv) propagates AS ITSELF: the server may have
     // executed the request, and re-sending would double side effects.
-    hop :: (self: *ClientPool, u: Url, method: string, extraHeaders: string, credentials: bool, body: string, first: bool, a: Allocator) -> (ClientResponse, !ClientErr) {
+    hop :: (self: *ClientPool, u: Url, req: ClientRequest, credentials: bool, first: bool) -> (ClientResponse, !ClientErr) {
         idx := self.find(u);
         reused := idx >= 0 and self.entries.items[idx].live;
         attempt : i64 = 0;
@@ -1161,14 +1173,14 @@ ClientPool :: struct {
                 reused = false;
             }
             e: *PoolEntry = *self.entries.items[idx];
-            se := sendOn(*e.conn, method, u.path, u.host, extraHeaders, body, credentials);
+            se := sendOn(*e.conn, req, credentials);
             if se {
                 self.drop(idx);
                 idx = -1;
                 if reused and attempt == 0 { attempt += 1; reused = false; continue; }
                 raise se;
             }
-            r, re := recvOn(*e.conn, a);
+            r, re := recvOn(*e.conn);
             if re {
                 self.drop(idx);
                 idx = -1;
@@ -1253,16 +1265,14 @@ Client :: struct {
     // Open a blocking TCP connection to ip:port (see free `dial`).
     dial :: (ip: u32, port: i64) -> (i32, !ClientErr) { return dial(ip, port); }
     // Send one request on an open fd (see free `send`).
-    send :: (fd: i32, method: string, path: string, host: string, extraHeaders: string, body: string) -> !ClientErr {
-        return send(fd, method, path, host, extraHeaders, body);
-    }
+    send :: (fd: i32, req: ClientRequest) -> !ClientErr { return send(fd, req); }
     // Read a full response on an open fd (see free `recv`).
-    recv :: (fd: i32, requestMethod: string = "GET", maxResponseBytes: ?i64 = null, a: Allocator = context.allocator) -> (ClientResponse, !ClientErr) {
-        return recv(fd, requestMethod, maxResponseBytes, a);
+    recv :: (fd: i32, requestMethod: string = "GET", maxResponseBytes: ?i64 = null) -> (ClientResponse, !ClientErr) {
+        return recv(fd, requestMethod, maxResponseBytes);
     }
     // One blocking round-trip: dial → send → recv → close (see free `request`).
-    request :: (ip: u32, port: i64, method: string, path: string, host: string, extraHeaders: string, body: string, maxResponseBytes: ?i64 = null, a: Allocator = context.allocator) -> (ClientResponse, !ClientErr) {
-        return request(ip, port, method, path, host, extraHeaders, body, maxResponseBytes, a);
+    request :: (ip: u32, port: i64, req: ClientRequest, maxResponseBytes: ?i64 = null) -> (ClientResponse, !ClientErr) {
+        return request(ip, port, req, maxResponseBytes);
     }
     // ── sessions (see the free functions above) ────────────────
     open :: (host: string, port: i64, opts: ClientOpts) -> (ClientConn, !ClientErr) {
@@ -1271,15 +1281,11 @@ Client :: struct {
     openAddr :: (a: *socket.Addr, opts: ClientOpts) -> (ClientConn, !ClientErr) {
         return openAddr(a, opts);
     }
-    sendOn :: (c: *ClientConn, method: string, path: string, host: string, extraHeaders: string, body: string) -> !ClientErr {
-        return sendOn(c, method, path, host, extraHeaders, body);
-    }
-    recvOn :: (c: *ClientConn, a: Allocator = context.allocator) -> (ClientResponse, !ClientErr) {
-        return recvOn(c, a);
-    }
+    sendOn :: (c: *ClientConn, req: ClientRequest) -> !ClientErr { return sendOn(c, req); }
+    recvOn :: (c: *ClientConn) -> (ClientResponse, !ClientErr) { return recvOn(c); }
     closeConn :: (c: *ClientConn) { closeConn(c); }
     // ── (see the free `fetch`) ─────────────────────────────────
-    fetch :: (method: string, url: string, extraHeaders: string, body: string, opts: ClientOpts, a: Allocator = context.allocator) -> (ClientResponse, !ClientErr) {
-        return fetch(method, url, extraHeaders, body, opts, a);
+    fetch :: (method: string, url: string, extraHeaders: string, body: string, opts: ClientOpts) -> (ClientResponse, !ClientErr) {
+        return fetch(method, url, extraHeaders, body, opts);
     }
 }

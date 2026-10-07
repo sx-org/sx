@@ -607,9 +607,10 @@ subprocess-isolated, on macOS and validated end-to-end on aarch64-Linux.
   verification, or the loudly-named `insecure()`; TLS 1.3 session tickets
   handled), chunked transfer decoding plus bounded transparent gzip/deflate
   content decoding, and truncated responses surfaced as errors — never a
-  padded body. Each `ClientResponse` holds its bytes in storage from the
-  allocator the read was given, until its `deinit`;
-  `ClientOpts.maxResponseBytes` bounds them.
+  padded body. A `ClientRequest` (method, path, host, extraHeaders, body)
+  is what `send`/`sendOn`/`request` write. Each `ClientResponse` holds its
+  bytes in storage from the `context.allocator` current at the read, until
+  its `deinit`; `ClientOpts.maxResponseBytes` bounds them.
   `ClientOpts.acceptCompression=false` retains the coded representation
   instead.
   `Client.fetch(method, url, extraHeaders, body, …)` adds URL parsing,

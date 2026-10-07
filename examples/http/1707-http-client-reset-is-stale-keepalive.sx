@@ -38,7 +38,7 @@ main :: () -> i32 {
     if afd < 0 { print("accept failed\n"); return 3; }
 
     // The request lands in afd's receive queue and is never read.
-    se := http.Client.sendOn(*c, "GET", "/hello", "127.0.0.1", "", "");
+    se := http.Client.sendOn(*c, .{ path = "/hello", host = "127.0.0.1" });
     if se { print("sendOn failed\n"); return 4; }
 
     // Let it arrive, then close with it unread → RST rather than FIN.

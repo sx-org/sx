@@ -1,8 +1,8 @@
-// Each fetch hop reads its response into storage from the fetch's allocator: a
-// redirect's is returned once its Location is copied out, the final one when
-// the caller deinits it. Header blocks and bodies viewing earlier responses
-// are sent on every hop of an absolute-then-relative chain, by the free fetch
-// and by a pool.
+// Each fetch hop reads its response into storage from the allocator current at
+// the fetch: a redirect's is returned once its Location is copied out, the
+// final one when the caller deinits it. Header blocks and bodies viewing
+// earlier responses are sent on every hop of an absolute-then-relative chain,
+// by the free fetch and by a pool.
 @import "modules/std.sx";
 @import "modules/std/http.sx";
 

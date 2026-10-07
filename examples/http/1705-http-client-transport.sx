@@ -114,7 +114,7 @@ run :: () -> i32 {
     optsPlain : http.ClientOpts = .{ connectTimeoutMs = 2000, ioTimeoutMs = 3000 };
     connA, ea := http.Client.open("localhost", srv.cfg.port, optsPlain);
     if ea { srv.stop(); t.join(); return 10; }
-    sa := http.Client.sendOn(*connA, "GET", "/", "t", "", "");
+    sa := http.Client.sendOn(*connA, .{ host = "t" });
     if sa { http.Client.closeConn(*connA); srv.stop(); t.join(); return 11; }
     ra, rae := http.Client.recvOn(*connA);
     if rae { http.Client.closeConn(*connA); srv.stop(); t.join(); return 12; }
@@ -127,7 +127,7 @@ run :: () -> i32 {
     // ── C. chunked response, then keep-alive reuse on the same conn ──
     connC, ec := http.Client.open("127.0.0.1", srv.cfg.port, optsPlain);
     if ec { srv.stop(); t.join(); return 13; }
-    sc := http.Client.sendOn(*connC, "GET", "/chunky", "t", "", "");
+    sc := http.Client.sendOn(*connC, .{ path = "/chunky", host = "t" });
     if sc { http.Client.closeConn(*connC); srv.stop(); t.join(); return 14; }
     rvc, rce := http.Client.recvOn(*connC);
     if rce { http.Client.closeConn(*connC); srv.stop(); t.join(); return 15; }
@@ -137,7 +137,7 @@ run :: () -> i32 {
     rvc.deinit();
     // keep-alive: the chunked framing must be FULLY consumed — a second
     // request on the same conn parses cleanly.
-    sc2 := http.Client.sendOn(*connC, "GET", "/", "t", "", "");
+    sc2 := http.Client.sendOn(*connC, .{ host = "t" });
     if sc2 { http.Client.closeConn(*connC); srv.stop(); t.join(); return 16; }
     rc2, rc2e := http.Client.recvOn(*connC);
     if rc2e { http.Client.closeConn(*connC); srv.stop(); t.join(); return 17; }
@@ -152,7 +152,7 @@ run :: () -> i32 {
     optsSmall.maxResponseBytes = 4096;
     connC2, ec2 := http.Client.open("127.0.0.1", srv.cfg.port, optsSmall);
     if ec2 { srv.stop(); t.join(); return 18; }
-    sc3 := http.Client.sendOn(*connC2, "GET", "/chunky", "t", "", "");
+    sc3 := http.Client.sendOn(*connC2, .{ path = "/chunky", host = "t" });
     if sc3 { http.Client.closeConn(*connC2); srv.stop(); t.join(); return 18; }
     _, rce2 := http.Client.recvOn(*connC2);
     http.Client.closeConn(*connC2);
@@ -169,7 +169,7 @@ run :: () -> i32 {
     if !uok { usrv.stop(); ut.join(); srv.stop(); t.join(); return 22; }
     connU, eu := http.Client.openAddr(*uaddr, optsPlain);
     if eu { usrv.stop(); ut.join(); srv.stop(); t.join(); return 23; }
-    su := http.Client.sendOn(*connU, "GET", "/", "t", "", "");
+    su := http.Client.sendOn(*connU, .{ host = "t" });
     ru, rue := http.Client.recvOn(*connU);
     http.Client.closeConn(*connU);
     usrv.stop();
@@ -200,7 +200,7 @@ run :: () -> i32 {
                                     tls = xx *tcc, tlsHost = "client-transport.test" };
     connT, et := http.Client.open("127.0.0.1", tsrv.cfg.port, optsTls);
     if et { tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 34; }
-    st := http.Client.sendOn(*connT, "GET", "/", "t", "", "");
+    st := http.Client.sendOn(*connT, .{ host = "t" });
     rt, rte := http.Client.recvOn(*connT);
     http.Client.closeConn(*connT);
     if st { tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 35; }
@@ -225,7 +225,7 @@ run :: () -> i32 {
                                     tls = xx *icc, tlsHost = "whatever.test" };
     connI, ei := http.Client.open("127.0.0.1", tsrv.cfg.port, optsIns);
     if ei { icc.deinit(); wcc.deinit(); tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 38; }
-    si := http.Client.sendOn(*connI, "GET", "/", "t", "", "");
+    si := http.Client.sendOn(*connI, .{ host = "t" });
     ri, rie := http.Client.recvOn(*connI);
     http.Client.closeConn(*connI);
     tsrv.stop();
@@ -285,7 +285,7 @@ run :: () -> i32 {
     // accept(), which close(muteL) does NOT reliably wake — skip the join
     // on this failure path (process exit reaps it) rather than deadlock.
     if ef { socket.close(muteL); srv.stop(); t.join(); return 54; }
-    sf := http.Client.sendOn(*connF, "GET", "/", "t", "", "");
+    sf := http.Client.sendOn(*connF, .{ host = "t" });
     if sf { http.Client.closeConn(*connF); socket.close(muteL); mt.join(); srv.stop(); t.join(); return 55; }
     rf, rfe := http.Client.recvOn(*connF);
     if !rfe { rf.deinit(); http.Client.closeConn(*connF); socket.close(muteL); mt.join(); srv.stop(); t.join(); return 56; }   // MUST time out, not hang

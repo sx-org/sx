@@ -1,14 +1,15 @@
 // std.http — client conveniences: URL fetch, redirect following, and
 // keep-alive connection pooling.
 //
-//   Client.fetch(method, url, extraHeaders, body, opts, a)
+//   Client.fetch(method, url, extraHeaders, body, opts)
 //       — parse the URL (http/https, host, optional :port, path), open
 //         (https requires opts.tls — `ClientErr.Tls` without), send with the
-//         caller's header lines, receive into storage from `a` (the
-//         response's `deinit` returns it), and follow redirects up to
-//         opts.maxRedirects: 301/302/303 switch to GET and drop the body;
-//         307/308 keep method + body; a cross-host Location re-resolves and
-//         re-dials. Exceeding the cap is `ClientErr.Redirect`.
+//         caller's header lines, receive into storage from
+//         `context.allocator` (the response's `deinit` returns it), and
+//         follow redirects up to opts.maxRedirects: 301/302/303 switch to
+//         GET and drop the body; 307/308 keep method + body; a cross-host
+//         Location re-resolves and re-dials. Exceeding the cap is
+//         `ClientErr.Redirect`.
 //   ClientOpts.maxRedirects (default 5; 0 = return the 3xx as-is)
 //   ClientPool
 //       — single-threaded keep-alive reuse keyed host:port:

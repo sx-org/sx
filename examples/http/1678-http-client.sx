@@ -38,7 +38,7 @@ main :: () -> i32 {
             t, te := thread.Thread.spawn(srvEntry, *srv);
             if te { print("spawn failed\n"); rc = 1; }
             else {
-                r1, e1 := http.Client.request(LOOPBACK, srv.cfg.port, "GET", "/hello", "t", "", "");
+                r1, e1 := http.Client.request(LOOPBACK, srv.cfg.port, .{ path = "/hello", host = "t" });
                 if e1 { print("GET /hello errored\n"); rc = 1; }
                 else {
                     if r1.status != 200 or r1.body != "world" {
@@ -47,7 +47,7 @@ main :: () -> i32 {
                     r1.deinit();
                 }
 
-                r2, e2 := http.Client.request(LOOPBACK, srv.cfg.port, "POST", "/echo", "t", "", "ping-pong");
+                r2, e2 := http.Client.request(LOOPBACK, srv.cfg.port, .{ method = "POST", path = "/echo", host = "t", body = "ping-pong" });
                 if e2 { print("POST /echo errored\n"); rc = 1; }
                 else {
                     if r2.status != 200 or r2.body != "ping-pong" {
@@ -60,7 +60,7 @@ main :: () -> i32 {
                     r2.deinit();
                 }
 
-                r3, e3 := http.Client.request(LOOPBACK, srv.cfg.port, "GET", "/missing", "t", "", "");
+                r3, e3 := http.Client.request(LOOPBACK, srv.cfg.port, .{ path = "/missing", host = "t" });
                 if e3 { print("GET /missing errored\n"); rc = 1; }
                 else {
                     if r3.status != 404 {
@@ -69,7 +69,7 @@ main :: () -> i32 {
                     r3.deinit();
                 }
 
-                _, e4 := http.Client.request(LOOPBACK, srv.cfg.port, "GET", "/hello", "t", "", "", 16);
+                _, e4 := http.Client.request(LOOPBACK, srv.cfg.port, .{ path = "/hello", host = "t" }, 16);
                 if e4 != .TooLarge { print("bounded GET /hello did not raise TooLarge\n"); rc = 1; }
 
                 srv.stop();
