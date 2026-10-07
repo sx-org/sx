@@ -248,9 +248,9 @@ websocket :: scope {
     // Open a WebSocket to `url` — ws:// or wss://host[:port][/path] — sending
     // `headers`, preformatted "Name: value\r\n" lines, with the upgrade
     // request. `opts` dials as http.Client does: connectTimeoutMs bounds the
-    // connect, ioTimeoutMs each later read or write of the handshake,
-    // sendText and close, opts.tls carries wss, and maxResponseBytes bounds
-    // each inbound message.
+    // connect, ioTimeoutMs each write and each read outside recv and ping
+    // (which take their own timeouts), opts.tls carries wss, and
+    // maxResponseBytes bounds each inbound message.
     connect :: (url: string, headers: string, opts: http.ClientOpts) -> (Client, !Error) {
         u, ok := parseUrl(url);
         if !ok { raise .Url; }

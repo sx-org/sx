@@ -229,6 +229,68 @@ srv.run();   // each instance owns its loop, slots, buffers, stats
 
 ---
 
+## WebSocket
+
+`std/http/websocket.sx` (scope `websocket`, imported explicitly) speaks RFC
+6455 text messages on both sides — no extensions, no binary frames.
+
+A route handler makes its own checks and then calls `websocket.accept`. A
+valid upgrade answers 101 with `Sec-WebSocket-Accept`; an invalid one answers
+400, or 426 for a version other than 13; a handler that refuses answers an
+ordinary response.
+
+```sx
+hWs :: (rc: *http.RouteCtx) {
+    if http.findHeader(rc.req, "authorization") != "Bearer t" { rc.resp.status = 401; return; }
+    websocket.accept(rc, .{ onOpen = onOpen, onText = onText, onClose = onClose, ctx = *state });
+}
+```
+
+- Once the 101 is written the connection leaves the server and runs on a
+  thread of its own: it holds no pool worker, and no handler, request or
+  keep-alive deadline applies to it. `Server.stop` and `close` leave it
+  alone. The mechanism is `Response.upgrade`, open to any protocol switch:
+  the server calls `Upgrade.take` with the socket, its TLS session and the
+  bytes read past the request.
+- The callbacks run on that thread, one at a time, each receiving `ctx` as
+  `*void`. `onText` gets whole messages — fragments reassembled, a message
+  past `maxMessage` failing the connection with 1009. `onClose` gets the
+  peer's close code, the code a protocol fault failed the connection with,
+  or 1006 when it ended without a close frame.
+- A `*websocket.Conn` is valid from `onOpen` until `onClose` returns.
+  `sendText` and `close` are safe from any thread in that span and return
+  `Closed` once the peer is gone — never SIGPIPE. Share a Conn across
+  threads under a lock that `onClose` takes to drop it.
+- Every `pingIntervalMs` the server pings; a ping still unanswered at the
+  next interval ends the connection as 1006, through `onClose`.
+- The Conn and its buffers come from the Server's allocator, which must be
+  thread-safe; the callbacks allocate through a GPA of their own thread.
+
+The client is blocking and single-threaded:
+
+```sx
+ws, e := websocket.connect("wss://host/ws", "Authorization: Bearer t\r\n", opts);
+ws.sendText("hi") catch {};
+m, re := ws.recv(3000);        // the next text, or the peer's close
+...
+m.deinit();
+ws.ping("p", 3000) catch {};   // awaits the pong
+ws.close(1000) catch {};       // returns the client's storage
+```
+
+`opts` is an `http.ClientOpts`: `connectTimeoutMs` bounds the connect,
+`ioTimeoutMs` each write and each read outside `recv` and `ping` (which take
+their own timeouts), `tls` dials wss://, and `maxResponseBytes` bounds each
+inbound message. A non-101 answer is
+`Error.Refused`. The client masks its frames, answers the server's pings
+while it reads, and holds its storage — and each Message's — in the
+`context.allocator` current at `connect`.
+
+See `examples/http/websocket-upgraded-route-frees-its-pool-worker.sx` and the
+other `websocket-*` examples.
+
+---
+
 ## Negotiated response compression
 
 Response compression is off by default. Enable it explicitly:
@@ -590,6 +652,9 @@ subprocess-isolated, on macOS and validated end-to-end on aarch64-Linux.
   per-request handler timeout (hard in pool mode).
 - `http.Router`: method+path routing, path params, query/urlencoded-form
   parsing, JSON request/response helpers (over `std/json`).
+- WebSocket (`std/http/websocket.sx`): the server upgrade inside a route
+  handler and the ws:// / wss:// client, text messages only; protocol
+  switches in general through `Response.upgrade`.
 - Underlying `std/socket`, `std/event`, `std/thread`, `std/mem` — the stable
   subset this server stands on; per-OS-correct on macOS + Linux.
 
