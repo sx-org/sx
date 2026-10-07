@@ -396,8 +396,8 @@ private startsWith :: (s: string, prefix: string) -> bool {
 }
 
 // Minimal absolute URL: scheme://host[:port][/path...]. Bracketed v6
-// literals supported ([::1]:8080); userinfo/query-split/fragments are the
-// caller's problem (the path view carries everything after the authority).
+// literals supported ([::1]:8080). The path view carries everything after
+// the authority up to the fragment; userinfo and the query are not split.
 private parseUrl :: (url: string) -> (Url, bool) {
     u : Url = .{};
     rest := "";
@@ -446,17 +446,7 @@ private parseUrl :: (url: string) -> (Url, bool) {
         if rest[ps] != '/' { return u, false; }   // junk between port and path
         u.path = string{ ptr = *rest.ptr[ps], len = rest.len - ps };
     }
-    // RFC 9112: the fragment is never part of the request
-    // target — strip it here so neither fetch loop sends one on the wire.
-    fi : i64 = 0;
-    while fi < u.path.len {
-        if u.path[fi] == '#' {
-            u.path = string{ ptr = u.path.ptr, len = fi };
-            break;
-        }
-        fi += 1;
-    }
-    if u.path.len == 0 { u.path = "/"; }
+    u.path = stripFragment(u.path);
     return u, true;
 }
 
@@ -509,6 +499,20 @@ private stripFragment :: (s: string) -> string {
     }
     if i == 0 { return "/"; }
     return string{ ptr = s.ptr, len = i };
+}
+
+// The target a redirect's Location `loc` names from `u`, or null when `loc`
+// is neither an absolute http(s) URL nor `/`-relative. A relative one keeps
+// `u`'s scheme, host and port. The path views `loc` without its fragment.
+private resolveLocation :: (u: Url, loc: string) -> ?Url {
+    if loc.len > 0 and loc[0] == '/' {
+        t := u;
+        t.path = stripFragment(loc);
+        return t;
+    }
+    t, ok := parseUrl(loc);
+    if !ok { return null; }
+    return t;
 }
 
 private connectionSaysClose :: (v: string) -> bool {
@@ -629,16 +633,9 @@ private fetch :: (method: string, url: string, extraHeaders: string, body: strin
         pathp = np;
         freeing = true;
 
-        if startsWith(locv, "http://") or startsWith(locv, "https://") {
-            nu, nok := parseUrl(locv);
-            if !nok { context.allocator.deallocBytes(pathp); raise .Url; }
-            u = nu;   // host/path view pathp — copied into hostb / kept owned next iteration
-        } else if locv.len > 0 and locv[0] == '/' {   // '/'-relative: keep authority
-            u.path = stripFragment(locv);   // parseUrl strips the absolute arm
-        } else {
-            context.allocator.deallocBytes(pathp);
-            raise .Url;   // relative-without-slash — unsupported
-        }
+        nu := resolveLocation(u, locv);
+        if nu == null { context.allocator.deallocBytes(pathp); raise .Url; }
+        u = nu;
         if r.status == 301 or r.status == 302 or r.status == 303 {
             m = "GET";
             b = "";
@@ -1150,16 +1147,9 @@ ClientPool :: struct {
             if freeing { context.allocator.deallocBytes(pathp); }
             pathp = np;
             freeing = true;
-            if startsWith(locv, "http://") or startsWith(locv, "https://") {
-                nu, nok := parseUrl(locv);
-                if !nok { context.allocator.deallocBytes(pathp); raise .Url; }
-                u = nu;
-            } else if locv.len > 0 and locv[0] == '/' {
-                u.path = locv;
-            } else {
-                context.allocator.deallocBytes(pathp);
-                raise .Url;
-            }
+            nu := resolveLocation(u, locv);
+            if nu == null { context.allocator.deallocBytes(pathp); raise .Url; }
+            u = nu;
             if r.status == 301 or r.status == 302 or r.status == 303 {
                 m = "GET";
                 b = "";

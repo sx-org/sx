@@ -1,0 +1,38 @@
+// A pooled fetch follows a `/`-relative Location without its fragment: the
+// request line carries the path alone.
+@import "modules/std.sx";
+@import "modules/std/http.sx";
+
+answer :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    if req.path == "/r" {
+        resp.status = 302;
+        resp.addHeader("Location", "/t#frag");
+        return;
+    }
+    resp.body = format("path={}", req.path);
+}
+
+srvEntry :: (arg: *void) -> *void abi(.c) {
+    srv : *http.Server = arg;
+    gpa := GPA.init();
+    push .{ allocator = gpa } {
+        srv.run();
+    }
+    return null;
+}
+
+main :: () -> i32 {
+    srv, se := http.Server.init(.{ port = 0, timeoutRequestMs = 5000 }, answer, 0);
+    if se { return 1; }
+    t, te := thread.Thread.spawn(srvEntry, *srv);
+    if te { return 1; }
+    buf : [8192]u8 = ---;
+    pool := http.ClientPool.init(.{ connectTimeoutMs = 2000, ioTimeoutMs = 3000 });
+    r, e := pool.fetch("GET", format("http://127.0.0.1:{}/r", srv.cfg.port), "", "", *buf[0], 8192);
+    pool.close();
+    if e { print("{}\n", e); } else { print("{}\n", r.body); }
+    srv.stop();
+    t.join();
+    srv.close();
+    0
+}
