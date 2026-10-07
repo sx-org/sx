@@ -16,17 +16,10 @@
 // and CAAnimation begin times.
 CACurrentMediaTime :: () -> f64 extern;
 
-// CGSize is a 2-element f64 HFA. arm64 Apple ABI puts it in d0,d1.
+// CGFloat is `f64` on 64-bit Apple targets.
+CGPoint :: struct { x: f64; y: f64; }
 CGSize :: struct { width: f64; height: f64; }
-
-// CGRect is a 4-element f64 HFA: Apple ARM64 keeps it in v0..v3 for
-// both the return slot and the argument slot.
-CGRect :: struct {
-    x: f64;
-    y: f64;
-    width: f64;
-    height: f64;
-}
+CGRect :: struct { origin: CGPoint; size: CGSize; }
 
 CALayer :: @ObjcClass("CALayer", extends = NSObject) extern {
     setOpaque :: (self: *Self, opaque: i8);

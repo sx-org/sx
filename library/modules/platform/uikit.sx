@@ -22,14 +22,6 @@ dlsym             :: (handle: *void, name: [*]u8) -> *void extern;
 // kEAGLRenderingAPIOpenGLES3 = 3
 EAGL_API_GLES3 :: 3;
 
-// CGFloat is a `double` on 64-bit Apple platforms; CGPoint = {x, y} fits in
-// 16 bytes and returns via the FP-register path on arm64.
-CGPoint :: struct { x: f64; y: f64; }
-
-// UIEdgeInsets = {top, left, bottom, right} CGFloats — 32 bytes; exceeds the
-// 16-byte registers cutoff so it returns via the x8 indirect-result-pointer
-// convention. sx generates the right call sequence when the function-pointer
-// type declares it as a by-value struct return.
 UIEdgeInsets :: struct {
     top: f64;
     left: f64;
@@ -543,8 +535,8 @@ impl Platform for UIKitPlatform {
         if glView := self.glView {
             b := glView.bounds();
 
-            wPts : f64 = b.width;
-            hPts : f64 = b.height;
+            wPts : f64 = b.size.width;
+            hPts : f64 = b.size.height;
             self.viewportW = wPts.(f32);
             self.viewportH = hPts.(f32);
 
@@ -571,7 +563,7 @@ impl Platform for UIKitPlatform {
         view : *UIView = ---;
         if v := self.glView { view = v; } else { return; }
         viewBounds := view.bounds();
-        viewH : f32 = viewBounds.height.(f32);
+        viewH : f32 = viewBounds.size.height.(f32);
 
         // The spring is evaluated at the frame's target timestamp, one
         // vsync ahead of the presentation layer.
@@ -607,7 +599,7 @@ impl Platform for UIKitPlatform {
                     live := layer.presentationLayer();
                     if live != null {
                         inView := view.convertRect_fromView(live.frame(), kbView.superview());
-                        top = inView.y.(f32);
+                        top = inView.origin.y.(f32);
                     }
                 }
             }
@@ -620,8 +612,8 @@ impl Platform for UIKitPlatform {
         if layer != null {
             b := layer.bounds();
             y : f64 = -self.kb.offset.(f64);
-            if b.y != y {
-                layer.setBounds(CGRect{ x = b.x, y = y, width = b.width, height = b.height });
+            if b.origin.y != y {
+                layer.setBounds(CGRect{ origin = .{ x = b.origin.x, y = y }, size = b.size });
             }
         }
     }
@@ -652,16 +644,16 @@ impl Platform for UIKitPlatform {
         // the more accurate end position.
         if kbView := uikitKeyboardView() {
             kf := kbView.layer().frame();
-            dw := kf.width - end.width; if dw < 0.0 { dw = 0.0 - dw; }
-            dh := kf.height - end.height; if dh < 0.0 { dh = 0.0 - dh; }
-            dx := kf.x - end.x; if dx < 0.0 { dx = 0.0 - dx; }
-            if dw < 0.5 and dh < 0.5 and dx < 0.5 { end.y = kf.y; }
+            dw := kf.size.width - end.size.width; if dw < 0.0 { dw = 0.0 - dw; }
+            dh := kf.size.height - end.size.height; if dh < 0.0 { dh = 0.0 - dh; }
+            dx := kf.origin.x - end.origin.x; if dx < 0.0 { dx = 0.0 - dx; }
+            if dw < 0.5 and dh < 0.5 and dx < 0.5 { end.origin.y = kf.origin.y; }
         }
 
         bounds := view.bounds();
-        viewH : f32 = bounds.height.(f32);
+        viewH : f32 = bounds.size.height.(f32);
         inView := view.convertRect_fromView(end, null);
-        overlap : f32 = viewH - inView.y.(f32);
+        overlap : f32 = viewH - inView.origin.y.(f32);
         if overlap < 0.0 { overlap = 0.0; }
         if overlap > viewH { overlap = viewH; }
 
@@ -712,7 +704,7 @@ impl Platform for UIKitPlatform {
         view : *UIView = ---;
         if v := self.glView { view = v; } else { return; }
         bounds := view.bounds();
-        viewH : f32 = bounds.height.(f32);
+        viewH : f32 = bounds.size.height.(f32);
         location := recognizer.locationInView(view);
         y : f32 = location.y.(f32);
         state := recognizer.state();
