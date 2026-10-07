@@ -1,0 +1,18 @@
+// On x86_64 Windows a union of up to 8 bytes crosses the C boundary as an
+// integer by its size, whatever its storage member, and a struct of a float
+// array crosses as an integer too: the homogeneous-float register rule is
+// AArch64's.
+
+@import "modules/std/core.sx";
+
+FI :: union { f: f32; i: i32; }
+PA :: struct { a: [2]f32; }
+
+cFI :: (u: FI) -> FI extern;
+cPA :: (p: PA) -> f32 extern;
+
+main :: () -> i32 {
+    u := cFI(.{ i = 1 });
+    s := cPA(PA{ a = .[1.25, 2.5] });
+    return u.i + s.(i32);
+}

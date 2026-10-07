@@ -200,10 +200,8 @@ sxStep :: (doc: *TextInputSession, at: i64, units: i64) -> ?*UITextPosition {
 
 sxCgRect :: (f: Frame) -> CGRect {
     CGRect{
-        x = f.origin.x.(f64),
-        y = f.origin.y.(f64),
-        width = f.size.width.(f64),
-        height = f.size.height.(f64),
+        origin = .{ x = f.origin.x.(f64), y = f.origin.y.(f64) },
+        size = .{ width = f.size.width.(f64), height = f.size.height.(f64) },
     }
 }
 

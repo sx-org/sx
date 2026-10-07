@@ -1,0 +1,17 @@
+// On AArch64 Linux a union of 9 to 16 bytes aligned to 16 crosses the C
+// boundary as one 128-bit integer, which starts at an even register; one
+// aligned to 8 crosses as two 64-bit words.
+
+@import "modules/std/core.sx";
+
+Wide :: union { v: @Vector(4, f32); b: [16]u8; }
+Pair :: union { a: [2]i64; d: f64; }
+
+cWide :: (a: i64, u: Wide) -> Wide extern;
+cPair :: (a: i64, u: Pair) -> Pair extern;
+
+main :: () -> i32 {
+    w := cWide(1, .{ b = .[2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] });
+    p := cPair(3, .{ a = .[4, 5] });
+    return w.b[0].(i32) + p.a[0].(i32);
+}

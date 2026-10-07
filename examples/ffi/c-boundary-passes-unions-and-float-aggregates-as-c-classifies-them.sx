@@ -1,0 +1,51 @@
+// A union crosses the C boundary as C passes it, by its members and not as
+// its storage member. On AArch64 a struct or union whose leaves, flat or
+// nested, are one to four floats of one type or vectors of one size crosses
+// in SIMD and FP registers, whole or not at all. An sx `abi(.c)` function's
+// result crosses the same way and reads back as its sx type.
+
+@import "modules/std.sx";
+
+@import c {
+    @source "c-boundary-passes-unions-and-float-aggregates-as-c-classifies-them.c";
+};
+
+FI :: union { f: f32; i: i32; }
+HU :: union { a: f32; b: [2]f32; }
+Big :: union { a: [3]i64; d: f64; }
+PA :: struct { a: [2]f32; }
+P2 :: struct { x: f32; y: f32; }
+V2 :: struct { a: @Vector(4, f32); b: @Vector(4, f32); }
+
+readFI :: (u: FI) -> i32 extern;
+sumHU :: (u: HU) -> f32 extern;
+makeHU :: (x: f32, y: f32) -> HU extern;
+sumBig :: (u: Big) -> i64 extern;
+makeBig :: (x: i64) -> Big extern;
+sumPA :: (p: PA) -> f32 extern;
+sumP2After7 :: (a: f64, b: f64, c: f64, d: f64, e: f64, f: f64, g: f64, p: P2) -> f32 extern;
+scaleV2 :: (v: V2, k: f32) -> f32 extern;
+callSxReadFI :: (i: i32) -> i32 extern;
+
+sxReadFI :: (u: FI) -> i32 export { u.i }
+sxMakePA :: (x: f32) -> PA abi(.c) { PA{ a = .[x, x + 2.0] } }
+
+main :: () -> i32 {
+    v2 := V2{ a = .{ 1.0, 2.0, 3.0, 4.0 }, b = .{ 0.5, 0.5, 0.5, 0.5 } };
+    fi : FI = .{ i = 1234 };
+    print("readFI {}\n", readFI(fi));
+    hu : HU = .{ b = .[1.25, 2.5] };
+    print("sumHU {}\n", sumHU(hu));
+    made := makeHU(0.5, 4.0);
+    print("makeHU {} {}\n", made.b[0], made.b[1]);
+    big : Big = .{ a = .[10, 20, 30] };
+    print("sumBig {}\n", sumBig(big));
+    mb := makeBig(7);
+    print("makeBig {} {} {}\n", mb.a[0], mb.a[1], mb.a[2]);
+    print("sumPA {}\n", sumPA(PA{ a = .[1.25, 2.5] }));
+    print("sumP2After7 {}\n", sumP2After7(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, P2{ x = 1.25, y = 2.5 }));
+    print("callSxReadFI {}\n", callSxReadFI(4321));
+    print("sxMakePA {}\n", sxMakePA(1.25).a[1]);
+    print("scaleV2 {}\n", scaleV2(v2, 2.0));
+    0
+}

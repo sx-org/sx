@@ -1,8 +1,8 @@
 // Focused FP-aggregate (HFA)
-// FFI test. All-float / all-double aggregates of ≤4 fields stay as
-// struct values in LLVM and pass through the float register file
-// (AAPCS64 v0..v3, SysV AMD64 xmm0..xmm7). Distinct from the int
-// register-coercion paths (i64 / [2 x i64]).
+// FFI test. All-float / all-double aggregates of ≤4 fields pass
+// through the float register file (AAPCS64 v0..v3, SysV AMD64
+// xmm0..xmm7). Distinct from the int register-coercion paths
+// (i64 / [2 x i64]).
 //
 // FQuad — 16 B, four f32     (same slot as ffi-02's Vec4f)
 // DQuad — 32 B, four f64     (UIEdgeInsets-shape HFA)

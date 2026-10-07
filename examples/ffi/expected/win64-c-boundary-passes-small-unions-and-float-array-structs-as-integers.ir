@@ -1,0 +1,38 @@
+
+@kDefaultContext = internal constant {} zeroinitializer
+
+; Function Attrs: nounwind
+declare i64 @cFI(i64) #0
+
+; Function Attrs: nounwind
+declare float @cPA(i64) #0
+
+; Function Attrs: nounwind
+define i32 @main() #0 {
+entry:
+  %alloca = alloca { float }, align 8
+  store i32 1, ptr %alloca, align 4
+  %load = load { float }, ptr %alloca, align 4
+  %abi.tmp = alloca i64, align 8
+  store i64 0, ptr %abi.tmp, align 8
+  store { float } %load, ptr %abi.tmp, align 4
+  %abi.coerce = load i64, ptr %abi.tmp, align 8
+  %call = call i64 @cFI(i64 %abi.coerce)
+  %abi.ret.tmp = alloca i64, align 8
+  store i64 %call, ptr %abi.ret.tmp, align 8
+  %abi.ret.coerce = load { float }, ptr %abi.ret.tmp, align 4
+  %allocaN = alloca { float }, align 8
+  store { float } %abi.ret.coerce, ptr %allocaN, align 4
+  %abi.tmp2 = alloca i64, align 8
+  store i64 0, ptr %abi.tmp2, align 8
+  store { [2 x float] } { [2 x float] [float 1.250000e+00, float 2.500000e+00] }, ptr %abi.tmp2, align 4
+  %abi.coerce3 = load i64, ptr %abi.tmp2, align 8
+  %callN = call float @cPA(i64 %abi.coerce3)
+  %allocaN = alloca float, align 4
+  store float %callN, ptr %allocaN, align 4
+  %loadN = load i32, ptr %allocaN, align 4
+  %loadN = load float, ptr %allocaN, align 4
+  %fptosi = fptosi float %loadN to i32
+  %add = add i32 %loadN, %fptosi
+  ret i32 %add
+}

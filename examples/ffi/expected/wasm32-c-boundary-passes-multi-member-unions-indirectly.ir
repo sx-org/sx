@@ -1,0 +1,53 @@
+
+@kDefaultContext = internal constant {} zeroinitializer
+
+; Function Attrs: nounwind
+declare void @cNum(ptr sret({ i32 }), ptr) #0
+
+; Function Attrs: nounwind
+declare { i8 } @cByte({ i8 }) #0
+
+; Function Attrs: nounwind
+declare { <3 x float> } @cLanes({ <3 x float> }) #0
+
+; Function Attrs: nounwind
+define i32 @main() #0 {
+entry:
+  %alloca = alloca { i32 }, align 8
+  store i32 1, ptr %alloca, align 4
+  %load = load { i32 }, ptr %alloca, align 4
+  %mem = alloca { i32 }, align 8
+  %memN = alloca { i32 }, align 8
+  store { i32 } %load, ptr %memN, align 4
+  call void @cNum(ptr sret({ i32 }) %mem, ptr %memN)
+  %part = load { i32 }, ptr %mem, align 4
+  %allocaN = alloca { i32 }, align 8
+  store { i32 } %part, ptr %allocaN, align 4
+  %allocaN = alloca { i8 }, align 8
+  store i8 2, ptr %allocaN, align 1
+  %loadN = load { i8 }, ptr %allocaN, align 1
+  %call = call { i8 } @cByte({ i8 } %loadN)
+  %allocaN = alloca { i8 }, align 8
+  store { i8 } %call, ptr %allocaN, align 1
+  %allocaN = alloca { <16 x i8> }, align 16
+  store <3 x float> <float 3.000000e+00, float 4.000000e+00, float 5.000000e+00>, ptr %allocaN, align 16
+  %loadN = load { <16 x i8> }, ptr %allocaN, align 16
+  %abi.pun = alloca { <16 x i8> }, align 16
+  store { <16 x i8> } %loadN, ptr %abi.pun, align 16
+  %abi.pun.ld = load { <3 x float> }, ptr %abi.pun, align 16
+  %callN = call { <3 x float> } @cLanes({ <3 x float> } %abi.pun.ld)
+  %abi.pun9 = alloca { <3 x float> }, align 16
+  store { <3 x float> } %callN, ptr %abi.pun9, align 16
+  %abi.pun.ld10 = load { <16 x i8> }, ptr %abi.pun9, align 16
+  %allocaN = alloca { <16 x i8> }, align 16
+  store { <16 x i8> } %abi.pun.ld10, ptr %allocaN, align 16
+  %loadN = load i32, ptr %allocaN, align 4
+  %loadN = load i8, ptr %allocaN, align 1
+  %zext = zext i8 %loadN to i32
+  %add = add i32 %loadN, %zext
+  %loadN = load <3 x float>, ptr %allocaN, align 16
+  %ve = extractelement <3 x float> %loadN, i32 0
+  %fptosi = fptosi float %ve to i32
+  %addN = add i32 %add, %fptosi
+  ret i32 %addN
+}

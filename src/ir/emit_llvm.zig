@@ -3083,6 +3083,16 @@ pub const LLVMEmitter = struct {
             _ = c.LLVMBuildStore(self.builder, val, tmp);
             return c.LLVMBuildLoad2(self.builder, param_ty, tmp, "abi.ret.coerce.arr");
         }
+        // Struct → Struct of the same size (a wasm32 union and the struct of
+        // its one member), through memory.
+        if (val_kind == c.LLVMStructTypeKind and param_kind == c.LLVMStructTypeKind) {
+            const dl = c.LLVMGetModuleDataLayout(self.llvm_module);
+            if (c.LLVMABISizeOfType(dl, val_ty) == c.LLVMABISizeOfType(dl, param_ty)) {
+                const tmp = self.buildEntryAlloca(val_ty, "abi.pun");
+                _ = c.LLVMBuildStore(self.builder, val, tmp);
+                return c.LLVMBuildLoad2(self.builder, param_ty, tmp, "abi.pun.ld");
+            }
+        }
         // Array → Ptr (array decay: alloca + GEP to first element)
         if (val_kind == c.LLVMArrayTypeKind and param_kind == c.LLVMPointerTypeKind) {
             const tmp = self.buildEntryAlloca(val_ty, "ca.arr");
