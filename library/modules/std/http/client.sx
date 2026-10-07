@@ -1067,11 +1067,11 @@ private recvOn :: (c: *ClientConn, a: Allocator = context.allocator) -> (ClientR
 
 // Convenience: dial ip:port, send the request, read the response into
 // storage from `a`, close the connection. One blocking round-trip.
-private request :: (ip: u32, port: i64, method: string, path: string, host: string, extraHeaders: string, body: string, a: Allocator = context.allocator) -> (ClientResponse, !ClientErr) {
+private request :: (ip: u32, port: i64, method: string, path: string, host: string, extraHeaders: string, body: string, maxResponseBytes: ?i64 = null, a: Allocator = context.allocator) -> (ClientResponse, !ClientErr) {
     fd := try dial(ip, port);
     defer socket.close(fd);
     try send(fd, method, path, host, extraHeaders, body);
-    return recv(fd, method, null, a);
+    return recv(fd, method, maxResponseBytes, a);
 }
 
 // ── keep-alive connection pool ────────────────────────────────
@@ -1261,8 +1261,8 @@ Client :: struct {
         return recv(fd, requestMethod, maxResponseBytes, a);
     }
     // One blocking round-trip: dial → send → recv → close (see free `request`).
-    request :: (ip: u32, port: i64, method: string, path: string, host: string, extraHeaders: string, body: string, a: Allocator = context.allocator) -> (ClientResponse, !ClientErr) {
-        return request(ip, port, method, path, host, extraHeaders, body, a);
+    request :: (ip: u32, port: i64, method: string, path: string, host: string, extraHeaders: string, body: string, maxResponseBytes: ?i64 = null, a: Allocator = context.allocator) -> (ClientResponse, !ClientErr) {
+        return request(ip, port, method, path, host, extraHeaders, body, maxResponseBytes, a);
     }
     // ── sessions (see the free functions above) ────────────────
     open :: (host: string, port: i64, opts: ClientOpts) -> (ClientConn, !ClientErr) {

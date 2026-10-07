@@ -2,7 +2,8 @@
 // against a live server. The server runs its event loop on a BACKGROUND
 // thread (a blocking client cannot interleave a same-thread tick loop); the
 // main thread dials in via http.request and asserts the round-trips. Covers
-// GET, POST-with-body echo, a 404, and a header lookup on the response.
+// GET, POST-with-body echo, a 404, a header lookup on the response, and
+// `ClientErr.TooLarge` from a bound the response passes.
 @import "modules/std.sx";
 @import "modules/std/http.sx";
 
@@ -67,6 +68,9 @@ main :: () -> i32 {
                     }
                     r3.deinit();
                 }
+
+                _, e4 := http.Client.request(LOOPBACK, srv.cfg.port, "GET", "/hello", "t", "", "", 16);
+                if e4 != .TooLarge { print("bounded GET /hello did not raise TooLarge\n"); rc = 1; }
 
                 srv.stop();
                 t.join();
