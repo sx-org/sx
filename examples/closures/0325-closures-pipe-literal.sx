@@ -63,5 +63,5 @@ main :: () {
     // A closure literal is a default; the `|` after it closes the outer list.
     nest := |f: Closure(i64) -> i64 = |y: i64| y| f(4);
     print("closure-default {}\n", nest(inc));
-    mem.free(inc);
+    mem.free(context.allocator, inc);
 }

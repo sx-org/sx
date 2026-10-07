@@ -1,4 +1,4 @@
-error: a value of type 'string' does not coerce to '[:0]u8': no conversion adds a terminator — materialize one with mem.cloneZ(s)
+error: a value of type 'string' does not coerce to '[:0]u8': no conversion adds a terminator — materialize one with mem.cloneZ(context.allocator, s)
   --> examples/diagnostics/1173-diagnostics-terminator-coercions.sx:8:5
    |
  8 |     c : [:0]u8 = s;             // error: an unterminated string -> [:0]u8

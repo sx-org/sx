@@ -55,8 +55,7 @@ mem :: scope {
         }
     }
 
-    // The default allocator is the one current at the free, which may differ from the allocator that funded x.
-    free :: ufcs (x: $T, a: Allocator = context.allocator) {
+    free :: ufcs (a: Allocator, x: $T) {
         inline match T {
             case interface:
                 @error("free on an interface handle — a handle borrows its referent and owns nothing; free the referent where it lives ('mem.destroy' for one made by 'mem.make')");
@@ -69,13 +68,13 @@ mem :: scope {
         }
     }
 
-    clone :: ufcs (src: []$T, a: Allocator = context.allocator) -> []T {
+    clone :: ufcs (a: Allocator, src: []$T) -> []T {
         raw := a.allocBytes(src.len * @sizeOf(T));
         c.memcpy(raw, src.ptr, src.len * @sizeOf(T));
         .{ ptr = raw.([*]T), len = src.len }
     }
 
-    cloneZ :: ufcs (src: []$T, a: Allocator = context.allocator) -> [:0]T {
+    cloneZ :: ufcs (a: Allocator, src: []$T) -> [:0]T {
         raw := a.allocBytes((src.len + 1) * @sizeOf(T));
         c.memcpy(raw, src.ptr, src.len * @sizeOf(T));
         p := raw.([*]T);
@@ -84,7 +83,7 @@ mem :: scope {
     }
 
     // Failure leaves the original slice live and owned by the caller.
-    resize :: ufcs (slice: []$T, a: Allocator, newCount: i64) -> ?[]T {
+    resize :: ufcs (a: Allocator, slice: []$T, newCount: i64) -> ?[]T {
         raw := a.allocBytes(newCount * @sizeOf(T));
         if raw == null { return null; }
         n := if slice.len < newCount then slice.len else newCount;

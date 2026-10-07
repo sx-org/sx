@@ -19,6 +19,6 @@ main :: () {
         i += 1;
     }
 
-    mem.free(args, tracker);
+    mem.free(tracker, args);
     print("allocations={} outstanding={}\n", tracker.allocCount, tracker.leakCount());
 }

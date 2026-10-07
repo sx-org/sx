@@ -14,7 +14,7 @@ fsWindowsWidePath :: (path: string) -> ?[]u16 {
     if count <= 0 { return null; }
     wide := mem.alloc(context.allocator, u16, count.(i64) + 1);
     if fsWindowsMultiByteToWideChar(FS_WINDOWS_CP_UTF8, 0, path.ptr, path.len.(i32), wide.ptr, count) != count {
-        mem.free(wide); return null;
+        mem.free(context.allocator, wide); return null;
     }
     wide[count] = 0;
     wide
@@ -67,7 +67,7 @@ fsOpenHandle :: (path: string, mode: i32) -> i64 {
     else if mode == 2 { access = FS_WINDOWS_GENERIC_WRITE; creation = FS_WINDOWS_OPEN_ALWAYS; }
     else if mode == 3 { access = FS_WINDOWS_GENERIC_READ | FS_WINDOWS_GENERIC_WRITE; creation = FS_WINDOWS_OPEN_EXISTING; }
     handle := fsWindowsCreateFileW(wide.ptr, access, FS_WINDOWS_FILE_SHARE_ALL, null, creation, FS_WINDOWS_FILE_ATTRIBUTE_NORMAL, null);
-    mem.free(wide);
+    mem.free(context.allocator, wide);
     bits : i64 = @reinterpret(isize, handle);
     if !fsFileIsValid(bits) { return -1; }
     if mode == 2 and fsFileSeek(bits, 0, 2) < 0 { fsFileClose(bits); return -1; }
@@ -76,12 +76,12 @@ fsOpenHandle :: (path: string, mode: i32) -> i64 {
 
 fsExists :: (path: string) -> bool {
     wide := fsWindowsWidePath(path); if wide == null { return false; }
-    attributes := fsWindowsGetFileAttributesW(wide.ptr); mem.free(wide); attributes != FS_WINDOWS_INVALID_ATTRIBUTES
+    attributes := fsWindowsGetFileAttributesW(wide.ptr); mem.free(context.allocator, wide); attributes != FS_WINDOWS_INVALID_ATTRIBUTES
 }
 
 fsDeleteFile :: (path: string) -> bool {
     wide := fsWindowsWidePath(path); if wide == null { return false; }
-    ok := fsWindowsDeleteFileW(wide.ptr) != 0; mem.free(wide); ok
+    ok := fsWindowsDeleteFileW(wide.ptr) != 0; mem.free(context.allocator, wide); ok
 }
 
 fsWriteFile :: (path: string, data: string) -> bool {
@@ -130,39 +130,39 @@ fsAppendFile :: (path: string, data: string) -> bool {
 
 fsDeleteDir :: (path: string) -> bool {
     wide := fsWindowsWidePath(path); if wide == null { return false; }
-    ok := fsWindowsRemoveDirectoryW(wide.ptr) != 0; mem.free(wide); ok
+    ok := fsWindowsRemoveDirectoryW(wide.ptr) != 0; mem.free(context.allocator, wide); ok
 }
 
 fsCreateDir :: (path: string) -> bool {
     wide := fsWindowsWidePath(path); if wide == null { return false; }
-    ok := fsWindowsCreateDirectoryW(wide.ptr, null) != 0; mem.free(wide); ok
+    ok := fsWindowsCreateDirectoryW(wide.ptr, null) != 0; mem.free(context.allocator, wide); ok
 }
 
 fsSetMode :: (path: string, mode: u32) -> bool {
     wide := fsWindowsWidePath(path); if wide == null { return false; }
     attributes := fsWindowsGetFileAttributesW(wide.ptr);
-    if attributes == FS_WINDOWS_INVALID_ATTRIBUTES { mem.free(wide); return false; }
+    if attributes == FS_WINDOWS_INVALID_ATTRIBUTES { mem.free(context.allocator, wide); return false; }
     if (mode & 0x92) == 0 { attributes = attributes | FS_WINDOWS_FILE_ATTRIBUTE_READONLY; }
     else { attributes = attributes & ~FS_WINDOWS_FILE_ATTRIBUTE_READONLY; }
     ok := fsWindowsSetFileAttributesW(wide.ptr, attributes) != 0;
-    mem.free(wide);
+    mem.free(context.allocator, wide);
     ok
 }
 
 fsMove :: (oldPath: string, newPath: string) -> bool {
     oldWide := fsWindowsWidePath(oldPath); if oldWide == null { return false; }
     newWide := fsWindowsWidePath(newPath);
-    if newWide == null { mem.free(oldWide); return false; }
+    if newWide == null { mem.free(context.allocator, oldWide); return false; }
     ok := fsWindowsMoveFileExW(oldWide.ptr, newWide.ptr, FS_WINDOWS_MOVEFILE_REPLACE_EXISTING) != 0;
-    mem.free(newWide); mem.free(oldWide); ok
+    mem.free(context.allocator, newWide); mem.free(context.allocator, oldWide); ok
 }
 
 fsCopyFile :: (source: string, destination: string) -> bool {
     sourceWide := fsWindowsWidePath(source); if sourceWide == null { return false; }
     destinationWide := fsWindowsWidePath(destination);
-    if destinationWide == null { mem.free(sourceWide); return false; }
+    if destinationWide == null { mem.free(context.allocator, sourceWide); return false; }
     ok := fsWindowsCopyFileW(sourceWide.ptr, destinationWide.ptr, 0) != 0;
-    mem.free(destinationWide); mem.free(sourceWide); ok
+    mem.free(context.allocator, destinationWide); mem.free(context.allocator, sourceWide); ok
 }
 
 fsWindowsSeparator :: (byte: u8) -> bool { byte == '/' or byte == '\\' }
@@ -222,7 +222,7 @@ fsWindowsWideHasPrefix :: (wide: [*]u16, len: i64, prefix: string) -> bool {
 fsRealPath :: (path: string) -> ?string {
     wide := fsWindowsWidePath(path); if wide == null { return null; }
     handle := fsWindowsCreateFileW(wide.ptr, 0, FS_WINDOWS_FILE_SHARE_ALL, null, FS_WINDOWS_OPEN_EXISTING, FS_WINDOWS_FILE_FLAG_BACKUP_SEMANTICS, null);
-    mem.free(wide); bits : i64 = @reinterpret(isize, handle);
+    mem.free(context.allocator, wide); bits : i64 = @reinterpret(isize, handle);
     if !fsFileIsValid(bits) { return null; }
     flags := FS_WINDOWS_FILE_NAME_NORMALIZED | FS_WINDOWS_VOLUME_NAME_DOS;
     capacity := fsWindowsGetFinalPathNameByHandleW(handle, null, 0, flags);
@@ -230,7 +230,7 @@ fsRealPath :: (path: string) -> ?string {
     final := mem.alloc(context.allocator, u16, capacity.(i64));
     made := fsWindowsGetFinalPathNameByHandleW(handle, final.ptr, capacity, flags).(i64);
     fsWindowsCloseHandle(handle);
-    if made == 0 or made >= capacity { mem.free(final); return null; }
+    if made == 0 or made >= capacity { mem.free(context.allocator, final); return null; }
     start := 0;
     if fsWindowsWideHasPrefix(final.ptr, made, "\\\\?\\UNC\\") { start = 6; final[6] = '\\'; }
     else if fsWindowsWideHasPrefix(final.ptr, made, "\\\\?\\") { start = 4; }
@@ -239,9 +239,9 @@ fsRealPath :: (path: string) -> ?string {
     if size > 0 {
         text := mem.allocString(size);
         if fsWindowsWideCharToMultiByte(FS_WINDOWS_CP_UTF8, 0, *final[start], (made - start).(i32), text.ptr, size, null, null) == size { result = text; }
-        else { mem.free(text); }
+        else { mem.free(context.allocator, text); }
     }
-    mem.free(final);
+    mem.free(context.allocator, final);
     result
 }
 
@@ -259,7 +259,7 @@ fsSetModifiedSeconds :: (path: string, seconds: i64) -> bool {
     if seconds < -11644473600 or seconds > 1833029933770 { return false; }
     wide := fsWindowsWidePath(path); if wide == null { return false; }
     handle := fsWindowsCreateFileW(wide.ptr, FS_WINDOWS_FILE_WRITE_ATTRIBUTES, FS_WINDOWS_FILE_SHARE_ALL, null, FS_WINDOWS_OPEN_EXISTING, FS_WINDOWS_FILE_ATTRIBUTE_NORMAL, null);
-    mem.free(wide); bits : i64 = @reinterpret(isize, handle);
+    mem.free(context.allocator, wide); bits : i64 = @reinterpret(isize, handle);
     if !fsFileIsValid(bits) { return false; }
     ticks := (seconds + 11644473600).(u64) * 10000000;
     value := FsWindowsFileTime{ low = ticks.(u32), high = (ticks >> 32).(u32) };

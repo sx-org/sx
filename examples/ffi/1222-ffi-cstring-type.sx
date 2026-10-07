@@ -29,8 +29,8 @@ main :: () -> i32 {
 
     // round trip: built string -> owned C string -> view -> equality
     s := concat("hi-", "there");
-    z := mem.cloneZ(s);
-    defer mem.free(z);
+    z := mem.cloneZ(context.allocator, s);
+    defer mem.free(context.allocator, z);
     c : [*:0]u8 = z;
     r := c[0..];
     if r != "hi-there" { print("BUG: round trip\n"); return 6; }

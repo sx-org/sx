@@ -11,7 +11,7 @@ main :: () -> i32 {
         got := resolved?!;
         print("absolute: {}\n", got[0] == '/');
         print("outstanding with the answer: {}\n", tracker.leakCount());
-        mem.free(got);
+        mem.free(context.allocator, got);
     }
     print("allocations: {}, outstanding: {}\n", tracker.allocCount, tracker.leakCount());
     print("allocated at least PATH_MAX bytes: {}\n", tracker.totalAllocBytes >= 1024);

@@ -11,7 +11,7 @@ main :: () -> i32 {
     if argc < 1 { return 1; }
 
     args := cli.osArgs();
-    defer mem.free(args);
+    defer mem.free(context.allocator, args);
     if args.len != argc { return 2; }
     if args[0].len == 0 { return 3; }
     return 0;

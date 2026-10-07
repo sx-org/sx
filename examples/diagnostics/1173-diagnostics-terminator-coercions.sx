@@ -6,7 +6,7 @@
 main :: () -> i32 {
     s := concat("a", "b");
     c : [:0]u8 = s;             // error: an unterminated string -> [:0]u8
-    t : string = mem.cloneZ(s);
+    t : string = mem.cloneZ(context.allocator, s);
     print("{}{}\n", t, c.len);
     return 0;
 }

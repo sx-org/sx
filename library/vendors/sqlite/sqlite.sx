@@ -336,7 +336,7 @@ sqlite :: scope {
     // `p[0..]` must not escape.
     fromCstr :: (p: ?[*:0]u8) -> string {
         if p == null { return ""; }
-        return mem.clone(p[0..]);
+        return mem.clone(context.allocator, p[0..]);
     }
 
     // `n` raw bytes at `p` as a context.allocator copy ("" when p is null).
@@ -367,8 +367,8 @@ sqlite :: scope {
         return sqlite3_threadsafe() != 0;
     }
     compileoptionUsed :: (name: string) -> bool {
-        nameZ := mem.cloneZ(name);
-        defer mem.free(nameZ);
+        nameZ := mem.cloneZ(context.allocator, name);
+        defer mem.free(context.allocator, nameZ);
         return sqlite3_compileoption_used(nameZ) != 0;
     }
     // The n'th compile option ("" past the end).
@@ -381,8 +381,8 @@ sqlite :: scope {
     }
     // True iff `sql` ends in a complete SQL statement.
     complete :: (sql: string) -> bool {
-        sqlZ := mem.cloneZ(sql);
-        defer mem.free(sqlZ);
+        sqlZ := mem.cloneZ(context.allocator, sql);
+        defer mem.free(context.allocator, sqlZ);
         return sqlite3_complete(sqlZ) != 0;
     }
     // `n` bytes from SQLite's CSPRNG.
@@ -415,24 +415,24 @@ sqlite :: scope {
     // GLOB / LIKE / case-insensitive compare, sqlite's own semantics.
     // strglob/strlike answer 0 on MATCH (C convention) — exposed as bools.
     strglob :: (glob: string, s: string) -> bool {
-        globZ := mem.cloneZ(glob);
-        defer mem.free(globZ);
-        sZ := mem.cloneZ(s);
-        defer mem.free(sZ);
+        globZ := mem.cloneZ(context.allocator, glob);
+        defer mem.free(context.allocator, globZ);
+        sZ := mem.cloneZ(context.allocator, s);
+        defer mem.free(context.allocator, sZ);
         return sqlite3_strglob(globZ, sZ) == 0;
     }
     strlike :: (like: string, s: string, esc: u32) -> bool {
-        likeZ := mem.cloneZ(like);
-        defer mem.free(likeZ);
-        sZ := mem.cloneZ(s);
-        defer mem.free(sZ);
+        likeZ := mem.cloneZ(context.allocator, like);
+        defer mem.free(context.allocator, likeZ);
+        sZ := mem.cloneZ(context.allocator, s);
+        defer mem.free(context.allocator, sZ);
         return sqlite3_strlike(likeZ, sZ, esc) == 0;
     }
     stricmp :: (a: string, b: string) -> i32 {
-        aZ := mem.cloneZ(a);
-        defer mem.free(aZ);
-        bZ := mem.cloneZ(b);
-        defer mem.free(bZ);
+        aZ := mem.cloneZ(context.allocator, a);
+        defer mem.free(context.allocator, aZ);
+        bZ := mem.cloneZ(context.allocator, b);
+        defer mem.free(context.allocator, bZ);
         return sqlite3_stricmp(aZ, bZ);
     }
 
@@ -486,8 +486,8 @@ sqlite :: scope {
         }
         // 1-based index of a named parameter (":name" / "@name" / "?N"), 0 if absent.
         parameterIndex :: (self: *Stmt, name: string) -> i32 {
-            nameZ := mem.cloneZ(name);
-            defer mem.free(nameZ);
+            nameZ := mem.cloneZ(context.allocator, name);
+            defer mem.free(context.allocator, nameZ);
             return sqlite3_bind_parameter_index(self.handle, nameZ);
         }
         // The name of parameter `idx` ("" for nameless `?` parameters).
@@ -603,8 +603,8 @@ sqlite :: scope {
 
         open :: (path: string) -> (Sqlite, !Error) {
             h : usize = 0;
-            pathZ := mem.cloneZ(path);
-            defer mem.free(pathZ);
+            pathZ := mem.cloneZ(context.allocator, path);
+            defer mem.free(context.allocator, pathZ);
             rc := sqlite3_open(pathZ, *h);
             if rc != SQLITE_OK {
                 if h != 0 { sqlite3_close(h); }
@@ -615,8 +615,8 @@ sqlite :: scope {
 
         openV2 :: (path: string, flags: i32) -> (Sqlite, !Error) {
             h : usize = 0;
-            pathZ := mem.cloneZ(path);
-            defer mem.free(pathZ);
+            pathZ := mem.cloneZ(context.allocator, path);
+            defer mem.free(context.allocator, pathZ);
             rc := sqlite3_open_v2(pathZ, *h, flags, 0);
             if rc != SQLITE_OK {
                 if h != 0 { sqlite3_close(h); }
@@ -639,8 +639,8 @@ sqlite :: scope {
         // Run one or more ;-separated statements with no result rows
         // (DDL, pragmas, BEGIN/COMMIT). Detail via errmsg on failure.
         exec :: (self: *Sqlite, sql: string) -> !Error {
-            sqlZ := mem.cloneZ(sql);
-            defer mem.free(sqlZ);
+            sqlZ := mem.cloneZ(context.allocator, sql);
+            defer mem.free(context.allocator, sqlZ);
             rc := sqlite3_exec(self.handle, sqlZ, 0, 0, 0);
             if rc != SQLITE_OK { raise .Exec; }
             return;
@@ -734,10 +734,10 @@ sqlite :: scope {
             nn : i32 = 0;
             pk : i32 = 0;
             ai : i32 = 0;
-            tableZ := mem.cloneZ(table);
-            defer mem.free(tableZ);
-            columnZ := mem.cloneZ(column);
-            defer mem.free(columnZ);
+            tableZ := mem.cloneZ(context.allocator, table);
+            defer mem.free(context.allocator, tableZ);
+            columnZ := mem.cloneZ(context.allocator, column);
+            defer mem.free(context.allocator, columnZ);
             rc := sqlite3_table_column_metadata(self.handle, "main", tableZ, columnZ, *dt, *cs, *nn, *pk, *ai);
             if rc != SQLITE_OK { raise .Metadata; }
             return ColumnMeta{
@@ -784,10 +784,10 @@ sqlite :: scope {
 
         open :: (db: *Sqlite, table: string, column: string, rowid: i64, writable: bool) -> (Blob, !Error) {
             h : usize = 0;
-            tableZ := mem.cloneZ(table);
-            defer mem.free(tableZ);
-            columnZ := mem.cloneZ(column);
-            defer mem.free(columnZ);
+            tableZ := mem.cloneZ(context.allocator, table);
+            defer mem.free(context.allocator, tableZ);
+            columnZ := mem.cloneZ(context.allocator, column);
+            defer mem.free(context.allocator, columnZ);
             rc := sqlite3_blob_open(db.handle, "main", tableZ, columnZ,
                                     rowid, if writable then 1 else 0, *h);
             if rc != SQLITE_OK { raise .Blob; }

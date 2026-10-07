@@ -16,7 +16,7 @@ main :: () -> i32 {
         cmd := line[0 .. line.len - 1];
         if r := process.run(cmd) {
             print("run: {} {}", r.exitCode, r.stdout);
-            mem.free(r.stdout);
+            mem.free(context.allocator, r.stdout);
         }
         print("live after run: {}\n", counter.leakCount());
     }

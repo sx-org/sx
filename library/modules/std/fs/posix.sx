@@ -67,8 +67,8 @@ fsPosixModeToFlags :: (mode: i32) -> i32 {
 }
 
 fsOpenHandle :: (path: string, mode: i32) -> i64 {
-    z := mem.cloneZ(path);
-    defer mem.free(z);
+    z := mem.cloneZ(context.allocator, path);
+    defer mem.free(context.allocator, z);
     fd := fsPosixC.c.open(z, fsPosixModeToFlags(mode), 420); // 0o644 = 420
     fd
 }
@@ -130,52 +130,52 @@ fsAppendFile :: (path: string, data: string) -> bool {
 // ── Single-syscall ops ───────────────────────────────────────────────
 
 fsExists :: (path: string) -> bool {
-    z := mem.cloneZ(path);
-    defer mem.free(z);
+    z := mem.cloneZ(context.allocator, path);
+    defer mem.free(context.allocator, z);
     fsPosixC.c.access(z, FS_POSIX_F_OK) == 0
 }
 
 fsDeleteFile :: (path: string) -> bool {
-    z := mem.cloneZ(path);
-    defer mem.free(z);
+    z := mem.cloneZ(context.allocator, path);
+    defer mem.free(context.allocator, z);
     fsPosixC.c.unlink(z) == 0
 }
 
 fsDeleteDir :: (path: string) -> bool {
-    z := mem.cloneZ(path);
-    defer mem.free(z);
+    z := mem.cloneZ(context.allocator, path);
+    defer mem.free(context.allocator, z);
     fsPosixC.c.rmdir(z) == 0
 }
 
 fsCreateDir :: (path: string) -> bool {
-    z := mem.cloneZ(path);
-    defer mem.free(z);
+    z := mem.cloneZ(context.allocator, path);
+    defer mem.free(context.allocator, z);
     fsPosixC.c.mkdir(z, 493) == 0 // 0o755 = 493
 }
 
 fsSetMode :: (path: string, mode: u32) -> bool {
-    z := mem.cloneZ(path);
-    defer mem.free(z);
+    z := mem.cloneZ(context.allocator, path);
+    defer mem.free(context.allocator, z);
     fsPosixC.c.chmod(z, mode) == 0
 }
 
 fsMove :: (oldp: string, newp: string) -> bool {
-    oldz := mem.cloneZ(oldp);
-    defer mem.free(oldz);
-    newz := mem.cloneZ(newp);
-    defer mem.free(newz);
+    oldz := mem.cloneZ(context.allocator, oldp);
+    defer mem.free(context.allocator, oldz);
+    newz := mem.cloneZ(context.allocator, newp);
+    defer mem.free(context.allocator, newz);
     fsPosixC.c.rename(oldz, newz) == 0
 }
 
 fsRealPath :: (path: string) -> ?string {
-    z := mem.cloneZ(path);
-    defer mem.free(z);
+    z := mem.cloneZ(context.allocator, path);
+    defer mem.free(context.allocator, z);
     resolvedBuf := mem.alloc(context.allocator, u8, FS_POSIX_PATH_MAX);
     if resolvedBuf.ptr == null { return null; }
-    defer mem.free(resolvedBuf);
+    defer mem.free(context.allocator, resolvedBuf);
     resolved := fsPosixRealpath(z, resolvedBuf.ptr);
     if resolved == null { return null; }
-    mem.clone(resolved[0..])
+    mem.clone(context.allocator, resolved[0..])
 }
 
 // Recursive mkdir -p. Walks the path and creates each missing
@@ -252,8 +252,8 @@ fsSetModifiedSeconds :: (path: string, seconds: i64) -> bool {
             .{ sec = 0, nsec = FS_POSIX_UTIME_OMIT },
             .{ sec = seconds, nsec = 0 },
         ];
-        z := mem.cloneZ(path);
-        defer mem.free(z);
+        z := mem.cloneZ(context.allocator, path);
+        defer mem.free(context.allocator, z);
         return fsPosixUtimensat(FS_POSIX_AT_FDCWD, z, *times[0], 0) == 0;
     }
 }

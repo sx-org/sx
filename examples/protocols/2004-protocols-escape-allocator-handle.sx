@@ -31,5 +31,5 @@ main :: () {
     xs := mem.alloc(A, i64, 3);
     for i in 0..3 { xs[i] = i * 2; }
     print("{} {} {}\n", xs[0], xs[1], xs[2]);
-    mem.free(xs, A);
+    mem.free(A, xs);
 }

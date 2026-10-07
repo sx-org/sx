@@ -21,7 +21,7 @@ main :: () {
     // resize — same contract at the typed-slice level
     xs := mem.alloc(a, i64, 4);
     xs[0] = 7; xs[3] = 9;
-    ys := mem.resize(xs, a, 4096);
+    ys := mem.resize(a, xs, 4096);
     print("ys null={}\n", ys == null);
     print("xs live: {} {} len={}\n", xs[0], xs[3], xs.len);
 
