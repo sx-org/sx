@@ -463,6 +463,17 @@ private ownHost :: (u: Url, hb: [*]u8) -> (Url, bool) {
     return o, true;
 }
 
+// `s`, or a copy of it when it overlaps the `cap` bytes at `buf`, which each
+// hop's response overwrites. The copy is also returned, for the caller to free.
+private ownOutside :: (s: string, buf: [*]u8, cap: i64) -> (string, ?[*]u8) {
+    sa := @reinterpret(isize, s.ptr);
+    ba := @reinterpret(isize, buf);
+    if s.len == 0 or sa >= ba + cap or ba >= sa + s.len { return s, null; }
+    p : [*]u8 = mem.alloc(context.allocator, u8, s.len).ptr;
+    clib.c.memcpy(p, s.ptr, s.len);
+    return string{ ptr = p, len = s.len }, p;
+}
+
 // Whether a fetch hop to `u` carries the caller's credential lines: only
 // when it shares the first URL's origin (scheme, host, port).
 private sameOrigin :: (origin: Url, u: Url) -> bool {
@@ -577,6 +588,9 @@ private isRedirect :: (status: i64) -> bool {
 // `token ":" value CRLF`, holds CR, LF or NUL inside its value, or names
 // Host, Content-Length or Transfer-Encoding raises `ClientErr.Header`
 // before any connection opens.
+//
+// `method`, `extraHeaders` and `body` may view `buf`: the hops send the bytes
+// passed, though each response overwrites `buf`.
 private fetch :: (method: string, url: string, extraHeaders: string, body: string, opts: ClientOpts, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
     // Owned copies of the current target — Location views the response
     // buffer, which the next hop overwrites.
@@ -590,8 +604,12 @@ private fetch :: (method: string, url: string, extraHeaders: string, body: strin
     originb : [256]u8 = ---;
     origin, ook := ownHost(u, *originb[0]);
     if !ook { raise .Url; }
-    m := method;
-    b := body;
+    m, mo := ownOutside(method, buf, cap);
+    defer if p := mo { context.allocator.deallocBytes(p); };
+    hdrs, ho := ownOutside(extraHeaders, buf, cap);
+    defer if p := ho { context.allocator.deallocBytes(p); };
+    b, bo := ownOutside(body, buf, cap);
+    defer if p := bo { context.allocator.deallocBytes(p); };
     hops : i64 = 0;
     first := true;
     while true {
@@ -603,7 +621,7 @@ private fetch :: (method: string, url: string, extraHeaders: string, body: strin
         u = hu;
 
         vh := if first then opts.tlsHost else "";
-        c, r, he := fetchHop(hu, m, extraHeaders, sameOrigin(origin, hu), b, opts, vh, buf, cap);
+        c, r, he := fetchHop(hu, m, hdrs, sameOrigin(origin, hu), b, opts, vh, buf, cap);
         if he { if freeing { context.allocator.deallocBytes(pathp); } raise he; }
 
         if !isRedirect(r.status) or opts.maxRedirects <= 0 {
@@ -1106,7 +1124,8 @@ ClientPool :: struct {
 
     // Fetch through the pool. Redirect hops are followed with the SAME
     // pooling (each hop reuses/creates its host's entry). `extraHeaders`
-    // is validated and sent as by the free `fetch`.
+    // is validated, and `method`, `extraHeaders` and `body` are sent, as by
+    // the free `fetch`; each may view `buf`.
     fetch :: (self: *ClientPool, method: string, url: string, extraHeaders: string, body: string, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
         u, ok := parseUrl(url);
         if !ok { raise .Url; }
@@ -1114,8 +1133,12 @@ ClientPool :: struct {
         originb : [256]u8 = ---;
         origin, ook := ownHost(u, *originb[0]);
         if !ook { raise .Url; }
-        m := method;
-        b := body;
+        m, mo := ownOutside(method, buf, cap);
+        defer if p := mo { context.allocator.deallocBytes(p); };
+        hdrs, ho := ownOutside(extraHeaders, buf, cap);
+        defer if p := ho { context.allocator.deallocBytes(p); };
+        b, bo := ownOutside(body, buf, cap);
+        defer if p := bo { context.allocator.deallocBytes(p); };
         hostb : [256]u8 = ---;
         pathp : [*]u8 = null;
         freeing := false;
@@ -1125,7 +1148,7 @@ ClientPool :: struct {
             hu, hok := ownHost(u, *hostb[0]);
             if !hok { if freeing { context.allocator.deallocBytes(pathp); } raise .Url; }
             u = hu;
-            r, he := self.hop(u, m, extraHeaders, sameOrigin(origin, u), b, first, buf, cap);
+            r, he := self.hop(u, m, hdrs, sameOrigin(origin, u), b, first, buf, cap);
             if he { if freeing { context.allocator.deallocBytes(pathp); } raise he; }
             if !isRedirect(r.status) or self.opts.maxRedirects <= 0 {
                 if freeing { context.allocator.deallocBytes(pathp); }
