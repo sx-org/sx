@@ -274,7 +274,6 @@ SxView :: @ObjcClass("SxView", extends = UIView, implements = .[UITextInput]) ex
         if doc := sxSession() {
             s := sxDocument(doc);
             defer mem.free(s, doc.a);
-    defer mem.free(s, doc.a);
             lo := sxClamp(sxLoOf(range), 0, s.len);
             hi := sxClamp(sxHiOf(range), lo, s.len);
             return nsstring(s[lo..hi]);
@@ -354,7 +353,6 @@ SxView :: @ObjcClass("SxView", extends = UIView, implements = .[UITextInput]) ex
         if doc := sxSession() {
             s := sxDocument(doc);
             defer mem.free(s, doc.a);
-    defer mem.free(s, doc.a);
             return bytesToUtf16Offset(s, sxOffsetOf(toPosition)) - bytesToUtf16Offset(s, sxOffsetOf(fromPosition));
         }
         0
@@ -384,7 +382,6 @@ SxView :: @ObjcClass("SxView", extends = UIView, implements = .[UITextInput]) ex
             at := sxOffsetOf(position);
             s := sxDocument(doc);
             defer mem.free(s, doc.a);
-    defer mem.free(s, doc.a);
             units := bytesToUtf16Offset(s, at);
             if sxIsBackward(direction) {
                 return sxRange(utf16OffsetToBytes(s, if units > 0 then units - 1 else 0), at);
