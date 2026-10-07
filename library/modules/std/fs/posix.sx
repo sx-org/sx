@@ -171,6 +171,7 @@ fsRealPath :: (path: string) -> ?string {
     z := mem.cloneZ(path);
     defer mem.free(z);
     resolvedBuf := mem.alloc(context.allocator, u8, FS_POSIX_PATH_MAX);
+    if resolvedBuf.ptr == null { return null; }
     defer mem.free(resolvedBuf);
     resolved := fsPosixRealpath(z, resolvedBuf.ptr);
     if resolved == null { return null; }
