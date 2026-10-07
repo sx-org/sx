@@ -1,0 +1,89 @@
+// sendText to a peer that has gone returns Closed instead of raising SIGPIPE,
+// whose default disposition would end the process. The connection's thread
+// is held inside onText meanwhile, so the send itself meets the gone socket.
+// Built AOT: `sx run`'s own process catches SIGPIPE.
+@import "modules/std.sx";
+@import "modules/std/http.sx";
+@import "modules/std/http/websocket.sx";
+
+LOOPBACK :u32: 0x0100007F;
+
+// Guards `held` and `released`.
+gate : thread.Mutex = .{};
+wake : thread.Cond = .{};
+held : ?*websocket.Conn = null;
+released := false;
+closedCode : i64 = 0;
+
+onText :: (c: *websocket.Conn, msg: string, ctx: *void) {
+    gate.lock();
+    held = c;
+    wake.broadcast();
+    while !released { wake.wait(*gate); }
+    gate.unlock();
+}
+onClose :: (c: *websocket.Conn, code: i64, ctx: *void) {
+    gate.lock();
+    held = null;
+    closedCode = code;
+    wake.broadcast();
+    gate.unlock();
+}
+
+hWs :: (rc: *http.RouteCtx) { websocket.accept(rc, .{ onText = onText, onClose = onClose }); }
+
+srvEntry :: (arg: *void) -> *void abi(.c) {
+    srv : *http.Server = arg;
+    gpa := GPA.init();
+    push .{ allocator = gpa } { srv.run(); }
+    return null;
+}
+
+main :: () -> i32 {
+    gate.setup();
+    wake.setup();
+    router := http.Router.init(0);
+    router.get("/ws", hWs);
+    cfg : http.Config = .{ port = 0, threadPoolCount = 1, streamRequestBody = true };
+    srv, se := http.Server.init(cfg, http.dispatch, @reinterpret(usize, *router));
+    if se { return 1; }
+    t, te := thread.Thread.spawn(srvEntry, *srv);
+    if te { return 1; }
+
+    fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+    a := socket.sockaddrIn(srv.cfg.port, LOOPBACK);
+    if socket.connect(fd, *a, 16) != 0 { print("connect failed\n"); return 1; }
+    req := "GET /ws HTTP/1.1\r\nHost: t\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n";
+    socket.write(fd, req.ptr, req.len);
+    // "hold", masked with a zero key.
+    hold : [10]u8 = .[0x81, 0x84, 0, 0, 0, 0, 'h', 'o', 'l', 'd'];
+    socket.write(fd, *hold[0], 10);
+    gate.lock();
+    while held == null { wake.wait(*gate); }
+    gate.unlock();
+    // The peer goes without a close frame.
+    socket.close(fd);
+
+    payload := mem.alloc(context.allocator, u8, 65536);
+    i := 0;
+    while i < payload.len { payload[i] = 'x'; i += 1; }
+    gate.lock();
+    h := held?!;
+    tries := 0;
+    failed := false;
+    while !failed and tries < 100 {
+        h.sendText(payload) catch |e| { print("send after the peer left: {}\n", e); failed = true; };
+        tries += 1;
+    }
+    released = true;
+    wake.broadcast();
+    while held != null { wake.wait(*gate); }
+    gate.unlock();
+    print("closed as {}\n", closedCode);
+
+    srv.stop();
+    t.join();
+    srv.close();
+    router.deinit();
+    0
+}

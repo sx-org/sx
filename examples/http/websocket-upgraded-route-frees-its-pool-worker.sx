@@ -1,0 +1,119 @@
+// A route upgrades to a WebSocket inside a pooled router server: text frames
+// both ways, a send from a thread outside the server, ping, close, and the
+// held connection neither outlives nor pins the handler pool. Everything the
+// client side allocates returns to its allocator.
+@import "modules/std.sx";
+@import "modules/std/http.sx";
+@import "modules/std/http/websocket.sx";
+
+held : ?*websocket.Conn = null;
+closed_code : i64 = 0;
+
+hHello :: (rc: *http.RouteCtx) { rc.resp.body = "hello"; }
+
+onOpen :: (c: *websocket.Conn, ctx: *void) { held = c; }
+onText :: (c: *websocket.Conn, msg: string, ctx: *void) {
+    e := concat("echo:", msg);
+    c.sendText(e) catch {};
+    mem.free(context.allocator, e);
+}
+onClose :: (c: *websocket.Conn, code: i64, ctx: *void) {
+    out : *i64 = ctx;
+    out.* = code;
+    held = null;
+}
+
+hWs :: (rc: *http.RouteCtx) {
+    if http.findHeader(rc.req, "authorization") != "Bearer t" {
+        rc.resp.status = 401;
+        return;
+    }
+    websocket.accept(rc, .{ onOpen = onOpen, onText = onText, onClose = onClose, ctx = *closed_code });
+}
+
+srvEntry :: (arg: *void) -> *void abi(.c) {
+    srv : *http.Server = arg;
+    gpa := GPA.init();
+    push .{ allocator = gpa } { srv.run(); }
+    return null;
+}
+
+expectText :: (c: *websocket.Client, want: string) -> bool {
+    m, e := c.recv(3000);
+    if e { print("recv: {}\n", e); return false; }
+    defer m.deinit();
+    if m.kind != .text or m.text != want { print("want text {}\n", want); return false; }
+    true
+}
+
+exercise :: (port: i64, opts: http.ClientOpts) -> bool {
+    url := format("ws://127.0.0.1:{}/ws", port);
+    defer mem.free(context.allocator, url);
+
+    _, de := websocket.connect(url, "Authorization: Bearer x\r\n", opts);
+    if de != .Refused { print("an unauthorized upgrade is refused\n"); return false; }
+
+    ws, ce := websocket.connect(url, "Authorization: Bearer t\r\n", opts);
+    if ce { print("connect: {}\n", ce); return false; }
+
+    // Past the handler timeout, with the only pool worker free for plain routes.
+    c.usleep(1000000);
+    hello := format("http://127.0.0.1:{}/hello", port);
+    defer mem.free(context.allocator, hello);
+    r, re := http.Client.fetch("GET", hello, "", "", opts);
+    if re { print("a held socket pins the pool\n"); return false; }
+    defer r.deinit();
+    if r.body != "hello" { print("a held socket pins the pool\n"); return false; }
+
+    ws.sendText("hi") catch { return false; };
+    if !expectText(*ws, "echo:hi") { return false; }
+
+    if held == null { print("no open connection\n"); return false; }
+    h := held?!;
+    h.sendText("push") catch { return false; };
+    if !expectText(*ws, "push") { return false; }
+
+    // A message larger than one read and than one frame's 16-bit length.
+    big := mem.alloc(context.allocator, u8, 70000);
+    defer mem.free(context.allocator, big);
+    i := 0;
+    while i < 70000 { big[i] = 120; i += 1; }
+    bs := string{ ptr = big.ptr, len = big.len };
+    want := concat("echo:", bs);
+    defer mem.free(context.allocator, want);
+    ws.sendText(bs) catch { return false; };
+    if !expectText(*ws, want) { return false; }
+
+    // The matching pong arrives within the timeout.
+    ws.ping("p", 3000) catch { return false; };
+
+    // close returns the client's storage to its allocator.
+    ws.close(1000) catch { return false; };
+    c.usleep(200000);
+    if closed_code != 1000 { print("close code {}\n", closed_code); return false; }
+    true
+}
+
+main :: () -> i32 {
+    router := http.Router.init(0);
+    router.get("/hello", hHello);
+    router.get("/ws", hWs);
+    cfg : http.Config = .{ port = 0, threadPoolCount = 1, handlerTimeoutMs = 500,
+                           timeoutRequestMs = 5000, streamRequestBody = true };
+    srv, se := http.Server.init(cfg, http.dispatch, @reinterpret(usize, *router));
+    if se { return 1; }
+    t, te := thread.Thread.spawn(srvEntry, *srv);
+    if te { return 1; }
+    opts : http.ClientOpts = .{ connectTimeoutMs = 2000, ioTimeoutMs = 3000 };
+    tracker := mem.TrackingAllocator.init(context.allocator);
+    ok := false;
+    push .{ allocator = tracker } { ok = exercise(srv.cfg.port, opts); }
+    srv.stop();
+    t.join();
+    srv.close();
+    router.deinit();
+    if !ok { return 1; }
+    if tracker.leakCount() != 0 { print("outstanding: {}\n", tracker.leakCount()); return 1; }
+    print("websocket channel ok\n");
+    0
+}

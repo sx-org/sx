@@ -1,0 +1,163 @@
+// A hand-framed client against the server side: a fragmented text message
+// is reassembled, with a ping between its fragments answered first; a frame
+// with a 16-bit length is read; a close is echoed. Each fault fails its
+// connection with RFC 6455's code: an unmasked frame 1002, text that is not
+// UTF-8 1007, a message past maxMessage 1009.
+@import "modules/std.sx";
+@import "modules/std/http.sx";
+@import "modules/std/http/websocket.sx";
+
+LOOPBACK :u32: 0x0100007F;
+
+onText :: (c: *websocket.Conn, msg: string, ctx: *void) { c.sendText(msg) catch {}; }
+
+hWs :: (rc: *http.RouteCtx) { websocket.accept(rc, .{ onText = onText, maxMessage = 1024 }); }
+
+srvEntry :: (arg: *void) -> *void abi(.c) {
+    srv : *http.Server = arg;
+    gpa := GPA.init();
+    push .{ allocator = gpa } { srv.run(); }
+    return null;
+}
+
+// An upgraded connection, or null.
+open :: (port: i64) -> ?i32 {
+    fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+    a := socket.sockaddrIn(port, LOOPBACK);
+    if socket.connect(fd, *a, 16) != 0 { return null; }
+    socket.setIoTimeout(fd, 3000);
+    req := "GET /ws HTTP/1.1\r\nHost: t\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n";
+    socket.write(fd, req.ptr, req.len);
+    tail : [4]u8 = .[0, 0, 0, 0];
+    one : [1]u8 = ---;
+    while !(tail[0] == '\r' and tail[1] == '\n' and tail[2] == '\r' and tail[3] == '\n') {
+        if socket.read(fd, *one[0], 1) != 1 { return null; }
+        tail[0] = tail[1];
+        tail[1] = tail[2];
+        tail[2] = tail[3];
+        tail[3] = one[0];
+    }
+    return fd;
+}
+
+// Write one frame; `masked` frames use a fixed key.
+send :: (fd: i32, fin: bool, op: u8, payload: string, masked: bool) {
+    f := mem.alloc(context.allocator, u8, payload.len + 8);
+    defer mem.free(context.allocator, f);
+    f[0] = (if fin then 0x80 else 0).(u8) | op;
+    m : u8 = if masked then 0x80 else 0;
+    n := 2;
+    if payload.len < 126 {
+        f[1] = m | payload.len.(u8);
+    } else {
+        f[1] = m | 126;
+        f[2] = (payload.len >> 8).(u8);
+        f[3] = payload.len.(u8);
+        n = 4;
+    }
+    key : [4]u8 = .[0x12, 0x34, 0x56, 0x78];
+    if masked {
+        i := 0;
+        while i < 4 { f[n + i] = key[i]; i += 1; }
+        n += 4;
+    }
+    i := 0;
+    while i < payload.len {
+        f[n + i] = if masked then payload[i] ^ key[i % 4] else payload[i];
+        i += 1;
+    }
+    socket.write(fd, f.ptr, n + payload.len);
+}
+
+readAll :: (fd: i32, dst: [*]u8, n: i64) -> bool {
+    got := 0;
+    while got < n {
+        k := socket.read(fd, *dst[got], n - got);
+        if k <= 0 { return false; }
+        got += k;
+    }
+    true
+}
+
+Frame :: struct {
+    op: u8;
+    text: string;
+}
+
+// The next server frame; its payload lands in `body`.
+recvFrame :: (fd: i32, body: []u8) -> ?Frame {
+    h : [2]u8 = ---;
+    if !readAll(fd, *h[0], 2) { return null; }
+    n := (h[1] & 0x7F).(i64);
+    if n == 126 {
+        x : [2]u8 = ---;
+        if !readAll(fd, *x[0], 2) { return null; }
+        n = (x[0].(i64) << 8) | x[1].(i64);
+    }
+    if !readAll(fd, body.ptr, n) { return null; }
+    return Frame{ op = h[0] & 0x0F, text = body[0..n] };
+}
+
+closeCode :: (f: ?Frame) -> ?i64 {
+    if got := f {
+        if got.op == 8 and got.text.len >= 2 { return (got.text[0].(i64) << 8) | got.text[1].(i64); }
+    }
+    return null;
+}
+
+// The code of the close frame a fault draws.
+faultCode :: (port: i64, op: u8, payload: string, masked: bool) -> ?i64 {
+    if fd := open(port) {
+        send(fd, true, op, payload, masked);
+        body := mem.alloc(context.allocator, u8, 4096);
+        defer mem.free(context.allocator, body);
+        code := closeCode(recvFrame(fd, body));
+        socket.close(fd);
+        return code;
+    }
+    return null;
+}
+
+main :: () -> i32 {
+    router := http.Router.init(0);
+    router.get("/ws", hWs);
+    cfg : http.Config = .{ port = 0, threadPoolCount = 1, streamRequestBody = true };
+    srv, se := http.Server.init(cfg, http.dispatch, @reinterpret(usize, *router));
+    if se { return 1; }
+    t, te := thread.Thread.spawn(srvEntry, *srv);
+    if te { return 1; }
+    port := srv.cfg.port;
+    body := mem.alloc(context.allocator, u8, 4096);
+
+    fd := open(port) ?? { print("no upgrade\n"); return 1; };
+    send(fd, false, 1, "hel", true);
+    send(fd, true, 9, "p", true);
+    send(fd, true, 0, "lo", true);
+    if f := recvFrame(fd, body) { print("first: op {} {}\n", f.op, f.text); }
+    if f := recvFrame(fd, body) { print("then: op {} {}\n", f.op, f.text); }
+
+    long := mem.alloc(context.allocator, u8, 300);
+    i := 0;
+    while i < 300 { long[i] = 'y'; i += 1; }
+    send(fd, true, 1, long, true);
+    if f := recvFrame(fd, body) { print("16-bit length: op {} {} bytes back\n", f.op, f.text.len); }
+
+    normal : [2]u8 = .[0x03, 0xE8];
+    send(fd, true, 8, normal[..], true);
+    print("close: {}\n", closeCode(recvFrame(fd, body)));
+    socket.close(fd);
+
+    print("unmasked: {}\n", faultCode(port, 1, "x", false));
+    broken : [2]u8 = .[0xC3, 0x28];
+    print("not utf-8: {}\n", faultCode(port, 1, broken[..], true));
+    big := mem.alloc(context.allocator, u8, 2000);
+    i = 0;
+    while i < 2000 { big[i] = 'z'; i += 1; }
+    print("past maxMessage: {}\n", faultCode(port, 1, big, true));
+
+    srv.stop();
+    t.join();
+    srv.close();
+    router.deinit();
+    0
+}

@@ -1,0 +1,4 @@
+recv with nothing sent: Error.Timeout
+the silent peer closed as 1006
+the answering client still echoes: still here
+the answering client closed as 1000
