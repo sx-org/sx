@@ -1,0 +1,18 @@
+// `fs.realPath` resolves into a PATH_MAX buffer from `context.allocator` and
+// returns that buffer to it; the answer is the one allocation it leaves.
+@import "modules/std.sx";
+
+main :: () -> i32 {
+    tracker := mem.TrackingAllocator.init(context.allocator);
+    push .{ allocator = tracker } {
+        resolved := fs.realPath(".");
+        if resolved == null { print("realPath(.) is null\n"); return 1; }
+        got := resolved?!;
+        print("absolute: {}\n", got[0] == '/');
+        print("outstanding with the answer: {}\n", tracker.leakCount());
+        mem.free(got);
+    }
+    print("allocations: {}, outstanding: {}\n", tracker.allocCount, tracker.leakCount());
+    print("allocated at least PATH_MAX bytes: {}\n", tracker.totalAllocBytes >= 1024);
+    0
+}

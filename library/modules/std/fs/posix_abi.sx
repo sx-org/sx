@@ -18,6 +18,7 @@ inline match @host.os {
 
 // Linux, Android, and Emscripten use the Linux asm-generic open flag values;
 // Darwin uses the BSD values. Unsupported targets fail closed here.
+// FS_POSIX_PATH_MAX is the libc PATH_MAX: the size realpath's output buffer must have.
 inline match @host.os {
     case .linux:
         FS_POSIX_O_RDONLY :i32: 0x0000;
@@ -28,6 +29,7 @@ inline match @host.os {
         FS_POSIX_O_TRUNC  :i32: 0x0200;
         FS_POSIX_AT_FDCWD :i32: -100;
         FS_POSIX_UTIME_OMIT :i32: 1073741822;
+        FS_POSIX_PATH_MAX :: 4096;
     case .android:
         FS_POSIX_O_RDONLY :i32: 0x0000;
         FS_POSIX_O_WRONLY :i32: 0x0001;
@@ -37,6 +39,7 @@ inline match @host.os {
         FS_POSIX_O_TRUNC  :i32: 0x0200;
         FS_POSIX_AT_FDCWD :i32: -100;
         FS_POSIX_UTIME_OMIT :i32: 1073741822;
+        FS_POSIX_PATH_MAX :: 4096;
     case .wasm:
         FS_POSIX_O_RDONLY :i32: 0x0000;
         FS_POSIX_O_WRONLY :i32: 0x0001;
@@ -46,6 +49,7 @@ inline match @host.os {
         FS_POSIX_O_TRUNC  :i32: 0x0200;
         FS_POSIX_AT_FDCWD :i32: -100;
         FS_POSIX_UTIME_OMIT :i32: 1073741822;
+        FS_POSIX_PATH_MAX :: 4096;
     case .macos:
         FS_POSIX_O_RDONLY :i32: 0x0000;
         FS_POSIX_O_WRONLY :i32: 0x0001;
@@ -55,6 +59,7 @@ inline match @host.os {
         FS_POSIX_O_TRUNC  :i32: 0x0400;
         FS_POSIX_AT_FDCWD :i32: -2;
         FS_POSIX_UTIME_OMIT :i32: -2;
+        FS_POSIX_PATH_MAX :: 1024;
     case .ios:
         FS_POSIX_O_RDONLY :i32: 0x0000;
         FS_POSIX_O_WRONLY :i32: 0x0001;
@@ -64,6 +69,7 @@ inline match @host.os {
         FS_POSIX_O_TRUNC  :i32: 0x0400;
         FS_POSIX_AT_FDCWD :i32: -2;
         FS_POSIX_UTIME_OMIT :i32: -2;
+        FS_POSIX_PATH_MAX :: 1024;
     else:
         @error("std/fs/posix_abi.sx: POSIX filesystem ABI is not defined for this target");
 }
