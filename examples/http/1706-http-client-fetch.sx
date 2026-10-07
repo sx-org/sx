@@ -1,10 +1,11 @@
 // std.http — client conveniences: URL fetch, redirect following, and
 // keep-alive connection pooling.
 //
-//   Client.fetch(method, url, extraHeaders, body, opts, buf, cap)
+//   Client.fetch(method, url, extraHeaders, body, opts, a)
 //       — parse the URL (http/https, host, optional :port, path), open
 //         (https requires opts.tls — `ClientErr.Tls` without), send with the
-//         caller's header lines, receive, and follow redirects up to
+//         caller's header lines, receive into storage from `a` (the
+//         response's `deinit` returns it), and follow redirects up to
 //         opts.maxRedirects: 301/302/303 switch to GET and drop the body;
 //         307/308 keep method + body; a cross-host Location re-resolves and
 //         re-dials. Exceeding the cap is `ClientErr.Redirect`.
@@ -131,7 +132,6 @@ run :: () -> i32 {
     if tae { srvB.stop(); tb.join(); return 5; }
 
     opts : http.ClientOpts = .{ connectTimeoutMs = 2000, ioTimeoutMs = 3000 };
-    buf : [8192]u8 = ---;
     urlBufs : [6][64]u8 = ---;
     hello := urlAt(urlBufs[0][..], "http", srvA.cfg.port, "/hello");
     r1url := urlAt(urlBufs[1][..], "http", srvA.cfg.port, "/r1");
@@ -141,33 +141,39 @@ run :: () -> i32 {
     xhost := urlAt(urlBufs[5][..], "http", srvA.cfg.port, "/xhost");
 
     // ── A. plain fetch ──
-    r1, e1 := http.Client.fetch("GET", hello, "", "", opts, *buf[0], 8192);
+    r1, e1 := http.Client.fetch("GET", hello, "", "", opts);
     if e1 { return teardown(90, *srvA, *ta, *srvB, *tb); }
+    defer r1.deinit();
     if r1.status != 200 or r1.body != "fetched" { return teardown(10, *srvA, *ta, *srvB, *tb); }
 
     // ── B. redirects: chain, 303→GET, 307 preserves POST ──
-    r2, e2 := http.Client.fetch("GET", r1url, "", "", opts, *buf[0], 8192);
+    r2, e2 := http.Client.fetch("GET", r1url, "", "", opts);
     if e2 { return teardown(91, *srvA, *ta, *srvB, *tb); }
+    defer r2.deinit();
     if r2.status != 200 or r2.body != "final-get" { return teardown(11, *srvA, *ta, *srvB, *tb); }
-    r3, e3 := http.Client.fetch("POST", r303, "", "payload", opts, *buf[0], 8192);
+    r3, e3 := http.Client.fetch("POST", r303, "", "payload", opts);
     if e3 { return teardown(92, *srvA, *ta, *srvB, *tb); }
+    defer r3.deinit();
     if r3.status != 200 or r3.body != "final-get" { return teardown(12, *srvA, *ta, *srvB, *tb); }
-    r4, e4 := http.Client.fetch("POST", r307, "", "payload", opts, *buf[0], 8192);
+    r4, e4 := http.Client.fetch("POST", r307, "", "payload", opts);
     if e4 { return teardown(93, *srvA, *ta, *srvB, *tb); }
+    defer r4.deinit();
     if r4.status != 200 or r4.body != "final-post:payload" { return teardown(13, *srvA, *ta, *srvB, *tb); }
 
     // ── C. loop capped; maxRedirects = 0 returns the 3xx ──
-    _, e5 := http.Client.fetch("GET", loop, "", "", opts, *buf[0], 8192);
+    _, e5 := http.Client.fetch("GET", loop, "", "", opts);
     if e5 != .Redirect { return teardown(14, *srvA, *ta, *srvB, *tb); }
     opts0 := opts;
     opts0.maxRedirects = 0;
-    r6, e6 := http.Client.fetch("GET", r1url, "", "", opts0, *buf[0], 8192);
+    r6, e6 := http.Client.fetch("GET", r1url, "", "", opts0);
     if e6 { return teardown(94, *srvA, *ta, *srvB, *tb); }
+    defer r6.deinit();
     if r6.status != 302 { return teardown(15, *srvA, *ta, *srvB, *tb); }
 
     // ── F. cross-host redirect (A → B) ──
-    r7, e7 := http.Client.fetch("GET", xhost, "", "", opts, *buf[0], 8192);
+    r7, e7 := http.Client.fetch("GET", xhost, "", "", opts);
     if e7 { return teardown(95, *srvA, *ta, *srvB, *tb); }
+    defer r7.deinit();
     if r7.status != 200 or r7.body != "b-final" { return teardown(16, *srvA, *ta, *srvB, *tb); }
 
     // ── E. pooling: five fetches, one conn; redial after eviction ──
@@ -175,9 +181,10 @@ run :: () -> i32 {
     pool := http.ClientPool.init(opts);
     k : i64 = 0;
     while k < 5 {
-        rp, ep := pool.fetch("GET", hello, "", "", *buf[0], 8192);
+        rp, ep := pool.fetch("GET", hello, "", "");
         if ep { pool.close(); return teardown(96, *srvA, *ta, *srvB, *tb); }
         if rp.status != 200 or rp.body != "fetched" { pool.close(); return teardown(17, *srvA, *ta, *srvB, *tb); }
+        rp.deinit();
         k += 1;
     }
     st1 := srvA.stats();
@@ -185,16 +192,17 @@ run :: () -> i32 {
     // have added exactly ONE accept
     if st1.acceptedTotal != acceptsBefore + 1 { pool.close(); return teardown(21, *srvA, *ta, *srvB, *tb); }
     base := st1.acceptedTotal;
-    rp2, ep2 := pool.fetch("GET", hello, "", "", *buf[0], 8192);
+    rp2, ep2 := pool.fetch("GET", hello, "", "");
     if ep2 { pool.close(); return teardown(97, *srvA, *ta, *srvB, *tb); }
-    _ := rp2;
+    defer rp2.deinit();
     st2 := srvA.stats();
     if st2.acceptedTotal != base { pool.close(); return teardown(18, *srvA, *ta, *srvB, *tb); }   // reused, no new accept
     // let the server evict the idle pooled conn (keepalive 250ms; 2x margin)...
     sleepMs(500);
     // ...then the pool must transparently redial.
-    rp3, ep3 := pool.fetch("GET", hello, "", "", *buf[0], 8192);
+    rp3, ep3 := pool.fetch("GET", hello, "", "");
     if ep3 { pool.close(); return teardown(98, *srvA, *ta, *srvB, *tb); }
+    defer rp3.deinit();
     if rp3.status != 200 or rp3.body != "fetched" { pool.close(); return teardown(19, *srvA, *ta, *srvB, *tb); }
     st3 := srvA.stats();
     if st3.acceptedTotal != base + 1 { pool.close(); return teardown(20, *srvA, *ta, *srvB, *tb); }
@@ -221,8 +229,9 @@ run :: () -> i32 {
     optsTls := opts;
     optsTls.tls = xx *tcc;
     optsTls.tlsHost = "client-transport.test";
-    rt, et := http.Client.fetch("GET", helloTls, "", "", optsTls, *buf[0], 8192);
+    rt, et := http.Client.fetch("GET", helloTls, "", "", optsTls);
     if et { tcc.deinit(); srvT.stop(); tt.join(); srvT.close(); return teardown(99, *srvA, *ta, *srvB, *tb); }
+    defer rt.deinit();
     if rt.status != 200 or rt.body != "fetched" {
         tcc.deinit(); srvT.stop(); tt.join(); srvT.close();
         return teardown(34, *srvA, *ta, *srvB, *tb);
@@ -230,15 +239,17 @@ run :: () -> i32 {
     // pooled https: two pooled fetches must ride ONE TLS conn.
     tlsAccepts0 := srvT.stats().acceptedTotal;
     tpool := http.ClientPool.init(optsTls);
-    rq1, eq1 := tpool.fetch("GET", helloTls, "", "", *buf[0], 8192);
+    rq1, eq1 := tpool.fetch("GET", helloTls, "", "");
     if eq1 { tpool.close(); tcc.deinit(); srvT.stop(); tt.join(); srvT.close(); return teardown(36, *srvA, *ta, *srvB, *tb); }
-    rq2, eq2 := tpool.fetch("GET", helloTls, "", "", *buf[0], 8192);
+    defer rq1.deinit();
+    rq2, eq2 := tpool.fetch("GET", helloTls, "", "");
     if eq2 { tpool.close(); tcc.deinit(); srvT.stop(); tt.join(); srvT.close(); return teardown(37, *srvA, *ta, *srvB, *tb); }
+    defer rq2.deinit();
     if rq1.status != 200 or rq2.status != 200 { tpool.close(); tcc.deinit(); srvT.stop(); tt.join(); srvT.close(); return teardown(38, *srvA, *ta, *srvB, *tb); }
     if srvT.stats().acceptedTotal != tlsAccepts0 + 1 { tpool.close(); tcc.deinit(); srvT.stop(); tt.join(); srvT.close(); return teardown(39, *srvA, *ta, *srvB, *tb); }
     tpool.close();
     // the same https url WITHOUT a dialer must refuse loudly.
-    _, en := http.Client.fetch("GET", helloTls, "", "", opts, *buf[0], 8192);
+    _, en := http.Client.fetch("GET", helloTls, "", "", opts);
     srvT.stop();
     tt.join();
     srvT.close();

@@ -5,11 +5,13 @@
 //
 // The blocking surface:
 //   • `recv`/`recvOn` read Content-Length, close-delimited, or chunked
-//     responses. Chunk framing is removed, and gzip/deflate is decoded
-//     incrementally unless ClientOpts.acceptCompression is false. Output is
-//     always bounded by the caller's buffer.
-//   • `send` builds the request through `context.allocator` and does not free
-//     it; drive a long-lived client under an arena (or reset per request).
+//     responses into storage from the allocator they are given, which the
+//     ClientResponse holds until `deinit` returns it. Chunk framing is
+//     removed, and gzip/deflate is decoded incrementally unless
+//     ClientOpts.acceptCompression is false. ClientOpts.maxResponseBytes
+//     bounds the bytes a response buffers.
+//   • `send`/`sendOn` build each request in one allocation from
+//     `context.allocator` and free it before returning.
 //   • `method` and the `path`/`host`/`extraHeaders` of `send`/`sendOn`/
 //     `request` are sent verbatim (no CRLF sanitisation) — pass trusted
 //     values. `fetch` validates its `extraHeaders`.
@@ -33,7 +35,7 @@ ClientErr :: error {
                 // or the socket faulted
     Recv;       // read() failed or timed out; the peer closed before a full
                 // response; or chunked framing was malformed
-    TooLarge;   // the response did not fit the caller's buffer
+    TooLarge;   // the response passed the connection's maxResponseBytes
     BadStatus;  // the status line was malformed / no header terminator
     Url;        // fetch: the URL did not parse (scheme/host/port)
     Redirect;   // fetch: the redirect chain exceeded maxRedirects
@@ -42,7 +44,8 @@ ClientErr :: error {
                 // differently depending on a race — the stale-keep-alive
                 // signature (the pool's ONLY safe retry window besides a send
                 // fault: the request provably never executed)
-    Allocation; // content-decoder state could not be allocated
+    Allocation; // response storage or content-decoder state could not be
+                // allocated
     Header;     // fetch: a caller header line is malformed or names a field
                 // fetch writes itself (see `fetch`)
 }
@@ -75,6 +78,11 @@ ClientOpts :: struct {
     // Accept-Encoding suppresses only the automatic field; decoding remains
     // enabled. False does neither and preserves every raw coding field/body.
     acceptCompression: bool = true;
+    // Bound the bytes a response buffers: its head plus its body as it
+    // arrives (chunk framing included until it is removed, decoded bytes for
+    // a content-coded body). Passing it is `ClientErr.TooLarge`. null =
+    // unbounded.
+    maxResponseBytes: ?i64 = null;
 }
 
 // An open client connection: the fd plus the optional TLS session all
@@ -86,6 +94,7 @@ ClientConn :: struct {
     // Set only after sendOn has written a complete request. recvOn uses it
     // to apply HEAD's bodyless response framing before looking at CL/TE.
     requestWasHead: bool = false;
+    maxResponseBytes: ?i64 = null;   // see ClientOpts.maxResponseBytes
 }
 
 // Open a connection to a prebuilt address (any family — unix included).
@@ -108,6 +117,7 @@ private openAddr :: (a: *socket.Addr, opts: ClientOpts) -> (ClientConn, !ClientE
     }
     c.fd = fd;
     c.acceptCompression = opts.acceptCompression;
+    c.maxResponseBytes = opts.maxResponseBytes;
     if opts.tls != null {
         if opts.tlsHost.len == 0 { socket.close(fd); raise .Tls; }
         tc := opts.tls.connect(fd, opts.tlsHost);
@@ -183,8 +193,8 @@ private connReadStep :: (c: *ClientConn, buf: [*]u8, cap: i64) -> i64 {
 }
 
 // A parsed HTTP response. `headersRaw` is the raw block between the status
-// line and the body; `body` is the entity body. All views point INTO the
-// caller's read buffer (valid until that buffer is reused).
+// line and the body; `body` is the entity body. Every view points into
+// `storage`, from `a`, until `deinit` returns it.
 ClientResponse :: struct {
     status: i64 = 0;
     reason: string = "";
@@ -194,6 +204,12 @@ ClientResponse :: struct {
     // Content-Length from headersRaw. null means no transform; a value names
     // the one coding removed. With acceptCompression=false this stays null.
     decodedFrom: ?ContentCoding = null;
+    storage: []u8;
+    a: Allocator;
+
+    deinit :: (self: *ClientResponse) {
+        mem.free(self.storage, self.a);
+    }
 
     // Case-insensitive header lookup (`name` lowercase); "" when absent.
     // Reuses the server-side parser by viewing headersRaw as a request
@@ -216,33 +232,10 @@ private dial :: (ip: u32, port: i64) -> (i32, !ClientErr) {
 
 // Send one HTTP/1.1 request on `fd`. `extraHeaders` is preformatted
 // "Name: value\r\n" lines (may be ""); a Content-Length is added automatically
-// for a non-empty `body`. Concats through the current context allocator.
+// for a non-empty `body`.
 private send :: (fd: i32, method: string, path: string, host: string, extraHeaders: string, body: string) -> !ClientErr {
-    req := concat(method, " ");
-    req = concat(req, path);
-    req = concat(req, " HTTP/1.1\r\nHost: ");
-    req = concat(req, host);
-    req = concat(req, "\r\n");
-    if body.len > 0 {
-        req = concat(req, "Content-Length: ");
-        req = concat(req, intToString(body.len));
-        req = concat(req, "\r\n");
-    }
-    req = concat(req, extraHeaders);
-    if !hasHeader(extraHeaders, "accept-encoding") and !hasHeader(extraHeaders, "range") {
-        req = concat(req, HDR_ACCEPT_ENCODING);
-    }
-    req = concat(req, "\r\n");
-    if body.len > 0 { req = concat(req, body); }
-
     conn : ClientConn = .{ fd = fd };
-    sent : i64 = 0;
-    while sent < req.len {
-        n := connWriteStep(*conn, *req.ptr[sent], (req.len - sent));
-        if n <= 0 { raise .Send; }
-        sent += n;
-    }
-    return;
+    return sendOn(*conn, method, path, host, extraHeaders, body);
 }
 
 // Parse the status code out of a status line "HTTP/1.1 200 OK". Returns
@@ -266,11 +259,11 @@ private parseStatusLine :: (line: string) -> (i64, string) {
     return code, reason;
 }
 
-// Read a full response on `fd` into `buf` (caller-owned, `cap` bytes), using
-// the same transfer/content decoding as recvOn. Returns views INTO `buf`.
-private recv :: (fd: i32, buf: [*]u8, cap: i64, requestMethod: string = "GET") -> (ClientResponse, !ClientErr) {
-    conn : ClientConn = .{ fd = fd, requestWasHead = ceAsciiIeq(requestMethod, "head") };
-    recvOn(*conn, buf, cap)
+// Read a full response on `fd` into storage from `a`, using the same
+// transfer/content decoding as recvOn.
+private recv :: (fd: i32, requestMethod: string = "GET", maxResponseBytes: ?i64 = null, a: Allocator = context.allocator) -> (ClientResponse, !ClientErr) {
+    conn : ClientConn = .{ fd = fd, requestWasHead = ceAsciiIeq(requestMethod, "head"), maxResponseBytes = maxResponseBytes };
+    recvOn(*conn, a)
 }
 
 // Send one HTTP/1.1 request on an open ClientConn (TLS-aware `send`).
@@ -450,28 +443,16 @@ private parseUrl :: (url: string) -> (Url, bool) {
     return u, true;
 }
 
-// `u` with its host copied into `hb` (256 bytes). A parsed host views text
-// the next hop may free or overwrite: a Location copy, or a `url` viewing the
-// response buffer. false when the host does not fit.
-private ownHost :: (u: Url, hb: [*]u8) -> (Url, bool) {
-    if u.host.len > 255 { return u, false; }
+// `u` with its host and path copied into `text`, one allocation from `a`
+// that the caller frees.
+private ownUrl :: (u: Url, a: Allocator) -> (Url, []u8, !ClientErr) {
+    text := mem.alloc(a, u8, u.host.len + u.path.len);
+    if text.ptr == null { raise .Allocation; }
+    put(text.ptr, put(text.ptr, 0, u.host), u.path);
     o := u;
-    if u.host.ptr != hb {
-        clib.c.memcpy(hb, u.host.ptr, u.host.len);
-        o.host = string{ ptr = hb, len = u.host.len };
-    }
-    return o, true;
-}
-
-// `s`, or a copy of it when it overlaps the `cap` bytes at `buf`, which each
-// hop's response overwrites. The copy is also returned, for the caller to free.
-private ownOutside :: (s: string, buf: [*]u8, cap: i64) -> (string, ?[*]u8) {
-    sa := @reinterpret(isize, s.ptr);
-    ba := @reinterpret(isize, buf);
-    if s.len == 0 or sa >= ba + cap or ba >= sa + s.len { return s, null; }
-    p : [*]u8 = mem.alloc(context.allocator, u8, s.len).ptr;
-    clib.c.memcpy(p, s.ptr, s.len);
-    return string{ ptr = p, len = s.len }, p;
+    o.host = text[0 .. u.host.len];
+    o.path = text[u.host.len ..];
+    return o, text;
 }
 
 // Whether a fetch hop to `u` carries the caller's credential lines: only
@@ -483,7 +464,7 @@ private sameOrigin :: (origin: Url, u: Url) -> bool {
 // One request against a parsed URL over a FRESH connection; the conn is
 // returned (still open) alongside the response for the caller to reuse or
 // close. `verifyHost` is the TLS name ("" = the URL host).
-private fetchHop :: (u: Url, method: string, extraHeaders: string, credentials: bool, body: string, opts: ClientOpts, verifyHost: string, buf: [*]u8, cap: i64) -> (ClientConn, ClientResponse, !ClientErr) {
+private fetchHop :: (u: Url, method: string, extraHeaders: string, credentials: bool, body: string, opts: ClientOpts, verifyHost: string, a: Allocator) -> (ClientConn, ClientResponse, !ClientErr) {
     o := opts;
     if u.https {
         if o.tls == null { raise .Tls; }   // never plaintext to an https target
@@ -496,7 +477,7 @@ private fetchHop :: (u: Url, method: string, extraHeaders: string, credentials: 
     if oe { raise oe; }
     se := sendOn(*c, method, u.path, u.host, extraHeaders, body, credentials);
     if se { closeConn(*c); raise se; }
-    r, re := recvOn(*c, buf, cap);
+    r, re := recvOn(*c, a);
     if re { closeConn(*c); raise re; }
     return c, r;
 }
@@ -589,72 +570,41 @@ private isRedirect :: (status: i64) -> bool {
 // Host, Content-Length or Transfer-Encoding raises `ClientErr.Header`
 // before any connection opens.
 //
-// `method`, `extraHeaders` and `body` may view `buf`: the hops send the bytes
-// passed, though each response overwrites `buf`.
-private fetch :: (method: string, url: string, extraHeaders: string, body: string, opts: ClientOpts, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
-    // Owned copies of the current target — Location views the response
-    // buffer, which the next hop overwrites.
-    hostb : [256]u8 = ---;
-    pathp : [*]u8 = null;      // owned location copy (heap; freed each hop)
-    freeing := false;          // pathp needs a free
-
+// Each hop's response is read into storage from `a`; a redirect's is
+// returned to `a` once its Location is copied, and the returned response
+// holds its own until `deinit`.
+private fetch :: (method: string, url: string, extraHeaders: string, body: string, opts: ClientOpts, a: Allocator = context.allocator) -> (ClientResponse, !ClientErr) {
     u, ok := parseUrl(url);
     if !ok { raise .Url; }
     if !validFetchHeaders(extraHeaders) { raise .Header; }
-    originb : [256]u8 = ---;
-    origin, ook := ownHost(u, *originb[0]);
-    if !ook { raise .Url; }
-    m, mo := ownOutside(method, buf, cap);
-    defer if p := mo { context.allocator.deallocBytes(p); };
-    hdrs, ho := ownOutside(extraHeaders, buf, cap);
-    defer if p := ho { context.allocator.deallocBytes(p); };
-    b, bo := ownOutside(body, buf, cap);
-    defer if p := bo { context.allocator.deallocBytes(p); };
+    origin := u;
+    // The current target's host and path, once a redirect has named it.
+    target : ?[]u8 = null;
+    defer if t := target { mem.free(t, a); };
+    m := method;
+    b := body;
     hops : i64 = 0;
     first := true;
     while true {
-        // Materialize the host into the stack buffer and REPOINT u.host at
-        // it — a later relative hop must not leave u.host viewing a freed
-        // previous location copy (absolute-then-relative chains).
-        hu, hok := ownHost(u, *hostb[0]);
-        if !hok { if freeing { context.allocator.deallocBytes(pathp); } raise .Url; }
-        u = hu;
-
         vh := if first then opts.tlsHost else "";
-        c, r, he := fetchHop(hu, m, hdrs, sameOrigin(origin, hu), b, opts, vh, buf, cap);
-        if he { if freeing { context.allocator.deallocBytes(pathp); } raise he; }
-
-        if !isRedirect(r.status) or opts.maxRedirects <= 0 {
-            closeConn(*c);
-            if freeing { context.allocator.deallocBytes(pathp); }
-            return r;
-        }
-        loc := r.header("location");
-        if loc.len == 0 {
-            closeConn(*c);
-            if freeing { context.allocator.deallocBytes(pathp); }
-            return r;
-        }
-        hops += 1;
-        if hops > opts.maxRedirects {
-            closeConn(*c);
-            if freeing { context.allocator.deallocBytes(pathp); }
-            raise .Redirect;
-        }
-        // Build the next target BEFORE the buffer is reused: copy the
-        // location out, then re-parse.
-        np : [*]u8 = mem.alloc(context.allocator, u8, loc.len).ptr;
-        clib.c.memcpy(np, loc.ptr, loc.len);
-        locv := string{ ptr = np, len = loc.len };
+        c, r, he := fetchHop(u, m, extraHeaders, sameOrigin(origin, u), b, opts, vh, a);
+        if he { raise he; }
         closeConn(*c);
-        if freeing { context.allocator.deallocBytes(pathp); }
-        pathp = np;
-        freeing = true;
-
-        nu := resolveLocation(u, locv);
-        if nu == null { context.allocator.deallocBytes(pathp); raise .Url; }
-        u = nu;
-        if r.status == 301 or r.status == 302 or r.status == 303 {
+        if !isRedirect(r.status) or opts.maxRedirects <= 0 { return r; }
+        loc := r.header("location");
+        if loc.len == 0 { return r; }
+        status := r.status;
+        hops += 1;
+        if hops > opts.maxRedirects { r.deinit(); raise .Redirect; }
+        nu := resolveLocation(u, loc);
+        if nu == null { r.deinit(); raise .Url; }
+        owned, text, oe := ownUrl(nu, a);
+        r.deinit();
+        if oe { raise oe; }
+        if t := target { mem.free(t, a); }
+        target = text;
+        u = owned;
+        if status == 301 or status == 302 or status == 303 {
             m = "GET";
             b = "";
         }
@@ -697,6 +647,31 @@ private finishContentDecoder :: (decoder: *Decoder, output: string) -> (i64, boo
     return progress.produced, progress.status == .done;
 }
 
+// `buf` grown to at least `want` bytes and at most `limit`, doubling its
+// length and keeping its bytes. `.TooLarge` when `want` passes `limit`.
+private growResponse :: (buf: []u8, want: i64, limit: ?i64, a: Allocator) -> ([]u8, !ClientErr) {
+    if want <= buf.len { return buf; }
+    n := buf.len * 2;
+    if n < want { n = want; }
+    if l := limit {
+        if want > l { raise .TooLarge; }
+        if n > l { n = l; }
+    }
+    grown := mem.resize(buf, a, n);
+    if grown == null { raise .Allocation; }
+    return grown;
+}
+
+// The unwritten tail of `buf.*` from `at`, grown first when it is empty;
+// "" once `buf.*` has reached `limit`.
+private outputWindow :: (buf: *[]u8, at: i64, limit: ?i64, a: Allocator) -> (string, !ClientErr) {
+    if at >= buf.len {
+        if l := limit { if buf.len >= l { return ""; } }
+        buf.* = try growResponse(buf.*, at + 1, limit, a);
+    }
+    return buf.*[at ..];
+}
+
 // Header compaction leaves the decoded body at its original headEnd;
 // only the public headersRaw view shrinks.
 private normalizeDecodedHeaders :: (raw: [*]u8, len: i64) -> i64 {
@@ -727,15 +702,17 @@ private normalizeDecodedHeaders :: (raw: [*]u8, len: i64) -> i64 {
 }
 
 // Decode a gzip/deflate response while its transfer framing is read. The
-// caller's body region is the destination; compressed wire bytes live only
-// in one 16 KiB stack window, so chunked and close-delimited responses do not
-// require buffering their encoded form. `initial` is the body prefix that
-// arrived with the header read and is copied before output can overwrite it.
-private recvEncodedBody :: (c: *ClientConn, buf: [*]u8, cap: i64, headEnd: i64,
+// decoded body lands in `buf.*` from `headEnd`, growing it up to `limit`;
+// compressed wire bytes live only in one 16 KiB stack window, so chunked and
+// close-delimited responses do not require buffering their encoded form.
+// `initial` is the body prefix that arrived with the header read and is
+// copied before output can overwrite it.
+private recvEncodedBody :: (c: *ClientConn, buf: *[]u8, limit: ?i64, a: Allocator, headEnd: i64,
                       initial: string, contentLen: i64, chunked: bool,
                       contentEncoding: Encoding) -> (i64, !ClientErr) {
-    outputCap := cap - headEnd;
-    decoder := Decoder.init(contentEncoding, outputCap, context.allocator) catch |e| {
+    outputCap : i64 = i64.max;
+    if l := limit { outputCap = l - headEnd; }
+    decoder := Decoder.init(contentEncoding, outputCap, a) catch |e| {
         if e == .AllocationFailed { raise .Allocation; }
         raise .Recv;
     };
@@ -784,10 +761,7 @@ private recvEncodedBody :: (c: *ClientConn, buf: [*]u8, cap: i64, headEnd: i64,
             if contentLen >= 0 and take > fixedLeft { take = fixedLeft; }
             if decoderDone and take > 0 { raise .Recv; }
             while take > 0 {
-                output := "";
-                if outputAt < outputCap {
-                    output = string{ ptr = *buf[headEnd + outputAt], len = outputCap - outputAt };
-                }
+                output := try outputWindow(buf, headEnd + outputAt, limit, a);
                 consumed, produced, done := try feedContentDecoder(*decoder,
                     string{ ptr = *wire[wireAt], len = take }, output);
                 wireAt += consumed;
@@ -812,10 +786,7 @@ private recvEncodedBody :: (c: *ClientConn, buf: [*]u8, cap: i64, headEnd: i64,
             take := if available < chunkLeft then available else chunkLeft;
             if decoderDone and take > 0 { raise .Recv; }
             while take > 0 {
-                output := "";
-                if outputAt < outputCap {
-                    output = string{ ptr = *buf[headEnd + outputAt], len = outputCap - outputAt };
-                }
+                output := try outputWindow(buf, headEnd + outputAt, limit, a);
                 consumed, produced, done := try feedContentDecoder(*decoder,
                     string{ ptr = *wire[wireAt], len = take }, output);
                 wireAt += consumed;
@@ -910,10 +881,7 @@ private recvEncodedBody :: (c: *ClientConn, buf: [*]u8, cap: i64, headEnd: i64,
     }
 
     while !decoderDone {
-        output := "";
-        if outputAt < outputCap {
-            output = string{ ptr = *buf[headEnd + outputAt], len = outputCap - outputAt };
-        }
+        output := try outputWindow(buf, headEnd + outputAt, limit, a);
         produced, done := try finishContentDecoder(*decoder, output);
         outputAt += produced;
         decoderDone = done;
@@ -950,10 +918,18 @@ private responseHeadEnd :: (buf: [*]u8, len: i64) -> i64 {
     -1
 }
 
-private recvOn :: (c: *ClientConn, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
+private recvOn :: (c: *ClientConn, a: Allocator = context.allocator) -> (ClientResponse, !ClientErr) {
+    limit := c.maxResponseBytes;
+    firstCap : i64 = CLIENT_WIRE_PIECE;
+    if l := limit { if l < firstCap { firstCap = l; } }
+    buf := mem.alloc(a, u8, firstCap);
+    if buf.ptr == null and firstCap > 0 { raise .Allocation; }
+    kept := false;
+    defer if !kept mem.free(buf, a);
     total : i64 = 0;
     headEnd : i64 = -1;
     headerStart : i64 = 0;
+    statusLineLen : i64 = 0;
     contentLen : i64 = -1;
     chunked := false;
     scan : ChunkScan = .{};
@@ -962,7 +938,6 @@ private recvOn :: (c: *ClientConn, buf: [*]u8, cap: i64) -> (ClientResponse, !Cl
     decodedFrom : ?ContentCoding = null;
     normalizedHeadersLen : i64 = -1;
     finalStatus: i64 = 0;
-    finalReason := "";
     requestWasHead := c.requestWasHead;
     c.requestWasHead = false;
     sawInformational := false;
@@ -970,18 +945,18 @@ private recvOn :: (c: *ClientConn, buf: [*]u8, cap: i64) -> (ClientResponse, !Cl
     while true {
         // Parse any complete head already buffered. This runs before another
         // read so a coalesced 1xx + final response cannot block waiting for
-        // bytes that are already in the caller's buffer.
-        if headEnd < 0 { headEnd = responseHeadEnd(buf, total); }
+        // bytes that are already buffered.
+        if headEnd < 0 { headEnd = responseHeadEnd(buf.ptr, total); }
         if headEnd >= 0 and finalStatus == 0 {
             sl : i64 = 0;
             while sl + 1 < headEnd and !(buf[sl] == '\r' and buf[sl+1] == '\n') { sl += 1; }
             if sl + 1 >= headEnd { raise .BadStatus; }
-            code, reason := parseStatusLine(string{ ptr = buf, len = sl });
+            code, _ := parseStatusLine(buf[0 .. sl]);
             if code == 0 { raise .BadStatus; }
 
             if code >= 100 and code < 200 {
                 remaining := total - headEnd;
-                if remaining > 0 { clib.c.memmove(buf, *buf[headEnd], remaining); }
+                if remaining > 0 { clib.c.memmove(buf.ptr, *buf[headEnd], remaining); }
                 total = remaining;
                 headEnd = -1;
                 sawInformational = true;
@@ -989,9 +964,9 @@ private recvOn :: (c: *ClientConn, buf: [*]u8, cap: i64) -> (ClientResponse, !Cl
             }
 
             finalStatus = code;
-            finalReason = reason;
+            statusLineLen = sl;
             headerStart = sl + 2;
-            hdrs := string{ ptr = *buf[headerStart], len = headEnd - 2 - headerStart };
+            hdrs := buf[headerStart .. headEnd - 2];
 
             if !(requestWasHead or code == 204 or code == 304) {
                 tmp : Request = .{ headersRaw = hdrs };
@@ -1021,9 +996,8 @@ private recvOn :: (c: *ClientConn, buf: [*]u8, cap: i64) -> (ClientResponse, !Cl
                         if encoding == .unacceptable { raise .Recv; }
                     }
                     if encoding != .identity {
-                        initial := string{ ptr = *buf[headEnd], len = total - headEnd };
-                        decoded = try recvEncodedBody(c, buf, cap, headEnd,
-                            initial, contentLen, chunked, encoding);
+                        decoded = try recvEncodedBody(c, *buf, limit, a, headEnd,
+                            buf[headEnd .. total], contentLen, chunked, encoding);
                         decodedFrom = if encoding == .gzip then ContentCoding.gzip else ContentCoding.deflate;
                         normalizedHeadersLen = normalizeDecodedHeaders(*buf[headerStart], headEnd - 2 - headerStart);
                         total = headEnd + decoded;
@@ -1041,7 +1015,9 @@ private recvOn :: (c: *ClientConn, buf: [*]u8, cap: i64) -> (ClientResponse, !Cl
                 break;
             }
             if chunked {
-                r := decodeChunked(*buf[headEnd], total - headEnd, cap - headEnd, scan);
+                maxBody : i64 = i64.max;
+                if l := limit { maxBody = l - headEnd; }
+                r := decodeChunked(*buf[headEnd], total - headEnd, maxBody, scan);
                 if r.status == ChunkStatus.OK { decoded = r.decodedLen; break; }
                 if r.status == ChunkStatus.TOO_BIG { raise .TooLarge; }
                 if r.status != ChunkStatus.NEED_MORE { raise .Recv; }
@@ -1052,8 +1028,8 @@ private recvOn :: (c: *ClientConn, buf: [*]u8, cap: i64) -> (ClientResponse, !Cl
             }
         }
 
-        if total >= cap { raise .TooLarge; }
-        room := cap - total;
+        buf = try growResponse(buf, total + 1, limit, a);
+        room := buf.len - total;
         if headEnd < 0 and room > CLIENT_WIRE_PIECE { room = CLIENT_WIRE_PIECE; }
         n := connReadStep(c, *buf[total], room);
         if n == READ_RESET and total == 0 and !sawInformational { raise .Closed; }
@@ -1075,31 +1051,35 @@ private recvOn :: (c: *ClientConn, buf: [*]u8, cap: i64) -> (ClientResponse, !Cl
     bodyLen := if decoded >= 0 then decoded
                 else if contentLen >= 0 then contentLen
                 else total - headEnd;
+    headersLen := if normalizedHeadersLen >= 0 then normalizedHeadersLen else headEnd - 2 - headerStart;
+    _, reason := parseStatusLine(buf[0 .. statusLineLen]);
+    kept = true;
     return ClientResponse{
         status = finalStatus,
-        reason = finalReason,
-        headersRaw = string{ ptr = *buf[headerStart], len = if normalizedHeadersLen >= 0 then normalizedHeadersLen else headEnd - 2 - headerStart },
-        body = string{ ptr = *buf[headEnd], len = bodyLen },
+        reason = reason,
+        headersRaw = buf[headerStart .. headerStart + headersLen],
+        body = buf[headEnd .. headEnd + bodyLen],
         decodedFrom = decodedFrom,
+        storage = buf,
+        a = a,
     };
 }
 
-// Convenience: dial ip:port, send the request, read the response into `buf`,
-// close the connection. One blocking round-trip.
-private request :: (ip: u32, port: i64, method: string, path: string, host: string, extraHeaders: string, body: string, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
+// Convenience: dial ip:port, send the request, read the response into
+// storage from `a`, close the connection. One blocking round-trip.
+private request :: (ip: u32, port: i64, method: string, path: string, host: string, extraHeaders: string, body: string, a: Allocator = context.allocator) -> (ClientResponse, !ClientErr) {
     fd := try dial(ip, port);
     defer socket.close(fd);
     try send(fd, method, path, host, extraHeaders, body);
-    return recv(fd, buf, cap, method);
+    return recv(fd, method, null, a);
 }
 
 // ── keep-alive connection pool ────────────────────────────────
 
 // One pooled keep-alive connection, keyed (https, host, port). `host` is a
-// pool-owned copy.
+// copy from the pool's allocator.
 private PoolEntry :: struct {
-    host: [*]u8 = null;
-    hostLen: i64 = 0;
+    host: string;
     port: i64 = 0;
     https: bool = false;
     conn: ClientConn;
@@ -1124,56 +1104,36 @@ ClientPool :: struct {
 
     // Fetch through the pool. Redirect hops are followed with the SAME
     // pooling (each hop reuses/creates its host's entry). `extraHeaders`
-    // is validated, and `method`, `extraHeaders` and `body` are sent, as by
-    // the free `fetch`; each may view `buf`.
-    fetch :: (self: *ClientPool, method: string, url: string, extraHeaders: string, body: string, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
+    // is validated, `method`, `extraHeaders` and `body` are sent, and each
+    // response is read into storage from `a`, as by the free `fetch`.
+    fetch :: (self: *ClientPool, method: string, url: string, extraHeaders: string, body: string, a: Allocator = context.allocator) -> (ClientResponse, !ClientErr) {
         u, ok := parseUrl(url);
         if !ok { raise .Url; }
         if !validFetchHeaders(extraHeaders) { raise .Header; }
-        originb : [256]u8 = ---;
-        origin, ook := ownHost(u, *originb[0]);
-        if !ook { raise .Url; }
-        m, mo := ownOutside(method, buf, cap);
-        defer if p := mo { context.allocator.deallocBytes(p); };
-        hdrs, ho := ownOutside(extraHeaders, buf, cap);
-        defer if p := ho { context.allocator.deallocBytes(p); };
-        b, bo := ownOutside(body, buf, cap);
-        defer if p := bo { context.allocator.deallocBytes(p); };
-        hostb : [256]u8 = ---;
-        pathp : [*]u8 = null;
-        freeing := false;
+        origin := u;
+        target : ?[]u8 = null;
+        defer if t := target { mem.free(t, a); };
+        m := method;
+        b := body;
         hops : i64 = 0;
         first := true;
         while true {
-            hu, hok := ownHost(u, *hostb[0]);
-            if !hok { if freeing { context.allocator.deallocBytes(pathp); } raise .Url; }
-            u = hu;
-            r, he := self.hop(u, m, hdrs, sameOrigin(origin, u), b, first, buf, cap);
-            if he { if freeing { context.allocator.deallocBytes(pathp); } raise he; }
-            if !isRedirect(r.status) or self.opts.maxRedirects <= 0 {
-                if freeing { context.allocator.deallocBytes(pathp); }
-                return r;
-            }
+            r := try self.hop(u, m, extraHeaders, sameOrigin(origin, u), b, first, a);
+            if !isRedirect(r.status) or self.opts.maxRedirects <= 0 { return r; }
             loc := r.header("location");
-            if loc.len == 0 {
-                if freeing { context.allocator.deallocBytes(pathp); }
-                return r;
-            }
+            if loc.len == 0 { return r; }
+            status := r.status;
             hops += 1;
-            if hops > self.opts.maxRedirects {
-                if freeing { context.allocator.deallocBytes(pathp); }
-                raise .Redirect;
-            }
-            np : [*]u8 = mem.alloc(context.allocator, u8, loc.len).ptr;
-            clib.c.memcpy(np, loc.ptr, loc.len);
-            locv := string{ ptr = np, len = loc.len };
-            if freeing { context.allocator.deallocBytes(pathp); }
-            pathp = np;
-            freeing = true;
-            nu := resolveLocation(u, locv);
-            if nu == null { context.allocator.deallocBytes(pathp); raise .Url; }
-            u = nu;
-            if r.status == 301 or r.status == 302 or r.status == 303 {
+            if hops > self.opts.maxRedirects { r.deinit(); raise .Redirect; }
+            nu := resolveLocation(u, loc);
+            if nu == null { r.deinit(); raise .Url; }
+            owned, text, oe := ownUrl(nu, a);
+            r.deinit();
+            if oe { raise oe; }
+            if t := target { mem.free(t, a); }
+            target = text;
+            u = owned;
+            if status == 301 or status == 302 or status == 303 {
                 m = "GET";
                 b = "";
             }
@@ -1189,7 +1149,7 @@ ClientPool :: struct {
     // alive signature). Every receipt failure after bytes arrived
     // (TooLarge/BadStatus/Recv) propagates AS ITSELF: the server may have
     // executed the request, and re-sending would double side effects.
-    hop :: (self: *ClientPool, u: Url, method: string, extraHeaders: string, credentials: bool, body: string, first: bool, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
+    hop :: (self: *ClientPool, u: Url, method: string, extraHeaders: string, credentials: bool, body: string, first: bool, a: Allocator) -> (ClientResponse, !ClientErr) {
         idx := self.find(u);
         reused := idx >= 0 and self.entries.items[idx].live;
         attempt : i64 = 0;
@@ -1208,7 +1168,7 @@ ClientPool :: struct {
                 if reused and attempt == 0 { attempt += 1; reused = false; continue; }
                 raise se;
             }
-            r, re := recvOn(*e.conn, buf, cap);
+            r, re := recvOn(*e.conn, a);
             if re {
                 self.drop(idx);
                 idx = -1;
@@ -1245,15 +1205,7 @@ ClientPool :: struct {
         i : i64 = 0;
         while i < self.entries.len {
             e: *PoolEntry = *self.entries.items[i];
-            if e.live and e.https == u.https and e.port == u.port and e.hostLen == u.host.len {
-                same := true;
-                j : i64 = 0;
-                while j < e.hostLen {
-                    if e.host[j] != u.host[j] { same = false; break; }
-                    j += 1;
-                }
-                if same { return i; }
-            }
+            if e.live and e.https == u.https and e.port == u.port and e.host == u.host { return i; }
             i += 1;
         }
         return -1;
@@ -1266,14 +1218,10 @@ ClientPool :: struct {
             if !self.entries.items[i].live { break; }
             i += 1;
         }
-        hp : [*]u8 = mem.alloc(self.a, u8, u.host.len).ptr;
-        j : i64 = 0;
-        while j < u.host.len { hp[j] = u.host[j]; j += 1; }
-        ne : PoolEntry = .{ host = hp, hostLen = u.host.len, port = u.port,
+        ne : PoolEntry = .{ host = mem.clone(u.host, self.a), port = u.port,
                             https = u.https, conn = c, live = true };
         if i < self.entries.len {
-            old: *PoolEntry = *self.entries.items[i];
-            if old.host != null { self.a.deallocBytes(old.host); }
+            mem.free(self.entries.items[i].host, self.a);
             self.entries.items[i] = ne;
         } else {
             self.entries.append(ne, self.a);
@@ -1294,7 +1242,7 @@ ClientPool :: struct {
         while i < self.entries.len {
             e: *PoolEntry = *self.entries.items[i];
             if e.live { closeConn(*e.conn); e.live = false; }
-            if e.host != null { self.a.deallocBytes(e.host); e.host = null; }
+            mem.free(e.host, self.a);
             i += 1;
         }
         self.entries.deinit(self.a);
@@ -1309,12 +1257,12 @@ Client :: struct {
         return send(fd, method, path, host, extraHeaders, body);
     }
     // Read a full response on an open fd (see free `recv`).
-    recv :: (fd: i32, buf: [*]u8, cap: i64, requestMethod: string = "GET") -> (ClientResponse, !ClientErr) {
-        return recv(fd, buf, cap, requestMethod);
+    recv :: (fd: i32, requestMethod: string = "GET", maxResponseBytes: ?i64 = null, a: Allocator = context.allocator) -> (ClientResponse, !ClientErr) {
+        return recv(fd, requestMethod, maxResponseBytes, a);
     }
     // One blocking round-trip: dial → send → recv → close (see free `request`).
-    request :: (ip: u32, port: i64, method: string, path: string, host: string, extraHeaders: string, body: string, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
-        return request(ip, port, method, path, host, extraHeaders, body, buf, cap);
+    request :: (ip: u32, port: i64, method: string, path: string, host: string, extraHeaders: string, body: string, a: Allocator = context.allocator) -> (ClientResponse, !ClientErr) {
+        return request(ip, port, method, path, host, extraHeaders, body, a);
     }
     // ── sessions (see the free functions above) ────────────────
     open :: (host: string, port: i64, opts: ClientOpts) -> (ClientConn, !ClientErr) {
@@ -1326,12 +1274,12 @@ Client :: struct {
     sendOn :: (c: *ClientConn, method: string, path: string, host: string, extraHeaders: string, body: string) -> !ClientErr {
         return sendOn(c, method, path, host, extraHeaders, body);
     }
-    recvOn :: (c: *ClientConn, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
-        return recvOn(c, buf, cap);
+    recvOn :: (c: *ClientConn, a: Allocator = context.allocator) -> (ClientResponse, !ClientErr) {
+        return recvOn(c, a);
     }
     closeConn :: (c: *ClientConn) { closeConn(c); }
     // ── (see the free `fetch`) ─────────────────────────────────
-    fetch :: (method: string, url: string, extraHeaders: string, body: string, opts: ClientOpts, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
-        return fetch(method, url, extraHeaders, body, opts, buf, cap);
+    fetch :: (method: string, url: string, extraHeaders: string, body: string, opts: ClientOpts, a: Allocator = context.allocator) -> (ClientResponse, !ClientErr) {
+        return fetch(method, url, extraHeaders, body, opts, a);
     }
 }

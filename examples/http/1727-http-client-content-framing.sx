@@ -54,14 +54,15 @@ hexInto :: (value: i64, dst: [*]u8) -> i64 {
 bodylessThenNormal :: (firstHead: string, method: string) -> bool {
     pair : [2]i32 = ---;
     if socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM, 0, *pair[0]) != 0 { return false; }
-    storage : [4096]u8 = ---;
     if !writeAll(pair[1], firstHead) { socket.close(pair[0]); socket.close(pair[1]); return false; }
-    first, fe := http.Client.recv(pair[0], *storage[0], storage.len, method);
-    ok := !fe and first.body.len == 0;
+    first, fe := http.Client.recv(pair[0], method);
+    ok := !fe;
+    if !fe { ok = first.body.len == 0; first.deinit(); }
     if ok { ok = writeAll(pair[1], "HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\npong"); }
     if ok {
-        second, se := http.Client.recv(pair[0], *storage[0], storage.len);
-        ok = !se and second.status == 200 and second.body == "pong";
+        second, se := http.Client.recv(pair[0]);
+        ok = !se;
+        if !se { ok = second.status == 200 and second.body == "pong"; second.deinit(); }
     }
     socket.close(pair[0]);
     socket.close(pair[1]);
@@ -76,9 +77,9 @@ informationalFinal :: () -> bool {
             "HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\npong"));
     ok := writeAll(pair[1], wire);
     if ok {
-        storage : [4096]u8 = ---;
-        response, e := http.Client.recv(pair[0], *storage[0], storage.len);
-        ok = !e and response.status == 200 and response.body == "pong";
+        response, e := http.Client.recv(pair[0]);
+        ok = !e;
+        if !e { ok = response.status == 200 and response.body == "pong"; response.deinit(); }
     }
     socket.close(pair[0]); socket.close(pair[1]);
     ok
@@ -109,17 +110,15 @@ decodeCase :: (packed: string, plain: string, coding: string, framing: i64, oneS
         else { ok = writeAll(pair[1], packed); }
     }
     if framing == 2 { socket.close(pair[1]); pair[1] = -1; }
-    cap := head.len + plain.len - (if oneShort then 1 else 0);
-    storage := context.allocator.allocBytes(cap);
-    if storage == null { socket.close(pair[0]); if pair[1] >= 0 { socket.close(pair[1]); } return false; }
-    response, e := http.Client.recv(pair[0], storage, cap);
+    limit := head.len + plain.len - (if oneShort then 1 else 0);
+    response, e := http.Client.recv(pair[0], "GET", limit);
     if oneShort { ok = ok and e == .TooLarge; }
     else {
         wanted := if coding == "gzip" then http.ContentCoding.gzip else http.ContentCoding.deflate;
         ok = ok and !e and response.decodedFrom != null and response.decodedFrom?! == wanted
             and same(response.body, plain);
     }
-    context.allocator.deallocBytes(storage);
+    if !e { response.deinit(); }
     socket.close(pair[0]); if pair[1] >= 0 { socket.close(pair[1]); }
     ok
 }
@@ -131,11 +130,14 @@ rawCodingPreserved :: () -> bool {
         "Content-Encoding: gzip\r\n\r\nraw");
     ok := writeAll(pair[1], wire);
     conn : http.ClientConn = .{ fd = pair[0], acceptCompression = false };
-    storage : [4096]u8 = ---;
-    response, e := http.Client.recvOn(*conn, *storage[0], storage.len);
-    ok = ok and !e and response.decodedFrom == null and response.body == "raw"
-        and contains(response.headersRaw, "Content-Encoding: br")
-        and contains(response.headersRaw, "Content-Encoding: gzip");
+    response, e := http.Client.recvOn(*conn);
+    ok = ok and !e;
+    if !e {
+        ok = ok and response.decodedFrom == null and response.body == "raw"
+            and contains(response.headersRaw, "Content-Encoding: br")
+            and contains(response.headersRaw, "Content-Encoding: gzip");
+        response.deinit();
+    }
     socket.close(pair[0]); socket.close(pair[1]);
     ok
 }
@@ -148,12 +150,13 @@ rangeCodingPreserved :: (packed: string, coding: string, status: i64) -> bool {
         "\r\nContent-Range: bytes */99\r\nContent-Length: "));
     head = concat(head, concat(intToString(packed.len), "\r\n\r\n"));
     ok := writeAll(pair[1], head) and writeAll(pair[1], packed);
-    storage := context.allocator.allocBytes(head.len + packed.len);
-    if storage == null { socket.close(pair[0]); socket.close(pair[1]); return false; }
-    response, e := http.Client.recv(pair[0], storage, head.len + packed.len);
-    ok = ok and !e and response.status == status and response.decodedFrom == null
-        and response.header("content-encoding") == coding and same(response.body, packed);
-    context.allocator.deallocBytes(storage);
+    response, e := http.Client.recv(pair[0], "GET", head.len + packed.len);
+    ok = ok and !e;
+    if !e {
+        ok = ok and response.status == status and response.decodedFrom == null
+            and response.header("content-encoding") == coding and same(response.body, packed);
+        response.deinit();
+    }
     socket.close(pair[0]); socket.close(pair[1]);
     ok
 }
@@ -175,8 +178,8 @@ encodedResponseFails :: (packed: string, coding: string) -> bool {
         concat(coding, concat("\r\nContent-Length: ", concat(intToString(packed.len), "\r\n\r\n"))));
     ok := writeAll(pair[1], head) and writeAll(pair[1], packed);
     socket.close(pair[1]);
-    storage : [4096]u8 = ---;
-    _, e := http.Client.recv(pair[0], *storage[0], storage.len);
+    response, e := http.Client.recv(pair[0]);
+    if !e { response.deinit(); }
     socket.close(pair[0]);
     ok and e == .Recv
 }
@@ -188,8 +191,8 @@ codingListFails :: (value: string) -> bool {
         concat(value, "\r\n\r\nx"));
     ok := writeAll(pair[1], wire);
     socket.close(pair[1]);
-    storage : [4096]u8 = ---;
-    _, e := http.Client.recv(pair[0], *storage[0], storage.len);
+    response, e := http.Client.recv(pair[0]);
+    if !e { response.deinit(); }
     socket.close(pair[0]);
     ok and e == .Recv
 }

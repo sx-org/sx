@@ -26,11 +26,10 @@ main :: () -> i32 {
     if se { return 1; }
     t, te := thread.Thread.spawn(srvEntry, *srv);
     if te { return 1; }
-    buf : [8192]u8 = ---;
     pool := http.ClientPool.init(.{ connectTimeoutMs = 2000, ioTimeoutMs = 3000 });
-    r, e := pool.fetch("GET", format("http://127.0.0.1:{}/r", srv.cfg.port), "", "", *buf[0], 8192);
+    r, e := pool.fetch("GET", format("http://127.0.0.1:{}/r", srv.cfg.port), "", "");
     pool.close();
-    if e { print("{}\n", e); } else { print("{}\n", r.body); }
+    if e { print("{}\n", e); } else { print("{}\n", r.body); r.deinit(); }
     srv.stop();
     t.join();
     srv.close();

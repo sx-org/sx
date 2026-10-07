@@ -196,13 +196,9 @@ serverEntry :: (arg: *void) -> *void abi(.c) {
     null
 }
 
-requestOn :: (conn: *http.ClientConn, path: string, headers: string,
-               storage: [*]u8, cap: i64) -> (ClientResponse, bool) {
-    se := http.Client.sendOn(conn, "GET", path, "content.test", headers, "");
-    if se { return .{}, true; }
-    response, re := http.Client.recvOn(conn, storage, cap);
-    if re { return .{}, true; }
-    return response, false;
+requestOn :: (conn: *http.ClientConn, path: string, headers: string, a: Allocator) -> (ClientResponse, !http.ClientErr) {
+    try http.Client.sendOn(conn, "GET", path, "content.test", headers, "");
+    return http.Client.recvOn(conn, a);
 }
 
 writeAll :: (fd: i32, data: string) -> bool {
@@ -222,8 +218,8 @@ malformedResponseFails :: (wire: string) -> bool {
         socket.close(pair[0]); socket.close(pair[1]); return false;
     }
     socket.close(pair[1]);
-    storage : [4096]u8 = ---;
-    _, e := http.Client.recv(pair[0], *storage[0], storage.len);
+    response, e := http.Client.recv(pair[0]);
+    if !e { response.deinit(); }
     socket.close(pair[0]);
     e == .Recv
 }
@@ -236,26 +232,24 @@ exactCapacityDecodes :: (plain: string, packed: string) -> bool {
         socket.close(pair[0]); socket.close(pair[1]); return false;
     }
     socket.close(pair[1]);
-    cap := head.len + plain.len;
-    storage := context.allocator.allocBytes(cap);
-    if storage == null { socket.close(pair[0]); return false; }
-    response, e := http.Client.recv(pair[0], storage, cap);
+    response, e := http.Client.recv(pair[0], "GET", head.len + plain.len);
     socket.close(pair[0]);
-    ok := !e and response.decodedFrom != null and response.decodedFrom?! == http.ContentCoding.gzip
+    if e { return false; }
+    ok := response.decodedFrom != null and response.decodedFrom?! == http.ContentCoding.gzip
         and response.header("content-encoding").len == 0
         and same(response.body, plain);
-    context.allocator.deallocBytes(storage);
+    response.deinit();
     ok
 }
 
-faultedStreamRejected :: (port: i64, path: string, headers: string,
-                            storage: [*]u8, cap: i64) -> bool {
+faultedStreamRejected :: (port: i64, path: string, headers: string) -> bool {
     opts : http.ClientOpts = .{ connectTimeoutMs = 2000, ioTimeoutMs = 5000 };
     conn, oe := http.Client.open("127.0.0.1", port, opts);
     if oe { return false; }
     se := http.Client.sendOn(*conn, "GET", path, "content.test", headers, "");
     if se { http.Client.closeConn(*conn); return false; }
-    _, re := http.Client.recvOn(*conn, storage, cap);
+    response, re := http.Client.recvOn(*conn);
+    if !re { response.deinit(); }
     http.Client.closeConn(*conn);
     re == .Recv
 }
@@ -280,11 +274,12 @@ runServerCases :: (app: *App, poolCount: i64) -> bool {
     opts : http.ClientOpts = .{ connectTimeoutMs = 2000, ioTimeoutMs = 5000 };
     conn, oe := http.Client.open("127.0.0.1", port, opts);
     if oe { srv.stop(); t.join(); srv.close(); return false; }
-    storage : [*]u8 = context.allocator.allocBytes(BODY_LEN + 4096);
+    // Every response below is read into this arena and returned with it.
+    arena := mem.Arena.init(context.allocator, 65536);
     ok := true;
 
     // The default client advertises both codings; the server tie-breaks gzip.
-    fixed, fe := requestOn(*conn, "/fixed", "", storage, BODY_LEN + 4096);
+    fixed, fe := requestOn(*conn, "/fixed", "", arena);
     if fe or fixed.status != 200 or fixed.decodedFrom == null or fixed.decodedFrom?! != http.ContentCoding.gzip
         or fixed.header("content-encoding").len != 0
         or fixed.header("content-length").len != 0
@@ -292,122 +287,124 @@ runServerCases :: (app: *App, poolCount: i64) -> bool {
         or !same(fixed.body, app.body[..FIXED_LEN]) { ok = false; }
     // Header normalization + decoded metadata make accidental double decode
     // visible and prevent a compressed Content-Length from sizing plain data.
-    doubleBytes, doubleDecode := gzip.decode(fixed.body, BODY_LEN);
-    if !doubleDecode {
-        context.allocator.deallocBytes(doubleBytes.ptr);
-        ok = false;
+    if !fe {
+        doubleBytes, doubleDecode := gzip.decode(fixed.body, BODY_LEN);
+        if !doubleDecode {
+            context.allocator.deallocBytes(doubleBytes.ptr);
+            ok = false;
+        }
     }
 
     // Explicit weights select RFC 9110 `deflate` (zlib framing).
     deflated, de := requestOn(*conn, "/fixed",
-        "Accept-Encoding: deflate, gzip;q=0.5\r\n", storage, BODY_LEN + 4096);
+        "Accept-Encoding: deflate, gzip;q=0.5\r\n", arena);
     if de or deflated.decodedFrom == null or deflated.decodedFrom?! != http.ContentCoding.deflate
         or deflated.header("content-encoding").len != 0
         or !same(deflated.body, app.body[..FIXED_LEN]) { ok = false; }
 
     // Identity has a higher default q than a lower-weight gzip offer.
     identity, ie := requestOn(*conn, "/fixed",
-        "Accept-Encoding: gzip;q=0.5\r\n", storage, BODY_LEN + 4096);
+        "Accept-Encoding: gzip;q=0.5\r\n", arena);
     if ie or identity.header("content-encoding").len != 0
         or identity.decodedFrom != null
         or identity.header("vary") != "Accept-Encoding"
         or !same(identity.body, app.body[..FIXED_LEN]) { ok = false; }
 
-    small, sme := requestOn(*conn, "/small", "", storage, BODY_LEN + 4096);
+    small, sme := requestOn(*conn, "/small", "", arena);
     if sme or small.header("content-encoding").len != 0 or small.body != "small"
         or small.header("vary") != "Accept-Encoding" { ok = false; }
 
-    png, pe := requestOn(*conn, "/png", "", storage, BODY_LEN + 4096);
+    png, pe := requestOn(*conn, "/png", "", arena);
     if pe or png.header("content-encoding").len != 0
         or !same(png.body, app.body[..FIXED_LEN]) { ok = false; }
 
-    jsonp, jpe := requestOn(*conn, "/jsonp", "", storage, BODY_LEN + 4096);
+    jsonp, jpe := requestOn(*conn, "/jsonp", "", arena);
     if jpe or jsonp.header("content-encoding").len != 0
         or !same(jsonp.body, app.body[..FIXED_LEN]) { ok = false; }
 
-    disabled, die := requestOn(*conn, "/disabled", "", storage, BODY_LEN + 4096);
+    disabled, die := requestOn(*conn, "/disabled", "", arena);
     if die or disabled.header("content-encoding").len != 0
         or !same(disabled.body, app.body[..FIXED_LEN]) { ok = false; }
 
-    partial, pae := requestOn(*conn, "/partial", "", storage, BODY_LEN + 4096);
+    partial, pae := requestOn(*conn, "/partial", "", arena);
     if pae or partial.status != 206 or partial.decodedFrom != null
         or partial.header("content-encoding").len != 0
         or partial.header("content-range") != "bytes 0-65535/200000"
         or !same(partial.body, app.body[..FIXED_LEN]) { ok = false; }
 
-    unchanged, ute := requestOn(*conn, "/no-transform", "", storage, BODY_LEN + 4096);
+    unchanged, ute := requestOn(*conn, "/no-transform", "", arena);
     if ute or unchanged.decodedFrom != null or unchanged.header("content-encoding").len != 0
         or unchanged.header("cache-control") != "public, no-transform"
         or !same(unchanged.body, app.body[..FIXED_LEN]) { ok = false; }
 
-    repeated, rce := requestOn(*conn, "/no-transform-repeat", "", storage, BODY_LEN + 4096);
+    repeated, rce := requestOn(*conn, "/no-transform-repeat", "", arena);
     if rce or repeated.decodedFrom != null or repeated.header("content-encoding").len != 0
         or !same(repeated.body, app.body[..FIXED_LEN]) { ok = false; }
 
-    strong, see := requestOn(*conn, "/strong-etag", "", storage, BODY_LEN + 4096);
+    strong, see := requestOn(*conn, "/strong-etag", "", arena);
     if see or strong.decodedFrom != null or strong.header("etag") != "\"identity-v1\""
         or !same(strong.body, app.body[..FIXED_LEN]) { ok = false; }
 
-    weak, wee := requestOn(*conn, "/weak-etag", "", storage, BODY_LEN + 4096);
+    weak, wee := requestOn(*conn, "/weak-etag", "", arena);
     if wee or weak.decodedFrom == null or weak.decodedFrom?! != http.ContentCoding.gzip
         or weak.header("etag") != "W/\"semantic-v1\""
         or !same(weak.body, app.body[..FIXED_LEN]) { ok = false; }
 
-    digest, dge := requestOn(*conn, "/digest", "", storage, BODY_LEN + 4096);
+    digest, dge := requestOn(*conn, "/digest", "", arena);
     if dge or digest.decodedFrom != null or digest.header("content-digest").len == 0
         or !same(digest.body, app.body[..FIXED_LEN]) { ok = false; }
 
     ranged, rge := requestOn(*conn, "/range-request", "Range: bytes=0-99\r\n",
-        storage, BODY_LEN + 4096);
+        arena);
     if rge or ranged.body != "range-no-ae" { ok = false; }
 
-    rangedMeta, rme := requestOn(*conn, "/content-range", "", storage, BODY_LEN + 4096);
+    rangedMeta, rme := requestOn(*conn, "/content-range", "", arena);
     if rme or rangedMeta.decodedFrom != null
         or rangedMeta.header("content-range") != "bytes 0-65535/200000"
         or !same(rangedMeta.body, app.body[..FIXED_LEN]) { ok = false; }
 
-    unsatisfied, use := requestOn(*conn, "/unsatisfied", "", storage, BODY_LEN + 4096);
+    unsatisfied, use := requestOn(*conn, "/unsatisfied", "", arena);
     if use or unsatisfied.status != 416 or unsatisfied.decodedFrom != null
         or unsatisfied.header("content-range") != "bytes */200000" { ok = false; }
 
-    codedPartial, cpe := requestOn(*conn, "/coded-partial", "", storage, BODY_LEN + 4096);
+    codedPartial, cpe := requestOn(*conn, "/coded-partial", "", arena);
     if cpe or codedPartial.status != 206 or codedPartial.decodedFrom != null
         or codedPartial.header("content-encoding") != "gzip"
         or !same(codedPartial.body, app.packed) { ok = false; }
 
-    codedUnsat, cue := requestOn(*conn, "/coded-unsatisfied", "", storage, BODY_LEN + 4096);
+    codedUnsat, cue := requestOn(*conn, "/coded-unsatisfied", "", arena);
     if cue or codedUnsat.status != 416 or codedUnsat.decodedFrom != null
         or codedUnsat.header("content-encoding") != "gzip"
         or !same(codedUnsat.body, app.packed) { ok = false; }
 
-    existing, exe := requestOn(*conn, "/existing", "", storage, BODY_LEN + 4096);
+    existing, exe := requestOn(*conn, "/existing", "", arena);
     if exe or existing.decodedFrom == null or existing.decodedFrom?! != http.ContentCoding.gzip
         or !same(existing.body, app.body) { ok = false; }
 
     refused, re := requestOn(*conn, "/fixed",
         "Accept-Encoding: gzip;q=0, deflate;q=0, identity;q=0\r\n",
-        storage, BODY_LEN + 4096);
+        arena);
     if re or refused.status != 406 or refused.body.len != 0 { ok = false; }
 
     refusal := "Accept-Encoding: gzip, identity;q=0\r\n";
-    floorRefused, fre := requestOn(*conn, "/small", refusal, storage, BODY_LEN + 4096);
-    disabledRefused, dre := requestOn(*conn, "/disabled", refusal, storage, BODY_LEN + 4096);
-    mediaRefused, mre := requestOn(*conn, "/png", refusal, storage, BODY_LEN + 4096);
-    transformRefused, tre := requestOn(*conn, "/no-transform-repeat", refusal, storage, BODY_LEN + 4096);
-    rangeRefused, rre := requestOn(*conn, "/partial", refusal, storage, BODY_LEN + 4096);
-    validatorRefused, vre := requestOn(*conn, "/strong-etag", refusal, storage, BODY_LEN + 4096);
+    floorRefused, fre := requestOn(*conn, "/small", refusal, arena);
+    disabledRefused, dre := requestOn(*conn, "/disabled", refusal, arena);
+    mediaRefused, mre := requestOn(*conn, "/png", refusal, arena);
+    transformRefused, tre := requestOn(*conn, "/no-transform-repeat", refusal, arena);
+    rangeRefused, rre := requestOn(*conn, "/partial", refusal, arena);
+    validatorRefused, vre := requestOn(*conn, "/strong-etag", refusal, arena);
     if fre or dre or mre or tre or rre or vre
         or floorRefused.status != 406 or disabledRefused.status != 406
         or mediaRefused.status != 406 or transformRefused.status != 406
         or rangeRefused.status != 406 or validatorRefused.status != 406 { ok = false; }
 
-    framingCl, fce := requestOn(*conn, "/framing-cl", "", storage, BODY_LEN + 4096);
+    framingCl, fce := requestOn(*conn, "/framing-cl", "", arena);
     if fce or framingCl.status != 500 or framingCl.header("content-length") == "999" { ok = false; }
-    framingTe, fte := requestOn(*conn, "/framing-te", "", storage, BODY_LEN + 4096);
+    framingTe, fte := requestOn(*conn, "/framing-te", "", arena);
     if fte or framingTe.status != 500 or framingTe.header("transfer-encoding") == "chunked" { ok = false; }
 
     // Chunked transfer framing is removed before incremental gzip decode.
-    streamed, stre := requestOn(*conn, "/stream", "", storage, BODY_LEN + 4096);
+    streamed, stre := requestOn(*conn, "/stream", "", arena);
     if stre or streamed.header("transfer-encoding") != "chunked"
         or streamed.header("content-encoding").len != 0
         or streamed.decodedFrom == null or streamed.decodedFrom?! != http.ContentCoding.gzip
@@ -415,17 +412,17 @@ runServerCases :: (app: *App, poolCount: i64) -> bool {
 
     // The entire compressed transfer was consumed; keep-alive remains clean.
     pong, poe := requestOn(*conn, "/small", "Accept-Encoding: identity\r\n",
-        storage, BODY_LEN + 4096);
+        arena);
     if poe or pong.body != "small" { ok = false; }
     http.Client.closeConn(*conn);
 
     // A negative producer result is a fault, never clean EOF. Exercise before
     // and after output, both raw and through the gzip encoder. A clean zero
     // chunk would make the raw cases succeed, so Recv proves truncation.
-    if !faultedStreamRejected(port, "/fault-before", "Accept-Encoding: identity\r\n", storage, BODY_LEN + 4096)
-        or !faultedStreamRejected(port, "/fault-after", "Accept-Encoding: identity\r\n", storage, BODY_LEN + 4096)
-        or !faultedStreamRejected(port, "/fault-before", "", storage, BODY_LEN + 4096)
-        or !faultedStreamRejected(port, "/fault-after", "", storage, BODY_LEN + 4096) { ok = false; }
+    if !faultedStreamRejected(port, "/fault-before", "Accept-Encoding: identity\r\n")
+        or !faultedStreamRejected(port, "/fault-after", "Accept-Encoding: identity\r\n")
+        or !faultedStreamRejected(port, "/fault-before", "")
+        or !faultedStreamRejected(port, "/fault-after", "") { ok = false; }
 
     // Opting out leaves the content-coded representation and its headers
     // intact. The caller can decode it explicitly exactly once.
@@ -438,7 +435,7 @@ runServerCases :: (app: *App, poolCount: i64) -> bool {
     if roe { ok = false; }
     else {
         rawFixed, rfe := requestOn(*rawConn, "/fixed",
-            "Accept-Encoding: gzip\r\n", storage, BODY_LEN + 4096);
+            "Accept-Encoding: gzip\r\n", arena);
         if rfe or rawFixed.decodedFrom != null or rawFixed.header("content-encoding") != "gzip"
             or rawFixed.header("content-length").len == 0 { ok = false; }
         else {
@@ -447,22 +444,25 @@ runServerCases :: (app: *App, poolCount: i64) -> bool {
             if explicit.ptr != null { context.allocator.deallocBytes(explicit.ptr); }
         }
         rawStacked, rse := requestOn(*rawConn, "/stacked",
-            "Accept-Encoding: br, gzip\r\n", storage, BODY_LEN + 4096);
+            "Accept-Encoding: br, gzip\r\n", arena);
         if rse or rawStacked.decodedFrom != null or rawStacked.body != "raw-stacked"
             or rawStacked.header("content-encoding") != "br"
             or !contains(rawStacked.headersRaw, "Content-Encoding: gzip") { ok = false; }
         http.Client.closeConn(*rawConn);
     }
 
-    // Decoded size, not compressed size, is bounded by the caller buffer.
-    shortConn, soe := http.Client.open("127.0.0.1", port, opts);
+    // Decoded size, not compressed size, is bounded by maxResponseBytes.
+    shortOpts := opts;
+    shortOpts.maxResponseBytes = 4096;
+    shortConn, soe := http.Client.open("127.0.0.1", port, shortOpts);
     if soe { ok = false; }
     else {
         trySend := http.Client.sendOn(*shortConn, "GET", "/stream", "content.test", "", "");
         if trySend { ok = false; }
         else {
-            _, shortError := http.Client.recvOn(*shortConn, storage, 4096);
-            if shortError != .TooLarge { ok = false; }
+            shortResponse, shortError := http.Client.recvOn(*shortConn, arena);
+            if !shortError { ok = false; shortResponse.deinit(); }
+            else if shortError != .TooLarge { ok = false; }
         }
         http.Client.closeConn(*shortConn);
     }
@@ -475,13 +475,14 @@ runServerCases :: (app: *App, poolCount: i64) -> bool {
         badSend := http.Client.sendOn(*badConn, "GET", "/bad", "content.test", "", "");
         if badSend { ok = false; }
         else {
-            _, badError := http.Client.recvOn(*badConn, storage, BODY_LEN + 4096);
-            if badError != .Recv { ok = false; }
+            badResponse, badError := http.Client.recvOn(*badConn, arena);
+            if !badError { ok = false; badResponse.deinit(); }
+            else if badError != .Recv { ok = false; }
         }
         http.Client.closeConn(*badConn);
     }
 
-    context.allocator.deallocBytes(storage);
+    arena.deinit();
     srv.stop();
     t.join();
     srv.close();

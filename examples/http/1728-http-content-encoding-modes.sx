@@ -138,78 +138,75 @@ serverEntry :: (arg: *void) -> *void abi(.c) {
 }
 
 requestOn :: (conn: *http.ClientConn, method: string, path: string,
-               headers: string, storage: [*]u8, cap: i64) -> (http.ClientResponse, bool) {
-    se := http.Client.sendOn(conn, method, path, "mode.test", headers, "");
-    if se { return .{}, true; }
-    response, re := http.Client.recvOn(conn, storage, cap);
-    if re { return .{}, true; }
-    return response, false;
+               headers: string, a: Allocator) -> (http.ClientResponse, !http.ClientErr) {
+    try http.Client.sendOn(conn, method, path, "mode.test", headers, "");
+    return http.Client.recvOn(conn, a);
 }
 
-pingOn :: (conn: *http.ClientConn, storage: [*]u8, cap: i64) -> bool {
-    response, e := requestOn(conn, "GET", "/ping", "Accept-Encoding: identity\r\n", storage, cap);
+pingOn :: (conn: *http.ClientConn, a: Allocator) -> bool {
+    response, e := requestOn(conn, "GET", "/ping", "Accept-Encoding: identity\r\n", a);
     !e and response.status == 200 and response.body == "pong"
 }
 
 bodylessFollowed :: (app: *App, conn: *http.ClientConn, method: string,
                       path: string, status: i64, streamed: bool,
-                      storage: [*]u8, cap: i64) -> bool {
+                      a: Allocator) -> bool {
     before := app.streamCalls.load(.relaxed);
-    response, e := requestOn(conn, method, path, "", storage, cap);
+    response, e := requestOn(conn, method, path, "", a);
     ok := !e and response.status == status and response.body.len == 0
         and response.decodedFrom == null;
     if streamed { ok = ok and app.streamCalls.load(.relaxed) == before; }
-    if ok { ok = pingOn(conn, storage, cap); }
+    if ok { ok = pingOn(conn, a); }
     ok
 }
 
-policyCases :: (app: *App, port: i64, storage: [*]u8, cap: i64) -> bool {
+policyCases :: (app: *App, port: i64, a: Allocator) -> bool {
     opts : http.ClientOpts = .{ connectTimeoutMs = 2000, ioTimeoutMs = 5000 };
     conn, oe := http.Client.open("127.0.0.1", port, opts);
     if oe { return false; }
     ok := true;
 
     wildcard, we := requestOn(*conn, "GET", "/fixed",
-        "Accept-Encoding: *;q=0.7, identity;q=0\r\n", storage, cap);
+        "Accept-Encoding: *;q=0.7, identity;q=0\r\n", a);
     if we or wildcard.decodedFrom == null
         or wildcard.decodedFrom?! != http.ContentCoding.gzip
         or !same(wildcard.body, app.body) { ok = false; }
 
     duplicate, de := requestOn(*conn, "GET", "/fixed",
         "Accept-Encoding: gzip;q=1, identity;q=0\r\nAccept-Encoding: gzip;q=0, deflate;q=0.5\r\n",
-        storage, cap);
+        a);
     if de or duplicate.decodedFrom == null
         or duplicate.decodedFrom?! != http.ContentCoding.deflate
         or !same(duplicate.body, app.body) { ok = false; }
 
     duplicateQ, dqe := requestOn(*conn, "GET", "/fixed",
-        "Accept-Encoding: gzip;q=1;q=0, deflate;q=0.4, identity;q=0\r\n", storage, cap);
+        "Accept-Encoding: gzip;q=1;q=0, deflate;q=0.4, identity;q=0\r\n", a);
     if dqe or duplicateQ.decodedFrom == null
         or duplicateQ.decodedFrom?! != http.ContentCoding.deflate { ok = false; }
 
     malformed, me := requestOn(*conn, "GET", "/fixed",
-        "Accept-Encoding: gzip;q=1.1, deflate;q=bogus, identity;q=0\r\n", storage, cap);
+        "Accept-Encoding: gzip;q=1.1, deflate;q=bogus, identity;q=0\r\n", a);
     if me or malformed.status != 406 or malformed.body.len != 0 { ok = false; }
 
     refused, re := requestOn(*conn, "GET", "/existing-gzip",
-        "Accept-Encoding: gzip;q=0, identity;q=1\r\n", storage, cap);
+        "Accept-Encoding: gzip;q=0, identity;q=1\r\n", a);
     if re or refused.status != 406 { ok = false; }
 
-    partial, pe := requestOn(*conn, "GET", "/coded-deflate-206", "", storage, cap);
+    partial, pe := requestOn(*conn, "GET", "/coded-deflate-206", "", a);
     if pe or partial.status != 206 or partial.decodedFrom != null
         or partial.header("content-encoding") != "deflate"
         or !same(partial.body, app.deflateBody) { ok = false; }
-    unsatisfied, ue := requestOn(*conn, "GET", "/coded-deflate-416", "", storage, cap);
+    unsatisfied, ue := requestOn(*conn, "GET", "/coded-deflate-416", "", a);
     if ue or unsatisfied.status != 416 or unsatisfied.decodedFrom != null
         or unsatisfied.header("content-encoding") != "deflate"
         or !same(unsatisfied.body, app.deflateBody) { ok = false; }
 
     strong, se := requestOn(*conn, "GET", "/strong",
-        "Accept-Encoding: deflate, identity;q=0.5\r\n", storage, cap);
+        "Accept-Encoding: deflate, identity;q=0.5\r\n", a);
     if se or strong.decodedFrom != null or strong.header("etag") != "\"identity-only\""
         or !same(strong.body, app.body) { ok = false; }
     strongRefused, sre := requestOn(*conn, "GET", "/strong",
-        "Accept-Encoding: deflate, identity;q=0\r\n", storage, cap);
+        "Accept-Encoding: deflate, identity;q=0\r\n", a);
     if sre or strongRefused.status != 406 { ok = false; }
     http.Client.closeConn(*conn);
 
@@ -219,7 +216,7 @@ policyCases :: (app: *App, port: i64, storage: [*]u8, cap: i64) -> bool {
     raw, roe := http.Client.open("127.0.0.1", port, rawOpts);
     if roe { return false; }
     stacked, ste := requestOn(*raw, "GET", "/existing-stacked",
-        "Accept-Encoding: *;q=0.5, identity;q=0\r\n", storage, cap);
+        "Accept-Encoding: *;q=0.5, identity;q=0\r\n", a);
     if ste or stacked.status != 200 or stacked.body != "stacked"
         or !contains(stacked.headersRaw, "Content-Encoding: br")
         or !contains(stacked.headersRaw, "Content-Encoding: gzip") { ok = false; }
@@ -273,7 +270,7 @@ faultWireCase :: (port: i64, path: string, accept: string) -> bool {
         and !endsWith(wire, "0\r\n\r\n")
 }
 
-fairnessCase :: (app: *App, port: i64, storage: [*]u8, cap: i64) -> bool {
+fairnessCase :: (app: *App, port: i64, a: Allocator) -> bool {
     app.hugeCalls.store(0, .relaxed);
     app.pingSeen.store(-1, .relaxed);
     opts : http.ClientOpts = .{ connectTimeoutMs = 2000, ioTimeoutMs = 5000 };
@@ -291,7 +288,7 @@ fairnessCase :: (app: *App, port: i64, storage: [*]u8, cap: i64) -> bool {
 
     pingConn, pe := http.Client.open("127.0.0.1", port, opts);
     if pe { http.Client.closeConn(*streamConn); return false; }
-    ok := pingOn(*pingConn, storage, cap);
+    ok := pingOn(*pingConn, a);
     seen := app.pingSeen.load(.relaxed);
     ok = ok and seen > 0 and seen < HUGE_CALLS;
     http.Client.closeConn(*pingConn);
@@ -318,33 +315,31 @@ runMode :: (app: *App, mode: i64) -> bool {
     t, te := thread.Thread.spawn(serverEntry, *srv);
     if te { srv.close(); runner.deinit(); return false; }
 
-    storage : [*]u8 = context.allocator.allocBytes(BODY_LEN + 8192);
-    if storage == null {
-        srv.stop(); t.join(); srv.close(); runner.deinit(); return false;
-    }
+    // Every response below is read into this arena and returned with it.
+    arena := mem.Arena.init(context.allocator, 65536);
     opts : http.ClientOpts = .{ connectTimeoutMs = 2000, ioTimeoutMs = 5000 };
     conn, oe := http.Client.open("127.0.0.1", port, opts);
     ok := true;
     if oe { ok = false; }
     else {
-        ok = bodylessFollowed(app, *conn, "HEAD", "/fixed", 200, false, storage, BODY_LEN + 8192)
-            and bodylessFollowed(app, *conn, "HEAD", "/stream", 200, true, storage, BODY_LEN + 8192)
-            and bodylessFollowed(app, *conn, "GET", "/n204-fixed", 204, false, storage, BODY_LEN + 8192)
-            and bodylessFollowed(app, *conn, "GET", "/n204-stream", 204, true, storage, BODY_LEN + 8192)
-            and bodylessFollowed(app, *conn, "GET", "/n304-fixed", 304, false, storage, BODY_LEN + 8192)
-            and bodylessFollowed(app, *conn, "GET", "/n304-stream", 304, true, storage, BODY_LEN + 8192);
+        ok = bodylessFollowed(app, *conn, "HEAD", "/fixed", 200, false, arena)
+            and bodylessFollowed(app, *conn, "HEAD", "/stream", 200, true, arena)
+            and bodylessFollowed(app, *conn, "GET", "/n204-fixed", 204, false, arena)
+            and bodylessFollowed(app, *conn, "GET", "/n204-stream", 204, true, arena)
+            and bodylessFollowed(app, *conn, "GET", "/n304-fixed", 304, false, arena)
+            and bodylessFollowed(app, *conn, "GET", "/n304-stream", 304, true, arena);
         http.Client.closeConn(*conn);
     }
-    if ok and mode == 0 { ok = policyCases(app, port, storage, BODY_LEN + 8192); }
+    if ok and mode == 0 { ok = policyCases(app, port, arena); }
     if ok and mode != 2 {
         ok = faultWireCase(port, "/fault-before", "identity")
             and faultWireCase(port, "/fault-after", "identity")
             and faultWireCase(port, "/fault-before", "gzip, identity;q=0")
             and faultWireCase(port, "/fault-after", "gzip, identity;q=0");
     }
-    if ok { ok = fairnessCase(app, port, storage, BODY_LEN + 8192); }
+    if ok { ok = fairnessCase(app, port, arena); }
 
-    context.allocator.deallocBytes(storage);
+    arena.deinit();
     srv.stop();
     t.join();
     srv.close();

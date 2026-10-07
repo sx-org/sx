@@ -282,7 +282,7 @@ except when the request already contains `Accept-Encoding` or contains
 chunked bodies. HEAD responses and 1xx/204/304 framing are resolved before
 Content-Length or Transfer-Encoding, and informational responses are consumed
 until the final response. The encoded input window is 16 KiB and decoded output
-is bounded by the caller's buffer. After transparent decoding,
+is bounded by `ClientOpts.maxResponseBytes`. After transparent decoding,
 `ClientResponse.decodedFrom` is the optional typed value
 `http.ContentCoding.gzip` or `.deflate`; null means no transform. Stale
 `Content-Encoding` plus encoded `Content-Length` fields are removed from
@@ -607,8 +607,11 @@ subprocess-isolated, on macOS and validated end-to-end on aarch64-Linux.
   verification, or the loudly-named `insecure()`; TLS 1.3 session tickets
   handled), chunked transfer decoding plus bounded transparent gzip/deflate
   content decoding, and truncated responses surfaced as errors — never a
-  padded body. `ClientOpts.acceptCompression=false` retains the coded
-  representation instead.
+  padded body. Each `ClientResponse` holds its bytes in storage from the
+  allocator the read was given, until its `deinit`;
+  `ClientOpts.maxResponseBytes` bounds them.
+  `ClientOpts.acceptCompression=false` retains the coded representation
+  instead.
   `Client.fetch(method, url, extraHeaders, body, …)` adds URL parsing,
   caller header lines on every hop (validated; `Authorization` and
   `Cookie` go only to the first URL's origin) and redirect following
