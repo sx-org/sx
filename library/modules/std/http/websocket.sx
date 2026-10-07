@@ -1055,7 +1055,7 @@ websocket :: scope {
             "\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: ", key,
             "\r\nSec-WebSocket-Version: 13\r\n", headers, "\r\n");
         we := clientWrite(c, req.ptr, req.len);
-        mem.free(c.a, req);
+        mem.free(context.allocator, req);
         if we { raise we; }
 
         deadline := ioDeadline(c);
@@ -1207,7 +1207,7 @@ websocket :: scope {
         h[4] = (h[4] + e) & MASK32;
     }
 
-    // SHA-1 (FIPS 180-4), used here only for the handshake's accept value.
+    // SHA-1 (FIPS 180-4).
     private sha1 :: (data: string) -> [20]u8 {
         h : [5]i64 = .[0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0];
         block : [64]u8 = ---;
