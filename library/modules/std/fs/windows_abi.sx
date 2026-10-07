@@ -6,13 +6,9 @@ fsWindowsC :: @import "modules/std/c.sx";
 fsWindowsKernel32 :: @library "kernel32";
 
 FsWindowsFileTime :: struct { low: u32; high: u32; }
-FsWindowsWidePath :: struct { ptr: [*]u16 = null; heap: *void = null; }
 
 fsWindowsMultiByteToWideChar :: (codePage: u32, flags: u32, input: [*]u8, inputLen: i32, output: [*]u16, outputLen: i32) -> i32 extern fsWindowsKernel32 "MultiByteToWideChar";
 fsWindowsWideCharToMultiByte :: (codePage: u32, flags: u32, input: [*]u16, inputLen: i32, output: [*]u8, outputLen: i32, defaultChar: *u8, usedDefault: *i32) -> i32 extern fsWindowsKernel32 "WideCharToMultiByte";
-fsWindowsGetProcessHeap :: () -> *void extern fsWindowsKernel32 "GetProcessHeap";
-fsWindowsHeapAlloc :: (heap: *void, flags: u32, bytes: u64) -> *void extern fsWindowsKernel32 "HeapAlloc";
-fsWindowsHeapFree :: (heap: *void, flags: u32, memory: *void) -> i32 extern fsWindowsKernel32 "HeapFree";
 fsWindowsCreateFileW :: (name: [*]u16, access: u32, share: u32, security: *void, creation: u32, attributes: u32, template: *void) -> *void extern fsWindowsKernel32 "CreateFileW";
 fsWindowsCloseHandle :: (handle: *void) -> i32 extern fsWindowsKernel32 "CloseHandle";
 fsWindowsReadFile :: (handle: *void, buffer: *void, bytes: u32, made: *u32, overlapped: *void) -> i32 extern fsWindowsKernel32 "ReadFile";
