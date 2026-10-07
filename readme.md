@@ -69,7 +69,7 @@ sx lsp                   # start language server
 | `struct` / `enum` / `union` | Aggregates |
 | `Closure(args) -> ret` | Erased callable — `mem.closure(\|params\|_{ caps } body)` |
 
-`[N]T` coerces to `[]T`. A `[*]T` has no length — slice it with `ptr[0..len]`; `p[0..]` of a `[*:0]u8` scans to the terminator. A string literal takes the shape its destination names. No conversion adds a terminator: `mem.cloneZ(s)` makes an owned `[:0]u8` copy of a `string`.
+`[N]T` coerces to `[]T`. A `[*]T` has no length — slice it with `ptr[0..len]`; `p[0..]` of a `[*:0]u8` scans to the terminator. A string literal takes the shape its destination names. No conversion adds a terminator: `mem.cloneZ(a, s)` makes an owned `[:0]u8` copy of a `string` through `a`.
 
 A typed store needs a modeled conversion; equal storage size grants none. Byte views use `@reinterpret(T, value)`. `x.(T)` is the explicit ladder: `1000.(i8)` truncates; `dog.(Speaker)` builds an interface handle over `dog`. On `any`: `try av.(i64)` / `av.(i64)` / `av.(?i64)`. `o?.(T)` maps over an optional.
 
@@ -180,7 +180,7 @@ add5 := makeAdder(5);
 boxed :: (n: i64) -> Closure(i64) -> i64 { return mem.closure(|x: i64|_{ n } x + n); }
 ```
 
-A `|…|` literal IS its env struct. The body sees its parameters, its locals, and module-level names; enclosing locals only through `_{ … }`, by value. Copies fork; `*$F/(…) -> R` shares. `Closure` is the erased `{ fnPtr, env }`: function pointers and empty-env literals promote to it with a null env, and a capturing one gets there through `mem.closure(f, alloc = context.allocator)`, which `mem.free(cl)` / `mem.free(cl, alloc)` releases. A nominal is callable through `impl (i64) -> i64 for T { call :: … }`.
+A `|…|` literal IS its env struct. The body sees its parameters, its locals, and module-level names; enclosing locals only through `_{ … }`, by value. Copies fork; `*$F/(…) -> R` shares. `Closure` is the erased `{ fnPtr, env }`: function pointers and empty-env literals promote to it with a null env, and a capturing one gets there through `mem.closure(f, alloc = context.allocator)`, which `mem.free(alloc, cl)` releases. A nominal is callable through `impl (i64) -> i64 for T { call :: … }`.
 
 ### Constraints and interfaces
 
