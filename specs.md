@@ -6196,15 +6196,18 @@ vendors/              vendored C libraries; the bindings sqlite, mbedtls,
                       gives sqlite.Sqlite
 ```
 
-`@import "modules/std.sx"` gives every prelude name bare, plus `mem.GPA`,
-`json.parse`, `fs.exists`, `hash.sha256Hex`, `log.warn`, ... through the
-carried namespace tail. A self-scoped file supplies its scope on direct
-import: `@import "modules/std/mem.sx";` exposes `mem.GPA`. Unscoped files
-provide bare access, such as `List` from `modules/std/list.sx`.
+`@import "modules/std.sx"` gives every prelude name bare, plus `json.parse`,
+`fs.exists`, `hash.sha256Hex`, `log.warn`, ... through the carried namespace
+tail. std.sx spreads the `mem` scope (`..mem;`), so its surface carries `mem`
+and each of its members bare (`GPA`, `Arena`, `create`, `free`, ...). A
+self-scoped file supplies its scope on direct import:
+`@import "modules/std/mem.sx";` exposes `mem.GPA`. Unscoped files provide bare
+access, such as `List` from `modules/std/list.sx`.
 
 A `ufcs` function of `mem` that allocates or frees takes the allocator as its
 first parameter, with no default, so its dot spelling is a call on the
-allocator; a caller wanting the current one passes `context.allocator`:
+allocator wherever mem is spread, std.sx included; a caller wanting the current
+one passes `context.allocator`:
 
 ```sx
 mem :: scope {
@@ -6218,15 +6221,14 @@ mem :: scope {
     realloc :: ufcs (a: Allocator, ptr: *void, old: i64, new: i64, align: i64) -> *void;
 }
 
-..mem;
 xs := context.allocator.alloc(i64, 4);
 ys := context.allocator.clone(xs);
-mem.free(context.allocator, ys);
+context.allocator.free(ys);
 ```
 
 `free` releases one item from `create` or `make` (a pointer), a slice, or a
-closure's environment. `allocStringZ :: (size: i64) -> [:0]u8`, re-exported
-bare by `modules/std.sx`, takes `size` zeroed bytes from `context.allocator`.
+closure's environment. `allocStringZ :: (size: i64) -> [:0]u8` takes `size`
+zeroed bytes from `context.allocator`.
 
 `modules/std/http.sx` is a scope facade:
 
