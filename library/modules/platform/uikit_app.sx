@@ -82,10 +82,6 @@ SxSceneDelegate :: @ObjcClass("SxSceneDelegate", extends = UIResponder, implemen
 // byte offset into the committed run with the marked run spliced at the
 // caret, so a query answers with the bytes the field renders.
 
-// The spliced document, staged for `textInRange:` — the one selector that
-// hands UIKit bytes. UIKit calls the text IMPs on the main thread alone.
-gSxDoc : [SESSION_COMMITTED_CAP + SESSION_MARKED_CAP]u8 = ---;
-
 // UITextStorageDirection is {forward 0, backward 1}, UITextLayoutDirection
 // {right 2, left 3, up 4, down 5}; both cross the same slot.
 SX_TEXT_BACKWARD :: 1;
@@ -153,17 +149,17 @@ sxSession :: () -> ?*TextInputSession {
     gUikitPlat.session
 }
 
+// The spliced document, in storage from the session's allocator that the
+// caller frees.
 sxDocument :: (doc: *TextInputSession) -> string {
     committed := doc.committedText();
     marked := doc.markedText();
     at := doc.caret;
-    if at > 0 { c.memcpy(*gSxDoc[0], committed.ptr, at); }
-    if marked.len > 0 { c.memcpy(*gSxDoc[at], marked.ptr, marked.len); }
+    s := mem.alloc(doc.a, u8, committed.len + marked.len);
+    if at > 0 { c.memcpy(s.ptr, committed.ptr, at); }
+    if marked.len > 0 { c.memcpy(*s[at], marked.ptr, marked.len); }
     tail := committed.len - at;
-    if tail > 0 { c.memcpy(*gSxDoc[at + marked.len], *doc.committed[at], tail); }
-    s : string = ---;
-    s.ptr = *gSxDoc[0];
-    s.len = committed.len + marked.len;
+    if tail > 0 { c.memcpy(*s[at + marked.len], *committed[at], tail); }
     s
 }
 
@@ -174,14 +170,14 @@ sxClamp :: (v: i64, lo: i64, hi: i64) -> i64 {
 // The selection: the IME's inside the marked run while one is live, the
 // document's otherwise.
 sxSelStart :: (doc: *TextInputSession) -> i64 =>
-    if doc.markedLen > 0 then doc.caret + doc.markedSelStart else doc.anchor;
+    if doc.isComposing() then doc.caret + doc.markedSelStart else doc.anchor;
 sxSelEnd   :: (doc: *TextInputSession) -> i64 => doc.caret + doc.markedSelEnd;
 
 // Inside a live mark the selection is the IME's own, carried by
 // setMarkedText:selectedRange:; a range set then leaves the document alone.
 sxSelect :: (lo: i64, hi: i64) {
     if doc := sxSession() {
-        if doc.markedLen == 0 { doc.select(lo, hi); }
+        if !doc.isComposing() { doc.select(lo, hi); }
     }
 }
 
@@ -192,6 +188,7 @@ sxIsBackward :: (direction: i64) -> bool =>
 // Outside the document there is no position, which is how UIKit reads nil.
 sxStep :: (doc: *TextInputSession, at: i64, units: i64) -> ?*UITextPosition {
     s := sxDocument(doc);
+    defer mem.free(s, doc.a);
     target := bytesToUtf16Offset(s, at) + units;
     if target < 0 { return null; }
     if target > bytesToUtf16Offset(s, s.len) { return null; }
@@ -276,6 +273,8 @@ SxView :: @ObjcClass("SxView", extends = UIView, implements = .[UITextInput]) ex
     textInRange :: (self: *Self, range: *void) -> ?*NSString {
         if doc := sxSession() {
             s := sxDocument(doc);
+            defer mem.free(s, doc.a);
+    defer mem.free(s, doc.a);
             lo := sxClamp(sxLoOf(range), 0, s.len);
             hi := sxClamp(sxHiOf(range), lo, s.len);
             return nsstring(s[lo..hi]);
@@ -300,7 +299,7 @@ SxView :: @ObjcClass("SxView", extends = UIView, implements = .[UITextInput]) ex
 
     markedTextRange :: (self: *Self) -> ?*UITextRange {
         if doc := sxSession() {
-            if doc.markedLen > 0 { return sxRange(doc.caret, doc.caret + doc.markedLen); }
+            if doc.isComposing() { return sxRange(doc.caret, doc.caret + doc.markedText().len); }
         }
         null
     }
@@ -322,7 +321,7 @@ SxView :: @ObjcClass("SxView", extends = UIView, implements = .[UITextInput]) ex
     beginningOfDocument :: (self: *Self) -> ?*UITextPosition { sxPosition(0) }
 
     endOfDocument :: (self: *Self) -> ?*UITextPosition {
-        if doc := sxSession() { return sxPosition(doc.committedLen + doc.markedLen); }
+        if doc := sxSession() { return sxPosition(doc.committedText().len + doc.markedText().len); }
         sxPosition(0)
     }
 
@@ -354,6 +353,8 @@ SxView :: @ObjcClass("SxView", extends = UIView, implements = .[UITextInput]) ex
     offsetFromPosition_toPosition :: (self: *Self, fromPosition: *void, toPosition: *void) -> i64 {
         if doc := sxSession() {
             s := sxDocument(doc);
+            defer mem.free(s, doc.a);
+    defer mem.free(s, doc.a);
             return bytesToUtf16Offset(s, sxOffsetOf(toPosition)) - bytesToUtf16Offset(s, sxOffsetOf(fromPosition));
         }
         0
@@ -382,6 +383,8 @@ SxView :: @ObjcClass("SxView", extends = UIView, implements = .[UITextInput]) ex
         if doc := sxSession() {
             at := sxOffsetOf(position);
             s := sxDocument(doc);
+            defer mem.free(s, doc.a);
+    defer mem.free(s, doc.a);
             units := bytesToUtf16Offset(s, at);
             if sxIsBackward(direction) {
                 return sxRange(utf16OffsetToBytes(s, if units > 0 then units - 1 else 0), at);

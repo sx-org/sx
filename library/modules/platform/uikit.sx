@@ -898,7 +898,7 @@ impl Platform for UIKitPlatform {
 
     hasText :: (self: *UIKitPlatform) -> bool {
         if session := self.session {
-            return session.committedLen > 0 or session.markedLen > 0;
+            return session.committedText().len > 0 or session.isComposing();
         }
         false
     }
