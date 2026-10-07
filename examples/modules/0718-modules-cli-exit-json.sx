@@ -51,6 +51,8 @@ main :: () -> ! {
         @printf("{}", pj.valueOf("out"));
         @printf("\"}}\n");
     }
+    pj.deinit();
+    pn.deinit();
 
     // ── 4. Usage error → human text to stderr → exitUsage() (= 64) ───
     // A bad command raises a `cli.Error`. The front-end maps every usage

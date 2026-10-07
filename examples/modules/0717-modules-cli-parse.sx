@@ -11,8 +11,10 @@
 //                    reserved `--json` mode flag surfaces as `parsed.json`.
 //   3. SEPARATORS  — `--` and the first bare operand both stop flag
 //                    parsing; the remainder is `parsed.rest` (operand VIEWS).
-//   4. HEAP        — flag values / group / command / rest all point INSIDE
-//                    the input argv (zero copy); `Parsed` is a stack value.
+//   4. OWNERSHIP   — flag values / group / command / rest all point INSIDE
+//                    the input argv (zero copy); each `Parsed` holds its flag
+//                    table in the allocator `parse` was given, and `deinit`
+//                    or a raise returns it there.
 //   5. FAILURES    — unknown command, unknown flag, missing required flag,
 //                    and a value-flag with no value each raise the specific
 //                    `cli.Error` variant on the error channel, and the
@@ -32,13 +34,14 @@ inRange :: (x: i64, lo: i64, hi: i64) -> bool {
 // True when `cli.parse(args, cmds)` raised exactly `want`. Destructure binds
 // the error tag without `try`, so a bad vector never aborts the example;
 // the failing token is captured in the caller-owned `Diag`.
-raises :: (args: []string, cmds: []cli.Command, want: cli.Error) -> bool {
+raises :: (args: []string, cmds: []cli.Command, want: cli.Error, a: Allocator) -> bool {
     d : cli.Diag = .{};
-    _, e := cli.parse(args, cmds, *d);
+    _, e := cli.parse(args, cmds, *d, a);
     return e == want;
 }
 
-main :: () -> ! {
+suite :: (tracker: Allocator) -> ! {
+
     // ── Command table (caller storage; flag specs passed as views) ────
     publishFlags : []cli.FlagSpec = .[
         cli.FlagSpec{ name = "out",     takesValue = true,  required = true  },
@@ -55,7 +58,8 @@ main :: () -> ! {
     // ── 1. Valid: <group> <command> --flag v --bool --json ───────────
     d : cli.Diag = .{};
     argv : []string = .["ci", "publish", "--out", "dist", "--verbose", "--json"];
-    p := try cli.parse(argv, cmds, *d);
+    p := try cli.parse(argv, cmds, *d, tracker);
+    defer p.deinit();
 
     report("dispatch-group",   p.group == "ci");
     report("dispatch-command", p.command == "publish");
@@ -79,14 +83,16 @@ main :: () -> ! {
 
     // ── 3. Dispatch to a different command in the table ──────────────
     sArgv : []string = .["ci", "status", "--verbose"];
-    sp := try cli.parse(sArgv, cmds, *d);
+    sp := try cli.parse(sArgv, cmds, *d, tracker);
+    defer sp.deinit();
     report("dispatch-2nd",   sp.command == "status" and sp.cmdIndex == 1);
     report("2nd-bool",       sp.isSet("verbose"));
     report("2nd-json-unset", !sp.json);
 
     // ── 4. `--` separator: rest are operand views, flags stop there ──
     sepArgv : []string = .["ci", "publish", "--out", "dist", "--", "--raw", "x"];
-    spv := try cli.parse(sepArgv, cmds, *d);
+    spv := try cli.parse(sepArgv, cmds, *d, tracker);
+    defer spv.deinit();
     report("sep-value",   spv.valueOf("out") == "dist");
     report("sep-rest-len", spv.rest.len == 2);
     report("sep-rest-0",  spv.rest.len == 2 and spv.rest[0] == "--raw");
@@ -95,13 +101,15 @@ main :: () -> ! {
 
     // ── 5. First bare operand also stops flag parsing ────────────────
     bareArgv : []string = .["ci", "publish", "--out", "dist", "extra", "tail"];
-    bpv := try cli.parse(bareArgv, cmds, *d);
+    bpv := try cli.parse(bareArgv, cmds, *d, tracker);
+    defer bpv.deinit();
     report("bare-rest-len", bpv.rest.len == 2);
     report("bare-rest-0",  bpv.rest.len == 2 and bpv.rest[0] == "extra");
 
     // ── 6. Value-flag accepts a single-dash value (not a long flag) ──
     dashArgv : []string = .["ci", "publish", "--out", "-5", "--verbose"];
-    dpv := try cli.parse(dashArgv, cmds, *d);
+    dpv := try cli.parse(dashArgv, cmds, *d, tracker);
+    defer dpv.deinit();
     report("dash-value", dpv.valueOf("out") == "-5" and dpv.isSet("verbose"));
 
     // ── 7. Failures: each surfaces the specific variant ──────────────
@@ -114,11 +122,8 @@ main :: () -> ! {
     aValueEats    : []string = .["ci", "publish", "--out", "--verbose"];
     aMissingReq   : []string = .["ci", "publish", "--verbose"];
 
-    // A command whose FlagSpec list exceeds the inline `Parsed.values` cap
-    // (16): the parser rejects it with TooManyFlags rather than silently
-    // truncating. 17 specs (> 16) trips the check right after dispatch
-    // matches (group, command), before any flag is read.
-    overFlags : []cli.FlagSpec = .[
+    // A command declaring 17 flags parses, its last flag included.
+    manyFlags : []cli.FlagSpec = .[
         cli.FlagSpec{ name = "f00", takesValue = false, required = false },
         cli.FlagSpec{ name = "f01", takesValue = false, required = false },
         cli.FlagSpec{ name = "f02", takesValue = false, required = false },
@@ -137,82 +142,84 @@ main :: () -> ! {
         cli.FlagSpec{ name = "f15", takesValue = false, required = false },
         cli.FlagSpec{ name = "f16", takesValue = false, required = false },
     ];
-    overCmds : []cli.Command = .[ cli.Command{ group = "big", command = "cmd", flags = overFlags } ];
-    overArgs : []string  = .["big", "cmd"];
+    manyCmds : []cli.Command = .[ cli.Command{ group = "big", command = "cmd", flags = manyFlags } ];
+    manyArgs : []string  = .["big", "cmd", "--f16"];
+    mp := try cli.parse(manyArgs, manyCmds, *d, tracker);
+    defer mp.deinit();
+    report("seventeen-flags", mp.isSet("f16") and !mp.isSet("f15"));
 
-    report("err-zero-args",       raises(aZeroArgs,     cmds,      .UnknownCommand));
-    report("err-unknown-cmd",     raises(aUnknownCmd,   cmds,      .UnknownCommand));
-    report("err-unknown-group",   raises(aUnknownGroup, cmds,      .UnknownCommand));
-    report("err-too-few",         raises(aTooFew,       cmds,      .UnknownCommand));
-    report("err-unknown-flag",    raises(aUnknownFlag,  cmds,      .UnknownFlag));
-    report("err-missing-value",   raises(aMissingValue, cmds,      .MissingValue));
-    report("err-value-eats-flag", raises(aValueEats,    cmds,      .MissingValue));
-    report("err-missing-req",     raises(aMissingReq,   cmds,      .MissingRequired));
-    report("err-too-many-flags",  raises(overArgs,       overCmds, .TooManyFlags));
+    report("err-zero-args",       raises(aZeroArgs,     cmds, .UnknownCommand, tracker));
+    report("err-unknown-cmd",     raises(aUnknownCmd,   cmds, .UnknownCommand, tracker));
+    report("err-unknown-group",   raises(aUnknownGroup, cmds, .UnknownCommand, tracker));
+    report("err-too-few",         raises(aTooFew,       cmds, .UnknownCommand, tracker));
+    report("err-unknown-flag",    raises(aUnknownFlag,  cmds, .UnknownFlag, tracker));
+    report("err-missing-value",   raises(aMissingValue, cmds, .MissingValue, tracker));
+    report("err-value-eats-flag", raises(aValueEats,    cmds, .MissingValue, tracker));
+    report("err-missing-req",     raises(aMissingReq,   cmds, .MissingRequired, tracker));
 
     // ── 8. Diag pins the offending (token, index) for EVERY raise site ─
     // Each failure records the exact offending token (a VIEW into `args`,
-    // except missing-required / too-many which name the spec's flag / the
-    // command) plus its `args` index, so a caller can report which token
-    // failed. This covers ALL SIX raise sites in cli.sx, both UnknownCommand
-    // sub-branches included:
+    // except missing-required, which names the spec's flag) plus its `args`
+    // index, so a caller can report which token failed. This covers every
+    // raise site in cli.sx, both UnknownCommand sub-branches included:
     //   - zero-arg     -> index -1, token ""        (args.len == 0)
     //   - too-few      -> index  0, token args[0]   (args.len == 1)
     //   - unknown pair -> index  1, token command   (group OR command wrong)
-    //   - too-many     -> index -1, token command   (spec count > 16 cap)
     //   - unknown flag -> index  i, token flag tok
     //   - missing val  -> index  i, token flag tok
     //   - missing req  -> index -1, token flag name
-    // The three index==-1 cases (zero-arg, too-many, missing-req) COINCIDE
+    // The two index==-1 cases (zero-arg, missing-req) COINCIDE
     // with `Diag`'s `.{}` defaults (index -1, token ""), so those Diags are
     // seeded with a sentinel first: the assertion then proves `parse`
     // actually WROTE the value, not that it merely left the default.
     de : cli.Diag = .{};
-    _, ue := cli.parse(aUnknownFlag, cmds, *de);
+    _, ue := cli.parse(aUnknownFlag, cmds, *de, tracker);
     report("diag-flag-tag",     ue == .UnknownFlag);
     report("diag-flag-token",   de.token == "--nope" and de.index == 4);
 
     dc : cli.Diag = .{};
-    _, ce := cli.parse(aUnknownCmd, cmds, *dc);
+    _, ce := cli.parse(aUnknownCmd, cmds, *dc, tracker);
     report("diag-cmd-tag",      ce == .UnknownCommand);
     report("diag-cmd-token",    dc.token == "deploy" and dc.index == 1);
 
     dg : cli.Diag = .{};
-    _, ge := cli.parse(aUnknownGroup, cmds, *dg);
+    _, ge := cli.parse(aUnknownGroup, cmds, *dg, tracker);
     report("diag-group-tag",    ge == .UnknownCommand);
     report("diag-group-token",  dg.token == "publish" and dg.index == 1);
 
     df : cli.Diag = .{};
-    _, fe := cli.parse(aTooFew, cmds, *df);
+    _, fe := cli.parse(aTooFew, cmds, *df, tracker);
     report("diag-too-few-tag",   fe == .UnknownCommand);
     report("diag-too-few-token", df.token == "ci" and df.index == 0);
 
     d0 : cli.Diag = .{ index = 999, token = "<unset>" };           // sentinel: -1/"" are defaults
-    _, z0e := cli.parse(aZeroArgs, cmds, *d0);
+    _, z0e := cli.parse(aZeroArgs, cmds, *d0, tracker);
     report("diag-zero-args-tag",   z0e == .UnknownCommand);
     report("diag-zero-args-token", d0.token == "" and d0.index == -1);
 
     dv : cli.Diag = .{};
-    _, ve := cli.parse(aMissingValue, cmds, *dv);
+    _, ve := cli.parse(aMissingValue, cmds, *dv, tracker);
     report("diag-missing-value-tag",   ve == .MissingValue);
     report("diag-missing-value-token", dv.token == "--out" and dv.index == 2);
 
     dz : cli.Diag = .{};
-    _, ze := cli.parse(aValueEats, cmds, *dz);
+    _, ze := cli.parse(aValueEats, cmds, *dz, tracker);
     report("diag-value-eats-tag",   ze == .MissingValue);
     report("diag-value-eats-token", dz.token == "--out" and dz.index == 2);
 
     dm : cli.Diag = .{ index = 999, token = "<unset>" };           // sentinel: -1 is the default
-    _, me := cli.parse(aMissingReq, cmds, *dm);
+    _, me := cli.parse(aMissingReq, cmds, *dm, tracker);
     report("diag-req-tag",    me == .MissingRequired);
     report("diag-req-token",  dm.token == "out");
     report("diag-req-index",  dm.index == -1);
 
-    dt : cli.Diag = .{ index = 999, token = "<unset>" };           // sentinel: -1 is the default
-    _, te := cli.parse(overArgs, overCmds, *dt);
-    report("diag-too-many-tag",   te == .TooManyFlags);
-    report("diag-too-many-token", dt.token == "cmd" and dt.index == -1);
+    return;
+}
 
+main :: () -> ! {
+    tracker := mem.TrackingAllocator.init(context.allocator);
+    try suite(tracker);
+    report("flag-tables-returned", tracker.allocCount > 0 and tracker.leakCount() == 0);
     print("=== DONE ===\n");
     return;
 }
