@@ -3,7 +3,7 @@
 // One program exercises the whole pure-sx runtime together: the M:1 scheduler,
 // the suspending fiber-task async layer `go`/`wait`, and the deterministic
 // virtual-time timers `sleep`/`nowMs` — all over the `abi(.naked)`
-// `swapContext` on guarded `mmap` stacks.
+// `swapContext` on guarded stacks.
 //
 // A coordinator fiber launches three async tasks; each `sleep`s a different
 // duration, records its completion (id @ virtual-ms) into a shared log, then
@@ -23,7 +23,7 @@
 // order, while the timer-driven schedule fixes the completion ORDER. Fully
 // deterministic + reproducible (virtual time, no real clock).
 //
-// aarch64-macOS-pinned (the scheduler's per-arch asm + Apple mmap constants):
+// aarch64-macOS-pinned (the scheduler's per-arch asm):
 // runs end-to-end on a matching host, ir-only on a mismatch.
 @import "modules/std.sx";
 @import "modules/std/sched.sx";

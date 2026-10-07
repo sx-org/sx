@@ -106,6 +106,7 @@ main :: () -> i32 {
 
     root.deinit();
     loop.deinit();
+    session.deinit();
     reports.deinit();
     0
 }

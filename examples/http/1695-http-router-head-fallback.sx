@@ -184,6 +184,7 @@ main :: () -> i32 {
         check(r, "Allow: GET, HEAD", "implicit HEAD in Allow", *failed);
 
         srv.close();
+        router.deinit();
         context.allocator.deallocBytes(rbuf);
         leaked = gpa.allocCount;
     }

@@ -1,15 +1,9 @@
 // =====================================================================
 // cli.sx — process command-line argument accessor (macOS, Linux), pure sx.
 //
-// `osArgs(buf)` returns the real OS-level process argv as a `[]string`,
-// each element a VIEW over storage that lives for the whole process, so
-// the views never dangle. The caller provides the `buf: []string`
-// backing (typically a stack array).
-//
-// No per-arg allocation, and nothing here touches `context.allocator`.
-// The returned slice header is a by-value stack return whose `.ptr` is
-// the caller's `buf` — ladder rungs "by-value", "view", and "caller
-// buffer".
+// `osArgs()` returns the real OS-level process argv as a `[]string` from
+// `context.allocator`, which the caller frees; each element is a VIEW over
+// storage that lives for the whole process, so the views never dangle.
 //
 // `sx run <prog.sx> ...` reality — READ THIS BEFORE CONSUMING:
 //   Under `sx run`, the process argv is the sx INTERPRETER's argv, e.g.
@@ -24,8 +18,8 @@
 // Platform:
 //   - macOS: zero-copy views into the C runtime's own argv block, reached
 //     through `_NSGetArgv()` (char***) and `_NSGetArgc()` (int*).
-//   - Linux: views into the `/proc/self/cmdline` blob, slurped once into a
-//     mapping this module never unmaps.
+//   - Linux: views into the `/proc/self/cmdline` blob, slurped once into
+//     process-lifetime storage from `mem.cAllocator`.
 //   - Other targets: the accessors bail loudly (`EX_UNAVAILABLE` via
 //     `process.exit`) rather than returning a silent empty.
 // =====================================================================
@@ -35,6 +29,7 @@ cli :: scope {
     @import "modules/build.sx";
     @import "modules/std/process.sx";
     @import "modules/std/c.sx";
+    @import "modules/std/mem.sx";
 
     // The argv externs below are OS-specific — not in the shared c.sx surface —
     // so keep them here, bound through the shared libc handle.
@@ -55,58 +50,54 @@ cli :: scope {
         case .linux:
             // glibc exposes no argv accessor, so the source is the kernel's own
             // record: the NUL-separated blob at /proc/self/cmdline. It is slurped
-            // once into an anonymous mapping that is never unmapped, so the views
-            // over it stay valid for the whole process.
-            CMDLINE_PROT_RW  :i32: 3;      // PROT_READ | PROT_WRITE
-            CMDLINE_MAP_AP   :i32: 0x22;   // MAP_PRIVATE (0x2) | MAP_ANON (0x20)
+            // once into storage from `mem.cAllocator` that is never freed, so the
+            // views over it stay valid for the whole process.
             CMDLINE_O_RDONLY :i32: 0;
             CMDLINE_FIRST_CAP :: 4096;
 
             cmdline := "";                // the NUL-separated blob
             cmdlineArgc : i64 = -1;       // -1 until `cmdlineLoad` has run
 
-            // Read the whole file into `buf`, returning the byte count, or -1 when
-            // it cannot be opened or read. A count below `cap` means EOF was
-            // reached.
-            cmdlineRead :: (buf: [*]u8, cap: i64) -> i64 {
+            // Read the whole file into `buf`, returning the filled prefix, or null
+            // when it cannot be opened or read. A prefix shorter than `buf` means
+            // EOF was reached.
+            cmdlineRead :: (buf: []u8) -> ?string {
                 fd := c.open("/proc/self/cmdline", CMDLINE_O_RDONLY, 0);
-                if fd < 0 { return -1; }
+                if fd < 0 { return null; }
                 at := 0;
-                while at < cap {
-                    made := c.read(fd, *buf[at], (cap - at));
-                    if made < 0 { c.close(fd); return -1; }
+                while at < buf.len {
+                    made := c.read(fd, *buf[at], (buf.len - at));
+                    if made < 0 { c.close(fd); return null; }
                     if made == 0 { break; }
                     at += made;
                 }
                 c.close(fd);
-                return at;
+                return buf[0 .. at];
             }
 
             // Slurp the blob and count its NUL-terminated tokens. procfs reports
-            // no size up front, so the mapping doubles until one read reaches EOF
+            // no size up front, so the buffer doubles until one read reaches EOF
             // inside it — a full buffer is indistinguishable from a longer blob,
             // and a truncated last token would be a silently dropped argument.
             cmdlineLoad :: () {
                 if cmdlineArgc >= 0 { return; }
                 cap := CMDLINE_FIRST_CAP;
                 while true {
-                    region := c.mmap(null, cap, CMDLINE_PROT_RW, CMDLINE_MAP_AP, -1, 0);
-                    // mmap signals failure with MAP_FAILED = (void*)-1, not null.
-                    if @reinterpret(isize, region) == -1 {
-                        @printf("std.cli: mmap failed while reading /proc/self/cmdline.\n");
+                    blob := mem.alloc(mem.cAllocator, u8, cap);
+                    if blob.ptr == null {
+                        @printf("std.cli: out of memory while reading /proc/self/cmdline.\n");
                         process.exit(EX_UNAVAILABLE);
                     }
-                    n := cmdlineRead(region, cap);
-                    if n < 0 {
+                    read := cmdlineRead(blob);
+                    if read == null {
                         @printf("std.cli: cannot read /proc/self/cmdline.\n");
                         process.exit(EX_UNAVAILABLE);
                     }
-                    if n < cap {
-                        cmdline.ptr = region;
-                        cmdline.len = n;
+                    if read.len < cap {
+                        cmdline = read;
                         break;
                     }
-                    c.munmap(region, cap);
+                    mem.free(blob, mem.cAllocator);
                     cap = cap * 2;
                 }
                 k := 0;
@@ -168,51 +159,38 @@ cli :: scope {
         }
     }
 
-    // Fill `buf` with VIEWS over the process argv and return the filled prefix
-    // `buf[0 .. min(argc, buf.len)]`. Each element points directly into the
-    // backend's process-lifetime storage; no per-argument bytes are copied.
-    //
-    // The caller owns `buf` (typically a stack `[N]string`); the returned
-    // slice points into it and is valid for as long as `buf` is in scope. If
-    // the process has more than `buf.len` arguments only the first `buf.len`
-    // are returned — call `osArgc()` first and size `buf` accordingly when an
-    // exact count matters.
-    osArgs :: (buf: []string) -> []string {
+    // The process argv: `osArgc()` VIEWS into the backend's process-lifetime
+    // storage, in a slice from `context.allocator` that the caller frees. No
+    // per-argument bytes are copied.
+    osArgs :: () -> []string {
         inline match @host.os {
             case .macos: {
                 argc := (nsGetArgc().*).(i64);
                 argv : [*]i64 = @reinterpret([*]i64, nsGetArgv().*);
-                n := if argc > buf.len then buf.len else argc;
+                args := mem.alloc(context.allocator, string, argc);
                 i := 0;
-                while i < n {
+                while i < argc {
                     cstr : [*]u8 = @reinterpret([*]u8, argv[i]);
                     len := 0;
                     while cstr[len] != 0 { len += 1; }
-                    buf[i] = string{ ptr = cstr, len = len };
+                    args[i] = string{ ptr = cstr, len = len };
                     i += 1;
                 }
-                result : []string = ---;
-                result.ptr = buf.ptr;
-                result.len = n;
-                return result;
+                return args;
             }
             case .linux: {
                 cmdlineLoad();
-                n := if cmdlineArgc > buf.len then buf.len else cmdlineArgc;
+                args := mem.alloc(context.allocator, string, cmdlineArgc);
                 i := 0;
                 at := 0;
-                while i < n {
+                while i < cmdlineArgc {
                     len := 0;
                     while cmdline.ptr[at + len] != 0 { len += 1; }
-                    tok : [*]u8 = *cmdline.ptr[at];
-                    buf[i] = string{ ptr = tok, len = len };
+                    args[i] = cmdline[at .. at + len];
                     at += len + 1;
                     i += 1;
                 }
-                result : []string = ---;
-                result.ptr = buf.ptr;
-                result.len = n;
-                return result;
+                return args;
             }
             else: {
                 @printf("std.cli: unsupported platform — only macOS and Linux are implemented.\n");
@@ -254,15 +232,16 @@ cli :: scope {
     // records the offending token (its `args` index + a VIEW of it) before
     // the raise, so the caller can report exactly which token failed.
     //
-    // OWNERSHIP: zero heap, zero copy.
+    // OWNERSHIP: zero copy.
     //   - group / command / every flag value / every `rest` operand are VIEWS
     //     (slices) into the caller's `args` — never copied.
-    //   - `Parsed` is a by-value STACK struct the caller binds (like
-    //     `hash.init()`); flag presence/values live in a FIXED-capacity inline
-    //     array `[16]FlagValue` (at most 16 flags per command), indexed
-    //     positionally by the matched command's spec — no per-flag allocation.
+    //   - `Parsed` is a by-value struct the caller binds; flag presence/values
+    //     live in one slice from the `context.allocator` current at `parse`,
+    //     indexed positionally by the matched command's spec, which `deinit`
+    //     returns.
+    //     A raising `parse` has already returned it.
     //   - The flag-spec list and the command table are caller storage passed
-    //     as VIEWS. Nothing here touches `context.allocator`.
+    //     as VIEWS.
     //
     // Usage:
     //
@@ -273,14 +252,13 @@ cli :: scope {
     //     cmds : []cli.Command = .[ cli.Command{ group = "ci", command = "publish", flags = flags } ];
     //     d : cli.Diag = .{};
     //     p := try cli.parse(args, cmds, *d);
+    //     defer p.deinit();
     //     // p.group == "ci"; p.command == "publish";
     //     // p.valueOf("out"); p.isSet("verbose"); p.json; p.rest
     // =====================================================================
 
-    // The parser's failure contract. The first four are INPUT errors a caller
-    // reacts to; `TooManyFlags` rejects a command that declares more flags than
-    // the inline `Parsed.values` array holds (16) — never a silent truncation.
-    Error :: error { UnknownCommand; UnknownFlag; MissingValue; MissingRequired; TooManyFlags }
+    // The parser's failure contract: INPUT errors a caller reacts to.
+    Error :: error { UnknownCommand; UnknownFlag; MissingValue; MissingRequired }
 
     // One flag's contract: its long name (without the `--`), whether it takes
     // a value, and whether it must be present. Caller-owned; passed as a view.
@@ -325,7 +303,12 @@ cli :: scope {
         json: bool;                // `--json` mode: true iff `--json` is in argv
         rest: []string;
         spec: []FlagSpec;          // view of the matched command's flag specs
-        values: [16]FlagValue;     // fixed inline storage, indexed by spec position
+        values: []FlagValue;       // from `a`, indexed by spec position
+        a: Allocator;
+
+        deinit :: (self: *Parsed) {
+            mem.free(self.values, self.a);
+        }
 
         // Presence of a declared flag (boolean or value-taking). False for an
         // undeclared name.
@@ -380,16 +363,9 @@ cli :: scope {
             raise .UnknownCommand;
         }
         spec := commands[ci].flags;
-        if spec.len > 16 {
-            diag.index = -1;
-            diag.token = command;
-            raise .TooManyFlags;
-        }
 
         // ── Result skeleton ──
-        // Clear ALL 16 `values` slots (not just the spec prefix): the whole
-        // struct must be live before it is returned by value. `rest` is an
-        // empty slice until a `--`/operand sets it.
+        // `rest` is an empty slice until a `--`/operand sets it.
         result : Parsed = ---;
         result.group = group;
         result.command = command;
@@ -397,12 +373,15 @@ cli :: scope {
         result.json = false;
         result.spec = spec;
         result.rest = args[args.len ..];
+        result.a = context.allocator;
+        result.values = mem.alloc(context.allocator, FlagValue, spec.len);
         j := 0;
-        while j < 16 {
-            result.values[j].set = false;
-            result.values[j].value = "";
+        while j < spec.len {
+            result.values[j] = .{};
             j += 1;
         }
+        parsed := false;
+        defer if !parsed result.deinit();
 
         // ── Flags ──
         i := 2;
@@ -459,6 +438,7 @@ cli :: scope {
             r += 1;
         }
 
+        parsed = true;
         return result;
     }
 }

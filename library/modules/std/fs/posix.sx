@@ -167,15 +167,15 @@ fsMove :: (oldp: string, newp: string) -> bool {
     fsPosixC.c.rename(oldz, newz) == 0
 }
 
-// realpath(path, NULL) allocates its answer with malloc.
 fsRealPath :: (path: string) -> ?string {
     z := mem.cloneZ(path);
     defer mem.free(z);
-    resolved := fsPosixRealpath(z, null);
+    resolvedBuf := mem.alloc(context.allocator, u8, FS_POSIX_PATH_MAX);
+    if resolvedBuf.ptr == null { return null; }
+    defer mem.free(resolvedBuf);
+    resolved := fsPosixRealpath(z, resolvedBuf.ptr);
     if resolved == null { return null; }
-    out := mem.clone(resolved[0..]);
-    fsPosixC.c.free(resolved);
-    out
+    mem.clone(resolved[0..])
 }
 
 // Recursive mkdir -p. Walks the path and creates each missing

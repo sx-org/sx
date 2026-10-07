@@ -1,13 +1,13 @@
 // The M:1 cooperative fiber scheduler core.
 //
 // A `Scheduler` drives any number of `Fiber`s, each running a stackful
-// `body: Closure() -> void` on its own guarded `mmap` stack, whose guard page
+// `body: Closure() -> void` on its own guarded stack, whose guard page
 // turns a stack overflow into an immediate fault instead of silent neighbor
 // corruption. Fibers cooperate: a running fiber hands control back to the
 // scheduler loop via `yieldNow` (re-enqueued, round-robin) or
 // `suspendSelf` (parked off-queue until an external `wake`). When a body
-// returns, the fiber reaches `.done`, its stack is `munmap`'d and its heap
-// `Fiber` freed.
+// returns, the fiber reaches `.done`, and its stack and heap `Fiber` return to
+// the scheduler's allocator.
 //
 // The primitives it stands on, corpus-pinned by examples/concurrency/1807-1809:
 //   - `swapContext` (aarch64 `abi(.naked)`, 13-slot save area: x19..x28, fp,
@@ -17,14 +17,14 @@
 //     bootstrapped `*Fiber` and x20 = `&fibDispatch`; it moves the fiber to x0
 //     and `br`s through x20 to the C-ABI `fibDispatch`, which calls the body
 //     then switches back to the scheduler.
-//   - guarded `mmap` stacks: `[GUARD | usable]`, low GUARD page `mprotect`'d
-//     PROT_NONE, 16-aligned top returned as the bootstrapped SP.
+//   - guarded stacks from `ownAllocator`: `[GUARD | usable]` at a GUARD-aligned
+//     offset of the block, the GUARD page `mprotect`'d PROT_NONE, 16-aligned
+//     top returned as the bootstrapped SP.
 //
 // aarch64-pinned (macOS + linux): the `swapContext` asm + the 13-slot save
-// area are per-arch. The per-OS bits are branched at comptime — `mmap`'s
-// MAP_ANON flag (`MAP_AP`) and the fd-readiness backend (kqueue on darwin,
-// epoll on linux). Runs end-to-end on a matching aarch64 host, ir-only on an
-// arch mismatch.
+// area are per-arch. The per-OS bits are branched at comptime — the
+// fd-readiness backend (kqueue on darwin, epoll on linux). Runs end-to-end on a
+// matching aarch64 host, ir-only on an arch mismatch.
 sched :: scope {
     @import "modules/std/core.sx";
     @import "modules/std/io.sx";
@@ -53,18 +53,10 @@ sched :: scope {
         ep :: @import "modules/std/net/epoll.sx";
     }
 
-    // --- mmap stack primitives (mmap/mprotect/munmap/close/abort via `c`) ------
+    // --- guarded stack primitives (mprotect/close/abort via `c`) ---------------
 
     PROT_NONE :: 0;
     PROT_RW   :: 3;          // PROT_READ | PROT_WRITE
-    // Exhaustive on the SUPPORTED OSes (linux/macOS), no default case: an
-    // unsupported target matches no case → MAP_AP undefined → a loud compile error
-    // on use rather than a silent wrong flag. (The fiber runtime is aarch64-only
-    // anyway — the swapContext asm — so only these two platforms are wired.)
-    inline match @host.os {
-        case .linux: MAP_AP :: 0x22;      // linux MAP_PRIVATE (0x2) | MAP_ANON (0x20)
-        case .macos: MAP_AP :: 0x1002;    // macOS MAP_PRIVATE (0x2) | MAP_ANON (0x1000)
-    }
     GUARD     :: 16384;      // one 16 KB page (aarch64-macOS)
     STACK     :: 131072;     // 128 KB usable per fiber
 
@@ -89,8 +81,8 @@ sched :: scope {
         bodyAlloc: Allocator;
         state: FiberState;
         sched: *Scheduler;
-        stackRegion: *void;   // mmap base — for munmap on reap
-        stackLen: i64;        // GUARD + STACK, for munmap
+        stack: []u8;          // the `ownAllocator` block holding the guard and the stack
+        stackGuard: *u8;      // the PROT_NONE page inside `stack`
         id: i64;
         next: *Fiber;          // intrusive FIFO ready-queue link
         // The dynamic `context` in force when this fiber was SPAWNED, captured by
@@ -217,7 +209,7 @@ sched :: scope {
             self.nextId = self.nextId + 1;
             self.nSpawned = self.nSpawned + 1;
 
-            top := bootStack(f, STACK);
+            top := bootStack(self, f, STACK);
             f.ctx.regs[0]  = @reinterpret(usize, f);             // x19 = self (→ x0 in the tramp)
             f.ctx.regs[1]  = @reinterpret(u64, fibDispatch);  // x20 = dispatch entry (tramp `br`s to it)
             f.ctx.regs[10] = 0;                // fp
@@ -275,7 +267,7 @@ sched :: scope {
             // timer-fire in `run` — which already removed the fired timer, so this
             // is a harmless re-scan there). Without this, a fiber that armed a
             // `sleep` timer but was woken EARLY by another path would run to
-            // completion and be reaped (stack munmap'd + Fiber freed) while its
+            // completion and be reaped (stack + Fiber freed) while its
             // Timer still held a dangling `*Fiber` — a later fire would dereference
             // freed memory (use-after-free). One timer per fiber max in the M:1
             // model, so a single eviction suffices; it also prevents a stale timer
@@ -285,7 +277,7 @@ sched :: scope {
             // suspended fiber funnels through `wake`. If a fiber armed `blockOnFd`
             // but was woken by another path (a manual wake, an async completion), its
             // `IoWaiter` would otherwise survive pointing at a fiber that runs to
-            // completion and is reaped (stack munmap'd + Fiber freed). A later
+            // completion and is reaped (stack + Fiber freed). A later
             // readiness drain matching that stale record would `wake` freed memory.
             // Evict it here. The kernel-side registration is handled per-OS inside
             // `cancelIoWaiterFor`: on darwin the EV_ONESHOT kqueue registration is
@@ -427,7 +419,7 @@ sched :: scope {
         // virtual clock by firing the earliest pending timer (which re-readies its
         // sleeper), and repeats — until both the ready queue and the timer set are
         // empty. Within the inner drain each iteration: dequeue the next fiber,
-        // switch into it, and — on its switch back — reap it if done (munmap stack,
+        // switch into it, and — on its switch back — reap it if done (free stack,
         // free the Fiber), re-enqueue it if it yielded, or leave it parked if it
         // suspended.
         run :: (self: *Scheduler) {
@@ -859,30 +851,29 @@ T
 
     // --- guarded stack bootstrap ----------------------------------------------
 
-    // mmap a [guard | usable-stack] region, mprotect the low guard page PROT_NONE.
-    // Stores the region base + len on the fiber (for munmap on reap) and returns
-    // the 16-aligned stack top (the bootstrapped SP).
-    bootStack :: (f: *Fiber, size: i64) -> u64 {
-        total := GUARD + size;
-        region : *void = c.mmap(null, total, PROT_RW, MAP_AP, -1, 0);
-        // mmap signals failure with MAP_FAILED = (void*)-1 (NOT null). Handing a
-        // wild SP to the switch would `ret` onto garbage — bail loudly instead.
-        if @reinterpret(isize, region) == -1 {
-            print("sched: mmap failed for a {}-byte fiber stack\n", total);
+    // Fund a [guard | usable-stack] span at a GUARD-aligned offset of a block
+    // from `ownAllocator`, mprotect the guard page PROT_NONE, and return the
+    // 16-aligned stack top (the bootstrapped SP).
+    bootStack :: (self: *Scheduler, f: *Fiber, size: i64) -> u64 {
+        block := mem.alloc(self.ownAllocator, u8, GUARD + GUARD + size);
+        if block.ptr == null {
+            print("sched: out of memory allocating a {}-byte fiber stack\n", block.len);
             c.abort();
         }
-        f.stackRegion = region;
-        f.stackLen = total;
-        // Guard-arm: turn the low page unwritable so overflow faults at the
+        // mprotect takes a page-aligned address; the offset is read from the
+        // block's address.
+        pad := ((GUARD - @reinterpret(usize, block.ptr) % GUARD) % GUARD).(i64);
+        f.stack = block;
+        f.stackGuard = *block[pad];
+        // Guard-arm: turn the guard page unwritable so overflow faults at the
         // boundary. The guard is mandatory; a stack handed out without it would
         // silently corrupt a neighbor on overflow, so a failed mprotect is fatal,
         // not ignorable.
-        if c.mprotect(region, GUARD, PROT_NONE) != 0 {
+        if c.mprotect(f.stackGuard, GUARD, PROT_NONE) != 0 {
             print("sched: mprotect(PROT_NONE) failed to arm the stack guard page\n");
             c.abort();
         }
-        usable : u64 = @reinterpret(usize, region) + GUARD;
-        top : u64 = usable + size.(u64);
+        top : u64 = @reinterpret(usize, *block[pad + GUARD + size]);
         return top - (top % 16);   // 16-byte aligned stack top (AAPCS)
     }
 
@@ -891,14 +882,19 @@ T
     // Reclaim a finished (`.done`) or leftover fiber. Frees, in order: the body
     // closure's ENV (`body.env` — the environment `spawn` persisted through
     // `bodyAlloc`; `null` for a capture-free body, so the free is a no-op then),
-    // then the guarded stack (munmap), then the `Fiber` struct itself.
+    // then the guarded stack, then the `Fiber` struct itself. The guard page is
+    // writable again before its block returns to `ownAllocator`.
     // MUST be the LAST use of `f` — `f` is dangling after.
     // (The body's env outlives the body's execution but dies WITH the fiber: the
     // body has returned by the time a `.done` fiber is reaped, so nothing reads the
     // captures again.)
     reapFiber :: (self: *Scheduler, f: *Fiber) {
         f.bodyAlloc.deallocBytes(f.body.env);
-        c.munmap(f.stackRegion, f.stackLen);
+        if c.mprotect(f.stackGuard, GUARD, PROT_RW) != 0 {
+            print("sched: mprotect(PROT_RW) failed to disarm the stack guard page\n");
+            c.abort();
+        }
+        mem.free(f.stack, self.ownAllocator);
         self.ownAllocator.deallocBytes(f);
     }
 

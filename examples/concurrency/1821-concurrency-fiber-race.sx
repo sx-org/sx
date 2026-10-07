@@ -15,7 +15,7 @@
 // 10 — NOT 30, which is what letting losers run to their natural end would
 // give. The losers end `.canceled` with their work stopped.
 //
-// aarch64-pinned (the scheduler's per-arch asm + per-OS mmap/event constants):
+// aarch64-pinned (the scheduler's per-arch asm + per-OS event constants):
 // runs end-to-end on a matching host (macOS + linux), ir-only on a mismatch.
 @import "modules/std.sx";
 @import "modules/std/sched.sx";

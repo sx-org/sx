@@ -21,10 +21,10 @@ srvEntry :: (arg: *void) -> *void abi(.c) {
 LOOPBACK :u32: 0x0100007F;   // 127.0.0.1 in sockaddrIn order
 
 get :: (port: i64) {
-    buf : [4096]u8 = ---;
-    r, e := http.Client.request(LOOPBACK, port, "GET", "/", "t", "", "", *buf[0], 4096);
+    r, e := http.Client.request(LOOPBACK, port, .{ host = "t" });
     if e { print("request failed\n"); return; }
     print("served: {}\n", r.body);
+    r.deinit();
 }
 
 main :: () -> i32 {

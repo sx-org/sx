@@ -133,12 +133,12 @@ mem :: scope {
             if size == 0 { return null; }
             // Pool workers share this counter; readers observe it after joining.
             @atomicFetchAdd(i64, *self.allocCount, 1, .relaxed);
-            return c.malloc(size);
+            return cAllocator.allocBytes(size);
         }
         deallocBytes :: (self: *GPA, ptr: *void) {
             if ptr == null { return; }
             @atomicFetchSub(i64, *self.allocCount, 1, .relaxed);
-            c.free(ptr);
+            cAllocator.deallocBytes(ptr);
         }
     }
 

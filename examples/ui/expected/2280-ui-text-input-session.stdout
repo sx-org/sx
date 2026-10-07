@@ -27,6 +27,6 @@ cut committed "a" caret 1 marked "" [0 0]
   .deleteBackward
   .text "가"
 replaced committed "가" caret 3 marked "" [0 0]
-overrun committed "가" queued 0
-filled 1024 queued 0
+committed 4099 marked 2000
 utf16 가 3 1 | a 1 1
+outstanding 0

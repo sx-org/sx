@@ -128,6 +128,7 @@ roundtrip :: (srv: *http.Server, fd: i32, reqtext: string, scratch: [*]u8, cap: 
 // whatever allocator is current (the GPA-pushed scope in main).
 runSuite :: (scratch: [*]u8, cap: i64) -> bool {
     router := http.Router.init(0);
+    defer router.deinit();
     router.get("/", hRoot);
     router.get("/hello", hHello);
     router.get("/users/:id", hUser);

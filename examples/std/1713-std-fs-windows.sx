@@ -21,5 +21,11 @@ main :: () -> i32 {
     if empty.isValid() or empty.close() { return 5; }
     if fs.setModifiedSeconds("C:\\sx-stdlib-fs-definitely-missing", 0) { return 6; }
     if fs.realPath("C:\\sx-stdlib-fs-definitely-missing") != null { return 7; }
+    if fs.deleteFile("C:\\sx-stdlib-fs-definitely-missing") { return 8; }
+    if fs.deleteDir("C:\\sx-stdlib-fs-definitely-missing") { return 9; }
+    if fs.setMode("C:\\sx-stdlib-fs-definitely-missing", 420) { return 10; }
+    if fs.move("C:\\sx-stdlib-fs-definitely-missing", "C:\\sx-stdlib-fs-moved") { return 11; }
+    if fs.copyFile("C:\\sx-stdlib-fs-definitely-missing", "C:\\sx-stdlib-fs-copied") { return 12; }
+    if !fs.createDirAll("C:\\") { return 13; }
     0
 }

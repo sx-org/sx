@@ -4,7 +4,7 @@
 //
 // A "sleeper" fiber arms `sleep(100)` and parks; a "waker" fiber wakes
 // it EARLY (at virtual t=0) via `wake`. The sleeper resumes, finishes, and is
-// reaped (its stack `munmap`'d + `Fiber` freed). Its 100ms timer must already be
+// reaped (its stack + `Fiber` freed). Its 100ms timer must already be
 // gone — otherwise, when the run loop later fired that stale timer, it would
 // `wake` a freed `*Fiber` (use-after-free) and wrongly advance the virtual clock
 // to 100. Here `wake` evicts the timer, so the clock stays at 0 and nothing
@@ -13,7 +13,7 @@
 // Contract: `log: 2 1` (waker records 2, then the early-woken sleeper records 1),
 // `clock: 0` (no stale timer fired), `nSuspended: 0` (balanced).
 //
-// aarch64-macOS-pinned (the scheduler's per-arch asm + Apple mmap constants):
+// aarch64-macOS-pinned (the scheduler's per-arch asm):
 // runs end-to-end on a matching host, ir-only on a mismatch.
 @import "modules/std.sx";
 @import "modules/std/sched.sx";

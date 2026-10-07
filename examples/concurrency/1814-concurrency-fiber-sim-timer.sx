@@ -30,9 +30,8 @@
 // No real-time variant runs here; the equivalence is the contract the
 // deterministic test relies on.
 //
-// aarch64-macOS-pinned (the scheduler's `swapContext` asm + guard-page mmap
-// constants are per-arch / Apple-specific): runs end-to-end on a matching host,
-// ir-only on a mismatch.
+// aarch64-macOS-pinned (the scheduler's `swapContext` asm is per-arch): runs
+// end-to-end on a matching host, ir-only on a mismatch.
 @import "modules/std.sx";
 @import "modules/std/sched.sx";
 

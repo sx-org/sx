@@ -1,11 +1,10 @@
-// MEMORY: route registration captures the Router's owning allocator
-// (init) and grows the route table through it — the table outlives any
-// transient per-request scope, per the long-lived-container rule. The
-// HOT PATH allocates NOTHING: path params, query pairs, and form pairs all
-// land in FIXED-CAPACITY arrays on the stack-resident RouteCtx — no
-// per-request heap, so the server's leak gate stays net-zero. Decoded
-// query/form VALUES (percent/`+` decoding needs fresh bytes) use the
-// per-request context arena, which the server tears down after the handler.
+// MEMORY: `init` captures `context.allocator` as the Router's own and the
+// route table grows through it — the table outlives any transient
+// per-request scope, per the long-lived-container rule; `deinit` returns
+// it. Path params, query pairs, form pairs and decoded query/form
+// tokens (percent/`+` decoding needs fresh bytes) live in the RouteCtx's
+// lists, grown through the allocator current at dispatch (the server's
+// per-request arena) and returned to it when the handler returns.
 //
 // ROUTING ORDER: matching is FIRST-REGISTERED-WINS over the route table, NOT
 // static-preferred. If a param route (`/users/:id`) is registered before a
@@ -23,23 +22,17 @@
 // application/x-www-form-urlencoded.
 
 @import "modules/std/http/wire.sx";
+@import "modules/std/core.sx";
 @import "modules/std/fmt.sx";          // concat
+@import "modules/std/list.sx";
 @import "modules/std/mem.sx";
 @import "modules/std/writer.sx";       // StringBuilder
 @import "modules/std/encoding.sx";     // hexValue
 @import "modules/std/json.sx";
 
-// Fixed capacities for the per-request scratch. A request that exceeds any
-// of these simply drops the overflow (the extra params/pairs are not
-// visible) rather than allocating — bounded memory is the contract.
-private MAX_PARAMS  :: 16;
-private MAX_QUERY   :: 32;
-private MAX_FORM    :: 64;
-private MAX_SEGS    :: 32;
-
 // One (name → value) pair. `name`/`value` are VIEWS — params point into the
 // request's path (untouched during dispatch); decoded query/form values
-// point into per-request-arena storage. Valid only for the handler call.
+// point into the RouteCtx's decoded tokens. Valid only for the handler call.
 KV :: struct {
     name: string = "";
     value: string = "";
@@ -47,7 +40,7 @@ KV :: struct {
 
 // One registered route: (method, pattern) → handler. The pattern is the
 // raw "/users/:id" string; matching splits it on '/' each dispatch (cheap,
-// no per-route preprocessing, no heap beyond the table row).
+// no per-route preprocessing).
 RouteHandler :: (rc: *RouteCtx) -> void;
 
 Route :: struct {
@@ -60,34 +53,41 @@ Route :: struct {
 // Router.dispatch; carries the live request/response, the matched path
 // params, and the app's own ctx word. Query/form pairs are parsed LAZILY
 // on first access and cached here, so a handler that never asks pays
-// nothing.
+// nothing. Every list grows through `a`, and `deinit` returns them.
 RouteCtx :: struct {
     req: *Request = null;
     resp: *Response = null;
     appCtx: usize = 0;          // the word the app gave Router.init
+    a: Allocator;
 
     // path params (filled by the match)
-    params: [MAX_PARAMS]KV = ---;
-    nParams: i64 = 0;
+    params: List(KV) = .{};
 
     // query cache (lazy)
     queryParsed: bool = false;
-    query: [MAX_QUERY]KV = ---;
-    nQuery: i64 = 0;
+    query: List(KV) = .{};
 
     // form cache (lazy)
     formParsed: bool = false;
-    form: [MAX_FORM]KV = ---;
-    nForm: i64 = 0;
+    form: List(KV) = .{};
+
+    // decoded query/form tokens the pairs view
+    decoded: List(string) = .{};
+
+    deinit :: (self: *RouteCtx) {
+        for t in self.decoded.items { mem.free(t, self.a); }
+        self.decoded.deinit(self.a);
+        self.params.deinit(self.a);
+        self.query.deinit(self.a);
+        self.form.deinit(self.a);
+    }
 
     // ── path params ──────────────────────────────────────────────────
     // Look up a path param by name; "" when absent. Names come straight
     // from the pattern's ":name" segments.
     param :: (self: *RouteCtx, name: string) -> string {
-        i := 0;
-        while i < self.nParams {
-            if strEq(self.params[i].name, name) { return self.params[i].value; }
-            i += 1;
+        for kv in self.params.items {
+            if strEq(kv.name, name) { return kv.value; }
         }
         return "";
     }
@@ -95,17 +95,14 @@ RouteCtx :: struct {
     // ── query string ─────────────────────────────────────────────────
     // Value of query key `name` from the request path's `?...` portion;
     // "" when the key is absent. A bare flag (`?x`) yields "". Decoded
-    // (percent + '+') into the per-request arena on first call.
+    // (percent + '+') on first call.
     queryGet :: (self: *RouteCtx, name: string) -> string {
         if !self.queryParsed {
-            qs := queryStringOf(self.req.path);
-            self.nQuery = parsePairs(qs, *self.query[0], MAX_QUERY);
+            self.parsePairs(queryStringOf(self.req.path), *self.query);
             self.queryParsed = true;
         }
-        i := 0;
-        while i < self.nQuery {
-            if strEq(self.query[i].name, name) { return self.query[i].value; }
-            i += 1;
+        for kv in self.query.items {
+            if strEq(kv.name, name) { return kv.value; }
         }
         return "";
     }
@@ -114,14 +111,11 @@ RouteCtx :: struct {
     // no value, `?x`, whose queryGet is "", from a missing key).
     queryHas :: (self: *RouteCtx, name: string) -> bool {
         if !self.queryParsed {
-            qs := queryStringOf(self.req.path);
-            self.nQuery = parsePairs(qs, *self.query[0], MAX_QUERY);
+            self.parsePairs(queryStringOf(self.req.path), *self.query);
             self.queryParsed = true;
         }
-        i := 0;
-        while i < self.nQuery {
-            if strEq(self.query[i].name, name) { return true; }
-            i += 1;
+        for kv in self.query.items {
+            if strEq(kv.name, name) { return true; }
         }
         return false;
     }
@@ -131,28 +125,67 @@ RouteCtx :: struct {
     // request body; "" when absent. Same percent/'+' decoding as the query.
     formGet :: (self: *RouteCtx, name: string) -> string {
         if !self.formParsed {
-            self.nForm = parsePairs(self.req.body, *self.form[0], MAX_FORM);
+            self.parsePairs(self.req.body, *self.form);
             self.formParsed = true;
         }
-        i := 0;
-        while i < self.nForm {
-            if strEq(self.form[i].name, name) { return self.form[i].value; }
-            i += 1;
+        for kv in self.form.items {
+            if strEq(kv.name, name) { return kv.value; }
         }
         return "";
     }
 
     formHas :: (self: *RouteCtx, name: string) -> bool {
         if !self.formParsed {
-            self.nForm = parsePairs(self.req.body, *self.form[0], MAX_FORM);
+            self.parsePairs(self.req.body, *self.form);
             self.formParsed = true;
         }
-        i := 0;
-        while i < self.nForm {
-            if strEq(self.form[i].name, name) { return true; }
-            i += 1;
+        for kv in self.form.items {
+            if strEq(kv.name, name) { return true; }
         }
         return false;
+    }
+
+    // Decode a token: a clean one is a view into the source; one with escapes
+    // is decoded into a token from `a` that `deinit` returns.
+    decodeToken :: (self: *RouteCtx, s: string) -> string {
+        if !needsDecode(s) { return s; }
+        buf := mem.alloc(self.a, u8, s.len);
+        n := urlDecodeInto(s, buf);
+        self.decoded.append(buf, self.a);
+        return buf[0 .. n];
+    }
+
+    // Parse `a=1&b=two&flag` into decoded KV pairs appended to `out`.
+    // A pair with no '=' (`flag`) has value "". Keys AND values are decoded
+    // (percent + '+').
+    parsePairs :: (self: *RouteCtx, s: string, out: *List(KV)) {
+        i := 0;
+        while i < s.len {
+            // one segment runs to the next '&'
+            segStart := i;
+            while i < s.len and s[i] != '&' { i += 1; }
+            seg := string{ ptr = *s[segStart], len = i - segStart };
+            if i < s.len { i += 1; }   // skip '&'
+
+            if seg.len == 0 { continue; }   // empty segment ("&&")
+
+            // split on the first '='
+            eq := -1;
+            k := 0;
+            while k < seg.len {
+                if seg[k] == '=' { eq = k; break; }
+                k += 1;
+            }
+            key := "";
+            val := "";
+            if eq < 0 {
+                key = seg;
+            } else {
+                key = string{ ptr = seg.ptr, len = eq };
+                val = string{ ptr = *seg[eq + 1], len = seg.len - eq - 1 };
+            }
+            out.append(KV{ name = self.decodeToken(key), value = self.decodeToken(val) }, self.a);
+        }
     }
 
     // ── JSON request body ────────────────────────────────────────────
@@ -236,10 +269,10 @@ private queryStringOf :: (path: string) -> string {
 // ── percent / '+' decoding ───────────────────────────────────────────
 
 // Decode one urlencoded token (`%XX` → byte, `+` → space, others verbatim)
-// from `s` into `dst` (must be >= s.len bytes — decoding only shrinks).
+// from `s` into `dst` (at least s.len bytes — decoding only shrinks).
 // Returns the decoded byte length. A malformed `%` (truncated or non-hex)
 // is passed through literally rather than dropped.
-private urlDecodeInto :: (s: string, dst: [*]u8) -> i64 {
+private urlDecodeInto :: (s: string, dst: []u8) -> i64 {
     di : i64 = 0;
     i := 0;
     while i < s.len {
@@ -273,70 +306,25 @@ private needsDecode :: (s: string) -> bool {
     return false;
 }
 
-// Decode a token: a clean one is a view into the source; one with escapes
-// is decoded into the per-request arena (context.allocator).
-private decodeToken :: (s: string) -> string {
-    if !needsDecode(s) { return s; }
-    buf : [*]u8 = mem.alloc(context.allocator, u8, if s.len > 0 then s.len else 1).ptr;
-    n := urlDecodeInto(s, buf);
-    return string{ ptr = buf, len = n };
-}
-
-// Parse `a=1&b=two&flag` into up to `cap` decoded KV pairs at `out`.
-// A pair with no '=' (`flag`) has value "". Keys AND values are decoded
-// (percent + '+'). Returns the number of pairs written (overflow dropped).
-private parsePairs :: (s: string, out: [*]KV, cap: i64) -> i64 {
-    n : i64 = 0;
-    i := 0;
-    while i < s.len and n < cap {
-        // one segment runs to the next '&'
-        segStart := i;
-        while i < s.len and s[i] != '&' { i += 1; }
-        seg := string{ ptr = *s[segStart], len = i - segStart };
-        if i < s.len { i += 1; }   // skip '&'
-
-        if seg.len == 0 { continue; }   // empty segment ("&&")
-
-        // split on the first '='
-        eq := -1;
-        k := 0;
-        while k < seg.len {
-            if seg[k] == '=' { eq = k; break; }
-            k += 1;
-        }
-        key := "";
-        val := "";
-        if eq < 0 {
-            key = seg;
-        } else {
-            key = string{ ptr = seg.ptr, len = eq };
-            val = string{ ptr = *seg[eq + 1], len = seg.len - eq - 1 };
-        }
-        out[n] = KV{ name = decodeToken(key), value = decodeToken(val) };
-        n += 1;
-    }
-    return n;
-}
-
 // ── pattern matching ─────────────────────────────────────────────────
 
 // Match `path` (already stripped of any query) against `pattern`,
-// extracting ":name" segments into `params` (up to MAX_PARAMS). Both are
-// split on '/'. Returns (true, nParams) on a match; false otherwise.
+// appending its ":name" segments to `rc.params`. Both are split on '/'. On
+// a mismatch `rc.params` is left empty.
 // Trailing-slash insensitive: "/users" matches "/users/" (empty trailing
 // segments are ignored on both sides).
-private matchPattern :: (pattern: string, path: string, params: [*]KV) -> (bool, i64 = 0) {
+private matchPattern :: (pattern: string, path: string, rc: *RouteCtx) -> bool {
+    rc.params.clear();
     pi := 0;   // pattern cursor
     xi := 0;   // path cursor
-    n : i64 = 0;
     while true {
         // advance past leading '/'
         while pi < pattern.len and pattern[pi] == '/' { pi += 1; }
         while xi < path.len and path[xi] == '/' { xi += 1; }
         patEnd := pi >= pattern.len;
         pathEnd := xi >= path.len;
-        if patEnd and pathEnd { return true, n; }
-        if patEnd or pathEnd { return false, 0; }
+        if patEnd and pathEnd { return true; }
+        if patEnd or pathEnd { rc.params.clear(); return false; }
         // grab one segment from each
         ps := pi;
         while pi < pattern.len and pattern[pi] != '/' { pi += 1; }
@@ -345,47 +333,39 @@ private matchPattern :: (pattern: string, path: string, params: [*]KV) -> (bool,
         while xi < path.len and path[xi] != '/' { xi += 1; }
         xseg := string{ ptr = *path[xs], len = xi - xs };
         if pseg.len > 0 and pseg[0] == ':' {   // param segment
-            if n < MAX_PARAMS {
-                name := string{ ptr = *pseg[1], len = pseg.len - 1 };
-                params[n] = KV{ name = name, value = xseg };
-                n += 1;
-            }
+            name := string{ ptr = *pseg[1], len = pseg.len - 1 };
+            rc.params.append(KV{ name = name, value = xseg }, rc.a);
         } else {
-            if !strEq(pseg, xseg) { return false, 0; }
+            if !strEq(pseg, xseg) { rc.params.clear(); return false; }
         }
     }
-    // Unreachable (the loop only exits via the returns above), but the
-    // checker still needs a full-arity terminating return: a defaulted return
-    // slot seeds only on the IMPLICIT/naked return, not on an explicit
-    // under-arity `return false;`.
-    return false, 0;
+    return false;
 }
 
 // ── the Router ───────────────────────────────────────────────────────
 
-private MAX_ROUTES :: 128;
-
 Router :: struct {
-    routes: [MAX_ROUTES]Route = ---;
-    nRoutes: i64 = 0;
+    routes: List(Route) = .{};
+    a: Allocator;
     appCtx: usize = 0;             // the word route handlers see (RouteCtx.appCtx)
     notFound: RouteHandler = null; // optional custom 404 handler
 
     // Initialize with the app's own ctx word (whatever route handlers want
-    // — a store handle, config). No allocation: the route table is inline
-    // (fixed MAX_ROUTES), so the Router needs no owning allocator and never
-    // grows the heap. Bind the result to a local; `router` is the ctx.
+    // — a store handle, config). The route table grows through the
+    // `context.allocator` current here, which must outlive the Router. Bind
+    // the result to a local; `router` is the ctx.
     init :: (appCtx: usize) -> Router {
-        Router{ appCtx = appCtx, nRoutes = 0, notFound = null }
+        Router{ a = context.allocator, appCtx = appCtx }
+    }
+
+    deinit :: (self: *Router) {
+        self.routes.deinit(self.a);
     }
 
     // Register (method, pattern) → handler. Method is matched case-
     // insensitively; pattern segments beginning ':' are path params.
-    // Silently ignores registration past MAX_ROUTES (bounded table).
     route :: (self: *Router, method: string, pattern: string, h: RouteHandler) {
-        if self.nRoutes >= MAX_ROUTES { return; }
-        self.routes[self.nRoutes] = Route{ method = method, pattern = pattern, handler = h };
-        self.nRoutes += 1;
+        self.routes.append(Route{ method = method, pattern = pattern, handler = h }, self.a);
     }
 
     get  :: (self: *Router, pattern: string, h: RouteHandler) { self.route("GET",  pattern, h); }
@@ -408,22 +388,16 @@ dispatch :: (req: *Request, resp: *Response, ctx: usize) {
     self : *Router = @reinterpret(*Router, ctx);
     path := pathOnly(req.path);    
 
-    rc : RouteCtx = .{ req = req, resp = resp, appCtx = self.appCtx };
+    rc : RouteCtx = .{ req = req, resp = resp, appCtx = self.appCtx, a = context.allocator };
+    defer rc.deinit();
 
     // First pass: find an exact (method, pattern) match.
-    i := 0;
-    while i < self.nRoutes {
-        r := self.routes[i];
-        if ciEq(r.method, req.method) {
-            ok, np := matchPattern(r.pattern, path, *rc.params[0]);
-            if ok {
-                rc.nParams = np;
-                h := r.handler;
-                h(*rc);
-                return;
-            }
+    for r in self.routes.items {
+        if ciEq(r.method, req.method) and matchPattern(r.pattern, path, *rc) {
+            h := r.handler;
+            h(*rc);
+            return;
         }
-        i += 1;
     }
 
     // (RFC 9110 §9.3.2): HEAD must be supported wherever GET is —
@@ -433,19 +407,12 @@ dispatch :: (req: *Request, resp: *Response, ctx: usize) {
     // response body (automatic HEAD), so the handler needs no HEAD
     // awareness.
     if ciEq(req.method, "HEAD") {
-        i = 0;
-        while i < self.nRoutes {
-            r := self.routes[i];
-            if ciEq(r.method, "GET") {
-                ok, np := matchPattern(r.pattern, path, *rc.params[0]);
-                if ok {
-                    rc.nParams = np;
-                    h := r.handler;
-                    h(*rc);
-                    return;
-                }
+        for r in self.routes.items {
+            if ciEq(r.method, "GET") and matchPattern(r.pattern, path, *rc) {
+                h := r.handler;
+                h(*rc);
+                return;
             }
-            i += 1;
         }
     }
 
@@ -455,19 +422,14 @@ dispatch :: (req: *Request, resp: *Response, ctx: usize) {
     allow := "";
     hasGet := false;
     hasHead := false;
-    scratch : [MAX_PARAMS]KV = ---;
-    i = 0;
-    while i < self.nRoutes {
-        r := self.routes[i];
-        ok, _ := matchPattern(r.pattern, path, *scratch[0]);
-        if ok {
+    for r in self.routes.items {
+        if matchPattern(r.pattern, path, *rc) {
             pathMatched = true;
             if allow.len == 0 { allow = r.method; }
             else { allow = concat(allow, concat(", ", r.method)); }
             if ciEq(r.method, "GET") { hasGet = true; }
             if ciEq(r.method, "HEAD") { hasHead = true; }
         }
-        i += 1;
     }
     // (RFC 9110 §10.2.1): HEAD is implicitly supported wherever GET
     // is (the fallback pass above dispatches it), so Allow must say so —

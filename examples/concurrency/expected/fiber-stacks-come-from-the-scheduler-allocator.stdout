@@ -1,0 +1,4 @@
+ran: 3
+two stacks funded by the allocator: true
+outstanding after run: 0
+outstanding after deinit: 0

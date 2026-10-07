@@ -90,7 +90,7 @@ sendCase :: () {
     h : Helper = .{ target = pthread_self(), fd = pair[1], release = .drainPeer, done = atomic.Atomic(bool).init(false) };
     t, te := thread.Thread.spawn(helperEntry, *h);
     if te { print("send: spawn failed\n"); return; }
-    e := http.Client.send(pair[0], "POST", "/", "t", "", string{ ptr = body, len = BODY_LEN });
+    e := http.Client.send(pair[0], .{ method = "POST", host = "t", body = string{ ptr = body, len = BODY_LEN } });
     socket.close(pair[0]);
     t.join();
     socket.close(pair[1]);
@@ -104,12 +104,11 @@ recvCase :: () {
     h : Helper = .{ target = pthread_self(), fd = pair[1], release = .respond, done = atomic.Atomic(bool).init(false) };
     t, te := thread.Thread.spawn(helperEntry, *h);
     if te { print("recv: spawn failed\n"); return; }
-    buf : [4096]u8 = ---;
-    r, e := http.Client.recv(pair[0], *buf[0], 4096);
+    r, e := http.Client.recv(pair[0]);
     t.join();
     socket.close(pair[0]);
     socket.close(pair[1]);
-    if e { print("recv: {}\n", e); } else { print("recv: {} {}\n", r.status, r.body); }
+    if e { print("recv: {}\n", e); } else { print("recv: {} {}\n", r.status, r.body); r.deinit(); }
 }
 
 main :: () -> i32 {

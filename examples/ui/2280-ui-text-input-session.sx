@@ -5,8 +5,8 @@
 // committed byte. Insert over a live mark discards the mark without reporting
 // a composition, while commitMarked splices those same bytes in and reports
 // them as text. Backspace takes a whole UTF-8 scalar wherever it lands and a
-// selection whole, and an op that would overrun the inline capacity leaves
-// both the document and the queue untouched.
+// selection whole. The document's bytes grow through the allocator current
+// when the session is initialized, and `deinit` returns them.
 @import "modules/std.sx";
 @import "modules/ui/input.sx";
 
@@ -30,7 +30,9 @@ report :: (q: *InputQueue) {
 
 main :: () -> i32 {
     queue := InputQueue.init(context.allocator);
-    session := TextInputSession.init(*queue);
+    tracker := mem.TrackingAllocator.init(context.allocator);
+    session : TextInputSession = ---;
+    push .{ allocator = tracker } { session = TextInputSession.init(*queue); }
     doc := *session;
 
     // Unmarked, text lands at the caret.
@@ -99,25 +101,20 @@ main :: () -> i32 {
     report(*queue);
     show("replaced", doc);
 
-    // An insert past the inline capacity is refused whole; the one that
-    // reaches the last byte exactly is not.
-    zeros : [SESSION_COMMITTED_CAP]u8 = .{};
-    run : string = ---;
-    run.ptr = *zeros[0];
-    run.len = SESSION_COMMITTED_CAP;
-    doc.insert(run);
-    print("overrun committed \"{}\" queued {}\n", doc.committedText(), queue.len);
-    run.len = SESSION_COMMITTED_CAP - doc.committedLen;
-    doc.insert(run);
+    // A run of any length lands whole, and so does a composition.
+    zeros : [4096]u8 = .{};
+    doc.insert(zeros[..]);
+    doc.setMarked(zeros[..2000], 0, 0);
     queue.clear();
-    doc.insert("!");
-    print("filled {} queued {}\n", doc.committedLen, queue.len);
+    print("committed {} marked {}\n", doc.committedText().len, doc.markedText().len);
 
     // UTF-16 code units are the host's index; bytes are the session's.
     print("utf16 가 {} {} | a {} {}\n",
         utf16OffsetToBytes("가", 1), bytesToUtf16Offset("가", 3),
         utf16OffsetToBytes("a", 1), bytesToUtf16Offset("a", 1));
 
+    session.deinit();
+    print("outstanding {}\n", tracker.leakCount());
     queue.deinit();
     0
 }

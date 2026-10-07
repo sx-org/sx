@@ -1,7 +1,7 @@
 // An allocation failure in std.http's content-encoding paths unwinds with
 // nothing leaked: each allocation of the gzip and deflate encoded producers and
-// of the out channel, and the first of response serialization and of the
-// client decoder.
+// of the out channel, the first of response serialization, and the client's
+// response storage and the first allocation of its decoder.
 @import "modules/std.sx";
 @import "modules/std/http.sx";
 wire :: @import "modules/std/http/wire.sx";
@@ -108,18 +108,18 @@ writeAll :: (fd: i32, data: string) -> bool {
     true
 }
 
-clientDecoderAllocation :: (packed: string) -> bool {
+clientDecoderAllocation :: (packed: string, failAt: i64) -> bool {
     gpa := GPA.init();
-    failing : FailingAllocator = .{ parent = gpa, failAt = 1 };
+    failing : FailingAllocator = .{ parent = gpa, failAt = failAt };
     pair : [2]i32 = ---;
     if socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM, 0, *pair[0]) != 0 { return false; }
     head := "HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nConnection: close\r\n\r\n";
     sent := writeAll(pair[1], head) and writeAll(pair[1], packed);
     socket.close(pair[1]);
-    storage : [4096]u8 = ---;
     failure := false;
     push .{ allocator = failing } {
-        _, e := http.Client.recv(pair[0], *storage[0], storage.len);
+        response, e := http.Client.recv(pair[0]);
+        if !e { response.deinit(); }
         failure = e == .Allocation;
     }
     socket.close(pair[0]);
@@ -136,7 +136,8 @@ main :: () -> i32 {
         and serializationCase(false, true)
         and serializationCase(true, false)
         and serializationCase(true, true)
-        and clientDecoderAllocation(packed);
+        and clientDecoderAllocation(packed, 1)
+        and clientDecoderAllocation(packed, 2);
     gpa.deallocBytes(packed.ptr);
     if !ok or gpa.allocCount != 0 {
         print("http content-encoding allocation sweep failed; leaks={}\n", gpa.allocCount);

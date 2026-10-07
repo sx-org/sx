@@ -148,7 +148,7 @@ TextField :: @OpenVariant(View) {
         if head.len > 0 {
             rc.addText(Frame.make(frame.origin.x, y, headSize.width, line), head, self.fontSize, self.color);
         }
-        if doc.markedLen > 0 {
+        if doc.isComposing() {
             rc.addText(Frame.make(markedX, y, markedSize.width, line), doc.markedText(), self.fontSize, self.color);
             rc.addRect(Frame.make(markedX, y + line - PREEDIT_RULE_HEIGHT, markedSize.width, PREEDIT_RULE_HEIGHT), self.color);
         }

@@ -18,9 +18,8 @@
 //   nSuspended: 0   (the reader's park was balanced by the kqueue wake)
 //
 // aarch64-macOS-pinned: kqueue/kevent is Apple/BSD, and the scheduler's
-// per-arch asm + Apple mmap constants. Runs end-to-end on a matching host,
-// ir-only on a mismatch. Like 1809 (mmap), JIT `sx run` resolves the libc
-// extern calls fine — no AOT build needed.
+// per-arch asm. Runs end-to-end on a matching host, ir-only on a mismatch.
+// JIT `sx run` resolves the libc extern calls fine — no AOT build needed.
 @import "modules/std.sx";
 @import "modules/std/sched.sx";
 

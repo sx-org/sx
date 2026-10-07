@@ -4,17 +4,15 @@
 // linux runner. `inline if @host.os` prunes the linux backend away on any other host,
 // so compiling for linux is what type-checks it.
 @import "modules/std/cli.sx";
+@import "modules/std/mem.sx";
 
 main :: () -> i32 {
     argc := cli.osArgc();
     if argc < 1 { return 1; }
 
-    buf : [64]string = ---;
-    args := cli.osArgs(buf[0..64]);
+    args := cli.osArgs();
+    defer mem.free(args);
     if args.len != argc { return 2; }
     if args[0].len == 0 { return 3; }
-
-    // The fill clamps to the caller's buffer, not to argc.
-    if cli.osArgs(buf[0..0]).len != 0 { return 4; }
     return 0;
 }
