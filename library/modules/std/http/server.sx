@@ -188,6 +188,8 @@ EventKind :: enum {
                     // slot; the worker's late completion will be discarded.
     TLS_HANDSHAKE_FAULT;// a TLS handshake failed or the peer dropped
                     // mid-handshake → the slot is closed; never served plaintext.
+    UPGRADE;        // a 101 response handed its connection to Upgrade.take
+                    // (the slot is free; counted in closedTotal)
 }
 
 // Metrics snapshot. All fields are plain i64 counters that ONLY the
@@ -563,6 +565,8 @@ private Conn :: struct {
     //     to writeMore.
     tlsRdWantWrite: bool = false;
     tlsWrWantRead: bool = false;
+    // a 101 response draining toward its hand-off (see Switch).
+    switched: ?Switch = null;
 
     // forget the incremental parse progress. Call whenever the
     // request at the front of readBuf is consumed (compaction slides the
@@ -576,6 +580,21 @@ private Conn :: struct {
         self.chunkRp = 0;
         self.chunkDecoded = 0;
         self.contSent = false;
+    }
+}
+
+// A handler's protocol switch on its way to Upgrade.take: the handler's
+// request scope outlives the handler until take returns, so `upgrade.state`
+// stays valid while the 101 head drains.
+private Switch :: struct {
+    upgrade: Upgrade;
+    arena: mem.Arena;
+}
+
+private dropSwitch :: (sw: ?Switch) {
+    if s := sw {
+        arena := s.arena;
+        arena.deinit();
     }
 }
 
@@ -726,6 +745,8 @@ private Completion :: struct {
     // path) and ochan is null.
     streamed: bool = false;
     ochan: *OutChan = null;
+    // a 101 response: `out` is its head.
+    switched: ?Switch = null;
 }
 
 // Heap-resident pool machinery: embeds a Mutex and is shared with
@@ -777,6 +798,7 @@ private queueCompletion :: (ps: *PoolState, alloc: Allocator, done: Completion) 
             done.ochan.abort();
             done.ochan.release();
         }
+        dropSwitch(done.switched);
     }
     ps.loopCopy.wake();
 }
@@ -1015,10 +1037,17 @@ private runHandlerJob :: (arg: usize) {
         // a handler mutating req.method must not flip body suppression.
         isHead := asciiIeq(job.req.method, "head");
         h(*job.req, *resp, job.appCtx);
-        if job.chan != null and !job.chan.wasDrained() { keep = false; }
-        encoding := prepareContentEncoding(*job.req, *resp,
-            job.compressResponses, job.compressMinSize,
-            job.compressLevel, context.allocator);
+        if job.chan != null and !job.chan.wasDrained() {
+            keep = false;
+            // Unread body bytes would reach the switched protocol.
+            if resp.upgrade != null { resp = Response{ status = 500, body = reasonFor(500), allowCompression = false }; }
+        }
+        encoding := Encoding.identity;
+        if resp.upgrade == null {
+            encoding = prepareContentEncoding(*job.req, *resp,
+                job.compressResponses, job.compressMinSize,
+                job.compressLevel, context.allocator);
+        }
         encoded : *EncodedProducer = null;
         if resp.streamed and resp.producer != null and !isHead and encoding != .identity {
             encoded = createEncodedProducer(encoding,
@@ -1033,7 +1062,9 @@ private runHandlerJob :: (arg: usize) {
         formatImfDate(time.nowSecs(), *db[0]);
         date = string{ ptr = *db[0], len = IMF_DATE_LEN };
         noBody := resp.status == 204 or resp.status == 304;
-        if resp.streamed and resp.producer != null and !isHead and !noBody {
+        if resp.upgrade != null {
+            ob = serializeSwitch(*resp, job.alloc, date, job.serverName);
+        } else if resp.streamed and resp.producer != null and !isHead and !noBody {
             // chunked — serialize ONLY the head (job.alloc-owned),
             // then pump the producer ON THIS WORKER, inside the push scope:
             // the request views and the per-request arena stay alive for
@@ -1116,7 +1147,9 @@ private runHandlerJob :: (arg: usize) {
             ob = serializeBytes(*resp, keep, job.alloc, isHead, date, job.serverName);
         }
     }
-    arena.deinit();
+    switched : ?Switch = null;
+    if up := resp.upgrade { switched = Switch{ upgrade = up, arena = arena }; }
+    else { arena.deinit(); }
     // the handler is done reading — drop the job's channel reference
     // (the conn side still holds one until completion/close).
     if job.chan != null { job.chan.release(); }
@@ -1127,7 +1160,7 @@ private runHandlerJob :: (arg: usize) {
         queueCompletion(job.ps, job.alloc, Completion{
             slot = job.slot, gen = job.gen, out = ob,
             closeAfter = !keep, consumed = job.consumed,
-            streamed = streamed,
+            streamed = streamed, switched = switched,
         });
     }
     a := job.alloc;
@@ -1141,6 +1174,7 @@ private runFiberJob :: (arg: usize) {
     resp : Response = .{};
     arena := mem.Arena.init(job.alloc, 65536);
     keep := job.keep;
+    attached := false;
     push .{ allocator = arena } {
         h := job.handler;
         if job.chan != null {
@@ -1149,10 +1183,16 @@ private runFiberJob :: (arg: usize) {
         }
         isHead := asciiIeq(job.req.method, "head");
         h(*job.req, *resp, job.appCtx);
-        if job.chan != null and !job.chan.wasDrained() { keep = false; }
-        encoding := prepareContentEncoding(*job.req, *resp,
-            job.compressResponses, job.compressMinSize,
-            job.compressLevel, context.allocator);
+        if job.chan != null and !job.chan.wasDrained() {
+            keep = false;
+            if resp.upgrade != null { resp = Response{ status = 500, body = reasonFor(500), allowCompression = false }; }
+        }
+        encoding := Encoding.identity;
+        if resp.upgrade == null {
+            encoding = prepareContentEncoding(*job.req, *resp,
+                job.compressResponses, job.compressMinSize,
+                job.compressLevel, context.allocator);
+        }
         c: *Conn = *srv.conns[job.slot];
         // Same-thread completion, gen-checked exactly like a pool
         // completion: a closed/recycled slot (eviction, disconnect,
@@ -1176,7 +1216,8 @@ private runFiberJob :: (arg: usize) {
                 if c.bchan != null { c.bchan.finish(true); }
                 c.lingerClose = true;
             }
-            srv.serializeResponse(job.slot, *resp, keep, isHead, encoding);
+            if resp.upgrade != null { srv.stageSwitch(job.slot, *resp); }
+            else { srv.serializeResponse(job.slot, *resp, keep, isHead, encoding); }
             // Drop the consumed request bytes (accumulate dispatch; the
             // streamed dispatch consumed its headers up front → 0).
             rest := c.readLen - job.consumed;
@@ -1186,9 +1227,12 @@ private runFiberJob :: (arg: usize) {
             c.fiberEarly = early;
             c.fiberDone = true;
             srv.fiberDoneN += 1;
+            attached = true;
         }
     }
-    arena.deinit();
+    up := resp.upgrade;
+    if attached and up != null { srv.conns[job.slot].switched = Switch{ upgrade = up?!, arena = arena }; }
+    else { arena.deinit(); }
     if job.chan != null { job.chan.release(); }   // the job's ref; the conn's is released at finalize/close
     a := job.alloc;
     a.deallocBytes(job);
@@ -1672,6 +1716,7 @@ Server :: struct {
                 if self.ps.done[d].ochan != null {
                     self.ps.done[d].ochan.release();
                 }
+                dropSwitch(self.ps.done[d].switched);
                 d += 1;
             }
             if self.ps.done != null { self.ownAlloc.deallocBytes(self.ps.done); }
@@ -1758,6 +1803,8 @@ Server :: struct {
             c.streamWaiting = false;
             self.streamWaitingN -= 1;
         }
+        dropSwitch(c.switched);
+        c.switched = null;
         if c.fd >= 0 {
             self.loop.delRead(c.fd);
             if c.writeArmed { self.loop.delWrite(c.fd); }
@@ -3512,14 +3559,19 @@ Server :: struct {
         reqArena := mem.Arena.init(self.ownAlloc, 65536);
         push .{ allocator = reqArena } {
             h(*req, *resp, self.ctx);
-            encoding := prepareContentEncoding(*req, *resp,
-                self.cfg.compressResponses, self.cfg.compressMinSize,
-                self.cfg.compressLevel, context.allocator);
-            // HEAD runs the handler like GET; serialization suppresses
-            // the body bytes (and never drives a stream producer).
-            self.serializeResponse(slot, *resp, keep, isHead, encoding);
+            if resp.upgrade != null {
+                self.stageSwitch(slot, *resp);
+            } else {
+                encoding := prepareContentEncoding(*req, *resp,
+                    self.cfg.compressResponses, self.cfg.compressMinSize,
+                    self.cfg.compressLevel, context.allocator);
+                // HEAD runs the handler like GET; serialization suppresses
+                // the body bytes (and never drives a stream producer).
+                self.serializeResponse(slot, *resp, keep, isHead, encoding);
+            }
         }
-        reqArena.deinit();
+        if up := resp.upgrade { c.switched = Switch{ upgrade = up, arena = reqArena }; }
+        else { reqArena.deinit(); }
         // A real request produced a response and begins sending: count it
         // served (inline path, loop thread). The pooled path counts in
         // drainCompletions instead — never inside the worker.
@@ -3637,6 +3689,19 @@ Server :: struct {
         c.streaming = false;
     }
 
+    // Stage a 101 head in the slot's persistent write buffer.
+    stageSwitch :: (self: *Server, slot: i64, resp: *Response) {
+        c: *Conn = *self.conns[slot];
+        date := self.dateNow();
+        self.ensureWbuf(slot, switchHeadLen(resp, date, self.cfg.serverName));
+        c.outLen = switchHeadWrite(resp, date, self.cfg.serverName, c.wbuf);
+        c.outBuf = c.wbuf;
+        c.outSent = 0;
+        c.outOwned = false;
+        c.closeAfter = false;
+        c.streaming = false;
+    }
+
     // Attach every queued pool completion to its connection: drop the
     // served request bytes, take the response, start writing. A
     // completion whose generation no longer matches (the conn was
@@ -3672,8 +3737,11 @@ Server :: struct {
                     done.ochan.abort();
                     done.ochan.release();
                 }
+                dropSwitch(done.switched);
                 continue;
             }
+            // From here every path that closes the slot drops the switch with it.
+            c.switched = done.switched;
             // The worker could not allocate even the response head. No bytes
             // escaped, so drop the completion and close the connection.
             if done.out.buf == null {
@@ -3769,7 +3837,7 @@ Server :: struct {
                 c.outLen = done.out.len;
                 c.outSent = 0;
                 c.outOwned = true;   // worker-allocated, freed when sent
-                c.closeAfter = done.closeAfter;
+                c.closeAfter = done.closeAfter and done.switched == null;
                 c.streaming = false;
             }
             // Count the request served HERE — on the loop thread, as its
@@ -3970,6 +4038,10 @@ Server :: struct {
             self.connClose(slot);
             return;
         }
+        if c.switched != null {
+            self.handOver(slot);
+            return;
+        }
         if c.readLen > 0 {
             // pipelined bytes already buffered: keep serving
             c.state = CONN_READING;
@@ -3979,6 +4051,27 @@ Server :: struct {
         }
         c.state = CONN_KEEPALIVE;
         self.setDeadline(slot, self.cfg.timeoutKeepaliveMs);
+    }
+
+    // Give a drained 101's connection to its Upgrade.take. Bytes the client
+    // sent past the request are still in readBuf (a CONN_WRITING read only
+    // buffers); the slot lets go of the socket and the TLS session and is
+    // freed with the request scope once take returns.
+    handOver :: (self: *Server, slot: i64) {
+        c: *Conn = *self.conns[slot];
+        up := c.switched?!.upgrade;
+        self.tlsWantDrop(slot);
+        self.loop.delRead(c.fd);
+        link : Link = .{ fd = c.fd, tls = c.tls, pending = string{ ptr = c.readBuf, len = c.readLen } };
+        c.fd = -1;
+        c.tls = null;
+        self.stClosed += 1;
+        self.emit(EventKind.UPGRADE, slot, 0);
+        take := up.take;
+        push .{ allocator = self.ownAlloc } {
+            take(up.state, link);
+        }
+        self.connClose(slot);
     }
 
     // ── lingering close ─────────────────────────────────────────

@@ -1,6 +1,7 @@
 @import "modules/std/core.sx";
 @import "modules/std/fmt.sx";    // concat (Response.addHeader)
 @import "modules/std/c.sx";
+@import "modules/std/http/tls.sx";
 
 // A content coding the blocking client can decode transparently. Identity is
 // represented by the absence of a value (`?ContentCoding = null`), so response
@@ -119,6 +120,10 @@ Response :: struct {
     // policy is enabled. Disable this for secret-bearing reflected content
     // (BREACH-style side channels) or data that should remain identity.
     allowCompression: bool = true;
+    // A protocol switch: the response is sent as 101 Switching Protocols
+    // carrying only `extraHeaders`, and the connection then leaves the server
+    // (see Upgrade).
+    upgrade: ?Upgrade = null;
 
     // ── helpers (add only what's missing) ────────────────────────────
     setStatus :: (self: *Response, status: i64) { self.status = status; }
@@ -138,6 +143,25 @@ Response :: struct {
         self.producerCtx = ctx;
     }
     disableCompression :: (self: *Response) { self.allowCompression = false; }
+}
+
+// A connection leaving the server after its 101: the socket (nonblocking),
+// its TLS session, and the bytes read past the upgrade request — a view valid
+// only during the `take` call.
+Link :: struct {
+    fd: i32;
+    tls: ?TlsConn = null;
+    pending: string = "";
+}
+
+// Set by a handler that switches protocols. Once the 101 head is written the
+// server stops serving the connection and calls `take` on its loop thread,
+// with the server's allocator as `context.allocator`; the connection is take's
+// from then on. `state`, like everything the handler allocated, stays valid
+// until take returns. The request must carry no unread body.
+Upgrade :: struct {
+    take: (state: *void, link: Link) -> void;
+    state: *void = null;
 }
 
 // Case-insensitive header lookup in `headersRaw`; "" when absent.
@@ -211,6 +235,7 @@ reasonFor :: (status: i64) -> string {
     if status == 408 { return "Request Timeout"; }
     if status == 413 { return "Content Too Large"; }
     if status == 417 { return "Expectation Failed"; }
+    if status == 426 { return "Upgrade Required"; }
     if status == 431 { return "Request Header Fields Too Large"; }
     if status == 500 { return "Internal Server Error"; }
     if status == 501 { return "Not Implemented"; }
