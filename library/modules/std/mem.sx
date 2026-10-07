@@ -16,10 +16,6 @@ mem :: scope {
         p
     }
 
-    destroy :: ufcs (a: Allocator, ptr: *$T) {
-        a.deallocBytes(ptr);
-    }
-
     alloc :: ufcs (a: Allocator, $T: Type, count: i64) -> []T {
         raw := a.allocBytes(count * @sizeOf(T));
         .{ ptr = raw.([*]T), len = count }
@@ -58,13 +54,14 @@ mem :: scope {
     free :: ufcs (a: Allocator, x: $T) {
         inline match T {
             case interface:
-                @error("free on an interface handle — a handle borrows its referent and owns nothing; free the referent where it lives ('mem.destroy' for one made by 'mem.make')");
+                @error("free on an interface handle — a handle borrows its referent and owns nothing; free the referent where it lives (for one made by 'mem.make', the pointer it returned)");
             case closure: {
                 env := @reinterpret(@Closure, x).env;
                 if env != null { a.deallocBytes(env); }
             }
             case slice:    a.deallocBytes(x.ptr);
-            else:          @error("free expects a closure or a slice");
+            case pointer:  a.deallocBytes(x);
+            else:          @error("free expects a closure, a slice or a pointer");
         }
     }
 

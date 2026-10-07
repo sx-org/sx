@@ -81,14 +81,14 @@ help: name the members this code handles and let 'else:' answer for the rest —
 51 |     match v {
    |           ^
 
-error: free expects a closure or a slice
+error: free expects a closure, a slice or a pointer
   --> examples/diagnostics/2045-diagnostics-open-set-type-switch.sx:91:5
    |
 91 |     mem.free(context.allocator, v);
    |     ^^^^^^^^
 
 note: raised by '@error' here
-  --> library/modules/std/mem.sx:67:28
+  --> library/modules/std/mem.sx:64:28
    |
-67 |             else:          @error("free expects a closure or a slice");
-   |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+64 |             else:          @error("free expects a closure, a slice or a pointer");
+   |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

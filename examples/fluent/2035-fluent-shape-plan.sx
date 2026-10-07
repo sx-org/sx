@@ -55,7 +55,7 @@ Hold :: struct {
         value.write(dest);
         print("  kept #{} {}\n", self.n, dest.draw());
         self.n += 1;
-        mem.destroy(context.allocator, dest);
+        mem.free(context.allocator, dest);
     }
 }
 

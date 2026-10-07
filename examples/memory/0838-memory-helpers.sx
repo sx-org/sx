@@ -1,5 +1,5 @@
 // Typed allocation helpers over the Allocator protocol (std/mem.sx):
-// create/destroy (one T), alloc/free (slices), clone, cloneZ, resize, and the
+// create (one T), alloc (slices), free (either), clone, cloneZ, resize, and the
 // bytes-level memRealloc. Declared `ufcs` — the dot spelling
 // (`context.allocator.create(Session)`) and the direct call both hit the
 // same generic machinery. Contents are UNINITIALISED by design
@@ -17,23 +17,23 @@ main :: () {
     tracker := mem.TrackingAllocator.init(gpa);
     a : Allocator = tracker;
 
-    // create / destroy — direct spelling
+    // create / free — direct spelling
     s := mem.create(a, Session);
     s.id = 7; s.score = 42;
     print("create: {} {}\n", s.id, s.score);
-    mem.destroy(a, s);
+    mem.free(a, s);
 
     // create — dot spelling on a local Allocator
     p := a.create(Session);
     p.id = 1;
     print("local-dot-create: {}\n", p.id);
-    a.destroy(p);
+    a.free(p);
 
     // create — canonical dot spelling on context.allocator
     q := context.allocator.create(Session);
     q.id = 2;
     print("dot-create: {}\n", q.id);
-    context.allocator.destroy(q);
+    context.allocator.free(q);
 
     // alloc / free — typed slice
     xs := a.alloc(i64, 4);

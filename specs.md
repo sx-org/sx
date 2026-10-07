@@ -3633,9 +3633,9 @@ button := store(Button{ label = "Play" });
 
 ```sx
 mem :: scope {
-    make    :: ufcs (a: Allocator, value: $I/@Init($T)) -> *T;
-    create  :: ufcs (a: Allocator, $T: Type) -> *T;
-    destroy :: ufcs (a: Allocator, p: *$T);
+    make   :: ufcs (a: Allocator, value: $I/@Init($T)) -> *T;
+    create :: ufcs (a: Allocator, $T: Type) -> *T;
+    free   :: ufcs (a: Allocator, x: $T);
 }
 ```
 
@@ -4751,7 +4751,8 @@ free :: ufcs (a: Allocator, x: $T) {
     inline match T {
         case closure:  { env := @reinterpret(@Closure, x).env; if env != null { a.deallocBytes(env); } }
         case slice:    a.deallocBytes(x.ptr);
-        else:          @error("free expects a closure or a slice");
+        case pointer:  a.deallocBytes(x);
+        else:          @error("free expects a closure, a slice or a pointer");
     }
 }
 ```
@@ -5762,7 +5763,8 @@ free :: ufcs (a: Allocator, x: $T) {
     inline match T {
         case closure:  { ... }
         case slice:    a.deallocBytes(x.ptr);
-        else:          @error("free expects a closure or a slice");
+        case pointer:  a.deallocBytes(x);
+        else:          @error("free expects a closure, a slice or a pointer");
     }
 }
 ```
@@ -6208,7 +6210,6 @@ allocator; a caller wanting the current one passes `context.allocator`:
 mem :: scope {
     create     :: ufcs (a: Allocator, $T: Type) -> *T;
     make       :: ufcs (a: Allocator, value: $I/@Init($T)) -> *T;
-    destroy    :: ufcs (a: Allocator, ptr: *$T);
     alloc      :: ufcs (a: Allocator, $T: Type, count: i64) -> []T;
     free       :: ufcs (a: Allocator, x: $T);
     clone      :: ufcs (a: Allocator, src: []$T) -> []T;
@@ -6222,6 +6223,9 @@ xs := context.allocator.alloc(i64, 4);
 ys := context.allocator.clone(xs);
 mem.free(context.allocator, ys);
 ```
+
+`free` releases one item from `create` or `make` (a pointer), a slice, or a
+closure's environment.
 
 `modules/std/http.sx` is a scope facade:
 

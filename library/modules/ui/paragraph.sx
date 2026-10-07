@@ -282,7 +282,7 @@ ParagraphCache :: struct {
     release :: (self: *ParagraphCache, e: *ParaEntry) {
         e.para.deinit(self.gpa);
         mem.free(self.gpa, e.text);
-        mem.destroy(self.gpa, e);
+        mem.free(self.gpa, e);
     }
 
     deinit :: (self: *ParagraphCache) {

@@ -44,7 +44,7 @@ main :: () -> i32 {
     print("before call\n");
     b := store(tag(1), Button{ label = makeLabel(), alpha = computeAlpha() });
     print("after call: {} {}\n", b.label, b.alpha);
-    mem.destroy(context.allocator, b);
+    mem.free(context.allocator, b);
     0
 }
 

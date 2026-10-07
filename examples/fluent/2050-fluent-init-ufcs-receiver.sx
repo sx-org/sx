@@ -61,7 +61,7 @@ show :: ufcs (value: $I/@Init($V/Drawable)) {
     d := mem.create(context.allocator, V);
     value.write(d);
     context.seen.last = d.draw();
-    mem.destroy(context.allocator, d);
+    mem.free(context.allocator, d);
 }
 
 // --- An open target at a protocol: the sink funds the payload ---
