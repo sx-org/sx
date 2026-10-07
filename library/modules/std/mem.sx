@@ -86,7 +86,7 @@ mem :: scope {
     }
 
     // Failure preserves ptr. Alignment beyond the heap's natural alignment is not supported.
-    memRealloc :: ufcs (a: Allocator, ptr: *void, old: i64, new: i64, align: i64) -> *void {
+    realloc :: ufcs (a: Allocator, ptr: *void, old: i64, new: i64, align: i64) -> *void {
         raw := a.allocBytes(new);
         if raw == null { return null; }
         n := if old < new then old else new;

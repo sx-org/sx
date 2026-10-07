@@ -1,5 +1,5 @@
 // A grow the allocator cannot serve leaves the caller's storage alone:
-// `memRealloc` and `resize` test the allocation before copying, so on failure
+// `realloc` and `resize` test the allocation before copying, so on failure
 // they hand back null and the old buffer is still live and still owned.
 
 @import "modules/std.sx";
@@ -10,11 +10,11 @@ main :: () {
     buf := mem.BufAlloc.init(*stackBuf[0], 64);
     a := buf.(Allocator);
 
-    // memRealloc — bytes level, grown past the 64-byte buffer
+    // realloc — bytes level, grown past the 64-byte buffer
     p := a.allocBytes(16);
     live : *i64 = p.(*i64);
     live.* = 1234;
-    q := mem.memRealloc(a, p, 16, 4096, 8);
+    q := mem.realloc(a, p, 16, 4096, 8);
     print("q null={}\n", q == null);
     print("old live: {}\n", live.*);
 

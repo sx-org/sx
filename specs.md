@@ -6208,14 +6208,14 @@ allocator; a caller wanting the current one passes `context.allocator`:
 
 ```sx
 mem :: scope {
-    create     :: ufcs (a: Allocator, $T: Type) -> *T;
-    make       :: ufcs (a: Allocator, value: $I/@Init($T)) -> *T;
-    alloc      :: ufcs (a: Allocator, $T: Type, count: i64) -> []T;
-    free       :: ufcs (a: Allocator, x: $T);
-    clone      :: ufcs (a: Allocator, src: []$T) -> []T;
-    cloneZ     :: ufcs (a: Allocator, src: []$T) -> [:0]T;
-    resize     :: ufcs (a: Allocator, slice: []$T, newCount: i64) -> ?[]T;
-    memRealloc :: ufcs (a: Allocator, ptr: *void, old: i64, new: i64, align: i64) -> *void;
+    create  :: ufcs (a: Allocator, $T: Type) -> *T;
+    make    :: ufcs (a: Allocator, value: $I/@Init($T)) -> *T;
+    alloc   :: ufcs (a: Allocator, $T: Type, count: i64) -> []T;
+    free    :: ufcs (a: Allocator, x: $T);
+    clone   :: ufcs (a: Allocator, src: []$T) -> []T;
+    cloneZ  :: ufcs (a: Allocator, src: []$T) -> [:0]T;
+    resize  :: ufcs (a: Allocator, slice: []$T, newCount: i64) -> ?[]T;
+    realloc :: ufcs (a: Allocator, ptr: *void, old: i64, new: i64, align: i64) -> *void;
 }
 
 ..mem;
