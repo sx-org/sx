@@ -7,8 +7,6 @@
 // zero across every pair.
 
 @import "modules/std.sx";
-@import "modules/std/mem.sx";
-..mem;
 
 Session :: struct { id: i64; score: i64; }
 
