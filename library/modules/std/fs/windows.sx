@@ -99,7 +99,7 @@ fsReadFile :: (path: string) -> ?string {
     handle := fsOpenHandle(path, 0); if !fsFileIsValid(handle) { return null; }
     size := fsFileSeek(handle, 0, 2);
     if size < 0 or fsFileSeek(handle, 0, 0) < 0 { fsFileClose(handle); return null; }
-    result := mem.allocString(size);
+    result := mem.allocStringZ(size);
     at := 0;
     while at < size {
         made := fsFileRead(handle, result[at..]);
@@ -237,7 +237,7 @@ fsRealPath :: (path: string) -> ?string {
     size := fsWindowsWideCharToMultiByte(FS_WINDOWS_CP_UTF8, 0, *final[start], (made - start).(i32), null, 0, null, null);
     result : ?string = null;
     if size > 0 {
-        text := mem.allocString(size);
+        text := mem.allocStringZ(size);
         if fsWindowsWideCharToMultiByte(FS_WINDOWS_CP_UTF8, 0, *final[start], (made - start).(i32), text.ptr, size, null, null) == size { result = text; }
         else { mem.free(context.allocator, text); }
     }

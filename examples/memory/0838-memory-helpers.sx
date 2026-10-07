@@ -51,6 +51,11 @@ main :: () {
     print("cloneZ: {} {} len={} end={}\n", @typeName(@typeOf(zt)), zt[0], zt.len, zt.ptr[zt.len]);
     a.free(zt);
 
+    // allocStringZ — zeroed bytes from context.allocator, terminated past its length
+    t := mem.allocStringZ(3);
+    print("allocStringZ: {} len={} first={} end={}\n", @typeName(@typeOf(t)), t.len, t[0], t.ptr[t.len]);
+    mem.free(context.allocator, t);
+
     // resize — grow (copies, old backing freed); null when the allocation fails
     grown := a.resize(xs, 6);
     if grown == null { return; }

@@ -102,8 +102,8 @@ IoErr :: core.IoErr;
 
 ..@import "modules/std/posix.sx";
 ..@import "modules/std/mem.sx";
-allocString :: mem.allocString;
-allocSlice  :: mem.allocSlice;
+allocStringZ :: mem.allocStringZ;
+allocSlice   :: mem.allocSlice;
 // Intentional allocator-prelude re-export. Static method heads obey the same
 // one-hop visibility boundary as every other type use; this own alias is what
 // makes bare `GPA.init()` part of the std facade rather than an accidental

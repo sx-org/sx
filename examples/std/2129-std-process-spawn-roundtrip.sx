@@ -11,7 +11,7 @@ main :: () -> i32 {
     wrote := child.stdinWrite(msg);
     if wrote != msg.len { print("write: {}\n", wrote); return 1; }
 
-    buf := allocString(64);
+    buf := allocStringZ(64);
     got := child.stdoutRead(buf);
     if got <= 0 { print("read: {}\n", got); return 1; }
     print("echoed: {}", buf[0 .. got.(i64)]);

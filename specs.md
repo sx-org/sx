@@ -6225,7 +6225,8 @@ mem.free(context.allocator, ys);
 ```
 
 `free` releases one item from `create` or `make` (a pointer), a slice, or a
-closure's environment.
+closure's environment. `allocStringZ :: (size: i64) -> [:0]u8`, re-exported
+bare by `modules/std.sx`, takes `size` zeroed bytes from `context.allocator`.
 
 `modules/std/http.sx` is a scope facade:
 

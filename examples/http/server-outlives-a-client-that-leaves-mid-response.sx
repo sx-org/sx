@@ -15,7 +15,7 @@ answer :: (req: *http.Request, resp: *http.Response, ctx: usize) {
 }
 
 main :: () -> i32 {
-    body = allocString(BIG);
+    body = allocStringZ(BIG);
     c.memset(body.ptr, 'x', BIG);
     srv, se := http.Server.init(.{ port = 0 }, answer, 0);
     if se { print("server init failed\n"); return 1; }

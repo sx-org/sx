@@ -21,14 +21,10 @@ mem :: scope {
         .{ ptr = raw.([*]T), len = count }
     }
 
-    // The zeroed buffer includes a NUL byte beyond its reported length.
-    allocString :: (size: i64) -> string {
+    allocStringZ :: (size: i64) -> [:0]u8 {
         raw := context.allocator.allocBytes(size + 1);
         c.memset(raw, 0, size + 1);
-        s : string = ---;
-        s.ptr = raw.([*]u8);
-        s.len = size;
-        s
+        .{ ptr = raw.([*]u8), len = size }
     }
 
     allocSlice :: ($T: Type, count: i64) -> []T {

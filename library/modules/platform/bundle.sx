@@ -979,7 +979,7 @@ MANIFEST, pkgEsc, libEsc, libEsc, libEsc)
 
 // `co/swipelab/sxchess/SxApp` → `co.swipelab.sxchess.SxApp`.
 slashToDot :: (path: string) -> string {
-    buf := allocString(path.len);
+    buf := allocStringZ(path.len);
     i := 0;
     while i < path.len {
         c := path[i];
