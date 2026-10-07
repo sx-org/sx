@@ -22,9 +22,9 @@
 // application/x-www-form-urlencoded.
 
 @import "modules/std/http/wire.sx";
-@import "modules/std/core.sx";         // Allocator
+@import "modules/std/core.sx";
 @import "modules/std/fmt.sx";          // concat
-@import "modules/std/list.sx";         // List
+@import "modules/std/list.sx";
 @import "modules/std/mem.sx";
 @import "modules/std/writer.sx";       // StringBuilder
 @import "modules/std/encoding.sx";     // hexValue
