@@ -1,0 +1,46 @@
+
+@kDefaultContext = internal constant {} zeroinitializer
+
+; Function Attrs: nounwind
+declare i128 @cWide(i64, i128) #0
+
+; Function Attrs: nounwind
+declare [2 x i64] @cPair(i64, [2 x i64]) #0
+
+; Function Attrs: nounwind
+define i32 @main() #0 {
+entry:
+  %alloca = alloca { <4 x float> }, align 16
+  store [16 x i8] c"\02\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00", ptr %alloca, align 1
+  %load = load { <4 x float> }, ptr %alloca, align 16
+  %abi.tmp = alloca i128, align 16
+  store i128 0, ptr %abi.tmp, align 16
+  store { <4 x float> } %load, ptr %abi.tmp, align 16
+  %abi.coerce = load i128, ptr %abi.tmp, align 16
+  %call = call i128 @cWide(i64 1, i128 %abi.coerce)
+  %abi.ret.tmp = alloca i128, align 16
+  store i128 %call, ptr %abi.ret.tmp, align 16
+  %abi.ret.coerce = load { <4 x float> }, ptr %abi.ret.tmp, align 16
+  %allocaN = alloca { <4 x float> }, align 16
+  store { <4 x float> } %abi.ret.coerce, ptr %allocaN, align 16
+  %allocaN = alloca { [2 x i64] }, align 8
+  store [2 x i64] [i64 4, i64 5], ptr %allocaN, align 8
+  %loadN = load { [2 x i64] }, ptr %allocaN, align 8
+  %abi.struct2arr = alloca [2 x i64], align 8
+  store { [2 x i64] } %loadN, ptr %abi.struct2arr, align 8
+  %abi.coerce.arr = load [2 x i64], ptr %abi.struct2arr, align 8
+  %callN = call [2 x i64] @cPair(i64 3, [2 x i64] %abi.coerce.arr)
+  %abi.arr2struct = alloca [2 x i64], align 8
+  store [2 x i64] %callN, ptr %abi.arr2struct, align 8
+  %abi.ret.coerce.arr = load { [2 x i64] }, ptr %abi.arr2struct, align 8
+  %allocaN = alloca { [2 x i64] }, align 8
+  store { [2 x i64] } %abi.ret.coerce.arr, ptr %allocaN, align 8
+  %igp.ptr = getelementptr i8, ptr %allocaN, i64 0
+  %loadN = load i8, ptr %igp.ptr, align 1
+  %zext = zext i8 %loadN to i32
+  %igp.ptr7 = getelementptr i64, ptr %allocaN, i64 0
+  %loadN = load i64, ptr %igp.ptr7, align 8
+  %trunc = trunc i64 %loadN to i32
+  %add = add i32 %zext, %trunc
+  ret i32 %add
+}

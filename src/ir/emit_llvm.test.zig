@@ -670,7 +670,7 @@ test "emit: abiCoerceParamType coerces C-ABI structs by size bucket" {
     var module = Module.init(alloc);
     defer module.deinit();
 
-    // Intern the shapes before building the emitter (toLLVMType reads live).
+    // Intern the shapes before building the emitters (toLLVMType reads live).
     const small = internStruct(&module, "Small", &.{ .i32, .i32 }); // 8 bytes
     const mid = internStruct(&module, "Mid", &.{ .i64, .i64 }); //    16 bytes
     const big = internStruct(&module, "Big", &.{ .i64, .i64, .i64 }); // 24 bytes
@@ -678,23 +678,26 @@ test "emit: abiCoerceParamType coerces C-ABI structs by size bucket" {
     const hfa_d = internStruct(&module, "HfaD", &.{ .f64, .f64 }); // 16, all-double
     const sl = module.types.sliceOf(.i32);
 
-    var emitter = LLVMEmitter.init(alloc, &module, "test_abi", .{});
-    defer emitter.deinit();
+    var arm = LLVMEmitter.init(alloc, &module, "test_abi_arm", .{ .triple = "aarch64-apple-darwin" });
+    defer arm.deinit();
+    var x86 = LLVMEmitter.init(alloc, &module, "test_abi_x86", .{ .triple = "x86_64-linux-gnu" });
+    defer x86.deinit();
 
     // ≤ 8 bytes → i64.
-    try std.testing.expect(emitter.abiCoerceParamType(small, emitter.toLLVMType(small)) == emitter.cached_i64);
+    try std.testing.expect(arm.abiCoerceParamType(small, arm.toLLVMType(small)) == arm.cached_i64);
     // 9–16 bytes → [2 x i64].
-    try std.testing.expect(emitter.abiCoerceParamType(mid, emitter.toLLVMType(mid)) == cc.LLVMArrayType2(emitter.cached_i64, 2));
+    try std.testing.expect(arm.abiCoerceParamType(mid, arm.toLLVMType(mid)) == cc.LLVMArrayType2(arm.cached_i64, 2));
     // > 16 bytes → ptr (passed byval at the call/sig sites).
-    try std.testing.expect(emitter.abiCoerceParamType(big, emitter.toLLVMType(big)) == emitter.cached_ptr);
-    // HFA (all-float / all-double, ≤ 4 fields) → unchanged.
-    try std.testing.expect(emitter.abiCoerceParamType(hfa_f, emitter.toLLVMType(hfa_f)) == emitter.toLLVMType(hfa_f));
-    try std.testing.expect(emitter.abiCoerceParamType(hfa_d, emitter.toLLVMType(hfa_d)) == emitter.toLLVMType(hfa_d));
+    try std.testing.expect(arm.abiCoerceParamType(big, arm.toLLVMType(big)) == arm.cached_ptr);
     // string / slice collapse to ptr at the C-API boundary (len dropped).
-    try std.testing.expect(emitter.abiCoerceParamType(.string, emitter.toLLVMType(.string)) == emitter.cached_ptr);
-    try std.testing.expect(emitter.abiCoerceParamType(sl, emitter.toLLVMType(sl)) == emitter.cached_ptr);
+    try std.testing.expect(arm.abiCoerceParamType(.string, arm.toLLVMType(.string)) == arm.cached_ptr);
+    try std.testing.expect(arm.abiCoerceParamType(sl, arm.toLLVMType(sl)) == arm.cached_ptr);
     // Scalars pass through unchanged.
-    try std.testing.expect(emitter.abiCoerceParamType(.i32, emitter.toLLVMType(.i32)) == emitter.toLLVMType(.i32));
+    try std.testing.expect(arm.abiCoerceParamType(.i32, arm.toLLVMType(.i32)) == arm.toLLVMType(.i32));
+    // A flat float struct is its LLVM struct off AArch64, and an HFA `[k x base]` on it.
+    try std.testing.expect(x86.abiCoerceParamType(hfa_f, x86.toLLVMType(hfa_f)) == x86.toLLVMType(hfa_f));
+    try std.testing.expect(arm.abiCoerceParamType(hfa_f, arm.toLLVMType(hfa_f)) == cc.LLVMArrayType2(arm.cached_f32, 4));
+    try std.testing.expect(arm.abiCoerceParamType(hfa_d, arm.toLLVMType(hfa_d)) == cc.LLVMArrayType2(arm.cached_f64, 2));
 }
 
 // Default ABI must pack ≤8-byte non-HFA structs (Color-shaped

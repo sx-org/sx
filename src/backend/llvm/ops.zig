@@ -898,12 +898,11 @@ pub const Ops = struct {
     // ── Calls ─────────────────────────────────────────────
     pub fn emitObjcMsgSend(self: Ops, instruction: *const Inst, msg: ObjcMsgSend) void {
         const msg_send = self.e.getObjcMsgSendValue();
-        // Detect the sret case: >16 B non-HFA struct return.
-        // Same predicate as the plain-extern-call path so the
-        // two arms stay in lockstep.
+        // The result crosses as an extern call's does: through `sret`, or
+        // in its C-ABI form.
         const raw_ret_ty = self.e.toLLVMType(instruction.ty);
         const uses_sret = self.e.needsByval(instruction.ty, raw_ret_ty, true);
-        const ret_ty = if (uses_sret) self.e.cached_void else raw_ret_ty;
+        const ret_ty = if (uses_sret) self.e.cached_void else self.e.abiCoerceParamType(instruction.ty, raw_ret_ty);
 
         // Slot layout:
         //   uses_sret = false → [recv, sel, args...]
@@ -958,6 +957,8 @@ pub const Ops = struct {
             // through the x8 / hidden-pointer convention.
             self.e.markSretArg(result, raw_ret_ty);
             result = self.e.residentPart(sret_slot, instruction.ty);
+        } else if (instruction.ty != .void) {
+            result = self.e.coerceArg(result, raw_ret_ty);
         }
         // Always mapRef — the IR Ref counter for this
         // instruction advances regardless of return type,
@@ -1645,7 +1646,7 @@ pub const Ops = struct {
             // LLVM backend lowers arg 0 via x8 (AAPCS64) / hidden ptr (SysV AMD64).
             self.e.markSretArg(result, callee_raw_ret);
             result = self.e.residentPart(sret_slot, callee_func.ret);
-        } else if (!call_is_void_like and callee_func.is_extern) {
+        } else if (!call_is_void_like and callee_needs_c_abi) {
             // Coerce ABI return value (e.g. i64 / [2 x i64]) back to IR struct type if needed
             const expected_ty = self.e.toLLVMType(instruction.ty);
             result = self.e.coerceArg(result, expected_ty);

@@ -1,0 +1,21 @@
+// On wasm32 a union crosses the C boundary as C passes it: one with more than
+// one member as a pointer to a copy the callee owns, returned through `sret`,
+// and one whose only member is a single element as that element's one-field
+// struct, whatever LLVM type holds the union.
+
+@import "modules/std/core.sx";
+
+Num :: union { i: i32; f: f32; }
+Byte :: union { b: u8; }
+Lanes :: union { v: @Vector(3, f32); }
+
+cNum :: (n: Num) -> Num extern;
+cByte :: (b: Byte) -> Byte extern;
+cLanes :: (l: Lanes) -> Lanes extern;
+
+main :: () -> i32 {
+    n := cNum(.{ i = 1 });
+    b := cByte(.{ b = 2 });
+    l := cLanes(.{ v = .{ 3.0, 4.0, 5.0 } });
+    return n.i + b.b.(i32) + l.v[0].(i32);
+}

@@ -1,0 +1,10 @@
+readFI 1234
+sumHU 3.750000
+makeHU 0.500000 4.000000
+sumBig 60
+makeBig 7 8 9
+sumPA 3.750000
+sumP2After7 3.750000
+callSxReadFI 4321
+sxMakePA 3.250000
+scaleV2 24.000000
