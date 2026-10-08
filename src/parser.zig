@@ -575,7 +575,7 @@ pub const Parser = struct {
             // name : type extern [LIB] ["csym"];   (extern data global, resolved
             // at link time)
             self.advance();
-            const tail = self.parseLinkageTail(true);
+            const tail = try self.parseLinkageTail(true);
             try self.expectStatementEnd();
             return try self.createNode(start_pos, .{ .var_decl = .{
                 .name = name,
@@ -1524,7 +1524,7 @@ pub const Parser = struct {
         const struct_extern = self.parseOptionalExternExport();
         var struct_extern_lib: ?[]const u8 = null;
         if (struct_extern != .none) {
-            struct_extern_lib = self.parseLinkageTail(false).lib;
+            struct_extern_lib = (try self.parseLinkageTail(false)).lib;
         }
 
         // Optional type params: struct($N: u32, $T: Type) { ... }
@@ -2940,7 +2940,7 @@ pub const Parser = struct {
         var extern_lib: ?[]const u8 = null;
         var extern_name: ?[]const u8 = null;
         if (extern_export != .none) {
-            const tail = self.parseLinkageTail(true);
+            const tail = try self.parseLinkageTail(true);
             extern_lib = tail.lib;
             extern_name = tail.name;
         }
@@ -5096,12 +5096,12 @@ pub const Parser = struct {
     };
 
     /// The `[LIB] ["csym"]` tail after `extern` / `export`. Both slots are
-    /// optional, and the declaration's `;` is what closes the tail.
-    fn parseLinkageTail(self: *Parser, admits_symbol: bool) LinkageTail {
+    /// optional, LIB may be a dotted path, and the declaration's `;` is what
+    /// closes the tail.
+    fn parseLinkageTail(self: *Parser, admits_symbol: bool) !LinkageTail {
         var tail: LinkageTail = .{};
         if (self.tokens.tag(self.tok) == .identifier) {
-            tail.lib = self.tokens.slice(self.tok);
-            self.advance();
+            tail.lib = try self.parseQualifiedName();
         }
         if (!admits_symbol) return tail;
         if (self.tokens.tag(self.tok) == .string_literal) {

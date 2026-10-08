@@ -331,11 +331,23 @@ pub fn processCImport(
 
 // ── extern ref validation ───────────────────────────────────────────
 
-fn collectExternRefTargets(valid: *std.StringHashMap(void), decls: []const *Node) !void {
+/// Registers each `@library` constant under its bare name and under every
+/// dotted suffix of its enclosing scope path (`libc`, `c.libc`, `s.c.libc`).
+fn collectExternRefTargets(arena: std.mem.Allocator, valid: *std.StringHashMap(void), path: *std.ArrayList([]const u8), decls: []const *Node) !void {
     for (decls) |d| {
         switch (d.data) {
-            .library_decl => |ld| try valid.put(ld.name, {}),
-            .scope_decl => |scope| try collectExternRefTargets(valid, scope.decls),
+            .library_decl => |ld| {
+                try valid.put(ld.name, {});
+                for (0..path.items.len) |from| {
+                    const prefix = try std.mem.join(arena, ".", path.items[from..]);
+                    try valid.put(try std.fmt.allocPrint(arena, "{s}.{s}", .{ prefix, ld.name }), {});
+                }
+            },
+            .scope_decl => |scope| {
+                try path.append(arena, scope.name);
+                defer _ = path.pop();
+                try collectExternRefTargets(arena, valid, path, scope.decls);
+            },
             .namespace_decl => |ns| {
                 // A NAMED `@import c` unit lowers to a namespace wrapping
                 // its c_import_decl — the namespace name is the unit ref.
@@ -345,7 +357,9 @@ fn collectExternRefTargets(valid: *std.StringHashMap(void), decls: []const *Node
                         break;
                     }
                 }
-                try collectExternRefTargets(valid, ns.decls);
+                try path.append(arena, ns.name);
+                defer _ = path.pop();
+                try collectExternRefTargets(arena, valid, path, ns.decls);
             },
             else => {},
         }
@@ -379,9 +393,12 @@ fn checkExternRefs(valid: *const std.StringHashMap(void), decls: []const *Node, 
 /// exempt.
 pub fn validateExternRefs(allocator: std.mem.Allocator, root: *const Node, diags: *@import("errors.zig").DiagnosticList) !void {
     if (root.data != .root) return;
-    var valid = std.StringHashMap(void).init(allocator);
-    defer valid.deinit();
-    try collectExternRefTargets(&valid, root.data.root.decls);
+    var arena_state = std.heap.ArenaAllocator.init(allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var valid = std.StringHashMap(void).init(arena);
+    var path = std.ArrayList([]const u8).empty;
+    try collectExternRefTargets(arena, &valid, &path, root.data.root.decls);
     checkExternRefs(&valid, root.data.root.decls, diags);
 }
 
