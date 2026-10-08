@@ -1,5 +1,5 @@
 @import "modules/std/fs.sx";
 
 main :: () -> i32 {
-    fs.fsPosixC.close(-1)
+    fs.fsPosixFtruncate(-1, 0)
 }
