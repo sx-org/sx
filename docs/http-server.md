@@ -280,8 +280,10 @@ ws.close(1000) catch {};       // returns the client's storage
 
 `opts` is an `http.ClientOpts`: `connectTimeoutMs` bounds the connect,
 `ioTimeoutMs` each write and each read outside `recv` and `ping` (which take
-their own timeouts), `tls` dials wss://, and `maxResponseBytes` bounds each
-inbound message. A non-101 answer is
+their own timeouts), and `tls` dials wss://. `connect`'s optional fourth
+argument, `maxMessage` (16 MiB by default, as on the server), bounds each
+inbound message: a longer one fails the connection with 1009 and `recv` or
+`ping` raises `TooLarge`. A non-101 answer is
 `Error.Refused`. The client masks its frames, answers the server's pings
 while it reads, and holds its storage — and each Message's — in the
 `context.allocator` current at `connect`.

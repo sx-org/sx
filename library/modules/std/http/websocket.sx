@@ -55,7 +55,7 @@ websocket :: scope {
         onClose: (c: *Conn, code: i64, ctx: *void) -> void = null;
         ctx: *void = null;
         // A longer inbound message fails the connection with 1009.
-        maxMessage: i64 = 16777216;
+        maxMessage: i64 = MAX_MESSAGE;
         // A ping goes out every interval; one still unanswered at the next
         // interval ends the connection as 1006.
         pingIntervalMs: i64 = 30000;
@@ -177,7 +177,7 @@ websocket :: scope {
         // Messages that arrived while ping awaited its pong.
         private queue: List(Message) = .{};
         private ioTimeoutMs: i64 = 0;
-        private maxMessage: ?i64 = null;
+        private maxMessage: i64;
         // This side has sent its close frame.
         private closing: bool = false;
         // The peer's close arrived, or the connection broke.
@@ -249,9 +249,10 @@ websocket :: scope {
     // `headers`, preformatted "Name: value\r\n" lines, with the upgrade
     // request. `opts` dials as http.Client does: connectTimeoutMs bounds the
     // connect, ioTimeoutMs each write and each read outside recv and ping
-    // (which take their own timeouts), opts.tls carries wss, and
-    // maxResponseBytes bounds each inbound message.
-    connect :: (url: string, headers: string, opts: http.ClientOpts) -> (Client, !Error) {
+    // (which take their own timeouts), and opts.tls carries wss. An inbound
+    // message longer than `maxMessage` fails the connection with 1009, and
+    // recv or ping raises TooLarge.
+    connect :: (url: string, headers: string, opts: http.ClientOpts, maxMessage: i64 = MAX_MESSAGE) -> (Client, !Error) {
         u, ok := parseUrl(url);
         if !ok { raise .Url; }
         if !validHeaders(headers) { raise .Header; }
@@ -265,7 +266,7 @@ websocket :: scope {
         if oe == .Tls { raise .Tls; }
         if oe { raise .Connect; }
         c : Client = .{ t = .{ fd = conn.fd, tls = conn.tls }, a = context.allocator,
-                        ioTimeoutMs = opts.ioTimeoutMs, maxMessage = opts.maxResponseBytes };
+                        ioTimeoutMs = opts.ioTimeoutMs, maxMessage = maxMessage };
         if !socket.setNonblocking(conn.fd) {
             c.t.close();
             raise .Connect;
@@ -296,6 +297,7 @@ websocket :: scope {
     private CLOSE_TOO_BIG     :i64: 1009;
 
     private READ_PIECE :: 16384;
+    private MAX_MESSAGE :: 16777216;
     // The longest 101 response head the client reads.
     private HEAD_LIMIT :: 16384;
     // A close this side sent that the peer leaves unanswered this long ends
@@ -412,7 +414,7 @@ websocket :: scope {
         // unread bytes to the front of `in` and leaves room for the frame it
         // waits on. `masked`: inbound frames carry a mask (the server's
         // side). `max` bounds a message's length.
-        next :: (self: *Reader, a: Allocator, masked: bool, max: ?i64) -> Inbound {
+        next :: (self: *Reader, a: Allocator, masked: bool, max: i64) -> Inbound {
             self.at += self.taken;
             self.taken = 0;
             if self.delivered {
@@ -433,10 +435,8 @@ websocket :: scope {
                         if h.op == OP_BIN { return .fault{CLOSE_UNSUPPORTED}; }
                         if h.op != OP_TEXT and h.op != OP_CONT { return .fault{CLOSE_PROTOCOL}; }
                         if (h.op == OP_CONT) != self.fragmenting { return .fault{CLOSE_PROTOCOL}; }
-                        if limit := max {
-                            held : i64 = if h.op == OP_CONT then self.msg.len else 0;
-                            if held + h.len > limit { return .fault{CLOSE_TOO_BIG}; }
-                        }
+                        held : i64 = if h.op == OP_CONT then self.msg.len else 0;
+                        if held + h.len > max { return .fault{CLOSE_TOO_BIG}; }
                     }
                     need += h.len;
                 }
@@ -538,7 +538,7 @@ websocket :: scope {
         reserve :: (self: *Bytes, a: Allocator, need: i64) {
             if need <= self.cap { return; }
             cap : i64 = if self.cap > 0 then self.cap else READ_PIECE;
-            while cap < need { cap *= 2; }
+            while cap < need { cap = if cap > need - cap then need else cap * 2; }
             grown := mem.alloc(a, u8, cap).ptr;
             if self.len > 0 { clib.c.memcpy(grown, self.ptr, self.len); }
             if self.cap > 0 { mem.free(a, self.ptr); }
