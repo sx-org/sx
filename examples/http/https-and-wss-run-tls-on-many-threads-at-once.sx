@@ -1,0 +1,167 @@
+// Several client threads share one TlsClientConfig and, released together,
+// each runs https requests and wss echo sessions against one TLS server:
+// handshakes and record I/O on many threads at once, on both ends. Every
+// body and every echo arrives intact, every wss session closes cleanly on
+// the server, and each thread returns everything it allocated.
+@import "modules/std.sx";
+@import "modules/std/http.sx";
+@import "modules/std/http/websocket.sx";
+@import "modules/std/atomic.sx";
+tlsp :: @import "modules/std/http/tls_mbedtls.sx";
+
+CERT :: "examples/http/1705-http-client-transport/cert.pem";
+KEY  :: "examples/http/1705-http-client-transport/key.pem";
+
+THREADS  :: 8;
+ROUNDS   :: 3;
+MESSAGES :: 4;
+BODY_LEN :: 40000;
+
+body : string = "";
+ready : i64 = 0;
+serverCloses : i64 = 0;
+
+hBody :: (rc: *http.RouteCtx) { rc.resp.body = body; }
+
+onText :: (c: *websocket.Conn, msg: string, ctx: *void) { c.sendText(msg) catch {}; }
+onClose :: (c: *websocket.Conn, code: i64, ctx: *void) {
+    if code == 1000 { _ := @atomicFetchAdd(i64, *serverCloses, 1, .acqRel); }
+}
+
+hWs :: (rc: *http.RouteCtx) { websocket.accept(rc, .{ onText = onText, onClose = onClose }); }
+
+srvEntry :: (arg: *void) -> *void abi(.c) {
+    srv : *http.Server = arg;
+    srv.run();
+    return null;
+}
+
+Worker :: struct {
+    id: i64;
+    port: i64;
+    opts: http.ClientOpts;
+    bodies: i64 = 0;
+    echoes: i64 = 0;
+    leaked: i64 = 0;
+}
+
+https :: (w: *Worker) -> bool {
+    conn, oe := http.Client.open("127.0.0.1", w.port, w.opts);
+    if oe { return false; }
+    defer http.Client.closeConn(*conn);
+    se := http.Client.sendOn(*conn, .{ path = "/body", host = "t" });
+    if se { return false; }
+    resp, re := http.Client.recvOn(*conn);
+    if re { return false; }
+    ok := resp.status == 200 and resp.body == body;
+    resp.deinit();
+    ok
+}
+
+echo :: (ws: *websocket.Client, msg: string) -> bool {
+    ws.sendText(msg) catch { return false; };
+    m, me := ws.recv(5000);
+    if me { return false; }
+    ok := m.kind == .text and m.text == msg;
+    m.deinit();
+    ok
+}
+
+// One wss session: MESSAGES echoes, then a client-initiated close.
+wss :: (w: *Worker) -> i64 {
+    url := format("wss://127.0.0.1:{}/ws", w.port);
+    defer mem.free(context.allocator, url);
+    ws, ce := websocket.connect(url, "", w.opts);
+    if ce { return 0; }
+    echoed := 0;
+    i := 0;
+    while i < MESSAGES {
+        msg := format("thread {} message {}", w.id, i);
+        if echo(*ws, msg) { echoed += 1; }
+        mem.free(context.allocator, msg);
+        i += 1;
+    }
+    ws.close(1000) catch {};
+    echoed
+}
+
+clientEntry :: (arg: *void) -> *void abi(.c) {
+    w : *Worker = arg;
+    gpa := GPA.init();
+    push .{ allocator = gpa } {
+        _ := @atomicFetchAdd(i64, *ready, 1, .acqRel);
+        while @atomicLoad(i64, *ready, .acquire) < THREADS { c.usleep(100); }
+        r := 0;
+        while r < ROUNDS {
+            if https(w) { w.bodies += 1; }
+            w.echoes += wss(w);
+            r += 1;
+        }
+    }
+    w.leaked = gpa.allocCount;
+    return null;
+}
+
+main :: () -> i32 {
+    buf := mem.alloc(context.allocator, u8, BODY_LEN);
+    i := 0;
+    while i < BODY_LEN { buf[i] = ('a' + i % 26).(u8); i += 1; }
+    body = .{ ptr = buf.ptr, len = BODY_LEN };
+
+    ts : tlsp.TlsServer = .{};
+    if !ts.setupFiles(CERT, KEY, context.allocator) { print("server TLS setup failed\n"); return 1; }
+    tcc : tlsp.TlsClientConfig = .{};
+    if !tcc.setupFiles(CERT, context.allocator) { print("client TLS setup failed\n"); return 1; }
+    router := http.Router.init(0);
+    router.get("/body", hBody);
+    router.get("/ws", hWs);
+    cfg : http.Config = .{ port = 0, threadPoolCount = 2, streamRequestBody = true };
+    cfg.tls = *ts;
+    srv, se := http.Server.init(cfg, http.dispatch, @reinterpret(usize, *router));
+    if se { return 1; }
+    st, ste := thread.Thread.spawn(srvEntry, *srv);
+    if ste { return 1; }
+
+    opts : http.ClientOpts = .{ connectTimeoutMs = 5000, ioTimeoutMs = 5000,
+                                tls = *tcc, tlsHost = "client-transport.test" };
+    workers : [THREADS]Worker = ---;
+    threads : [THREADS]thread.Thread = ---;
+    n := 0;
+    while n < THREADS {
+        workers[n] = .{ id = n, port = srv.cfg.port, opts = opts };
+        t, te := thread.Thread.spawn(clientEntry, *workers[n]);
+        if te { print("spawn failed\n"); return 1; }
+        threads[n] = t;
+        n += 1;
+    }
+    bodies := 0;
+    echoes := 0;
+    leaked := 0;
+    n = 0;
+    while n < THREADS {
+        threads[n].join();
+        bodies += workers[n].bodies;
+        echoes += workers[n].echoes;
+        leaked += workers[n].leaked;
+        n += 1;
+    }
+    // A wss session's server side counts its close after closing its TLS
+    // session, which borrows `ts`.
+    waited := 0;
+    while @atomicLoad(i64, *serverCloses, .acquire) < THREADS * ROUNDS and waited < 500 { c.usleep(10000); waited += 1; }
+    closes := @atomicLoad(i64, *serverCloses, .acquire);
+    srv.stop();
+    st.join();
+    srv.close();
+    router.deinit();
+    tcc.deinit();
+    ts.deinit();
+    mem.free(context.allocator, buf);
+
+    print("https bodies intact: {} of {}\n", bodies, THREADS * ROUNDS);
+    print("wss echoes intact: {} of {}\n", echoes, THREADS * ROUNDS * MESSAGES);
+    print("wss sessions closed on the server: {} of {}\n", closes, THREADS * ROUNDS);
+    print("client allocations outstanding: {}\n", leaked);
+    if bodies != THREADS * ROUNDS or echoes != THREADS * ROUNDS * MESSAGES or closes != THREADS * ROUNDS or leaked != 0 { return 1; }
+    0
+}
