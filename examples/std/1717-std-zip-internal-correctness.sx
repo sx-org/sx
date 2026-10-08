@@ -62,7 +62,7 @@ same :: (left: string, right: string) -> bool {
     true
 }
 
-makeArchive :: (data: string, method: zip.ZipMethod, alloc: Allocator) -> string {
+makeArchive :: (data: string, method: zip.zipContracts.Method, alloc: Allocator) -> string {
     sink := SinkState{ out = codec.ByteWriter.init(alloc) };
     writer := zip.ZipStreamWriter.init(.{ ctx = *sink, write = sinkWrite }, alloc);
     writer.addOptions("data.bin", data, .{

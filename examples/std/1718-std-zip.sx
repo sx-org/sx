@@ -1,8 +1,5 @@
 @import "modules/std.sx";
 
-ZipSource :: zip.Source;
-ZipSink :: zip.Sink;
-
 // Exact output from miniz 77d0dce8627735138c51770d1799a1ef48f2117d
 // for the deterministic archive assembled by makeArchive(alloc, ""). This
 // pins the complete ZIP bytes, including headers, DEFLATE payload, descriptors,
@@ -46,7 +43,7 @@ MemorySource :: struct {
     failure: compress.Error = .Io;
 }
 
-impl ZipSource for MemorySource {
+impl zip.contracts.Source for MemorySource {
     size :: (self: *MemorySource) -> i64 { self.data.len }
 
     readAt :: (self: *MemorySource, offset: i64, output: string) -> (string, !compress.Error) {
@@ -71,7 +68,7 @@ Collector :: struct {
     failure: compress.Error = .Io;
 }
 
-impl ZipSink for Collector {
+impl zip.contracts.Sink for Collector {
     write :: (self: *Collector, data: string) -> !compress.Error {
         if self.failAfter >= 0 and self.calls >= self.failAfter { raise self.failure; }
         self.calls += 1;
@@ -134,7 +131,7 @@ streamReportsChecksum :: (stream: *zip.EntryReader) -> bool {
     false
 }
 
-metadataLimitRejected :: (source: ZipSource, limit: i64, alloc: Allocator) -> bool {
+metadataLimitRejected :: (source: zip.contracts.Source, limit: i64, alloc: Allocator) -> bool {
     reader := zip.openSource(source, .{ maxMetadata = limit }, alloc) catch |e| { return e == .OutputLimit; };
     reader.deinit();
     false

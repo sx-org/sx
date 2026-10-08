@@ -12,21 +12,7 @@ zip :: scope {
     @import "modules/std/core.sx";
     @import "modules/std/compress.sx";
     @import "modules/std/internal/zip_facade.sx";
-
-    // These flat-imported aliases resolve to declarations authored in the public
-    // zipContracts part-file. The `StdZip*` bridge spellings stay internal and
-    // this facade authors only the supported names below.
-    Method            :: StdZipMethod;
-    Entry             :: StdZipEntry;
-    EntryOptions      :: StdZipEntryOptions;
-    WriterOptions     :: StdZipWriterOptions;
-    FileWriterOptions :: StdZipFileWriterOptions;
-    FromReaderOptions :: StdZipFromReaderOptions;
-    AppendOptions     :: StdZipAppendOptions;
-    OpenOptions       :: StdZipOpenOptions;
-    OpenFileOptions   :: StdZipOpenFileOptions;
-    Source            :: StdZipSource;
-    Sink              :: StdZipSink;
+    contracts :: @import "modules/std/codecs/zip_contracts.sx";
 
     // A bounded, seekable view of one entry. It borrows its archive Reader, which
     // must outlive this value. `read` returns the initialized prefix borrowed from
@@ -65,7 +51,7 @@ zip :: scope {
         comment :: (self: *Reader) -> string { stdZipReaderComment(*self.state) }
         isZip64 :: (self: *Reader) -> bool { stdZipReaderIsZip64(*self.state) }
 
-        entry :: (self: *Reader, index: i64) -> (Entry, !compress.Error) {
+        entry :: (self: *Reader, index: i64) -> (contracts.Entry, !compress.Error) {
             stdZipReaderEntry(*self.state, index)
         }
 
@@ -101,7 +87,7 @@ zip :: scope {
         }
 
         // Streams bounded output to target without materializing the entry.
-        extractTo :: (self: *Reader, index: i64, target: Sink, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !compress.Error) {
+        extractTo :: (self: *Reader, index: i64, target: contracts.Sink, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !compress.Error) {
             stdZipReaderExtractTo(*self.state, index, target, false, maxOutput, alloc)
         }
 
@@ -135,7 +121,7 @@ zip :: scope {
             stdZipReaderExtractInto(*self.state, index, output, true, alloc)
         }
 
-        extractCompressedTo :: (self: *Reader, index: i64, target: Sink, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !compress.Error) {
+        extractCompressedTo :: (self: *Reader, index: i64, target: contracts.Sink, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !compress.Error) {
             stdZipReaderExtractTo(*self.state, index, target, true, maxOutput, alloc)
         }
 
@@ -161,12 +147,12 @@ zip :: scope {
 
     // source must outlive the returned Reader. maxMetadata bounds resident
     // central-directory/name/extra/comment storage.
-    openSource :: (source: Source, options: OpenOptions = .{}, alloc: Allocator = context.allocator) -> (Reader, !compress.Error) {
+    openSource :: (source: contracts.Source, options: contracts.OpenOptions = .{}, alloc: Allocator = context.allocator) -> (Reader, !compress.Error) {
         state := try stdZipReaderSource(source, options.maxMetadata, alloc);
         Reader{ state = state }
     }
 
-    openFile :: (path: string, options: OpenFileOptions = .{}, alloc: Allocator = context.allocator) -> (Reader, !compress.Error) {
+    openFile :: (path: string, options: contracts.OpenFileOptions = .{}, alloc: Allocator = context.allocator) -> (Reader, !compress.Error) {
         if options.start < 0 { raise .InvalidOptions; }
         if size := options.size {
             if size < 0 { raise .InvalidOptions; }
@@ -180,19 +166,19 @@ zip :: scope {
         state: StdZipWriterState;
 
         // Memory output. Call finish() and then take() to transfer ownership.
-        init :: (options: WriterOptions = .{}, alloc: Allocator = context.allocator) -> (Writer, !compress.Error) {
+        init :: (options: contracts.WriterOptions = .{}, alloc: Allocator = context.allocator) -> (Writer, !compress.Error) {
             state := try stdZipWriterMemory(options.zip64, alloc);
             Writer{ state = state }
         }
 
         // target must outlive the Writer. Output is emitted incrementally; sink
         // errors poison the writer because accepted bytes cannot be rolled back.
-        initSink :: (target: Sink, options: WriterOptions = .{}, alloc: Allocator = context.allocator) -> (Writer, !compress.Error) {
+        initSink :: (target: contracts.Sink, options: contracts.WriterOptions = .{}, alloc: Allocator = context.allocator) -> (Writer, !compress.Error) {
             state := try stdZipWriterSink(target, options.zip64, alloc);
             Writer{ state = state }
         }
 
-        initFile :: (path: string, options: FileWriterOptions = .{}, alloc: Allocator = context.allocator) -> (Writer, !compress.Error) {
+        initFile :: (path: string, options: contracts.FileWriterOptions = .{}, alloc: Allocator = context.allocator) -> (Writer, !compress.Error) {
             if options.reserve < 0 { raise .InvalidOptions; }
             state := try stdZipWriterFile(path, options.reserve, options.zip64, alloc);
             Writer{ state = state }
@@ -200,14 +186,14 @@ zip :: scope {
 
         // Copies existing local records into memory without recompressing them.
         // A null finish comment preserves the source archive comment.
-        fromReader :: (source: *Reader, options: FromReaderOptions = .{}, alloc: Allocator = context.allocator) -> (Writer, !compress.Error) {
+        fromReader :: (source: *Reader, options: contracts.FromReaderOptions = .{}, alloc: Allocator = context.allocator) -> (Writer, !compress.Error) {
             state := try stdZipWriterFromReader(*source.state, options.forceZip64, alloc);
             Writer{ state = state }
         }
 
         // Opens an existing archive for in-place append, or creates it when absent.
         // A null finish comment preserves an existing archive comment.
-        appendFile :: (path: string, options: AppendOptions = .{}, alloc: Allocator = context.allocator) -> (Writer, !compress.Error) {
+        appendFile :: (path: string, options: contracts.AppendOptions = .{}, alloc: Allocator = context.allocator) -> (Writer, !compress.Error) {
             state := try stdZipWriterAppendFile(path, options.forceZip64, options.maxMetadata, alloc);
             Writer{ state = state }
         }
@@ -224,17 +210,17 @@ zip :: scope {
             stdZipWriterReservePrefix(*self.state, size)
         }
 
-        add :: (self: *Writer, name: string, data: string, options: EntryOptions = .{}) -> !compress.Error {
+        add :: (self: *Writer, name: string, data: string, options: contracts.EntryOptions = .{}) -> !compress.Error {
             stdZipWriterAdd(*self.state, name, data, options)
         }
 
         // source.size() is authoritative; early EOF is an error and reads never
         // exceed that declared bound.
-        addSource :: (self: *Writer, name: string, source: Source, options: EntryOptions = .{}) -> !compress.Error {
+        addSource :: (self: *Writer, name: string, source: contracts.Source, options: contracts.EntryOptions = .{}) -> !compress.Error {
             stdZipWriterAddSource(*self.state, name, source, options)
         }
 
-        addFile :: (self: *Writer, name: string, path: string, options: EntryOptions = .{}) -> !compress.Error {
+        addFile :: (self: *Writer, name: string, path: string, options: contracts.EntryOptions = .{}) -> !compress.Error {
             stdZipWriterAddFile(*self.state, name, path, options)
         }
 
@@ -271,10 +257,10 @@ zip :: scope {
     Input :: struct {
         name: string;
         data: string;
-        options: EntryOptions = .{};
+        options: contracts.EntryOptions = .{};
     }
 
-    create :: (inputs: []Input, options: WriterOptions = .{}, comment: string = "", alloc: Allocator = context.allocator) -> (string, !compress.Error) {
+    create :: (inputs: []Input, options: contracts.WriterOptions = .{}, comment: string = "", alloc: Allocator = context.allocator) -> (string, !compress.Error) {
         writer := try Writer.init(options, alloc);
         defer writer.deinit();
         i := 0;
@@ -286,7 +272,7 @@ zip :: scope {
         writer.take()
     }
 
-    createFile :: (path: string, inputs: []Input, options: FileWriterOptions = .{}, comment: string = "", alloc: Allocator = context.allocator) -> !compress.Error {
+    createFile :: (path: string, inputs: []Input, options: contracts.FileWriterOptions = .{}, comment: string = "", alloc: Allocator = context.allocator) -> !compress.Error {
         writer := try Writer.initFile(path, options, alloc);
         defer writer.deinit();
         i := 0;

@@ -44,9 +44,9 @@ word is involved, in which case it names the replacement or says there is none.
 | `mz_zip_extract_archive_file_to_heap` | `zip.openFile`, exact `Reader.find`, then allocator-owned `Reader.extract` or `extractCompressed` according to the typed operation |
 | `mz_zip_extract_archive_file_to_heap_v2` | Exact-name normal/raw extraction maps to `openFile` plus `find` and `extract`/`extractCompressed`; there is no comment matching, alternate lookup flag, or error-out parameter |
 | `mz_zip_get_archive_file_start_offset` | Container offsets are inputs to `zip.openFile(start, size)` or discovered by `openEmbedded`; Reader does not expose C storage-layout state |
-| `mz_zip_get_archive_size` | Physical container size is owned by `zip.Source.size`/the file boundary; Reader exposes bounded `readAt` rather than a C archive-state query |
+| `mz_zip_get_archive_size` | Physical container size is owned by `zip.contracts.Source.size`/the file boundary; Reader exposes bounded `readAt` rather than a C archive-state query |
 | `mz_zip_get_central_dir_size` | The parser uses central-directory size internally to enforce `openSource(..., maxMetadata)`, but the public C query itself has no SX equivalent |
-| `mz_zip_get_cfile` | Borrowed `FILE *` identity is replaced by `zip.Source`, `zip.Sink`, and `std.fs`; native Reader ownership is not recoverable as a C handle |
+| `mz_zip_get_cfile` | Borrowed `FILE *` identity is replaced by `zip.contracts.Source`, `zip.contracts.Sink`, and `std.fs`; native Reader ownership is not recoverable as a C handle |
 | `mz_zip_get_error_string` | Numeric ZIP error strings are replaced by the shared typed `compress.Error` channel |
 | `mz_zip_get_last_error` | The failing operation returns its error directly; there is no global archive error state to read or clear |
 | `mz_zip_get_mode` | Separate `Reader` and `Writer` types make the C runtime mode enum unnecessary |
@@ -57,7 +57,7 @@ word is involved, in which case it names the replacement or says there is none.
 | `mz_zip_reader_end` | idempotent `zip.Reader.deinit()` |
 | `mz_zip_reader_extract_file_iter_new` | Normal mode maps to `zip.Reader.streamName(name)`; raw-compressed mode requires `find(name)` followed by `streamCompressed(index)` |
 | `mz_zip_reader_extract_file_to_callback` | `Reader.find(name)` followed by `extractTo` for decoded bytes or `extractCompressedTo` for raw compressed payload |
-| `mz_zip_reader_extract_file_to_cfile` | The `FILE *` adapter spelling is replaced by generic `zip.Sink`; after `find`, callers choose `extractTo` or `extractCompressedTo` |
+| `mz_zip_reader_extract_file_to_cfile` | The `FILE *` adapter spelling is replaced by generic `zip.contracts.Sink`; after `find`, callers choose `extractTo` or `extractCompressedTo` |
 | `mz_zip_reader_extract_file_to_file` | Decoded extraction maps to `find` plus `extractFile`; raw-compressed path output has no file convenience and requires a caller sink with `extractCompressedTo` |
 | `mz_zip_reader_extract_file_to_heap` | Normal mode is allocator-owned `extractName`; raw-compressed mode is `find(name)` plus `extractCompressed(index)` |
 | `mz_zip_reader_extract_file_to_mem` | Normal mode is caller-buffer `extractNameInto`; raw-compressed mode is `find(name)` plus `extractCompressedInto(index, output)` |
@@ -66,16 +66,16 @@ word is involved, in which case it names the replacement or says there is none.
 | `mz_zip_reader_extract_iter_new` | `zip.Reader.stream(index)` or `streamCompressed(index)` |
 | `mz_zip_reader_extract_iter_read` | `zip.EntryReader.read(output)` |
 | `mz_zip_reader_extract_to_callback` | `zip.Reader.extractTo` emits decoded bytes; `extractCompressedTo` separately emits raw compressed payload |
-| `mz_zip_reader_extract_to_cfile` | The `FILE *` sink adapter is replaced by public `zip.Sink` with explicit normal `extractTo` or raw `extractCompressedTo` |
+| `mz_zip_reader_extract_to_cfile` | The `FILE *` sink adapter is replaced by public `zip.contracts.Sink` with explicit normal `extractTo` or raw `extractCompressedTo` |
 | `mz_zip_reader_extract_to_file` | Decoded extraction maps to `zip.Reader.extractFile`; raw-compressed path output has no file convenience and requires `extractCompressedTo` with a caller sink |
 | `mz_zip_reader_extract_to_heap` | `zip.Reader.extract` returns decoded bytes; `extractCompressed` separately returns raw compressed payload |
 | `mz_zip_reader_extract_to_mem` | `zip.Reader.extractInto` writes decoded bytes; `extractCompressedInto` separately writes raw compressed payload |
 | `mz_zip_reader_extract_to_mem_no_alloc` | `extractInto` writes into caller-owned output, but the engine may allocate bounded scratch; there is no zero-allocation, caller-read-buffer form |
-| `mz_zip_reader_file_stat` | typed `zip.Reader.entry(index)` returning `zip.Entry` |
+| `mz_zip_reader_file_stat` | typed `zip.Reader.entry(index)` returning `zip.contracts.Entry` |
 | `mz_zip_reader_get_filename` | `zip.Reader.entry(index).name` |
 | `mz_zip_reader_get_num_files` | `zip.Reader.len()` |
 | `mz_zip_reader_init` | `zip.openSource(source, maxMetadata, alloc)` |
-| `mz_zip_reader_init_cfile` | Borrowed `FILE *` initialization is replaced by a caller-authored `zip.Source` or `zip.openFile` |
+| `mz_zip_reader_init_cfile` | Borrowed `FILE *` initialization is replaced by a caller-authored `zip.contracts.Source` or `zip.openFile` |
 | `mz_zip_reader_init_file` | `zip.openFile(path)` |
 | `mz_zip_reader_init_file_v2` | `zip.openFile(path, start, size, maxMetadata, alloc)` |
 | `mz_zip_reader_init_mem` | `zip.open(data, alloc)` or prefix-detecting `zip.openEmbedded` |
@@ -95,7 +95,7 @@ word is involved, in which case it names the replacement or says there is none.
 | `mz_zip_validate_file` | `Reader.validate` validates the archive and extraction/streaming validates selected data, but there is no direct public one-entry validation operation or C validation-flags equivalent |
 | `mz_zip_validate_file_archive` | `zip.openFile(path)` followed by `Reader.validate(...)` |
 | `mz_zip_validate_mem_archive` | `zip.open(data)` followed by `Reader.validate(...)` |
-| `mz_zip_writer_add_cfile` | The `FILE *` source adapter is replaced by `zip.Source` plus `Writer.addSource`, or by `Writer.addFile` for paths |
+| `mz_zip_writer_add_cfile` | The `FILE *` source adapter is replaced by `zip.contracts.Source` plus `Writer.addSource`, or by `Writer.addFile` for paths |
 | `mz_zip_writer_add_file` | `zip.Writer.addFile(name, path, options)` |
 | `mz_zip_writer_add_from_zip_reader` | `zip.Writer.addFrom(source, index)` transfers an entry of a valid archive without recompressing it |
 | `mz_zip_writer_add_mem` | `zip.Writer.add(name, data)` |
@@ -106,7 +106,7 @@ word is involved, in which case it names the replacement or says there is none.
 | `mz_zip_writer_finalize_archive` | `zip.Writer.finish(comment)` |
 | `mz_zip_writer_finalize_heap_archive` | `zip.Writer.finish(comment)` followed by ownership-transferring `take()` |
 | `mz_zip_writer_init` | `zip.Writer.initSink(target)` maps only `existing_size == 0`; the C callback writer's nonzero existing logical-size contract has no public SX equivalent |
-| `mz_zip_writer_init_cfile` | Borrowed `FILE *` output is replaced by `zip.Sink` or `Writer.initFile`; no C handle leaks through stdlib |
+| `mz_zip_writer_init_cfile` | Borrowed `FILE *` output is replaced by `zip.contracts.Sink` or `Writer.initFile`; no C handle leaks through stdlib |
 | `mz_zip_writer_init_file` | `zip.Writer.initFile(path, .{ reserve = n })` |
 | `mz_zip_writer_init_file_v2` | `zip.Writer.initFile(path, .{ reserve = n, zip64 = z }, alloc)`; other C flags map only where a typed `Writer` operation exists |
 | `mz_zip_writer_init_from_reader` | True in-place file conversion/append maps to `zip.Writer.appendFile(path)`; `Writer.fromReader(reader)` instead creates a separate memory copy and is not the same storage transition |
