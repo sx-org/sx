@@ -40,8 +40,8 @@ srvEntry :: (arg: *void) -> *void abi(.c) {
 }
 
 main :: () -> i32 {
-    gate.setup();
-    wake.setup();
+    gate.setup() catch { return 1; };
+    wake.setup() catch { return 1; };
     router := http.Router.init(0);
     router.get("/ws", hWs);
     cfg : http.Config = .{ port = 0, threadPoolCount = 1, streamRequestBody = true };

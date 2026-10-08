@@ -15,7 +15,7 @@
 //
 // MOVE SEMANTICS: a pthread mutex/cond is address-sensitive once
 // initialized — POSIX leaves moving one undefined. Mutex/Cond therefore
-// initialize IN PLACE (`m.setup()`) and Pool lives behind a pointer
+// set up IN PLACE (`try m.setup()`) and Pool lives behind a pointer
 // (`Pool.create`), never by-value copy.
 //
 // PTHREAD STRUCT SIZES `MutexBuf`/`CondBuf` below are sized
@@ -50,8 +50,8 @@ thread :: scope {
     Mutex :: struct {
         buf: c.MutexBuf = .{};
 
-        setup :: (self: *Mutex) -> bool {
-            return c.pthread_mutex_init(*self.buf, null) == 0;
+        setup :: (self: *Mutex) -> !Error {
+            if c.pthread_mutex_init(*self.buf, null) != 0 { raise .Init; }
         }
         lock :: (self: *Mutex) {
             c.pthread_mutex_lock(*self.buf);
@@ -59,7 +59,7 @@ thread :: scope {
         unlock :: (self: *Mutex) {
             c.pthread_mutex_unlock(*self.buf);
         }
-        destroy :: (self: *Mutex) {
+        deinit :: (self: *Mutex) {
             c.pthread_mutex_destroy(*self.buf);
         }
     }
@@ -67,8 +67,8 @@ thread :: scope {
     Cond :: struct {
         buf: c.CondBuf = .{};
 
-        setup :: (self: *Cond) -> bool {
-            return c.pthread_cond_init(*self.buf, null) == 0;
+        setup :: (self: *Cond) -> !Error {
+            if c.pthread_cond_init(*self.buf, null) != 0 { raise .Init; }
         }
         // Atomically releases `m` and sleeps; reacquires `m` before returning.
         wait :: (self: *Cond, m: *Mutex) {
@@ -80,7 +80,7 @@ thread :: scope {
         broadcast :: (self: *Cond) {
             c.pthread_cond_broadcast(*self.buf);
         }
-        destroy :: (self: *Cond) {
+        deinit :: (self: *Cond) {
             c.pthread_cond_destroy(*self.buf);
         }
     }
@@ -142,8 +142,8 @@ thread :: scope {
             // Free-before-raise: nothing past `p` is allocated yet, so the
             // mutex-setup failure only needs to release `p`. The cond-setup
             // failure additionally tears down the already-init'd mutex.
-            if !p.mu.setup() { alloc.deallocBytes(p); raise .Init; }
-            if !p.nonempty.setup() { p.mu.destroy(); alloc.deallocBytes(p); raise .Init; }
+            p.mu.setup() catch { alloc.deallocBytes(p); raise .Init; };
+            p.nonempty.setup() catch { p.mu.deinit(); alloc.deallocBytes(p); raise .Init; };
             p.tasks = mem.alloc(alloc, PoolTask, backlog).ptr;
             p.cap = backlog;
             p.threads = mem.alloc(alloc, usize, workers).ptr;
@@ -187,8 +187,8 @@ thread :: scope {
                 c.pthread_join(self.threads[i], null);
                 i += 1;
             }
-            self.mu.destroy();
-            self.nonempty.destroy();
+            self.mu.deinit();
+            self.nonempty.deinit();
             // Free everything create allocated, from the same allocator.
             // tasks/threads first, then the Pool struct last (no field of
             // self is read after this point).

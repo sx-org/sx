@@ -703,8 +703,8 @@ private BodyChan :: struct {
         last := self.refs == 0;
         self.mu.unlock();
         if last {
-            self.mu.destroy();
-            self.cv.destroy();
+            self.mu.deinit();
+            self.cv.deinit();
             a := self.alloc;
             if self.buf != null { a.deallocBytes(self.buf); }
             a.deallocBytes(self);
@@ -1563,18 +1563,17 @@ Server :: struct {
 
         ps : *PoolState = null;
         if cfg.threadPoolCount > 0 {
-            ps = mem.create(oa, PoolState);
-            ps.* = PoolState{};
+            ps = mem.make(oa, PoolState{});
             // Failure below this point must release what init already
             // allocated (slots, dheap, ps, ps.done) — these late paths used
             // to close only the fd and leak the rest .
-            if !ps.mu.setup() {
+            ps.mu.setup() catch {
                 oa.deallocBytes(ps);
                 oa.deallocBytes(slots);
                 oa.deallocBytes(dh);
                 closeListener(lfd, cfg.unixPath);
                 raise .Loop;
-            }
+            };
             // Max completions pending between two drains: every conn has at
             // most ONE job in flight, and within one tick's serve storm the
             // loop can submit up to maxConn replacements while backlog +
@@ -1594,7 +1593,7 @@ Server :: struct {
             ps.loopCopy = lp;
             pool, pce := thread.Pool.create(cfg.threadPoolCount, cfg.threadPoolBacklog);
             if pce {
-                ps.mu.destroy();
+                ps.mu.deinit();
                 oa.deallocBytes(ps.done);
                 oa.deallocBytes(ps.ochans);
                 oa.deallocBytes(ps);
@@ -1721,7 +1720,7 @@ Server :: struct {
             }
             if self.ps.done != null { self.ownAlloc.deallocBytes(self.ps.done); }
             if self.ps.ochans != null { self.ownAlloc.deallocBytes(self.ps.ochans); }
-            self.ps.mu.destroy();
+            self.ps.mu.deinit();
             self.ownAlloc.deallocBytes(self.ps);
             self.ps = null;
         }
@@ -3265,19 +3264,18 @@ Server :: struct {
             isHead := asciiIeq(req.method, "head");
             req.deadlineMs = self.cfg.handlerTimeoutMs;
 
-            ch : *BodyChan = mem.create(self.ownAlloc, BodyChan);
-            ch.* = BodyChan{ alloc = self.ownAlloc };
-            if !ch.mu.setup() {
+            ch := mem.make(self.ownAlloc, BodyChan{ alloc = self.ownAlloc });
+            ch.mu.setup() catch {
                 self.ownAlloc.deallocBytes(ch);
                 self.respondErrorClose(slot, 500);
                 return false;
-            }
-            if !ch.cv.setup() {
-                ch.mu.destroy();
+            };
+            ch.cv.setup() catch {
+                ch.mu.deinit();
                 self.ownAlloc.deallocBytes(ch);
                 self.respondErrorClose(slot, 500);
                 return false;
-            }
+            };
             ch.buf = mem.alloc(self.ownAlloc, u8, BODY_CHAN_CAP).ptr;
             ch.cap = BODY_CHAN_CAP;
             // Copy AFTER init's unconditional addWake — wakeFd is live.
