@@ -109,9 +109,9 @@ main :: () -> i32 {
     body = .{ ptr = buf.ptr, len = BODY_LEN };
 
     ts : tlsp.TlsServer = .{};
-    if !ts.setupFiles(CERT, KEY, context.allocator) { print("server TLS setup failed\n"); return 1; }
+    ts.setupFiles(CERT, KEY, context.allocator) catch { print("server TLS setup failed\n"); return 1; };
     tcc : tlsp.TlsClientConfig = .{};
-    if !tcc.setupFiles(CERT, context.allocator) { print("client TLS setup failed\n"); return 1; }
+    tcc.setupFiles(CERT, context.allocator) catch { print("client TLS setup failed\n"); return 1; };
     router := http.Router.init(0);
     router.get("/body", hBody);
     router.get("/ws", hWs);

@@ -6,7 +6,7 @@
 //
 // Cases:
 //   A. successful HTTPS request → 200 with the expected body.
-//   B. bad cert path → setupFiles returns false (server accepts no TLS; loud).
+//   B. bad cert path → setupFiles raises Read (server accepts no TLS; loud).
 //   C. handshake failure (a plaintext client sends garbage to the TLS port) →
 //      the server drops that slot, then still serves a fresh good client.
 //   + net-zero GPA leak gate across the whole run.
@@ -119,15 +119,16 @@ main :: () -> i32 {
 run :: () -> i32 {
     // ── B. bad cert path → setupFiles must fail loudly ──
     bad : tlsp.TlsServer = .{};
-    if bad.setupFiles("examples/http/1679-http-tls-https/does-not-exist.pem", "examples/http/1679-http-tls-https/key.pem", context.allocator) {
-        return 1;   // setupFiles unexpectedly succeeded on a missing cert
+    badErr := bad.setupFiles("examples/http/1679-http-tls-https/does-not-exist.pem", "examples/http/1679-http-tls-https/key.pem", context.allocator);
+    if badErr != .Read {
+        return 1;   // setupFiles did not raise Read on a missing cert
     }
 
     // ── shared acceptor from the fixture cert/key ──
     ts : tlsp.TlsServer = .{};
-    if !ts.setupFiles("examples/http/1679-http-tls-https/cert.pem", "examples/http/1679-http-tls-https/key.pem", context.allocator) {
+    ts.setupFiles("examples/http/1679-http-tls-https/cert.pem", "examples/http/1679-http-tls-https/key.pem", context.allocator) catch {
         return 2;
-    }
+    };
     cfg : http.Config = .{ port = 0, timeoutRequestMs = 3000, maxConn = 8 };
     cfg.tls = xx *ts;
     srv, se := http.Server.init(cfg, handler, 0);

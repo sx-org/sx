@@ -50,9 +50,9 @@ exercise :: (port: i64, opts: http.ClientOpts) -> bool {
 
 main :: () -> i32 {
     ts : tlsp.TlsServer = .{};
-    if !ts.setupFiles(CERT, KEY, context.allocator) { print("server TLS setup failed\n"); return 1; }
+    ts.setupFiles(CERT, KEY, context.allocator) catch { print("server TLS setup failed\n"); return 1; };
     tcc : tlsp.TlsClientConfig = .{};
-    if !tcc.setupFiles(CERT, context.allocator) { print("client TLS setup failed\n"); return 1; }
+    tcc.setupFiles(CERT, context.allocator) catch { print("client TLS setup failed\n"); return 1; };
     router := http.Router.init(0);
     router.get("/ws", hWs);
     cfg : http.Config = .{ port = 0, threadPoolCount = 1, streamRequestBody = true };

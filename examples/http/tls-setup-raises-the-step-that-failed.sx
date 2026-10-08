@@ -1,0 +1,21 @@
+// A TlsServer setup that fails raises the step that failed, and the same
+// storage then sets up with no deinit between.
+@import "modules/std.sx";
+tlsp :: @import "modules/std/http/tls_mbedtls.sx";
+
+CERT :: "examples/http/1705-http-client-transport/cert.pem";
+KEY  :: "examples/http/1705-http-client-transport/key.pem";
+
+main :: () -> i32 {
+    ts : tlsp.TlsServer = .{};
+    missing := ts.setupFiles("examples/http/no-such-cert.pem", KEY, context.allocator);
+    print("a missing cert file: {}\n", missing);
+    keyAsCert := ts.setupFiles(KEY, KEY, context.allocator);
+    print("a key where the cert goes: {}\n", keyAsCert);
+    certAsKey := ts.setupFiles(CERT, CERT, context.allocator);
+    print("a cert where the key goes: {}\n", certAsKey);
+    ts.setupFiles(CERT, KEY, context.allocator) catch |err| { print("setup failed: {}\n", err); return 1; };
+    ts.deinit();
+    print("the same server then sets up\n");
+    return 0;
+}

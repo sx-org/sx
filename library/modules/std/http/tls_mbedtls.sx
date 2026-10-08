@@ -9,6 +9,15 @@
 @import "modules/std/fs.sx";
 @import "vendors/mbedtls/mbedtls.sx";
 
+// Why a TlsServer or TlsClientConfig did not set up.
+TlsErr :: error {
+    Read;     // a PEM file could not be read
+    Seed;     // the DRBG did not seed from the platform entropy source
+    Cert;     // the certificate chain or trust anchor did not parse
+    Key;      // the private key did not parse
+    Config;   // mbedTLS refused the config defaults or the own-cert binding
+}
+
 // mbedTLS hands each its pBio ctx = the *TlsSession (set via set_bio); the
 // thunk reads its fd and issues one raw nonblocking read/write, translating
 // the result into the byte count OR an mbedTLS WANT_* sentinel. EINTR is
@@ -93,9 +102,10 @@ impl http.TlsConn for TlsSession {
 }
 
 // Holds the parsed cert chain, private key, RNG, and the SslConfig all
-// sessions share. MUST outlive the Server (Config.tls borrows `@this`).
-// `ok` gates accept: a failed setup never mints a session, so a misconfigured
-// server drops every connection rather than serving it in the clear.
+// sessions share. MUST outlive the Server (Config.tls borrows `@this`). The
+// config points into the value itself, so it is set up in place.
+// `ok` gates accept: a server that is not set up never mints a session, so it
+// drops every connection rather than serving it in the clear.
 
 // one SNI table entry — an extra identity served when the client's
 // serverName matches. Heap-created via the TlsServer's allocator (stable
@@ -138,77 +148,70 @@ TlsServer :: struct {
     ca:    mbedtls.X509Crt;   // client-cert trust anchor (mTLS)
     caSet: bool = false;      // a trust anchor was parsed into `ca`
 
-    // Build the shared server TLS state from a PEM cert chain + private key.
-    // Returns false (and leaves `ok = false`) on ANY mbedTLS setup error — RNG
-    // seed, cert/key parse, config defaults, own-cert bind — so a bad cert/key
-    // is a loud "server won't accept TLS", never a silent plaintext
-    // fallthrough. `a` must outlive the TlsServer (it owns no copy of cert/key
-    // bytes after this returns; the parsed forms live in the mbedTLS contexts).
-    setup :: (self: *TlsServer, certPem: []u8, keyPem: []u8, a: Allocator) -> bool {
-        self.a  = a;
-        self.ok = false;
+    // Build the shared server TLS state from a PEM cert chain + private key,
+    // writing every field. A failed step — RNG seed, cert/key parse, config
+    // defaults, own-cert bind — raises with everything setup built already
+    // freed, so a bad cert/key is a loud "server won't accept TLS", never a
+    // silent plaintext fallthrough. `a` must outlive the TlsServer (it owns no
+    // copy of cert/key bytes after this returns; the parsed forms live in the
+    // mbedTLS contexts).
+    setup :: (self: *TlsServer, certPem: []u8, keyPem: []u8, a: Allocator) -> !TlsErr {
+        self.* = .{ a = a };
         mbedtls.mbedtls_ssl_config_init(*self.conf);
         mbedtls.mbedtls_x509_crt_init(*self.cert);
         mbedtls.mbedtls_pk_init(*self.pkey);
         mbedtls.mbedtls_ctr_drbg_init(*self.drbg);
         mbedtls.mbedtls_entropy_init(*self.entropy);
         mbedtls.mbedtls_x509_crt_init(*self.ca);   // parsed by requireClientCert; freed by deinit either way
+        defer if !self.ok self.deinit();
 
         // Seed the DRBG from the platform entropy source.
         if mbedtls.mbedtls_ctr_drbg_seed(*self.drbg, mbedtls.mbedtls_entropy_func, *self.entropy, null, 0) != 0 {
-            return false;
+            raise .Seed;
         }
 
         // Parse the cert chain (PEM: buflen must include the trailing NUL).
         cbuf, cn := nulDup(a, certPem);
         rc := mbedtls.mbedtls_x509_crt_parse(*self.cert, cbuf, cn);
         a.deallocBytes(cbuf);
-        if rc != 0 {
-            // Partial-parse hygiene, same as requireClientCert: a retried
-            // setup must not append onto leftovers from the failed call.
-            mbedtls.mbedtls_x509_crt_free(*self.cert);
-            mbedtls.mbedtls_x509_crt_init(*self.cert);
-            return false;
-        }
+        if rc != 0 { raise .Cert; }
 
         // Parse the private key (the DRBG seeds any PEM-decryption RNG).
         kbuf, kn := nulDup(a, keyPem);
         rk := mbedtls.mbedtls_pk_parse_key(*self.pkey, kbuf, kn, null, 0, mbedtls.mbedtls_ctr_drbg_random, *self.drbg);
         a.deallocBytes(kbuf);
-        if rk != 0 { return false; }
+        if rk != 0 { raise .Key; }
 
         // Server-side stream config; wire the RNG + own cert/key.
         if mbedtls.mbedtls_ssl_config_defaults(*self.conf, mbedtls.MBEDTLS_SSL_IS_SERVER, mbedtls.MBEDTLS_SSL_TRANSPORT_STREAM, mbedtls.MBEDTLS_SSL_PRESET_DEFAULT) != 0 {
-            return false;
+            raise .Config;
         }
         mbedtls.mbedtls_ssl_conf_rng(*self.conf, mbedtls.mbedtls_ctr_drbg_random, *self.drbg);
         if mbedtls.mbedtls_ssl_conf_own_cert(*self.conf, *self.cert, *self.pkey) != 0 {
-            return false;
+            raise .Config;
         }
 
         self.ok = true;
-        return true;
     }
 
     // Convenience: load the PEM cert chain + private key from FILE PATHS, then
     // `setup`. Reads each file (via `context.allocator`), hands the bytes to
     // `setup` (which copies them into the mbedTLS contexts), then frees the
-    // read buffers — so nothing is retained beyond the parsed forms. Returns
-    // false if EITHER file can't be read or `setup` fails (loud: leaves
-    // `ok = false`, so the server accepts no TLS). `a` is the allocator the
-    // parsed state + every minted session uses; it must outlive the TlsServer.
-    setupFiles :: (self: *TlsServer, certPath: string, keyPath: string, a: Allocator) -> bool {
-        ok := false;
+    // read buffers — so nothing is retained beyond the parsed forms. Raises
+    // Read if EITHER file can't be read, else whatever `setup` raises. `a` is
+    // the allocator the parsed state + every minted session uses; it must
+    // outlive the TlsServer.
+    setupFiles :: (self: *TlsServer, certPath: string, keyPath: string, a: Allocator) -> !TlsErr {
         if cert := fs.readFile(certPath) {
+            defer context.allocator.deallocBytes(cert.ptr);
             if key := fs.readFile(keyPath) {
+                defer context.allocator.deallocBytes(key.ptr);
                 cb : []u8 = .{ ptr = cert.ptr, len = cert.len };
                 kb : []u8 = .{ ptr = key.ptr,  len = key.len };
-                ok = self.setup(cb, kb, a);
-                context.allocator.deallocBytes(key.ptr);
+                return self.setup(cb, kb, a);
             }
-            context.allocator.deallocBytes(cert.ptr);
         }
-        return ok;
+        raise .Read;
     }
 
     // (Minimum TLS version: the config default floors at TLS 1.2 and prefers
@@ -470,8 +473,9 @@ impl http.TlsAcceptor for TlsServer {
 }
 
 // The shared client TLS state: trust anchor + RNG + SslConfig. MUST outlive
-// every connection it minted (ClientOpts.tls borrows `@this`). Two
-// setups, both loud:
+// every connection it minted (ClientOpts.tls borrows `@this`). The config
+// points into the value itself, so it is set up in place. Two setups, both
+// loud:
 //   setup(caPem)  — REQUIRED verification against the explicit trust
 //                    anchor + the connect-time hostname (a self-signed
 //                    server cert can BE the anchor — mbedTLS trusts an
@@ -486,57 +490,53 @@ TlsClientConfig :: struct {
     a:       Allocator;
     ok:      bool = false;
 
-    // Shared init tail: config defaults (CLIENT) + RNG. Returns false on
-    // any mbedTLS error, leaving ok = false (connect mints nothing).
-    setupBase :: (self: *TlsClientConfig, a: Allocator) -> bool {
-        self.a  = a;
-        self.ok = false;
+    // Shared setup head, writing every field: config defaults (CLIENT) +
+    // RNG, leaving ok = false (connect mints nothing until setup or
+    // insecure finishes). A failure raises with everything it built freed.
+    setupBase :: (self: *TlsClientConfig, a: Allocator) -> !TlsErr {
+        self.* = .{ a = a };
         mbedtls.mbedtls_ssl_config_init(*self.conf);
         mbedtls.mbedtls_x509_crt_init(*self.ca);
         mbedtls.mbedtls_ctr_drbg_init(*self.drbg);
         mbedtls.mbedtls_entropy_init(*self.entropy);
         if mbedtls.mbedtls_ctr_drbg_seed(*self.drbg, mbedtls.mbedtls_entropy_func, *self.entropy, null, 0) != 0 {
-            return false;
+            self.deinit();
+            raise .Seed;
         }
         if mbedtls.mbedtls_ssl_config_defaults(*self.conf, mbedtls.MBEDTLS_SSL_IS_CLIENT, mbedtls.MBEDTLS_SSL_TRANSPORT_STREAM, mbedtls.MBEDTLS_SSL_PRESET_DEFAULT) != 0 {
-            return false;
+            self.deinit();
+            raise .Config;
         }
         mbedtls.mbedtls_ssl_conf_rng(*self.conf, mbedtls.mbedtls_ctr_drbg_random, *self.drbg);
-        return true;
     }
 
-    setup :: (self: *TlsClientConfig, caPem: []u8, a: Allocator) -> bool {
-        if !self.setupBase(a) { return false; }
+    setup :: (self: *TlsClientConfig, caPem: []u8, a: Allocator) -> !TlsErr {
+        try self.setupBase(a);
         buf, n := nulDup(a, caPem);
         rc := mbedtls.mbedtls_x509_crt_parse(*self.ca, buf, n);
         a.deallocBytes(buf);
         if rc != 0 {
-            // partial-parse hygiene (same as the server's trust paths)
-            mbedtls.mbedtls_x509_crt_free(*self.ca);
-            mbedtls.mbedtls_x509_crt_init(*self.ca);
-            return false;
+            self.deinit();
+            raise .Cert;
         }
         mbedtls.mbedtls_ssl_conf_ca_chain(*self.conf, *self.ca, null);
         mbedtls.mbedtls_ssl_conf_authmode(*self.conf, mbedtls.MBEDTLS_SSL_VERIFY_REQUIRED);
         self.ok = true;
-        return true;
     }
 
-    setupFiles :: (self: *TlsClientConfig, caPath: string, a: Allocator) -> bool {
-        ok := false;
+    setupFiles :: (self: *TlsClientConfig, caPath: string, a: Allocator) -> !TlsErr {
         if data := fs.readFile(caPath) {
+            defer context.allocator.deallocBytes(data.ptr);
             b : []u8 = .{ ptr = data.ptr, len = data.len };
-            ok = self.setup(b, a);
-            context.allocator.deallocBytes(data.ptr);
+            return self.setup(b, a);
         }
-        return ok;
+        raise .Read;
     }
 
-    insecure :: (self: *TlsClientConfig, a: Allocator = context.allocator) -> bool {
-        if !self.setupBase(a) { return false; }
+    insecure :: (self: *TlsClientConfig, a: Allocator = context.allocator) -> !TlsErr {
+        try self.setupBase(a);
         mbedtls.mbedtls_ssl_conf_authmode(*self.conf, mbedtls.MBEDTLS_SSL_VERIFY_NONE);
         self.ok = true;
-        return true;
     }
 
     deinit :: (self: *TlsClientConfig) {
