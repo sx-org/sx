@@ -468,9 +468,9 @@ tls  :: @import "modules/std/http/tls_mbedtls.sx";
 
 main :: () -> i32 {
     server : tls.TlsServer = .{};
-    if !server.setupFiles("cert.pem", "key.pem", context.allocator) {
-        print("TLS setup failed\n"); return 1;
-    }
+    server.setupFiles("cert.pem", "key.pem", context.allocator) catch |err| {
+        print("TLS setup failed: {}\n", err); return 1;
+    };
     cfg : http.Config = .{ port = 443 };
     cfg.tls = xx @server;                       // null (the default) = plaintext
     srv, e := http.Server.init(cfg, handler, 0);
@@ -486,8 +486,11 @@ main :: () -> i32 {
   through a `CONN_TLS_HANDSHAKE` state before its first request; a per-session
   setup failure drops the connection — **it is never served in the clear**.
 - `setupFiles(cert, key, alloc)` loads a PEM cert chain + private key from disk;
-  `setup(certPem, keyPem, alloc)` takes the bytes directly. A bad cert/key
-  makes the server accept **no** TLS (loud `false`), never plaintext.
+  `setup(certPem, keyPem, alloc)` takes the bytes directly. Both set the
+  server up in place, since its config points into it. A bad cert/key raises
+  a `TlsErr` naming the step that failed (`Read`, `Seed`, `Cert`, `Key`,
+  `Config`) with nothing left to `deinit`, and the server accepts **no** TLS,
+  never plaintext.
 - The minimum version defaults to TLS 1.2 (preferring 1.3). The crypto is
   vendored + cross-compiled (no system mbedTLS); a `--self-contained` build
   links it statically into the binary — no per-target archive to ship.

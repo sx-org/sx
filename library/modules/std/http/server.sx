@@ -703,8 +703,8 @@ private BodyChan :: struct {
         last := self.refs == 0;
         self.mu.unlock();
         if last {
-            self.mu.destroy();
-            self.cv.destroy();
+            self.mu.deinit();
+            self.cv.deinit();
             a := self.alloc;
             if self.buf != null { a.deallocBytes(self.buf); }
             a.deallocBytes(self);
@@ -749,11 +749,11 @@ private Completion :: struct {
     switched: ?Switch = null;
 }
 
-// Heap-resident pool machinery: embeds a Mutex and is shared with
-// worker threads, so it must never move (the Server struct itself is
+// Heap-resident pool machinery: embeds the Pool and a Mutex and is shared
+// with worker threads, so it must never move (the Server struct itself is
 // returned by value from init and may be copied).
 private PoolState :: struct {
-    pool: *thread.Pool = null;
+    pool: thread.Pool = .{};
     mu: thread.Mutex = .{};
     done: [*]Completion = null;
     doneCap: i64 = 0;
@@ -1563,18 +1563,17 @@ Server :: struct {
 
         ps : *PoolState = null;
         if cfg.threadPoolCount > 0 {
-            ps = mem.create(oa, PoolState);
-            ps.* = PoolState{};
+            ps = mem.make(oa, PoolState{});
             // Failure below this point must release what init already
             // allocated (slots, dheap, ps, ps.done) — these late paths used
             // to close only the fd and leak the rest .
-            if !ps.mu.setup() {
+            ps.mu.setup() catch {
                 oa.deallocBytes(ps);
                 oa.deallocBytes(slots);
                 oa.deallocBytes(dh);
                 closeListener(lfd, cfg.unixPath);
                 raise .Loop;
-            }
+            };
             // Max completions pending between two drains: every conn has at
             // most ONE job in flight, and within one tick's serve storm the
             // loop can submit up to maxConn replacements while backlog +
@@ -1592,9 +1591,8 @@ Server :: struct {
             // freeze wakeFd == -1 and ps.loopCopy.wake() would silently
             // no-op. The unconditional addWake in init runs before here.
             ps.loopCopy = lp;
-            pool, pce := thread.Pool.create(cfg.threadPoolCount, cfg.threadPoolBacklog);
-            if pce {
-                ps.mu.destroy();
+            ps.pool.setup(cfg.threadPoolCount, cfg.threadPoolBacklog) catch {
+                ps.mu.deinit();
                 oa.deallocBytes(ps.done);
                 oa.deallocBytes(ps.ochans);
                 oa.deallocBytes(ps);
@@ -1602,8 +1600,7 @@ Server :: struct {
                 oa.deallocBytes(dh);
                 closeListener(lfd, cfg.unixPath);
                 raise .Loop;
-            }
-            ps.pool = pool;
+            };
         }
 
         return Server{
@@ -1615,11 +1612,8 @@ Server :: struct {
 
     // Tear down everything init (and runtime) allocated, in an order
     // that never touches freed memory:
-    //   1. shutdown the pool FIRST — joins every worker, so no worker can
+    //   1. deinit the pool FIRST — joins every worker, so no worker can
     //      still write into ps.done / ps.loopCopy after we free ps.
-    //      (Pool.shutdown frees the Pool struct + its tasks/threads from
-    //      the allocator it was created with — ownAlloc here — so we do
-    //      NOT free ps.pool ourselves.)
     //   2. close every connection still active (frees its outBuf, removes
     //      it from the loop, closes the fd).
     //   3. free every slot's readBuf — these survive connClose (reused
@@ -1632,7 +1626,7 @@ Server :: struct {
     close :: (self: *Server) {
         if self.ps != null {
             // a worker can be BLOCKED in a body-channel read; fault
-            // every live channel BEFORE joining, or shutdown would deadlock
+            // every live channel BEFORE joining, or the join would deadlock
             // on that worker. (connClose below releases the conn refs.)
             i0 : i64 = 0;
             while i0 < self.cfg.maxConn {
@@ -1655,7 +1649,7 @@ Server :: struct {
                 oi += 1;
             }
             self.ps.mu.unlock();
-            self.ps.pool.shutdown();
+            self.ps.pool.deinit();
         }
         i : i64 = 0;
         while i < self.cfg.maxConn {
@@ -1698,7 +1692,7 @@ Server :: struct {
         }
 
         if self.ps != null {
-            // Pool.shutdown() has joined every worker, so
+            // Pool.deinit() has joined every worker, so
             // ps.doneLen / ps.done are stable — no lock needed. Workers
             // that finished an in-flight handler queued their serialized
             // response bytes (out.buf, from serializeBytes) here and they
@@ -1721,7 +1715,7 @@ Server :: struct {
             }
             if self.ps.done != null { self.ownAlloc.deallocBytes(self.ps.done); }
             if self.ps.ochans != null { self.ownAlloc.deallocBytes(self.ps.ochans); }
-            self.ps.mu.destroy();
+            self.ps.mu.deinit();
             self.ownAlloc.deallocBytes(self.ps);
             self.ps = null;
         }
@@ -3265,19 +3259,18 @@ Server :: struct {
             isHead := asciiIeq(req.method, "head");
             req.deadlineMs = self.cfg.handlerTimeoutMs;
 
-            ch : *BodyChan = mem.create(self.ownAlloc, BodyChan);
-            ch.* = BodyChan{ alloc = self.ownAlloc };
-            if !ch.mu.setup() {
+            ch := mem.make(self.ownAlloc, BodyChan{ alloc = self.ownAlloc });
+            ch.mu.setup() catch {
                 self.ownAlloc.deallocBytes(ch);
                 self.respondErrorClose(slot, 500);
                 return false;
-            }
-            if !ch.cv.setup() {
-                ch.mu.destroy();
+            };
+            ch.cv.setup() catch {
+                ch.mu.deinit();
                 self.ownAlloc.deallocBytes(ch);
                 self.respondErrorClose(slot, 500);
                 return false;
-            }
+            };
             ch.buf = mem.alloc(self.ownAlloc, u8, BODY_CHAN_CAP).ptr;
             ch.cap = BODY_CHAN_CAP;
             // Copy AFTER init's unconditional addWake — wakeFd is live.

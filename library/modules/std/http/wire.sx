@@ -809,8 +809,8 @@ OutChan :: struct {
         last := self.refs == 0;
         self.mu.unlock();
         if last {
-            self.mu.destroy();
-            self.cv.destroy();
+            self.mu.deinit();
+            self.cv.deinit();
             a := self.alloc;
             if self.buf != null { a.deallocBytes(self.buf); }
             a.deallocBytes(self);
@@ -819,19 +819,18 @@ OutChan :: struct {
 }
 
 createOutChan :: (alloc: Allocator, lp: event.Loop) -> *OutChan {
-    result := mem.create(alloc, OutChan);
+    result := mem.make(alloc, OutChan{ alloc = alloc, lp = lp });
     if result == null { return null; }
-    result.* = OutChan{ alloc = alloc, lp = lp };
-    if !result.mu.setup() { alloc.deallocBytes(result); return null; }
-    if !result.cv.setup() {
-        result.mu.destroy();
+    result.mu.setup() catch { alloc.deallocBytes(result); return null; };
+    result.cv.setup() catch {
+        result.mu.deinit();
         alloc.deallocBytes(result);
         return null;
-    }
+    };
     bytes := mem.alloc(alloc, u8, OUT_CHAN_CAP);
     if bytes.ptr == null {
-        result.cv.destroy();
-        result.mu.destroy();
+        result.cv.deinit();
+        result.mu.deinit();
         alloc.deallocBytes(result);
         return null;
     }

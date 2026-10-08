@@ -211,9 +211,9 @@ run :: () -> i32 {
 
     // ── D. https gated on a dialer ──
     ts : tlsp.TlsServer = .{};
-    if !ts.setupFiles("examples/http/1705-http-client-transport/cert.pem",
-                       "examples/http/1705-http-client-transport/key.pem",
-                       context.allocator) { return teardown(30, *srvA, *ta, *srvB, *tb); }
+    ts.setupFiles("examples/http/1705-http-client-transport/cert.pem",
+                  "examples/http/1705-http-client-transport/key.pem",
+                  context.allocator) catch { return teardown(30, *srvA, *ta, *srvB, *tb); };
     cfgT : http.Config = .{ port = 0, timeoutRequestMs = 5000, maxConn = 8 };
     cfgT.tls = xx *ts;
     srvT, seT := http.Server.init(cfgT, handlerA, 0);
@@ -221,10 +221,10 @@ run :: () -> i32 {
     tt, tte := thread.Thread.spawn(srvEntry, *srvT);
     if tte { return teardown(32, *srvA, *ta, *srvB, *tb); }
     tcc : tlsp.TlsClientConfig = .{};
-    if !tcc.setupFiles("examples/http/1705-http-client-transport/cert.pem", context.allocator) {
+    tcc.setupFiles("examples/http/1705-http-client-transport/cert.pem", context.allocator) catch {
         srvT.stop(); tt.join(); srvT.close();
         return teardown(33, *srvA, *ta, *srvB, *tb);
-    }
+    };
     tlsUrlBuf : [64]u8 = ---;
     helloTls := urlAt(tlsUrlBuf[..], "https", srvT.cfg.port, "/hello");
     optsTls := opts;

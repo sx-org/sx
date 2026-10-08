@@ -182,9 +182,9 @@ run :: () -> i32 {
 
     // ── D. TLS: trust the fixture cert, verify its hostname ──
     ts : tlsp.TlsServer = .{};
-    if !ts.setupFiles("examples/http/1705-http-client-transport/cert.pem",
-                       "examples/http/1705-http-client-transport/key.pem",
-                       context.allocator) { srv.stop(); t.join(); return 30; }
+    ts.setupFiles("examples/http/1705-http-client-transport/cert.pem",
+                  "examples/http/1705-http-client-transport/key.pem",
+                  context.allocator) catch { srv.stop(); t.join(); return 30; };
     tcfg : http.Config = .{ port = 0, timeoutRequestMs = 5000, maxConn = 8 };
     tcfg.tls = xx *ts;
     tsrv, tse := http.Server.init(tcfg, handler, 0);
@@ -193,9 +193,9 @@ run :: () -> i32 {
     if tte { srv.stop(); t.join(); return 32; }
 
     tcc : tlsp.TlsClientConfig = .{};
-    if !tcc.setupFiles("examples/http/1705-http-client-transport/cert.pem", context.allocator) {
+    tcc.setupFiles("examples/http/1705-http-client-transport/cert.pem", context.allocator) catch {
         tsrv.stop(); tt.join(); srv.stop(); t.join(); return 33;
-    }
+    };
     optsTls : http.ClientOpts = .{ connectTimeoutMs = 2000, ioTimeoutMs = 5000,
                                     tls = xx *tcc, tlsHost = "client-transport.test" };
     connT, et := http.Client.open("127.0.0.1", tsrv.cfg.port, optsTls);
@@ -211,16 +211,16 @@ run :: () -> i32 {
     rt.deinit();
     // wrong trust anchor → open must FAIL (verification), never serve.
     wcc : tlsp.TlsClientConfig = .{};
-    if !wcc.setupFiles("examples/http/1703-http-tls-alpn-sni-mtls/alt-cert.pem", context.allocator) {
+    wcc.setupFiles("examples/http/1703-http-tls-alpn-sni-mtls/alt-cert.pem", context.allocator) catch {
         tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 36;
-    }
+    };
     optsBad : http.ClientOpts = .{ connectTimeoutMs = 2000, ioTimeoutMs = 5000,
                                     tls = xx *wcc, tlsHost = "client-transport.test" };
     connW, ew := http.Client.open("127.0.0.1", tsrv.cfg.port, optsBad);
     if !ew { http.Client.closeConn(*connW); wcc.deinit(); tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 37; }
     // insecure() accepts whatever cert is presented.
     icc : tlsp.TlsClientConfig = .{};
-    icc.insecure();
+    icc.insecure() catch { wcc.deinit(); tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 38; };
     optsIns : http.ClientOpts = .{ connectTimeoutMs = 2000, ioTimeoutMs = 5000,
                                     tls = xx *icc, tlsHost = "whatever.test" };
     connI, ei := http.Client.open("127.0.0.1", tsrv.cfg.port, optsIns);

@@ -1,0 +1,4 @@
+a missing cert file: TlsErr.Read
+a key where the cert goes: TlsErr.Cert
+a cert where the key goes: TlsErr.Key
+the same server then sets up

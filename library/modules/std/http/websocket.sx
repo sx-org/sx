@@ -662,15 +662,15 @@ websocket :: scope {
     // Set up the connection's locks, wait loop and thread; false leaves none
     // of them standing.
     private startConn :: (c: *Conn) -> bool {
-        if !c.io.setup() { return false; }
-        if !c.wmu.setup() {
-            c.io.destroy();
+        c.io.setup() catch { return false; };
+        c.wmu.setup() catch {
+            c.io.deinit();
             return false;
-        }
+        };
         lp, le := event.Loop.init();
         if le {
-            c.wmu.destroy();
-            c.io.destroy();
+            c.wmu.deinit();
+            c.io.deinit();
             return false;
         }
         c.lp = lp;
@@ -684,8 +684,8 @@ websocket :: scope {
         }
         if !ok {
             c.lp.close();
-            c.wmu.destroy();
-            c.io.destroy();
+            c.wmu.deinit();
+            c.io.deinit();
         }
         return ok;
     }
@@ -713,8 +713,8 @@ websocket :: scope {
         if closed != null { closed(c, code, c.opts.ctx); }
         c.lp.close();
         c.r.free(c.a);
-        c.wmu.destroy();
-        c.io.destroy();
+        c.wmu.deinit();
+        c.io.deinit();
         a := c.a;
         mem.free(a, c);
     }
