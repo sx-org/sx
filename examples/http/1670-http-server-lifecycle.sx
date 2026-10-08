@@ -23,7 +23,6 @@
 // thread and worker threads bump it concurrently.
 @import "modules/std.sx";
 @import "modules/std/http.sx";
-cstd :: @import "modules/std/c.sx";
 
 handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     if req.path == "/echo" { resp.body = req.body; return; }
@@ -33,7 +32,7 @@ handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
 // Slow handler for the in-flight-close scenario: sleeps so the request
 // lingers in CONN_HANDLING on a worker thread while the loop ticks.
 slowHandler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
-    cstd.c.usleep(80000);
+    c.usleep(80000);
     resp.body = "ok";
 }
 
@@ -119,12 +118,12 @@ serveOnce :: (poolCount: i64, scratch: [*]u8, cap: i64) -> bool {
     srv, se := http.Server.init(cfg, handler, 0);
     if se { print("init failed (pool={})\n", poolCount); return false; }
 
-    c := dialPort(srv.cfg.port);
-    if c < 0 { print("dial failed (pool={})\n", poolCount); srv.close(); return false; }
+    fd := dialPort(srv.cfg.port);
+    if fd < 0 { print("dial failed (pool={})\n", poolCount); srv.close(); return false; }
 
     // small GET
-    r1 := roundtrip(*srv, c, "GET /hello HTTP/1.1\r\nHost: t\r\n\r\n", scratch, cap);
-    if !contains(r1, "HTTP/1.1 200 OK") { print("small GET bad (pool={})\n", poolCount); socket.close(c); srv.close(); return false; }
+    r1 := roundtrip(*srv, fd, "GET /hello HTTP/1.1\r\nHost: t\r\n\r\n", scratch, cap);
+    if !contains(r1, "HTTP/1.1 200 OK") { print("small GET bad (pool={})\n", poolCount); socket.close(fd); srv.close(); return false; }
 
     // large POST: body past READ_BUF_INITIAL forces growReadBuf on the
     // server side. Build the request into ONE explicit buffer (no concat
@@ -134,15 +133,15 @@ serveOnce :: (poolCount: i64, scratch: [*]u8, cap: i64) -> bool {
     hdr := "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 40000\r\n\r\n";
     reqLen : i64 = hdr.len + bigN;
     rbuf : [*]u8 = context.allocator.allocBytes(reqLen);
-    cstd.c.memcpy(rbuf, hdr.ptr, hdr.len);
+    c.memcpy(rbuf, hdr.ptr, hdr.len);
     f := 0;
     while f < bigN { rbuf[hdr.len + f] = 97.(u8) + (f % 26).(u8); f += 1; }
-    r2 := roundtrip(*srv, c, string{ ptr = rbuf, len = reqLen }, scratch, cap);
+    r2 := roundtrip(*srv, fd, string{ ptr = rbuf, len = reqLen }, scratch, cap);
     ok := contains(r2, "HTTP/1.1 200 OK") and contains(r2, "Content-Length: 40000");
     context.allocator.deallocBytes(rbuf);
-    if !ok { print("large POST bad (pool={})\n", poolCount); socket.close(c); srv.close(); return false; }
+    if !ok { print("large POST bad (pool={})\n", poolCount); socket.close(fd); srv.close(); return false; }
 
-    socket.close(c);
+    socket.close(fd);
     srv.close();
     return true;
 }

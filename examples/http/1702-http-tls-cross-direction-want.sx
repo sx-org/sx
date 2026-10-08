@@ -35,7 +35,6 @@
 //   + net-zero GPA gate across the whole run.
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
-cstd   :: @import "modules/std/c.sx";
 @import "modules/std/http.sx";
 
 // ── fake TLS provider ────────────────────────────────────────────────
@@ -93,7 +92,7 @@ impl http.TlsConn for FakeConn {
         if self.pendOff < self.pendLen {
             n := self.pendLen - self.pendOff;
             if n > cap.(i64) { n = cap.(i64); }
-            cstd.c.memcpy(buf, *self.pend[self.pendOff], n);
+            c.memcpy(buf, *self.pend[self.pendOff], n);
             self.pendOff += n;
             if self.pendOff == self.pendLen { self.pendOff = 0; self.pendLen = 0; }
             return n, http.TlsStep.Done;
@@ -214,7 +213,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     if req.path == "/b"  { resp.body = "ok-b"; return; }
     if req.path == "/h"  {
         // A SLOW pooled handler keeps the cross-armed-watch window wide.
-        cstd.c.usleep(80000);
+        c.usleep(80000);
         resp.body = "ok-h";
         return;
     }
