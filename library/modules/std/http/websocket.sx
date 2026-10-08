@@ -6,7 +6,10 @@
 // valid upgrade leaves the HTTP server once its 101 is written: the
 // connection is served by a thread of its own, holds no pool worker, and no
 // HTTP deadline applies to it. Its Conn and buffers come from the Server's
-// allocator, which must be thread-safe (as pool mode requires); the
+// allocator, which must be thread-safe (as pool mode requires) and outlives
+// every upgraded connection: they return to it on the connection's thread
+// after onClose returns, which nothing reports, so once a connection has
+// upgraded the allocator stays live for the rest of the process. The
 // callbacks run under an allocator of that thread's own. A wss connection's
 // session borrows Config.tls, so the acceptor outlives every upgraded
 // connection until its onClose returns, past Server.close.

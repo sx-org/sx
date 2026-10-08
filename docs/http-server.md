@@ -266,7 +266,10 @@ hWs :: (rc: *http.RouteCtx) {
 - Every `pingIntervalMs` the server pings; a ping still unanswered at the
   next interval ends the connection as 1006, through `onClose`.
 - The Conn and its buffers come from the Server's allocator, which must be
-  thread-safe; the callbacks allocate through a GPA of their own thread.
+  thread-safe and outlives every upgraded connection: they return to it on
+  the connection's thread after `onClose` returns, which nothing reports, so
+  once a connection has upgraded the allocator stays live for the rest of
+  the process. The callbacks allocate through a GPA of their own thread.
 
 The client is blocking and single-threaded:
 
