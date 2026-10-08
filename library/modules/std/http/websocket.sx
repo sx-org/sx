@@ -298,6 +298,7 @@ websocket :: scope {
 
     private READ_PIECE :: 16384;
     private MAX_MESSAGE :: 16777216;
+    private I64_MAX :: 0x7FFFFFFFFFFFFFFF;
     // The longest 101 response head the client reads.
     private HEAD_LIMIT :: 16384;
     // A close this side sent that the peer leaves unanswered this long ends
@@ -436,7 +437,7 @@ websocket :: scope {
                         if h.op != OP_TEXT and h.op != OP_CONT { return .fault{CLOSE_PROTOCOL}; }
                         if (h.op == OP_CONT) != self.fragmenting { return .fault{CLOSE_PROTOCOL}; }
                         held : i64 = if h.op == OP_CONT then self.msg.len else 0;
-                        if held + h.len > max { return .fault{CLOSE_TOO_BIG}; }
+                        if h.len > max - held or h.len > I64_MAX - h.size { return .fault{CLOSE_TOO_BIG}; }
                     }
                     need += h.len;
                 }
