@@ -24,7 +24,8 @@ TlsConn :: interface {
 
 // Server-side TLS provider: mints a per-connection session for each accepted
 // fd. The concrete value holds the shared cert/key/config/DRBG and MUST
-// outlive the Server (Config.tls borrows it).
+// outlive the Server (Config.tls borrows it) and every session it minted: one
+// an Upgrade took lives until its taker closes it, past Server.close.
 TlsAcceptor :: interface {
     // Create a TLS session bound to `fd`; null = per-connection setup failure
     // → the connection is dropped, never served in the clear.

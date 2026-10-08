@@ -7,7 +7,9 @@
 // connection is served by a thread of its own, holds no pool worker, and no
 // HTTP deadline applies to it. Its Conn and buffers come from the Server's
 // allocator, which must be thread-safe (as pool mode requires); the
-// callbacks run under an allocator of that thread's own.
+// callbacks run under an allocator of that thread's own. A wss connection's
+// session borrows Config.tls, so the acceptor outlives every upgraded
+// connection until its onClose returns, past Server.close.
 //
 // Client: `connect(url, headers, opts)` dials ws:// or wss:// through
 // http.ClientOpts. The Client's storage comes from the `context.allocator`

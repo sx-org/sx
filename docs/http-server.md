@@ -249,7 +249,9 @@ hWs :: (rc: *http.RouteCtx) {
 - Once the 101 is written the connection leaves the server and runs on a
   thread of its own: it holds no pool worker, and no handler, request or
   keep-alive deadline applies to it. `Server.stop` and `close` leave it
-  alone. The mechanism is `Response.upgrade`, open to any protocol switch:
+  alone, and a wss connection's TLS session keeps borrowing `Config.tls`:
+  the acceptor outlives every upgraded connection until its `onClose`
+  returns. The mechanism is `Response.upgrade`, open to any protocol switch:
   the server calls `Upgrade.take` with the socket, its TLS session and the
   bytes read past the request.
 - The callbacks run on that thread, one at a time, each receiving `ctx` as

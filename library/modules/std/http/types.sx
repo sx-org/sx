@@ -147,7 +147,8 @@ Response :: struct {
 
 // A connection leaving the server after its 101: the socket (nonblocking),
 // its TLS session, and the bytes read past the upgrade request — a view valid
-// only during the `take` call.
+// only during the `take` call. The session borrows Config.tls until the taker
+// closes it, past Server.close.
 Link :: struct {
     fd: i32;
     tls: ?TlsConn = null;
