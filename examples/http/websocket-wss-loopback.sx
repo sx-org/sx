@@ -1,0 +1,83 @@
+// wss:// end to end: a TLS http.Server upgrades a route, and a client dialing
+// through a TlsClientConfig that trusts the server's certificate exchanges
+// text, a ping, and a server-initiated close that its recv returns. The
+// client returns everything it allocated.
+@import "modules/std.sx";
+@import "modules/std/http.sx";
+@import "modules/std/http/websocket.sx";
+@import "modules/std/atomic.sx";
+tlsp :: @import "modules/std/http/tls_mbedtls.sx";
+
+CERT :: "examples/http/1705-http-client-transport/cert.pem";
+KEY  :: "examples/http/1705-http-client-transport/key.pem";
+
+serverCode : i64 = 0;
+
+onText :: (c: *websocket.Conn, msg: string, ctx: *void) {
+    if msg == "bye" { c.close(4000) catch {}; return; }
+    c.sendText(msg) catch {};
+}
+onClose :: (c: *websocket.Conn, code: i64, ctx: *void) { @atomicStore(i64, *serverCode, code, .release); }
+
+hWs :: (rc: *http.RouteCtx) { websocket.accept(rc, .{ onText = onText, onClose = onClose }); }
+
+srvEntry :: (arg: *void) -> *void abi(.c) {
+    srv : *http.Server = arg;
+    gpa := GPA.init();
+    push .{ allocator = gpa } { srv.run(); }
+    return null;
+}
+
+exercise :: (port: i64, opts: http.ClientOpts) -> bool {
+    url := format("wss://127.0.0.1:{}/ws", port);
+    defer mem.free(context.allocator, url);
+    ws, ce := websocket.connect(url, "", opts);
+    if ce { print("connect: {}\n", ce); return false; }
+    ws.sendText("over tls") catch { return false; };
+    m, me := ws.recv(3000);
+    if me { print("recv: {}\n", me); return false; }
+    print("echo: {}\n", m.text);
+    m.deinit();
+    ws.ping("p", 3000) catch { print("no pong\n"); return false; };
+    ws.sendText("bye") catch { return false; };
+    cl, cle := ws.recv(3000);
+    if cle { print("recv: {}\n", cle); return false; }
+    print("the server's close reached recv: {} {}\n", cl.kind, cl.code);
+    cl.deinit();
+    ws.close(1000) catch { print("close failed\n"); return false; };
+    true
+}
+
+main :: () -> i32 {
+    ts : tlsp.TlsServer = .{};
+    if !ts.setupFiles(CERT, KEY, context.allocator) { print("server TLS setup failed\n"); return 1; }
+    tcc : tlsp.TlsClientConfig = .{};
+    if !tcc.setupFiles(CERT, context.allocator) { print("client TLS setup failed\n"); return 1; }
+    router := http.Router.init(0);
+    router.get("/ws", hWs);
+    cfg : http.Config = .{ port = 0, threadPoolCount = 1, streamRequestBody = true };
+    cfg.tls = xx *ts;
+    srv, se := http.Server.init(cfg, http.dispatch, @reinterpret(usize, *router));
+    if se { return 1; }
+    t, te := thread.Thread.spawn(srvEntry, *srv);
+    if te { return 1; }
+    opts : http.ClientOpts = .{ connectTimeoutMs = 2000, ioTimeoutMs = 3000,
+                                tls = xx *tcc, tlsHost = "client-transport.test" };
+    tracker := mem.TrackingAllocator.init(context.allocator);
+    ok := false;
+    push .{ allocator = tracker } { ok = exercise(srv.cfg.port, opts); }
+    // onClose runs once the server's TLS session is closed.
+    waited := 0;
+    while @atomicLoad(i64, *serverCode, .acquire) == 0 and waited < 300 { c.usleep(10000); waited += 1; }
+    print("the server closed as {}\n", serverCode);
+    srv.stop();
+    t.join();
+    srv.close();
+    router.deinit();
+    tcc.deinit();
+    ts.deinit();
+    if !ok { return 1; }
+    if tracker.leakCount() != 0 { print("outstanding: {}\n", tracker.leakCount()); return 1; }
+    print("wss loopback ok\n");
+    0
+}

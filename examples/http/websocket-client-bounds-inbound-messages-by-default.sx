@@ -1,0 +1,70 @@
+// A client connected with default options bounds each inbound message: a
+// server announcing a 2^62-byte text frame makes recv raise TooLarge within
+// its timeout, and the client fails the connection with 1009.
+@import "modules/std.sx";
+@import "modules/std/http.sx";
+@import "modules/std/http/websocket.sx";
+
+peer : i64 = 0;
+
+// The server side of the upgrade: announce the frame and keep the socket.
+announce :: (state: *void, link: http.Link) {
+    head : [10]u8 = .[0x81, 0x7F, 0x40, 0, 0, 0, 0, 0, 0, 0];
+    socket.write(link.fd, *head[0], 10);
+    @atomicStore(i64, *peer, link.fd.(i64), .release);
+}
+
+hWs :: (rc: *http.RouteCtx) {
+    websocket.accept(rc, .{});
+    rc.resp.upgrade = .{ take = announce };
+}
+
+srvEntry :: (arg: *void) -> *void abi(.c) {
+    srv : *http.Server = arg;
+    gpa := GPA.init();
+    push .{ allocator = gpa } { srv.run(); }
+    return null;
+}
+
+// `n` bytes from the nonblocking `fd`, waiting at most 3 s for each read.
+readAll :: (fd: i32, dst: [*]u8, n: i64) -> bool {
+    got := 0;
+    while got < n {
+        pfd : socket.PollFd = .{ fd = fd, events = socket.POLLIN };
+        if socket.poll(*pfd, 1, 3000) <= 0 { return false; }
+        k := socket.read(fd, *dst[got], n - got);
+        if k <= 0 { return false; }
+        got += k;
+    }
+    true
+}
+
+main :: () -> i32 {
+    router := http.Router.init(0);
+    router.get("/ws", hWs);
+    cfg : http.Config = .{ port = 0, threadPoolCount = 1, streamRequestBody = true };
+    srv, se := http.Server.init(cfg, http.dispatch, @reinterpret(usize, *router));
+    if se { return 1; }
+    t, te := thread.Thread.spawn(srvEntry, *srv);
+    if te { return 1; }
+
+    url := format("ws://127.0.0.1:{}/ws", srv.cfg.port);
+    ws, ce := websocket.connect(url, "", .{ connectTimeoutMs = 2000, ioTimeoutMs = 3000 });
+    if ce { print("connect: {}\n", ce); return 1; }
+    _, re := ws.recv(2000);
+    print("recv: {}\n", re);
+    ws.close(1000) catch {};
+
+    fd := @atomicLoad(i64, *peer, .acquire).(i32);
+    frame : [8]u8 = ---;
+    if !readAll(fd, *frame[0], 8) or frame[0] != 0x88 { print("no close frame\n"); return 1; }
+    code := ((frame[6] ^ frame[2]).(i64) << 8) | (frame[7] ^ frame[3]).(i64);
+    print("the client's close frame: {}\n", code);
+    socket.close(fd);
+
+    srv.stop();
+    t.join();
+    srv.close();
+    router.deinit();
+    0
+}

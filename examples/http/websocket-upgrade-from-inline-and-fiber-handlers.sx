@@ -1,0 +1,61 @@
+// An upgrade answered by an inline handler, and by a fiber handler, hands its
+// connection over as a pooled one does: each echoes over the WebSocket and
+// reports the client's close code.
+@import "modules/std.sx";
+@import "modules/std/http.sx";
+@import "modules/std/http/websocket.sx";
+@import "modules/std/atomic.sx";
+fs :: @import "modules/std/http/fiber_sched.sx";
+
+closedCode : i64 = 0;
+
+onText :: (c: *websocket.Conn, msg: string, ctx: *void) { c.sendText(msg) catch {}; }
+onClose :: (c: *websocket.Conn, code: i64, ctx: *void) { @atomicStore(i64, *closedCode, code, .release); }
+
+hWs :: (rc: *http.RouteCtx) { websocket.accept(rc, .{ onText = onText, onClose = onClose }); }
+
+srvEntry :: (arg: *void) -> *void abi(.c) {
+    srv : *http.Server = arg;
+    gpa := GPA.init();
+    push .{ allocator = gpa } { srv.run(); }
+    return null;
+}
+
+// Upgrade through a server built from `cfg`, echo once, close with 1000.
+roundTrip :: (cfg: http.Config) {
+    @atomicStore(i64, *closedCode, 0, .release);
+    router := http.Router.init(0);
+    router.get("/ws", hWs);
+    srv, se := http.Server.init(cfg, http.dispatch, @reinterpret(usize, *router));
+    if se { print("init failed\n"); return; }
+    t, te := thread.Thread.spawn(srvEntry, *srv);
+    if te { print("spawn failed\n"); return; }
+    url := format("ws://127.0.0.1:{}/ws", srv.cfg.port);
+    ws, ce := websocket.connect(url, "", .{ connectTimeoutMs = 2000, ioTimeoutMs = 3000 });
+    if ce { print("connect: {}\n", ce); }
+    else {
+        ws.sendText("over the switch") catch {};
+        m, me := ws.recv(3000);
+        if me { print("recv: {}\n", me); }
+        else {
+            print("echo: {}\n", m.text);
+            m.deinit();
+        }
+        ws.close(1000) catch {};
+        waited := 0;
+        while @atomicLoad(i64, *closedCode, .acquire) == 0 and waited < 300 { c.usleep(10000); waited += 1; }
+        print("closed as {}\n", @atomicLoad(i64, *closedCode, .acquire));
+    }
+    srv.stop();
+    t.join();
+    srv.close();
+    router.deinit();
+}
+
+main :: () -> i32 {
+    roundTrip(.{ port = 0 });
+    runner := fs.SchedRunner.init();
+    roundTrip(.{ port = 0, fibers = runner });
+    runner.deinit();
+    0
+}

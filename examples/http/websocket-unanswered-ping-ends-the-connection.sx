@@ -1,0 +1,80 @@
+// The server pings each connection every interval. A peer that never answers
+// is closed as 1006 through onClose, while a client reading meanwhile answers
+// every ping on its own and stays connected; its recv times out empty.
+@import "modules/std.sx";
+@import "modules/std/http.sx";
+@import "modules/std/http/websocket.sx";
+@import "modules/std/atomic.sx";
+
+LOOPBACK :u32: 0x0100007F;
+INTERVAL :: 200;
+
+silentCode : i64 = 0;
+clientCode : i64 = 0;
+
+onText :: (c: *websocket.Conn, msg: string, ctx: *void) { c.sendText(msg) catch {}; }
+onClose :: (c: *websocket.Conn, code: i64, ctx: *void) {
+    out : *i64 = ctx;
+    @atomicStore(i64, out, code, .release);
+}
+
+hSilent :: (rc: *http.RouteCtx) {
+    websocket.accept(rc, .{ onClose = onClose, ctx = *silentCode, pingIntervalMs = INTERVAL });
+}
+hTalk :: (rc: *http.RouteCtx) {
+    websocket.accept(rc, .{ onText = onText, onClose = onClose, ctx = *clientCode, pingIntervalMs = INTERVAL });
+}
+
+srvEntry :: (arg: *void) -> *void abi(.c) {
+    srv : *http.Server = arg;
+    gpa := GPA.init();
+    push .{ allocator = gpa } { srv.run(); }
+    return null;
+}
+
+// An upgraded connection that never reads or writes again, or null.
+silentPeer :: (port: i64) -> ?i32 {
+    fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+    a := socket.sockaddrIn(port, LOOPBACK);
+    if socket.connect(fd, *a, 16) != 0 { return null; }
+    req := "GET /silent HTTP/1.1\r\nHost: t\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n";
+    socket.write(fd, req.ptr, req.len);
+    return fd;
+}
+
+main :: () -> i32 {
+    router := http.Router.init(0);
+    router.get("/silent", hSilent);
+    router.get("/talk", hTalk);
+    cfg : http.Config = .{ port = 0, threadPoolCount = 1, streamRequestBody = true };
+    srv, se := http.Server.init(cfg, http.dispatch, @reinterpret(usize, *router));
+    if se { return 1; }
+    t, te := thread.Thread.spawn(srvEntry, *srv);
+    if te { return 1; }
+
+    silent := silentPeer(srv.cfg.port) ?? { print("no silent peer\n"); return 1; };
+    url := format("ws://127.0.0.1:{}/talk", srv.cfg.port);
+    ws, ce := websocket.connect(url, "", .{ connectTimeoutMs = 2000, ioTimeoutMs = 3000 });
+    if ce { print("connect: {}\n", ce); return 1; }
+
+    _, re := ws.recv(5 * INTERVAL);
+    print("recv with nothing sent: {}\n", re);
+    print("the silent peer closed as {}\n", @atomicLoad(i64, *silentCode, .acquire));
+
+    ws.sendText("still here") catch { print("send failed\n"); return 1; };
+    m, me := ws.recv(3000);
+    if me { print("recv: {}\n", me); return 1; }
+    print("the answering client still echoes: {}\n", m.text);
+    m.deinit();
+    ws.close(1000) catch {};
+    waited := 0;
+    while @atomicLoad(i64, *clientCode, .acquire) == 0 and waited < 300 { c.usleep(10000); waited += 1; }
+    print("the answering client closed as {}\n", clientCode);
+
+    socket.close(silent);
+    srv.stop();
+    t.join();
+    srv.close();
+    router.deinit();
+    0
+}

@@ -1,0 +1,7 @@
+first: op 10 p
+then: op 1 hello
+16-bit length: op 1 300 bytes back
+close: 1000
+unmasked: 1002
+not utf-8: 1007
+past maxMessage: 1009

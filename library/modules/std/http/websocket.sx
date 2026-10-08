@@ -1,0 +1,1249 @@
+// std.http WebSocket (RFC 6455): the server side of an upgrade inside a
+// Router handler, and a blocking client over socket/TlsConn. Text messages
+// only — no extensions, no binary frames.
+//
+// Server: `accept(rc, opts)` answers the handshake from a route handler. A
+// valid upgrade leaves the HTTP server once its 101 is written: the
+// connection is served by a thread of its own, holds no pool worker, and no
+// HTTP deadline applies to it. Its Conn and buffers come from the Server's
+// allocator, which must be thread-safe (as pool mode requires) and outlives
+// every upgraded connection: they return to it on the connection's thread
+// after onClose returns, which nothing reports, so once a connection has
+// upgraded the allocator stays live for the rest of the process. The
+// callbacks run under an allocator of that thread's own. A wss connection's
+// session borrows Config.tls, so the acceptor outlives every upgraded
+// connection until its onClose returns, past Server.close.
+//
+// Client: `connect(url, headers, opts)` dials ws:// or wss:// through
+// http.ClientOpts. The Client's storage comes from the `context.allocator`
+// current at connect, and `close` returns it. A Client is used by one thread
+// at a time.
+websocket :: scope {
+    @import "modules/std/core.sx";
+    @import "modules/std/fmt.sx";
+    @import "modules/std/list.sx";
+    @import "modules/std/mem.sx";
+    @import "modules/std/posix.sx";
+    @import "modules/std/socket.sx";
+    @import "modules/std/thread.sx";
+    @import "modules/std/event.sx";
+    @import "modules/std/http.sx";
+    @import "modules/std/http/wire.sx";
+    private clib :: @import "modules/std/c.sx";
+
+    private libc :: clib.c.libc;
+    private getentropy :: (buf: *void, len: usize) -> i32 extern libc;
+
+    Error :: error {
+        Url;        // connect: not ws:// or wss://host[:port][/path]
+        Header;     // connect: a header line is malformed or names a field the handshake writes
+        Connect;    // connect: resolve, socket or connect failed, or the connect timed out
+        Tls;        // connect: the TLS dial failed, or a wss URL had no TlsDialer
+        Refused;    // connect: the server answered the upgrade with a status other than 101
+        Handshake;  // connect: the 101 lacks RFC 6455's fields or its Sec-WebSocket-Accept is wrong
+        Timeout;    // the time given ran out
+        Closed;     // the connection is closing or gone
+        Protocol;   // the peer broke RFC 6455 framing or sent text that is not UTF-8
+        TooLarge;   // an inbound message passed its bound, or a ping payload passed 125 bytes
+        Utf8;       // sendText: the text is not UTF-8
+    }
+
+    // How `accept` serves an upgraded connection. The callbacks run on the
+    // connection's thread, one at a time, each receiving `ctx`.
+    Opts :: struct {
+        onOpen: (c: *Conn, ctx: *void) -> void = null;
+        // `msg` is one whole message, valid until the callback returns.
+        onText: (c: *Conn, msg: string, ctx: *void) -> void = null;
+        // `code` is the peer's close code (1005 when its close frame carried
+        // none), the code this side failed the connection with, or 1006 when
+        // the connection ended without a close frame.
+        onClose: (c: *Conn, code: i64, ctx: *void) -> void = null;
+        ctx: *void = null;
+        // A longer inbound message fails the connection with 1009.
+        maxMessage: i64 = MAX_MESSAGE;
+        // A ping goes out every interval; one still unanswered at the next
+        // interval ends the connection as 1006.
+        pingIntervalMs: i64 = 30000;
+        // A frame write that makes no progress for this long ends the
+        // connection.
+        writeTimeoutMs: i64 = 10000;
+    }
+
+    // One upgraded connection, valid from onOpen until onClose returns.
+    // sendText and close may be called from any thread in that span; a caller
+    // that shares a Conn across threads drops it in onClose under the lock its
+    // callers hold, so no call outlasts onClose.
+    Conn :: struct {
+        private t: Transport;
+        private a: Allocator;
+        private opts: Opts;
+        private r: Reader = .{};
+        // One transport call at a time: a TLS session is single-threaded.
+        private io: thread.Mutex = .{};
+        // One frame at a time; guards `ended` and `closeAt`.
+        private wmu: thread.Mutex = .{};
+        // The connection thread waits here for the socket or a wake.
+        private lp: event.Loop = .{};
+        private ended: bool = false;
+        // When this side has sent its close frame: the time the peer's close
+        // must arrive by.
+        private closeAt: ?i64 = null;
+
+        // Send one text message.
+        sendText :: (self: *Conn, text: string) -> !Error {
+            if !utf8Valid(text) { raise .Utf8; }
+            self.wmu.lock();
+            defer self.wmu.unlock();
+            if self.ended or self.closeAt != null { raise .Closed; }
+            if !connFrame(self, OP_TEXT, text) {
+                self.ended = true;
+                self.lp.wake();
+                raise .Closed;
+            }
+            return;
+        }
+
+        // Start the closing handshake with `code`. The peer's answer, or the
+        // connection ending without one, reaches onClose.
+        close :: (self: *Conn, code: i64) -> !Error {
+            self.wmu.lock();
+            defer self.wmu.unlock();
+            if self.ended or self.closeAt != null { raise .Closed; }
+            if !sendClose(self, code) { self.ended = true; }
+            self.lp.wake();
+            if self.ended { raise .Closed; }
+            return;
+        }
+    }
+
+    // Answer the RFC 6455 handshake from a Router handler, after the
+    // handler's own checks. A valid upgrade answers 101 Switching Protocols
+    // and the connection is then served with `opts`; an invalid one answers
+    // 400, or 426 when it asks for a version other than 13.
+    accept :: (rc: *http.RouteCtx, opts: Opts) {
+        req := rc.req;
+        resp := rc.resp;
+        key := http.findHeader(req, "sec-websocket-key");
+        valid := ceAsciiIeq(req.method, "get")
+            and ceAsciiIeq(req.version, "http/1.1")
+            and hasHeaderToken(req.headersRaw, "upgrade", "websocket")
+            and hasHeaderToken(req.headersRaw, "connection", "upgrade")
+            and validKey(key)
+            and req.body.len == 0 and req.bodyReadFn == null;
+        if !valid {
+            resp.status = 400;
+            resp.body = http.reasonFor(400);
+            return;
+        }
+        if http.findHeader(req, "sec-websocket-version") != "13" {
+            resp.status = 426;
+            resp.body = http.reasonFor(426);
+            resp.addHeader("Sec-WebSocket-Version", "13");
+            return;
+        }
+        answer := acceptKey(key);
+        resp.status = 101;
+        resp.addHeader("Upgrade", "websocket");
+        resp.addHeader("Connection", "Upgrade");
+        resp.addHeader("Sec-WebSocket-Accept", string{ ptr = *answer[0], len = 28 });
+        state := mem.create(context.allocator, Opts);
+        state.* = opts;
+        resp.upgrade = .{ take = takeLink, state = state };
+    }
+
+    MessageKind :: enum {
+        text;
+        close;
+    }
+
+    // A message `recv` returned: a text message, or the peer's close with
+    // its reason in `text`. `text` views storage the Message holds until
+    // `deinit`.
+    Message :: struct {
+        kind: MessageKind = .text;
+        text: string = "";
+        // The peer's close code (1005 when its frame carried none); null for
+        // a text message.
+        code: ?i64 = null;
+        private storage: []u8;
+        private a: Allocator;
+
+        deinit :: (self: *Message) {
+            mem.free(self.a, self.storage);
+        }
+    }
+
+    // A client connection. Its pings are answered while recv, ping or close
+    // read.
+    Client :: struct {
+        private t: Transport;
+        private a: Allocator;
+        private r: Reader = .{};
+        // Messages that arrived while ping awaited its pong.
+        private queue: List(Message) = .{};
+        private ioTimeoutMs: i64 = 0;
+        private maxMessage: i64;
+        // This side has sent its close frame.
+        private closing: bool = false;
+        // The peer's close arrived, or the connection broke.
+        private closed: bool = false;
+
+        sendText :: (self: *Client, text: string) -> !Error {
+            if !utf8Valid(text) { raise .Utf8; }
+            if self.closing or self.closed { raise .Closed; }
+            try clientFrame(self, OP_TEXT, text);
+            return;
+        }
+
+        // The next text message, or the peer's close (after which only
+        // `close` remains), waiting at most `timeoutMs`.
+        recv :: (self: *Client, timeoutMs: i64) -> (Message, !Error) {
+            if self.queue.len > 0 { return self.queue.remove(0); }
+            if self.closed { raise .Closed; }
+            deadline := event.deadlineIn(timeoutMs);
+            while true {
+                ev := try clientNext(self, deadline);
+                match ev {
+                    case .text: |m| { return own(self, .text, m, null); }
+                    case .close: |cl| { return own(self, .close, cl.reason, cl.code); }
+                    else: {}
+                }
+            }
+            raise .Closed;
+        }
+
+        // Ping with `payload` and wait at most `timeoutMs` for its pong.
+        // Messages that arrive meanwhile wait for recv.
+        ping :: (self: *Client, payload: string, timeoutMs: i64) -> !Error {
+            if payload.len > 125 { raise .TooLarge; }
+            if self.closing or self.closed { raise .Closed; }
+            try clientFrame(self, OP_PING, payload);
+            deadline := event.deadlineIn(timeoutMs);
+            while true {
+                ev := try clientNext(self, deadline);
+                match ev {
+                    case .pong: |p| { if p == payload { return; } }
+                    case .text: |m| { self.queue.append(own(self, .text, m, null), self.a); }
+                    case .close: |cl| {
+                        self.queue.append(own(self, .close, cl.reason, cl.code), self.a);
+                        raise .Closed;
+                    }
+                    else: {}
+                }
+            }
+            raise .Closed;
+        }
+
+        // Close with `code`: send the close frame, await the peer's, and
+        // return the client's storage whatever the outcome.
+        close :: (self: *Client, code: i64) -> !Error {
+            e := clientShut(self, code);
+            for m in self.queue.items {
+                held := m;
+                held.deinit();
+            }
+            self.queue.deinit(self.a);
+            self.r.free(self.a);
+            self.t.close();
+            if e { raise e; }
+            return;
+        }
+    }
+
+    // Open a WebSocket to `url` — ws:// or wss://host[:port][/path] — sending
+    // `headers`, preformatted "Name: value\r\n" lines, with the upgrade
+    // request. `opts` dials as http.Client does: connectTimeoutMs bounds the
+    // connect, ioTimeoutMs each write and each read outside recv and ping
+    // (which take their own timeouts), and opts.tls carries wss. An inbound
+    // message longer than `maxMessage` fails the connection with 1009, and
+    // recv or ping raises TooLarge.
+    connect :: (url: string, headers: string, opts: http.ClientOpts, maxMessage: i64 = MAX_MESSAGE) -> (Client, !Error) {
+        u, ok := parseUrl(url);
+        if !ok { raise .Url; }
+        if !validHeaders(headers) { raise .Header; }
+        o := opts;
+        if u.secure {
+            if o.tls == null { raise .Tls; }
+        } else {
+            o.tls = null;
+        }
+        conn, oe := http.Client.open(u.host, u.port, o);
+        if oe == .Tls { raise .Tls; }
+        if oe { raise .Connect; }
+        c : Client = .{ t = .{ fd = conn.fd, tls = conn.tls }, a = context.allocator,
+                        ioTimeoutMs = opts.ioTimeoutMs, maxMessage = maxMessage };
+        if !socket.setNonblocking(conn.fd) {
+            c.t.close();
+            raise .Connect;
+        }
+        he := handshake(*c, u, headers);
+        if he {
+            c.r.free(c.a);
+            c.t.close();
+            raise he;
+        }
+        return c;
+    }
+
+    // ── framing (RFC 6455 §5) ─────────────────────────────────────────
+
+    private OP_CONT  :u8: 0x0;
+    private OP_TEXT  :u8: 0x1;
+    private OP_BIN   :u8: 0x2;
+    private OP_CLOSE :u8: 0x8;
+    private OP_PING  :u8: 0x9;
+    private OP_PONG  :u8: 0xA;
+
+    private CLOSE_PROTOCOL    :i64: 1002;
+    private CLOSE_UNSUPPORTED :i64: 1003;
+    private CLOSE_NONE        :i64: 1005;
+    private CLOSE_ABNORMAL    :i64: 1006;
+    private CLOSE_INVALID     :i64: 1007;
+    private CLOSE_TOO_BIG     :i64: 1009;
+
+    private READ_PIECE :: 16384;
+    private MAX_MESSAGE :: 16777216;
+    private I64_MAX :: 0x7FFFFFFFFFFFFFFF;
+    // The longest 101 response head the client reads.
+    private HEAD_LIMIT :: 16384;
+    // A close this side sent that the peer leaves unanswered this long ends
+    // the connection.
+    private CLOSE_WAIT_MS :: 5000;
+
+    private Head :: struct {
+        fin: bool = false;
+        op: u8 = 0;
+        masked: bool = false;
+        key: [4]u8 = .[0, 0, 0, 0];
+        len: i64 = 0;
+        // the head's own bytes
+        size: i64 = 0;
+    }
+
+    private Scan :: enum {
+        partial;   // the head needs `size` bytes
+        whole;
+        bad;       // reserved bits, or a 64-bit length with its top bit set
+    }
+
+    private scanHead :: (b: string) -> (Head, Scan) {
+        h : Head = .{ size = 2 };
+        if b.len < 2 { return h, .partial; }
+        if (b[0] & 0x70) != 0 { return h, .bad; }
+        h.fin = (b[0] & 0x80) != 0;
+        h.op = b[0] & 0x0F;
+        h.masked = (b[1] & 0x80) != 0;
+        len7 := (b[1] & 0x7F).(i64);
+        if len7 == 126 { h.size = 4; }
+        if len7 == 127 { h.size = 10; }
+        if h.masked { h.size += 4; }
+        if b.len < h.size { return h, .partial; }
+        h.len = len7;
+        if len7 == 126 { h.len = (b[2].(i64) << 8) | b[3].(i64); }
+        if len7 == 127 {
+            if (b[2] & 0x80) != 0 { return h, .bad; }
+            h.len = 0;
+            i : i64 = 2;
+            while i < 10 {
+                h.len = (h.len << 8) | b[i].(i64);
+                i += 1;
+            }
+        }
+        if h.masked {
+            k := h.size - 4;
+            h.key = .[b[k], b[k + 1], b[k + 2], b[k + 3]];
+        }
+        return h, .whole;
+    }
+
+    // Write the head of a frame carrying `len` payload bytes into `dst` (14
+    // bytes hold any head) and return its length.
+    private putHead :: (op: u8, len: i64, key: ?[4]u8, dst: [*]u8) -> i64 {
+        dst[0] = 0x80 | op;
+        m : u8 = if key != null then 0x80 else 0;
+        n : i64 = 2;
+        if len < 126 {
+            dst[1] = m | len.(u8);
+        } else if len < 65536 {
+            dst[1] = m | 126;
+            dst[2] = (len >> 8).(u8);
+            dst[3] = len.(u8);
+            n = 4;
+        } else {
+            dst[1] = m | 127;
+            i : i64 = 0;
+            while i < 8 {
+                dst[2 + i] = (len >> ((7 - i) * 8)).(u8);
+                i += 1;
+            }
+            n = 10;
+        }
+        if k := key {
+            dst[n] = k[0];
+            dst[n + 1] = k[1];
+            dst[n + 2] = k[2];
+            dst[n + 3] = k[3];
+            n += 4;
+        }
+        return n;
+    }
+
+    private Closing :: struct {
+        code: i64 = 0;
+        reason: string = "";
+    }
+
+    // What the frames read so far mean to their endpoint. A payload is a
+    // view valid until the next `Reader.next`.
+    private Inbound :: enum {
+        more;            // no whole frame is buffered yet
+        text: string;    // one whole message
+        ping: string;
+        pong: string;
+        close: Closing;
+        fault: i64;      // the close code the peer's violation calls for
+    }
+
+    // Received bytes, and the fragmented message being reassembled.
+    private Reader :: struct {
+        in: Bytes = .{};
+        // where the unread bytes of `in` start
+        at: i64 = 0;
+        // bytes the last delivered frame occupies past `at`
+        taken: i64 = 0;
+        msg: Bytes = .{};
+        fragmenting: bool = false;
+        // `msg` holds the last delivered message
+        delivered: bool = false;
+
+        // The meaning of the next whole frame in `in`. A `.more` moves the
+        // unread bytes to the front of `in` and leaves room for the frame it
+        // waits on. `masked`: inbound frames carry a mask (the server's
+        // side). `max` bounds a message's length.
+        next :: (self: *Reader, a: Allocator, masked: bool, max: i64) -> Inbound {
+            self.at += self.taken;
+            self.taken = 0;
+            if self.delivered {
+                self.msg.len = 0;
+                self.delivered = false;
+            }
+            while true {
+                unread := self.in.view()[self.at..];
+                h, scan := scanHead(unread);
+                if scan == .bad { return .fault{CLOSE_PROTOCOL}; }
+                need := h.size;
+                if scan == .whole {
+                    if h.masked != masked { return .fault{CLOSE_PROTOCOL}; }
+                    if (h.op & 0x8) != 0 {
+                        if !h.fin or h.len > 125 { return .fault{CLOSE_PROTOCOL}; }
+                        if h.op != OP_CLOSE and h.op != OP_PING and h.op != OP_PONG { return .fault{CLOSE_PROTOCOL}; }
+                    } else {
+                        if h.op == OP_BIN { return .fault{CLOSE_UNSUPPORTED}; }
+                        if h.op != OP_TEXT and h.op != OP_CONT { return .fault{CLOSE_PROTOCOL}; }
+                        if (h.op == OP_CONT) != self.fragmenting { return .fault{CLOSE_PROTOCOL}; }
+                        held : i64 = if h.op == OP_CONT then self.msg.len else 0;
+                        if h.len > max - held or h.len > I64_MAX - h.size { return .fault{CLOSE_TOO_BIG}; }
+                    }
+                    need += h.len;
+                }
+                if unread.len < need {
+                    self.in.drop(self.at);
+                    self.at = 0;
+                    self.in.reserve(a, need);
+                    return .more;
+                }
+                payload := unread[h.size..need];
+                if h.masked { unmask(payload, h.key); }
+                self.taken = need;
+                if h.op == OP_PING { return .ping{payload}; }
+                if h.op == OP_PONG { return .pong{payload}; }
+                if h.op == OP_CLOSE { return closing(payload); }
+                if h.op == OP_TEXT and h.fin {
+                    if !utf8Valid(payload) { return .fault{CLOSE_INVALID}; }
+                    return .text{payload};
+                }
+                self.msg.append(a, payload);
+                self.at += self.taken;
+                self.taken = 0;
+                self.fragmenting = !h.fin;
+                if h.fin {
+                    self.delivered = true;
+                    whole := self.msg.view();
+                    if !utf8Valid(whole) { return .fault{CLOSE_INVALID}; }
+                    return .text{whole};
+                }
+            }
+            return .more;
+        }
+
+        free :: (self: *Reader, a: Allocator) {
+            self.in.free(a);
+            self.msg.free(a);
+        }
+    }
+
+    private closing :: (p: string) -> Inbound {
+        if p.len == 0 { return .close{ code = CLOSE_NONE }; }
+        if p.len == 1 { return .fault{CLOSE_PROTOCOL}; }
+        code := (p[0].(i64) << 8) | p[1].(i64);
+        sendable := (code >= 1000 and code <= 1003) or (code >= 1007 and code <= 1014)
+            or (code >= 3000 and code <= 4999);
+        if !sendable { return .fault{CLOSE_PROTOCOL}; }
+        reason := p[2..];
+        if !utf8Valid(reason) { return .fault{CLOSE_INVALID}; }
+        return .close{ code = code, reason = reason };
+    }
+
+    private unmask :: (p: string, key: [4]u8) {
+        i : i64 = 0;
+        while i < p.len {
+            p[i] = p[i] ^ key[i & 3];
+            i += 1;
+        }
+    }
+
+    // RFC 3629 UTF-8: no overlong forms, no surrogates, nothing past U+10FFFF.
+    private utf8Valid :: (s: string) -> bool {
+        i : i64 = 0;
+        while i < s.len {
+            b := s[i].(i64);
+            if b < 0x80 {
+                i += 1;
+                continue;
+            }
+            n : i64 = 0;
+            cp : i64 = 0;
+            least : i64 = 0;
+            if (b & 0xE0) == 0xC0 { n = 1; cp = b & 0x1F; least = 0x80; }
+            else if (b & 0xF0) == 0xE0 { n = 2; cp = b & 0x0F; least = 0x800; }
+            else if (b & 0xF8) == 0xF0 { n = 3; cp = b & 0x07; least = 0x10000; }
+            else { return false; }
+            if s.len - i <= n { return false; }
+            j : i64 = 1;
+            while j <= n {
+                cb := s[i + j].(i64);
+                if (cb & 0xC0) != 0x80 { return false; }
+                cp = (cp << 6) | (cb & 0x3F);
+                j += 1;
+            }
+            if cp < least or cp > 0x10FFFF or (cp >= 0xD800 and cp <= 0xDFFF) { return false; }
+            i += n + 1;
+        }
+        return true;
+    }
+
+    // A byte buffer grown through its owner's allocator.
+    private Bytes :: struct {
+        ptr: [*]u8 = null;
+        cap: i64 = 0;
+        len: i64 = 0;
+
+        view :: (self: *Bytes) -> string { string{ ptr = self.ptr, len = self.len } }
+
+        // Capacity for `need` bytes in all.
+        reserve :: (self: *Bytes, a: Allocator, need: i64) {
+            if need <= self.cap { return; }
+            cap : i64 = if self.cap > 0 then self.cap else READ_PIECE;
+            while cap < need { cap = if cap > need - cap then need else cap * 2; }
+            grown := mem.alloc(a, u8, cap).ptr;
+            if self.len > 0 { clib.c.memcpy(grown, self.ptr, self.len); }
+            if self.cap > 0 { mem.free(a, self.ptr); }
+            self.ptr = grown;
+            self.cap = cap;
+        }
+
+        append :: (self: *Bytes, a: Allocator, s: string) {
+            self.reserve(a, self.len + s.len);
+            if s.len > 0 { clib.c.memcpy(*self.ptr[self.len], s.ptr, s.len); }
+            self.len += s.len;
+        }
+
+        drop :: (self: *Bytes, n: i64) {
+            if n == 0 { return; }
+            rest := self.len - n;
+            if rest > 0 { clib.c.memmove(self.ptr, *self.ptr[n], rest); }
+            self.len = rest;
+        }
+
+        free :: (self: *Bytes, a: Allocator) {
+            if self.cap > 0 { mem.free(a, self.ptr); }
+            self.ptr = null;
+            self.cap = 0;
+            self.len = 0;
+        }
+    }
+
+    // ── transport ─────────────────────────────────────────────────────
+
+    private Step :: enum {
+        done;
+        wantRead;
+        wantWrite;
+        end;
+    }
+
+    // A socket and its optional TLS session, driven nonblocking.
+    private Transport :: struct {
+        fd: i32;
+        tls: ?http.TlsConn = null;
+
+        read :: (self: *Transport, buf: [*]u8, cap: i64) -> (i64, Step) {
+            if self.tls != null {
+                n, st := self.tls.read(buf, cap);
+                return n, stepOf(st);
+            }
+            n, e := socket.readNb(self.fd, buf, cap);
+            if e == .WouldBlock { return 0, .wantRead; }
+            if e { return 0, .end; }
+            return n, .done;
+        }
+
+        write :: (self: *Transport, buf: [*]u8, len: i64) -> (i64, Step) {
+            if self.tls != null {
+                n, st := self.tls.write(buf, len);
+                return n, stepOf(st);
+            }
+            n, e := socket.writeNb(self.fd, buf, len);
+            if e == .WouldBlock { return 0, .wantWrite; }
+            if e { return 0, .end; }
+            return n, .done;
+        }
+
+        close :: (self: *Transport) {
+            if self.tls != null {
+                self.tls.close();
+                self.tls = null;
+            }
+            socket.close(self.fd);
+        }
+    }
+
+    private stepOf :: (st: http.TlsStep) -> Step {
+        if st == .Done { return .done; }
+        if st == .WantRead { return .wantRead; }
+        if st == .WantWrite { return .wantWrite; }
+        return .end;
+    }
+
+    // Wait until `fd` is ready for what `st` wants; false once `deadline`
+    // passes. A null deadline waits without bound.
+    private await :: (fd: i32, st: Step, deadline: ?i64) -> bool {
+        events := if st == .wantWrite then socket.POLLOUT else socket.POLLIN;
+        while true {
+            wait : i32 = -1;
+            if d := deadline {
+                left := event.remainingMs(d);
+                if left <= 0 { return false; }
+                wait = if left > 2147483647 then 2147483647 else left.(i32);
+            }
+            pfd : socket.PollFd = .{ fd = fd, events = events };
+            pr := socket.poll(*pfd, 1, wait);
+            if pr > 0 { return true; }
+            if pr < 0 and socket.errno() != posix.EINTR { return false; }
+        }
+        return false;
+    }
+
+    // ── the server's connection ───────────────────────────────────────
+
+    // Upgrade.take: runs on the HTTP loop thread under the Server's allocator.
+    private takeLink :: (state: *void, link: http.Link) {
+        opts : *Opts = state;
+        a := context.allocator;
+        c := mem.create(a, Conn);
+        c.* = Conn{ t = .{ fd = link.fd, tls = link.tls }, a = a, opts = opts.* };
+        c.r.in.append(a, link.pending);
+        if !startConn(c) {
+            c.t.close();
+            c.r.free(a);
+            mem.free(a, c);
+        }
+    }
+
+    // Set up the connection's locks, wait loop and thread; false leaves none
+    // of them standing.
+    private startConn :: (c: *Conn) -> bool {
+        if !c.io.setup() { return false; }
+        if !c.wmu.setup() {
+            c.io.destroy();
+            return false;
+        }
+        lp, le := event.Loop.init();
+        if le {
+            c.wmu.destroy();
+            c.io.destroy();
+            return false;
+        }
+        c.lp = lp;
+        ok := true;
+        c.lp.addRead(c.t.fd, 0) catch { ok = false; };
+        if ok { c.lp.addWake(1) catch { ok = false; }; }
+        if ok {
+            th, te := thread.Thread.spawn(serveEntry, c);
+            if te { ok = false; }
+            else { th.detach(); }
+        }
+        if !ok {
+            c.lp.close();
+            c.wmu.destroy();
+            c.io.destroy();
+        }
+        return ok;
+    }
+
+    private serveEntry :: (arg: *void) -> *void abi(.c) {
+        c : *Conn = arg;
+        gpa := mem.GPA.init();
+        push .{ allocator = gpa } {
+            serve(c);
+        }
+        return null;
+    }
+
+    // The connection's thread: onOpen, frames until the connection ends,
+    // onClose, then the Conn returns to its allocator.
+    private serve :: (c: *Conn) {
+        opened := c.opts.onOpen;
+        if opened != null { opened(c, c.opts.ctx); }
+        code := pump(c);
+        c.wmu.lock();
+        c.ended = true;
+        c.wmu.unlock();
+        c.t.close();
+        closed := c.opts.onClose;
+        if closed != null { closed(c, code, c.opts.ctx); }
+        c.lp.close();
+        c.r.free(c.a);
+        c.wmu.destroy();
+        c.io.destroy();
+        a := c.a;
+        mem.free(a, c);
+    }
+
+    // Read and act on frames until the connection ends; returns the code
+    // onClose reports.
+    private pump :: (c: *Conn) -> i64 {
+        evs : [4]event.Event = ---;
+        pingAt := event.deadlineIn(c.opts.pingIntervalMs);
+        pongOwed := false;
+        while true {
+            if code := drain(c, *pongOwed) { return code; }
+            c.wmu.lock();
+            ended := c.ended;
+            closeAt := c.closeAt;
+            c.wmu.unlock();
+            if ended { return CLOSE_ABNORMAL; }
+            wait := event.remainingMs(pingAt);
+            if at := closeAt {
+                if event.expired(at) { return CLOSE_ABNORMAL; }
+                left := event.remainingMs(at);
+                if left < wait { wait = left; }
+            }
+            if event.expired(pingAt) {
+                if pongOwed { return CLOSE_ABNORMAL; }
+                if !control(c, OP_PING, "") { return CLOSE_ABNORMAL; }
+                pongOwed = true;
+                pingAt = event.deadlineIn(c.opts.pingIntervalMs);
+                continue;
+            }
+            c.r.in.reserve(c.a, c.r.in.len + READ_PIECE);
+            c.io.lock();
+            n, st := c.t.read(*c.r.in.ptr[c.r.in.len], c.r.in.cap - c.r.in.len);
+            c.io.unlock();
+            if st == .done {
+                c.r.in.len += n;
+                continue;
+            }
+            if st == .end { return CLOSE_ABNORMAL; }
+            if st == .wantWrite {
+                await(c.t.fd, st, event.deadlineIn(wait));
+                continue;
+            }
+            _, we := c.lp.wait(.{ ptr = *evs[0], len = 4 }, wait);
+            if we { return CLOSE_ABNORMAL; }
+        }
+        return CLOSE_ABNORMAL;
+    }
+
+    // Act on every whole frame read so far: the code that ends the
+    // connection, or null once more bytes are needed.
+    private drain :: (c: *Conn, pongOwed: *bool) -> ?i64 {
+        while true {
+            match c.r.next(c.a, true, c.opts.maxMessage) {
+                case .more: { return null; }
+                case .text: |m| {
+                    f := c.opts.onText;
+                    if f != null { f(c, m, c.opts.ctx); }
+                }
+                case .ping: |p| {
+                    if !control(c, OP_PONG, p) { return CLOSE_ABNORMAL; }
+                }
+                case .pong: { pongOwed.* = false; }
+                case .close: |cl| {
+                    answer(c, cl.code);
+                    return cl.code;
+                }
+                case .fault: |code| {
+                    answer(c, code);
+                    return code;
+                }
+            }
+        }
+        return null;
+    }
+
+    // Send a close frame with `code` unless this side already sent one.
+    private answer :: (c: *Conn, code: i64) {
+        c.wmu.lock();
+        if !c.ended and c.closeAt == null { sendClose(c, code); }
+        c.wmu.unlock();
+    }
+
+    // Send a control frame from the connection's thread; false once the
+    // connection can no longer write.
+    private control :: (c: *Conn, op: u8, payload: string) -> bool {
+        c.wmu.lock();
+        defer c.wmu.unlock();
+        if c.ended { return false; }
+        if !connFrame(c, op, payload) {
+            c.ended = true;
+            return false;
+        }
+        return true;
+    }
+
+    // Under wmu: the close frame for `code`, which the peer must answer
+    // within CLOSE_WAIT_MS.
+    private sendClose :: (c: *Conn, code: i64) -> bool {
+        c.closeAt = event.deadlineIn(CLOSE_WAIT_MS);
+        body : [2]u8 = .[(code >> 8).(u8), code.(u8)];
+        if code == CLOSE_NONE { return connFrame(c, OP_CLOSE, ""); }
+        return connFrame(c, OP_CLOSE, body[..]);
+    }
+
+    // Under wmu: one unmasked frame.
+    private connFrame :: (c: *Conn, op: u8, payload: string) -> bool {
+        head : [14]u8 = ---;
+        n := putHead(op, payload.len, null, *head[0]);
+        if !connWrite(c, *head[0], n) { return false; }
+        return payload.len == 0 or connWrite(c, payload.ptr, payload.len);
+    }
+
+    private connWrite :: (c: *Conn, p: [*]u8, n: i64) -> bool {
+        off : i64 = 0;
+        deadline := event.deadlineIn(c.opts.writeTimeoutMs);
+        while off < n {
+            c.io.lock();
+            k, st := c.t.write(*p[off], n - off);
+            c.io.unlock();
+            if st == .done {
+                off += k;
+                deadline = event.deadlineIn(c.opts.writeTimeoutMs);
+                continue;
+            }
+            if st == .end { return false; }
+            if !await(c.t.fd, st, deadline) { return false; }
+        }
+        return true;
+    }
+
+    // ── the client ────────────────────────────────────────────────────
+
+    private ioDeadline :: (c: *Client) -> ?i64 {
+        if c.ioTimeoutMs > 0 { return event.deadlineIn(c.ioTimeoutMs); }
+        return null;
+    }
+
+    private clientWrite :: (c: *Client, p: [*]u8, n: i64) -> !Error {
+        off : i64 = 0;
+        while off < n {
+            k, st := c.t.write(*p[off], n - off);
+            if st == .done {
+                off += k;
+                continue;
+            }
+            if st == .end {
+                c.closed = true;
+                raise .Closed;
+            }
+            if !await(c.t.fd, st, ioDeadline(c)) {
+                c.closed = true;
+                raise .Timeout;
+            }
+        }
+        return;
+    }
+
+    // One frame, masked with a fresh key (RFC 6455 §5.3).
+    private clientFrame :: (c: *Client, op: u8, payload: string) -> !Error {
+        key : [4]u8 = ---;
+        getentropy(*key[0], 4);
+        frame := mem.alloc(c.a, u8, 14 + payload.len);
+        n := putHead(op, payload.len, key, frame.ptr);
+        i : i64 = 0;
+        while i < payload.len {
+            frame[n + i] = payload[i] ^ key[i & 3];
+            i += 1;
+        }
+        e := clientWrite(c, frame.ptr, n + payload.len);
+        mem.free(c.a, frame);
+        if e { raise e; }
+        return;
+    }
+
+    private clientRead :: (c: *Client, deadline: ?i64) -> !Error {
+        c.r.in.reserve(c.a, c.r.in.len + READ_PIECE);
+        while true {
+            n, st := c.t.read(*c.r.in.ptr[c.r.in.len], c.r.in.cap - c.r.in.len);
+            if st == .done {
+                c.r.in.len += n;
+                return;
+            }
+            if st == .end {
+                c.closed = true;
+                raise .Closed;
+            }
+            if !await(c.t.fd, st, deadline) { raise .Timeout; }
+        }
+        return;
+    }
+
+    // The next text, pong or close from the peer, answering its pings
+    // meanwhile. A violation fails the connection.
+    private clientNext :: (c: *Client, deadline: ?i64) -> (Inbound, !Error) {
+        while true {
+            ev := c.r.next(c.a, false, c.maxMessage);
+            reading := false;
+            match ev {
+                case .more: { reading = true; }
+                case .ping: |p| {
+                    if !c.closing { try clientFrame(c, OP_PONG, p); }
+                }
+                case .close: |cl| {
+                    clientAnswer(c, cl.code);
+                    c.closed = true;
+                    return ev;
+                }
+                case .fault: |code| {
+                    clientAnswer(c, code);
+                    c.closed = true;
+                    if code == CLOSE_TOO_BIG { raise .TooLarge; }
+                    raise .Protocol;
+                }
+                else: { return ev; }
+            }
+            if reading { try clientRead(c, deadline); }
+        }
+        raise .Closed;
+    }
+
+    // A close frame with `code` unless this side already sent one; a write
+    // failure leaves nothing more to answer.
+    private clientAnswer :: (c: *Client, code: i64) {
+        if c.closing { return; }
+        c.closing = true;
+        body : [2]u8 = .[(code >> 8).(u8), code.(u8)];
+        if code == CLOSE_NONE { clientFrame(c, OP_CLOSE, "") catch {}; }
+        else { clientFrame(c, OP_CLOSE, body[..]) catch {}; }
+    }
+
+    private clientShut :: (c: *Client, code: i64) -> !Error {
+        if c.closed { return; }
+        if !c.closing {
+            body : [2]u8 = .[(code >> 8).(u8), code.(u8)];
+            try clientFrame(c, OP_CLOSE, body[..]);
+            c.closing = true;
+        }
+        while !c.closed {
+            try clientNext(c, ioDeadline(c));
+        }
+        return;
+    }
+
+    private own :: (c: *Client, kind: MessageKind, text: string, code: ?i64) -> Message {
+        storage := mem.clone(c.a, text);
+        return Message{ kind = kind, text = storage, code = code, storage = storage, a = c.a };
+    }
+
+    private WsUrl :: struct {
+        secure: bool = false;
+        host: string = "";
+        port: i64 = 0;
+        path: string = "/";
+    }
+
+    // ws://host[:port][/path] or wss://…; a bracketed IPv6 literal is
+    // accepted. The path keeps the query and drops the fragment.
+    private parseUrl :: (url: string) -> (WsUrl, bool) {
+        u : WsUrl = .{};
+        rest := "";
+        if url.len > 5 and url[0..5] == "ws://" {
+            u.port = 80;
+            rest = url[5..];
+        } else if url.len > 6 and url[0..6] == "wss://" {
+            u.secure = true;
+            u.port = 443;
+            rest = url[6..];
+        } else {
+            return u, false;
+        }
+        at : i64 = 0;
+        if rest[0] == '[' {
+            at = 1;
+            while at < rest.len and rest[at] != ']' { at += 1; }
+            if at >= rest.len { return u, false; }
+            u.host = rest[1..at];
+            at += 1;
+        } else {
+            while at < rest.len and rest[at] != ':' and rest[at] != '/' and rest[at] != '?' and rest[at] != '#' { at += 1; }
+            u.host = rest[0..at];
+        }
+        if u.host.len == 0 { return u, false; }
+        if at < rest.len and rest[at] == ':' {
+            at += 1;
+            v : i64 = 0;
+            digits : i64 = 0;
+            while at < rest.len and rest[at] >= '0' and rest[at] <= '9' {
+                v = v * 10 + (rest[at] - '0');
+                at += 1;
+                digits += 1;
+            }
+            if digits == 0 or digits > 5 or v < 1 or v > 65535 { return u, false; }
+            u.port = v;
+        }
+        end := at;
+        while end < rest.len and rest[end] != '#' { end += 1; }
+        if at < end {
+            if rest[at] != '/' { return u, false; }
+            u.path = rest[at..end];
+        }
+        return u, true;
+    }
+
+    // Header lines a caller may add: `token ":" value CRLF`, none naming a
+    // field the handshake writes itself.
+    private validHeaders :: (block: string) -> bool {
+        at : i64 = 0;
+        while at < block.len {
+            colon := at;
+            while colon < block.len and isTchar(block[colon]) { colon += 1; }
+            if colon == at or colon >= block.len or block[colon] != ':' { return false; }
+            name := block[at..colon];
+            if ceAsciiIeq(name, "host") or ceAsciiIeq(name, "upgrade") or ceAsciiIeq(name, "connection")
+                or ceAsciiIeq(name, "content-length") or ceAsciiIeq(name, "transfer-encoding")
+                or (name.len > 14 and ceAsciiIeq(name[0..14], "sec-websocket-")) {
+                return false;
+            }
+            end := colon + 1;
+            while end < block.len and block[end] != '\r' and block[end] != '\n' and block[end] != 0 { end += 1; }
+            if end + 1 >= block.len or block[end] != '\r' or block[end + 1] != '\n' { return false; }
+            at = end + 2;
+        }
+        return true;
+    }
+
+    // Write the upgrade request and read its 101; bytes past the head stay
+    // in the client's reader as its first frames.
+    private handshake :: (c: *Client, u: WsUrl, headers: string) -> !Error {
+        nonce : [16]u8 = ---;
+        getentropy(*nonce[0], 16);
+        keyBuf : [24]u8 = ---;
+        base64(nonce[..], *keyBuf[0]);
+        key := string{ ptr = *keyBuf[0], len = 24 };
+        v6 := false;
+        for ch in u.host { if ch == ':' { v6 = true; } }
+        portBuf : [8]u8 = ---;
+        portText := "";
+        if u.port != (if u.secure then 443 else 80) { portText = decimal(u.port, *portBuf[0]); }
+        req := concat("GET ", u.path, " HTTP/1.1\r\nHost: ",
+            if v6 then "[" else "", u.host, if v6 then "]" else "",
+            if portText.len > 0 then ":" else "", portText,
+            "\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: ", key,
+            "\r\nSec-WebSocket-Version: 13\r\n", headers, "\r\n");
+        we := clientWrite(c, req.ptr, req.len);
+        mem.free(context.allocator, req);
+        if we { raise we; }
+
+        deadline := ioDeadline(c);
+        headLen : i64 = 0;
+        while headLen == 0 {
+            v := c.r.in.view();
+            i : i64 = 0;
+            while i + 3 < v.len {
+                if v[i] == '\r' and v[i + 1] == '\n' and v[i + 2] == '\r' and v[i + 3] == '\n' {
+                    headLen = i + 4;
+                    break;
+                }
+                i += 1;
+            }
+            if headLen == 0 {
+                if v.len >= HEAD_LIMIT { raise .Handshake; }
+                try clientRead(c, deadline);
+            }
+        }
+        head := c.r.in.view()[0..headLen];
+        lineEnd : i64 = 0;
+        while head[lineEnd] != '\r' { lineEnd += 1; }
+        line := head[0..lineEnd];
+        if line.len < 12 or line[0..5] != "HTTP/" { raise .Handshake; }
+        sp : i64 = 0;
+        while sp < line.len and line[sp] != ' ' { sp += 1; }
+        if sp + 4 > line.len or line[(sp + 1)..(sp + 4)] != "101" { raise .Refused; }
+        raw := head[(lineEnd + 2)..headLen];
+        expected := acceptKey(key);
+        valid := hasHeaderToken(raw, "upgrade", "websocket")
+            and hasHeaderToken(raw, "connection", "upgrade")
+            and header(raw, "sec-websocket-accept") == string{ ptr = *expected[0], len = 28 }
+            and !hasHeader(raw, "sec-websocket-extensions")
+            and !hasHeader(raw, "sec-websocket-protocol");
+        if !valid { raise .Handshake; }
+        c.r.in.drop(headLen);
+        return;
+    }
+
+    private decimal :: (n: i64, dst: [*]u8) -> string {
+        digits : i64 = 0;
+        v := n;
+        while v > 0 {
+            digits += 1;
+            v = v / 10;
+        }
+        v = n;
+        i := digits;
+        while i > 0 {
+            i -= 1;
+            dst[i] = ('0' + v % 10).(u8);
+            v = v / 10;
+        }
+        return string{ ptr = dst, len = digits };
+    }
+
+    // ── the handshake key (RFC 6455 §4.2.2) ───────────────────────────
+
+    private B64 :: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    // A Sec-WebSocket-Key: the base64 of 16 bytes.
+    private validKey :: (key: string) -> bool {
+        if key.len != 24 or key[22] != '=' or key[23] != '=' { return false; }
+        i : i64 = 0;
+        while i < 22 {
+            ch := key[i];
+            alpha := (ch >= 'A' and ch <= 'Z') or (ch >= 'a' and ch <= 'z') or (ch >= '0' and ch <= '9')
+                or ch == '+' or ch == '/';
+            if !alpha { return false; }
+            i += 1;
+        }
+        return true;
+    }
+
+    // Padded base64 of `src` into `dst`: 4 bytes per 3, rounded up.
+    private base64 :: (src: string, dst: [*]u8) {
+        i : i64 = 0;
+        o : i64 = 0;
+        while i < src.len {
+            left := src.len - i;
+            v := src[i].(i64) << 16;
+            if left > 1 { v = v | (src[i + 1].(i64) << 8); }
+            if left > 2 { v = v | src[i + 2].(i64); }
+            dst[o] = B64[(v >> 18) & 63];
+            dst[o + 1] = B64[(v >> 12) & 63];
+            dst[o + 2] = if left > 1 then B64[(v >> 6) & 63] else '=';
+            dst[o + 3] = if left > 2 then B64[v & 63] else '=';
+            i += 3;
+            o += 4;
+        }
+    }
+
+    private GUID :: "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+
+    // The Sec-WebSocket-Accept for a 24-byte Sec-WebSocket-Key.
+    private acceptKey :: (key: string) -> [28]u8 {
+        input : [60]u8 = ---;
+        clib.c.memcpy(*input[0], key.ptr, 24);
+        clib.c.memcpy(*input[24], GUID.ptr, 36);
+        digest := sha1(input[..]);
+        out : [28]u8 = ---;
+        base64(digest[..], *out[0]);
+        return out;
+    }
+
+    private MASK32 :: 0xFFFFFFFF;
+
+    private rotl :: (x: i64, n: i64) -> i64 {
+        ((x << n) | (x >> (32 - n))) & MASK32
+    }
+
+    private sha1Block :: (h: *[5]i64, block: *[64]u8) {
+        w : [80]i64 = ---;
+        t : i64 = 0;
+        while t < 16 {
+            w[t] = (block[t * 4].(i64) << 24) | (block[t * 4 + 1].(i64) << 16)
+                | (block[t * 4 + 2].(i64) << 8) | block[t * 4 + 3].(i64);
+            t += 1;
+        }
+        while t < 80 {
+            w[t] = rotl(w[t - 3] ^ w[t - 8] ^ w[t - 14] ^ w[t - 16], 1);
+            t += 1;
+        }
+        a := h[0];
+        b := h[1];
+        c := h[2];
+        d := h[3];
+        e := h[4];
+        t = 0;
+        while t < 80 {
+            f : i64 = 0;
+            k : i64 = 0;
+            if t < 20 { f = (b & c) | ((~b) & d); k = 0x5A827999; }
+            else if t < 40 { f = b ^ c ^ d; k = 0x6ED9EBA1; }
+            else if t < 60 { f = (b & c) | (b & d) | (c & d); k = 0x8F1BBCDC; }
+            else { f = b ^ c ^ d; k = 0xCA62C1D6; }
+            temp := (rotl(a, 5) + (f & MASK32) + e + k + w[t]) & MASK32;
+            e = d;
+            d = c;
+            c = rotl(b, 30);
+            b = a;
+            a = temp;
+            t += 1;
+        }
+        h[0] = (h[0] + a) & MASK32;
+        h[1] = (h[1] + b) & MASK32;
+        h[2] = (h[2] + c) & MASK32;
+        h[3] = (h[3] + d) & MASK32;
+        h[4] = (h[4] + e) & MASK32;
+    }
+
+    // SHA-1 (FIPS 180-4).
+    private sha1 :: (data: string) -> [20]u8 {
+        h : [5]i64 = .[0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0];
+        block : [64]u8 = ---;
+        i : i64 = 0;
+        while i + 64 <= data.len {
+            clib.c.memcpy(*block[0], *data[i], 64);
+            sha1Block(*h, *block);
+            i += 64;
+        }
+        rest := data.len - i;
+        clib.c.memset(*block[0], 0, 64);
+        if rest > 0 { clib.c.memcpy(*block[0], *data[i], rest); }
+        block[rest] = 0x80;
+        if rest >= 56 {
+            sha1Block(*h, *block);
+            clib.c.memset(*block[0], 0, 64);
+        }
+        bits := data.len * 8;
+        j : i64 = 0;
+        while j < 8 {
+            block[56 + j] = (bits >> ((7 - j) * 8)).(u8);
+            j += 1;
+        }
+        sha1Block(*h, *block);
+        out : [20]u8 = ---;
+        j = 0;
+        while j < 20 {
+            out[j] = (h[j / 4] >> ((3 - j % 4) * 8)).(u8);
+            j += 1;
+        }
+        return out;
+    }
+}

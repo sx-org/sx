@@ -156,6 +156,7 @@ private statusLineFor :: (status: i64) -> string {
     if status == 408 { return "HTTP/1.1 408 Request Timeout"; }
     if status == 413 { return "HTTP/1.1 413 Content Too Large"; }
     if status == 417 { return "HTTP/1.1 417 Expectation Failed"; }
+    if status == 426 { return "HTTP/1.1 426 Upgrade Required"; }
     if status == 431 { return "HTTP/1.1 431 Request Header Fields Too Large"; }
     if status == 500 { return "HTTP/1.1 500 Internal Server Error"; }
     if status == 501 { return "HTTP/1.1 501 Not Implemented"; }
@@ -914,6 +915,38 @@ serializeBytes :: (resp: *Response, keep: bool, alloc: Allocator, headOnly: bool
     w := respHeadWrite(resp, keep, date, serverName, noBodyStatus, false, buf);
     if bodyLen > 0 { clib.c.memcpy(*buf[w], resp.body.ptr, bodyLen); }
     return OutBytes{ buf = buf, len = w + bodyLen };
+}
+
+private HDR_SWITCH : string : "HTTP/1.1 101 Switching Protocols";
+
+// The head of an upgrading response: no framing, no Connection field of the
+// server's own — the handler's extraHeaders carry Upgrade and Connection.
+switchHeadLen :: (resp: *Response, date: string, serverName: string) -> i64 {
+    n := HDR_SWITCH.len + HDR_DATE.len + date.len + 2;
+    if serverName.len > 0 { n += HDR_SRV.len + serverName.len; }
+    return n + resp.extraHeaders.len + 2;
+}
+
+switchHeadWrite :: (resp: *Response, date: string, serverName: string, dst: [*]u8) -> i64 {
+    off := putStr(dst, 0, HDR_SWITCH);
+    off = putStr(dst, off, HDR_DATE);
+    off = putStr(dst, off, date);
+    if serverName.len > 0 {
+        off = putStr(dst, off, HDR_SRV);
+        off = putStr(dst, off, serverName);
+    }
+    off = putStr(dst, off, "\r\n");
+    if resp.extraHeaders.len > 0 { off = putStr(dst, off, resp.extraHeaders); }
+    dst[off] = '\r';
+    dst[off + 1] = '\n';
+    return off + 2;
+}
+
+serializeSwitch :: (resp: *Response, alloc: Allocator, date: string, serverName: string) -> OutBytes {
+    raw := alloc.allocBytes(switchHeadLen(resp, date, serverName));
+    if raw == null { return .{}; }
+    buf : [*]u8 = raw.([*]u8);
+    return OutBytes{ buf = buf, len = switchHeadWrite(resp, date, serverName, buf) };
 }
 
 serializeChunkedHead :: (resp: *Response, keep: bool, alloc: Allocator, date: string, serverName: string) -> OutBytes {
