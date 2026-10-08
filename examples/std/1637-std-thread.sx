@@ -1,7 +1,7 @@
 // std.thread: raw threads contend correctly on a Mutex,
 // the Pool runs every submitted task exactly once across its workers,
 // a full backlog applies backpressure (submit returns false), and
-// shutdown joins cleanly with queued work finished.
+// deinit joins cleanly with queued work finished.
 @import "modules/std.sx";
 
 Shared :: struct {
@@ -73,8 +73,8 @@ main :: () -> i32 {
 
     // ── pool: 100 tasks, each adds its index+1; sum = 5050 ───────────
     sh.counter = 0;
-    pool, pe := thread.Pool.create(4, 128);
-    if pe { print("pool create failed\n"); return 1; }
+    pool : thread.Pool = .{};
+    pool.setup(4, 128) catch { print("pool setup failed\n"); return 1; };
     args : [*]AddArg = (context.allocator.allocBytes(100 * @sizeOf(AddArg))).([*]AddArg);
     n := 0;
     while n < 100 {
@@ -82,14 +82,14 @@ main :: () -> i32 {
         if !pool.submit(addTask, @reinterpret(usize, *args[n])) { print("submit unexpectedly refused\n"); return 1; }
         n += 1;
     }
-    pool.shutdown();   // queued tasks finish before workers exit
+    pool.deinit();   // queued tasks finish before workers exit
     if sh.counter != 5050 { print("pool: expected 5050, got {}\n", sh.counter); return 1; }
     print("pool: 100 tasks across 4 workers summed to {}\n", sh.counter);
 
     // ── backpressure: 1 worker held at the gate, backlog 2 fills ─────
     sh.gate = 0;
-    p2, pe2 := thread.Pool.create(1, 2);
-    if pe2 { print("pool2 create failed\n"); return 1; }
+    p2 : thread.Pool = .{};
+    p2.setup(1, 2) catch { print("pool2 setup failed\n"); return 1; };
     if !p2.submit(gateTask, @reinterpret(usize, *sh)) { print("gate submit refused\n"); return 1; }
     // give the worker a beat to take the gate task off the queue
     spins := 0;
@@ -108,7 +108,7 @@ main :: () -> i32 {
     sh.mu.lock();
     sh.gate = 1;
     sh.mu.unlock();
-    p2.shutdown();
+    p2.deinit();
     print("std.thread ok\n");
     return 0;
 }

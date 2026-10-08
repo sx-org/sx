@@ -2,7 +2,7 @@
 //
 // Server.init allocates the conns array, each connection's read buffer
 // (grown lazily), and — in pooled mode — the PoolState struct, its
-// completion ring, and the thread.Pool (struct + tasks + threads).
+// completion ring, and the thread.Pool's tasks + threads.
 // Server.close must free ALL of it from the SAME allocator init used.
 //
 // This drives a start/serve/stop loop for THREE scenarios:

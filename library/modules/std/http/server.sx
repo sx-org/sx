@@ -749,11 +749,11 @@ private Completion :: struct {
     switched: ?Switch = null;
 }
 
-// Heap-resident pool machinery: embeds a Mutex and is shared with
-// worker threads, so it must never move (the Server struct itself is
+// Heap-resident pool machinery: embeds the Pool and a Mutex and is shared
+// with worker threads, so it must never move (the Server struct itself is
 // returned by value from init and may be copied).
 private PoolState :: struct {
-    pool: *thread.Pool = null;
+    pool: thread.Pool = .{};
     mu: thread.Mutex = .{};
     done: [*]Completion = null;
     doneCap: i64 = 0;
@@ -1591,8 +1591,7 @@ Server :: struct {
             // freeze wakeFd == -1 and ps.loopCopy.wake() would silently
             // no-op. The unconditional addWake in init runs before here.
             ps.loopCopy = lp;
-            pool, pce := thread.Pool.create(cfg.threadPoolCount, cfg.threadPoolBacklog);
-            if pce {
+            ps.pool.setup(cfg.threadPoolCount, cfg.threadPoolBacklog) catch {
                 ps.mu.deinit();
                 oa.deallocBytes(ps.done);
                 oa.deallocBytes(ps.ochans);
@@ -1601,8 +1600,7 @@ Server :: struct {
                 oa.deallocBytes(dh);
                 closeListener(lfd, cfg.unixPath);
                 raise .Loop;
-            }
-            ps.pool = pool;
+            };
         }
 
         return Server{
@@ -1614,11 +1612,8 @@ Server :: struct {
 
     // Tear down everything init (and runtime) allocated, in an order
     // that never touches freed memory:
-    //   1. shutdown the pool FIRST — joins every worker, so no worker can
+    //   1. deinit the pool FIRST — joins every worker, so no worker can
     //      still write into ps.done / ps.loopCopy after we free ps.
-    //      (Pool.shutdown frees the Pool struct + its tasks/threads from
-    //      the allocator it was created with — ownAlloc here — so we do
-    //      NOT free ps.pool ourselves.)
     //   2. close every connection still active (frees its outBuf, removes
     //      it from the loop, closes the fd).
     //   3. free every slot's readBuf — these survive connClose (reused
@@ -1631,7 +1626,7 @@ Server :: struct {
     close :: (self: *Server) {
         if self.ps != null {
             // a worker can be BLOCKED in a body-channel read; fault
-            // every live channel BEFORE joining, or shutdown would deadlock
+            // every live channel BEFORE joining, or the join would deadlock
             // on that worker. (connClose below releases the conn refs.)
             i0 : i64 = 0;
             while i0 < self.cfg.maxConn {
@@ -1654,7 +1649,7 @@ Server :: struct {
                 oi += 1;
             }
             self.ps.mu.unlock();
-            self.ps.pool.shutdown();
+            self.ps.pool.deinit();
         }
         i : i64 = 0;
         while i < self.cfg.maxConn {
@@ -1697,7 +1692,7 @@ Server :: struct {
         }
 
         if self.ps != null {
-            // Pool.shutdown() has joined every worker, so
+            // Pool.deinit() has joined every worker, so
             // ps.doneLen / ps.done are stable — no lock needed. Workers
             // that finished an in-flight handler queued their serialized
             // response bytes (out.buf, from serializeBytes) here and they

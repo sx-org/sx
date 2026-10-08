@@ -14,9 +14,9 @@
 // are touched only under the pool mutex.
 //
 // MOVE SEMANTICS: a pthread mutex/cond is address-sensitive once
-// initialized — POSIX leaves moving one undefined. Mutex/Cond therefore
-// set up IN PLACE (`try m.setup()`) and Pool lives behind a pointer
-// (`Pool.create`), never by-value copy.
+// initialized — POSIX leaves moving one undefined — and Pool's workers hold
+// its address. Mutex, Cond and Pool are therefore set up in place
+// (`try m.setup()`) on storage that stays put until `deinit`.
 //
 // PTHREAD STRUCT SIZES `MutexBuf`/`CondBuf` below are sized
 // to the SAFE MAXIMUM across every supported target, so no per-OS branch is
@@ -109,7 +109,7 @@ thread :: scope {
     //
     // httpz's thread_pool shape: `submit` enqueues a task for the next free
     // worker and returns false when the backlog is full (the caller sheds —
-    // reject, retry, or run inline). `shutdown` drains nothing: queued
+    // reject, retry, or run inline). `deinit` drains nothing: queued
     // tasks still run, then workers exit and join.
 
     PoolTask :: struct {
@@ -127,38 +127,31 @@ thread :: scope {
         stop: bool = false;
         threads: [*]usize = null;
         count: i64 = 0;
-        // The allocator the pool (struct + tasks + threads) was created from.
-        // Captured at create so shutdown frees from the SAME allocator,
-        // independent of whatever context is current at shutdown time.
+        // The allocator the task and thread buffers come from, so deinit frees
+        // them from it whatever context is current then.
         ownAlloc: Allocator;
 
-        // Heap-allocate (the pool must never move: workers hold its address,
-        // and it embeds a live mutex), init in place, spawn the workers.
-        create :: (workers: i64, backlog: i64) -> (*Pool, !Error) {
+        // Workers hold the pool's address, so it is set up where it stays
+        // until deinit.
+        setup :: (self: *Pool, workers: i64, backlog: i64) -> !Error {
             alloc := context.allocator;
-            p : *Pool = mem.create(alloc, Pool);
-            p.* = Pool{};
-            p.ownAlloc = alloc;
-            // Free-before-raise: nothing past `p` is allocated yet, so the
-            // mutex-setup failure only needs to release `p`. The cond-setup
-            // failure additionally tears down the already-init'd mutex.
-            p.mu.setup() catch { alloc.deallocBytes(p); raise .Init; };
-            p.nonempty.setup() catch { p.mu.deinit(); alloc.deallocBytes(p); raise .Init; };
-            p.tasks = mem.alloc(alloc, PoolTask, backlog).ptr;
-            p.cap = backlog;
-            p.threads = mem.alloc(alloc, usize, workers).ptr;
-            p.count = workers;
+            self.* = .{ ownAlloc = alloc };
+            try self.mu.setup();
+            self.nonempty.setup() catch |e| { self.mu.deinit(); raise e; };
+            self.tasks = mem.alloc(alloc, PoolTask, backlog).ptr;
+            self.cap = backlog;
+            self.threads = mem.alloc(alloc, usize, workers).ptr;
+            self.count = workers;
             i : i64 = 0;
             while i < workers {
-                if c.pthread_create(*p.threads[i], null, poolWorker, p) != 0 {
+                if c.pthread_create(*self.threads[i], null, poolWorker, self) != 0 {
                     // join what started, then fail loudly
-                    p.count = i;
-                    p.shutdown();
+                    self.count = i;
+                    self.deinit();
                     raise .Spawn;
                 }
                 i += 1;
             }
-            return p;
         }
 
         // False = backlog full (backpressure); the task did not enqueue.
@@ -177,7 +170,7 @@ thread :: scope {
         }
 
         // Stop accepting work, let queued tasks finish, join every worker.
-        shutdown :: (self: *Pool) {
+        deinit :: (self: *Pool) {
             self.mu.lock();
             self.stop = true;
             self.nonempty.broadcast();
@@ -189,13 +182,9 @@ thread :: scope {
             }
             self.mu.deinit();
             self.nonempty.deinit();
-            // Free everything create allocated, from the same allocator.
-            // tasks/threads first, then the Pool struct last (no field of
-            // self is read after this point).
             a := self.ownAlloc;
             if self.tasks != null { a.deallocBytes(self.tasks); }
             if self.threads != null { a.deallocBytes(self.threads); }
-            a.deallocBytes(self);
         }
     }
 
