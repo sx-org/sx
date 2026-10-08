@@ -21,7 +21,7 @@
 @import "modules/std/list.sx";         // List
 @import "modules/std/mem.sx";
 @import "modules/std/encoding.sx";     // hexValue
-private clib :: @import "modules/std/c.sx";
+@import "modules/std/c.sx";
 @import "modules/std/posix.sx";
 @import "modules/std/socket.sx";
 
@@ -335,7 +335,7 @@ private sendOn :: (c: *ClientConn, req: ClientRequest, credentials: bool = true)
 
 // Append `s` into the request build at offset `w`, returning the new offset.
 private put :: (p: [*]u8, w: i64, s: string) -> i64 {
-    if s.len > 0 { clib.c.memcpy(*p[w], s.ptr, s.len); }
+    if s.len > 0 { c.memcpy(*p[w], s.ptr, s.len); }
     return w + s.len;
 }
 
@@ -703,7 +703,7 @@ private normalizeDecodedHeaders :: (raw: [*]u8, len: i64) -> i64 {
         }
         if !remove {
             count := after - readAt;
-            if writeAt != readAt { clib.c.memmove(*raw[writeAt], *raw[readAt], count); }
+            if writeAt != readAt { c.memmove(*raw[writeAt], *raw[readAt], count); }
             writeAt += count;
         }
         readAt = after;
@@ -717,7 +717,7 @@ private normalizeDecodedHeaders :: (raw: [*]u8, len: i64) -> i64 {
 // close-delimited responses do not require buffering their encoded form.
 // `initial` is the body prefix that arrived with the header read and is
 // copied before output can overwrite it.
-private recvEncodedBody :: (c: *ClientConn, buf: *[]u8, limit: ?i64, headEnd: i64,
+private recvEncodedBody :: (conn: *ClientConn, buf: *[]u8, limit: ?i64, headEnd: i64,
                       initial: string, contentLen: i64, chunked: bool,
                       contentEncoding: Encoding) -> (i64, !ClientErr) {
     outputCap : i64 = i64.max;
@@ -730,7 +730,7 @@ private recvEncodedBody :: (c: *ClientConn, buf: *[]u8, limit: ?i64, headEnd: i6
 
     wire : [CLIENT_WIRE_PIECE]u8 = ---;
     if initial.len > CLIENT_WIRE_PIECE { raise .TooLarge; }
-    if initial.len > 0 { clib.c.memcpy(*wire[0], initial.ptr, initial.len); }
+    if initial.len > 0 { c.memcpy(*wire[0], initial.ptr, initial.len); }
     wireAt : i64 = 0;
     wireLen : i64 = initial.len;
     outputAt : i64 = 0;
@@ -755,7 +755,7 @@ private recvEncodedBody :: (c: *ClientConn, buf: *[]u8, limit: ?i64, headEnd: i6
         }
 
         if wireAt >= wireLen {
-            n := connReadStep(c, *wire[0], CLIENT_WIRE_PIECE);
+            n := connReadStep(conn, *wire[0], CLIENT_WIRE_PIECE);
             if n < 0 { raise .Recv; }
             if n == 0 {
                 if chunked or contentLen >= 0 { raise .Recv; }
@@ -928,8 +928,8 @@ private responseHeadEnd :: (buf: [*]u8, len: i64) -> i64 {
     -1
 }
 
-private recvOn :: (c: *ClientConn) -> (ClientResponse, !ClientErr) {
-    limit := c.maxResponseBytes;
+private recvOn :: (conn: *ClientConn) -> (ClientResponse, !ClientErr) {
+    limit := conn.maxResponseBytes;
     firstCap : i64 = CLIENT_WIRE_PIECE;
     if l := limit { if l < firstCap { firstCap = l; } }
     buf := mem.alloc(context.allocator, u8, firstCap);
@@ -948,8 +948,8 @@ private recvOn :: (c: *ClientConn) -> (ClientResponse, !ClientErr) {
     decodedFrom : ?ContentCoding = null;
     normalizedHeadersLen : i64 = -1;
     finalStatus: i64 = 0;
-    requestWasHead := c.requestWasHead;
-    c.requestWasHead = false;
+    requestWasHead := conn.requestWasHead;
+    conn.requestWasHead = false;
     sawInformational := false;
 
     while true {
@@ -966,7 +966,7 @@ private recvOn :: (c: *ClientConn) -> (ClientResponse, !ClientErr) {
 
             if code >= 100 and code < 200 {
                 remaining := total - headEnd;
-                if remaining > 0 { clib.c.memmove(buf.ptr, *buf[headEnd], remaining); }
+                if remaining > 0 { c.memmove(buf.ptr, *buf[headEnd], remaining); }
                 total = remaining;
                 headEnd = -1;
                 sawInformational = true;
@@ -998,7 +998,7 @@ private recvOn :: (c: *ClientConn) -> (ClientResponse, !ClientErr) {
                 }
 
                 rangeResponse := code == 206 or code == 416 or hasHeader(hdrs, "content-range");
-                if c.acceptCompression and !rangeResponse {
+                if conn.acceptCompression and !rangeResponse {
                     ceCount := countHeader(*tmp, "content-encoding");
                     if ceCount > 0 {
                         if ceCount != 1 { raise .Recv; }
@@ -1006,7 +1006,7 @@ private recvOn :: (c: *ClientConn) -> (ClientResponse, !ClientErr) {
                         if encoding == .unacceptable { raise .Recv; }
                     }
                     if encoding != .identity {
-                        decoded = try recvEncodedBody(c, *buf, limit, headEnd,
+                        decoded = try recvEncodedBody(conn, *buf, limit, headEnd,
                             buf[headEnd .. total], contentLen, chunked, encoding);
                         decodedFrom = if encoding == .gzip then ContentCoding.gzip else ContentCoding.deflate;
                         normalizedHeadersLen = normalizeDecodedHeaders(*buf[headerStart], headEnd - 2 - headerStart);
@@ -1041,7 +1041,7 @@ private recvOn :: (c: *ClientConn) -> (ClientResponse, !ClientErr) {
         buf = try growResponse(buf, total + 1, limit);
         room := buf.len - total;
         if headEnd < 0 and room > CLIENT_WIRE_PIECE { room = CLIENT_WIRE_PIECE; }
-        n := connReadStep(c, *buf[total], room);
+        n := connReadStep(conn, *buf[total], room);
         if n == READ_RESET and total == 0 and !sawInformational { raise .Closed; }
         if n < 0 { raise .Recv; }
         if n == 0 {
