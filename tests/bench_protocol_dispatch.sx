@@ -33,7 +33,7 @@ impl Shape for Rc  { area :: (self: *Rc) -> i64 { self.w * self.h } }
 impl Shape for Tri { area :: (self: *Tri) -> i64 { self.b * self.h / 2 } }
 
 monoNs :: () -> i64 {
-    ts : time.Timespec = .{};
+    ts : c.Timespec = .{};
     c.clock_gettime(time.CLOCK_MONOTONIC, *ts);
     ts.sec * 1000000000 + ts.nsec
 }

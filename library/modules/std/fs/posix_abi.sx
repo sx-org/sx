@@ -4,7 +4,6 @@
 
 @import "modules/std/c.sx";
 
-FsPosixTimespec :: c.Timespec;
 fsPosixUtimensat :: (directory: i32, path: [*:0]u8, times: *void, flags: i32) -> i32 extern c.libc "utimensat";
 fsPosixFtruncate :: (fd: i32, len: i64) -> i32 extern c.libc "ftruncate";
 

@@ -42,7 +42,7 @@ main :: () -> i32 {
         initialAccess : i64 = 1700000001;
         initialModified : i64 = 1700000002;
         targetModified : i64 = 1700000100;
-        initial : [2]posixAbi.FsPosixTimespec = .[
+        initial : [2]c.Timespec = .[
             .{ sec = initialAccess, nsec = 0 },
             .{ sec = initialModified, nsec = 0 },
         ];

@@ -10,7 +10,7 @@ BENCH_WARMUPS : i64 = 3;
 BENCH_SAMPLES : i64 = 15;
 
 monoNs :: () -> i64 {
-    ts : time.Timespec = .{};
+    ts : c.Timespec = .{};
     if c.clock_gettime(time.CLOCK_MONOTONIC, *ts) != 0 { return -1; }
     ts.sec * 1000000000 + ts.nsec
 }

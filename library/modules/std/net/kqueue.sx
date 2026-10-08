@@ -26,15 +26,8 @@ Kevent :: struct {
     udata:  usize = 0;
 }
 
-// kevent's timeout — same layout as std.time's Timespec, declared
-// locally so the module stands alone.
-KqTimespec :: struct {
-    sec:  i64 = 0;
-    nsec: i64 = 0;
-}
-
 kqueue :: () -> i32 extern c.libc;
-kevent :: (kq: i32, changelist: *Kevent, nchanges: i32, eventlist: *Kevent, nevents: i32, timeout: *KqTimespec) -> i32 extern c.libc;
+kevent :: (kq: i32, changelist: *Kevent, nchanges: i32, eventlist: *Kevent, nevents: i32, timeout: *c.Timespec) -> i32 extern c.libc;
 
 // Filters (darwin)
 EVFILT_READ  :i16: -1;
@@ -71,7 +64,7 @@ kqApply :: (kq: i32, change: Kevent) -> bool {
 // `timeoutMs` (negative = wait forever). Returns the event count
 // (0 = timeout); -1 only for a real kevent failure — EINTR is retried.
 kqWait :: (kq: i32, events: *Kevent, cap: i32, timeoutMs: i64) -> i32 {
-    ts : KqTimespec = .{ sec = timeoutMs / 1000, nsec = (timeoutMs % 1000) * 1000000 };
+    ts : c.Timespec = .{ sec = timeoutMs / 1000, nsec = (timeoutMs % 1000) * 1000000 };
     while true {
         n := if timeoutMs < 0
             then kevent(kq, null, 0, events, cap, null)

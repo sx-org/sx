@@ -249,7 +249,7 @@ fsModifiedSecondsHandle :: (handle: i64) -> (i64, bool) {
 fsSetModifiedSeconds :: (path: string, seconds: i64) -> bool {
     inline if @host.os == .wasm { return false; }
     else {
-        times : [2]FsPosixTimespec = .[
+        times : [2]c.Timespec = .[
             .{ sec = 0, nsec = FS_POSIX_UTIME_OMIT },
             .{ sec = seconds, nsec = 0 },
         ];
