@@ -7,14 +7,12 @@ process :: scope {
     @import "modules/std/posix.sx";
     @import "modules/std/trace.sx";
 
-    libc :: c.libc;
-
-    popen  :: (cmd: [*:0]u8, mode: [*:0]u8) -> *void extern libc;
-    pclose :: (stream: *void) -> i32 extern libc;
-    fread  :: (ptr: [*]u8, size: i64, nmemb: i64, stream: *void) -> usize extern libc;
-    feof   :: (stream: *void) -> i32 extern libc;
-    getenv :: (name: [*:0]u8) -> ?[*:0]u8 extern libc;
-    system :: (cmd: [*:0]u8) -> i32 extern libc;
+    popen  :: (cmd: [*:0]u8, mode: [*:0]u8) -> *void extern c.libc;
+    pclose :: (stream: *void) -> i32 extern c.libc;
+    fread  :: (ptr: [*]u8, size: i64, nmemb: i64, stream: *void) -> usize extern c.libc;
+    feof   :: (stream: *void) -> i32 extern c.libc;
+    getenv :: (name: [*:0]u8) -> ?[*:0]u8 extern c.libc;
+    system :: (cmd: [*:0]u8) -> i32 extern c.libc;
 
     ProcessResult :: struct {
         exitCode: i32;
