@@ -1,0 +1,14 @@
+// `?!` yields a present optional's payload and stops the program at a null.
+
+@import "modules/std.sx";
+
+pick :: (n: i64) -> ?i64 {
+    if n > 0 { return n; }
+    null
+}
+
+main :: () {
+    print("{}\n", pick(5)?!);
+    v := pick(0)?!;
+    print("{}\n", v);
+}

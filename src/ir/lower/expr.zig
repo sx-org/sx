@@ -3655,6 +3655,17 @@ pub fn unwrapOptionalOperand(self: *Lowering, operand: Ref, ty: TypeId, span: as
 pub fn lowerForceUnwrap(self: *Lowering, fu: *const ast.ForceUnwrap) Ref {
     const val = self.lowerExpr(fu.operand);
     const inner_ty = self.resolveOptionalInner(self.inferExprType(fu.operand));
+    const present_bb = self.freshBlock("unwrap.present");
+    const null_bb = self.freshBlock("unwrap.null");
+    self.builder.condBr(self.builder.optionalHasValue(val), present_bb, &.{}, null_bb, &.{});
+    self.builder.switchToBlock(null_bb);
+    const cs = self.builder.current_span;
+    const span = ast.Span{ .start = cs.start, .end = cs.end };
+    const callee = self.synthNode(.{ .identifier = .{ .name = "@panic" } }, span, self.current_source_file);
+    const msg = self.synthNode(.{ .string_literal = .{ .raw = "force-unwrap of a null optional" } }, span, self.current_source_file);
+    const args = self.alloc.dupe(*Node, &.{msg}) catch @panic("out of memory");
+    _ = self.expressionDiverged(self.lowerCall(&.{ .callee = callee, .args = args }));
+    self.builder.switchToBlock(present_bb);
     return self.builder.optionalUnwrap(val, inner_ty);
 }
 

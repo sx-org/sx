@@ -1,0 +1,24 @@
+// `?!` on a null interface optional stops the program before a method
+// dispatches through it.
+
+@import "modules/std.sx";
+
+Greeter :: interface {
+    greet :: (self: *Self) -> i64;
+}
+
+Dog :: struct { n: i64; }
+impl Greeter for Dog {
+    greet :: (self: *Dog) -> i64 { self.n }
+}
+
+pick :: (d: *Dog, want: bool) -> ?Greeter {
+    if want { return d.(Greeter); }
+    null
+}
+
+main :: () {
+    rex := Dog{ n = 7 };
+    print("{}\n", pick(*rex, true)?!.greet());
+    print("{}\n", pick(*rex, false)?!.greet());
+}
