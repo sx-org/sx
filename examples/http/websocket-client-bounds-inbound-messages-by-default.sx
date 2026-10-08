@@ -10,7 +10,7 @@ peer : i64 = 0;
 // The server side of the upgrade: announce the frame and keep the socket.
 announce :: (state: *void, link: http.Link) {
     head : [10]u8 = .[0x81, 0x7F, 0x40, 0, 0, 0, 0, 0, 0, 0];
-    socket.write(link.fd, *head[0], 10);
+    c.write(link.fd, *head[0], 10);
     @atomicStore(i64, *peer, link.fd.(i64), .release);
 }
 
@@ -32,7 +32,7 @@ readAll :: (fd: i32, dst: [*]u8, n: i64) -> bool {
     while got < n {
         pfd : socket.PollFd = .{ fd = fd, events = socket.POLLIN };
         if socket.poll(*pfd, 1, 3000) <= 0 { return false; }
-        k := socket.read(fd, *dst[got], n - got);
+        k := c.read(fd, *dst[got], n - got);
         if k <= 0 { return false; }
         got += k;
     }
@@ -60,7 +60,7 @@ main :: () -> i32 {
     if !readAll(fd, *frame[0], 8) or frame[0] != 0x88 { print("no close frame\n"); return 1; }
     code := ((frame[6] ^ frame[2]).(i64) << 8) | (frame[7] ^ frame[3]).(i64);
     print("the client's close frame: {}\n", code);
-    socket.close(fd);
+    c.close(fd);
 
     srv.stop();
     t.join();

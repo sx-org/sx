@@ -28,13 +28,13 @@ show :: (port: i64, request: string, name: string) {
     a := socket.sockaddrIn(port, LOOPBACK);
     if socket.connect(fd, *a, 16) != 0 { print("connect failed\n"); return; }
     socket.setIoTimeout(fd, 3000);
-    socket.write(fd, request.ptr, request.len);
+    c.write(fd, request.ptr, request.len);
     buf := mem.alloc(context.allocator, u8, 4096);
     defer mem.free(context.allocator, buf);
     got := 0;
     head := 0;
     while head == 0 and got < buf.len {
-        n := socket.read(fd, *buf[got], buf.len - got);
+        n := c.read(fd, *buf[got], buf.len - got);
         if n <= 0 { break; }
         got += n;
         i := 0;
@@ -43,7 +43,7 @@ show :: (port: i64, request: string, name: string) {
             i += 1;
         }
     }
-    socket.close(fd);
+    c.close(fd);
     line := 0;
     while line < head and buf[line] != '\r' { line += 1; }
     print("{}\n", string{ ptr = buf.ptr, len = line });

@@ -31,10 +31,6 @@ cli :: scope {
     @import "modules/std/c.sx";
     @import "modules/std/mem.sx";
 
-    // The argv externs below are OS-specific — not in the shared c.sx surface —
-    // so keep them here, bound through the shared libc handle.
-    libc :: c.libc;
-
     // Unbraced case arms keep their declarations in the enclosing scope.
     inline match @host.os {
         case .macos:
@@ -44,8 +40,8 @@ cli :: scope {
             // the `char**` / `int` the process was launched with. Declared as
             // `*i64` / `*i32` since on 64-bit a `char***` is just a pointer to a
             // pointer-sized slot.
-            nsGetArgv :: () -> *i64 extern libc "_NSGetArgv";
-            nsGetArgc :: () -> *i32 extern libc "_NSGetArgc";
+            nsGetArgv :: () -> *i64 extern c.libc "_NSGetArgv";
+            nsGetArgc :: () -> *i32 extern c.libc "_NSGetArgc";
 
         case .linux:
             // glibc exposes no argv accessor, so the source is the kernel's own

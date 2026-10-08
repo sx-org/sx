@@ -9,10 +9,6 @@ deflate :: scope {
     @import "modules/std/internal/compress.sx";
     contracts :: @import "modules/std/codecs/deflate_contracts.sx";
 
-    Strategy :: contracts.Strategy;
-    Flush    :: contracts.Flush;
-    Options  :: contracts.Options;
-
     bound :: (sourceLen: i64) -> (i64, !compress.Error) {
         compressBound(sourceLen)
     }
@@ -20,14 +16,14 @@ deflate :: scope {
     Encoder :: struct {
         state: Deflater;
 
-        init :: (options: Options = .{}, alloc: Allocator = context.allocator) -> (Encoder, !compress.Error) {
+        init :: (options: contracts.Options = .{}, alloc: Allocator = context.allocator) -> (Encoder, !compress.Error) {
             try options.validate();
             state := Deflater.initStrategy(options.level, options.strategy, alloc);
             if state.allocationFailed { state.deinit(); raise .AllocationFailed; }
             Encoder{ state = state }
         }
 
-        reset :: (self: *Encoder, options: Options = .{}) -> !compress.Error {
+        reset :: (self: *Encoder, options: contracts.Options = .{}) -> !compress.Error {
             try options.validate();
             alloc := self.state.alloc;
             self.state.deinit();
@@ -35,7 +31,7 @@ deflate :: scope {
             if self.state.allocationFailed { raise .AllocationFailed; }
         }
 
-        flush :: (self: *Encoder, input: string, output: string, mode: Flush = .none) -> (compress.Progress, !compress.Error) {
+        flush :: (self: *Encoder, input: string, output: string, mode: contracts.Flush = .none) -> (compress.Progress, !compress.Error) {
             self.state.stepFlush(input, output, mode)
         }
 
@@ -103,14 +99,14 @@ deflate :: scope {
         deinit :: (self: *Decoder) { self.deinit(); }
     }
 
-    encode :: (data: string, options: Options = .{}, alloc: Allocator = context.allocator) -> (string, !compress.Error) {
+    encode :: (data: string, options: contracts.Options = .{}, alloc: Allocator = context.allocator) -> (string, !compress.Error) {
         try options.validate();
         result := deflateStrategy(data, options.level, options.strategy, alloc);
         if result.ptr == null { raise .AllocationFailed; }
         result
     }
 
-    encodeInto :: (data: string, output: string, options: Options = .{}, alloc: Allocator = context.allocator) -> (string, !compress.Error) {
+    encodeInto :: (data: string, output: string, options: contracts.Options = .{}, alloc: Allocator = context.allocator) -> (string, !compress.Error) {
         encoder := try Encoder.init(options, alloc);
         defer encoder.deinit();
         inputAt := 0;

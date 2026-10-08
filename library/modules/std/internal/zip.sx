@@ -38,8 +38,6 @@ private zipStringEqual :: (a: string, b: string) -> bool {
     true
 }
 
-ZipMethod :: zipContracts.Method;
-
 ZipExtractOptions :: struct {
     compressedData: bool = false;
     skipCrc: bool = false;
@@ -49,7 +47,7 @@ private ZipEntry :: struct {
     name: string;
     extra: string;
     comment: string;
-    method: ZipMethod;
+    method: zipContracts.Method;
     methodValue: i64;
     flags: i64;
     crc: i64;
@@ -524,7 +522,7 @@ ZipReader :: struct {
             if next > self.data.len or next > self.centralOffset + self.centralSize { raise .InvalidData; }
             if n == index {
                 methodValue := try le16(self.data, pos + 10);
-                method : ZipMethod = .unsupported;
+                method : zipContracts.Method = .unsupported;
                 if methodValue == 0 { method = .store; }
                 else if methodValue == 8 { method = .deflate; }
                 compressedSize := try le32(self.data, pos + 20);
@@ -1540,7 +1538,7 @@ ZipSeekExtractor :: struct {
 private ZipWriterEntry :: struct {
     nameOffset: i64;
     nameLen: i64;
-    method: ZipMethod;
+    method: zipContracts.Method;
     methodValue: i64;
     flags: i64;
     crc: i64;
@@ -1635,7 +1633,7 @@ private zipResolveDosTime :: (options: ZipEntryOptions) -> (i64, i64, !compress.
 }
 
 ZipEntryOptions :: struct {
-    method: ZipMethod = .deflate;
+    method: zipContracts.Method = .deflate;
     level: i64 = 6;
     extra: string = "";
     centralExtra: string = "";

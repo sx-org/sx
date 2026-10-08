@@ -1,0 +1,8 @@
+@import "modules/std.sx";
+
+cAbs :: (n: i32) -> i32 extern c.libc "abs";
+
+main :: () -> i32 {
+    print("cAbs(-5) = {}\n", cAbs(-5));
+    0
+}

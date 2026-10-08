@@ -32,8 +32,8 @@ dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1, per-OS layout
-    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { c.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { c.close(fd); return -1; }
     return fd;
 }
 
@@ -72,7 +72,7 @@ respComplete :: (buf: [*]u8, len: i64) -> bool {
 roundtrip :: (srv: *http.Server, reqtext: string, scratch: [*]u8) -> string {
     fd := dialPort(srv.cfg.port);
     if fd < 0 { return ""; }
-    socket.write(fd, reqtext.ptr, reqtext.len);
+    c.write(fd, reqtext.ptr, reqtext.len);
     total : i64 = 0;
     tries := 0;
     out := "";
@@ -84,7 +84,7 @@ roundtrip :: (srv: *http.Server, reqtext: string, scratch: [*]u8) -> string {
         if respComplete(scratch, total) { out = string{ ptr = scratch, len = total }; break; }
         tries += 1;
     }
-    socket.close(fd);
+    c.close(fd);
     return out;
 }
 

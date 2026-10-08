@@ -68,9 +68,9 @@ bytes; the corresponding `decodePrefix` and `decodeIntoPrefix` operations
 return both the decoded bytes and the compressed byte count when a stream is
 embedded in a larger input.
 
-`deflate.Options` selects a compression `level` from 0 through 10 and a
-`deflate.Strategy`; zlib and gzip take the same options. The default is level 6
-with the default strategy. Invalid levels raise
+`deflate.contracts.Options` selects a compression `level` from 0 through 10
+and a `deflate.contracts.Strategy`; zlib and gzip take the same options. The
+default is level 6 with the default strategy. Invalid levels raise
 `compress.Error.InvalidOptions`; there is no C-style `-1` default or numeric
 flag word.
 
@@ -139,12 +139,12 @@ bytes must outlive the `zip.Reader`. Entries and their name/comment/extra
 views borrow the reader. `extract` and `extractCompressed` return owned
 storage; `Into` variants return borrowed caller-buffer prefixes.
 
-For bounded random-access input, implement `zip.Source`:
+For bounded random-access input, implement `zip.contracts.Source`:
 
 ```sx
 ArchiveSource :: struct { bytes: string; }
 
-impl zip.Source for ArchiveSource {
+impl zip.contracts.Source for ArchiveSource {
     size :: (self: *ArchiveSource) -> i64 { self.bytes.len }
 
     readAt :: (self: *ArchiveSource, offset: i64, output: string) ->
@@ -165,9 +165,9 @@ prefix at end of input. The returned slice must point at that window rather
 than unrelated storage. The source object must outlive a reader opened with
 `zip.openSource`.
 
-`zip.Sink.write` either accepts the supplied bytes or raises an error. A sink
-writer is poisoned after an error because already-emitted archive bytes cannot
-be rolled back.
+`zip.contracts.Sink.write` either accepts the supplied bytes or raises an
+error. A sink writer is poisoned after an error because already-emitted archive
+bytes cannot be rolled back.
 
 `Reader.stream`, `streamName`, and `streamCompressed` return a bounded,
 seekable `zip.EntryReader`. It borrows the archive reader. `read` returns an
@@ -197,10 +197,10 @@ while true {
 transfers that ownership to the caller. `initSink` emits incrementally,
 `initFile` writes a path, `fromReader` preserves existing local records
 without recompression, and `appendFile` updates an existing archive. Every
-factory takes a typed options struct (`WriterOptions`, `FileWriterOptions`,
-`FromReaderOptions`, `AppendOptions`; readers take `OpenOptions` /
-`OpenFileOptions`, whose null `size` means "to the end of the file") — no
-positional booleans or zero sentinels. `close()` is the fallible
+factory takes a typed options struct from `zip.contracts` (`WriterOptions`,
+`FileWriterOptions`, `FromReaderOptions`, `AppendOptions`; readers take
+`OpenOptions` / `OpenFileOptions`, whose null `size` means "to the end of the
+file") — no positional booleans or zero sentinels. `close()` is the fallible
 finalization: it flushes and closes the underlying file or target and raises
 `Io` when that fails; memory writers `take()` first. `deinit` stays the
 infallible cleanup and is a no-op after `close`.

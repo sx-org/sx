@@ -14,29 +14,21 @@
 // APK smoke build.
 
 socket :: scope {
-    clib  :: @import "modules/std/c.sx";     // namespace `clib` (not `c` — `c` is a local fd var throughout)
+    @import "modules/std/c.sx";
     @import "modules/std/posix.sx";
     @import "modules/std/time.sx";
-    libc  :: clib.c.libc;
     // errno constants live in std/posix.sx — consumers reference `posix.EAGAIN` etc.
     // directly (a cross-module value-const can't be re-aliased at module scope).
 
-    // POSIX socket API. Cross-cutting fd primitives are re-exported from std/c.sx
-    // so existing socket.read/write/close callers keep their source-level API
-    // without duplicating the libc declarations.
-    read  :: clib.c.read;
-    write :: clib.c.write;
-    close :: clib.c.close;
-    fcntl :: clib.c.fcntl;
-    socket     :: (domain: i32, kind: i32, protocol: i32) -> i32 extern libc;
-    setsockopt :: (fd: i32, level: i32, optname: i32, optval: *i32, optlen: u32) -> i32 extern libc;
-    bind       :: (fd: i32, addr: *SockAddr, addrlen: u32) -> i32 extern libc;
-    listen     :: (fd: i32, backlog: i32) -> i32 extern libc;
-    accept     :: (fd: i32, addr: *SockAddr, addrlen: *u32) -> i32 extern libc;
-    connect    :: (fd: i32, addr: *SockAddr, addrlen: u32) -> i32 extern libc;
-    shutdown   :: (fd: i32, how: i32) -> i32 extern libc;
-    socketpair :: (domain: i32, kind: i32, protocol: i32, fds: *i32) -> i32 extern libc;
-    getsockname :: (fd: i32, addr: *SockAddr, addrlen: *u32) -> i32 extern libc;
+    socket     :: (domain: i32, kind: i32, protocol: i32) -> i32 extern c.libc;
+    setsockopt :: (fd: i32, level: i32, optname: i32, optval: *i32, optlen: u32) -> i32 extern c.libc;
+    bind       :: (fd: i32, addr: *SockAddr, addrlen: u32) -> i32 extern c.libc;
+    listen     :: (fd: i32, backlog: i32) -> i32 extern c.libc;
+    accept     :: (fd: i32, addr: *SockAddr, addrlen: *u32) -> i32 extern c.libc;
+    connect    :: (fd: i32, addr: *SockAddr, addrlen: u32) -> i32 extern c.libc;
+    shutdown   :: (fd: i32, how: i32) -> i32 extern c.libc;
+    socketpair :: (domain: i32, kind: i32, protocol: i32, fds: *i32) -> i32 extern c.libc;
+    getsockname :: (fd: i32, addr: *SockAddr, addrlen: *u32) -> i32 extern c.libc;
 
     // OS-neutral constants (same numeric value on darwin + linux).
     AF_UNSPEC    :i32: 0;
@@ -113,16 +105,16 @@ socket :: scope {
     POLLERR :i16: 0x0008;
     POLLHUP :i16: 0x0010;
 
-    poll :: (fds: *PollFd, nfds: i64, timeoutMs: i32) -> i32 extern libc;
+    poll :: (fds: *PollFd, nfds: i64, timeoutMs: i32) -> i32 extern c.libc;
 
-    getsockopt :: (fd: i32, level: i32, optname: i32, optval: *i32, optlen: *u32) -> i32 extern libc;
+    getsockopt :: (fd: i32, level: i32, optname: i32, optval: *i32, optlen: *u32) -> i32 extern c.libc;
 
     // Clear O_NONBLOCK (the inverse of setNonblocking — a timed connect flips
     // the fd nonblocking for the poll wait, then restores blocking mode).
     setBlocking :: (fd: i32) -> bool {
-        flags := fcntl(fd, F_GETFL);
+        flags := c.fcntl(fd, F_GETFL);
         if flags < 0 { return false; }
-        return fcntl(fd, F_SETFL, flags & ~O_NONBLOCK) >= 0;
+        return c.fcntl(fd, F_SETFL, flags & ~O_NONBLOCK) >= 0;
     }
 
     // Bound every subsequent blocking read/write on `fd` to `ms` milliseconds
@@ -184,12 +176,12 @@ socket :: scope {
 
     // Presentation → network address (numeric only, no DNS). Same signature on
     // both OSes; returns 1 on success.
-    inet_pton :: (af: i32, src: [*]u8, dst: *void) -> i32 extern libc;
+    inet_pton :: (af: i32, src: [*]u8, dst: *void) -> i32 extern c.libc;
 
     // getaddrinfo/freeaddrinfo — `res` is an out-param for the result-list head
     // pointer (typed usize; the per-OS AddrInfo layout is below).
-    getaddrinfo  :: (node: [*]u8, service: [*]u8, hints: *AddrInfo, res: *usize) -> i32 extern libc;
-    freeaddrinfo :: (res: *AddrInfo) extern libc;
+    getaddrinfo  :: (node: [*]u8, service: [*]u8, hints: *AddrInfo, res: *usize) -> i32 extern c.libc;
+    freeaddrinfo :: (res: *AddrInfo) extern c.libc;
 
     // Parse a NUMERIC address literal ("127.0.0.1", "::", "::1", …) + port into
     // an Addr — v4 first, then v6. No DNS (that is `resolve`); false when the
@@ -384,14 +376,14 @@ socket :: scope {
         SOCK_NONBLOCK :i32: 2048;      // 0o4000 — mirrors O_NONBLOCK
         SOCK_CLOEXEC  :i32: 524288;    // 0o2000000
 
-        accept4 :: (fd: i32, addr: *SockAddr, addrlen: *u32, flags: i32) -> i32 extern libc;
+        accept4 :: (fd: i32, addr: *SockAddr, addrlen: *u32, flags: i32) -> i32 extern c.libc;
 
         // ── per-OS SIGPIPE suppression ─────────────────────────────
         // The Linux family suppresses per write: a send with MSG_NOSIGNAL to
         // a peer that has gone fails with EPIPE instead of raising SIGPIPE.
         MSG_NOSIGNAL :i32: 0x4000;
 
-        send :: (fd: i32, buf: [*]u8, len: i64, flags: i32) -> isize extern libc;
+        send :: (fd: i32, buf: [*]u8, len: i64, flags: i32) -> isize extern c.libc;
 
         // Nothing to set: sendNoSigpipe suppresses SIGPIPE on every write.
         setNoSigpipe :: (fd: i32) -> bool {
@@ -410,8 +402,8 @@ socket :: scope {
         // contract as acceptNb (EINTR/ECONNABORTED retried internally).
         acceptConnNb :: (fd: i32) -> (i32, !Error) {
             while true {
-                c := accept4(fd, null, null, SOCK_NONBLOCK | SOCK_CLOEXEC);
-                if c >= 0 { return c; }
+                conn := accept4(fd, null, null, SOCK_NONBLOCK | SOCK_CLOEXEC);
+                if conn >= 0 { return conn; }
                 e := errno();
                 if e == posix.EINTR or e == posix.ECONNABORTED { continue; }
                 if isWouldblock(e) { raise .WouldBlock; }
@@ -521,7 +513,7 @@ socket :: scope {
         // write(2) on a socket, failing with EPIPE where the peer has gone
         // once setNoSigpipe has run on it.
         sendNoSigpipe :: (fd: i32, buf: [*]u8, len: i64) -> isize {
-            return clib.c.write(fd, buf, len);
+            return c.write(fd, buf, len);
         }
 
         // accept one pending connection with O_NONBLOCK, FD_CLOEXEC and
@@ -532,13 +524,13 @@ socket :: scope {
         // closes the fd and reports Fault — never returns a half-configured
         // socket. Same error contract as acceptNb.
         acceptConnNb :: (fd: i32) -> (i32, !Error) {
-            c, ae := acceptNb(fd);
+            conn, ae := acceptNb(fd);
             if ae == .WouldBlock { raise .WouldBlock; }
             if ae { raise .Fault; }
-            if fcntl(c, F_SETFD, FD_CLOEXEC) < 0 { clib.c.close(c); raise .Fault; }
-            if !setNonblocking(c) { clib.c.close(c); raise .Fault; }
-            if !setNoSigpipe(c) { clib.c.close(c); raise .Fault; }
-            return c;
+            if c.fcntl(conn, F_SETFD, FD_CLOEXEC) < 0 { c.close(conn); raise .Fault; }
+            if !setNonblocking(conn) { c.close(conn); raise .Fault; }
+            if !setNoSigpipe(conn) { c.close(conn); raise .Fault; }
+            return conn;
         }
     }
 
@@ -566,16 +558,16 @@ socket :: scope {
     // Put `fd` in nonblocking mode (reads/writes/accepts return EAGAIN
     // instead of parking the thread). False when fcntl refuses.
     setNonblocking :: (fd: i32) -> bool {
-        flags := fcntl(fd, F_GETFL);
+        flags := c.fcntl(fd, F_GETFL);
         if flags < 0 { return false; }
-        return fcntl(fd, F_SETFL, flags | O_NONBLOCK) >= 0;
+        return c.fcntl(fd, F_SETFL, flags | O_NONBLOCK) >= 0;
     }
 
     // mark `fd` close-on-exec so a fork/exec'd child (process.run)
     // never inherits it. FD_CLOEXEC is the only fd flag, so F_SETFD can set
     // the word directly — no read-modify-write. False when fcntl refuses.
     setCloexec :: (fd: i32) -> bool {
-        return fcntl(fd, F_SETFD, FD_CLOEXEC) >= 0;
+        return c.fcntl(fd, F_SETFD, FD_CLOEXEC) >= 0;
     }
 
     // Failure classes for the _nb wrappers.
@@ -595,8 +587,8 @@ socket :: scope {
     // surfaced — the listener is fine.
     acceptNb :: (fd: i32) -> (i32, !Error) {
         while true {
-            c := accept(fd, null, null);
-            if c >= 0 { return c; }
+            conn := accept(fd, null, null);
+            if conn >= 0 { return conn; }
             e := errno();
             if e == posix.EINTR or e == posix.ECONNABORTED { continue; }
             if isWouldblock(e) { raise .WouldBlock; }
@@ -609,7 +601,7 @@ socket :: scope {
     // or a peer reset is Closed.
     readNb :: (fd: i32, buf: [*]u8, cap: i64) -> (i64, !Error) {
         while true {
-            n := clib.c.read(fd, buf, cap);
+            n := c.read(fd, buf, cap);
             if n > 0 { return n; }
             if n == 0 { raise .Closed; }
             e := errno();

@@ -52,9 +52,9 @@ main :: () -> i32 {
         // Kill the readiness queue out from under the loop: every wait()
         // from here on fails immediately.
         inline if @host.os == .linux {
-            socket.close(srv.loop.epfd);
+            c.close(srv.loop.epfd);
         } else {
-            socket.close(srv.loop.kq);
+            c.close(srv.loop.kq);
         }
 
         // Without the fault stop this never returns (the corpus times out).

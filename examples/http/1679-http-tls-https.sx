@@ -30,7 +30,7 @@ handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
 // ── client-side BIO over a bare nonblocking fd (ctx = *i32) ──
 cliSend :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
     fd : *i32 = ctx;
-    n := socket.write(fd.*, buf, len.(i64));
+    n := c.write(fd.*, buf, len.(i64));
     if n >= 0 { return xx n; }
     e := socket.errno();
     if e == posix.EINTR or socket.isWouldblock(e) { return mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE; }
@@ -38,7 +38,7 @@ cliSend :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
 }
 cliRecv :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
     fd : *i32 = ctx;
-    n := socket.read(fd.*, buf, len.(i64));
+    n := c.read(fd.*, buf, len.(i64));
     if n > 0 { return xx n; }
     if n == 0 { return 0; }
     e := socket.errno();
@@ -95,8 +95,8 @@ dial :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { c.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { c.close(fd); return -1; }
     return fd;
 }
 
@@ -138,10 +138,10 @@ run :: () -> i32 {
     //      the slot. We drive a few ticks so the server processes + closes it. ──
     badFd := dial(srv.cfg.port);
     if badFd < 0 { return 4; }
-    socket.write(badFd, "GET / HTTP/1.1\r\n\r\n".ptr, 18);
+    c.write(badFd, "GET / HTTP/1.1\r\n\r\n".ptr, 18);
     t : i64 = 0;
     while t < 50 { srv.tick(5) catch {}; t += 1; }
-    socket.close(badFd);
+    c.close(badFd);
     t = 0;
     while t < 20 { srv.tick(5) catch {}; t += 1; }
 
@@ -155,7 +155,7 @@ run :: () -> i32 {
 
     mbedtls.mbedtls_ssl_close_notify(*cl.ssl);
     clientFree(*cl);
-    socket.close(fd);
+    c.close(fd);
     srv.close();
     ts.deinit();
     return rc;

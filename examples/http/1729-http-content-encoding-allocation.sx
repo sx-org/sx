@@ -101,7 +101,7 @@ serializationCase :: (chunked: bool, fail: bool) -> bool {
 writeAll :: (fd: i32, data: string) -> bool {
     at : i64 = 0;
     while at < data.len {
-        n := socket.write(fd, *data.ptr[at], (data.len - at));
+        n := c.write(fd, *data.ptr[at], (data.len - at));
         if n <= 0 { return false; }
         at += n;
     }
@@ -115,14 +115,14 @@ clientDecoderAllocation :: (packed: string, failAt: i64) -> bool {
     if socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM, 0, *pair[0]) != 0 { return false; }
     head := "HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nConnection: close\r\n\r\n";
     sent := writeAll(pair[1], head) and writeAll(pair[1], packed);
-    socket.close(pair[1]);
+    c.close(pair[1]);
     failure := false;
     push .{ allocator = failing } {
         response, e := http.Client.recv(pair[0]);
         if !e { response.deinit(); }
         failure = e == .Allocation;
     }
-    socket.close(pair[0]);
+    c.close(pair[0]);
     sent and failure and failing.failures == 1 and failing.live == 0
         and gpa.allocCount == 0
 }

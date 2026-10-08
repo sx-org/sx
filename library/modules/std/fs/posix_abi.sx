@@ -1,19 +1,17 @@
 // Private POSIX ABI used by std.fs. This file is flat-imported by the POSIX
-// implementation so its libc namespace and ABI constants are not authored by
-// the public std.fs facade.
+// implementation so its extern declarations and ABI constants are not authored
+// by the public std.fs facade.
 
-fsPosixC :: @import "modules/std/c.sx";
-fsPosixLibc :: @library "c";
+@import "modules/std/c.sx";
 
-FsPosixTimespec :: fsPosixC.c.Timespec;
-fsPosixUtimensat :: (directory: i32, path: [*:0]u8, times: *void, flags: i32) -> i32 extern fsPosixLibc "utimensat";
-fsPosixFtruncate :: (fd: i32, len: i64) -> i32 extern fsPosixLibc "ftruncate";
+fsPosixUtimensat :: (directory: i32, path: [*:0]u8, times: *void, flags: i32) -> i32 extern c.libc "utimensat";
+fsPosixFtruncate :: (fd: i32, len: i64) -> i32 extern c.libc "ftruncate";
 
 // The Darwin SDK's realpath is the realpath$DARWIN_EXTSN symbol.
 inline match @host.os {
-    case .macos: fsPosixRealpath :: (path: [*:0]u8, resolved: [*]u8) -> ?[*:0]u8 extern fsPosixLibc "realpath$DARWIN_EXTSN";
-    case .ios:   fsPosixRealpath :: (path: [*:0]u8, resolved: [*]u8) -> ?[*:0]u8 extern fsPosixLibc "realpath$DARWIN_EXTSN";
-    else:        fsPosixRealpath :: (path: [*:0]u8, resolved: [*]u8) -> ?[*:0]u8 extern fsPosixLibc "realpath";
+    case .macos: fsPosixRealpath :: (path: [*:0]u8, resolved: [*]u8) -> ?[*:0]u8 extern c.libc "realpath$DARWIN_EXTSN";
+    case .ios:   fsPosixRealpath :: (path: [*:0]u8, resolved: [*]u8) -> ?[*:0]u8 extern c.libc "realpath$DARWIN_EXTSN";
+    else:        fsPosixRealpath :: (path: [*:0]u8, resolved: [*]u8) -> ?[*:0]u8 extern c.libc "realpath";
 }
 
 // Linux, Android, and Emscripten use the Linux asm-generic open flag values;

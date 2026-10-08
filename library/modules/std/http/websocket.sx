@@ -29,10 +29,9 @@ websocket :: scope {
     @import "modules/std/event.sx";
     @import "modules/std/http.sx";
     @import "modules/std/http/wire.sx";
-    private clib :: @import "modules/std/c.sx";
+    @import "modules/std/c.sx";
 
-    private libc :: clib.c.libc;
-    private getentropy :: (buf: *void, len: usize) -> i32 extern libc;
+    private getentropy :: (buf: *void, len: usize) -> i32 extern c.libc;
 
     Error :: error {
         Url;        // connect: not ws:// or wss://host[:port][/path]
@@ -546,7 +545,7 @@ websocket :: scope {
             cap : i64 = if self.cap > 0 then self.cap else READ_PIECE;
             while cap < need { cap = if cap > need - cap then need else cap * 2; }
             grown := mem.alloc(a, u8, cap).ptr;
-            if self.len > 0 { clib.c.memcpy(grown, self.ptr, self.len); }
+            if self.len > 0 { c.memcpy(grown, self.ptr, self.len); }
             if self.cap > 0 { mem.free(a, self.ptr); }
             self.ptr = grown;
             self.cap = cap;
@@ -554,14 +553,14 @@ websocket :: scope {
 
         append :: (self: *Bytes, a: Allocator, s: string) {
             self.reserve(a, self.len + s.len);
-            if s.len > 0 { clib.c.memcpy(*self.ptr[self.len], s.ptr, s.len); }
+            if s.len > 0 { c.memcpy(*self.ptr[self.len], s.ptr, s.len); }
             self.len += s.len;
         }
 
         drop :: (self: *Bytes, n: i64) {
             if n == 0 { return; }
             rest := self.len - n;
-            if rest > 0 { clib.c.memmove(self.ptr, *self.ptr[n], rest); }
+            if rest > 0 { c.memmove(self.ptr, *self.ptr[n], rest); }
             self.len = rest;
         }
 
@@ -614,7 +613,7 @@ websocket :: scope {
                 self.tls.close();
                 self.tls = null;
             }
-            socket.close(self.fd);
+            c.close(self.fd);
         }
     }
 
@@ -1159,8 +1158,8 @@ websocket :: scope {
     // The Sec-WebSocket-Accept for a 24-byte Sec-WebSocket-Key.
     private acceptKey :: (key: string) -> [28]u8 {
         input : [60]u8 = ---;
-        clib.c.memcpy(*input[0], key.ptr, 24);
-        clib.c.memcpy(*input[24], GUID.ptr, 36);
+        c.memcpy(*input[0], key.ptr, 24);
+        c.memcpy(*input[24], GUID.ptr, 36);
         digest := sha1(input[..]);
         out : [28]u8 = ---;
         base64(digest[..], *out[0]);
@@ -1219,17 +1218,17 @@ websocket :: scope {
         block : [64]u8 = ---;
         i : i64 = 0;
         while i + 64 <= data.len {
-            clib.c.memcpy(*block[0], *data[i], 64);
+            c.memcpy(*block[0], *data[i], 64);
             sha1Block(*h, *block);
             i += 64;
         }
         rest := data.len - i;
-        clib.c.memset(*block[0], 0, 64);
-        if rest > 0 { clib.c.memcpy(*block[0], *data[i], rest); }
+        c.memset(*block[0], 0, 64);
+        if rest > 0 { c.memcpy(*block[0], *data[i], rest); }
         block[rest] = 0x80;
         if rest >= 56 {
             sha1Block(*h, *block);
-            clib.c.memset(*block[0], 0, 64);
+            c.memset(*block[0], 0, 64);
         }
         bits := data.len * 8;
         j : i64 = 0;

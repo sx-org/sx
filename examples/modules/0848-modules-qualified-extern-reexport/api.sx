@@ -1,4 +1,4 @@
-clib :: @import "clib.sx";
+native :: @import "native.sx";
 
-// Re-export, do not redeclare: clib.sx remains the sole extern owner.
-abs :: clib.abs;
+// Re-export, do not redeclare: native.sx remains the sole extern owner.
+abs :: native.abs;

@@ -38,6 +38,7 @@
 
 event :: scope {
     @import "modules/std/core.sx";
+    @import "modules/std/c.sx";
     @import "modules/std/list.sx";
     @import "modules/std/socket.sx";
     kqb  :: @import "modules/std/net/kqueue.sx";
@@ -116,8 +117,8 @@ event :: scope {
         }
 
         close :: (self: *Loop) {
-            if self.epfd >= 0 { socket.close(self.epfd); }
-            if self.wakeFd >= 0 { socket.close(self.wakeFd); }
+            if self.epfd >= 0 { c.close(self.epfd); }
+            if self.wakeFd >= 0 { c.close(self.wakeFd); }
             self.regs.deinit(self.own);
             self.epfd = -1;
             self.wakeFd = -1;
@@ -204,7 +205,7 @@ event :: scope {
         wake :: (self: *Loop) {
             if self.wakeFd < 0 { return; }
             one : u64 = 1;
-            socket.write(self.wakeFd, @reinterpret([*]u8, *one), 8);
+            c.write(self.wakeFd, @reinterpret([*]u8, *one), 8);
         }
 
         // Fill `out` with ready events, waiting at most `timeoutMs`
@@ -225,7 +226,7 @@ event :: scope {
                 if self.wakeFd >= 0 and fd == self.wakeFd {
                     // Drain the eventfd counter so it doesn't re-fire immediately.
                     drain : u64 = 0;
-                    socket.read(self.wakeFd, @reinterpret([*]u8, *drain), 8);
+                    c.read(self.wakeFd, @reinterpret([*]u8, *drain), 8);
                     e.user = true;
                     e.udata = self.wakeUdata;
                 } else {
@@ -256,7 +257,7 @@ event :: scope {
         }
 
         close :: (self: *Loop) {
-            if self.kq >= 0 { socket.close(self.kq); }
+            if self.kq >= 0 { c.close(self.kq); }
             self.kq = -1;
         }
 

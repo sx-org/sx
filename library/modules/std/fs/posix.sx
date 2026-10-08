@@ -1,3 +1,4 @@
+@import "modules/std/c.sx";
 @import "modules/std/core.sx";
 @import "modules/std/fmt.sx";
 @import "modules/std/mem.sx";
@@ -27,17 +28,17 @@ fsFileIsValid :: (handle: i64) -> bool { handle >= 0 and handle <= 0x7fffffff }
 
 fsFileClose :: (handle: i64) -> bool {
     if !fsFileIsValid(handle) { return false; }
-    fsPosixC.c.close(handle.(i32)) == 0
+    c.close(handle.(i32)) == 0
 }
 
 fsFileRead :: (handle: i64, output: string) -> i64 {
     if !fsFileIsValid(handle) { return -1; }
-    fsPosixC.c.read(handle.(i32), output.ptr, output.len)
+    c.read(handle.(i32), output.ptr, output.len)
 }
 
 fsFileWrite :: (handle: i64, data: string) -> i64 {
     if !fsFileIsValid(handle) { return -1; }
-    fsPosixC.c.write(handle.(i32), data.ptr, data.len)
+    c.write(handle.(i32), data.ptr, data.len)
 }
 
 fsFileTruncate :: (handle: i64, len: i64) -> bool {
@@ -50,7 +51,7 @@ fsFileSeek :: (handle: i64, offset: i64, from: i32) -> i64 {
     whence := FS_POSIX_SEEK_SET;
     if from == 1 { whence = FS_POSIX_SEEK_CUR; }
     else if from == 2 { whence = FS_POSIX_SEEK_END; }
-    fsPosixC.c.lseek(handle.(i32), offset, whence)
+    c.lseek(handle.(i32), offset, whence)
 }
 
 // ── High-level file API ─────────────────────────────────────────────
@@ -69,7 +70,7 @@ fsPosixModeToFlags :: (mode: i32) -> i32 {
 fsOpenHandle :: (path: string, mode: i32) -> i64 {
     z := mem.cloneZ(context.allocator, path);
     defer mem.free(context.allocator, z);
-    fd := fsPosixC.c.open(z, fsPosixModeToFlags(mode), 420); // 0o644 = 420
+    fd := c.open(z, fsPosixModeToFlags(mode), 420); // 0o644 = 420
     fd
 }
 
@@ -81,18 +82,18 @@ fsOpenHandle :: (path: string, mode: i32) -> i64 {
 fsReadFile :: (path: string) -> ?string {
     fd := fsOpenHandle(path, 0).(i32);
     if fd < 0 { return null; }
-    size := fsPosixC.c.lseek(fd, 0, FS_POSIX_SEEK_END);
-    if size < 0 { fsPosixC.c.close(fd); return null; }
-    if fsPosixC.c.lseek(fd, 0, FS_POSIX_SEEK_SET) < 0 { fsPosixC.c.close(fd); return null; }
+    size := c.lseek(fd, 0, FS_POSIX_SEEK_END);
+    if size < 0 { c.close(fd); return null; }
+    if c.lseek(fd, 0, FS_POSIX_SEEK_SET) < 0 { c.close(fd); return null; }
     buf := mem.allocStringZ(size);
     at := 0;
     ok := true;
     while at < size {
-        made := fsPosixC.c.read(fd, *buf.ptr[at], (size - at));
+        made := c.read(fd, *buf.ptr[at], (size - at));
         if made <= 0 { ok = false; break; }
         at += made;
     }
-    closeOk := fsPosixC.c.close(fd) == 0;
+    closeOk := c.close(fd) == 0;
     if !ok or !closeOk {
         context.allocator.deallocBytes(buf.ptr);
         return null;
@@ -103,7 +104,7 @@ fsReadFile :: (path: string) -> ?string {
 fsPosixWriteAll :: (fd: i32, data: string) -> bool {
     at := 0;
     while at < data.len {
-        made := fsPosixC.c.write(fd, *data.ptr[at], (data.len - at));
+        made := c.write(fd, *data.ptr[at], (data.len - at));
         if made <= 0 { return false; }
         at += made;
     }
@@ -115,7 +116,7 @@ fsWriteFile :: (path: string, data: string) -> bool {
     fd := fsOpenHandle(path, 1).(i32);
     if fd < 0 { return false; }
     ok := fsPosixWriteAll(fd, data);
-    closeOk := fsPosixC.c.close(fd) == 0;
+    closeOk := c.close(fd) == 0;
     ok and closeOk
 }
 
@@ -123,7 +124,7 @@ fsAppendFile :: (path: string, data: string) -> bool {
     fd := fsOpenHandle(path, 2).(i32);
     if fd < 0 { return false; }
     ok := fsPosixWriteAll(fd, data);
-    closeOk := fsPosixC.c.close(fd) == 0;
+    closeOk := c.close(fd) == 0;
     ok and closeOk
 }
 
@@ -132,31 +133,31 @@ fsAppendFile :: (path: string, data: string) -> bool {
 fsExists :: (path: string) -> bool {
     z := mem.cloneZ(context.allocator, path);
     defer mem.free(context.allocator, z);
-    fsPosixC.c.access(z, FS_POSIX_F_OK) == 0
+    c.access(z, FS_POSIX_F_OK) == 0
 }
 
 fsDeleteFile :: (path: string) -> bool {
     z := mem.cloneZ(context.allocator, path);
     defer mem.free(context.allocator, z);
-    fsPosixC.c.unlink(z) == 0
+    c.unlink(z) == 0
 }
 
 fsDeleteDir :: (path: string) -> bool {
     z := mem.cloneZ(context.allocator, path);
     defer mem.free(context.allocator, z);
-    fsPosixC.c.rmdir(z) == 0
+    c.rmdir(z) == 0
 }
 
 fsCreateDir :: (path: string) -> bool {
     z := mem.cloneZ(context.allocator, path);
     defer mem.free(context.allocator, z);
-    fsPosixC.c.mkdir(z, 493) == 0 // 0o755 = 493
+    c.mkdir(z, 493) == 0 // 0o755 = 493
 }
 
 fsSetMode :: (path: string, mode: u32) -> bool {
     z := mem.cloneZ(context.allocator, path);
     defer mem.free(context.allocator, z);
-    fsPosixC.c.chmod(z, mode) == 0
+    c.chmod(z, mode) == 0
 }
 
 fsMove :: (oldp: string, newp: string) -> bool {
@@ -164,7 +165,7 @@ fsMove :: (oldp: string, newp: string) -> bool {
     defer mem.free(context.allocator, oldz);
     newz := mem.cloneZ(context.allocator, newp);
     defer mem.free(context.allocator, newz);
-    fsPosixC.c.rename(oldz, newz) == 0
+    c.rename(oldz, newz) == 0
 }
 
 fsRealPath :: (path: string) -> ?string {
@@ -201,28 +202,28 @@ fsCopyFile :: (src: string, dst: string) -> bool {
     if srcFd < 0 { return false; }
     dstFd := fsOpenHandle(dst, 1).(i32);
     if dstFd < 0 {
-        fsPosixC.c.close(srcFd);
+        c.close(srcFd);
         return false;
     }
     ok := true;
     buf := mem.allocStringZ(65536);
     loop := true;
     while loop {
-        n := fsPosixC.c.read(srcFd, buf.ptr, 65536);
+        n := c.read(srcFd, buf.ptr, 65536);
         if n < 0 { ok = false; loop = false; }
         if n == 0 { loop = false; }
         if n > 0 {
             at := 0;
             while at < n {
-                made := fsPosixC.c.write(dstFd, *buf.ptr[at], (n - at));
+                made := c.write(dstFd, *buf.ptr[at], (n - at));
                 if made <= 0 { ok = false; loop = false; break; }
                 at += made;
             }
         }
     }
     context.allocator.deallocBytes(buf.ptr);
-    srcCloseOk := fsPosixC.c.close(srcFd) == 0;
-    dstCloseOk := fsPosixC.c.close(dstFd) == 0;
+    srcCloseOk := c.close(srcFd) == 0;
+    dstCloseOk := c.close(dstFd) == 0;
     ok and srcCloseOk and dstCloseOk
 }
 
@@ -234,13 +235,13 @@ fsModifiedSecondsHandle :: (handle: i64) -> (i64, bool) {
     inline if @host.os == .wasm { return 0, false; }
     else {
         raw : [256]u8 = .{};
-        if fsPosixC.c.fstat(handle.(i32), *raw[0]) != 0 { return 0, false; }
+        if c.fstat(handle.(i32), *raw[0]) != 0 { return 0, false; }
         offset := 0;
         inline if @host.os == .macos or @host.os == .ios { offset = 48; }
         else if @host.os == .linux or @host.os == .android { offset = 88; }
         else { @error("std/fs/posix.sx: stat modification-time offset is not defined for this target"); }
         seconds : i64 = 0;
-        fsPosixC.c.memcpy(*seconds, *raw[offset], @sizeOf(i64));
+        c.memcpy(*seconds, *raw[offset], @sizeOf(i64));
         return seconds, true;
     }
 }
@@ -248,7 +249,7 @@ fsModifiedSecondsHandle :: (handle: i64) -> (i64, bool) {
 fsSetModifiedSeconds :: (path: string, seconds: i64) -> bool {
     inline if @host.os == .wasm { return false; }
     else {
-        times : [2]FsPosixTimespec = .[
+        times : [2]c.Timespec = .[
             .{ sec = 0, nsec = FS_POSIX_UTIME_OMIT },
             .{ sec = seconds, nsec = 0 },
         ];

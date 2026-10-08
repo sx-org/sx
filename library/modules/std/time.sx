@@ -16,7 +16,6 @@
 
 time :: scope {
     @import "modules/std/c.sx";
-    Timespec :: c.Timespec;
 
     inline match @host.os {
         case .macos:
@@ -40,14 +39,14 @@ time :: scope {
 
     // Wall clock as unix epoch seconds.
     nowSecs :: () -> i64 {
-        ts : Timespec = .{};
+        ts : c.Timespec = .{};
         c.clock_gettime(CLOCK_REALTIME, *ts);
         return ts.sec;
     }
 
     // Monotonic milliseconds since an arbitrary process-local origin.
     monoMs :: () -> i64 {
-        ts : Timespec = .{};
+        ts : c.Timespec = .{};
         c.clock_gettime(CLOCK_MONOTONIC, *ts);
         return ts.sec * 1000 + ts.nsec / 1000000;
     }
@@ -55,7 +54,7 @@ time :: scope {
     // Monotonic nanoseconds since an arbitrary process-local origin —
     // input timestamps, frame timing.
     monoNs :: () -> i64 {
-        ts : Timespec = .{};
+        ts : c.Timespec = .{};
         c.clock_gettime(CLOCK_MONOTONIC, *ts);
         return ts.sec * 1_000_000_000 + ts.nsec;
     }

@@ -10,7 +10,7 @@ main :: () -> i32 {
     are := false;
     loop.addRead(pair[0], slot) catch { are = true; };
     if are { return 1; }
-    socket.write(pair[1], "x".ptr, 1);
+    c.write(pair[1], "x".ptr, 1);
     evs : [4]event.Event = ---;
     n, we := loop.wait(.{ ptr = *evs[0], len = 4 }, 1000);
     if we or n != 1 { return 1; }

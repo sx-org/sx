@@ -3,7 +3,7 @@
 @import "modules/std/list.sx";          // List
 @import "modules/std/mem.sx";
 @import "modules/std/http.sx";
-private clib    :: @import "modules/std/c.sx";
+@import "modules/std/c.sx";
 @import "modules/std/socket.sx";
 @import "modules/std/posix.sx";
 @import "modules/std/fs.sx";
@@ -30,7 +30,7 @@ private tlsBioSend :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
 private tlsBioRecv :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
     s : *TlsSession = ctx.(*TlsSession);
     while true {
-        n := socket.read(s.fd, buf, len.(i64));
+        n := c.read(s.fd, buf, len.(i64));
         if n > 0 { return n.(i32); }
         if n == 0 { return 0; }   // orderly EOF — mbedTLS treats as conn closed
         e := socket.errno();
@@ -445,7 +445,7 @@ private tlsSniSelect :: (ctx: *void, ssl: *mbedtls.SslContext, name: [*]u8, name
 private nulDup :: (a: Allocator, src: []u8) -> ([*]u8, usize) {
     n := src.len;
     p : [*]u8 = mem.alloc(a, u8, n + 1).ptr;
-    if n > 0 { clib.c.memcpy(p, src.ptr, n); }
+    if n > 0 { c.memcpy(p, src.ptr, n); }
     p[n] = 0;
     return p, (n + 1).(usize);
 }

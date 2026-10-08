@@ -2304,7 +2304,9 @@ SxFoo     :: @ObjcClass("SxFoo")    export { counter: i32; bump :: (self: *Self)
   it is passed to the linker (`-lname` on Unix); when omitted, the symbol must
   resolve at link time from a framework or an already-linked / auto-detected
   library. The `@library` declaration + build-flag linking mechanism is a separate
-  axis — `extern` *references* a library, it does not declare one.
+  axis — `extern` *references* a library, it does not declare one. `lib_ref` is
+  the constant's name or a dotted path through the scopes that declare it:
+  `extern c.libc` names the `libc` declared in `c :: scope { … }`.
 - `extern lib_ref "c_symbol"` (and `export "c_symbol"`) renames the binding: the
   sx name differs from the C symbol. This avoids name collisions (e.g. POSIX
   `write` vs an sx builtin) and gives an export a stable C-visible name.

@@ -4,8 +4,8 @@
 // out — folding the result into a constant.
 @import "modules/std.sx";
 
-toupper :: (c: i32) -> i32 extern libc;
-tolower :: (c: i32) -> i32 extern libc;
+toupper :: (c: i32) -> i32 extern c.libc;
+tolower :: (c: i32) -> i32 extern c.libc;
 
 UP :: @run toupper(97);   // 'a' -> 'A' = 65
 LO :: @run tolower(90);   // 'Z' -> 'z' = 122

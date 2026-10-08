@@ -1,1 +1,1 @@
-absval :: (n: i32) -> i32 extern libc "abs";
+absval :: (n: i32) -> i32 extern c.libc "abs";

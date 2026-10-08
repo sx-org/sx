@@ -1,0 +1,5 @@
+error: extern library 'libs.libc' is not declared; expected a @library constant or a named '@import c' unit
+  --> examples/ffi/extern-library-path-is-checked-through-its-scopes.sx:4:1
+   |
+ 4 | cAbs :: (n: i32) -> i32 extern libs.libc "abs";
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

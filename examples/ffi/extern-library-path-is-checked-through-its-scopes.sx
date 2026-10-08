@@ -1,0 +1,9 @@
+// `libc` is declared only inside the `c` scope, so the path `libs.libc` names nothing.
+@import "modules/std.sx";
+
+cAbs :: (n: i32) -> i32 extern libs.libc "abs";
+
+main :: () -> i32 {
+    print("cAbs(-5) = {}\n", cAbs(-5));
+    0
+}

@@ -31,8 +31,8 @@ dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { c.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { c.close(fd); return -1; }
     return fd;
 }
 
@@ -82,7 +82,7 @@ drain :: (srv: *http.Server, fd: i32, buf: [*]u8, cap: i64, total: *i64) -> bool
 staged :: (srv: *http.Server, first: string, second: string, third: string, waitFor: string, buf: [*]u8, cap: i64) -> string {
     fd := dialPort(srv.cfg.port);
     if fd < 0 { return ""; }
-    socket.write(fd, first.ptr, first.len);
+    c.write(fd, first.ptr, first.len);
     total : i64 = 0;
     // Phase 1: wait for the interim (or prove silence).
     if waitFor.len > 0 {
@@ -102,7 +102,7 @@ staged :: (srv: *http.Server, first: string, second: string, third: string, wait
     // Phase 2: a partial body piece, then ticks that would expose a
     // re-emitted interim on the extra need-more cycle.
     if second.len > 0 {
-        socket.write(fd, second.ptr, second.len);
+        c.write(fd, second.ptr, second.len);
         if third.len > 0 {
             mid : i64 = 0;
             while mid < 20 {
@@ -112,7 +112,7 @@ staged :: (srv: *http.Server, first: string, second: string, third: string, wait
         }
     }
     // Phase 3: the rest of the request, then read to EOF.
-    if third.len > 0 { socket.write(fd, third.ptr, third.len); }
+    if third.len > 0 { c.write(fd, third.ptr, third.len); }
     stall : i64 = 0;
     done := false;
     prev := total;
@@ -120,7 +120,7 @@ staged :: (srv: *http.Server, first: string, second: string, third: string, wait
         done = drain(srv, fd, buf, cap, *total);
         if total > prev { stall = 0; prev = total; } else { stall += 1; }
     }
-    socket.close(fd);
+    c.close(fd);
     return string{ ptr = buf, len = total };
 }
 

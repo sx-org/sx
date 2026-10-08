@@ -35,7 +35,6 @@
 //   + net-zero GPA gate across the whole run.
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
-cstd   :: @import "modules/std/c.sx";
 @import "modules/std/http.sx";
 
 // ── fake TLS provider ────────────────────────────────────────────────
@@ -93,7 +92,7 @@ impl http.TlsConn for FakeConn {
         if self.pendOff < self.pendLen {
             n := self.pendLen - self.pendOff;
             if n > cap.(i64) { n = cap.(i64); }
-            cstd.c.memcpy(buf, *self.pend[self.pendOff], n);
+            c.memcpy(buf, *self.pend[self.pendOff], n);
             self.pendOff += n;
             if self.pendOff == self.pendLen { self.pendOff = 0; self.pendLen = 0; }
             return n, http.TlsStep.Done;
@@ -214,7 +213,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     if req.path == "/b"  { resp.body = "ok-b"; return; }
     if req.path == "/h"  {
         // A SLOW pooled handler keeps the cross-armed-watch window wide.
-        cstd.c.usleep(80000);
+        c.usleep(80000);
         resp.body = "ok-h";
         return;
     }
@@ -226,8 +225,8 @@ dial :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { c.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { c.close(fd); return -1; }
     return fd;
 }
 
@@ -298,9 +297,9 @@ run :: (acc: *FakeAcceptor) -> i32 {
     c1 := dial(srv.cfg.port);
     if c1 < 0 { return 3; }
     reqA := "GET /a HTTP/1.1\r\nHost: t\r\n\r\n";
-    socket.write(c1, reqA.ptr, reqA.len);
+    c.write(c1, reqA.ptr, reqA.len);
     if !readResponse(*srv, c1, *rbuf[0], 4096, "ok-a") { srv.close(); return 10; }
-    socket.close(c1);
+    c.close(c1);
 
     // ── W: write-want-read. Wait for the want to surface (the acceptor's
     // counter flips on the loop thread == this thread), then send the one
@@ -309,7 +308,7 @@ run :: (acc: *FakeAcceptor) -> i32 {
     c2 := dial(srv.cfg.port);
     if c2 < 0 { return 4; }
     reqB := "GET /b HTTP/1.1\r\nHost: t\r\n\r\n";
-    socket.write(c2, reqB.ptr, reqB.len);
+    c.write(c2, reqB.ptr, reqB.len);
     t : i64 = 0;
     while acc.wrDeclared == 0 and t < 2500 { srv.tick(1) catch {}; t += 1; }
     if acc.wrDeclared != 1 { srv.close(); return 11; }
@@ -319,14 +318,14 @@ run :: (acc: *FakeAcceptor) -> i32 {
     t = 0;
     while t < 20 { srv.tick(1) catch {}; t += 1; }
     tickle := "\n";
-    socket.write(c2, tickle.ptr, 1);
+    c.write(c2, tickle.ptr, 1);
     if !readResponse(*srv, c2, *rbuf[0], 4096, "ok-b") { srv.close(); return 12; }
     if acc.wrExtraRetries != 0 { srv.close(); return 13; }
     // keep-alive on the same conn: the watch state healed.
     reqB2 := "GET /b2 HTTP/1.1\r\nHost: t\r\n\r\n";
-    socket.write(c2, reqB2.ptr, reqB2.len);
+    c.write(c2, reqB2.ptr, reqB2.len);
     if !readResponse(*srv, c2, *rbuf[0], 4096, "pong") { srv.close(); return 14; }
-    socket.close(c2);
+    c.close(c2);
 
     // ── B: body-cross on the CONN_BODY pump. Headers + 4 body bytes first
     // (passes through: 1st data-bearing read), then the 8-byte tail arms
@@ -334,13 +333,13 @@ run :: (acc: *FakeAcceptor) -> i32 {
     c3 := dial(srv.cfg.port);
     if c3 < 0 { return 5; }
     reqC := "POST /c HTTP/1.1\r\nHost: t\r\nContent-Length: 12\r\n\r\nabcd";
-    socket.write(c3, reqC.ptr, reqC.len);
+    c.write(c3, reqC.ptr, reqC.len);
     t = 0;
     while t < 30 { srv.tick(1) catch {}; t += 1; }   // headers dispatched, pump waiting
     tail := "efghijkl";
-    socket.write(c3, tail.ptr, tail.len);
+    c.write(c3, tail.ptr, tail.len);
     if !readResponse(*srv, c3, *rbuf[0], 4096, "got-12") { srv.close(); return 15; }
-    socket.close(c3);
+    c.close(c3);
 
     // ── H: the want is UNRESOLVED at dispatch. The server must drop the
     // cross-armed watch when reading parks for the handler — otherwise the
@@ -349,9 +348,9 @@ run :: (acc: *FakeAcceptor) -> i32 {
     c4 := dial(srv.cfg.port);
     if c4 < 0 { return 6; }
     reqH := "GET /h HTTP/1.1\r\nHost: t\r\n\r\n";
-    socket.write(c4, reqH.ptr, reqH.len);
+    c.write(c4, reqH.ptr, reqH.len);
     if !readResponse(*srv, c4, *rbuf[0], 4096, "ok-h") { srv.close(); return 17; }
-    socket.close(c4);
+    c.close(c4);
 
     // Both read-cross injections fired (R and B) and the dispatch-cross
     // want (H) surfaced before its request was served.

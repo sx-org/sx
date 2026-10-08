@@ -5,7 +5,7 @@
 ..@import "modules/std/http/types.sx";
 ..@import "modules/std/http/tls.sx";
 ..@import "modules/std/http/fiber.sx";
-private clib :: @import "modules/std/c.sx";
+@import "modules/std/c.sx";
 @import "modules/std/thread.sx";
 @import "modules/std/event.sx";
 @import "modules/std/codecs/gzip.sx";
@@ -100,7 +100,7 @@ private decodeChunkedPass :: (src: [*]u8, avail: i64, maxBody: i64, commit: bool
         if rp + size + 1 >= avail { return ChunkResult{ status = ChunkStatus.NEED_MORE, resumeRp = cpRp, resumeDecoded = cpDecoded }; }
 
         if commit and wp != rp {
-            clib.c.memmove(*src[wp], *src[rp], size);
+            c.memmove(*src[wp], *src[rp], size);
         }
         wp += size;
         rp += size;
@@ -741,7 +741,7 @@ OutChan :: struct {
             space := self.cap - self.len;
             rem := n - off;
             take := if rem < space then rem else space;
-            clib.c.memcpy(*self.buf[self.len], *src[off], take);
+            c.memcpy(*self.buf[self.len], *src[off], take);
             self.len += take;
             off += take;
             w := self.hungry;
@@ -774,9 +774,9 @@ OutChan :: struct {
         self.mu.lock();
         n := if want < self.len then want else self.len;
         if n > 0 {
-            clib.c.memcpy(dst, self.buf, n);
+            c.memcpy(dst, self.buf, n);
             rest := self.len - n;
-            if rest > 0 { clib.c.memmove(self.buf, *self.buf[n], rest); }
+            if rest > 0 { c.memmove(self.buf, *self.buf[n], rest); }
             self.len = rest;
             self.cv.signal();
         }
@@ -855,7 +855,7 @@ private HDR_CLOSE : string : "\r\nConnection: close\r\n";
 private HTTP_PFX  : string : "HTTP/1.1 ";
 
 private putStr :: (dst: [*]u8, off: i64, s: string) -> i64 {
-    clib.c.memcpy(*dst[off], s.ptr, s.len);
+    c.memcpy(*dst[off], s.ptr, s.len);
     return off + s.len;
 }
 
@@ -913,7 +913,7 @@ serializeBytes :: (resp: *Response, keep: bool, alloc: Allocator, headOnly: bool
     if raw == null { return .{}; }
     buf : [*]u8 = raw.([*]u8);
     w := respHeadWrite(resp, keep, date, serverName, noBodyStatus, false, buf);
-    if bodyLen > 0 { clib.c.memcpy(*buf[w], resp.body.ptr, bodyLen); }
+    if bodyLen > 0 { c.memcpy(*buf[w], resp.body.ptr, bodyLen); }
     return OutBytes{ buf = buf, len = w + bodyLen };
 }
 

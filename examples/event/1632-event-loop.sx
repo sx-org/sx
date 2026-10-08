@@ -31,7 +31,7 @@ main :: () -> i32 {
 
     // Readable: the event carries fd, udata, and the pending byte count.
     msg := "ping";
-    socket.write(b, msg.ptr, 4);
+    c.write(b, msg.ptr, 4);
     n2, we2 := loop.wait(.{ ptr = *evs[0], len = 8 }, 1000);
     if we2 { print("wait failed\n"); return 1; }
     if n2 != 1 { print("after write: expected 1 event, got {}\n", n2); return 1; }
@@ -46,7 +46,7 @@ main :: () -> i32 {
     loop.addWrite(b, 42) catch { awe = true; };
     if awe { print("addWrite failed\n"); return 1; }
     buf : [16]u8 = ---;
-    socket.read(a, *buf[0], 16);   // drain so only the WRITE event fires
+    c.read(a, *buf[0], 16);   // drain so only the WRITE event fires
     n3, we3 := loop.wait(.{ ptr = *evs[0], len = 8 }, 1000);
     if we3 { print("wait failed\n"); return 1; }
     if n3 != 1 { print("write interest: expected 1 event, got {}\n", n3); return 1; }
@@ -56,7 +56,7 @@ main :: () -> i32 {
     loop.delWrite(b);
 
     // Peer close: readable with the eof flag set.
-    socket.close(b);
+    c.close(b);
     n4, we4 := loop.wait(.{ ptr = *evs[0], len = 8 }, 1000);
     if we4 { print("wait failed\n"); return 1; }
     if n4 != 1 { print("after close: expected 1 event, got {}\n", n4); return 1; }
@@ -64,7 +64,7 @@ main :: () -> i32 {
     print("peer close: eof flagged\n");
 
     loop.delRead(a);
-    socket.close(a);
+    c.close(a);
     loop.close();
     print("event loop ok\n");
     return 0;

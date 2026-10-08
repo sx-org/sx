@@ -54,8 +54,8 @@ dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { c.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { c.close(fd); return -1; }
     return fd;
 }
 
@@ -128,7 +128,7 @@ main :: () -> i32 {
         ca := dialPort(srv.cfg.port);
         if ca < 0 { print("dial A failed\n"); srv.close(); return 1; }
         slowReq := "GET /slow HTTP/1.1\r\nHost: t\r\n\r\n";
-        socket.write(ca, slowReq.ptr, slowReq.len);
+        c.write(ca, slowReq.ptr, slowReq.len);
 
         // Tick enough to accept + dispatch the slow request (CONN_HANDLING),
         // then keep ticking past the 40 ms handler deadline so the loop's
@@ -165,7 +165,7 @@ main :: () -> i32 {
         cb := dialPort(srv.cfg.port);
         if cb < 0 { print("dial B failed\n"); srv.close(); return 1; }
         fastReq := "GET /fast HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n";
-        socket.write(cb, fastReq.ptr, fastReq.len);
+        c.write(cb, fastReq.ptr, fastReq.len);
         fbTotal : i64 = 0;
         fastResp := "";
         t = 0;
@@ -204,8 +204,8 @@ main :: () -> i32 {
             failed = 1;
         }
 
-        socket.close(ca);
-        socket.close(cb);
+        c.close(ca);
+        c.close(cb);
         srv.close();   // joins the slow worker; its late completion (if any
                        // still pending) is freed by close's drain — net-zero.
 

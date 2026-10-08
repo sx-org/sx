@@ -89,8 +89,8 @@ dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { c.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { c.close(fd); return -1; }
     return fd;
 }
 
@@ -237,7 +237,7 @@ main :: () -> i32 {
             if tickBytes < preq.len and tickServed < 2 {
                 // the pipeline surfaced to the server in parts — the
                 // one-tick premise is void; retry on a fresh conn
-                socket.close(cp);
+                c.close(cp);
                 srv.tick(1) catch {};
                 srv.tick(1) catch {};
                 ptrials += 1;
@@ -247,7 +247,7 @@ main :: () -> i32 {
                 // everything was read in the one tick and still not both
                 // served — the same-tick re-drive is genuinely broken
                 print("case1b: {} served in one tick ({} bytes read, want 2)\n", tickServed, tickBytes);
-                socket.close(cp);
+                c.close(cp);
                 failed = 1;
                 break;
             }
@@ -269,7 +269,7 @@ main :: () -> i32 {
                 srv.tick(1) catch {};
                 pr += 1;
             }
-            socket.close(cp);
+            c.close(cp);
             srv.tick(1) catch {};
             srv.tick(1) catch {};
             if pongs != 2 { print("case1b: {} pongs on the wire (want 2)\n", pongs); failed = 1; }
@@ -303,7 +303,7 @@ main :: () -> i32 {
         r3 := readResponse(*srv, c1, rbuf, cap);
         resp3 := string{ ptr = rbuf, len = r3 };
         if !contains(resp3, "pong") { print("case3: no pong\n"); failed = 1; }
-        socket.close(c1);
+        c.close(c1);
 
         // ── case 4: stalled body → eviction wakes the parked fiber ────
         c4 := dialPort(srv.cfg.port);
@@ -317,7 +317,7 @@ main :: () -> i32 {
             srv.tick(1) catch {};
             t += 1;
         }
-        socket.close(c4);
+        c.close(c4);
         if obs.stallRc != -1 { print("case4: rc {} (want -1)\n", obs.stallRc); failed = 1; }
         if obs.stallGot != 1024 { print("case4: got {} (want 1024)\n", obs.stallGot); failed = 1; }
 
@@ -328,7 +328,7 @@ main :: () -> i32 {
         r5 := readResponse(*srv, c5, rbuf, cap);
         resp5 := string{ ptr = rbuf, len = r5 };
         if !contains(resp5, "pong") { print("case5: no pong\n"); failed = 1; }
-        socket.close(c5);
+        c.close(c5);
 
         // ── case 6: close() with a fiber parked mid-body must return ──
         c6 := dialPort(srv.cfg.port);
@@ -339,7 +339,7 @@ main :: () -> i32 {
         while t < 5 { srv.tick(1) catch {}; t += 1; }   // fiber parked in readBody
 
         srv.close();   // faults channels, wakes + drives fibers — must return
-        socket.close(c6);
+        c.close(c6);
         runner.deinit();
 
         context.allocator.deallocBytes(body);

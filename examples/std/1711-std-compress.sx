@@ -203,7 +203,7 @@ testStreaming :: (alloc: Allocator) -> bool {
         if outputEnd > encoded.len { outputEnd = encoded.len; }
         output := "";
         if outputAt < outputEnd { output = encoded[outputAt..outputEnd]; }
-        mode : deflate.Flush = if inputEnd == PLAIN.len then .finish else .none;
+        mode : deflate.contracts.Flush = if inputEnd == PLAIN.len then .finish else .none;
         progress := encoder.flush(input, output, mode) catch { encoder.deinit(); return false; };
         inputAt += progress.consumed;
         outputAt += progress.produced;

@@ -30,8 +30,8 @@ dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { c.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { c.close(fd); return -1; }
     return fd;
 }
 
@@ -90,19 +90,19 @@ main :: () -> i32 {
         ca := dialPort(srv.cfg.port);
         if ca < 0 { print("dial A failed\n"); srv.close(); return 1; }
         partial := "GET /slowclient HTTP/1.1\r\nHo";   // header block never finishes
-        socket.write(ca, partial.ptr, partial.len);
+        c.write(ca, partial.ptr, partial.len);
         ra := drainToEof(*srv, ca, rbuf, cap);       // rides past the deadline
         if !contains(ra, "HTTP/1.1 408") or !contains(ra, "Connection: close") {
             print("expected 408 for a timed-out partial request, got {} bytes\n", ra.len);
             failed = 1;
         }
-        socket.close(ca);
+        c.close(ca);
 
         // ── (b) idle keepalive eviction stays wire-silent ─────────────
         cb := dialPort(srv.cfg.port);
         if cb < 0 { print("dial B failed\n"); srv.close(); return 1; }
         good := "GET / HTTP/1.1\r\nHost: t\r\n\r\n";
-        socket.write(cb, good.ptr, good.len);
+        c.write(cb, good.ptr, good.len);
         rb := drainToEof(*srv, cb, rbuf, cap);       // response, idle, evicted
         if !contains(rb, "HTTP/1.1 200 OK") or !contains(rb, "served") {
             print("keepalive request failed\n");
@@ -113,31 +113,31 @@ main :: () -> i32 {
             print("idle keepalive eviction was not silent\n");
             failed = 1;
         }
-        socket.close(cb);
+        c.close(cb);
 
         // ── (c) well-formed unsupported version → 505 ─────────────────
         cc := dialPort(srv.cfg.port);
         if cc < 0 { print("dial C failed\n"); srv.close(); return 1; }
         v2 := "GET / HTTP/2.0\r\nHost: t\r\n\r\n";
-        socket.write(cc, v2.ptr, v2.len);
+        c.write(cc, v2.ptr, v2.len);
         rc := drainToEof(*srv, cc, rbuf, cap);
         if !contains(rc, "HTTP/1.1 505") {
             print("expected 505 for HTTP/2.0, got: {}\n", rc);
             failed = 1;
         }
-        socket.close(cc);
+        c.close(cc);
 
         // ── (d) garbage version stays 400 ─────────────────────────────
         cd := dialPort(srv.cfg.port);
         if cd < 0 { print("dial D failed\n"); srv.close(); return 1; }
         vg := "GET / FOO/1.1\r\nHost: t\r\n\r\n";
-        socket.write(cd, vg.ptr, vg.len);
+        c.write(cd, vg.ptr, vg.len);
         rd := drainToEof(*srv, cd, rbuf, cap);
         if !contains(rd, "HTTP/1.1 400") {
             print("expected 400 for a garbage version, got: {}\n", rd);
             failed = 1;
         }
-        socket.close(cd);
+        c.close(cd);
 
         // ── (e) both evictions counted ────────────────────────────────
         st := srv.stats();

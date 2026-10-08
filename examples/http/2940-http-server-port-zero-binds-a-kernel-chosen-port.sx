@@ -52,7 +52,7 @@ main :: () -> i32 {
     fds : [2]i32 = ---;
     if socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM, 0, *fds[0]) != 0 { print("socketpair failed\n"); return 1; }
     print("AF_UNIX localPort: {}\n", socket.localPort(fds[0]));
-    socket.close(fds[0]);
-    socket.close(fds[1]);
+    c.close(fds[0]);
+    c.close(fds[1]);
     0
 }
