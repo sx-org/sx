@@ -7,8 +7,8 @@
 //   and index targets of a multi-assign;
 // - subslices (`o[0..n]` is `[]T`, viewing the payload's own storage);
 // - generic binding, so a `[]$T` ufcs receiver binds `[]i64`.
-// Un-narrowed, `o[i]` stays the optional chain `?Elem`; `q := o` keeps the
-// declared `?[]T`, and `q : []T = o` binds the payload.
+// Un-narrowed, `o[i]` stays the optional chain `?Elem`. After the guard,
+// `q := o` keeps the declared `?[]T`, and `q : []T = o` binds the payload.
 @import "modules/std.sx";
 
 P :: struct { n: i64 = 0; }
