@@ -296,7 +296,7 @@ main :: () -> i32 {
                 c.write(fd, partial.ptr, partial.len);
                 t := 0;
                 while t < 50 { srv.tick(1) catch {}; t += 1; }   // let the server read the partial
-                c.close(fd);                                 // disconnect mid-body
+                c.close(fd);                                      // disconnect mid-body
                 t = 0;
                 while t < 200 { srv.tick(1) catch {}; t += 1; }   // let the server notice + close
                 if activeSlots(*srv) != 0 {
