@@ -1,0 +1,14 @@
+// std's TLS calls mbedTLS from several threads, so the vendored mbedTLS is
+// built with its pthread threading layer: the library's own feature query
+// answers for both options.
+@import "modules/std.sx";
+@import "vendors/mbedtls/mbedtls.sx";
+
+main :: () -> i32 {
+    threading := mbedtls.mbedtls_version_check_feature("MBEDTLS_THREADING_C".ptr) == 0;
+    pthread := mbedtls.mbedtls_version_check_feature("MBEDTLS_THREADING_PTHREAD".ptr) == 0;
+    print("MBEDTLS_THREADING_C: {}\n", threading);
+    print("MBEDTLS_THREADING_PTHREAD: {}\n", pthread);
+    if !threading or !pthread { return 1; }
+    0
+}
