@@ -18,14 +18,14 @@ zlib :: scope {
     Encoder :: struct {
         state: ZlibDeflater;
 
-        init :: (options: deflate.Options = .{}, alloc: Allocator = context.allocator) -> (Encoder, !compress.Error) {
+        init :: (options: deflate.contracts.Options = .{}, alloc: Allocator = context.allocator) -> (Encoder, !compress.Error) {
             try options.validate();
             state := ZlibDeflater.initStrategy(options.level, options.strategy, alloc);
             if state.raw.allocationFailed { state.deinit(); raise .AllocationFailed; }
             Encoder{ state = state }
         }
 
-        reset :: (self: *Encoder, options: deflate.Options = .{}) -> !compress.Error {
+        reset :: (self: *Encoder, options: deflate.contracts.Options = .{}) -> !compress.Error {
             try options.validate();
             alloc := self.state.alloc;
             self.state.deinit();
@@ -33,7 +33,7 @@ zlib :: scope {
             if self.state.raw.allocationFailed { raise .AllocationFailed; }
         }
 
-        flush :: (self: *Encoder, input: string, output: string, mode: deflate.Flush = .none) -> (compress.Progress, !compress.Error) {
+        flush :: (self: *Encoder, input: string, output: string, mode: deflate.contracts.Flush = .none) -> (compress.Progress, !compress.Error) {
             self.state.stepFlush(input, output, mode)
         }
 
@@ -101,14 +101,14 @@ zlib :: scope {
         deinit :: (self: *Decoder) { self.deinit(); }
     }
 
-    encode :: (data: string, options: deflate.Options = .{}, alloc: Allocator = context.allocator) -> (string, !compress.Error) {
+    encode :: (data: string, options: deflate.contracts.Options = .{}, alloc: Allocator = context.allocator) -> (string, !compress.Error) {
         try options.validate();
         result := compressPath(data, options.level, options.strategy, .fastest, alloc);
         if result.ptr == null { raise .AllocationFailed; }
         result
     }
 
-    encodeInto :: (data: string, output: string, options: deflate.Options = .{}, alloc: Allocator = context.allocator) -> (string, !compress.Error) {
+    encodeInto :: (data: string, output: string, options: deflate.contracts.Options = .{}, alloc: Allocator = context.allocator) -> (string, !compress.Error) {
         try options.validate();
         if options.strategy == .default {
             return try compressInto(data, output, options.level, alloc);

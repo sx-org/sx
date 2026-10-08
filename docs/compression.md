@@ -68,9 +68,9 @@ bytes; the corresponding `decodePrefix` and `decodeIntoPrefix` operations
 return both the decoded bytes and the compressed byte count when a stream is
 embedded in a larger input.
 
-`deflate.Options` selects a compression `level` from 0 through 10 and a
-`deflate.Strategy`; zlib and gzip take the same options. The default is level 6
-with the default strategy. Invalid levels raise
+`deflate.contracts.Options` selects a compression `level` from 0 through 10
+and a `deflate.contracts.Strategy`; zlib and gzip take the same options. The
+default is level 6 with the default strategy. Invalid levels raise
 `compress.Error.InvalidOptions`; there is no C-style `-1` default or numeric
 flag word.
 

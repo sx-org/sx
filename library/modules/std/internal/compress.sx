@@ -13,9 +13,6 @@
 @import "modules/std/encoding.sx";
 deflateContracts :: @import "modules/std/codecs/deflate_contracts.sx";
 
-private Strategy :: deflateContracts.Strategy;
-private Flush :: deflateContracts.Flush;
-
 private DeflatePath :: enum { fastest; portable; }
 
 private TDEFL_PROBES : [11]i64 = .[0, 1, 6, 32, 16, 32, 128, 256, 512, 768, 1500];
@@ -1000,15 +997,15 @@ private emitTdeflFixed :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Alloca
     return writer.finish(), validBits;
 }
 
-deflateStrategy :: (data: string, level: i64, strategy: Strategy, alloc: Allocator = context.allocator) -> string {
+deflateStrategy :: (data: string, level: i64, strategy: deflateContracts.Strategy, alloc: Allocator = context.allocator) -> string {
     deflateWithOptions(data, level, strategy, 0, alloc)
 }
 
-private deflateWithOptions :: (data: string, level: i64, strategy: Strategy, blockMode: i64, alloc: Allocator) -> string {
+private deflateWithOptions :: (data: string, level: i64, strategy: deflateContracts.Strategy, blockMode: i64, alloc: Allocator) -> string {
     deflateWithPathOptions(data, level, strategy, .fastest, blockMode, alloc)
 }
 
-private deflateWithPathOptions :: (data: string, level: i64, strategy: Strategy, path: DeflatePath, blockMode: i64, alloc: Allocator) -> string {
+private deflateWithPathOptions :: (data: string, level: i64, strategy: deflateContracts.Strategy, path: DeflatePath, blockMode: i64, alloc: Allocator) -> string {
     state := Deflater.initPathMode(level, strategy, path, blockMode, alloc);
     out := ByteWriter.init(alloc);
     // The one-shot API knows its complete input size. Reserve miniz's public
@@ -1429,7 +1426,7 @@ Deflater :: struct {
     level: i64;
     maxProbes: i64;
     greedy: bool;
-    strategy: Strategy;
+    strategy: deflateContracts.Strategy;
     filterMatches: bool;
     rleMatches: bool;
     useFast: bool;
@@ -1440,7 +1437,7 @@ Deflater :: struct {
     // costs measurable encode time at levels 6-9.
     nondeterministic: bool;
     lessMemory: bool;
-    flushMode: Flush;
+    flushMode: deflateContracts.Flush;
     needsMarker: bool;
     emittingMarker: bool;
     allocationFailed: bool;
@@ -1450,11 +1447,11 @@ Deflater :: struct {
         Deflater.initMode(level, 0, alloc)
     }
 
-    initStrategy :: (level: i64, strategy: Strategy, alloc: Allocator = context.allocator) -> Deflater {
+    initStrategy :: (level: i64, strategy: deflateContracts.Strategy, alloc: Allocator = context.allocator) -> Deflater {
         Deflater.initStrategyMode(level, strategy, 0, alloc)
     }
 
-    initPath :: (level: i64, strategy: Strategy, path: DeflatePath, alloc: Allocator = context.allocator) -> Deflater {
+    initPath :: (level: i64, strategy: deflateContracts.Strategy, path: DeflatePath, alloc: Allocator = context.allocator) -> Deflater {
         Deflater.initPathMode(level, strategy, path, 0, alloc)
     }
 
@@ -1466,11 +1463,11 @@ Deflater :: struct {
         Deflater.initStrategyMode(level, .default, blockMode, alloc)
     }
 
-    initStrategyMode :: (level: i64, strategy: Strategy, blockMode: i64, alloc: Allocator) -> Deflater {
+    initStrategyMode :: (level: i64, strategy: deflateContracts.Strategy, blockMode: i64, alloc: Allocator) -> Deflater {
         Deflater.initPathMode(level, strategy, .fastest, blockMode, alloc)
     }
 
-    initPathMode :: (level: i64, strategy: Strategy, path: DeflatePath, blockMode: i64, alloc: Allocator) -> Deflater {
+    initPathMode :: (level: i64, strategy: deflateContracts.Strategy, path: DeflatePath, blockMode: i64, alloc: Allocator) -> Deflater {
         actualLevel := level;
         if actualLevel < 0 { actualLevel = 6; }
         if actualLevel > 10 { actualLevel = 10; }
@@ -1481,7 +1478,7 @@ Deflater :: struct {
         Deflater.initCustom(actualLevel, probes, greedy, strategy, path, blockMode, false, false, alloc)
     }
 
-    initCustom :: (actualLevel: i64, probes: i64, greedy: bool, strategy: Strategy, path: DeflatePath, blockMode: i64, lessMemory: bool, nondeterministic: bool, alloc: Allocator) -> Deflater {
+    initCustom :: (actualLevel: i64, probes: i64, greedy: bool, strategy: deflateContracts.Strategy, path: DeflatePath, blockMode: i64, lessMemory: bool, nondeterministic: bool, alloc: Allocator) -> Deflater {
         actualMode := blockMode;
         if actualMode == 0 and strategy == .fixed and actualLevel > 0 { actualMode = 3; }
         useFast := path == .fastest and probes == 1 and greedy and
@@ -2068,7 +2065,7 @@ Deflater :: struct {
         self.stepFlushUnchecked(input, output, if finish then .finish else .none)
     }
 
-    stepFlushUnchecked :: (self: *Deflater, input: string, output: string, mode: Flush = .none) -> compress.Progress {
+    stepFlushUnchecked :: (self: *Deflater, input: string, output: string, mode: deflateContracts.Flush = .none) -> compress.Progress {
         if self.allocationFailed { return compress.Progress{ consumed = 0, produced = 0, status = .done }; }
         if mode == .finish { self.finishing = true; }
         else if mode == .sync or mode == .full {
@@ -2266,7 +2263,7 @@ Deflater :: struct {
         progress
     }
 
-    stepFlush :: (self: *Deflater, input: string, output: string, mode: Flush) -> (compress.Progress, !compress.Error) {
+    stepFlush :: (self: *Deflater, input: string, output: string, mode: deflateContracts.Flush) -> (compress.Progress, !compress.Error) {
         if self.allocationFailed { raise .AllocationFailed; }
         if input.len > 0 and (self.phase == .done or (self.blockFinal and (self.phase == .pendingBits or self.phase == .flushFinal))) {
             raise .Finished;
@@ -2292,18 +2289,18 @@ ZlibDeflater :: struct {
     trailerAt: i64;
     checksum: i64;
     level: i64;
-    strategy: Strategy;
+    strategy: deflateContracts.Strategy;
     alloc: Allocator;
 
     init :: (level: i64 = 6, alloc: Allocator = context.allocator) -> ZlibDeflater {
         ZlibDeflater.initStrategy(level, .default, alloc)
     }
 
-    initStrategy :: (level: i64, strategy: Strategy, alloc: Allocator = context.allocator) -> ZlibDeflater {
+    initStrategy :: (level: i64, strategy: deflateContracts.Strategy, alloc: Allocator = context.allocator) -> ZlibDeflater {
         ZlibDeflater.initPath(level, strategy, .fastest, alloc)
     }
 
-    initPath :: (level: i64, strategy: Strategy, path: DeflatePath, alloc: Allocator = context.allocator) -> ZlibDeflater {
+    initPath :: (level: i64, strategy: deflateContracts.Strategy, path: DeflatePath, alloc: Allocator = context.allocator) -> ZlibDeflater {
         actual := level;
         if actual < 0 { actual = 6; }
         if actual > 10 { actual = 10; }
@@ -2351,7 +2348,7 @@ ZlibDeflater :: struct {
         self.stepFlushUnchecked(input, output, if finish then .finish else .none)
     }
 
-    stepFlushUnchecked :: (self: *ZlibDeflater, input: string, output: string, mode: Flush = .none) -> compress.Progress {
+    stepFlushUnchecked :: (self: *ZlibDeflater, input: string, output: string, mode: deflateContracts.Flush = .none) -> compress.Progress {
         consumed := 0;
         produced := 0;
         while true {
@@ -2409,7 +2406,7 @@ ZlibDeflater :: struct {
         progress
     }
 
-    stepFlush :: (self: *ZlibDeflater, input: string, output: string, mode: Flush) -> (compress.Progress, !compress.Error) {
+    stepFlush :: (self: *ZlibDeflater, input: string, output: string, mode: deflateContracts.Flush) -> (compress.Progress, !compress.Error) {
         if self.raw.allocationFailed { raise .AllocationFailed; }
         if input.len > 0 and (self.phase == .done or self.phase == .trailer or (self.phase == .body and self.raw.blockFinal and (self.raw.phase == .pendingBits or self.raw.phase == .flushFinal))) { raise .Finished; }
         progress := self.stepFlushUnchecked(input, output, mode);
@@ -2489,7 +2486,7 @@ GzipDeflater :: struct {
         GzipDeflater.initStrategy(level, .default, alloc)
     }
 
-    initStrategy :: (level: i64, strategy: Strategy, alloc: Allocator = context.allocator) -> GzipDeflater {
+    initStrategy :: (level: i64, strategy: deflateContracts.Strategy, alloc: Allocator = context.allocator) -> GzipDeflater {
         actual := level;
         if actual < 0 { actual = 0; }
         if actual > 10 { actual = 10; }
@@ -2514,7 +2511,7 @@ GzipDeflater :: struct {
         state
     }
 
-    initOptions :: (level: i64, strategy: Strategy, options: GzipOptions, alloc: Allocator = context.allocator) -> (GzipDeflater, !compress.Error) {
+    initOptions :: (level: i64, strategy: deflateContracts.Strategy, options: GzipOptions, alloc: Allocator = context.allocator) -> (GzipDeflater, !compress.Error) {
         try validateGzipOptions(options);
         state := GzipDeflater.initStrategy(level, strategy, alloc);
         if state.raw.allocationFailed { state.deinit(); raise .AllocationFailed; }
@@ -2564,7 +2561,7 @@ GzipDeflater :: struct {
         self.* = GzipDeflater.init(level, alloc);
     }
 
-    resetOptions :: (self: *GzipDeflater, level: i64, strategy: Strategy, options: GzipOptions) -> !compress.Error {
+    resetOptions :: (self: *GzipDeflater, level: i64, strategy: deflateContracts.Strategy, options: GzipOptions) -> !compress.Error {
         alloc := self.alloc;
         self.deinit();
         self.* = try GzipDeflater.initOptions(level, strategy, options, alloc);
@@ -4021,11 +4018,11 @@ private compressChecked :: (data: string, level: i64 = -1, alloc: Allocator = co
     result
 }
 
-private compressStrategy :: (data: string, level: i64, strategy: Strategy, alloc: Allocator = context.allocator) -> string {
+private compressStrategy :: (data: string, level: i64, strategy: deflateContracts.Strategy, alloc: Allocator = context.allocator) -> string {
     compressPath(data, level, strategy, .fastest, alloc)
 }
 
-compressPath :: (data: string, level: i64, strategy: Strategy, path: DeflatePath, alloc: Allocator = context.allocator) -> string {
+compressPath :: (data: string, level: i64, strategy: deflateContracts.Strategy, path: DeflatePath, alloc: Allocator = context.allocator) -> string {
     state := ZlibDeflater.initPath(level, strategy, path, alloc);
     out := ByteWriter.init(alloc);
     // The one-shot zlib wrapper has the same complete-size knowledge as the
@@ -4172,7 +4169,7 @@ decompressIntoWithConsumed :: (data: string, output: string, alloc: Allocator = 
 // -----------------------------------------------------------------------------
 // RFC 1952 gzip wrapper
 
-gzipCompressOptionsStrategy :: (data: string, options: GzipOptions, level: i64, strategy: Strategy, alloc: Allocator = context.allocator) -> (string, !compress.Error) {
+gzipCompressOptionsStrategy :: (data: string, options: GzipOptions, level: i64, strategy: deflateContracts.Strategy, alloc: Allocator = context.allocator) -> (string, !compress.Error) {
     try validateGzipOptions(options);
 
     raw := deflateStrategy(data, level, strategy, alloc);
