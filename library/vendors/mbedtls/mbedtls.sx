@@ -19,12 +19,12 @@
 // pointers / size_t); `.{}` zero-fills. Sizes are the v3.6.6 `sizeof`
 // rounded UP to an i64 multiple plus headroom — over-sizing is safe
 // (mbedTLS only touches the real prefix), under-sizing corrupts the heap.
-// ctr_drbg and entropy each embed a pthread_mutex_t, whose size is the
-// libc's (Apple's 64 bytes is the largest); every other context is the same
-// on every target. Measured sizeof (v3.6.6, the trimmed config, Apple):
-// ssl_context 448 · ssl_config 352 · x509_crt 744 · pk_context 16 ·
-// ctr_drbg 416 · entropy 904. Re-probe after any mbedTLS bump or config
-// change.
+// Under the threading layer ctr_drbg and entropy each embed a
+// pthread_mutex_t, whose size is the libc's (Apple's 64 bytes is the
+// largest); no other context's size depends on the libc. Measured sizeof
+// (v3.6.6, the trimmed config, Apple): ssl_context 448 · ssl_config 352 ·
+// x509_crt 744 · pk_context 16 · ctr_drbg 416 · entropy 904. Re-probe after
+// any mbedTLS bump or config change.
 // =====================================================================
 
 mbedtls :: scope {
