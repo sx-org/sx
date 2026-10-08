@@ -63,7 +63,7 @@ main :: () {
 
     maybe := hash.sha256File(path);
     if maybe == null { print("file-eq-memory: FAIL (open)\n"); return; }
-    fileDigest := maybe?!;
+    fileDigest : [64]u8 = maybe;
     memDigest := hash.sha256Hex(MSG);
 
     fv := string{ ptr = *fileDigest[0], len = 64 };

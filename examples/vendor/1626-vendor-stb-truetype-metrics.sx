@@ -13,7 +13,7 @@ main :: () -> i32 {
         print("font missing\n");
         return 1;
     }
-    bytes := data?!;
+    bytes : string = data;
 
     off := stb_truetype.stbtt_GetFontOffsetForIndex(bytes.ptr, 0);
     print("font offset >= 0: {}\n", off >= 0);

@@ -34,7 +34,7 @@ main :: () {
         print("pixels skipped: no display/GPU on this host\n");
         return;
     }
-    s := surface?!;
+    s : PixelSurface = surface;
 
     line := lineMetrics(16.0).height;
     rowHeight := line + ROW_PAD * 2.0;

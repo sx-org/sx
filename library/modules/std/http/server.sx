@@ -1231,7 +1231,7 @@ private runFiberJob :: (arg: usize) {
         }
     }
     up := resp.upgrade;
-    if attached and up != null { srv.conns[job.slot].switched = Switch{ upgrade = up?!, arena = arena }; }
+    if attached and up != null { srv.conns[job.slot].switched = Switch{ upgrade = up, arena = arena }; }
     else { arena.deinit(); }
     if job.chan != null { job.chan.release(); }   // the job's ref; the conn's is released at finalize/close
     a := job.alloc;
