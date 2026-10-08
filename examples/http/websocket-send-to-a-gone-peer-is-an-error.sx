@@ -54,15 +54,15 @@ main :: () -> i32 {
     a := socket.sockaddrIn(srv.cfg.port, LOOPBACK);
     if socket.connect(fd, *a, 16) != 0 { print("connect failed\n"); return 1; }
     req := "GET /ws HTTP/1.1\r\nHost: t\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n";
-    socket.write(fd, req.ptr, req.len);
+    c.write(fd, req.ptr, req.len);
     // "hold", masked with a zero key.
     hold : [10]u8 = .[0x81, 0x84, 0, 0, 0, 0, 'h', 'o', 'l', 'd'];
-    socket.write(fd, *hold[0], 10);
+    c.write(fd, *hold[0], 10);
     gate.lock();
     while held == null { wake.wait(*gate); }
     gate.unlock();
     // The peer goes without a close frame.
-    socket.close(fd);
+    c.close(fd);
 
     payload := mem.alloc(context.allocator, u8, 65536);
     i := 0;

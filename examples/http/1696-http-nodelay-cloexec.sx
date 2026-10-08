@@ -37,8 +37,8 @@ dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { c.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { c.close(fd); return -1; }
     return fd;
 }
 
@@ -73,7 +73,7 @@ main :: () -> i32 {
         fd := dialPort(srv.cfg.port);
         if fd < 0 { print("dial failed\n"); return 1; }
         req := "GET / HTTP/1.1\r\nHost: t\r\n\r\n";
-        socket.write(fd, req.ptr, req.len);
+        c.write(fd, req.ptr, req.len);
         total : i64 = 0;
         stall : i64 = 0;
         while stall < 400 {
@@ -114,25 +114,25 @@ main :: () -> i32 {
                 print("TCP_NODELAY not set on accepted socket\n");
                 failed = 1;
             }
-            fdf := socket.fcntl(cfd, F_GETFD);
+            fdf := c.fcntl(cfd, F_GETFD);
             if fdf < 0 or (fdf & FD_CLOEXEC) == 0 {
                 print("FD_CLOEXEC not set on accepted socket\n");
                 failed = 1;
             }
-            fl := socket.fcntl(cfd, socket.F_GETFL);
+            fl := c.fcntl(cfd, socket.F_GETFL);
             if fl < 0 or (fl & socket.O_NONBLOCK) == 0 {
                 print("O_NONBLOCK not set on accepted socket\n");
                 failed = 1;
             }
         }
 
-        lff := socket.fcntl(srv.lfd, F_GETFD);
+        lff := c.fcntl(srv.lfd, F_GETFD);
         if lff < 0 or (lff & FD_CLOEXEC) == 0 {
             print("FD_CLOEXEC not set on listener\n");
             failed = 1;
         }
 
-        socket.close(fd);
+        c.close(fd);
         // Reap the client's close so the slot is freed before teardown.
         reap : i64 = 0;
         while reap < 50 {

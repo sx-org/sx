@@ -56,8 +56,8 @@ dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { c.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { c.close(fd); return -1; }
     return fd;
 }
 
@@ -211,14 +211,14 @@ main :: () -> i32 {
 
         // ── 3. pipelined plain request on the same connection ─────────
         r3 := "GET /plain HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n";
-        socket.write(ca, r3.ptr, r3.len);
+        c.write(ca, r3.ptr, r3.len);
         resp3 := readResponse(*srv, ca, rbuf, cap);
         if !contains(resp3, "HTTP/1.1 200 OK") or !contains(resp3, "plain-ok") {
             print("follow-up plain request failed\n");
             failed = 1;
         }
 
-        socket.close(ca);
+        c.close(ca);
         srv.close();
         reqArena.deinit();
         context.allocator.deallocBytes(rbuf);

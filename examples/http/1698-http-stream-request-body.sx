@@ -107,8 +107,8 @@ dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { c.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { c.close(fd); return -1; }
     return fd;
 }
 
@@ -262,7 +262,7 @@ main :: () -> i32 {
         if !contains(resp2, "HTTP/1.1 200 OK") { print("case2: no 200\n"); failed = 1; }
         if numAfter(resp2, "len=") != CH1 + CH2 + CH3 { print("case2: bad len {}\n", numAfter(resp2, "len=")); failed = 1; }
         if numAfter(resp2, "sum=") != sum2 { print("case2: bad sum\n"); failed = 1; }
-        socket.close(c1);
+        c.close(c1);
 
         // ── case 3: backpressure — worker sleeps, channel fills, park+wake ──
         c3 := dialPort(srv.cfg.port);
@@ -274,7 +274,7 @@ main :: () -> i32 {
         if !contains(resp3, "HTTP/1.1 200 OK") { print("case3: no 200\n"); failed = 1; }
         if numAfter(resp3, "len=") != CL_BODY_LEN { print("case3: bad len {}\n", numAfter(resp3, "len=")); failed = 1; }
         if numAfter(resp3, "sum=") != sum1 { print("case3: bad sum\n"); failed = 1; }
-        socket.close(c3);
+        c.close(c3);
 
         // ── case 4: early response without draining → 413 + close ────
         c4 := dialPort(srv.cfg.port);
@@ -285,7 +285,7 @@ main :: () -> i32 {
         resp4 := string{ ptr = rbuf, len = r4 };
         if !contains(resp4, "HTTP/1.1 413") { print("case4: no 413\n"); failed = 1; }
         if !contains(resp4, "Connection: close") { print("case4: no close\n"); failed = 1; }
-        socket.close(c4);
+        c.close(c4);
 
         // ── case 4b: bare CR inside a chunk extension → framing abort ──
         // Parity with the accumulate decoder : the size
@@ -301,14 +301,14 @@ main :: () -> i32 {
         resp4b := string{ ptr = rbuf, len = r4b };
         if !contains(resp4b, "counted-b") { print("case4b: no response\n"); failed = 1; }
         if !contains(resp4b, "Connection: close") { print("case4b: no close\n"); failed = 1; }
-        socket.close(c4b);
+        c.close(c4b);
 
         // ── case 5: client disconnect mid-body → readBody faults ─────
         c5 := dialPort(srv.cfg.port);
         if c5 < 0 { print("dial c5 failed\n"); srv.close(); return 1; }
         sendAll(*srv, c5, "POST /count HTTP/1.1\r\nHost: t\r\nContent-Length: 100000\r\n\r\n");
         sendAll(*srv, c5, string{ ptr = body, len = COUNT_SENT });
-        socket.close(c5);   // mid-body disconnect
+        c.close(c5);   // mid-body disconnect
         // drain: tick until nothing is in flight (fault propagated, late
         // completion discarded), with a generous stall-based cap
         t : i64 = 0;
@@ -327,7 +327,7 @@ main :: () -> i32 {
             print("health check failed\n");
             failed = 1;
         }
-        socket.close(c6);
+        c.close(c6);
 
         srv.close();   // joins the pool: obs writes are now visible + stable
 

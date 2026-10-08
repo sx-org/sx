@@ -40,8 +40,8 @@ dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { c.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { c.close(fd); return -1; }
     return fd;
 }
 
@@ -89,7 +89,7 @@ contains :: (hay: string, needle: string) -> bool {
 
 // Send one request, tick the server to completion, return the response.
 roundtrip :: (srv: *http.Server, fd: i32, reqtext: string, scratch: [*]u8, cap: i64) -> string {
-    socket.write(fd, reqtext.ptr, reqtext.len);
+    c.write(fd, reqtext.ptr, reqtext.len);
     total : i64 = 0;
     tries := 0;
     while tries < 2000 {
@@ -123,7 +123,7 @@ serveOnce :: (poolCount: i64, scratch: [*]u8, cap: i64) -> bool {
 
     // small GET
     r1 := roundtrip(*srv, fd, "GET /hello HTTP/1.1\r\nHost: t\r\n\r\n", scratch, cap);
-    if !contains(r1, "HTTP/1.1 200 OK") { print("small GET bad (pool={})\n", poolCount); socket.close(fd); srv.close(); return false; }
+    if !contains(r1, "HTTP/1.1 200 OK") { print("small GET bad (pool={})\n", poolCount); c.close(fd); srv.close(); return false; }
 
     // large POST: body past READ_BUF_INITIAL forces growReadBuf on the
     // server side. Build the request into ONE explicit buffer (no concat
@@ -139,9 +139,9 @@ serveOnce :: (poolCount: i64, scratch: [*]u8, cap: i64) -> bool {
     r2 := roundtrip(*srv, fd, string{ ptr = rbuf, len = reqLen }, scratch, cap);
     ok := contains(r2, "HTTP/1.1 200 OK") and contains(r2, "Content-Length: 40000");
     context.allocator.deallocBytes(rbuf);
-    if !ok { print("large POST bad (pool={})\n", poolCount); socket.close(fd); srv.close(); return false; }
+    if !ok { print("large POST bad (pool={})\n", poolCount); c.close(fd); srv.close(); return false; }
 
-    socket.close(fd);
+    c.close(fd);
     srv.close();
     return true;
 }
@@ -175,7 +175,7 @@ serveInflightClose :: (n: i64) -> bool {
     req := "GET /slow HTTP/1.1\r\nHost: t\r\n\r\n";
     i = 0;
     while i < n {
-        socket.write(fds[i], req.ptr, req.len);
+        c.write(fds[i], req.ptr, req.len);
         i += 1;
     }
     // Tick ~30ms total (30 ticks * 1ms) — long enough to accept and
@@ -189,7 +189,7 @@ serveInflightClose :: (n: i64) -> bool {
     }
     srv.close();
     i = 0;
-    while i < n { socket.close(fds[i]); i += 1; }
+    while i < n { c.close(fds[i]); i += 1; }
     return true;
 }
 

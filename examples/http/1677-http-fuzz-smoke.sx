@@ -44,8 +44,8 @@ dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { c.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { c.close(fd); return -1; }
     return fd;
 }
 
@@ -236,7 +236,7 @@ fuzzOnce :: (rng: *Rng, srv: *http.Server, bytes: [*]u8, blen: i64, scratch: [*]
             if he >= 0 { responded = true; break; }
         }
     }
-    socket.close(fd);
+    c.close(fd);
 
     if responded {
         s := string{ ptr = scratch, len = total };
@@ -253,7 +253,7 @@ livenessOk :: (srv: *http.Server, scratch: [*]u8, scap: i64) -> bool {
     fd := dialPort(srv.cfg.port);
     if fd < 0 { return false; }
     req := "GET /ok HTTP/1.1\r\nHost: t\r\n\r\n";
-    socket.write(fd, req.ptr, req.len);
+    c.write(fd, req.ptr, req.len);
     total : i64 = 0;
     tries := 0;
     out := false;
@@ -266,7 +266,7 @@ livenessOk :: (srv: *http.Server, scratch: [*]u8, scap: i64) -> bool {
         if contains(s, "HTTP/1.1 200 OK") and contains(s, "\r\n\r\n") { out = true; break; }
         tries += 1;
     }
-    socket.close(fd);
+    c.close(fd);
     return out;
 }
 

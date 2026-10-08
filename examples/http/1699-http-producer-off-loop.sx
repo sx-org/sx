@@ -96,8 +96,8 @@ dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { c.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { c.close(fd); return -1; }
     return fd;
 }
 
@@ -281,7 +281,7 @@ main :: () -> i32 {
         r2 := readResponse(*srv, c1, rbuf, cap);
         resp2 := string{ ptr = rbuf, len = r2 };
         if !contains(resp2, "pong") { print("case2: no pong\n"); failed = 1; }
-        socket.close(c1);
+        c.close(c1);
 
         // ── case 3: mid-stream disconnect aborts the feeder ───────────
         c2 := dialPort(srv.cfg.port);
@@ -296,7 +296,7 @@ main :: () -> i32 {
             else if re == .Closed { break; }
             t += 1;
         }
-        socket.close(c2);   // mid-stream disconnect
+        c.close(c2);   // mid-stream disconnect
         t = 0;
         while t < 20000 and srv.inFlight() > 0 {
             srv.tick(1) catch {};
@@ -310,7 +310,7 @@ main :: () -> i32 {
         r4 := readResponse(*srv, c3, rbuf, cap);
         resp4 := string{ ptr = rbuf, len = r4 };
         if !contains(resp4, "pong") { print("case4: worker pinned — no pong\n"); failed = 1; }
-        socket.close(c3);
+        c.close(c3);
 
         // ── case 5: close() while a worker is mid-handler, PRE-register ──
         // the /slowbig worker is
@@ -329,7 +329,7 @@ main :: () -> i32 {
         }
 
         srv.close();   // must return: the late-registered chan aborts its pump
-        socket.close(c5);
+        c.close(c5);
 
         // ── the producer must have run OFF the loop thread ────────────
         if obs.prodTid == 0 { print("producer never ran\n"); failed = 1; }

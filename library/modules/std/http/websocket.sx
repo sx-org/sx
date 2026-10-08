@@ -613,7 +613,7 @@ websocket :: scope {
                 self.tls.close();
                 self.tls = null;
             }
-            socket.close(self.fd);
+            c.close(self.fd);
         }
     }
 

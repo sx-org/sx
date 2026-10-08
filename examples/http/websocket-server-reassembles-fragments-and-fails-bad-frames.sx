@@ -27,11 +27,11 @@ open :: (port: i64) -> ?i32 {
     if socket.connect(fd, *a, 16) != 0 { return null; }
     socket.setIoTimeout(fd, 3000);
     req := "GET /ws HTTP/1.1\r\nHost: t\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n";
-    socket.write(fd, req.ptr, req.len);
+    c.write(fd, req.ptr, req.len);
     tail : [4]u8 = .[0, 0, 0, 0];
     one : [1]u8 = ---;
     while !(tail[0] == '\r' and tail[1] == '\n' and tail[2] == '\r' and tail[3] == '\n') {
-        if socket.read(fd, *one[0], 1) != 1 { return null; }
+        if c.read(fd, *one[0], 1) != 1 { return null; }
         tail[0] = tail[1];
         tail[1] = tail[2];
         tail[2] = tail[3];
@@ -66,13 +66,13 @@ send :: (fd: i32, fin: bool, op: u8, payload: string, masked: bool) {
         f[n + i] = if masked then payload[i] ^ key[i % 4] else payload[i];
         i += 1;
     }
-    socket.write(fd, f.ptr, n + payload.len);
+    c.write(fd, f.ptr, n + payload.len);
 }
 
 readAll :: (fd: i32, dst: [*]u8, n: i64) -> bool {
     got := 0;
     while got < n {
-        k := socket.read(fd, *dst[got], n - got);
+        k := c.read(fd, *dst[got], n - got);
         if k <= 0 { return false; }
         got += k;
     }
@@ -112,7 +112,7 @@ faultCode :: (port: i64, op: u8, payload: string, masked: bool) -> ?i64 {
         body := mem.alloc(context.allocator, u8, 4096);
         defer mem.free(context.allocator, body);
         code := closeCode(recvFrame(fd, body));
-        socket.close(fd);
+        c.close(fd);
         return code;
     }
     return null;
@@ -145,7 +145,7 @@ main :: () -> i32 {
     normal : [2]u8 = .[0x03, 0xE8];
     send(fd, true, 8, normal[..], true);
     print("close: {}\n", closeCode(recvFrame(fd, body)));
-    socket.close(fd);
+    c.close(fd);
 
     print("unmasked: {}\n", faultCode(port, 1, "x", false));
     broken : [2]u8 = .[0xC3, 0x28];

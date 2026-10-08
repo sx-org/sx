@@ -56,15 +56,15 @@ contains :: (hay: string, needle: string) -> bool {
 dialAddr :: (a: *socket.Addr) -> i32 {
     fd := socket.socket(socket.addrFamily(a), socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
-    if socket.connectTo(fd, a) != 0 { socket.close(fd); return -1; }
-    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
+    if socket.connectTo(fd, a) != 0 { c.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { c.close(fd); return -1; }
     return fd;
 }
 
 // One GET → expect a 200 "pong" within the tick budget.
 roundtrip :: (srv: *http.Server, fd: i32) -> bool {
     req := "GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n";
-    socket.write(fd, req.ptr, req.len);
+    c.write(fd, req.ptr, req.len);
     rbuf : [2048]u8 = ---;
     total : i64 = 0;
     t : i64 = 0;
@@ -91,7 +91,7 @@ serveOne :: (cfg: http.Config, host: string, code: i32) -> i32 {
     fd := dialAddr(*a);
     if fd < 0 { srv.close(); return code + 2; }
     ok := roundtrip(*srv, fd);
-    socket.close(fd);
+    c.close(fd);
     srv.close();
     if !ok { return code + 3; }
     return 0;
@@ -127,22 +127,22 @@ run :: () -> i32 {
     if !cok6 { srvC.close(); return 31; }
     fd6 := dialAddr(*c6);
     if fd6 < 0 { srvC.close(); return 32; }
-    if !roundtrip(*srvC, fd6) { socket.close(fd6); srvC.close(); return 33; }
-    socket.close(fd6);
+    if !roundtrip(*srvC, fd6) { c.close(fd6); srvC.close(); return 33; }
+    c.close(fd6);
     c4, cok4 := socket.parseAddr("127.0.0.1", srvC.cfg.port);
     if !cok4 { srvC.close(); return 34; }
     fd4 := dialAddr(*c4);
     if fd4 < 0 { srvC.close(); return 35; }
-    if !roundtrip(*srvC, fd4) { socket.close(fd4); srvC.close(); return 36; }
-    socket.close(fd4);
+    if !roundtrip(*srvC, fd4) { c.close(fd4); srvC.close(); return 36; }
+    c.close(fd4);
     // resolve("localhost") → whichever family comes back, the dual-stack
     // listener answers.
     lh, lok := socket.resolve("localhost", srvC.cfg.port);
     if !lok { srvC.close(); return 37; }
     fdl := dialAddr(*lh);
     if fdl < 0 { srvC.close(); return 38; }
-    if !roundtrip(*srvC, fdl) { socket.close(fdl); srvC.close(); return 39; }
-    socket.close(fdl);
+    if !roundtrip(*srvC, fdl) { c.close(fdl); srvC.close(); return 39; }
+    c.close(fdl);
     srvC.close();
 
     // ── D. "::" with ipv6Only=true: v6 serves, v4 refused ──
@@ -160,8 +160,8 @@ run :: () -> i32 {
     if !uok { srvE.close(); return 52; }
     fdu := dialAddr(*ua);
     if fdu < 0 { srvE.close(); return 53; }
-    if !roundtrip(*srvE, fdu) { socket.close(fdu); srvE.close(); return 54; }
-    socket.close(fdu);
+    if !roundtrip(*srvE, fdu) { c.close(fdu); srvE.close(); return 54; }
+    c.close(fdu);
     srvE.close();
     if fs.exists(SOCK_PATH) { return 55; }   // close() must remove the file
 
@@ -195,7 +195,7 @@ serveOneWithV4Refusal :: (cfg: http.Config, host: string, code: i32) -> i32 {
     fd := dialAddr(*a);
     if fd < 0 { srv.close(); return code + 2; }
     ok := roundtrip(*srv, fd);
-    socket.close(fd);
+    c.close(fd);
     if !ok { srv.close(); return code + 3; }
     // v4 loopback must be REFUSED (nothing bound on the v4 side).
     v4, vok := socket.parseAddr("127.0.0.1", srv.cfg.port);
@@ -203,7 +203,7 @@ serveOneWithV4Refusal :: (cfg: http.Config, host: string, code: i32) -> i32 {
     fdr := socket.socket(socket.addrFamily(*v4), socket.SOCK_STREAM, 0);
     if fdr < 0 { srv.close(); return code + 5; }
     refused := socket.connectTo(fdr, *v4) != 0;
-    socket.close(fdr);
+    c.close(fdr);
     srv.close();
     if !refused { return code + 6; }
     return 0;

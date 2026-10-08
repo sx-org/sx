@@ -90,8 +90,8 @@ dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { c.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { c.close(fd); return -1; }
     return fd;
 }
 
@@ -126,7 +126,7 @@ respComplete :: (buf: [*]u8, len: i64) -> bool {
 
 // Send a request, tick until the full response (or a close) arrives.
 roundtrip :: (srv: *http.Server, fd: i32, reqtext: string, scratch: [*]u8) -> string {
-    socket.write(fd, reqtext.ptr, reqtext.len);
+    c.write(fd, reqtext.ptr, reqtext.len);
     total : i64 = 0;
     tries := 0;
     while tries < 400 {
@@ -172,13 +172,13 @@ main :: () -> i32 {
     if c2 < 0 { print("dial2 failed\n"); return 1; }
     r3 := roundtrip(*srv, c2, "GET /hello FOO/9.9\r\nHost: t\r\n\r\n", *buf[0]);
     if !contains(r3, "HTTP/1.1 400 Bad Request") { print("case3: expected 400\n"); return 1; }
-    socket.close(c2);
+    c.close(c2);
 
     // ── 3. unknown path → 404 (a 4xx too, but NOT a parser error: the
     //       handler produced it, so it counts as a served request) ──────
     r4 := roundtrip(*srv, c1, "GET /missing HTTP/1.1\r\nHost: t\r\n\r\n", *buf[0]);
     if !contains(r4, "HTTP/1.1 404 Not Found") { print("case4: expected 404\n"); return 1; }
-    socket.close(c1);
+    c.close(c1);
 
     // Tick until the 400-closed and dropped client sockets are fully
     // reaped (READ_FAULT/CLOSE) before snapshotting — poll the stats the
@@ -247,7 +247,7 @@ main :: () -> i32 {
         fds[ci] = dialPort(psrv.cfg.port);
         if fds[ci] < 0 { print("pooled dial failed\n"); return 1; }
         req := "GET /slow HTTP/1.1\r\nHost: t\r\n\r\n";
-        socket.write(fds[ci], req.ptr, req.len);
+        c.write(fds[ci], req.ptr, req.len);
         ci += 1;
     }
     // Pump the loop until every request concluded — served (1 running +
@@ -268,7 +268,7 @@ main :: () -> i32 {
     if countKind(*plog, http.EventKind.REJECTED_503) < 1 { print("pooled: missing REJECTED_503 hook\n"); return 1; }
 
     ci = 0;
-    while ci < NCONN { socket.close(fds[ci]); ci += 1; }
+    while ci < NCONN { c.close(fds[ci]); ci += 1; }
     psrv.close();
 
     print("ok\n");

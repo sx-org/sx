@@ -23,11 +23,11 @@ main :: () -> i32 {
     addr := socket.sockaddrIn(srv.cfg.port, LOOPBACK);
     if socket.connect(fd, *addr, 16) != 0 { print("connect failed\n"); return 1; }
     req := "GET / HTTP/1.1\r\nHost: t\r\n\r\n";
-    if socket.write(fd, req.ptr, req.len) != req.len { print("request write failed\n"); return 1; }
+    if c.write(fd, req.ptr, req.len) != req.len { print("request write failed\n"); return 1; }
     i := 0;
     while i < 20 { srv.tick(5) catch {}; i += 1; }
     // The unread response bytes make this close a reset.
-    socket.close(fd);
+    c.close(fd);
     c.usleep(50000);
     i = 0;
     while i < 20 { srv.tick(5) catch {}; i += 1; }

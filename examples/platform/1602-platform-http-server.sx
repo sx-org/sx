@@ -59,18 +59,18 @@ main :: () -> i32 {
         }
 
         arena.reset();
-        socket.close(client);
+        c.close(client);
     }
 
     arena.deinit();
-    socket.close(fd);
+    c.close(fd);
     0
 }
 
 handle :: (client: i32) {
     // Read request
     buf : [4096]u8 = ---;
-    socket.read(client, buf, buf.len);
+    c.read(client, buf, buf.len);
 
     body :: "<html><body><h1>Hello from sx!</h1></body></html>";
     response :: format("HTTP/1.1 200 OK\r
@@ -79,7 +79,7 @@ Connection: close\r
 Content-Length: {}\r
 \r\n{}", body.len, body);
 
-    socket.write(client, response.ptr, response.len);
+    c.write(client, response.ptr, response.len);
     logger := context.logger?!;
     log(logger, format("served request #{}", logger.count + 1));
 }

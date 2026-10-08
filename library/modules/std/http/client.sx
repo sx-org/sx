@@ -100,31 +100,31 @@ ClientConn :: struct {
 // Open a connection to a prebuilt address (any family — unix included).
 // See ClientOpts for the timeout/TLS behavior.
 private openAddr :: (a: *socket.Addr, opts: ClientOpts) -> (ClientConn, !ClientErr) {
-    c : ClientConn = .{};
+    conn : ClientConn = .{};
     fd := socket.socket(socket.addrFamily(a), socket.SOCK_STREAM, 0);
     if fd < 0 { raise .Connect; }
-    if !socket.setNoSigpipe(fd) { socket.close(fd); raise .Connect; }
+    if !socket.setNoSigpipe(fd) { c.close(fd); raise .Connect; }
     if opts.connectTimeoutMs > 0 {
         if !socket.connectTimed(fd, a, opts.connectTimeoutMs) {
-            socket.close(fd);
+            c.close(fd);
             raise .Connect;
         }
     } else {
-        if !socket.connectBlocking(fd, a) { socket.close(fd); raise .Connect; }
+        if !socket.connectBlocking(fd, a) { c.close(fd); raise .Connect; }
     }
     if opts.ioTimeoutMs > 0 {
-        if !socket.setIoTimeout(fd, opts.ioTimeoutMs) { socket.close(fd); raise .Connect; }
+        if !socket.setIoTimeout(fd, opts.ioTimeoutMs) { c.close(fd); raise .Connect; }
     }
-    c.fd = fd;
-    c.acceptCompression = opts.acceptCompression;
-    c.maxResponseBytes = opts.maxResponseBytes;
+    conn.fd = fd;
+    conn.acceptCompression = opts.acceptCompression;
+    conn.maxResponseBytes = opts.maxResponseBytes;
     if opts.tls != null {
-        if opts.tlsHost.len == 0 { socket.close(fd); raise .Tls; }
+        if opts.tlsHost.len == 0 { c.close(fd); raise .Tls; }
         tc := opts.tls.connect(fd, opts.tlsHost);
-        if tc == null { socket.close(fd); raise .Tls; }
-        c.tls = tc;
+        if tc == null { c.close(fd); raise .Tls; }
+        conn.tls = tc;
     }
-    return c;
+    return conn;
 }
 
 // Resolve `host` (DNS or numeric) and open a connection. The TLS
@@ -138,14 +138,14 @@ private open :: (host: string, port: i64, opts: ClientOpts) -> (ClientConn, !Cli
 }
 
 // Close the connection (TLS close_notify + session teardown first).
-private closeConn :: (c: *ClientConn) {
-    if c.tls != null {
-        c.tls.close();
-        c.tls = null;
+private closeConn :: (conn: *ClientConn) {
+    if conn.tls != null {
+        conn.tls.close();
+        conn.tls = null;
     }
-    if c.fd >= 0 {
-        socket.close(c.fd);
-        c.fd = -1;
+    if conn.fd >= 0 {
+        c.close(conn.fd);
+        conn.fd = -1;
     }
 }
 
@@ -171,15 +171,15 @@ private READ_RESET :i64: -2;
 
 // One read step: > 0 bytes, 0 = orderly end of stream, READ_RESET = the peer
 // reset the conn, -1 = any other fault/timeout.
-private connReadStep :: (c: *ClientConn, buf: [*]u8, cap: i64) -> i64 {
-    if c.tls != null {
-        n, step := c.tls.read(buf, cap);
+private connReadStep :: (conn: *ClientConn, buf: [*]u8, cap: i64) -> i64 {
+    if conn.tls != null {
+        n, step := conn.tls.read(buf, cap);
         if step == TlsStep.Done { return n; }
         if step == TlsStep.Closed { return 0; }
         return -1;   // Want (io timeout on a blocking fd) or Fatal
     }
-    n := socket.read(c.fd, buf, cap);
-    while n < 0 and socket.errno() == posix.EINTR { n = socket.read(c.fd, buf, cap); }
+    n := c.read(conn.fd, buf, cap);
+    while n < 0 and socket.errno() == posix.EINTR { n = c.read(conn.fd, buf, cap); }
     if n < 0 {
         // READ_RESET, not a generic fault: an idle keep-alive conn the peer
         // has closed answers the request we just wrote with an RST, and the
@@ -1079,7 +1079,7 @@ private recvOn :: (conn: *ClientConn) -> (ClientResponse, !ClientErr) {
 // connection. One blocking round-trip.
 private request :: (ip: u32, port: i64, req: ClientRequest, maxResponseBytes: ?i64 = null) -> (ClientResponse, !ClientErr) {
     fd := try dial(ip, port);
-    defer socket.close(fd);
+    defer c.close(fd);
     try send(fd, req);
     return recv(fd, req.method, maxResponseBytes);
 }

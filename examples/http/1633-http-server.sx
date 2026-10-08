@@ -42,8 +42,8 @@ dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1, per-OS layout
-    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { c.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { c.close(fd); return -1; }
     return fd;
 }
 
@@ -81,7 +81,7 @@ respComplete :: (buf: [*]u8, len: i64) -> bool {
 // Send a request and tick the server until its full response arrives.
 // Returns the response text ("" = the connection closed instead).
 roundtrip :: (srv: *http.Server, fd: i32, reqtext: string, scratch: [*]u8) -> string {
-    socket.write(fd, reqtext.ptr, reqtext.len);
+    c.write(fd, reqtext.ptr, reqtext.len);
     total : i64 = 0;
     tries := 0;
     while tries < 400 {
@@ -135,7 +135,7 @@ main :: () -> i32 {
         tries += 1;
     }
     if !drained { print("case3: server did not close at the cap\n"); return 1; }
-    socket.close(c1);
+    c.close(c1);
     print("request cap: close + EOF\n");
 
     // ── 4. POST body echo ─────────────────────────────────────────────
@@ -148,7 +148,7 @@ main :: () -> i32 {
     // ── 5. unknown path routes 404 ────────────────────────────────────
     r5 := roundtrip(*srv, c2, "GET /missing HTTP/1.1\r\nHost: t\r\n\r\n", *buf[0]);
     if !contains(r5, "HTTP/1.1 404 Not Found") { print("case5: expected 404\n"); return 1; }
-    socket.close(c2);
+    c.close(c2);
     print("404 routing ok\n");
 
     // ── 5b. a body past READ_BUF_INITIAL forces the buffer to grow ────
@@ -161,7 +161,7 @@ main :: () -> i32 {
     c2b := dialPort(srv.cfg.port);
     if c2b < 0 { print("dial2b failed\n"); return 1; }
     bigbuf : [*]u8 = (context.allocator.allocBytes((bigN + 4096))).([*]u8);
-    socket.write(c2b, breq.ptr, breq.len);
+    c.write(c2b, breq.ptr, breq.len);
     btotal : i64 = 0;
     btries := 0;
     while btries < 2000 {
@@ -176,7 +176,7 @@ main :: () -> i32 {
     if !contains(bresp, "HTTP/1.1 200 OK") { print("case5b: big echo not 200\n"); return 1; }
     if !contains(bresp, concat("Content-Length: ", intToString(bigN))) { print("case5b: wrong echo length\n"); return 1; }
     if bigbuf[btotal - 1] != 97 + ((bigN - 1) % 26).(u8) { print("case5b: tail byte wrong\n"); return 1; }
-    socket.close(c2b);
+    c.close(c2b);
     print("big body grows the buffer and echoes intact\n");
 
     // ── 6. half a header is evicted at the request deadline, while a
@@ -184,7 +184,7 @@ main :: () -> i32 {
     c3 := dialPort(srv.cfg.port);
     if c3 < 0 { print("dial3 failed\n"); return 1; }
     half := "GET /hel";
-    socket.write(c3, half.ptr, half.len);
+    c.write(c3, half.ptr, half.len);
     gone := event.deadlineIn(300);   // > timeoutRequestMs
     while !event.expired(gone) { srv.tick(5) catch {}; }
     c4 := dialPort(srv.cfg.port);
@@ -201,8 +201,8 @@ main :: () -> i32 {
         tries += 1;
     }
     if !evicted { print("case6: half-header connection never evicted\n"); return 1; }
-    socket.close(c3);
-    socket.close(c4);
+    c.close(c3);
+    c.close(c4);
     print("slow client evicted, healthy client served\n");
 
     srv.close();
@@ -232,7 +232,7 @@ main :: () -> i32 {
     if !contains(r8, "ping-pong") { print("pooled: echo failed\n"); return 1; }
     r9 := roundtrip(*psrv, c5, "GET /missing HTTP/1.1\r\nHost: t\r\n\r\n", *buf[0]);
     if !contains(r9, "HTTP/1.1 404 Not Found") { print("pooled: expected 404\n"); return 1; }
-    socket.close(c5);
+    c.close(c5);
     psrv.close();
     print("pooled dispatch: GET, echo, 404 across worker threads ok\n");
 

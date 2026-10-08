@@ -72,11 +72,11 @@ srvEntry :: (arg: *void) -> *void abi(.c) {
 // Case F: accept and hold — never write a byte, never close until told.
 muteEntry :: (arg: *void) -> *void abi(.c) {
     lfd : *i32 = arg;
-    c := socket.accept(lfd.*, null, null);
+    conn := socket.accept(lfd.*, null, null);
     // hold the conn open until the listener is closed under us
     hold : [1]u8 = ---;
-    _ := socket.read(c, *hold[0], 1);   // blocks until main closes lfd/conn or process exit
-    if c >= 0 { socket.close(c); }
+    _ := c.read(conn, *hold[0], 1);   // blocks until main closes lfd/conn or process exit
+    if conn >= 0 { c.close(conn); }
     return null;
 }
 
@@ -244,10 +244,10 @@ run :: () -> i32 {
     holdL := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if holdL < 0 { srv.stop(); t.join(); return 40; }
     haddr := socket.sockaddrIn(0, 0x0100007F);
-    if socket.bind(holdL, *haddr, 16) != 0 { socket.close(holdL); srv.stop(); t.join(); return 41; }
-    if socket.listen(holdL, 1) != 0 { socket.close(holdL); srv.stop(); t.join(); return 42; }
+    if socket.bind(holdL, *haddr, 16) != 0 { c.close(holdL); srv.stop(); t.join(); return 41; }
+    if socket.listen(holdL, 1) != 0 { c.close(holdL); srv.stop(); t.join(); return 42; }
     holdPort := socket.localPort(holdL);
-    if holdPort == null { socket.close(holdL); srv.stop(); t.join(); return 43; }
+    if holdPort == null { c.close(holdL); srv.stop(); t.join(); return 43; }
     // saturate the queue with pending, never-accepted connects
     pend : [24]i32 = ---;
     pi_ : i64 = 0;
@@ -265,33 +265,33 @@ run :: () -> i32 {
     // Either way the call RETURNED (the corpus timeout is the hang
     // backstop). Clean up the saturation sockets.
     pi_ = 0;
-    while pi_ < 24 { socket.close(pend[pi_]); pi_ += 1; }
-    socket.close(holdL);
+    while pi_ < 24 { c.close(pend[pi_]); pi_ += 1; }
+    c.close(holdL);
 
     // ── F. io timeout: accepted but mute ──
     muteL := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if muteL < 0 { srv.stop(); t.join(); return 50; }
     maddr := socket.sockaddrIn(0, 0x0100007F);
-    if socket.bind(muteL, *maddr, 16) != 0 { socket.close(muteL); srv.stop(); t.join(); return 51; }
-    if socket.listen(muteL, 4) != 0 { socket.close(muteL); srv.stop(); t.join(); return 52; }
+    if socket.bind(muteL, *maddr, 16) != 0 { c.close(muteL); srv.stop(); t.join(); return 51; }
+    if socket.listen(muteL, 4) != 0 { c.close(muteL); srv.stop(); t.join(); return 52; }
     mutePort := socket.localPort(muteL);
-    if mutePort == null { socket.close(muteL); srv.stop(); t.join(); return 57; }
+    if mutePort == null { c.close(muteL); srv.stop(); t.join(); return 57; }
     muteBox := muteL;
     mt, mte := thread.Thread.spawn(muteEntry, *muteBox);
-    if mte { socket.close(muteL); srv.stop(); t.join(); return 53; }
+    if mte { c.close(muteL); srv.stop(); t.join(); return 53; }
     optsIo : http.ClientOpts = .{ connectTimeoutMs = 2000, ioTimeoutMs = 500 };
     connF, ef := http.Client.open("127.0.0.1", mutePort, optsIo);
     // On an open failure the holder thread is still blocked in
     // accept(), which close(muteL) does NOT reliably wake — skip the join
     // on this failure path (process exit reaps it) rather than deadlock.
-    if ef { socket.close(muteL); srv.stop(); t.join(); return 54; }
+    if ef { c.close(muteL); srv.stop(); t.join(); return 54; }
     sf := http.Client.sendOn(*connF, .{ host = "t" });
-    if sf { http.Client.closeConn(*connF); socket.close(muteL); mt.join(); srv.stop(); t.join(); return 55; }
+    if sf { http.Client.closeConn(*connF); c.close(muteL); mt.join(); srv.stop(); t.join(); return 55; }
     rf, rfe := http.Client.recvOn(*connF);
-    if !rfe { rf.deinit(); http.Client.closeConn(*connF); socket.close(muteL); mt.join(); srv.stop(); t.join(); return 56; }   // MUST time out, not hang
+    if !rfe { rf.deinit(); http.Client.closeConn(*connF); c.close(muteL); mt.join(); srv.stop(); t.join(); return 56; }   // MUST time out, not hang
     // closing our end unblocks the holder thread's read
     http.Client.closeConn(*connF);
-    socket.close(muteL);
+    c.close(muteL);
     mt.join();
 
     srv.stop();

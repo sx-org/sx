@@ -33,8 +33,8 @@ dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { c.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { c.close(fd); return -1; }
     return fd;
 }
 
@@ -54,7 +54,7 @@ contains :: (hay: string, needle: string) -> bool {
 roundtrip :: (srv: *http.Server, req: string, buf: [*]u8, cap: i64) -> string {
     fd := dialPort(srv.cfg.port);
     if fd < 0 { return ""; }
-    socket.write(fd, req.ptr, req.len);
+    c.write(fd, req.ptr, req.len);
     total : i64 = 0;
     stall : i64 = 0;
     done := false;
@@ -69,7 +69,7 @@ roundtrip :: (srv: *http.Server, req: string, buf: [*]u8, cap: i64) -> string {
         }
         if got > 0 { stall = 0; } else { stall += 1; }
     }
-    socket.close(fd);
+    c.close(fd);
     return string{ ptr = buf, len = total };
 }
 

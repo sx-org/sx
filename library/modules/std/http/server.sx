@@ -162,7 +162,7 @@ HttpErr :: error {
 // error path — a failed construction never reaches close()/stop(), so the
 // AF_UNIX socket file the bind just created must be removed HERE.
 private closeListener :: (lfd: i32, unixPath: string) {
-    socket.close(lfd);
+    c.close(lfd);
     if unixPath.len > 0 { fs.deleteFile(unixPath); }
 }
 
@@ -1485,14 +1485,14 @@ Server :: struct {
             if !uok { raise .Bind; }   // empty / overflows sun_path
             lfd = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM, 0);
             if lfd < 0 { raise .Bind; }
-            if !socket.setCloexec(lfd) { socket.close(lfd); raise .Bind; }
+            if !socket.setCloexec(lfd) { c.close(lfd); raise .Bind; }
             // The path belongs to the server (documented contract): a
             // stale socket file from a previous run would fail the bind —
             // remove it. A path we cannot unlink fails at bind, loud.
             fs.deleteFile(cfg.unixPath);
-            if socket.bindTo(lfd, *ua) != 0 { socket.close(lfd); raise .Bind; }
-            if socket.listen(lfd, cfg.backlog) != 0 { socket.close(lfd); raise .Bind; }
-            if !socket.setNonblocking(lfd) { socket.close(lfd); raise .Bind; }
+            if socket.bindTo(lfd, *ua) != 0 { c.close(lfd); raise .Bind; }
+            if socket.listen(lfd, cfg.backlog) != 0 { c.close(lfd); raise .Bind; }
+            if !socket.setNonblocking(lfd) { c.close(lfd); raise .Bind; }
         } else {
             btext := if cfg.bindAddr.len > 0 then cfg.bindAddr else "0.0.0.0";
             ba, bok := socket.parseAddr(btext, cfg.port);
@@ -1503,7 +1503,7 @@ Server :: struct {
             // the listener must not leak into fork/exec'd children (an
             // inherited listener keeps the port bound after Server.close).
             // Conn fds get CLOEXEC at accept (acceptConnNb).
-            if !socket.setCloexec(lfd) { socket.close(lfd); raise .Bind; }
+            if !socket.setCloexec(lfd) { c.close(lfd); raise .Bind; }
             one : i32 = 1;
             socket.setsockopt(lfd, socket.SOL_SOCKET, socket.SO_REUSEADDR, *one, 4);
             // opt-in port sharing. A refused setsockopt is a hard Bind
@@ -1511,7 +1511,7 @@ Server :: struct {
             // next instance's bind would fail mysteriously.
             if cfg.reusePort {
                 if socket.setsockopt(lfd, socket.SOL_SOCKET, socket.SO_REUSEPORT, *one, 4) != 0 {
-                    socket.close(lfd);
+                    c.close(lfd);
                     raise .Bind;
                 }
             }
@@ -1522,16 +1522,16 @@ Server :: struct {
             if fam == socket.AF_INET6 {
                 v6only : i32 = if cfg.ipv6Only then 1 else 0;
                 if socket.setsockopt(lfd, socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, *v6only, 4) != 0 {
-                    socket.close(lfd);
+                    c.close(lfd);
                     raise .Bind;
                 }
             }
-            if socket.bindTo(lfd, *ba) != 0 { socket.close(lfd); raise .Bind; }
+            if socket.bindTo(lfd, *ba) != 0 { c.close(lfd); raise .Bind; }
             bound := socket.localPort(lfd);
-            if bound == null { socket.close(lfd); raise .Bind; }
+            if bound == null { c.close(lfd); raise .Bind; }
             cfg.port = bound;
-            if socket.listen(lfd, cfg.backlog) != 0 { socket.close(lfd); raise .Bind; }
-            if !socket.setNonblocking(lfd) { socket.close(lfd); raise .Bind; }
+            if socket.listen(lfd, cfg.backlog) != 0 { c.close(lfd); raise .Bind; }
+            if !socket.setNonblocking(lfd) { c.close(lfd); raise .Bind; }
         }
 
         lp, le := event.Loop.init();
@@ -1726,7 +1726,7 @@ Server :: struct {
             self.ps = null;
         }
 
-        if self.lfd >= 0 { socket.close(self.lfd); }
+        if self.lfd >= 0 { c.close(self.lfd); }
         self.lfd = -1;
         // an AF_UNIX listener's socket file is removed at teardown
         // (idempotent — stop() may have unlinked it already).
@@ -1747,116 +1747,116 @@ Server :: struct {
     }
 
     connClose :: (self: *Server, slot: i64) {
-        c: *Conn = *self.conns[slot];
+        conn: *Conn = *self.conns[slot];
         // push onto the free list exactly once per FREE transition
         // (a re-close of an already-free slot — close()'s teardown sweep
         // tolerates them — must not corrupt the list with a cycle).
-        wasActive := c.state != CONN_FREE;
+        wasActive := conn.state != CONN_FREE;
         // TLS: tear down the per-connection TLS session first,
         // while the fd is still open so close() can attempt a best-effort
         // close_notify. close() frees the session's own state; idempotent
         // (null = plaintext).
-        if c.tls != null {
-            c.tls.close();
-            c.tls = null;
+        if conn.tls != null {
+            conn.tls.close();
+            conn.tls = null;
         }
         // a live body channel must never strand a blocked reader —
         // fault it (the worker's readBody returns -1; its completion will
         // fail the gen check and be discarded) and drop the conn's ref.
-        if c.bchan != null {
-            c.bchan.finish(true);
-            c.bchan.release();
-            c.bchan = null;
+        if conn.bchan != null {
+            conn.bchan.finish(true);
+            conn.bchan.release();
+            conn.bchan = null;
         }
         // wake the conn's fiber so it observes the fault and unwinds
         // (its completion then fails the gen check and is skipped; the
         // runner reaps it at the next drive). A pending fiber completion
         // for THIS conn is moot — drop the mark.
-        if c.fiberH != 0 {
-            if self.cfg.fibers != null { self.cfg.fibers.wake(c.fiberH); }
-            c.fiberH = 0;
+        if conn.fiberH != 0 {
+            if self.cfg.fibers != null { self.cfg.fibers.wake(conn.fiberH); }
+            conn.fiberH = 0;
         }
-        if c.fiberDone {
-            c.fiberDone = false;
+        if conn.fiberDone {
+            conn.fiberDone = false;
             self.fiberDoneN -= 1;
         }
-        c.fiberEarly = false;
-        if c.bodyParked {
-            c.bodyParked = false;
+        conn.fiberEarly = false;
+        if conn.bodyParked {
+            conn.bodyParked = false;
             self.bodyParkedN -= 1;
         }
-        c.bodyMode = 0;
-        c.bodyRemaining = 0;
-        c.bchState = 0;
+        conn.bodyMode = 0;
+        conn.bodyRemaining = 0;
+        conn.bchState = 0;
         // same for a worker-fed response stream — abort unblocks a
         // feeder mid-feedAll; drop the conn's ref.
-        if c.ochan != null {
-            c.ochan.abort();
-            c.ochan.release();
-            c.ochan = null;
+        if conn.ochan != null {
+            conn.ochan.abort();
+            conn.ochan.release();
+            conn.ochan = null;
         }
-        if c.encodedProducer != null {
-            destroyEncodedProducer(c.encodedProducer, self.ownAlloc);
-            c.encodedProducer = null;
+        if conn.encodedProducer != null {
+            destroyEncodedProducer(conn.encodedProducer, self.ownAlloc);
+            conn.encodedProducer = null;
         }
-        if c.streamWaiting {
-            c.streamWaiting = false;
+        if conn.streamWaiting {
+            conn.streamWaiting = false;
             self.streamWaitingN -= 1;
         }
-        dropSwitch(c.switched);
-        c.switched = null;
-        if c.fd >= 0 {
-            self.loop.delRead(c.fd);
-            if c.writeArmed { self.loop.delWrite(c.fd); }
-            socket.close(c.fd);
+        dropSwitch(conn.switched);
+        conn.switched = null;
+        if conn.fd >= 0 {
+            self.loop.delRead(conn.fd);
+            if conn.writeArmed { self.loop.delWrite(conn.fd); }
+            c.close(conn.fd);
             // A real connection occupied this slot — count the close and
             // surface it. Slots swept while already CONN_FREE (close()'s
             // teardown) carry fd < 0 and are not double-counted.
             self.stClosed += 1;
             self.emit(EventKind.CLOSE, slot, 0);
         }
-        if c.outBuf != null {
+        if conn.outBuf != null {
             // only per-response allocations are freed here — an
             // outBuf aliasing the persistent wbuf is retained for reuse.
-            if c.outOwned { self.ownAlloc.deallocBytes(c.outBuf); }
-            c.outBuf = null;
+            if conn.outOwned { self.ownAlloc.deallocBytes(conn.outBuf); }
+            conn.outBuf = null;
         }
-        c.outOwned = true;
+        conn.outOwned = true;
         // readBuf (and wbuf) stay allocated — reused by the next
         // connection here. Exception: an over-cap wbuf (grown by one huge
         // response) is released now instead of pinning the high-water mark
         // for the server's lifetime .
-        if c.wbufCap > WBUF_RETAIN_CAP {
-            self.ownAlloc.deallocBytes(c.wbuf);
-            c.wbuf = null;
-            c.wbufCap = 0;
+        if conn.wbufCap > WBUF_RETAIN_CAP {
+            self.ownAlloc.deallocBytes(conn.wbuf);
+            conn.wbuf = null;
+            conn.wbufCap = 0;
         }
-        c.fd = -1;
-        c.state = CONN_FREE;
-        c.gen += 1;   // also invalidates every heap entry for this slot
-        c.hqDeadline = 0;
+        conn.fd = -1;
+        conn.state = CONN_FREE;
+        conn.gen += 1;   // also invalidates every heap entry for this slot
+        conn.hqDeadline = 0;
         if wasActive {
-            c.nextFree = self.freeHead;
+            conn.nextFree = self.freeHead;
             self.freeHead = slot;
         }
-        c.handlerDeadline = 0;
-        c.headReq = false;
-        c.readLen = 0;
-        c.resetParse();
-        c.outLen = 0;
-        c.outSent = 0;
-        c.served = 0;
-        c.closeAfter = false;
-        c.lingerClose = false;
-        c.writeArmed = false;
-        c.tlsRdWantWrite = false;
-        c.tlsWrWantRead = false;
-        c.streaming = false;
-        c.producer = null;
-        c.producerCtx = 0;
-        c.encodedProducer = null;
-        c.streamOff = 0;
-        c.streamDone = false;
+        conn.handlerDeadline = 0;
+        conn.headReq = false;
+        conn.readLen = 0;
+        conn.resetParse();
+        conn.outLen = 0;
+        conn.outSent = 0;
+        conn.served = 0;
+        conn.closeAfter = false;
+        conn.lingerClose = false;
+        conn.writeArmed = false;
+        conn.tlsRdWantWrite = false;
+        conn.tlsWrWantRead = false;
+        conn.streaming = false;
+        conn.producer = null;
+        conn.producerCtx = 0;
+        conn.encodedProducer = null;
+        conn.streamOff = 0;
+        conn.streamDone = false;
     }
 
     // ── the tick: one bounded loop iteration ─────────────────────────
@@ -2111,7 +2111,7 @@ Server :: struct {
         self.stopBegun = true;
         if !self.lfdRemoved and self.lfd >= 0 {
             self.loop.delRead(self.lfd);
-            socket.close(self.lfd);
+            c.close(self.lfd);
             self.lfd = -1;
             self.lfdRemoved = true;
             // stop() means "accept no more" — remove the AF_UNIX
@@ -2215,14 +2215,14 @@ Server :: struct {
             if self.cfg.unixPath.len == 0 {
                 one : i32 = 1;
                 if socket.setsockopt(fd, socket.IPPROTO_TCP, socket.TCP_NODELAY, *one, 4) != 0 {
-                    socket.close(fd);
+                    c.close(fd);
                     self.emit(EventKind.ACCEPT_FAULT, -1, 0);
                     return;
                 }
             }
             slot := self.freeSlot();
             if slot < 0 {                                // at maxConn: shed
-                socket.close(fd);
+                c.close(fd);
                 self.emit(EventKind.ACCEPT_FAULT, -1, 0);
                 return;
             }

@@ -74,8 +74,8 @@ dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { c.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { c.close(fd); return -1; }
     return fd;
 }
 
@@ -174,7 +174,7 @@ main :: () -> i32 {
             if c1 < 0 { print("dial failed\n"); rc = 1; }
             if rc == 0 {
                 req := "GET /big HTTP/1.1\r\nHost: t\r\n\r\n";
-                socket.write(c1, req.ptr, req.len);
+                c.write(c1, req.ptr, req.len);
                 total : i64 = 0;
                 tries := 0;
                 done := false;
@@ -205,7 +205,7 @@ main :: () -> i32 {
                     }
                 }
             }
-            if c1 >= 0 { socket.close(c1); }
+            if c1 >= 0 { c.close(c1); }
 
             // ── 2. fixed-body fast path still works ───────────────────
             if rc == 0 {
@@ -213,7 +213,7 @@ main :: () -> i32 {
                 if c2 < 0 { print("dial2 failed\n"); rc = 1; }
                 if rc == 0 {
                     req := "GET /small HTTP/1.1\r\nHost: t\r\n\r\n";
-                    socket.write(c2, req.ptr, req.len);
+                    c.write(c2, req.ptr, req.len);
                     total : i64 = 0;
                     tries := 0;
                     got := false;
@@ -232,7 +232,7 @@ main :: () -> i32 {
                     else if !contains(s, "Content-Length: 16") { print("fixed: wrong content-length\n"); rc = 1; }
                     else if contains(s, "Transfer-Encoding") { print("fixed: should not be chunked\n"); rc = 1; }
                 }
-                if c2 >= 0 { socket.close(c2); }
+                if c2 >= 0 { c.close(c2); }
             }
 
             // ── 3. keep-alive: chunked then a second request, same conn ──
@@ -242,7 +242,7 @@ main :: () -> i32 {
                 if rc == 0 {
                     // first: chunked /big
                     req := "GET /big HTTP/1.1\r\nHost: t\r\n\r\n";
-                    socket.write(c3, req.ptr, req.len);
+                    c.write(c3, req.ptr, req.len);
                     total : i64 = 0;
                     tries := 0;
                     done := false;
@@ -263,7 +263,7 @@ main :: () -> i32 {
                     // second: fixed /small on the SAME connection
                     if rc == 0 {
                         req2 := "GET /small HTTP/1.1\r\nHost: t\r\n\r\n";
-                        socket.write(c3, req2.ptr, req2.len);
+                        c.write(c3, req2.ptr, req2.len);
                         total = 0;
                         tries = 0;
                         got := false;
@@ -279,7 +279,7 @@ main :: () -> i32 {
                         if !got { print("keep-alive: second request failed\n"); rc = 1; }
                     }
                 }
-                if c3 >= 0 { socket.close(c3); }
+                if c3 >= 0 { c.close(c3); }
             }
 
             context.allocator.deallocBytes(rbuf);

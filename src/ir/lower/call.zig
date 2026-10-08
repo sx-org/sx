@@ -5919,8 +5919,8 @@ pub fn resolveCallParamTypes(
             if (!is_value) {
                 // Resolve the member from the selected namespace target before
                 // consulting process-global qualified/bare maps. This includes
-                // extern re-exports (`socket.write :: c.write`), whose literal C
-                // symbol intentionally has no distinct `socket.write` FuncId.
+                // extern re-exports (`abs :: native.abs`), whose literal C
+                // symbol has no FuncId under the re-exporting name.
                 // Without the signature here, the ambient expression target
                 // leaks into argument lowering (a `-> bool` caller truncated a
                 // byte count to i1 before calling libc).

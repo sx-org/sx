@@ -38,7 +38,7 @@ silentPeer :: (port: i64) -> ?i32 {
     a := socket.sockaddrIn(port, LOOPBACK);
     if socket.connect(fd, *a, 16) != 0 { return null; }
     req := "GET /silent HTTP/1.1\r\nHost: t\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n";
-    socket.write(fd, req.ptr, req.len);
+    c.write(fd, req.ptr, req.len);
     return fd;
 }
 
@@ -71,7 +71,7 @@ main :: () -> i32 {
     while @atomicLoad(i64, *clientCode, .acquire) == 0 and waited < 300 { c.usleep(10000); waited += 1; }
     print("the answering client closed as {}\n", clientCode);
 
-    socket.close(silent);
+    c.close(silent);
     srv.stop();
     t.join();
     srv.close();

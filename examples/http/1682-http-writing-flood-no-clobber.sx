@@ -56,8 +56,8 @@ dialPort :: (port: i64) -> i32 {
     rsz : i32 = 65536;
     socket.setsockopt(fd, socket.SOL_SOCKET, socket.SO_RCVBUF, *rsz, 4);
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { c.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { c.close(fd); return -1; }
     return fd;
 }
 
@@ -85,7 +85,7 @@ main :: () -> i32 {
         if ca < 0 { print("dial failed\n"); srv.close(); return 1; }
 
         req := "GET /big HTTP/1.1\r\nHost: t\r\n\r\n";
-        socket.write(ca, req.ptr, req.len);
+        c.write(ca, req.ptr, req.len);
 
         // Let the server accept, serve, and PARK mid-write. Deterministic:
         // poll the slot until the write watch is armed (a write actually
@@ -180,7 +180,7 @@ main :: () -> i32 {
             }
         }
 
-        socket.close(ca);
+        c.close(ca);
         srv.close();
         context.allocator.deallocBytes(junk);
         context.allocator.deallocBytes(rbuf);

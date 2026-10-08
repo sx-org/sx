@@ -28,7 +28,7 @@ contains :: (value: string, needle: string) -> bool {
 writeAll :: (fd: i32, data: string) -> bool {
     at : i64 = 0;
     while at < data.len {
-        n := socket.write(fd, *data.ptr[at], (data.len - at));
+        n := c.write(fd, *data.ptr[at], (data.len - at));
         if n <= 0 { return false; }
         at += n;
     }
@@ -54,7 +54,7 @@ hexInto :: (value: i64, dst: [*]u8) -> i64 {
 bodylessThenNormal :: (firstHead: string, method: string) -> bool {
     pair : [2]i32 = ---;
     if socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM, 0, *pair[0]) != 0 { return false; }
-    if !writeAll(pair[1], firstHead) { socket.close(pair[0]); socket.close(pair[1]); return false; }
+    if !writeAll(pair[1], firstHead) { c.close(pair[0]); c.close(pair[1]); return false; }
     first, fe := http.Client.recv(pair[0], method);
     ok := !fe;
     if !fe { ok = first.body.len == 0; first.deinit(); }
@@ -64,8 +64,8 @@ bodylessThenNormal :: (firstHead: string, method: string) -> bool {
         ok = !se;
         if !se { ok = second.status == 200 and second.body == "pong"; second.deinit(); }
     }
-    socket.close(pair[0]);
-    socket.close(pair[1]);
+    c.close(pair[0]);
+    c.close(pair[1]);
     ok
 }
 
@@ -81,7 +81,7 @@ informationalFinal :: () -> bool {
         ok = !e;
         if !e { ok = response.status == 200 and response.body == "pong"; response.deinit(); }
     }
-    socket.close(pair[0]); socket.close(pair[1]);
+    c.close(pair[0]); c.close(pair[1]);
     ok
 }
 
@@ -109,7 +109,7 @@ decodeCase :: (packed: string, plain: string, coding: string, framing: i64, oneS
         if framing == 1 { ok = writeChunked(pair[1], packed); }
         else { ok = writeAll(pair[1], packed); }
     }
-    if framing == 2 { socket.close(pair[1]); pair[1] = -1; }
+    if framing == 2 { c.close(pair[1]); pair[1] = -1; }
     limit := head.len + plain.len - (if oneShort then 1 else 0);
     response, e := http.Client.recv(pair[0], "GET", limit);
     if oneShort { ok = ok and e == .TooLarge; }
@@ -119,7 +119,7 @@ decodeCase :: (packed: string, plain: string, coding: string, framing: i64, oneS
             and same(response.body, plain);
     }
     if !e { response.deinit(); }
-    socket.close(pair[0]); if pair[1] >= 0 { socket.close(pair[1]); }
+    c.close(pair[0]); if pair[1] >= 0 { c.close(pair[1]); }
     ok
 }
 
@@ -138,7 +138,7 @@ rawCodingPreserved :: () -> bool {
             and contains(response.headersRaw, "Content-Encoding: gzip");
         response.deinit();
     }
-    socket.close(pair[0]); socket.close(pair[1]);
+    c.close(pair[0]); c.close(pair[1]);
     ok
 }
 
@@ -157,7 +157,7 @@ rangeCodingPreserved :: (packed: string, coding: string, status: i64) -> bool {
             and response.header("content-encoding") == coding and same(response.body, packed);
         response.deinit();
     }
-    socket.close(pair[0]); socket.close(pair[1]);
+    c.close(pair[0]); c.close(pair[1]);
     ok
 }
 
@@ -177,10 +177,10 @@ encodedResponseFails :: (packed: string, coding: string) -> bool {
     head := concat("HTTP/1.1 200 OK\r\nContent-Encoding: ",
         concat(coding, concat("\r\nContent-Length: ", concat(intToString(packed.len), "\r\n\r\n"))));
     ok := writeAll(pair[1], head) and writeAll(pair[1], packed);
-    socket.close(pair[1]);
+    c.close(pair[1]);
     response, e := http.Client.recv(pair[0]);
     if !e { response.deinit(); }
-    socket.close(pair[0]);
+    c.close(pair[0]);
     ok and e == .Recv
 }
 
@@ -190,10 +190,10 @@ codingListFails :: (value: string) -> bool {
     wire := concat("HTTP/1.1 200 OK\r\nContent-Length: 1\r\nContent-Encoding: ",
         concat(value, "\r\n\r\nx"));
     ok := writeAll(pair[1], wire);
-    socket.close(pair[1]);
+    c.close(pair[1]);
     response, e := http.Client.recv(pair[0]);
     if !e { response.deinit(); }
-    socket.close(pair[0]);
+    c.close(pair[0]);
     ok and e == .Recv
 }
 

@@ -40,14 +40,14 @@ helperEntry :: (arg: *void) -> *void abi(.c) {
     if h.release == .drainListener {
         while !h.done.load(.acquire) {
             fd := socket.accept(h.fd, null, null);
-            if fd >= 0 { socket.close(fd); } else { c.usleep(1000); }
+            if fd >= 0 { c.close(fd); } else { c.usleep(1000); }
         }
     } else if h.release == .drainPeer {
         sink : [65536]u8 = ---;
-        while socket.read(h.fd, *sink[0], 65536) > 0 {}
+        while c.read(h.fd, *sink[0], 65536) > 0 {}
     } else {
         resp := "HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\npong";
-        socket.write(h.fd, resp.ptr, resp.len);
+        c.write(h.fd, resp.ptr, resp.len);
     }
     return null;
 }
@@ -77,8 +77,8 @@ connectCase :: (label: string, opts: http.ClientOpts) {
     t.join();
     if e { print("{}: {}\n", label, e); } else { print("{}: connected\n", label); http.Client.closeConn(*conn); }
     i = 0;
-    while i < 24 { socket.close(pend[i]); i += 1; }
-    socket.close(l);
+    while i < 24 { c.close(pend[i]); i += 1; }
+    c.close(l);
 }
 
 sendCase :: () {
@@ -91,9 +91,9 @@ sendCase :: () {
     t, te := thread.Thread.spawn(helperEntry, *h);
     if te { print("send: spawn failed\n"); return; }
     e := http.Client.send(pair[0], .{ method = "POST", host = "t", body = string{ ptr = body, len = BODY_LEN } });
-    socket.close(pair[0]);
+    c.close(pair[0]);
     t.join();
-    socket.close(pair[1]);
+    c.close(pair[1]);
     context.allocator.deallocBytes(body);
     if e { print("send: {}\n", e); } else { print("send: sent {} body bytes\n", BODY_LEN); }
 }
@@ -106,8 +106,8 @@ recvCase :: () {
     if te { print("recv: spawn failed\n"); return; }
     r, e := http.Client.recv(pair[0]);
     t.join();
-    socket.close(pair[0]);
-    socket.close(pair[1]);
+    c.close(pair[0]);
+    c.close(pair[1]);
     if e { print("recv: {}\n", e); } else { print("recv: {} {}\n", r.status, r.body); r.deinit(); }
 }
 

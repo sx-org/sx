@@ -36,14 +36,14 @@ main :: () -> i32 {
     if rn != 4 { print("short read: {}\n", rn); return 1; }
     print("pair round trip: {} bytes\n", rn);
 
-    socket.close(b);
+    c.close(b);
     cn, ce := socket.readNb(a, *buf[0], 16);
     if ce != .Closed {
         print("read after peer close: expected Closed\n");
         return 1;
     }
     print("peer close: Closed\n");
-    socket.close(a);
+    c.close(a);
 
     // ── nonblocking listener: acceptNb ───────────────────────────────
     lfd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
@@ -86,9 +86,9 @@ main :: () -> i32 {
     if got < 0 { print("accept never produced the connection\n"); return 1; }
     print("accept after connect: ok\n");
 
-    socket.close(xx got);
-    socket.close(cfd);
-    socket.close(lfd);
+    c.close(xx got);
+    c.close(cfd);
+    c.close(lfd);
     print("socket nonblocking ok\n");
     return 0;
 }

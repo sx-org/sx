@@ -74,8 +74,8 @@ dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { c.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { c.close(fd); return -1; }
     return fd;
 }
 
@@ -155,7 +155,7 @@ main :: () -> i32 {
             t += 1;
         }
         if !got504 { print("expected 504 for slow handler\n"); failed = 1; }
-        socket.close(ca);
+        c.close(ca);
 
         // ── connection B: immediately reuse the slot, overwrite + GROW ──
         // the read buffer while the worker still holds its request. B's body
@@ -188,7 +188,7 @@ main :: () -> i32 {
             print("expected 200 ok-b on the reused slot\n");
             failed = 1;
         }
-        socket.close(cb);
+        c.close(cb);
 
         // Drive ticks past the worker's 200 ms return so its late completion
         // is queued and discarded (gen mismatch) — then close joins the pool.

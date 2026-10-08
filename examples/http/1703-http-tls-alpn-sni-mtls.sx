@@ -37,7 +37,7 @@ handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
 // ── client-side BIO over a bare nonblocking fd (ctx = *i32) ──
 cliSend :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
     fd : *i32 = ctx;
-    n := socket.write(fd.*, buf, len.(i64));
+    n := c.write(fd.*, buf, len.(i64));
     if n >= 0 { return xx n; }
     e := socket.errno();
     if e == posix.EINTR or socket.isWouldblock(e) { return mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE; }
@@ -45,7 +45,7 @@ cliSend :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
 }
 cliRecv :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
     fd : *i32 = ctx;
-    n := socket.read(fd.*, buf, len.(i64));
+    n := c.read(fd.*, buf, len.(i64));
     if n > 0 { return xx n; }
     if n == 0 { return 0; }
     e := socket.errno();
@@ -187,8 +187,8 @@ dial :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { c.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { c.close(fd); return -1; }
     return fd;
 }
 
@@ -279,7 +279,7 @@ run :: () -> i32 {
                                     alpn = 2 }) { srv.close(); ts.deinit(); return 11; }
     hc := driveHandshake(*srv, *clC);
     clientFree(*clC);
-    socket.close(fdC);
+    c.close(fdC);
     if hc != 0 { srv.close(); ts.deinit(); return 12; }   // must FAIL, not complete/hang
 
     // ── D. mTLS: a cert-less client must be refused. Under TLS 1.3 the
@@ -297,7 +297,7 @@ run :: () -> i32 {
     refused := hd == 0;
     if hd == 1 { refused = oneGet(*srv, *clD) != 0; }
     clientFree(*clD);
-    socket.close(fdD);
+    c.close(fdD);
     if !refused { srv.close(); ts.deinit(); return 15; }
 
     // ── A. default fallback + ALPN negotiation + mTLS accept + 200 ──
@@ -309,18 +309,18 @@ run :: () -> i32 {
                                     alpn = 1 }) { srv.close(); ts.deinit(); return 17; }
     ha := driveHandshake(*srv, *clA);
     if ha != 1 {
-        clientFree(*clA); socket.close(fdA); srv.close(); ts.deinit();
+        clientFree(*clA); c.close(fdA); srv.close(); ts.deinit();
         return 18;
     }
     neg := mbedtls.mbedtls_ssl_get_alpn_protocol(*clA.ssl);
     if !cstrEq(neg, "http/1.1") {
-        clientFree(*clA); socket.close(fdA); srv.close(); ts.deinit();
+        clientFree(*clA); c.close(fdA); srv.close(); ts.deinit();
         return 19;
     }
     ga := oneGet(*srv, *clA);
     mbedtls.mbedtls_ssl_close_notify(*clA.ssl);
     clientFree(*clA);
-    socket.close(fdA);
+    c.close(fdA);
     if ga != 0 { srv.close(); ts.deinit(); return 20; }
 
     // ── B. SNI: hostname alt.test, trusting ONLY the alt cert ──
@@ -333,13 +333,13 @@ run :: () -> i32 {
     }
     hb := driveHandshake(*srv, *clB);
     if hb != 1 {
-        clientFree(*clB); socket.close(fdB); srv.close(); ts.deinit();
+        clientFree(*clB); c.close(fdB); srv.close(); ts.deinit();
         return 23;
     }
     gb := oneGet(*srv, *clB);
     mbedtls.mbedtls_ssl_close_notify(*clB.ssl);
     clientFree(*clB);
-    socket.close(fdB);
+    c.close(fdB);
     if gb != 0 { srv.close(); ts.deinit(); return 24; }
 
     srv.close();

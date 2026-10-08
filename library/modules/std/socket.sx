@@ -20,13 +20,6 @@ socket :: scope {
     // errno constants live in std/posix.sx — consumers reference `posix.EAGAIN` etc.
     // directly (a cross-module value-const can't be re-aliased at module scope).
 
-    // POSIX socket API. Cross-cutting fd primitives are re-exported from std/c.sx
-    // so existing socket.read/write/close callers keep their source-level API
-    // without duplicating the libc declarations.
-    read  :: c.read;
-    write :: c.write;
-    close :: c.close;
-    fcntl :: c.fcntl;
     socket     :: (domain: i32, kind: i32, protocol: i32) -> i32 extern c.libc;
     setsockopt :: (fd: i32, level: i32, optname: i32, optval: *i32, optlen: u32) -> i32 extern c.libc;
     bind       :: (fd: i32, addr: *SockAddr, addrlen: u32) -> i32 extern c.libc;
@@ -119,9 +112,9 @@ socket :: scope {
     // Clear O_NONBLOCK (the inverse of setNonblocking — a timed connect flips
     // the fd nonblocking for the poll wait, then restores blocking mode).
     setBlocking :: (fd: i32) -> bool {
-        flags := fcntl(fd, F_GETFL);
+        flags := c.fcntl(fd, F_GETFL);
         if flags < 0 { return false; }
-        return fcntl(fd, F_SETFL, flags & ~O_NONBLOCK) >= 0;
+        return c.fcntl(fd, F_SETFL, flags & ~O_NONBLOCK) >= 0;
     }
 
     // Bound every subsequent blocking read/write on `fd` to `ms` milliseconds
@@ -534,7 +527,7 @@ socket :: scope {
             conn, ae := acceptNb(fd);
             if ae == .WouldBlock { raise .WouldBlock; }
             if ae { raise .Fault; }
-            if fcntl(conn, F_SETFD, FD_CLOEXEC) < 0 { c.close(conn); raise .Fault; }
+            if c.fcntl(conn, F_SETFD, FD_CLOEXEC) < 0 { c.close(conn); raise .Fault; }
             if !setNonblocking(conn) { c.close(conn); raise .Fault; }
             if !setNoSigpipe(conn) { c.close(conn); raise .Fault; }
             return conn;
@@ -565,16 +558,16 @@ socket :: scope {
     // Put `fd` in nonblocking mode (reads/writes/accepts return EAGAIN
     // instead of parking the thread). False when fcntl refuses.
     setNonblocking :: (fd: i32) -> bool {
-        flags := fcntl(fd, F_GETFL);
+        flags := c.fcntl(fd, F_GETFL);
         if flags < 0 { return false; }
-        return fcntl(fd, F_SETFL, flags | O_NONBLOCK) >= 0;
+        return c.fcntl(fd, F_SETFL, flags | O_NONBLOCK) >= 0;
     }
 
     // mark `fd` close-on-exec so a fork/exec'd child (process.run)
     // never inherits it. FD_CLOEXEC is the only fd flag, so F_SETFD can set
     // the word directly — no read-modify-write. False when fcntl refuses.
     setCloexec :: (fd: i32) -> bool {
-        return fcntl(fd, F_SETFD, FD_CLOEXEC) >= 0;
+        return c.fcntl(fd, F_SETFD, FD_CLOEXEC) >= 0;
     }
 
     // Failure classes for the _nb wrappers.

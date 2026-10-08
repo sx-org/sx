@@ -28,8 +28,8 @@ dial :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);
-    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { c.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { c.close(fd); return -1; }
     return fd;
 }
 
@@ -42,7 +42,7 @@ main :: () -> i32 {
     if fd < 0 { print("dial failed\n"); return 1; }
 
     req :: "GET /x HTTP/1.1\r\nHost: t\r\n\r\n";
-    socket.write(fd, req.ptr, req.len);
+    c.write(fd, req.ptr, req.len);
 
     buf : [4096]u8 = ---;
     total : i64 = 0;
@@ -56,10 +56,10 @@ main :: () -> i32 {
     }
     resp := string{ ptr = *buf[0], len = total };
     print("served {} bytes\n", total);
-    if !contains(resp, "HTTP/1.1 200 OK") { print("bad status\n"); socket.close(fd); srv.close(); return 1; }
-    if !contains(resp, "served") { print("bad body\n"); socket.close(fd); srv.close(); return 1; }
+    if !contains(resp, "HTTP/1.1 200 OK") { print("bad status\n"); c.close(fd); srv.close(); return 1; }
+    if !contains(resp, "served") { print("bad body\n"); c.close(fd); srv.close(); return 1; }
 
-    socket.close(fd);
+    c.close(fd);
     srv.close();
     print("duplicate server import: request served\n");
     return 0;

@@ -31,22 +31,22 @@ main :: () -> i32 {
     // Blocking loopback connect completes against the listen queue with no
     // accept yet, so this stays single-threaded.
     opts : http.ClientOpts = .{ connectTimeoutMs = 2000, ioTimeoutMs = 2000 };
-    c, oe := http.Client.open("127.0.0.1", port, opts);
+    conn, oe := http.Client.open("127.0.0.1", port, opts);
     if oe { print("open failed\n"); return 2; }
 
     afd := socket.accept(lfd, null, null);
     if afd < 0 { print("accept failed\n"); return 3; }
 
     // The request lands in afd's receive queue and is never read.
-    se := http.Client.sendOn(*c, .{ path = "/hello", host = "127.0.0.1" });
+    se := http.Client.sendOn(*conn, .{ path = "/hello", host = "127.0.0.1" });
     if se { print("sendOn failed\n"); return 4; }
 
     // Let it arrive, then close with it unread → RST rather than FIN.
     sleepMs(100);
-    socket.close(afd);
+    c.close(afd);
     sleepMs(100);
 
-    r, re := http.Client.recvOn(*c);
+    r, re := http.Client.recvOn(*conn);
     if !re {
         r.deinit();
         print("FAIL: recvOn returned a response from a reset conn\n");
@@ -59,8 +59,8 @@ main :: () -> i32 {
         return 6;
     }
 
-    http.Client.closeConn(*c);
-    socket.close(lfd);
+    http.Client.closeConn(*conn);
+    c.close(lfd);
     print("reset before any byte classified as Closed (retryable)\n");
     return 0;
 }
