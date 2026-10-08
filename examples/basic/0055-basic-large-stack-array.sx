@@ -5,8 +5,6 @@
 // A whole-aggregate shape — the undef store from `---`, or `index_get` on
 // the loaded array value — scalarizes into one SelectionDAG node per
 // element, so neither appears here.
-//
-// Results print via @printf/intToString.
 
 @import "modules/std.sx";
 
@@ -34,9 +32,7 @@ big :: () -> i64 {
 }
 
 main :: () -> i32 {
-    @printf("{}", intToString(checksum()));
-    @printf("\n");
-    @printf("{}", intToString(big()));
-    @printf("\n");
+    print("{}\n", intToString(checksum()));
+    print("{}\n", intToString(big()));
     return 0;
 }

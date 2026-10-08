@@ -1,0 +1,37 @@
+// `print` renders straight into a stdout `FdWriter`, so it writes with no
+// allocator behind it: both lines below are produced inside a context whose
+// allocator refuses every request and counts the attempts. The final count is
+// zero.
+@import "modules/std.sx";
+@import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
+
+Refusing :: struct {
+    calls: i64;
+}
+
+impl Allocator for Refusing {
+    allocBytes :: (self: *Refusing, size: i64) -> *void {
+        self.calls += 1;
+        return null;
+    }
+    deallocBytes :: (self: *Refusing, ptr: *void) {}
+}
+
+Point :: struct { x: i64; y: f64; }
+Color :: enum { red; green; }
+
+main :: () {
+    refusing := Refusing{ calls = 0 };
+    ctx := context;
+    ctx.allocator = refusing.(Allocator);
+    p := Point{ x = 3, y = 1.5 };
+    arr: [3]i64 = .[1, 2, 3];
+    o: ?i64 = 7;
+
+    push ctx {
+        print("{} {} {} {} braces {{}}\n", i64.min, u64.max, true, "text");
+        print("{} {} {} {}\n", p, Color.green, arr, o);
+    }
+
+    print("allocator calls: {}\n", refusing.calls);
+}

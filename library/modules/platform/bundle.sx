@@ -44,11 +44,11 @@ bundleMain :: (opts: *@BuildOptions) -> bool {
         return true;
     }
     if bid.len == 0 {
-        @printf("error: bundle requires bundleId (set opts.bundleId or pass --bundle-id)\n");
+        print("error: bundle requires bundleId (set opts.bundleId or pass --bundle-id)\n");
         return false;
     }
     if binary.len == 0 {
-        @printf("error: bundle: empty binaryPath (compiler bug)\n");
+        print("error: bundle: empty binaryPath (compiler bug)\n");
         return false;
     }
 
@@ -60,7 +60,7 @@ bundleMain :: (opts: *@BuildOptions) -> bool {
     // device, so fail fast with a clear hint.
     if opts.isIosDevice() {
         if opts.codesignIdentity.len == 0 or opts.provisioningProfile.len == 0 {
-            @printf("error: --target ios requires --codesign-identity (e.g. \"Apple Development: ...\") and --provisioning-profile <path>\n");
+            print("error: --target ios requires --codesign-identity (e.g. \"Apple Development: ...\") and --provisioning-profile <path>\n");
             return false;
         }
     }
@@ -70,16 +70,12 @@ bundleMain :: (opts: *@BuildOptions) -> bool {
     rmCmd := concat("rm -rf \"", concat(bundle, "\""));
     if r := process.run(rmCmd) {
         if r.exitCode != 0 {
-            @printf("error: bundle: failed to clean ");
-            @printf("{}", bundle);
-            @printf("\n");
+            print("error: bundle: failed to clean {}\n", bundle);
             return false;
         }
     }
     if !fs.createDirAll(bundle) {
-        @printf("error: bundle: cannot create dir ");
-        @printf("{}", bundle);
-        @printf("\n");
+        print("error: bundle: cannot create dir {}\n", bundle);
         return false;
     }
 
@@ -91,11 +87,11 @@ bundleMain :: (opts: *@BuildOptions) -> bool {
     assetRoot := if isMac then concat(bundle, "/Contents/Resources") else bundle;
     if isMac {
         if !fs.createDirAll(macosDir) {
-            @printf("error: bundle: cannot create Contents/MacOS\n");
+            print("error: bundle: cannot create Contents/MacOS\n");
             return false;
         }
         if !fs.createDirAll(assetRoot) {
-            @printf("error: bundle: cannot create Contents/Resources\n");
+            print("error: bundle: cannot create Contents/Resources\n");
             return false;
         }
     }
@@ -104,7 +100,7 @@ bundleMain :: (opts: *@BuildOptions) -> bool {
     exeDest := concat(macosDir, "/");
     exeDest = concat(exeDest, exeName);
     if !fs.copyFile(binary, exeDest) {
-        @printf("error: bundle: copy binary failed\n");
+        print("error: bundle: copy binary failed\n");
         return false;
     }
     fs.setMode(exeDest, 493); // 0o755 = preserve executable bit
@@ -114,7 +110,7 @@ bundleMain :: (opts: *@BuildOptions) -> bool {
     plist := buildInfoPlist(opts, exeName, bid);
     plistPath := concat(plistDir, "/Info.plist");
     if !fs.writeFile(plistPath, plist) {
-        @printf("error: bundle: write Info.plist failed\n");
+        print("error: bundle: write Info.plist failed\n");
         return false;
     }
 
@@ -137,9 +133,7 @@ bundleMain :: (opts: *@BuildOptions) -> bool {
         src := opts.assetDirs.items[j].src;
         dest := opts.assetDirs.items[j].dest;
         if !copyAssetDir(src, dest, assetRoot) {
-            @printf("error: bundle: failed to copy asset dir '");
-            @printf("{}", src);
-            @printf("'\n");
+            print("error: bundle: failed to copy asset dir '{}'\n", src);
             return false;
         }
         j += 1;
@@ -157,7 +151,7 @@ bundleMain :: (opts: *@BuildOptions) -> bool {
         if fwCount > 0 {
             fwDir := concat(bundle, "/Frameworks");
             if !fs.createDirAll(fwDir) {
-                @printf("error: bundle: cannot create Frameworks dir\n");
+                print("error: bundle: cannot create Frameworks dir\n");
                 return false;
             }
             i : i64 = 0;
@@ -181,7 +175,7 @@ bundleMain :: (opts: *@BuildOptions) -> bool {
             if e := extractEntitlements(profile, bid) {
                 entPath = e;
             } else {
-                @printf("error: bundle: failed to extract entitlements from provisioning profile\n");
+                print("error: bundle: failed to extract entitlements from provisioning profile\n");
                 return false;
             }
         }
@@ -190,13 +184,11 @@ bundleMain :: (opts: *@BuildOptions) -> bool {
         return false;
     }
     if opts.isIosDevice() and !profileAcceptsBundleCertificate(profile, bundle) {
-        @printf("error: provisioning profile does not include the certificate selected by --codesign-identity; regenerate the profile for the current signing certificate\n");
+        print("error: provisioning profile does not include the certificate selected by --codesign-identity; regenerate the profile for the current signing certificate\n");
         return false;
     }
 
-    @printf("bundled: ");
-    @printf("{}", bundle);
-    @printf("\n");
+    print("bundled: {}\n", bundle);
     true
 }
 
@@ -299,14 +291,12 @@ embedProvisioningProfile :: (profile: string, bundle: string) -> bool {
     if data := fs.readFile(profile) {
         dest := concat(bundle, "/embedded.mobileprovision");
         if !fs.writeFile(dest, data) {
-            @printf("error: bundle: failed to write embedded.mobileprovision\n");
+            print("error: bundle: failed to write embedded.mobileprovision\n");
             return false;
         }
         return true;
     }
-    @printf("error: bundle: cannot read provisioning profile: ");
-    @printf("{}", profile);
-    @printf("\n");
+    print("error: bundle: cannot read provisioning profile: {}\n", profile);
     false
 }
 
@@ -329,9 +319,7 @@ copyAssetDir :: (src: string, dest: string, bundle: string) -> bool {
     // works in "copy src contents into existing dir" mode by appending
     // a trailing `/` to src.
     if !fs.createDirAll(destFull) {
-        @printf("error: bundle: cannot create asset dest '");
-        @printf("{}", destFull);
-        @printf("'\n");
+        print("error: bundle: cannot create asset dest '{}'\n", destFull);
         return false;
     }
     // `cp -R src/. dest/` copies the contents of src into dest. The
@@ -343,13 +331,13 @@ copyAssetDir :: (src: string, dest: string, bundle: string) -> bool {
     cmd = concat(cmd, "\" 2>&1");
     if r := process.run(cmd) {
         if r.exitCode != 0 {
-            @printf("error: cp -R failed:\n");
-            @printf("{}", r.stdout);
+            print("error: cp -R failed:\n");
+            print("{}", r.stdout);
             return false;
         }
         return true;
     }
-    @printf("error: cp -R spawn failed\n");
+    print("error: cp -R spawn failed\n");
     false
 }
 
@@ -377,16 +365,12 @@ embedFramework :: (opts: *@BuildOptions, name: string, destDir: string) -> bool 
             cmd = concat(cmd, "\"");
             if r := process.run(cmd) {
                 if r.exitCode != 0 {
-                    @printf("error: cp -R ");
-                    @printf("{}", candidate);
-                    @printf(" -> ");
-                    @printf("{}", dest);
-                    @printf(" failed\n");
+                    print("error: cp -R {} -> {} failed\n", candidate, dest);
                     return false;
                 }
                 return true;
             }
-            @printf("error: cp -R failed to spawn\n");
+            print("error: cp -R failed to spawn\n");
             return false;
         }
         i += 1;
@@ -448,12 +432,12 @@ extractEntitlements :: (profile: string, bundleId: string) -> ?string {
     cmd1 = concat(cmd1, "\" 2>&1");
     if r := process.run(cmd1) {
         if r.exitCode != 0 {
-            @printf("error: failed to decode provisioning profile:\n");
-            @printf("{}", r.stdout);
+            print("error: failed to decode provisioning profile:\n");
+            print("{}", r.stdout);
             return null;
         }
     } else {
-        @printf("error: security cms spawn failed\n");
+        print("error: security cms spawn failed\n");
         return null;
     }
 
@@ -464,12 +448,12 @@ extractEntitlements :: (profile: string, bundleId: string) -> ?string {
     cmd2 = concat(cmd2, "\" 2>&1");
     if r := process.run(cmd2) {
         if r.exitCode != 0 {
-            @printf("error: failed to extract entitlements:\n");
-            @printf("{}", r.stdout);
+            print("error: failed to extract entitlements:\n");
+            print("{}", r.stdout);
             return null;
         }
     } else {
-        @printf("error: plutil extract spawn failed\n");
+        print("error: plutil extract spawn failed\n");
         return null;
     }
 
@@ -482,8 +466,8 @@ extractEntitlements :: (profile: string, bundleId: string) -> ?string {
     team := "";
     if r := process.run(cmd3) {
         if r.exitCode != 0 {
-            @printf("error: profile missing ApplicationIdentifierPrefix:\n");
-            @printf("{}", r.stdout);
+            print("error: profile missing ApplicationIdentifierPrefix:\n");
+            print("{}", r.stdout);
             return null;
         }
         team = r.stdout;
@@ -497,11 +481,11 @@ extractEntitlements :: (profile: string, bundleId: string) -> ?string {
             else { break; }
         }
     } else {
-        @printf("error: plutil ApplicationIdentifierPrefix spawn failed\n");
+        print("error: plutil ApplicationIdentifierPrefix spawn failed\n");
         return null;
     }
     if team.len == 0 {
-        @printf("error: provisioning profile has empty ApplicationIdentifierPrefix\n");
+        print("error: provisioning profile has empty ApplicationIdentifierPrefix\n");
         return null;
     }
 
@@ -516,7 +500,7 @@ extractEntitlements :: (profile: string, bundleId: string) -> ?string {
     profileAppId := "";
     if r := process.run(cmdProfileId) {
         if r.exitCode != 0 {
-            @printf("error: profile missing application-identifier\n");
+            print("error: profile missing application-identifier\n");
             return null;
         }
         profileAppId = r.stdout;
@@ -529,15 +513,11 @@ extractEntitlements :: (profile: string, bundleId: string) -> ?string {
             else { break; }
         }
     } else {
-        @printf("error: plutil application-identifier spawn failed\n");
+        print("error: plutil application-identifier spawn failed\n");
         return null;
     }
     if profileAppId != wildcardAppId and profileAppId != resolvedAppId {
-        @printf("error: provisioning profile application-identifier '");
-        @printf("{}", profileAppId);
-        @printf("' does not allow bundle id '");
-        @printf("{}", bundleId);
-        @printf("'\n");
+        print("error: provisioning profile application-identifier '{}' does not allow bundle id '{}'\n", profileAppId, bundleId);
         return null;
     }
 
@@ -549,12 +529,12 @@ extractEntitlements :: (profile: string, bundleId: string) -> ?string {
     cmd4 = concat(cmd4, "\" 2>&1");
     if r := process.run(cmd4) {
         if r.exitCode != 0 {
-            @printf("error: failed to resolve application-identifier:\n");
-            @printf("{}", r.stdout);
+            print("error: failed to resolve application-identifier:\n");
+            print("{}", r.stdout);
             return null;
         }
     } else {
-        @printf("error: plutil replace spawn failed\n");
+        print("error: plutil replace spawn failed\n");
         return null;
     }
 
@@ -577,13 +557,13 @@ codesign :: (bundle: string, identity: string, entPath: string) -> bool {
     cmd = concat(cmd, "\" 2>&1");
     if r := process.run(cmd) {
         if r.exitCode != 0 {
-            @printf("error: codesign failed:\n");
-            @printf("{}", r.stdout);
+            print("error: codesign failed:\n");
+            print("{}", r.stdout);
             return false;
         }
         return true;
     }
-    @printf("error: codesign spawn failed\n");
+    print("error: codesign spawn failed\n");
     false
 }
 
@@ -636,22 +616,18 @@ androidBundleMain :: (opts: *@BuildOptions, binary: string, apkPath: string, bun
 
     sdk := discoverAndroidSdk();
     if sdk.len == 0 {
-        @printf("error: cannot locate Android SDK \xe2\x80\x94 set $ANDROID_HOME\n");
+        print("error: cannot locate Android SDK \xe2\x80\x94 set $ANDROID_HOME\n");
         return false;
     }
 
     buildTools := findHighestSubdir(pathJoin(sdk, "build-tools"));
     if buildTools.len == 0 {
-        @printf("error: no build-tools under ");
-        @printf("{}", sdk);
-        @printf("/build-tools\n");
+        print("error: no build-tools under {}/build-tools\n", sdk);
         return false;
     }
     platformDir := findHighestSubdir(pathJoin(sdk, "platforms"));
     if platformDir.len == 0 {
-        @printf("error: no platforms under ");
-        @printf("{}", sdk);
-        @printf("/platforms\n");
+        print("error: no platforms under {}/platforms\n", sdk);
         return false;
     }
     androidJar := pathJoin(platformDir, "android.jar");
@@ -671,12 +647,12 @@ androidBundleMain :: (opts: *@BuildOptions, binary: string, apkPath: string, bun
     rmCmd = concat(rmCmd, "\"");
     if r := process.run(rmCmd) {
         if r.exitCode != 0 {
-            @printf("error: apk: failed to clean stage dir\n");
+            print("error: apk: failed to clean stage dir\n");
             return false;
         }
     }
     if !fs.createDirAll(libDir) {
-        @printf("error: apk: cannot create stage lib dir\n");
+        print("error: apk: cannot create stage lib dir\n");
         return false;
     }
 
@@ -686,7 +662,7 @@ androidBundleMain :: (opts: *@BuildOptions, binary: string, apkPath: string, bun
     soBasename := fs.basename(binary);
     soDest := pathJoin(libDir, soBasename);
     if !fs.copyFile(binary, soDest) {
-        @printf("error: apk: failed to copy .so into stage\n");
+        print("error: apk: failed to copy .so into stage\n");
         return false;
     }
 
@@ -700,7 +676,7 @@ androidBundleMain :: (opts: *@BuildOptions, binary: string, apkPath: string, bun
         generatedXml := buildAndroidManifest(opts, bundleId, libName);
         generatedPath := pathJoin(stage, "AndroidManifest.xml");
         if !fs.writeFile(generatedPath, generatedXml) {
-            @printf("error: apk: failed to write AndroidManifest.xml\n");
+            print("error: apk: failed to write AndroidManifest.xml\n");
             return false;
         }
         manifestUsed = generatedPath;
@@ -726,12 +702,12 @@ androidBundleMain :: (opts: *@BuildOptions, binary: string, apkPath: string, bun
     aaptCmd = concat(aaptCmd, "\" 2>&1");
     if r := process.run(aaptCmd) {
         if r.exitCode != 0 {
-            @printf("error: aapt2 link failed:\n");
-            @printf("{}", r.stdout);
+            print("error: aapt2 link failed:\n");
+            print("{}", r.stdout);
             return false;
         }
     } else {
-        @printf("error: aapt2 spawn failed\n");
+        print("error: aapt2 spawn failed\n");
         return false;
     }
 
@@ -773,12 +749,12 @@ androidBundleMain :: (opts: *@BuildOptions, binary: string, apkPath: string, bun
     alignCmd = concat(alignCmd, "\" 2>&1");
     if r := process.run(alignCmd) {
         if r.exitCode != 0 {
-            @printf("error: zipalign failed:\n");
-            @printf("{}", r.stdout);
+            print("error: zipalign failed:\n");
+            print("{}", r.stdout);
             return false;
         }
     } else {
-        @printf("error: zipalign spawn failed\n");
+        print("error: zipalign spawn failed\n");
         return false;
     }
 
@@ -788,7 +764,7 @@ androidBundleMain :: (opts: *@BuildOptions, binary: string, apkPath: string, bun
         if home := process.env("HOME") {
             keystore = pathJoin(home, ".android/debug.keystore");
         } else {
-            @printf("error: apk: cannot locate $HOME for default keystore\n");
+            print("error: apk: cannot locate $HOME for default keystore\n");
             return false;
         }
     }
@@ -805,12 +781,12 @@ androidBundleMain :: (opts: *@BuildOptions, binary: string, apkPath: string, bun
     signCmd = concat(signCmd, "\" 2>&1");
     if r := process.run(signCmd) {
         if r.exitCode != 0 {
-            @printf("error: apksigner failed:\n");
-            @printf("{}", r.stdout);
+            print("error: apksigner failed:\n");
+            print("{}", r.stdout);
             return false;
         }
     } else {
-        @printf("error: apksigner spawn failed\n");
+        print("error: apksigner spawn failed\n");
         return false;
     }
 
@@ -820,9 +796,7 @@ androidBundleMain :: (opts: *@BuildOptions, binary: string, apkPath: string, bun
     fs.deleteFile(aligned);
     process.run(concat("rm -rf \"", concat(stage, "\"")));
 
-    @printf("apk: ");
-    @printf("{}", apkPath);
-    @printf("\n");
+    print("apk: {}\n", apkPath);
     true
 }
 
@@ -838,15 +812,13 @@ runInDir :: (dir: string, cmd: string) -> bool {
     wrapped = concat(wrapped, " 2>&1");
     if r := process.run(wrapped) {
         if r.exitCode != 0 {
-            @printf("error: ");
-            @printf("{}", cmd);
-            @printf(" failed:\n");
-            @printf("{}", r.stdout);
+            print("error: {} failed:\n", cmd);
+            print("{}", r.stdout);
             return false;
         }
         return true;
     }
-    @printf("error: shell spawn failed\n");
+    print("error: shell spawn failed\n");
     false
 }
 
@@ -1020,17 +992,17 @@ compileJniMainSources :: (opts: *@BuildOptions, stage: string, androidJar: strin
     javaRoot := pathJoin(stage, "java");
     classesRoot := pathJoin(stage, "classes");
     if !fs.createDirAll(javaRoot) {
-        @printf("error: apk: cannot create java root\n");
+        print("error: apk: cannot create java root\n");
         return false;
     }
     if !fs.createDirAll(classesRoot) {
-        @printf("error: apk: cannot create classes root\n");
+        print("error: apk: cannot create classes root\n");
         return false;
     }
 
     javac := discoverJavac();
     if javac.len == 0 {
-        @printf("error: javac not on PATH and $JAVA_HOME unset \xe2\x80\x94 install a JDK (Android Studio bundles one at $ANDROID_STUDIO/Contents/jre)\n");
+        print("error: javac not on PATH and $JAVA_HOME unset \xe2\x80\x94 install a JDK (Android Studio bundles one at $ANDROID_STUDIO/Contents/jre)\n");
         return false;
     }
 
@@ -1049,14 +1021,12 @@ compileJniMainSources :: (opts: *@BuildOptions, stage: string, androidJar: strin
 
         pkgDir := if pkg.len > 0 then pathJoin(javaRoot, pkg) else javaRoot;
         if !fs.createDirAll(pkgDir) {
-            @printf("error: apk: cannot create java pkg dir\n");
+            print("error: apk: cannot create java pkg dir\n");
             return false;
         }
         javaPath := pathJoin(pkgDir, concat(cls, ".java"));
         if !fs.writeFile(javaPath, javaSource) {
-            @printf("error: apk: cannot write .java for ");
-            @printf("{}", runtimePath);
-            @printf("\n");
+            print("error: apk: cannot write .java for {}\n", runtimePath);
             return false;
         }
         if javacFiles.len > 0 { javacFiles = concat(javacFiles, " "); }
@@ -1079,12 +1049,12 @@ compileJniMainSources :: (opts: *@BuildOptions, stage: string, androidJar: strin
     javacCmd = concat(javacCmd, " 2>&1");
     if r := process.run(javacCmd) {
         if r.exitCode != 0 {
-            @printf("error: javac failed:\n");
-            @printf("{}", r.stdout);
+            print("error: javac failed:\n");
+            print("{}", r.stdout);
             return false;
         }
     } else {
-        @printf("error: javac spawn failed\n");
+        print("error: javac spawn failed\n");
         return false;
     }
 
@@ -1098,12 +1068,12 @@ compileJniMainSources :: (opts: *@BuildOptions, stage: string, androidJar: strin
     d8Cmd = concat(d8Cmd, " 2>&1");
     if r := process.run(d8Cmd) {
         if r.exitCode != 0 {
-            @printf("error: d8 failed:\n");
-            @printf("{}", r.stdout);
+            print("error: d8 failed:\n");
+            print("{}", r.stdout);
             return false;
         }
     } else {
-        @printf("error: d8 spawn failed\n");
+        print("error: d8 spawn failed\n");
         return false;
     }
     true
@@ -1133,7 +1103,7 @@ zipAssetDir :: (src: string, dest: string, apk: string) -> bool {
     process.run(rmCmd);
     parent := if dirPart(dest).len > 0 then concat(".sx-tmp/apk-assets/", dirPart(dest)) else ".sx-tmp/apk-assets";
     if !fs.createDirAll(parent) {
-        @printf("error: apk: cannot create asset stage dir\n");
+        print("error: apk: cannot create asset stage dir\n");
         return false;
     }
     cpCmd := concat("cp -R \"", src);
@@ -1142,12 +1112,12 @@ zipAssetDir :: (src: string, dest: string, apk: string) -> bool {
     cpCmd = concat(cpCmd, "\" 2>&1");
     if r := process.run(cpCmd) {
         if r.exitCode != 0 {
-            @printf("error: cp -R asset dir failed:\n");
-            @printf("{}", r.stdout);
+            print("error: cp -R asset dir failed:\n");
+            print("{}", r.stdout);
             return false;
         }
     } else {
-        @printf("error: cp -R asset dir spawn failed\n");
+        print("error: cp -R asset dir spawn failed\n");
         return false;
     }
     // Make apk path absolute-ish for the cd shell wrapping. The user
@@ -1177,12 +1147,12 @@ ensureDebugKeystore :: (keystorePath: string) -> bool {
     cmd = concat(cmd, "\" -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname \"CN=Android Debug,O=Android,C=US\" 2>&1");
     if r := process.run(cmd) {
         if r.exitCode != 0 {
-            @printf("error: keytool failed:\n");
-            @printf("{}", r.stdout);
+            print("error: keytool failed:\n");
+            print("{}", r.stdout);
             return false;
         }
         return true;
     }
-    @printf("error: keytool spawn failed\n");
+    print("error: keytool spawn failed\n");
     false
 }

@@ -1,5 +1,6 @@
 io :: scope {
     @import "modules/std/core.sx";
+    @import "modules/std/fmt.sx";
     @import "modules/std/atomic.sx";
     @import "modules/std/mem.sx";
     @import "modules/std/c.sx";
@@ -116,7 +117,7 @@ io :: scope {
         alreadyCanceled := f.canceled.load(.acquire);
         if f.state == .pending and !alreadyCanceled {
             if f.park.handle != null {
-                @printf("io: await — future already has an awaiter (one awaiter per future in the M:1 model)\n");
+                print("io: await — future already has an awaiter (one awaiter per future in the M:1 model)\n");
                 c.abort();
             }
             context.io.suspendRaw(*f.park) catch {};   // cancellation surfaces via `f.canceled` below

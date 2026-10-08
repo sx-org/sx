@@ -26,6 +26,7 @@
 
 cli :: scope {
     @import "modules/std/core.sx";
+    @import "modules/std/fmt.sx";
     @import "modules/build.sx";
     @import "modules/std/process.sx";
     @import "modules/std/c.sx";
@@ -81,12 +82,12 @@ cli :: scope {
                 while true {
                     blob := mem.alloc(mem.cAllocator, u8, cap);
                     if blob.ptr == null {
-                        @printf("std.cli: out of memory while reading /proc/self/cmdline.\n");
+                        print("std.cli: out of memory while reading /proc/self/cmdline.\n");
                         process.exit(EX_UNAVAILABLE);
                     }
                     read := cmdlineRead(blob);
                     if read == null {
-                        @printf("std.cli: cannot read /proc/self/cmdline.\n");
+                        print("std.cli: cannot read /proc/self/cmdline.\n");
                         process.exit(EX_UNAVAILABLE);
                     }
                     if read.len < cap {
@@ -149,7 +150,7 @@ cli :: scope {
                 return cmdlineArgc;
             }
             else: {
-                @printf("std.cli: unsupported platform — only macOS and Linux are implemented.\n");
+                print("std.cli: unsupported platform — only macOS and Linux are implemented.\n");
                 process.exit(EX_UNAVAILABLE);
             }
         }
@@ -189,7 +190,7 @@ cli :: scope {
                 return args;
             }
             else: {
-                @printf("std.cli: unsupported platform — only macOS and Linux are implemented.\n");
+                print("std.cli: unsupported platform — only macOS and Linux are implemented.\n");
                 process.exit(EX_UNAVAILABLE);
             }
         }

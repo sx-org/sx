@@ -183,7 +183,6 @@ test "collectDecls leaves an `@` function whose body is sx" {
     var out = std.ArrayList([]const u8).empty;
     try collectDecls(arena.allocator(),
         \\@panic :: (msg: string) -> noreturn {
-        \\    @printf("{}", msg);
         \\    c.abort()
         \\}
         \\@vaEnd :: (list: *@VaList);

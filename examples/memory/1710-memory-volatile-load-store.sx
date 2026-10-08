@@ -3,7 +3,7 @@
 // to a single register value — each volatile access survives instead, and none
 // of them carries an atomic ordering (volatile is not atomic; see
 // modules/std/core.sx).
-// The intrinsics and `@printf` resolve with no import, like `@sizeOf`.
+@import "modules/std/core.sx";
 
 Point :: struct {
     x: i32;
@@ -11,6 +11,7 @@ Point :: struct {
 }
 
 main :: () {
+    out := FdWriter.init(.stdout);
     slot: i32 = 41;
     address := *slot;
 
@@ -20,9 +21,9 @@ main :: () {
     third := @volatileLoad(i32, address);
 
     if first == 41 and second == 41 and third == 42 {
-        @printf("scalar: 41 41 42\n");
+        out.write("scalar: 41 41 42\n");
     } else {
-        @printf("scalar: WRONG\n");
+        out.write("scalar: WRONG\n");
     }
 
     // `value: T` converts like any typed parameter, so a signed i32 widens by
@@ -32,9 +33,9 @@ main :: () {
     @volatileStore(i64, *wide, narrow);
 
     if @volatileLoad(i64, *wide) == -1 {
-        @printf("widened: -1\n");
+        out.write("widened: -1\n");
     } else {
-        @printf("widened: WRONG\n");
+        out.write("widened: WRONG\n");
     }
 
     // `T` alone fixes the access width. The address is a narrower view of the
@@ -44,9 +45,9 @@ main :: () {
     @volatileStore(i64, view, -1);
 
     if @volatileLoad(i64, view) == -1 {
-        @printf("viewed: -1\n");
+        out.write("viewed: -1\n");
     } else {
-        @printf("viewed: WRONG\n");
+        out.write("viewed: WRONG\n");
     }
 
     // Aggregates travel as one typed access, not field by field.
@@ -55,8 +56,8 @@ main :: () {
     @volatileStore(Point, *point, Point{ x = snapshot.y, y = snapshot.x });
 
     if point.x == 4 and point.y == 3 {
-        @printf("aggregate: 4 3\n");
+        out.write("aggregate: 4 3\n");
     } else {
-        @printf("aggregate: WRONG\n");
+        out.write("aggregate: WRONG\n");
     }
 }

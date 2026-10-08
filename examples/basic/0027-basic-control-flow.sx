@@ -115,76 +115,74 @@ main :: () {
 
     // For loop basic
     farr : [4]i32 = .[10, 20, 30, 40];
-    @printf("for:");
+    print("for:");
     for it in farr {
-        @printf(" ");
-        @printf("{}", intToString(it));
+        print(" {}", intToString(it));
     }
-    @printf("\n");
+    print("\n");
 
     // For with print
-    @printf("for-print:");
+    print("for-print:");
     for it in farr {
         print(" {}", it);
     }
-    @printf("\n");
+    print("\n");
 
     // For with index
-    @printf("for-idx:");
+    print("for-idx:");
     for _, ix in farr, 0.. {
-        @printf(" ");
-        @printf("{}", intToString(ix));
+        print(" {}", intToString(ix));
     }
-    @printf("\n");
+    print("\n");
 
     // For with print two args
-    @printf("for-2arg:");
+    print("for-2arg:");
     for it, ix in farr, 0.. {
         print(" {}@{}", it, ix);
     }
-    @printf("\n");
+    print("\n");
 
     // For with break
-    @printf("for-break:");
+    print("for-break:");
     for it in farr {
         if it == 30 { break; }
         print(" {}", it);
     }
-    @printf("\n");
+    print("\n");
 
     // For with continue
-    @printf("for-continue:");
+    print("for-continue:");
     for it in farr {
         if it == 20 { continue; }
         print(" {}", it);
     }
-    @printf("\n");
+    print("\n");
 
     // For on slice
     fsl : []i32 = .[10, 20, 30];
-    @printf("for-slice:");
+    print("for-slice:");
     for it in fsl {
         print(" {}", it);
     }
-    @printf("\n");
+    print("\n");
 
     // For on slice with index
-    @printf("for-slice-idx:");
+    print("for-slice-idx:");
     for it, ix in fsl, 0.. {
         print(" {}:{}", ix, it);
     }
-    @printf("\n");
+    print("\n");
 
     // Nested for
     nfA : [2]i32 = .[0, 1];
     nfB : [2]i32 = .[0, 1];
-    @printf("for-nested:");
+    print("for-nested:");
     for oa in nfA {
         for ob in nfB {
             print(" ({},{})", oa, ob);
         }
     }
-    @printf("\n");
+    print("\n");
 
     // For with break preserving index
     fbi : [5]i32 = .[10, 20, 30, 40, 50];

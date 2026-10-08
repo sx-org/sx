@@ -1,9 +1,10 @@
 test :: scope {
     @import "modules/std/core.sx";
+    @import "modules/std/fmt.sx";
 
     assert :: (condition: bool) {
         if !condition {
-            @printf("assertion failed\n");
+            print("assertion failed\n");
         }
     }
 }

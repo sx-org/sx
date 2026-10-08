@@ -102,25 +102,17 @@ the import can stand in for the canonical declaration:
 A contract need not be a type: an `@` name also declares a function, under the
 same (module, name) identity rule. Most are a signature with no body, which the
 compiler implements — `@volatileLoad` and `@volatileStore` (§Intrinsics,
-Memory), `@sqrt` / `@sin` / `@cos` / `@floor`, `@printf`, `@isComptime`
+Memory), `@sqrt` / `@sin` / `@cos` / `@floor`, `@isComptime`
 (§Compile-time Evaluation, `@isComptime()`).
 `@panic` is ordinary sx: a body written in the owning module, over the stderr
 writer and `@isComptime`. So is the postfix assertion's spelled form, `@cast`
 (§Postfix Cast), owned by `modules/std/core.sx`.
 
-`@printf($fmt: string, ..$args)` is an allocation-free formatted write to stdout.
-`$fmt` is a comptime string in the same `{}` vocabulary `print` takes — `{}`
-consumes the next argument, `{{` and `}}` write a brace — and the compiler
-expands the call into one write per segment and per argument, in source order.
-An argument is a slice of `u8`, a `bool`, an integer or a float; any other type
-is a compile error, because rendering it takes the allocating formatter, `print`.
-
 `@panic(msg: string, site: @SourceSite = @caller) -> noreturn` writes
 `file:line: msg` to stderr and stops the program; a site with `line == 0`
 writes bare `msg`. A `@run` panic exits the COMPILER with code 1, a compiled
-panic raises SIGABRT. It renders through the same stack-buffered writer
-`@printf` expands onto, so it reaches its message with a broken or exhausted
-allocator behind it.
+panic raises SIGABRT. It renders through an `FdWriter` and allocates nothing,
+so it reaches its message with a broken or exhausted allocator behind it.
 
 A contract name resolves program-wide, and `modules/std/core.sx` is in every
 program, so an `@` name needs no import. The registry admits exactly one

@@ -25,7 +25,7 @@ addOne :: (concat: i64) -> i64 {
 
 // 3. No shadow: the closure calls the REAL prelude fn `concat`.
 callReal :: () {
-    c := || { @printf("{}", concat("real-", "out\n")); };
+    c := || { print("{}", concat("real-", "out\n")); };
     c();
 }
 
