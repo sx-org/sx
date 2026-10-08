@@ -2171,6 +2171,13 @@ Extracts the payload, traps at runtime if null:
 x: ?i32 = 42;
 val := x?!;            // val : i32 = 42
 ```
+On a binding that flow-sensitive narrowing proves present, `?!` is a compile
+error naming the binding: there the bare name is the payload, and its only
+spelling.
+```sx
+if x == null { return; }
+print("{}\n", x?!);    // error: 'x' is already proven present here
+```
 
 #### Default (`??`)
 Returns the payload if present, otherwise evaluates the right-hand side:
@@ -2248,6 +2255,9 @@ the right operand of `or` what its left operand proves when false. With
 c != null and c.n > 0
 got == null or got.len != want.len
 ```
+
+A narrowed binding reads as its payload, so `?!` on it is refused (§Force
+Unwrap).
 
 Reassignment kills narrowing.
 

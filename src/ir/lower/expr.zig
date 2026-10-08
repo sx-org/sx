@@ -3652,7 +3652,12 @@ pub fn unwrapOptionalOperand(self: *Lowering, operand: Ref, ty: TypeId, span: as
     return self.builder.emit(.{ .optional_unwrap = .{ .operand = operand } }, info.optional.child);
 }
 
-pub fn lowerForceUnwrap(self: *Lowering, fu: *const ast.ForceUnwrap) Ref {
+pub fn lowerForceUnwrap(self: *Lowering, node: *const Node) Ref {
+    const fu = &node.data.force_unwrap;
+    if (fu.operand.data == .identifier and self.provenPresent(fu.operand.data.identifier.name)) {
+        const name = fu.operand.data.identifier.name;
+        if (self.diagnostics) |d| d.addFmt(.err, node.span, "'{s}' is already proven present here; write '{s}' without '?!'", .{ name, name });
+    }
     const val = self.lowerExpr(fu.operand);
     const inner_ty = self.resolveOptionalInner(self.inferExprType(fu.operand));
     const present_bb = self.freshBlock("unwrap.present");
@@ -4486,7 +4491,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
         .slice_expr => |se| self.lowerSliceExpr(&se),
         // The literal's identity is its node: the env type memo keys on it.
         .lambda => self.lowerLambda(&node.data.lambda),
-        .force_unwrap => |fu| self.lowerForceUnwrap(&fu),
+        .force_unwrap => self.lowerForceUnwrap(node),
         .null_coalesce => |nc| self.lowerNullCoalesce(&nc),
         .deref_expr => |de| self.lowerDerefExpr(&de),
 
