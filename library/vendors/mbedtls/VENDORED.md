@@ -67,6 +67,14 @@ deployment never references the client code and the linker strips it. Enabling
 lets the in-process loopback TLS test run a self-contained client (no
 external openssl, corpus/sandbox-friendly).
 
+`MBEDTLS_THREADING_PTHREAD` and `MBEDTLS_THREADING_C` are **enabled** wherever
+the build has threads (all but an Emscripten build without `-pthread`): std's
+TLS runs on several threads, and the shared CTR-DRBG, entropy, RSA blinding and
+PSA state take their mutexes. The pthread layer needs no setup or teardown
+call: its global mutexes are static `PTHREAD_MUTEX_INITIALIZER`s, and each
+context's own mutex is created and destroyed by that context's
+`_init`/`_seed` and `_free`.
+
 ## Status
 
 - **Host (macOS) compiles + links + runs** — `bench/tls-probe.sx` prints `3.6.6`.
@@ -81,6 +89,6 @@ external openssl, corpus/sandbox-friendly).
 ## Updating
 
 Re-clone the tag, copy `library/*.{c,h}` → `c/library/`, `include/{mbedtls,psa}`
-→ `c/include/`, re-apply the 13-option config trim onto the new stock
-`mbedtls_config.h` (keep it at `c/include/mbedtls/mbedtls_config.h`), keep the two
-anchor headers, refresh the `@source` list in `mbedtls.sx`.
+→ `c/include/`, re-apply the config trim (every option marked `sx:`) onto the
+new stock `mbedtls_config.h` (keep it at `c/include/mbedtls/mbedtls_config.h`),
+keep the two anchor headers, refresh the `@source` list in `mbedtls.sx`.
