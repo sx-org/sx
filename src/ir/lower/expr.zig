@@ -5467,7 +5467,7 @@ pub fn lowerBinaryOp(self: *Lowering, node: *const Node) Ref {
         const false_val = self.builder.constBool(false);
         self.builder.condBr(lhs, rhs_bb, &.{}, merge_bb, &.{false_val});
         self.builder.switchToBlock(rhs_bb);
-        const rhs = self.lowerBoolCondition(bop.rhs);
+        const rhs = self.lowerShortCircuitRhs(bop);
         self.builder.br(merge_bb, &.{rhs});
         self.builder.switchToBlock(merge_bb);
         return self.builder.blockParam(merge_bb, 0, .bool);
@@ -5480,7 +5480,7 @@ pub fn lowerBinaryOp(self: *Lowering, node: *const Node) Ref {
         const true_val = self.builder.constBool(true);
         self.builder.condBr(lhs, merge_bb, &.{true_val}, rhs_bb, &.{});
         self.builder.switchToBlock(rhs_bb);
-        const rhs = self.lowerBoolCondition(bop.rhs);
+        const rhs = self.lowerShortCircuitRhs(bop);
         self.builder.br(merge_bb, &.{rhs});
         self.builder.switchToBlock(merge_bb);
         return self.builder.blockParam(merge_bb, 0, .bool);

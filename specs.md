@@ -2241,6 +2241,14 @@ if a == null or b == null { return; }
 // both a and b are narrowed after the guard
 ```
 
+The right operand of `and` sees what its left operand proves when true, and
+the right operand of `or` what its left operand proves when false. With
+`c: ?Cell` and `got: ?[]T`:
+```sx
+c != null and c.n > 0
+got == null or got.len != want.len
+```
+
 Reassignment kills narrowing.
 
 A guard proves the *binding* it names, so a declaration shadowing a narrowed

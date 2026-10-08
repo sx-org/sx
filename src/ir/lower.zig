@@ -4082,6 +4082,7 @@ pub const Lowering = struct {
     pub const nullCmpBinding = lower_control_flow.nullCmpBinding;
     pub const collectPresentIfTrue = lower_control_flow.collectPresentIfTrue;
     pub const collectPresentIfFalse = lower_control_flow.collectPresentIfFalse;
+    pub const lowerShortCircuitRhs = lower_control_flow.lowerShortCircuitRhs;
     pub const narrowSnapshot = lower_control_flow.narrowSnapshot;
     pub const narrowSet = lower_control_flow.narrowSet;
     pub const narrowRestore = lower_control_flow.narrowRestore;

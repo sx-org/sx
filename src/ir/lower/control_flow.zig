@@ -85,6 +85,20 @@ pub fn collectPresentIfFalse(self: *Lowering, cond: *const Node, out: *std.Array
     }
 }
 
+/// Lower the right operand of `and` / `or` as a condition, under what reaching
+/// it proves: the left operand held for `and`, failed for `or`.
+pub fn lowerShortCircuitRhs(self: *Lowering, bop: *const ast.BinaryOp) Ref {
+    var present = std.ArrayList(BindingId).empty;
+    defer present.deinit(self.alloc);
+    if (bop.op == .and_op) self.collectPresentIfTrue(bop.lhs, &present) else self.collectPresentIfFalse(bop.lhs, &present);
+    if (present.items.len == 0) return self.lowerBoolCondition(bop.rhs);
+    var saved = self.narrowSnapshot();
+    self.applyNarrowing(present.items);
+    const rhs = self.lowerBoolCondition(bop.rhs);
+    self.narrowRestore(&saved);
+    return rhs;
+}
+
 /// Snapshot the currently-narrowed bindings so a region (block / branch) can
 /// restore them on exit. Returns a list the caller must `deinit`.
 pub fn narrowSnapshot(self: *Lowering) std.ArrayList(Narrowing) {
