@@ -2259,7 +2259,13 @@ got == null or got.len != want.len
 A narrowed binding reads as its payload, so `?!` on it is refused (§Force
 Unwrap).
 
-Reassignment kills narrowing.
+Reassignment kills narrowing. A loop that reassigns a binding anywhere in its
+condition or body holds no proof of it from before the loop, in the loop or
+after it.
+
+Taking a binding's address lets a write through that address clear it: from
+then on, every call and every store to anything but a bare name kills its
+narrowing, and a fresh guard narrows it again.
 
 A guard proves the *binding* it names, so a declaration shadowing a narrowed
 name starts with no proof of presence.

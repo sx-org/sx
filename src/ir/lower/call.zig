@@ -954,6 +954,7 @@ fn lowerComptimePlainStructMethod(
 pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
     self.openCall(c_in);
     defer _ = self.open_calls.pop();
+    defer self.endExposedProofs();
     var c = c_in;
     // A bare reserved-type-name spelling in call position parses as a
     // `.type_expr` (e.g. `i8(4)`), but if a function of that name is in

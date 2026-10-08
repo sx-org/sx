@@ -54,14 +54,17 @@ pub fn nullCmpBinding(self: *Lowering, bop: ast.BinaryOp) ?BindingId {
 }
 
 /// Bindings proven present when `cond` is TRUE: `x != null`, and the `and` of
-/// such tests (`a != null and b != null`).
+/// such tests (`a != null and b != null`). A proof of the left operand stands
+/// only if the right operand does not end it.
 pub fn collectPresentIfTrue(self: *Lowering, cond: *const Node, out: *std.ArrayList(BindingId)) void {
     if (cond.data != .binary_op) return;
     const bop = cond.data.binary_op;
     switch (bop.op) {
         .neq => if (self.nullCmpBinding(bop)) |b| out.append(self.alloc, b) catch {},
         .and_op => {
+            const start = out.items.len;
             self.collectPresentIfTrue(bop.lhs, out);
+            dropEnded(self, bop.rhs, out, start);
             self.collectPresentIfTrue(bop.rhs, out);
         },
         else => {},
@@ -78,11 +81,282 @@ pub fn collectPresentIfFalse(self: *Lowering, cond: *const Node, out: *std.Array
     switch (bop.op) {
         .eq => if (self.nullCmpBinding(bop)) |b| out.append(self.alloc, b) catch {},
         .or_op => {
+            const start = out.items.len;
             self.collectPresentIfFalse(bop.lhs, out);
+            dropEnded(self, bop.rhs, out, start);
             self.collectPresentIfFalse(bop.rhs, out);
         },
         else => {},
     }
+}
+
+/// Drop from `proofs[start..]` every proof that running `node` ends.
+fn dropEnded(self: *Lowering, node: *const Node, proofs: *std.ArrayList(BindingId), start: usize) void {
+    if (proofs.items.len == start) return;
+    var writes = Writes{};
+    defer writes.deinit(self.alloc);
+    collectWrites(self, node, &writes);
+    var i = start;
+    while (i < proofs.items.len) {
+        if (writes.ends(self, proofs.items[i])) _ = proofs.swapRemove(i) else i += 1;
+    }
+}
+
+/// What running a subtree may do to the proofs standing before it.
+const Writes = struct {
+    /// Bindings it assigns.
+    assigned: std.ArrayList(BindingId) = .empty,
+    /// Bindings whose address it takes.
+    addressed: std.ArrayList(lower.Binding) = .empty,
+    /// It calls, or stores to anything but a bare name.
+    memory: bool = false,
+    /// It splices code that is not in the tree (`@insert`).
+    unknown: bool = false,
+
+    fn deinit(self: *Writes, alloc: std.mem.Allocator) void {
+        self.assigned.deinit(alloc);
+        self.addressed.deinit(alloc);
+    }
+
+    /// A taken address ends a proof only together with `memory`.
+    fn ends(self: *const Writes, l: *Lowering, binding: BindingId) bool {
+        if (self.unknown) return true;
+        for (self.assigned.items) |a| if (a == binding) return true;
+        if (!self.memory) return false;
+        if (l.exposed.contains(binding)) return true;
+        for (self.addressed.items) |b| if (b.id == binding) return true;
+        return false;
+    }
+};
+
+fn collectWriteTarget(self: *Lowering, target: *const Node, out: *Writes) void {
+    if (target.data == .identifier) {
+        const scope = self.scope orelse return;
+        if (scope.bindingId(target.data.identifier.name)) |id| out.assigned.append(self.alloc, id) catch unreachable;
+    } else {
+        out.memory = true;
+        collectWrites(self, target, out);
+    }
+}
+
+/// Gather into `out` what lowering `node` may write, naming bindings as the
+/// current scope resolves them. A lambda or nested function body reaches no
+/// enclosing binding.
+fn collectWrites(self: *Lowering, node: *const Node, out: *Writes) void {
+    const walk = collectWrites;
+    switch (node.data) {
+        .assignment => |a| {
+            collectWriteTarget(self, a.target, out);
+            walk(self, a.value, out);
+        },
+        .multi_assign => |ma| {
+            for (ma.targets) |t| collectWriteTarget(self, t, out);
+            for (ma.values) |v| walk(self, v, out);
+        },
+        .unary_op => |u| {
+            if (u.op == .address_of and u.operand.data == .identifier) {
+                if (self.scope) |scope| if (scope.lookup(u.operand.data.identifier.name)) |b|
+                    out.addressed.append(self.alloc, b) catch unreachable;
+            }
+            walk(self, u.operand, out);
+        },
+        .call => |c| {
+            out.memory = true;
+            walk(self, c.callee, out);
+            for (c.args) |a| walk(self, a, out);
+        },
+        .ffi_intrinsic_call => |fi| {
+            out.memory = true;
+            for (fi.args) |a| walk(self, a, out);
+        },
+        .asm_expr => |ae| {
+            out.memory = true;
+            for (ae.operands) |op| if (op.role != .out_value) walk(self, op.payload, out);
+        },
+        // Unsettled: a construction whose `name = value` items are field
+        // inits, or a call whose block is a closure.
+        .juxtaposition => |jx| {
+            out.memory = true;
+            walk(self, jx.expr, out);
+            for (jx.block.data.block.stmts) |s| switch (s.data) {
+                .assignment => |a| if (a.op == .assign and a.target.data == .identifier) walk(self, a.value, out) else walk(self, s, out),
+                else => walk(self, s, out),
+            };
+            if (jx.init_block) |ib| walk(self, ib, out);
+        },
+        .insert_expr => out.unknown = true,
+        .block => |blk| for (blk.stmts) |s| walk(self, s, out),
+        .if_expr => |ie| {
+            walk(self, ie.condition, out);
+            walk(self, ie.then_branch, out);
+            if (ie.else_branch) |e| walk(self, e, out);
+        },
+        .match_expr => |me| {
+            walk(self, me.subject, out);
+            for (me.arms) |arm| {
+                if (arm.pattern) |p| walk(self, p, out);
+                walk(self, arm.body, out);
+            }
+        },
+        .match_arm => |arm| {
+            if (arm.pattern) |p| walk(self, p, out);
+            walk(self, arm.body, out);
+        },
+        .while_expr => |we| {
+            walk(self, we.condition, out);
+            walk(self, we.body, out);
+        },
+        .for_expr => |fe| {
+            for (fe.iterables) |it| {
+                walk(self, it.expr, out);
+                if (it.range_end) |e| walk(self, e, out);
+            }
+            walk(self, fe.body, out);
+        },
+        .var_decl => |vd| if (vd.value) |v| walk(self, v, out),
+        .const_decl => |cd| walk(self, cd.value, out),
+        .destructure_decl => |dd| walk(self, dd.value, out),
+        .binary_op => |o| {
+            walk(self, o.lhs, out);
+            walk(self, o.rhs, out);
+        },
+        .chained_comparison => |cc| for (cc.operands) |o| walk(self, o, out),
+        .field_access => |fa| walk(self, fa.object, out),
+        .index_expr => |ie| {
+            walk(self, ie.object, out);
+            walk(self, ie.index, out);
+        },
+        .slice_expr => |se| {
+            walk(self, se.object, out);
+            if (se.start) |s| walk(self, s, out);
+            if (se.end) |e| walk(self, e, out);
+        },
+        .struct_literal => |sl| {
+            for (sl.field_inits) |fi| walk(self, fi.value, out);
+            if (sl.init_block) |ib| walk(self, ib, out);
+        },
+        .tuple_literal => |t| for (t.elements) |e| walk(self, e.value, out),
+        .array_literal => |al| for (al.elements) |e| walk(self, e, out),
+        .self_block => |sb| {
+            walk(self, sb.operand, out);
+            walk(self, sb.block, out);
+        },
+        .defer_stmt => |ds| walk(self, ds.expr, out),
+        .push_stmt => |ps| {
+            walk(self, ps.context_expr, out);
+            walk(self, ps.body, out);
+        },
+        .jni_env_block => |j| {
+            walk(self, j.env, out);
+            walk(self, j.body, out);
+        },
+        .comptime_expr => |ce| walk(self, ce.expr, out),
+        .return_stmt => |rs| if (rs.value) |v| walk(self, v, out),
+        .raise_stmt => |rs| walk(self, rs.tag, out),
+        .try_expr => |te| walk(self, te.operand, out),
+        .catch_expr => |ce| {
+            walk(self, ce.operand, out);
+            walk(self, ce.body, out);
+        },
+        .force_unwrap => |fu| walk(self, fu.operand, out),
+        .null_coalesce => |nc| {
+            walk(self, nc.lhs, out);
+            walk(self, nc.rhs, out);
+        },
+        .deref_expr => |de| walk(self, de.operand, out),
+        .postfix_cast => |pc| walk(self, pc.operand, out),
+        .spread_expr => |se| walk(self, se.operand, out),
+        .named_arg => |na| walk(self, na.value, out),
+
+        .lambda,
+        .trailing_block,
+        .fn_decl,
+        .root,
+        .namespace_decl,
+        .struct_decl,
+        .enum_decl,
+        .union_decl,
+        .error_set_decl,
+        .impl_block,
+        .protocol_decl,
+        .open_set_decl,
+        .runtime_class_decl,
+        .context_extend_decl,
+        .scope_decl,
+        .spread_decl,
+        .import_decl,
+        .c_import_decl,
+        .library_decl,
+        .framework_decl,
+        .ufcs_alias,
+        .asm_global,
+        .error_directive,
+        .param,
+        .type_expr,
+        .array_type_expr,
+        .slice_type_expr,
+        .parameterized_type_expr,
+        .pointer_type_expr,
+        .many_pointer_type_expr,
+        .optional_type_expr,
+        .error_type_expr,
+        .function_type_expr,
+        .closure_type_expr,
+        .tuple_type_expr,
+        .return_type_expr,
+        .pack_index_type_expr,
+        .comptime_pack_ref,
+        .int_literal,
+        .float_literal,
+        .bool_literal,
+        .string_literal,
+        .char_literal,
+        .identifier,
+        .enum_literal,
+        .null_literal,
+        .undef_literal,
+        .caller_site,
+        .break_expr,
+        .continue_expr,
+        .inferred_type,
+        .intrinsic_expr,
+        => {},
+    }
+}
+
+/// Taking an optional binding's address: from here on, a call or a store to
+/// anything but a bare name may clear it.
+pub fn exposeAddress(self: *Lowering, binding: lower.Binding) void {
+    const id = binding.id orelse return;
+    if (binding.ty.isBuiltin() or self.module.types.get(binding.ty) != .optional) return;
+    self.exposed.put(self.alloc, id, {}) catch unreachable;
+}
+
+/// A call or a store to anything but a bare name ran: no binding whose address
+/// is taken is proven present any longer.
+pub fn endExposedProofs(self: *Lowering) void {
+    if (self.exposed.count() == 0 or self.narrowed.count() == 0) return;
+    var ended = std.ArrayList(BindingId).empty;
+    defer ended.deinit(self.alloc);
+    var it = self.narrowed.keyIterator();
+    while (it.next()) |b| if (self.exposed.contains(b.*)) ended.append(self.alloc, b.*) catch unreachable;
+    for (ended.items) |b| _ = self.narrowed.remove(b);
+}
+
+/// Entering a loop whose `parts` run on every iteration: what an iteration may
+/// end is ended at the header, so neither a back edge nor a `break` carries a
+/// proof the loop ends.
+pub fn endLoopProofs(self: *Lowering, parts: []const *const Node) void {
+    var writes = Writes{};
+    defer writes.deinit(self.alloc);
+    for (parts) |p| collectWrites(self, p, &writes);
+    if (writes.unknown) {
+        self.narrowed.clearRetainingCapacity();
+        return;
+    }
+    for (writes.assigned.items) |b| _ = self.narrowed.remove(b);
+    for (writes.addressed.items) |b| self.exposeAddress(b);
+    if (writes.memory) self.endExposedProofs();
 }
 
 /// Lower the right operand of `and` / `or` as a condition, under what reaching
@@ -822,6 +1096,7 @@ pub fn lowerWhile(self: *Lowering, we: *const ast.WhileExpr) Ref {
     const body_bb = self.freshBlock("while.body");
     const exit_bb = self.freshBlock("while.exit");
 
+    self.endLoopProofs(&.{ we.condition, we.body });
     // Branch to header
     self.builder.br(header_bb, &.{});
 
@@ -1065,6 +1340,7 @@ pub fn lowerFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
     const inc_bb = self.freshBlock("for.inc");
     const exit_bb = self.freshBlock("for.exit");
 
+    self.endLoopProofs(&.{fe.body});
     self.builder.br(header_bb, &.{});
 
     // Header: first cursor against the first bound.

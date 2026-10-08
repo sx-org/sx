@@ -1183,8 +1183,10 @@ pub fn fixupMethodReceiver(self: *Lowering, method_args: *std.ArrayList(Ref), fu
                         method_args.items[0] = if (binding_info == .optional and
                             binding_info.optional.child == obj_ty and self.module.types.optionalShape(obj_ty) == .flag)
                             self.builder.structGepTyped(binding.ref, 0, self.module.types.ptrTo(obj_ty), binding.ty)
-                        else
-                            receiverPointer(self, binding.ref, obj_ty);
+                        else blk: {
+                            if (obj_ty == binding.ty) self.exposeAddress(binding);
+                            break :blk receiverPointer(self, binding.ref, obj_ty);
+                        };
                         return;
                     }
                     if (binding.origin == .local_const) {
@@ -4353,6 +4355,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                     if (sb.crossed != .none) break :blk self.diagEnclosingLocalRef(id_name, node.span, sb.crossed);
                     if (sb.binding) |binding| {
                         if (binding.is_alloca) {
+                            self.exposeAddress(binding);
                             const ptr_ty = self.module.types.ptrTo(binding.ty);
                             break :blk self.builder.emit(.{ .addr_of = .{ .operand = binding.ref } }, ptr_ty);
                         }
@@ -5102,6 +5105,7 @@ pub fn asmResultType(self: *Lowering, ae: *const ast.AsmExpr) TypeId {
 /// placeholder Ref instead of the op, so `hasErrors()` aborts the build on
 /// whichever diagnostic fired.
 pub fn lowerAsmExpr(self: *Lowering, ae: *const ast.AsmExpr, span: ast.Span) Ref {
+    defer self.endExposedProofs();
     const diags = self.diagnostics orelse return self.emitPlaceholder("inline_asm");
 
     // (1) The template must be a compile-time-known string (a `"..."` literal or

@@ -1,0 +1,5 @@
+error: cannot use a value of type '?i64' as an operand: an optional does not implicitly unwrap; force-unwrap with '?!', supply a fallback with '?? <default>', or guard with '!= null'
+  --> examples/optionals/a-reassignment-in-the-left-operand-ends-its-proof.sx:7:74
+   |
+ 7 | positive :: (x: ?i64) -> bool { (x != null and { x = none(); true }) and x > 0 }
+   |                                                                          ^
