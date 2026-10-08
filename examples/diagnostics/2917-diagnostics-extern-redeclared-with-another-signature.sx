@@ -3,7 +3,7 @@
 
 @import "modules/std.sx";
 
-getenv :: (name: [*:0]u8) -> [*:0]u8 extern libc;
+getenv :: (name: [*:0]u8) -> [*:0]u8 extern c.libc;
 
 main :: () -> i32 {
     getenv("HOME");

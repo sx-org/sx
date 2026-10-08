@@ -1,6 +1,6 @@
 @import "modules/std.sx";
 
-sendFlags :: (fd: i32, buf: [*]u8, len: i64, flags: i32) -> isize extern libc "send";
+sendFlags :: (fd: i32, buf: [*]u8, len: i64, flags: i32) -> isize extern c.libc "send";
 
 send :: (fd: i32, buf: [*]u8) -> isize {
     return sendFlags(fd, buf, 0, 0) + 8;
@@ -10,7 +10,7 @@ recv :: (fd: i32, buf: [*]u8) -> isize {
     return recvFlags(fd, buf, 0, 0) + 8;
 }
 
-recvFlags :: (fd: i32, buf: [*]u8, len: i64, flags: i32) -> isize extern libc "recv";
+recvFlags :: (fd: i32, buf: [*]u8, len: i64, flags: i32) -> isize extern c.libc "recv";
 
 sqrt :: (a: i64) -> i64 {
     return a + 1;

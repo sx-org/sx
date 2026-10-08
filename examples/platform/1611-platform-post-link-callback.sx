@@ -7,7 +7,7 @@
 // phase, so this file prints `runtime main` alone; `sx build` is what
 // exercises the post-link path.
 
-puts :: (s: [*:0]u8) -> i32 extern libc;
+puts :: (s: [*:0]u8) -> i32 extern c.libc;
 
 postLink :: (opt: *@BuildOptions) -> bool {
     puts("[post-link] callback fired");

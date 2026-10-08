@@ -23,9 +23,9 @@
 @import "modules/std.sx";
 @import "modules/std/sched.sx";
 
-read   :: (fd: c.Fd, buf: [*]u8, count: i64) -> isize extern libc "read";
-write  :: (fd: c.Fd, buf: [*]u8, count: i64) -> isize extern libc "write";
-close  :: (fd: c.Fd) -> i32 extern libc "close";
+read   :: (fd: c.Fd, buf: [*]u8, count: i64) -> isize extern c.libc "read";
+write  :: (fd: c.Fd, buf: [*]u8, count: i64) -> isize extern c.libc "write";
+close  :: (fd: c.Fd) -> i32 extern c.libc "close";
 
 // Shared log: a tiny ledger of what happened, in order.
 S :: struct {

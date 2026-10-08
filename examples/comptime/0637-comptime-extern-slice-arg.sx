@@ -4,7 +4,7 @@
 // (A bare `[*:0]u8` arg passes as a word.)
 @import "modules/std.sx";
 
-strlen :: (s: string) -> usize extern libc;
+strlen :: (s: string) -> usize extern c.libc;
 
 LEN :: @run strlen("hello, world");
 
