@@ -336,12 +336,8 @@ pub fn isStaticTypeArg(self: *Lowering, node: *const Node) bool {
                 .not_qualified, .missing, .ambiguous => return false,
             };
             return switch (sel.author.raw) {
-                .struct_decl, .enum_decl, .union_decl, .error_set_decl, .protocol_decl, .runtime_class_decl => true,
-                .const_decl => |cd| switch (cd.value.data) {
-                    .struct_decl, .enum_decl, .union_decl, .error_set_decl, .identifier, .field_access => true,
-                    else => false,
-                },
-                else => false,
+                .const_decl => !self.authorNamesNoType(sel.author),
+                else => isNamedTypeKind(sel.author.raw),
             };
         },
         .pack_index_type_expr,
