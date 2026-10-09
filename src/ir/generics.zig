@@ -330,13 +330,17 @@ pub const GenericResolver = struct {
         return type_bridge.typeInfoProjection(aliased) != null;
     }
 
-    /// A bare name the call site resolves to a type, an alias (`Handle :: *i32`)
-    /// included. A local of that name is a value.
+    /// A name the call site resolves to a type, bare or qualified (`ns.T`), an
+    /// alias (`Handle :: *i32`) included. A local of that name is a value.
     fn argNamesType(self: GenericResolver, arg: *const Node) bool {
-        if (arg.data != .identifier) return false;
-        const name = arg.data.identifier.name;
-        if (self.l.scope) |scope| if (scope.lookup(name) != null) return false;
-        return self.l.selectHeadType(name) == .resolved;
+        return switch (arg.data) {
+            .identifier => |id| {
+                if (self.l.scope) |scope| if (scope.lookup(id.name) != null) return false;
+                return self.l.selectHeadType(id.name) == .resolved;
+            },
+            .field_access => self.l.isStaticTypeArg(arg),
+            else => false,
+        };
     }
 
     /// Whether `arg` spells a type a `$T: Type` slot binds from. A prefix `*`

@@ -4174,6 +4174,7 @@ pub const Lowering = struct {
     pub const selectCallableAuthor = lower_decl.selectCallableAuthor;
     pub const callableAuthorFn = lower_decl.callableAuthorFn;
     pub const authorNamesNoType = lower_decl.authorNamesNoType;
+    pub const constAuthorType = lower_decl.constAuthorType;
     pub const CallableKinds = lower_decl.CallableKinds;
     pub const selectNominalLeaf = lower_decl.selectNominalLeaf;
     pub const typeNodeLeavesReady = lower_decl.typeNodeLeavesReady;

@@ -2785,6 +2785,14 @@ pub fn authorNamesNoType(self: *Lowering, author: resolver_mod.RawAuthor) bool {
     };
 }
 
+/// The type a const author names: its registered alias, or its alias chain
+/// resolved now, ahead of the declaration-order scan, so every consumer
+/// interns the one canonical TypeId. Null when the chain reaches no type.
+pub fn constAuthorType(self: *Lowering, author: resolver_mod.RawAuthor) ?TypeId {
+    if (self.program_index.get(.type_alias, author.id)) |tid| return tid;
+    return resolvePendingAliasType(self, author, author.raw.const_decl.name);
+}
+
 fn typedValueConst(raw: resolver_mod.RawDeclRef) bool {
     if (raw != .const_decl) return false;
     const annotation = raw.const_decl.type_annotation orelse return false;
@@ -3064,12 +3072,7 @@ pub fn selectNominalLeaf(self: *Lowering, name: []const u8, environment: imports
                 if (self.namedRefTid(own.raw, name)) |tid| return .{ .resolved = tid };
                 return .forward;
             }
-            if (self.program_index.get(.type_alias, own.id)) |tid| return .{ .resolved = tid };
-            // Forward/qualified alias chains may be queried by an ABI consumer
-            // before declaration-order scanning reaches the alias. Resolve the
-            // raw chain now so params, returns, fields and wrappers all intern
-            // the same canonical protocol TypeId (issue 0323).
-            if (resolvePendingAliasType(self, own, name)) |tid| return .{ .resolved = tid };
+            if (constAuthorType(self, own)) |tid| return .{ .resolved = tid };
             // Own alias not yet resolved: pending (own takes priority over any
             // flat author — prevents flat-preemption).
             if (!authorNamesNoType(self, own)) return .pending;
@@ -3122,8 +3125,7 @@ pub fn selectNominalLeaf(self: *Lowering, name: []const u8, environment: imports
     //     is that primitive.
     for (author_set.flat) |fa| {
         if (fa.raw == .const_decl) {
-            if (self.program_index.get(.type_alias, fa.id)) |tid| return .{ .resolved = tid };
-            if (resolvePendingAliasType(self, fa, name)) |tid| return .{ .resolved = tid };
+            if (constAuthorType(self, fa)) |tid| return .{ .resolved = tid };
             if (!authorNamesNoType(self, fa)) return .pending;
         }
     }

@@ -1,0 +1,19 @@
+// A qualified type in a `$T: Type` argument slot binds the type it names.
+@import "modules/std.sx";
+thing :: @import "qualified-type-binds-a-type-parameter-as-its-target/thing.sx";
+
+ns :: scope {
+    Pair :: struct { a: i64; b: i64; }
+    Handle :: *i32;
+}
+
+name :: ($T: Type) -> string { @typeName(T) }
+
+main :: () {
+    pairs := mem.alloc(context.allocator, ns.Pair, 2);
+    t := context.allocator.create(thing.Thing);
+    t.n = 7;
+    print("{} {} {}\n", pairs.len, t.n, name(ns.Handle));
+    context.allocator.free(pairs);
+    context.allocator.free(t);
+}
