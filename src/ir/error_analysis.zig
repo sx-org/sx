@@ -56,6 +56,18 @@ pub const ErrorAnalysis = struct {
         const Source = struct { node: *const Node, scope: LocalScope };
     };
 
+    /// The declarations a call may reach: `decl`, and `unnarrowed`, the ufcs
+    /// a dot-call on an optional reaches where narrowing does not prove the
+    /// receiver present.
+    const Callees = struct {
+        decl: *const ast.FnDecl,
+        unnarrowed: ?*const ast.FnDecl = null,
+
+        fn of(decl: ?*const ast.FnDecl) ?Callees {
+            return .{ .decl = decl orelse return null };
+        }
+    };
+
     const FunctionAuthor = struct { id: imports.DeclId, name: []const u8, decl: *const ast.FnDecl };
 
     fn functionAuthors(self: ErrorAnalysis) []const FunctionAuthor {
@@ -81,24 +93,24 @@ pub const ErrorAnalysis = struct {
         };
     }
 
-    /// The declaration a callee spelling selects, or null when it selects none.
-    fn calleeDecl(self: ErrorAnalysis, callee: *const Node, enclosing_fd: ?*const ast.FnDecl) ?*const ast.FnDecl {
+    /// The declarations a callee spelling selects, or null when it selects none.
+    fn calleeDecls(self: ErrorAnalysis, callee: *const Node, enclosing_fd: ?*const ast.FnDecl) ?Callees {
         switch (callee.data) {
-            .identifier => |id| return self.l.edgeCalleeDecl(id.name, self.l.current_source_file),
+            .identifier => |id| return Callees.of(self.l.edgeCalleeDecl(id.name, self.l.current_source_file)),
             .field_access => |fa| {
                 if (!self.headIsBinding(enclosing_fd, fa.object)) switch (self.l.staticStructHead(fa.object)) {
                     .resolved => |owner_ty| if (self.l.hasPlainStructAuthor(owner_ty))
-                        return if (self.l.plainStructMethod(owner_ty, fa.field)) |method| method.fd else null,
+                        return if (self.l.plainStructMethod(owner_ty, fa.field)) |method| .{ .decl = method.fd } else null,
                     .ambiguous, .not_visible => return null,
                     .none => {},
                 };
                 if (fa.object.data == .identifier) {
                     const obj = fa.object.data.identifier.name;
-                    if (self.bindingType(enclosing_fd, obj)) |ty| return self.receiverMethod(ty, fa.field);
-                    if (self.qualifiedDecl(obj, fa.field)) |q| return q;
-                    return self.ufcsDecl(fa.field);
+                    if (self.bindingType(enclosing_fd, obj)) |ty| return self.receiverCallees(ty, fa.field);
+                    if (self.qualifiedDecl(obj, fa.field)) |q| return .{ .decl = q };
+                    return Callees.of(self.ufcsDecl(fa.field));
                 }
-                return self.receiverMethod(self.receiverType(enclosing_fd, fa.object), fa.field);
+                return self.receiverCallees(self.receiverType(enclosing_fd, fa.object), fa.field);
             },
             else => return null,
         }
@@ -116,13 +128,14 @@ pub const ErrorAnalysis = struct {
         return self.bindingType(fd, name) != null;
     }
 
-    /// The escape a `try`ed or `return`ed call contributes: an EDGE naming the
-    /// callee's declaration, the members of a callable binding's closed
-    /// channel, or `dyn` when the callee names neither. A non-failable callee
-    /// contributes no member.
+    /// The escape a `try`ed or `return`ed call contributes: an EDGE naming each
+    /// declaration the callee may reach, the members of a callable binding's
+    /// closed channel, or `dyn` when the callee names neither. A non-failable
+    /// callee contributes no member.
     fn contributeCallee(self: ErrorAnalysis, callee: *const Node, enclosing_fd: ?*const ast.FnDecl, tags: *std.ArrayList(u32), edges: *std.ArrayList(*const ast.FnDecl), dyn: *bool) void {
-        if (self.calleeDecl(callee, enclosing_fd)) |edge| {
-            edges.append(self.l.alloc, edge) catch {};
+        if (self.calleeDecls(callee, enclosing_fd)) |callees| {
+            edges.append(self.l.alloc, callees.decl) catch {};
+            if (callees.unnarrowed) |ufcs| edges.append(self.l.alloc, ufcs) catch {};
             return;
         }
         if (callee.data == .identifier) {
@@ -281,15 +294,17 @@ pub const ErrorAnalysis = struct {
     }
 
     /// Does a call through this callee spelling carry an error channel? Read
-    /// from what the source WROTE — a lambda's return, the callee
+    /// from what the source WROTE — a lambda's return, any callee
     /// declaration's return, a callable binding's return. A spelling collect
     /// cannot read fails: the extra contribution then routes it through
     /// `contributeCallee`, which marks it `dyn`.
     fn calleeIsFailable(self: ErrorAnalysis, callee: *const Node, enclosing_fd: ?*const ast.FnDecl) bool {
         if (callee.data == .lambda)
             return Lowering.astChannelNode(callee.data.lambda.return_type) != null;
-        if (self.calleeDecl(callee, enclosing_fd)) |fd|
-            return Lowering.astChannelNode(fd.return_type) != null;
+        if (self.calleeDecls(callee, enclosing_fd)) |callees| {
+            if (callees.unnarrowed) |ufcs| if (Lowering.astChannelNode(ufcs.return_type) != null) return true;
+            return Lowering.astChannelNode(callees.decl.return_type) != null;
+        }
         if (callee.data == .identifier) {
             if (self.slotReturn(enclosing_fd, callee.data.identifier.name)) |ret| return self.l.errorChannelOf(ret) != null;
         }
@@ -319,7 +334,6 @@ pub const ErrorAnalysis = struct {
     /// a `Name`, so the `Name.method` spelling speaks only for a type with no
     /// known author.
     fn receiverMethod(self: ErrorAnalysis, ty: TypeId, method: []const u8) ?*const ast.FnDecl {
-        if (self.optionalPayload(ty)) |payload| return self.optionalReceiverMethod(payload, method);
         if (self.l.plainStructMethod(ty, method)) |m| return m.fd;
         if (self.nominalName(ty)) |name| {
             if (self.l.genericInstanceMethod(name, method)) |gm| return gm.fd;
@@ -330,24 +344,29 @@ pub const ErrorAnalysis = struct {
         return self.ufcsDecl(method);
     }
 
-    /// The method a call on a `?payload` receiver dispatches to: the payload's
-    /// where narrowing proves the receiver present, else a free function that
-    /// takes the optional. Narrowing is not known here, so when the two differ
-    /// the call selects none.
-    fn optionalReceiverMethod(self: ErrorAnalysis, payload: TypeId, method: []const u8) ?*const ast.FnDecl {
-        const narrowed = self.receiverMethod(payload, method) orelse return null;
+    /// The declarations a dot-call on a `ty` receiver may reach. Narrowing is
+    /// not known here, so on an optional these are both the payload's method
+    /// and a free function that takes the optional.
+    fn receiverCallees(self: ErrorAnalysis, ty: TypeId, method: []const u8) ?Callees {
+        const payload = self.optionalPayload(ty) orelse return Callees.of(self.receiverMethod(ty, method));
+        const narrowed = self.receiverCallees(payload, method) orelse return null;
         const ufcs = self.ufcsDecl(method) orelse return narrowed;
-        return if (narrowed == ufcs or !self.takesOptional(ufcs)) narrowed else null;
+        if (narrowed.decl == ufcs or !self.takesOptional(ufcs)) return narrowed;
+        return .{ .decl = narrowed.decl, .unnarrowed = ufcs };
     }
 
     /// Whether a dot-call on an un-narrowed optional reaches the free function
-    /// `fd`: a receiver parameter that mentions no binder and resolves to a
-    /// non-optional type other than `any` refuses it.
+    /// `fd`. A receiver parameter that mentions a binder takes the optional
+    /// when, past its pointer layers, it is a bare binder or an optional; any
+    /// other takes it when it resolves to an optional or `any`.
     fn takesOptional(self: ErrorAnalysis, fd: *const ast.FnDecl) bool {
         if (fd.params.len == 0) return false;
         const receiver = fd.params[0].type_expr;
         for (fd.type_params) |tp| {
-            if (Lowering.matchTypeParamStatic(receiver, tp.name)) return true;
+            if (!Lowering.matchTypeParamStatic(receiver, tp.name)) continue;
+            var core = receiver;
+            while (core.data == .pointer_type_expr) core = core.data.pointer_type_expr.pointee_type;
+            return core.data == .optional_type_expr or !Lowering.ufcsReceiverConcrete(fd);
         }
         const ty = self.derefed(self.l.resolveTypeInEnvironment(self.l.functionEnvironment(fd), receiver));
         return ty == .unresolved or ty == .any or self.optionalPayload(ty) != null;
@@ -544,10 +563,11 @@ pub const ErrorAnalysis = struct {
                 const receiver = call.callee.data.field_access.object;
                 if (receiver.data != .identifier) break :result;
                 const ty = self.bindingType(fd, receiver.data.identifier.name) orelse break :result;
-                const callee = self.receiverMethod(ty, call.callee.data.field_access.field) orelse break :result;
-                if (callee.type_params.len != 0) break :result;
-                const ret = callee.return_type orelse break :result;
-                return self.l.resolveTypeInEnvironment(self.l.functionEnvironment(callee), ret);
+                const callees = self.receiverCallees(ty, call.callee.data.field_access.field) orelse break :result;
+                const ret = self.declaredReturn(callees.decl) orelse break :result;
+                const ufcs = callees.unnarrowed orelse return ret;
+                if ((self.declaredReturn(ufcs) orelse break :result) != ret) break :result;
+                return ret;
             },
             .try_expr => |attempt| {
                 if (attempt.operand.data == .block) return self.receiverType(fd, attempt.operand);
@@ -567,6 +587,11 @@ pub const ErrorAnalysis = struct {
             else => {},
         }
         return self.l.inferExprType(node);
+    }
+
+    fn declaredReturn(self: ErrorAnalysis, fd: *const ast.FnDecl) ?TypeId {
+        if (fd.type_params.len != 0) return null;
+        return self.l.resolveTypeInEnvironment(self.l.functionEnvironment(fd), fd.return_type orelse return null);
     }
 
     fn successType(self: ErrorAnalysis, fd: ?*const ast.FnDecl, operand: *const Node) TypeId {

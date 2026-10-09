@@ -1,0 +1,47 @@
+// A dot-call on an optional dispatches to the payload's method where narrowing
+// proves the optional present, and otherwise to a ufcs taking the optional, so
+// where both answer the call fails with the members of both. A ufcs whose
+// receiver cannot take the optional leaves the payload's method selected.
+@import "modules/std.sx";
+A :: error { Bad; }
+B :: error { Worse; }
+F :: struct {
+    close :: (self: *F) -> ! { raise A.Bad; }
+    flush :: (self: *F) -> ! { raise A.Bad; }
+    drain :: (self: *F) -> ! { raise A.Bad; }
+}
+close :: ufcs (o: ?F) -> ! { raise B.Worse; }
+flush :: ufcs (f: *F, n: i64) -> ! { if n > 0 { raise B.Worse; } }
+drain :: ufcs (xs: []$T) -> ! { if xs.len > 0 { raise B.Worse; } }
+
+shut :: (o: ?F) -> ! { try o.close(); }
+
+shutCopy :: (o: ?F) -> ! {
+    if o == null { return; }
+    f := o;
+    try f.close();
+}
+
+flushCopy :: (o: ?F) -> ! {
+    if o == null { return; }
+    f := o;
+    try f.flush();
+}
+
+drainCopy :: (o: ?F) -> ! {
+    if o == null { return; }
+    f := o;
+    try f.drain();
+}
+
+runFlush :: (o: ?F) -> !A { try flushCopy(o); }
+runDrain :: (o: ?F) -> !A { try drainCopy(o); }
+
+main :: () {
+    o : ?F = F{};
+    r := shut(o);
+    c := shutCopy(o);
+    f := runFlush(o);
+    d := runDrain(o);
+    print("{} {} {} {}\n", r == .Worse, c == .Bad, f == .Bad, d == .Bad);
+}

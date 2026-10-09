@@ -4413,6 +4413,7 @@ pub const Lowering = struct {
     pub const intCastErrorSet = lower_call.intCastErrorSet;
     pub const lowerCall = lower_call.lowerCall;
     pub const ufcsGenericBindsAll = lower_call.ufcsGenericBindsAll;
+    pub const ufcsReceiverConcrete = lower_call.ufcsReceiverConcrete;
     pub const ufcsFunction = lower_call.ufcsFunction;
     pub const selectUfcsGenericByReceiver = lower_call.selectUfcsGenericByReceiver;
     pub const diagnoseMissingContext = lower_call.diagnoseMissingContext;
