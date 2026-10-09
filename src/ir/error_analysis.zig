@@ -511,7 +511,9 @@ pub const ErrorAnalysis = struct {
     }
 
     fn iterableElementType(self: ErrorAnalysis, fd: ?*const ast.FnDecl, expr: *const Node) TypeId {
-        const ty = self.derefed(self.receiverType(fd, expr));
+        // An optional is iterated only where narrowing proves it present.
+        const source = self.receiverType(fd, expr);
+        const ty = self.derefed(self.optionalPayload(source) orelse source);
         if (!ty.isBuiltin() and self.l.module.types.get(ty) == .@"struct") {
             const fields = self.l.module.types.get(ty).@"struct".fields;
             for (fields) |field| {

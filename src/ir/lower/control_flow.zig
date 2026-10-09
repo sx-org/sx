@@ -1392,8 +1392,13 @@ pub fn lowerFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
             }
             preps.append(self.alloc, .{ .is_range = true, .slot = slot }) catch unreachable;
         } else {
-            var data = self.lowerExpr(it.expr);
-            var data_ty = self.inferExprType(it.expr);
+            // A guard-narrowed binding iterates its payload.
+            const narrowed_child = if (it.expr.data == .identifier and self.provenPresent(it.expr.data.identifier.name))
+                self.resolveOptionalInner(self.inferExprType(it.expr))
+            else
+                null;
+            var data = if (narrowed_child) |child| self.lowerNarrowedContainer(it.expr, child) else self.lowerExpr(it.expr);
+            var data_ty = narrowed_child orelse self.inferExprType(it.expr);
 
             // `*List` / `*[]T` etc. — deref to the collection value. Tracked
             // because a deref'd iterable's identifier binding holds the
@@ -1429,7 +1434,12 @@ pub fn lowerFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
                 return self.builder.constInt(0, .void);
             }
             const is_array = !data_ty.isBuiltin() and self.module.types.get(data_ty) == .array;
-            const storage = if (is_array and !was_deref) self.getExprAlloca(it.expr) else null;
+            const storage = if (!is_array or was_deref)
+                null
+            else if (narrowed_child) |child|
+                self.narrowedContainerPtr(it.expr, child)
+            else
+                self.getExprAlloca(it.expr);
             const slot = self.builder.alloca(.i64);
             self.builder.store(slot, self.builder.constInt(0, .i64));
             if (i == 0) limit = len;
