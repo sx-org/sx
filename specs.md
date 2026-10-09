@@ -2178,6 +2178,8 @@ spelling.
 if x == null { return; }
 print("{}\n", x?!);    // error: 'x' is already proven present here
 ```
+As the whole initializer of a declaration without a type annotation
+(`y := x?!`), it is a warning instead.
 
 #### Default (`??`)
 Returns the payload if present, otherwise evaluates the right-hand side:
@@ -2256,8 +2258,9 @@ c != null and c.n > 0
 got == null or got.len != want.len
 ```
 
-A narrowed binding reads as its payload, so `?!` on it is refused (§Force
-Unwrap).
+A narrowed binding reads as its payload: a declaration without a type
+annotation that copies it (`y := x`) takes the payload type, and `?!` on it is
+refused (§Force Unwrap).
 
 Reassignment kills narrowing.
 

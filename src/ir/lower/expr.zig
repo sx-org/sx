@@ -3654,12 +3654,19 @@ pub fn unwrapOptionalOperand(self: *Lowering, operand: Ref, ty: TypeId, span: as
     return self.builder.emit(.{ .optional_unwrap = .{ .operand = operand } }, info.optional.child);
 }
 
+/// Reports `node`, a `?!`, at `level` when its operand is a binding narrowing
+/// proves present; true when it does.
+pub fn diagProvenUnwrap(self: *Lowering, node: *const Node, level: errors.Level) bool {
+    const operand = node.data.force_unwrap.operand;
+    if (operand.data != .identifier or !self.provenPresent(operand.data.identifier.name)) return false;
+    const name = operand.data.identifier.name;
+    if (self.diagnostics) |d| d.addFmt(level, node.span, "'{s}' is already proven present here; write '{s}' without '?!'", .{ name, name });
+    return true;
+}
+
 pub fn lowerForceUnwrap(self: *Lowering, node: *const Node) Ref {
     const fu = &node.data.force_unwrap;
-    if (fu.operand.data == .identifier and self.provenPresent(fu.operand.data.identifier.name)) {
-        const name = fu.operand.data.identifier.name;
-        if (self.diagnostics) |d| d.addFmt(.err, node.span, "'{s}' is already proven present here; write '{s}' without '?!'", .{ name, name });
-    }
+    _ = self.diagProvenUnwrap(node, .err);
     const val = self.lowerExpr(fu.operand);
     const inner_ty = self.resolveOptionalInner(self.inferExprType(fu.operand));
     const present_bb = self.freshBlock("unwrap.present");

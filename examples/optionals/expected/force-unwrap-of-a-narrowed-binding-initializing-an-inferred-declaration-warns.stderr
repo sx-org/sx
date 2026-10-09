@@ -1,0 +1,5 @@
+warning: 'x' is already proven present here; write 'x' without '?!'
+  --> examples/optionals/force-unwrap-of-a-narrowed-binding-initializing-an-inferred-declaration-warns.sx:7:10
+   |
+ 7 |     y := x?!;
+   |          ^^^

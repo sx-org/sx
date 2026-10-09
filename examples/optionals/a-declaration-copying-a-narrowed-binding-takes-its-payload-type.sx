@@ -1,0 +1,11 @@
+// A declaration without a type annotation that copies a narrowed binding takes
+// the binding's payload type.
+@import "modules/std.sx";
+
+next :: (x: ?i64) -> i64 {
+    if x == null { return 0; }
+    y := x;
+    y + 1
+}
+
+main :: () { print("{} {}\n", next(4), next(null)); }
