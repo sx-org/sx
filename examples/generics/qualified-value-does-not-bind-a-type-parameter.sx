@@ -1,0 +1,14 @@
+// A qualified const that names a value is not a type argument.
+@import "modules/std.sx";
+
+Mode :: enum { slow; fast; }
+
+ns :: scope {
+    Default :: Mode.fast;
+}
+
+name :: ($T: Type) -> string { @typeName(T) }
+
+main :: () {
+    print("{}\n", name(ns.Default));
+}

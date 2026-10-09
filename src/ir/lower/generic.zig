@@ -335,10 +335,8 @@ pub fn isStaticTypeArg(self: *Lowering, node: *const Node) bool {
                 .selected => |s| s,
                 .not_qualified, .missing, .ambiguous => return false,
             };
-            return switch (sel.author.raw) {
-                .const_decl => !self.authorNamesNoType(sel.author),
-                else => isNamedTypeKind(sel.author.raw),
-            };
+            return isNamedTypeKind(sel.author.raw) or
+                (sel.author.raw == .const_decl and self.constAuthorType(sel.author) != null);
         },
         .pack_index_type_expr,
         .pointer_type_expr,

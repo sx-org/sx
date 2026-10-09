@@ -1,0 +1,5 @@
+error: cannot infer generic type parameter 'T' for 'name' from this call's arguments
+  --> examples/generics/qualified-value-does-not-bind-a-type-parameter.sx:13:19
+   |
+13 |     print("{}\n", name(ns.Default));
+   |                   ^^^^
