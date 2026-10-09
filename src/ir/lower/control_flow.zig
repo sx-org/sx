@@ -111,6 +111,9 @@ const Writes = struct {
     unknown: bool = false,
     /// The names it declares that are in scope where the walk stands.
     declared: std.ArrayList([]const u8) = .empty,
+    /// The walk stands in a closure body. No proof of the forming frame narrows
+    /// a name there, so a method called on a binding may receive its address.
+    in_body: bool = false,
 
     fn deinit(self: *Writes, alloc: std.mem.Allocator) void {
         self.assigned.deinit(alloc);
@@ -148,7 +151,12 @@ fn collectScopedWrites(self: *Lowering, name: ?[]const u8, body: *const Node, ou
 /// Walk a closure body with its parameters and env fields declared.
 fn collectBodyWrites(self: *Lowering, params: []const ast.Param, env: []const ast.EnvField, body: *const Node, out: *Writes) void {
     const mark = out.declared.items.len;
-    defer out.declared.shrinkRetainingCapacity(mark);
+    const in_body = out.in_body;
+    defer {
+        out.declared.shrinkRetainingCapacity(mark);
+        out.in_body = in_body;
+    }
+    out.in_body = true;
     for (params) |p| out.declare(self.alloc, p.name);
     for (env) |f| out.declare(self.alloc, f.name);
     collectWrites(self, body, out);
@@ -181,6 +189,12 @@ fn collectWrites(self: *Lowering, node: *const Node, out: *Writes) void {
             walk(self, u.operand, out);
         },
         .call => |c| {
+            if (out.in_body and c.callee.data == .field_access) {
+                const recv = c.callee.data.field_access.object;
+                if (recv.data == .identifier) {
+                    if (out.binding(self, recv.data.identifier.name)) |b| out.addressed.append(self.alloc, b) catch unreachable;
+                }
+            }
             walk(self, c.callee, out);
             for (c.args) |a| walk(self, a, out);
         },

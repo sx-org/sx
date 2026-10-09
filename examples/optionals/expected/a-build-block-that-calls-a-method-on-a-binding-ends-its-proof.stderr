@@ -1,0 +1,11 @@
+error: cannot use a value of type '?i64' as an operand: an optional does not implicitly unwrap; force-unwrap with '?!', supply a fallback with '?? <default>', or guard with '!= null'
+  --> examples/optionals/a-build-block-that-calls-a-method-on-a-binding-ends-its-proof.sx:22:5
+   |
+22 |     x + t
+   |     ^
+
+error: cannot use a value of type '?i64' where 'i64' is expected: an optional does not implicitly unwrap; force-unwrap with '?!', supply a fallback with '?? <default>', bind it (`if v := ...`), or guard with '!= null'
+  --> examples/optionals/a-build-block-that-calls-a-method-on-a-binding-ends-its-proof.sx:29:9
+   |
+29 |         sum += x;
+   |         ^^^^^^^^^
