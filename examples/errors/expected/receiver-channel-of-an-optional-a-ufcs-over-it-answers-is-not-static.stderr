@@ -1,0 +1,5 @@
+error: cannot forward a bare-`!` result through the named error set 'A' — the source channel has no static member set
+  --> examples/errors/receiver-channel-of-an-optional-a-ufcs-over-it-answers-is-not-static.sx:23:24
+   |
+23 | run :: (o: ?F) -> !A { try shut(o); }
+   |                        ^^^^^^^^^^^

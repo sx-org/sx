@@ -318,8 +318,8 @@ pub const ErrorAnalysis = struct {
     /// generic instance through its stamped one: two modules may each declare
     /// a `Name`, so the `Name.method` spelling speaks only for a type with no
     /// known author.
-    fn receiverMethod(self: ErrorAnalysis, receiver: TypeId, method: []const u8) ?*const ast.FnDecl {
-        const ty = self.memberOwner(receiver);
+    fn receiverMethod(self: ErrorAnalysis, ty: TypeId, method: []const u8) ?*const ast.FnDecl {
+        if (self.optionalPayload(ty)) |payload| return self.optionalReceiverMethod(payload, method);
         if (self.l.plainStructMethod(ty, method)) |m| return m.fd;
         if (self.nominalName(ty)) |name| {
             if (self.l.genericInstanceMethod(name, method)) |gm| return gm.fd;
@@ -328,6 +328,29 @@ pub const ErrorAnalysis = struct {
             }
         }
         return self.ufcsDecl(method);
+    }
+
+    /// The method a call on a `?payload` receiver dispatches to: the payload's
+    /// where narrowing proves the receiver present, else a free function that
+    /// takes the optional. Narrowing is not known here, so when the two differ
+    /// the call selects none.
+    fn optionalReceiverMethod(self: ErrorAnalysis, payload: TypeId, method: []const u8) ?*const ast.FnDecl {
+        const narrowed = self.receiverMethod(payload, method) orelse return null;
+        const ufcs = self.ufcsDecl(method) orelse return narrowed;
+        return if (narrowed == ufcs or !self.takesOptional(ufcs)) narrowed else null;
+    }
+
+    /// Whether a dot-call on an un-narrowed optional reaches the free function
+    /// `fd`: a receiver parameter that mentions no binder and resolves to a
+    /// non-optional type other than `any` refuses it.
+    fn takesOptional(self: ErrorAnalysis, fd: *const ast.FnDecl) bool {
+        if (fd.params.len == 0) return false;
+        const receiver = fd.params[0].type_expr;
+        for (fd.type_params) |tp| {
+            if (Lowering.matchTypeParamStatic(receiver, tp.name)) return true;
+        }
+        const ty = self.derefed(self.l.resolveTypeInEnvironment(self.l.functionEnvironment(fd), receiver));
+        return ty == .unresolved or ty == .any or self.optionalPayload(ty) != null;
     }
 
     /// The free function a dot-call selects. Dot-dispatch onto a free function
@@ -492,13 +515,6 @@ pub const ErrorAnalysis = struct {
         return if (info == .optional) info.optional.child else null;
     }
 
-    /// The type a `.member` on a `ty` receiver reaches: an optional's payload,
-    /// as a plain `.member` of an optional compiles only where narrowing proves
-    /// it present.
-    fn memberOwner(self: ErrorAnalysis, ty: TypeId) TypeId {
-        return self.optionalPayload(ty) orelse ty;
-    }
-
     fn derefed(self: ErrorAnalysis, ty: TypeId) TypeId {
         if (ty.isBuiltin()) return ty;
         const info = self.l.module.types.get(ty);
@@ -512,7 +528,9 @@ pub const ErrorAnalysis = struct {
                 return self.l.module.types.ptrTo(self.receiverType(fd, op.operand)),
             .field_access => |fa| {
                 const object = self.receiverType(fd, fa.object);
-                if (self.l.exprTyper().memberType(if (fa.is_optional) object else self.memberOwner(object), fa.field, fa.is_optional)) |ty| return ty;
+                // A plain field of an optional is read only where narrowing proves it present.
+                const owner = if (fa.is_optional) object else self.optionalPayload(object) orelse object;
+                if (self.l.exprTyper().memberType(owner, fa.field, fa.is_optional)) |ty| return ty;
             },
             .index_expr => |ix| {
                 if (self.l.exprTyper().indexType(self.receiverType(fd, ix.object))) |ty| return ty;
