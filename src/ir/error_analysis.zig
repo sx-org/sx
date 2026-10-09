@@ -318,7 +318,8 @@ pub const ErrorAnalysis = struct {
     /// generic instance through its stamped one: two modules may each declare
     /// a `Name`, so the `Name.method` spelling speaks only for a type with no
     /// known author.
-    fn receiverMethod(self: ErrorAnalysis, ty: TypeId, method: []const u8) ?*const ast.FnDecl {
+    fn receiverMethod(self: ErrorAnalysis, receiver: TypeId, method: []const u8) ?*const ast.FnDecl {
+        const ty = self.memberOwner(receiver);
         if (self.l.plainStructMethod(ty, method)) |m| return m.fd;
         if (self.nominalName(ty)) |name| {
             if (self.l.genericInstanceMethod(name, method)) |gm| return gm.fd;
@@ -410,9 +411,7 @@ pub const ErrorAnalysis = struct {
                     var outer = self;
                     outer.locals = current.parent;
                     const ty = outer.receiverType(fd, payload.condition);
-                    if (!ty.isBuiltin() and self.l.module.types.get(ty) == .optional)
-                        return .{ .typed = self.l.module.types.get(ty).optional.child };
-                    return .{ .typed = ty };
+                    return .{ .typed = self.optionalPayload(ty) orelse ty };
                 }
             }
             if (current.arm) |arm| {
@@ -487,6 +486,19 @@ pub const ErrorAnalysis = struct {
         return self.l.getElementType(ty);
     }
 
+    fn optionalPayload(self: ErrorAnalysis, ty: TypeId) ?TypeId {
+        if (ty.isBuiltin()) return null;
+        const info = self.l.module.types.get(ty);
+        return if (info == .optional) info.optional.child else null;
+    }
+
+    /// The type a `.member` on a `ty` receiver reaches: an optional's payload,
+    /// as a plain `.member` of an optional compiles only where narrowing proves
+    /// it present.
+    fn memberOwner(self: ErrorAnalysis, ty: TypeId) TypeId {
+        return self.optionalPayload(ty) orelse ty;
+    }
+
     fn derefed(self: ErrorAnalysis, ty: TypeId) TypeId {
         if (ty.isBuiltin()) return ty;
         const info = self.l.module.types.get(ty);
@@ -499,7 +511,8 @@ pub const ErrorAnalysis = struct {
             .unary_op => |op| if (op.op == .address_of)
                 return self.l.module.types.ptrTo(self.receiverType(fd, op.operand)),
             .field_access => |fa| {
-                if (self.l.exprTyper().memberType(self.receiverType(fd, fa.object), fa.field, fa.is_optional)) |ty| return ty;
+                const object = self.receiverType(fd, fa.object);
+                if (self.l.exprTyper().memberType(if (fa.is_optional) object else self.memberOwner(object), fa.field, fa.is_optional)) |ty| return ty;
             },
             .index_expr => |ix| {
                 if (self.l.exprTyper().indexType(self.receiverType(fd, ix.object))) |ty| return ty;
@@ -507,6 +520,7 @@ pub const ErrorAnalysis = struct {
             .slice_expr => |sl| {
                 if (self.l.exprTyper().sliceType(self.receiverType(fd, sl.object), sl.end == null)) |ty| return ty;
             },
+            .force_unwrap => |fu| if (self.optionalPayload(self.receiverType(fd, fu.operand))) |payload| return payload,
             .call => |call| result: {
                 if (call.callee.data != .field_access) break :result;
                 const receiver = call.callee.data.field_access.object;

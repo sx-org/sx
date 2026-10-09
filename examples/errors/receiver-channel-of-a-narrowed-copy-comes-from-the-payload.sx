@@ -1,0 +1,41 @@
+// A failable method called through a copy of a narrowed binding names the
+// payload's method, so the inferred `!` stays static and forwards through a
+// named set.
+@import "modules/std.sx";
+IoErr :: error { Failed; }
+File :: struct {
+    ok: bool = true;
+    close :: (self: *File) -> ! { if self.ok == false { raise IoErr.Failed; } }
+}
+Holder :: struct { file: File; }
+
+shut :: (o: ?File) -> ! {
+    if o == null { return; }
+    f := o;
+    try f.close();
+}
+
+shutHeld :: (o: ?Holder) -> ! {
+    if o == null { return; }
+    h := o;
+    try h.file.close();
+}
+
+shutForced :: (o: ?File) -> ! {
+    if o == null { return; }
+    f := o?!;
+    try f.close();
+}
+
+run :: (o: ?File) -> !IoErr { try shut(o); }
+runHeld :: (o: ?Holder) -> !IoErr { try shutHeld(o); }
+runForced :: (o: ?File) -> !IoErr { try shutForced(o); }
+
+main :: () {
+    bad := File{ ok = false };
+    a := run(bad);
+    b := runHeld(Holder{ file = bad });
+    c := runForced(bad);
+    d := run(File{});
+    print("{} {} {} {}\n", a == .Failed, b == .Failed, c == .Failed, d == .Failed);
+}
