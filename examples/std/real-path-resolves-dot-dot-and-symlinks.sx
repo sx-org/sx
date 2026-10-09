@@ -10,7 +10,7 @@ ROOT :: ".sx-tmp/real-path-resolves-dot-dot-and-symlinks";
 show :: (root: string, path: string) {
     resolved := fs.realPath(pathJoin(ROOT, path));
     if resolved == null { print("{}: null\n", path); return; }
-    got := resolved?!;
+    got : string = resolved;
     if got.len > root.len and got[0 .. root.len] == root and got[root.len] == '/' {
         print("{}: {}\n", path, got[root.len + 1 ..]);
     } else {
@@ -27,7 +27,7 @@ main :: () -> i32 {
     }
     resolved := fs.realPath(ROOT);
     if resolved == null { print("{}: null\n", ROOT); return 1; }
-    root := resolved?!;
+    root : string = resolved;
     print("{} is absolute: {}\n", ROOT, root[0] == '/');
     show(root, "ws/repo/../repo");
     show(root, "ws/escape");

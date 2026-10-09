@@ -7,5 +7,5 @@ pcapLibVersion :: () -> ?[*:0]u8 extern pcaplib "pcap_lib_version";
 pcapVersion :: () -> string {
     p := pcapLibVersion();
     if p == null { return ""; }
-    return p?![0..];
+    return p[0..];
 }

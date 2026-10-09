@@ -7,8 +7,8 @@
 // - method calls on a narrowed receiver;
 // - inference agrees with lowering (a local declared from a
 //   narrowed read gets the field's type).
-// `?.` keeps the optional; `q := p` keeps the static optional type
-// (only guarded locals narrow — spell `q := p?!`).
+// `?.` keeps the optional; `q := p` keeps the static optional type, and
+// `q : *T = p` binds the payload.
 @import "modules/std.sx";
 
 U :: struct { m: i64 = 3; }
@@ -83,7 +83,7 @@ main :: () {
     process.assert(valueOptional(V{}) == 9 and valueOptional(null) == 0, "value optional");
 
     c := stillChains(*t);
-    process.assert(c != null and c?! == 43, "?. chain preserved");
+    process.assert(c != null and c == 43, "?. chain preserved");
 
     v := V{};
     process.assert(guardOr(*t, *v) == 52, "or-guard narrows both");

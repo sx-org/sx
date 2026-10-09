@@ -1,0 +1,23 @@
+// Passing a binding to a pointer parameter takes its address, so the call may
+// clear it and ends its proof. Passing it to a value parameter keeps the proof.
+@import "modules/std.sx";
+
+clear :: (p: *?i64) { p.* = null; }
+show :: (v: ?i64) { print("{}\n", v ?? -1); }
+
+passed :: (x: ?i64) -> i64 {
+    if x == null { return 0; }
+    clear(x);
+    x
+}
+
+shown :: (x: ?i64) -> i64 {
+    if x == null { return 0; }
+    show(x);
+    x
+}
+
+main :: () {
+    print("{}\n", shown(5));
+    print("{}\n", passed(5));
+}

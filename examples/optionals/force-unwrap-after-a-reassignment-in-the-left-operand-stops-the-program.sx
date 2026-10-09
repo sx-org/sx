@@ -1,0 +1,9 @@
+// `?!` on a binding the left operand of `and` reassigns after its test
+// compiles, and stops the program at the null.
+@import "modules/std.sx";
+
+none :: () -> ?i64 { null }
+
+positive :: (x: ?i64) -> bool { (x != null and { x = none(); true }) and x?! > 0 }
+
+main :: () { print("{}\n", positive(5)); }

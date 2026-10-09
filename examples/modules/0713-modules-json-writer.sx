@@ -99,7 +99,7 @@ main :: () -> ! {
     back := fs.readFile(path);
     fs.deleteFile(path);
     if back == null { print("file-read: FAIL\n"); return; }
-    report("file-exact", back?! == EXPECT);
+    report("file-exact", back == EXPECT);
 
     // 3. A buffer of exactly the document's length holds all of it.
     exact := FixedWriter.init(buf[256..256 + EXPECT.len]);

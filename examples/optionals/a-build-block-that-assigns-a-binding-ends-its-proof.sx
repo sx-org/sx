@@ -1,0 +1,36 @@
+// A build block's body runs on the forming frame's locals: a binding it assigns
+// is not proven present after the call that receives the block, nor in a loop
+// that forms it.
+@import "modules/std.sx";
+
+Sink :: struct {
+    total: i64;
+    expression :: (self: *Sink, v: i64) { self.total += v; }
+}
+
+collect :: (content: $B/@BuildBlock(i64)) -> i64 {
+    sink := Sink{ total = 0 };
+    content.run(*sink);
+    sink.total
+}
+
+after :: (x: ?i64) -> i64 {
+    if x == null { return 0; }
+    t := collect() { x = null; 1; };
+    x + t
+}
+
+repeated :: (x: ?i64) -> i64 {
+    if x == null { return 0; }
+    sum := 0;
+    for i in 0..2 {
+        sum += x;
+        sum += collect() { x = null; 1; };
+    }
+    sum
+}
+
+main :: () {
+    print("{}\n", after(5));
+    print("{}\n", repeated(5));
+}

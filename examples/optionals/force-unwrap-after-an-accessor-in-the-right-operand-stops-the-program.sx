@@ -1,0 +1,17 @@
+// `?!` after a `@get` read in the right operand of `and` compiles: it reads
+// what the accessor wrote through the binding's address, and stops the program
+// at the null.
+@import "modules/std.sx";
+
+Holder :: struct {
+    p: *?i64;
+    zap :: (self: *Holder) -> bool @get { self.p.* = null; true }
+}
+
+next :: (x: ?i64) -> i64 {
+    h := Holder{ p = *x };
+    if x != null and h.zap { return x?! + 1; }
+    0
+}
+
+main :: () { print("{}\n", next(5)); }

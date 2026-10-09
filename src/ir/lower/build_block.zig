@@ -207,6 +207,7 @@ pub fn formBlock(self: *Lowering, arg: *const Node, protocol: TypeId) Ref {
         }
         return Ref.none;
     }
+    self.endBuildBlockProofs(&arg.data.lambda);
     const site = siteFor(self, arg, protocol);
     const block_ty = self.module.types.buildBlockImplementorType(protocol, site);
     const record = &self.block_sites.items[site - 1];

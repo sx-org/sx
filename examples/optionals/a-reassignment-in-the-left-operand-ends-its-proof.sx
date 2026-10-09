@@ -1,0 +1,9 @@
+// A reassignment in the left operand of `and`, after its test, ends the proof
+// the test made, so the right operand does not read the binding as present.
+@import "modules/std.sx";
+
+none :: () -> ?i64 { null }
+
+positive :: (x: ?i64) -> bool { (x != null and { x = none(); true }) and x > 0 }
+
+main :: () { print("{}\n", positive(5)); }

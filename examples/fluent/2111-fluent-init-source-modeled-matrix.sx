@@ -29,7 +29,7 @@ formLabel :: ufcs (value: $I/@Init(Label)) {
 formOptLabel :: ufcs (value: $I/@Init(?Label)) {
     slot: ?Label = ---;
     value.write(*slot);
-    if slot != null { print("?Label {}\n", slot?!.text); } else { print("?Label null\n"); }
+    if slot != null { print("?Label {}\n", slot.text); } else { print("?Label null\n"); }
 }
 
 formView :: ufcs (value: $I/@Init(View)) {

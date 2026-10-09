@@ -1,0 +1,36 @@
+// `?!` in a loop on a binding whose address is taken compiles: the next
+// iteration reads what was written through the address, and stops the program
+// at a null.
+@import "modules/std.sx";
+
+Holder :: struct {
+    p: *?i64;
+    zap :: (self: *Holder) -> bool @get { self.p.* = null; true }
+}
+
+before :: (x: ?i64) -> i64 {
+    h := Holder{ p = *x };
+    if x == null { return 0; }
+    sum := 0;
+    for i in 0..2 {
+        sum += x?!;
+        z := h.zap;
+    }
+    sum
+}
+
+within :: (x: ?i64) -> i64 {
+    if x == null { return 0; }
+    sum := 0;
+    for i in 0..2 {
+        sum += x?!;
+        clear := ||_{ p = *x } { p.* = null; };
+        clear();
+    }
+    sum
+}
+
+main :: () {
+    print("{}\n", before(5));
+    print("{}\n", within(5));
+}

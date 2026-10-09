@@ -1,0 +1,14 @@
+// The right operand of `and` reads a binding its left operand proves present,
+// and the right operand of `or` one its left operand's failure proves present.
+@import "modules/std.sx";
+
+Cell :: struct { n: i64; }
+
+positive :: (c: ?Cell) -> bool { c != null and c.n > 0 }
+differs :: (got: ?[]i64, want: []i64) -> bool { got == null or got.len != want.len }
+
+main :: () {
+    w : [3]i64 = .[1, 2, 3];
+    print("{} {}\n", positive(Cell{ n = 2 }), positive(null));
+    print("{} {} {}\n", differs(null, w[0..]), differs(w[0..2], w[0..]), differs(w[0..], w[0..]));
+}

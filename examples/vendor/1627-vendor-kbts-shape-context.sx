@@ -13,7 +13,7 @@ main :: () -> i32 {
         print("font missing\n");
         return 1;
     }
-    bytes := data?!;
+    bytes : string = data;
 
     ctx := kb_text_shape.kbts_CreateShapeContext(null, null);
     print("context created: {}\n", ctx != null);

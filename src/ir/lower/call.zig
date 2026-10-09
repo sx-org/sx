@@ -754,6 +754,7 @@ fn coerceGlobalFnPointerArgs(self: *Lowering, args: []Ref, info: types.TypeInfo.
                     if (self.scope) |scope| {
                         if (scope.lookup(c.args[ai].data.identifier.name)) |binding| {
                             if (binding.is_alloca) {
+                                self.exposeAddress(binding);
                                 arg.* = self.builder.emit(.{ .addr_of = .{ .operand = binding.ref } }, dst_ty);
                                 continue;
                             }
@@ -954,6 +955,7 @@ fn lowerComptimePlainStructMethod(
 pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
     self.openCall(c_in);
     defer _ = self.open_calls.pop();
+    defer self.endExposedProofs();
     var c = c_in;
     // A bare reserved-type-name spelling in call position parses as a
     // `.type_expr` (e.g. `i8(4)`), but if a function of that name is in
@@ -2598,6 +2600,7 @@ fn lowerCallArg(self: *Lowering, arg: *const Node, ai: usize, param_types: []con
                 const local = if (self.scope) |scope| scope.lookup(nm) else null;
                 if (local) |binding| {
                     if (binding.is_alloca and self.module.types.sameType(binding.ty, pti.pointer.pointee)) {
+                        self.exposeAddress(binding);
                         const ptr_ty = self.module.types.ptrTo(binding.ty);
                         return self.builder.emit(.{ .addr_of = .{ .operand = binding.ref } }, ptr_ty);
                     }
@@ -6216,6 +6219,63 @@ pub fn resolveCallParamTypes(
     }
 
     return &.{};
+}
+
+/// The type of the parameter each written argument of `c` binds, as lowering
+/// `c` resolves it, read before `c` lowers: null for an argument no parameter
+/// types, and in place of the list when the callee resolves to no signature.
+pub fn writtenParamTypes(self: *Lowering, c: *const ast.Call) ?[]const ?TypeId {
+    const resolver = self.callResolver();
+    var qualified = resolver.classifyQualifiedCall(c);
+    var bare: Lowering.BareCallee = switch (qualified) {
+        .never_qualified, .value_receiver => resolver.selectedFreeAuthor(c),
+        .type_prefix, .func, .callable_value => .none,
+        .non_callable, .missing, .not_visible, .ambiguous => return null,
+    };
+    const sel_author: ?*SelectedFunc = switch (bare) {
+        .func => |*sf| sf,
+        else => switch (qualified) {
+            .func => |*sf| sf,
+            else => null,
+        },
+    };
+    const qualified_callable: ?GlobalInfo = switch (qualified) {
+        .callable_value => |cv| cv.global,
+        else => null,
+    };
+    const author_declines = bare == .ambiguous or bare == .not_callable;
+    const callee = namedCalleeDecl(self, c, sel_author, qualified == .func, qualified_callable, author_declines);
+    const off = if (callee) |nc| nc.receiver_params else 0;
+    // Declaration order past the receiver. A pack or comptime call binds its
+    // fixed parameters from the declaration. A shadowing author's come from its
+    // declaration too, so reading them lowers no body.
+    const demands: []const ParamDemand = demands: {
+        if (callee) |nc| if (isPackFn(nc.fd) or hasComptimeParams(nc.fd)) {
+            const fixed = self.alloc.alloc(ParamDemand, nc.fd.params.len -| off) catch unreachable;
+            for (fixed, off..) |*d, i| d.* = if (Lowering.isPackParam(nc.fd.params[i])) .none else lower_bound.paramDemand(self, nc.fd, i);
+            break :demands fixed;
+        };
+        if (c.callee.data == .identifier and bare == .func) break :demands astCalleeParamTypes(self, bare.func.decl, c.args);
+        break :demands self.resolveCallParamTypes(c, sel_author, qualified == .func, qualified_callable, author_declines);
+    };
+    if (callee == null and demands.len == 0) return null;
+    const params = self.alloc.alloc(?TypeId, c.args.len) catch unreachable;
+    @memset(params, null);
+    var pos: usize = 0;
+    for (c.args, params) |a, *param| switch (a.data) {
+        .named_arg => |na| if (callee) |nc| for (nc.fd.params, 0..) |p, i| {
+            if (i < off or !std.mem.eql(u8, p.name, na.name)) continue;
+            if (i - off < demands.len) param.* = demands[i - off].coerceType();
+            break;
+        },
+        .spread_expr => |se| pos += spreadArgWidth(self, se.operand) orelse 1,
+        .trailing_block => {},
+        else => {
+            if (pos < demands.len) param.* = demands[pos].coerceType();
+            pos += 1;
+        },
+    };
+    return params;
 }
 
 /// The open set a method-call receiver of type `ty` names — the set itself, or the

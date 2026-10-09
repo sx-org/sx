@@ -1,0 +1,31 @@
+// A loop that reassigns a binding carries no proof of it made before the loop:
+// not into the next iteration, and not out through a `break`.
+@import "modules/std.sx";
+
+pick :: (n: i64) -> ?i64 {
+    if n > 0 { return n; }
+    null
+}
+
+repeats :: (x: ?i64) -> i64 {
+    if x == null { return 0; }
+    sum := 0;
+    for i in 0..2 {
+        sum += x;
+        x = pick(0);
+    }
+    sum
+}
+
+leaves :: (x: ?i64) -> i64 {
+    if x == null { return 0; }
+    for i in 0..2 {
+        if i == 1 { x = pick(7); break; }
+    }
+    x
+}
+
+main :: () {
+    print("{}\n", leaves(5));
+    print("{}\n", repeats(5));
+}

@@ -1,0 +1,5 @@
+error: 'x' is already proven present here; write 'x' without '?!'
+  --> examples/optionals/force-unwrap-of-a-binding-proven-present-is-refused.sx:7:5
+   |
+ 7 |     x?!
+   |     ^^^
