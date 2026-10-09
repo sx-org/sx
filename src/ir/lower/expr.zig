@@ -1183,8 +1183,10 @@ pub fn fixupMethodReceiver(self: *Lowering, method_args: *std.ArrayList(Ref), fu
                         method_args.items[0] = if (binding_info == .optional and
                             binding_info.optional.child == obj_ty and self.module.types.optionalShape(obj_ty) == .flag)
                             self.builder.structGepTyped(binding.ref, 0, self.module.types.ptrTo(obj_ty), binding.ty)
-                        else
-                            receiverPointer(self, binding.ref, obj_ty);
+                        else blk: {
+                            if (obj_ty == binding.ty) self.exposeAddress(binding);
+                            break :blk receiverPointer(self, binding.ref, obj_ty);
+                        };
                         return;
                     }
                     if (binding.origin == .local_const) {
@@ -3652,7 +3654,12 @@ pub fn unwrapOptionalOperand(self: *Lowering, operand: Ref, ty: TypeId, span: as
     return self.builder.emit(.{ .optional_unwrap = .{ .operand = operand } }, info.optional.child);
 }
 
-pub fn lowerForceUnwrap(self: *Lowering, fu: *const ast.ForceUnwrap) Ref {
+pub fn lowerForceUnwrap(self: *Lowering, node: *const Node) Ref {
+    const fu = &node.data.force_unwrap;
+    if (fu.operand.data == .identifier and self.provenPresent(fu.operand.data.identifier.name)) {
+        const name = fu.operand.data.identifier.name;
+        if (self.diagnostics) |d| d.addFmt(.err, node.span, "'{s}' is already proven present here; write '{s}' without '?!'", .{ name, name });
+    }
     const val = self.lowerExpr(fu.operand);
     const inner_ty = self.resolveOptionalInner(self.inferExprType(fu.operand));
     const present_bb = self.freshBlock("unwrap.present");
@@ -4348,6 +4355,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
                     if (sb.crossed != .none) break :blk self.diagEnclosingLocalRef(id_name, node.span, sb.crossed);
                     if (sb.binding) |binding| {
                         if (binding.is_alloca) {
+                            self.exposeAddress(binding);
                             const ptr_ty = self.module.types.ptrTo(binding.ty);
                             break :blk self.builder.emit(.{ .addr_of = .{ .operand = binding.ref } }, ptr_ty);
                         }
@@ -4486,7 +4494,7 @@ fn lowerExprInner(self: *Lowering, node: *const Node) Ref {
         .slice_expr => |se| self.lowerSliceExpr(&se),
         // The literal's identity is its node: the env type memo keys on it.
         .lambda => self.lowerLambda(&node.data.lambda),
-        .force_unwrap => |fu| self.lowerForceUnwrap(&fu),
+        .force_unwrap => self.lowerForceUnwrap(node),
         .null_coalesce => |nc| self.lowerNullCoalesce(&nc),
         .deref_expr => |de| self.lowerDerefExpr(&de),
 
@@ -5097,6 +5105,7 @@ pub fn asmResultType(self: *Lowering, ae: *const ast.AsmExpr) TypeId {
 /// placeholder Ref instead of the op, so `hasErrors()` aborts the build on
 /// whichever diagnostic fired.
 pub fn lowerAsmExpr(self: *Lowering, ae: *const ast.AsmExpr, span: ast.Span) Ref {
+    defer self.endExposedProofs();
     const diags = self.diagnostics orelse return self.emitPlaceholder("inline_asm");
 
     // (1) The template must be a compile-time-known string (a `"..."` literal or
@@ -5467,7 +5476,7 @@ pub fn lowerBinaryOp(self: *Lowering, node: *const Node) Ref {
         const false_val = self.builder.constBool(false);
         self.builder.condBr(lhs, rhs_bb, &.{}, merge_bb, &.{false_val});
         self.builder.switchToBlock(rhs_bb);
-        const rhs = self.lowerBoolCondition(bop.rhs);
+        const rhs = self.lowerShortCircuitRhs(node);
         self.builder.br(merge_bb, &.{rhs});
         self.builder.switchToBlock(merge_bb);
         return self.builder.blockParam(merge_bb, 0, .bool);
@@ -5480,7 +5489,7 @@ pub fn lowerBinaryOp(self: *Lowering, node: *const Node) Ref {
         const true_val = self.builder.constBool(true);
         self.builder.condBr(lhs, merge_bb, &.{true_val}, rhs_bb, &.{});
         self.builder.switchToBlock(rhs_bb);
-        const rhs = self.lowerBoolCondition(bop.rhs);
+        const rhs = self.lowerShortCircuitRhs(node);
         self.builder.br(merge_bb, &.{rhs});
         self.builder.switchToBlock(merge_bb);
         return self.builder.blockParam(merge_bb, 0, .bool);

@@ -1,0 +1,23 @@
+// Taking a binding's address lets a write through it clear the binding, so a
+// later call or store through a pointer ends the binding's proof.
+@import "modules/std.sx";
+
+clear :: (p: *?i64) { p.* = null; }
+
+passed :: (x: ?i64) -> i64 {
+    if x == null { return 0; }
+    clear(*x);
+    x
+}
+
+kept :: (x: ?i64) -> i64 {
+    p := *x;
+    if x == null { return 0; }
+    p.* = 7;
+    x
+}
+
+main :: () {
+    print("{}\n", kept(5));
+    print("{}\n", passed(5));
+}

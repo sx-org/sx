@@ -1,0 +1,11 @@
+error: cannot use a value of type '?i64' where 'i64' is expected: an optional does not implicitly unwrap; force-unwrap with '?!', supply a fallback with '?? <default>', bind it (`if v := ...`), or guard with '!= null'
+  --> examples/optionals/a-loop-holds-no-proof-of-a-binding-whose-address-is-taken.sx:15:9
+   |
+15 |         sum += x;
+   |         ^^^^^^^^^
+
+error: cannot use a value of type '?i64' where 'i64' is expected: an optional does not implicitly unwrap; force-unwrap with '?!', supply a fallback with '?? <default>', bind it (`if v := ...`), or guard with '!= null'
+  --> examples/optionals/a-loop-holds-no-proof-of-a-binding-whose-address-is-taken.sx:25:9
+   |
+25 |         sum += x;
+   |         ^^^^^^^^^

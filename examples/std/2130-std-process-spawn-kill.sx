@@ -13,7 +13,7 @@ main :: () -> i32 {
 
     code := child.wait(true);
     if code == null { print("wait produced no status\n"); return 1; }
-    print("terminated: {}\n", code?!);
+    print("terminated: {}\n", code);
 
     // A reaped child answers from its stored status and never re-enters
     // waitpid; its pid may already belong to someone else.

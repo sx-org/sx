@@ -643,7 +643,7 @@ testFiles :: (alloc: Allocator) -> bool {
     if maybeFile == null {
         fs.deleteFile(archivePath); fs.deleteFile(inputPath); fs.deleteFile(extractedPath); return false;
     }
-    file := maybeFile?!;
+    file : fs.File = maybeFile;
     buffer : [16]u8 = ---;
     read := file.read(buffer[..]);
     closed := file.close();
@@ -864,13 +864,13 @@ testAddFromFailures :: (alloc: Allocator) -> bool {
     controlLen := -1;
     maybeFile := fs.openFile(filePath, .read);
     if maybeFile != null {
-        handle := maybeFile?!;
+        handle : fs.File = maybeFile;
         fileLen = handle.read(fileBuf[..]);
         handle.close();
     }
     maybeControl := fs.openFile(controlPath, .read);
     if maybeControl != null {
-        handle := maybeControl?!;
+        handle : fs.File = maybeControl;
         controlLen = handle.read(controlBuf[..]);
         handle.close();
     }

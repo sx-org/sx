@@ -1,0 +1,16 @@
+// `?!` on a binding a guard proves present is refused; a reassignment ends the
+// proof, so the `?!` after it compiles.
+@import "modules/std.sx";
+
+guarded :: (x: ?i64) -> i64 {
+    if x == null { return 0; }
+    x?!
+}
+
+reassigned :: (x: ?i64, y: ?i64) -> i64 {
+    if x == null { return 0; }
+    x = y;
+    x?!
+}
+
+main :: () { print("{} {}\n", guarded(4), reassigned(4, 5)); }

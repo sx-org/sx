@@ -1,0 +1,19 @@
+// `?!` in a loop that passes the binding to a pointer parameter compiles: the
+// next iteration reads what the call stored, and stops the program at the null.
+@import "modules/std.sx";
+
+clear :: (p: *?i64) { p.* = null; }
+
+passed :: (x: ?i64) -> i64 {
+    if x == null { return 0; }
+    sum := 0;
+    for i in 0..2 {
+        sum += x?!;
+        clear(x);
+    }
+    sum
+}
+
+main :: () {
+    print("{}\n", passed(5));
+}

@@ -2438,6 +2438,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
     if (asgn.target.data == .identifier) {
         self.killNarrowing(asgn.target.data.identifier.name);
     }
+    defer if (asgn.target.data != .identifier) self.endExposedProofs();
     noteStorageWrite(self, asgn.target);
 
     // Writes through a constant are rejected at compile time:
@@ -3814,6 +3815,10 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
         if (t.data == .identifier) self.killNarrowing(t.data.identifier.name);
         noteStorageWrite(self, t);
     }
+    const stores_elsewhere = for (ma.targets) |t| {
+        if (t.data != .identifier) break true;
+    } else false;
+    defer if (stores_elsewhere) self.endExposedProofs();
 
     // Select every namespace-qualified destination before evaluating any RHS.
     // Multi-assignment evaluates all values first, so a later re-resolution

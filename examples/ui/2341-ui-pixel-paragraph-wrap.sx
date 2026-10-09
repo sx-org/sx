@@ -29,7 +29,7 @@ main :: () {
         print("pixels skipped: no display/GPU on this host\n");
         return;
     }
-    s := surface?!;
+    s : PixelSurface = surface;
 
     tree := fluent.RenderTree.init();
     ctx := fluent.RenderContext.init(*tree);

@@ -8,7 +8,7 @@ main :: () -> i32 {
     push .{ allocator = tracker } {
         resolved := fs.realPath(".");
         if resolved == null { print("realPath(.) is null\n"); return 1; }
-        got := resolved?!;
+        got : string = resolved;
         print("absolute: {}\n", got[0] == '/');
         print("outstanding with the answer: {}\n", tracker.leakCount());
         mem.free(context.allocator, got);

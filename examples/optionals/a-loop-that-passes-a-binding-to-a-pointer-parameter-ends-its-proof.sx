@@ -1,0 +1,44 @@
+// A loop carries no proof made before it of a binding it passes to a pointer
+// parameter: an iteration may clear it through the address. Passing it to a
+// value parameter keeps the proof, unless the loop declares the callee.
+@import "modules/std.sx";
+
+clear :: (p: *?i64) { p.* = null; }
+show :: (v: ?i64) { print("{}\n", v ?? -1); }
+
+passed :: (x: ?i64) -> i64 {
+    if x == null { return 0; }
+    sum := 0;
+    for i in 0..2 {
+        sum += x;
+        clear(x);
+    }
+    sum
+}
+
+shown :: (x: ?i64) -> i64 {
+    if x == null { return 0; }
+    sum := 0;
+    for i in 0..2 {
+        sum += x;
+        show(x);
+    }
+    sum
+}
+
+declared :: (x: ?i64) -> i64 {
+    if x == null { return 0; }
+    sum := 0;
+    for i in 0..2 {
+        sum += x;
+        look := |v: ?i64| -> i64 { v ?? 0 };
+        sum += look(x);
+    }
+    sum
+}
+
+main :: () {
+    print("{}\n", shown(5));
+    print("{}\n", passed(5));
+    print("{}\n", declared(5));
+}

@@ -20,7 +20,7 @@ main :: () -> i32 {
     // ?[*:0]u8: present, absent, and null-returning C call
     p := getenvC("PATH");
     if p == null { print("BUG: PATH null\n"); return 2; }
-    if p?![0..].len < 1 { print("BUG: PATH empty\n"); return 3; }
+    if p[0..].len < 1 { print("BUG: PATH empty\n"); return 3; }
     q := getenvC("NO_SUCH_VAR_ZZZ");
     if q != null { print("BUG: missing not null\n"); return 4; }
     d := dlerrorC();

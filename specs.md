@@ -2171,6 +2171,13 @@ Extracts the payload, traps at runtime if null:
 x: ?i32 = 42;
 val := x?!;            // val : i32 = 42
 ```
+On a binding that flow-sensitive narrowing proves present, `?!` is a compile
+error naming the binding: there the bare name is the payload, and its only
+spelling.
+```sx
+if x == null { return; }
+print("{}\n", x?!);    // error: 'x' is already proven present here
+```
 
 #### Default (`??`)
 Returns the payload if present, otherwise evaluates the right-hand side:
@@ -2241,7 +2248,32 @@ if a == null or b == null { return; }
 // both a and b are narrowed after the guard
 ```
 
+The right operand of `and` sees what its left operand proves when true, and
+the right operand of `or` what its left operand proves when false. With
+`c: ?Cell` and `got: ?[]T`:
+```sx
+c != null and c.n > 0
+got == null or got.len != want.len
+```
+
+A narrowed binding reads as its payload, so `?!` on it is refused (§Force
+Unwrap).
+
 Reassignment kills narrowing.
+
+Taking a binding's address lets a write through that address clear it: from
+then on, every call and every store to anything but a bare name kills its
+narrowing, and a fresh guard narrows it again.
+
+No proof of the forming frame narrows a binding in a build block's body, so a
+call the body makes that passes one of the frame's bindings by name, as an
+argument or as a method's receiver, counts as taking that binding's address.
+
+A loop holds no proof from before it, in the loop or after it, of a binding it
+reassigns anywhere in its condition or body, or of one whose address is taken
+before the loop or within it. Within a loop, a call whose callee is, or is
+reached through, a name the loop declares counts as taking the address of each
+binding it passes by name.
 
 A guard proves the *binding* it names, so a declaration shadowing a narrowed
 name starts with no proof of presence.
