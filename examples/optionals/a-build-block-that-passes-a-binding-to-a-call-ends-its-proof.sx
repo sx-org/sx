@@ -1,6 +1,6 @@
-// A method a build block's body calls on one of the forming frame's optionals
-// may clear it: the binding is not proven present after the call that receives
-// the block, nor in a loop that forms it.
+// A call a build block's body makes that passes one of the forming frame's
+// optionals by name may clear it: the binding is not proven present after the
+// call that receives the block, nor in a loop that forms it.
 @import "modules/std.sx";
 
 Sink :: struct {
@@ -15,6 +15,7 @@ collect :: (content: $B/@BuildBlock(i64)) -> i64 {
 }
 
 wipe :: ufcs (self: *?i64) { self.* = null; }
+clear :: (p: *?i64) { p.* = null; }
 
 after :: (x: ?i64) -> i64 {
     if x == null { return 0; }
@@ -32,7 +33,14 @@ repeated :: (x: ?i64) -> i64 {
     sum
 }
 
+passed :: (x: ?i64) -> i64 {
+    if x == null { return 0; }
+    t := collect() { clear(x); 1; };
+    x + t
+}
+
 main :: () {
     print("{}\n", after(5));
     print("{}\n", repeated(5));
+    print("{}\n", passed(5));
 }

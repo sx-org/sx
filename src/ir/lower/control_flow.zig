@@ -112,7 +112,7 @@ const Writes = struct {
     /// The names it declares that are in scope where the walk stands.
     declared: std.ArrayList([]const u8) = .empty,
     /// The walk stands in a closure body. No proof of the forming frame narrows
-    /// a name there, so a method called on a binding may receive its address.
+    /// a name there, so a call passing a binding by name may receive its address.
     in_body: bool = false,
 
     fn deinit(self: *Writes, alloc: std.mem.Allocator) void {
@@ -131,6 +131,12 @@ const Writes = struct {
 
     fn declare(self: *Writes, alloc: std.mem.Allocator, name: []const u8) void {
         self.declared.append(alloc, name) catch unreachable;
+    }
+
+    fn address(self: *Writes, l: *Lowering, node: *const Node) void {
+        if (node.data != .identifier) return;
+        const b = self.binding(l, node.data.identifier.name) orelse return;
+        self.addressed.append(l.alloc, b) catch unreachable;
     }
 };
 
@@ -183,17 +189,13 @@ fn collectWrites(self: *Lowering, node: *const Node, out: *Writes) void {
             for (ma.values) |v| walk(self, v, out);
         },
         .unary_op => |u| {
-            if (u.op == .address_of and u.operand.data == .identifier) {
-                if (out.binding(self, u.operand.data.identifier.name)) |b| out.addressed.append(self.alloc, b) catch unreachable;
-            }
+            if (u.op == .address_of) out.address(self, u.operand);
             walk(self, u.operand, out);
         },
         .call => |c| {
-            if (out.in_body and c.callee.data == .field_access) {
-                const recv = c.callee.data.field_access.object;
-                if (recv.data == .identifier) {
-                    if (out.binding(self, recv.data.identifier.name)) |b| out.addressed.append(self.alloc, b) catch unreachable;
-                }
+            if (out.in_body) {
+                if (c.callee.data == .field_access) out.address(self, c.callee.data.field_access.object);
+                for (c.args) |a| out.address(self, if (a.data == .named_arg) a.data.named_arg.value else a);
             }
             walk(self, c.callee, out);
             for (c.args) |a| walk(self, a, out);

@@ -754,6 +754,7 @@ fn coerceGlobalFnPointerArgs(self: *Lowering, args: []Ref, info: types.TypeInfo.
                     if (self.scope) |scope| {
                         if (scope.lookup(c.args[ai].data.identifier.name)) |binding| {
                             if (binding.is_alloca) {
+                                self.exposeAddress(binding);
                                 arg.* = self.builder.emit(.{ .addr_of = .{ .operand = binding.ref } }, dst_ty);
                                 continue;
                             }
@@ -2599,6 +2600,7 @@ fn lowerCallArg(self: *Lowering, arg: *const Node, ai: usize, param_types: []con
                 const local = if (self.scope) |scope| scope.lookup(nm) else null;
                 if (local) |binding| {
                     if (binding.is_alloca and self.module.types.sameType(binding.ty, pti.pointer.pointee)) {
+                        self.exposeAddress(binding);
                         const ptr_ty = self.module.types.ptrTo(binding.ty);
                         return self.builder.emit(.{ .addr_of = .{ .operand = binding.ref } }, ptr_ty);
                     }

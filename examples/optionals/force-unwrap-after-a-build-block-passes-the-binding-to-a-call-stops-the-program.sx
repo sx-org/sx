@@ -1,5 +1,5 @@
-// `?!` on a binding a build block's body calls a method on compiles: it reads
-// what the method stored, and stops the program at the null.
+// `?!` on a binding a build block's body passes to a call compiles: it reads
+// what the call stored, and stops the program at the null.
 @import "modules/std.sx";
 
 Sink :: struct {
@@ -14,6 +14,7 @@ collect :: (content: $B/@BuildBlock(i64)) -> i64 {
 }
 
 wipe :: ufcs (self: *?i64) { self.* = null; }
+clear :: (p: *?i64) { p.* = null; }
 
 after :: (x: ?i64) -> i64 {
     if x == null { return 0; }
@@ -31,7 +32,14 @@ repeated :: (x: ?i64) -> i64 {
     sum
 }
 
+passed :: (x: ?i64) -> i64 {
+    if x == null { return 0; }
+    t := collect() { clear(x); 1; };
+    x?! + t
+}
+
 main :: () {
+    print("{}\n", passed(5));
     print("{}\n", after(5));
     print("{}\n", repeated(5));
 }

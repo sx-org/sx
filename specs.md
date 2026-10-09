@@ -2266,8 +2266,8 @@ then on, every call and every store to anything but a bare name kills its
 narrowing, and a fresh guard narrows it again.
 
 No proof of the forming frame narrows a binding in a build block's body, so a
-method the body calls on one of the frame's bindings takes that binding's
-address.
+call the body makes that passes one of the frame's bindings by name, as an
+argument or as a method's receiver, counts as taking that binding's address.
 
 A loop holds no proof from before it, in the loop or after it, of a binding it
 reassigns anywhere in its condition or body, or of one whose address is taken
