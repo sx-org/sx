@@ -1,0 +1,1 @@
+force-unwrap-in-a-loop-that-passes-the-binding-to-a-pointer-parameter-stops-the-program.sx:11: force-unwrap of a null optional

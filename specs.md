@@ -2271,7 +2271,9 @@ argument or as a method's receiver, counts as taking that binding's address.
 
 A loop holds no proof from before it, in the loop or after it, of a binding it
 reassigns anywhere in its condition or body, or of one whose address is taken
-before the loop or within it.
+before the loop or within it. Within a loop, a call whose callee is, or is
+reached through, a name the loop declares counts as taking the address of each
+binding it passes by name.
 
 A guard proves the *binding* it names, so a declaration shadowing a narrowed
 name starts with no proof of presence.

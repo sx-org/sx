@@ -4438,6 +4438,7 @@ pub const Lowering = struct {
     pub const expandCallDefaults = lower_call.expandCallDefaults;
     pub const userParamTypes = lower_call.userParamTypes;
     pub const resolveCallParamTypes = lower_call.resolveCallParamTypes;
+    pub const writtenParamTypes = lower_call.writtenParamTypes;
     pub const callableLocalShadow = lower_call.callableLocalShadow;
 
     // --- lower/cvariadic.zig (lower_cvariadic) ---

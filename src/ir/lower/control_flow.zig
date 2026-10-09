@@ -121,10 +121,15 @@ const Writes = struct {
         self.declared.deinit(alloc);
     }
 
+    fn declares(self: *const Writes, name: []const u8) bool {
+        for (self.declared.items) |d| if (std.mem.eql(u8, d, name)) return true;
+        return false;
+    }
+
     /// The binding `name` names where the walk stands: none for a name the
     /// subtree declares.
     fn binding(self: *const Writes, l: *Lowering, name: []const u8) ?lower.Binding {
-        for (self.declared.items) |d| if (std.mem.eql(u8, d, name)) return null;
+        if (self.declares(name)) return null;
         const scope = l.scope orelse return null;
         return scope.lookup(name);
     }
@@ -168,6 +173,46 @@ fn collectBodyWrites(self: *Lowering, params: []const ast.Param, env: []const as
     collectWrites(self, body, out);
 }
 
+/// Gather each optional binding, its address not yet taken, that `c` passes by
+/// name to a parameter pointing at the binding's type. A callee the walk cannot
+/// resolve, because the subtree declares the name its path starts at or it
+/// resolves to no signature, may take the address of each one.
+fn collectArgumentAddresses(self: *Lowering, c: *const ast.Call, out: *Writes) void {
+    var resolved = false;
+    var params: ?[]const ?TypeId = null;
+    for (c.args, 0..) |a, k| {
+        const arg = if (a.data == .named_arg) a.data.named_arg.value else a;
+        if (arg.data != .identifier) continue;
+        const b = out.binding(self, arg.data.identifier.name) orelse continue;
+        const id = b.id orelse continue;
+        if (!b.is_alloca or b.ty.isBuiltin() or self.module.types.get(b.ty) != .optional or self.exposed.contains(id)) continue;
+        if (!resolved) {
+            resolved = true;
+            const root = calleeRoot(c.callee);
+            if (root == null or !out.declares(root.?)) params = self.writtenParamTypes(c);
+        }
+        const pt = (params orelse {
+            out.addressed.append(self.alloc, b) catch unreachable;
+            continue;
+        })[k] orelse continue;
+        if (pt.isBuiltin()) continue;
+        const info = self.module.types.get(pt);
+        if (info == .pointer and self.module.types.sameType(b.ty, info.pointer.pointee)) out.addressed.append(self.alloc, b) catch unreachable;
+    }
+}
+
+/// The name a callee path starts at.
+fn calleeRoot(callee: *const Node) ?[]const u8 {
+    var node = callee;
+    while (true) node = switch (node.data) {
+        .identifier => |id| return id.name,
+        .field_access => |fa| fa.object,
+        .index_expr => |ie| ie.object,
+        .deref_expr => |de| de.operand,
+        else => return null,
+    };
+}
+
 fn collectArmWrites(self: *Lowering, arm: ast.MatchArm, out: *Writes) void {
     if (arm.pattern) |p| collectWrites(self, p, out);
     collectScopedWrites(self, arm.capture, arm.body, out);
@@ -192,11 +237,11 @@ fn collectWrites(self: *Lowering, node: *const Node, out: *Writes) void {
             if (u.op == .address_of) out.address(self, u.operand);
             walk(self, u.operand, out);
         },
-        .call => |c| {
+        .call => |*c| {
             if (out.in_body) {
                 if (c.callee.data == .field_access) out.address(self, c.callee.data.field_access.object);
                 for (c.args) |a| out.address(self, if (a.data == .named_arg) a.data.named_arg.value else a);
-            }
+            } else collectArgumentAddresses(self, c, out);
             walk(self, c.callee, out);
             for (c.args) |a| walk(self, a, out);
         },
