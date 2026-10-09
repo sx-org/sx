@@ -18,15 +18,6 @@ total :: (n: i64) -> i64 {
     s
 }
 
-weighted :: (n: i64) -> i64 {
-    xs := pick(n);
-    if xs == null { return 0; }
-    defer mem.free(context.allocator, xs);
-    s : i64 = 0;
-    for x, i in xs, 0.. { s += x * i; }
-    s
-}
-
 scaled :: (a: ?[3]i64) -> i64 {
     if a == null { return 0; }
     for *x in a { x.* *= 10; }
@@ -34,5 +25,5 @@ scaled :: (a: ?[3]i64) -> i64 {
 }
 
 main :: () {
-    print("{} {} {} {}\n", total(3), total(0), weighted(3), scaled(.{ 1, 2, 3 }));
+    print("{} {} {}\n", total(3), total(0), scaled(.{ 1, 2, 3 }));
 }
