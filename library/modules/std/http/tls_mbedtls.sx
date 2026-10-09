@@ -472,16 +472,20 @@ impl http.TlsAcceptor for TlsServer {
     }
 }
 
+// What a TlsClientConfig checks a server certificate against.
+TlsTrust :: enum {
+    // REQUIRED verification against this PEM trust anchor + the connect-time
+    // hostname (a self-signed server cert can BE the anchor — mbedTLS trusts
+    // an exact match in the CA list).
+    ca: []u8;
+    // VERIFY_NONE: accepts ANY certificate. The name is the warning; for
+    // tests and localhost tooling only.
+    insecure;
+}
+
 // The shared client TLS state: trust anchor + RNG + SslConfig. MUST outlive
 // every connection it minted (ClientOpts.tls borrows `@this`). The config
-// points into the value itself, so it is set up in place. Two setups, both
-// loud:
-//   setup(caPem)  — REQUIRED verification against the explicit trust
-//                    anchor + the connect-time hostname (a self-signed
-//                    server cert can BE the anchor — mbedTLS trusts an
-//                    exact match in the CA list).
-//   insecure()     — VERIFY_NONE: accepts ANY certificate. The name is the
-//                    warning; for tests and localhost tooling only.
+// points into the value itself, so it is set up in place.
 TlsClientConfig :: struct {
     conf:    mbedtls.SslConfig;
     ca:      mbedtls.X509Crt;
@@ -490,10 +494,9 @@ TlsClientConfig :: struct {
     a:       Allocator;
     ok:      bool = false;
 
-    // Shared setup head, writing every field: config defaults (CLIENT) +
-    // RNG, leaving ok = false (connect mints nothing until setup or
-    // insecure finishes). A failure raises with everything it built freed.
-    setupBase :: (self: *TlsClientConfig, a: Allocator) -> !TlsErr {
+    // Writes every field: config defaults (CLIENT) + RNG + `trust`. A
+    // failure raises with everything it built freed.
+    setup :: (self: *TlsClientConfig, trust: TlsTrust, a: Allocator = context.allocator) -> !TlsErr {
         self.* = .{ a = a };
         mbedtls.mbedtls_ssl_config_init(*self.conf);
         mbedtls.mbedtls_x509_crt_init(*self.ca);
@@ -508,19 +511,20 @@ TlsClientConfig :: struct {
             raise .Config;
         }
         mbedtls.mbedtls_ssl_conf_rng(*self.conf, mbedtls.mbedtls_ctr_drbg_random, *self.drbg);
-    }
-
-    setup :: (self: *TlsClientConfig, caPem: []u8, a: Allocator) -> !TlsErr {
-        try self.setupBase(a);
-        buf, n := nulDup(a, caPem);
-        rc := mbedtls.mbedtls_x509_crt_parse(*self.ca, buf, n);
-        a.deallocBytes(buf);
-        if rc != 0 {
-            self.deinit();
-            raise .Cert;
+        match trust {
+            case .ca: |caPem| {
+                buf, n := nulDup(a, caPem);
+                rc := mbedtls.mbedtls_x509_crt_parse(*self.ca, buf, n);
+                a.deallocBytes(buf);
+                if rc != 0 {
+                    self.deinit();
+                    raise .Cert;
+                }
+                mbedtls.mbedtls_ssl_conf_ca_chain(*self.conf, *self.ca, null);
+                mbedtls.mbedtls_ssl_conf_authmode(*self.conf, mbedtls.MBEDTLS_SSL_VERIFY_REQUIRED);
+            }
+            case .insecure: mbedtls.mbedtls_ssl_conf_authmode(*self.conf, mbedtls.MBEDTLS_SSL_VERIFY_NONE);
         }
-        mbedtls.mbedtls_ssl_conf_ca_chain(*self.conf, *self.ca, null);
-        mbedtls.mbedtls_ssl_conf_authmode(*self.conf, mbedtls.MBEDTLS_SSL_VERIFY_REQUIRED);
         self.ok = true;
     }
 
@@ -528,15 +532,9 @@ TlsClientConfig :: struct {
         if data := fs.readFile(caPath) {
             defer context.allocator.deallocBytes(data.ptr);
             b : []u8 = .{ ptr = data.ptr, len = data.len };
-            return self.setup(b, a);
+            return self.setup(.ca{b}, a);
         }
         raise .Read;
-    }
-
-    insecure :: (self: *TlsClientConfig, a: Allocator = context.allocator) -> !TlsErr {
-        try self.setupBase(a);
-        mbedtls.mbedtls_ssl_conf_authmode(*self.conf, mbedtls.MBEDTLS_SSL_VERIFY_NONE);
-        self.ok = true;
     }
 
     deinit :: (self: *TlsClientConfig) {
