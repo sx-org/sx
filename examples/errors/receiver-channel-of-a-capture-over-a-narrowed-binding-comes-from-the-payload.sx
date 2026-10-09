@@ -1,0 +1,23 @@
+// A failable method called on a `for` capture over a narrowed binding names the
+// payload element's method, so the inferred `!` stays static and forwards
+// through a named set.
+@import "modules/std.sx";
+IoErr :: error { Failed; }
+File :: struct {
+    ok: bool = true;
+    close :: (self: *File) -> ! { if self.ok == false { raise IoErr.Failed; } }
+}
+
+shutAll :: (files: ?[]File) -> ! {
+    if files == null { return; }
+    for *f in files { try f.close(); }
+}
+
+run :: (files: ?[]File) -> !IoErr { try shutAll(files); }
+
+main :: () {
+    fs : [2]File = .{ File{}, File{ ok = false } };
+    a := run(fs[0..2]);
+    b := run(fs[0..1]);
+    print("{} {}\n", a == .Failed, b == .Failed);
+}

@@ -2259,8 +2259,9 @@ got == null or got.len != want.len
 ```
 
 A narrowed binding reads as its payload: a declaration without a type
-annotation that copies it (`y := x`) takes the payload type, and `?!` on it is
-refused (§Force Unwrap).
+annotation that copies it (`y := x`) takes the payload type, a `for` over it
+(`for e in xs`) iterates the payload, and `?!` on it is refused (§Force
+Unwrap).
 
 Reassignment kills narrowing.
 

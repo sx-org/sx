@@ -1,0 +1,11 @@
+error: cannot iterate a value of type '?[]i64'
+  --> examples/optionals/a-for-over-an-optional-takes-a-guard-not-an-unwrap.sx:7:14
+   |
+ 7 |     for x in xs { s += x; }
+   |              ^^
+
+error: 'xs' is already proven present here; write 'xs' without '?!'
+  --> examples/optionals/a-for-over-an-optional-takes-a-guard-not-an-unwrap.sx:14:14
+   |
+14 |     for x in xs?! { s += x; }
+   |              ^^^^

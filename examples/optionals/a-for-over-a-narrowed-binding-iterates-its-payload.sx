@@ -1,0 +1,38 @@
+// A `for` over a narrowed binding iterates its payload, and a by-reference
+// capture over a narrowed array writes the binding's own storage.
+@import "modules/std.sx";
+
+pick :: (n: i64) -> ?[]i64 {
+    if n == 0 { return null; }
+    xs := mem.alloc(context.allocator, i64, n);
+    for *x, i in xs, 0.. { x.* = i + 1; }
+    xs
+}
+
+total :: (n: i64) -> i64 {
+    xs := pick(n);
+    if xs == null { return 0; }
+    defer mem.free(context.allocator, xs);
+    s : i64 = 0;
+    for x in xs { s += x; }
+    s
+}
+
+weighted :: (n: i64) -> i64 {
+    xs := pick(n);
+    if xs == null { return 0; }
+    defer mem.free(context.allocator, xs);
+    s : i64 = 0;
+    for x, i in xs, 0.. { s += x * i; }
+    s
+}
+
+scaled :: (a: ?[3]i64) -> i64 {
+    if a == null { return 0; }
+    for *x in a { x.* *= 10; }
+    a[0] + a[1] + a[2]
+}
+
+main :: () {
+    print("{} {} {} {}\n", total(3), total(0), weighted(3), scaled(.{ 1, 2, 3 }));
+}
