@@ -678,8 +678,9 @@ subprocess-isolated, on macOS and validated end-to-end on aarch64-Linux.
   (`open`/`openAddr`/`sendOn`/`recvOn`/`closeConn` under `ClientOpts`):
   resolver or `Addr` dialing (unix included), connect + per-op I/O
   timeouts, HTTPS through the `TlsDialer` seam
-  (`tls_mbedtls.TlsClientConfig` — explicit trust anchor with hostname
-  verification, or the loudly-named `insecure()`; TLS 1.3 session tickets
+  (`tls_mbedtls.TlsClientConfig` — `setup(.ca{pem})` verifies against an
+  explicit trust anchor and the hostname, the loudly-named
+  `setup(.insecure)` verifies nothing; TLS 1.3 session tickets
   handled), chunked transfer decoding plus bounded transparent gzip/deflate
   content decoding, and truncated responses surfaced as errors — never a
   padded body. A `ClientRequest` (method, path, host, extraHeaders, body)

@@ -12,8 +12,8 @@
 //       defaults to the dialed host).
 //   tls_mbedtls.TlsClientConfig     — the client TLS provider: setupFiles
 //       (explicit trust anchor + hostname verification; a self-signed
-//       server cert can BE the anchor) or insecure() (VERIFY_NONE, loudly
-//       named).
+//       server cert can BE the anchor) or setup(.insecure) (VERIFY_NONE,
+//       loudly named).
 //
 // Cases (server on a background thread — the client is blocking):
 //   A. dialHost: open("localhost", …) → GET → 200 (resolver path).
@@ -22,7 +22,7 @@
 //      to the exact expected body, transparently, on a keep-alive conn
 //      that then serves a SECOND request (framing fully consumed).
 //   D. TLS: open with TlsClientConfig trusting the fixture cert +
-//      tlsHost matching its CN → HTTPS 200. insecure() also works.
+//      tlsHost matching its CN → HTTPS 200. setup(.insecure) also works.
 //      A client trusting a DIFFERENT cert must FAIL the open (verify).
 //   E. connect timeout: a dial into a full, never-accepted listen queue
 //      errors instead of hanging (bounded by connectTimeoutMs).
@@ -218,9 +218,9 @@ run :: () -> i32 {
                                     tls = xx *wcc, tlsHost = "client-transport.test" };
     connW, ew := http.Client.open("127.0.0.1", tsrv.cfg.port, optsBad);
     if !ew { http.Client.closeConn(*connW); wcc.deinit(); tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 37; }
-    // insecure() accepts whatever cert is presented.
+    // setup(.insecure) accepts whatever cert is presented.
     icc : tlsp.TlsClientConfig = .{};
-    icc.insecure() catch { wcc.deinit(); tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 38; };
+    icc.setup(.insecure) catch { wcc.deinit(); tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 38; };
     optsIns : http.ClientOpts = .{ connectTimeoutMs = 2000, ioTimeoutMs = 5000,
                                     tls = xx *icc, tlsHost = "whatever.test" };
     connI, ei := http.Client.open("127.0.0.1", tsrv.cfg.port, optsIns);
