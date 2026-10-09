@@ -1,0 +1,16 @@
+// A `@get` read in the right operand of `and` is a call, and one that writes
+// through the binding's taken address ends the proof the left operand made.
+@import "modules/std.sx";
+
+Holder :: struct {
+    p: *?i64;
+    zap :: (self: *Holder) -> bool @get { self.p.* = null; true }
+}
+
+next :: (x: ?i64) -> i64 {
+    h := Holder{ p = *x };
+    if x != null and h.zap { return x + 1; }
+    0
+}
+
+main :: () { print("{}\n", next(5)); }

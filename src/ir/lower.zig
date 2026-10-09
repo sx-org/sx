@@ -797,9 +797,12 @@ pub const Lowering = struct {
     /// inside one argument does not reach that call's other arguments.
     narrowed: std.AutoHashMap(BindingId, []const CallArgument) = undefined,
     /// Optional bindings whose address has been taken. A write through that
-    /// address can clear one, so its proof ends at every call and every store
-    /// to anything but a bare name.
+    /// address can clear one, so its proof ends at every call, every store to
+    /// anything but a bare name, and every loop header.
     exposed: std.AutoHashMapUnmanaged(BindingId, void) = .empty,
+    /// The proofs of an `and` / `or` left operand that lowering its right
+    /// operand ended, by operator node.
+    rhs_ended: std.AutoHashMapUnmanaged(*const Node, []const BindingId) = .empty,
     /// The calls being lowered, innermost last.
     open_calls: std.ArrayList(OpenCall) = .empty,
     /// The arguments of `open_calls` the lowering stands in.
@@ -4090,6 +4093,7 @@ pub const Lowering = struct {
     pub const exposeAddress = lower_control_flow.exposeAddress;
     pub const endExposedProofs = lower_control_flow.endExposedProofs;
     pub const endLoopProofs = lower_control_flow.endLoopProofs;
+    pub const endBuildBlockProofs = lower_control_flow.endBuildBlockProofs;
     pub const narrowSnapshot = lower_control_flow.narrowSnapshot;
     pub const narrowSet = lower_control_flow.narrowSet;
     pub const narrowRestore = lower_control_flow.narrowRestore;

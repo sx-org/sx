@@ -1,0 +1,14 @@
+// A loop that declares and assigns a binding shadowing a narrowed name keeps
+// the proof of the outer binding.
+@import "modules/std.sx";
+
+next :: (x: ?i64) -> i64 {
+    if x == null { return 0; }
+    for i in 0..2 {
+        x : ?i64 = null;
+        x = 3;
+    }
+    x + 1
+}
+
+main :: () { print("{}\n", next(5)); }

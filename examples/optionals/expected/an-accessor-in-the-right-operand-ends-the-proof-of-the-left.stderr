@@ -1,0 +1,5 @@
+error: cannot use a value of type '?i64' as an operand: an optional does not implicitly unwrap; force-unwrap with '?!', supply a fallback with '?? <default>', or guard with '!= null'
+  --> examples/optionals/an-accessor-in-the-right-operand-ends-the-proof-of-the-left.sx:12:37
+   |
+12 |     if x != null and h.zap { return x + 1; }
+   |                                     ^

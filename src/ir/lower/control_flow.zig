@@ -14,6 +14,7 @@ const BlockId = inst_mod.BlockId;
 const lower = @import("../lower.zig");
 const lower_stmt = @import("stmt.zig");
 const lower_error = @import("error.zig");
+const lower_juxtaposition = @import("juxtaposition.zig");
 const Lowering = lower.Lowering;
 const Scope = lower.Scope;
 const BindingId = lower.BindingId;
@@ -55,7 +56,7 @@ pub fn nullCmpBinding(self: *Lowering, bop: ast.BinaryOp) ?BindingId {
 
 /// Bindings proven present when `cond` is TRUE: `x != null`, and the `and` of
 /// such tests (`a != null and b != null`). A proof of the left operand stands
-/// only if the right operand does not end it.
+/// only if lowering the right operand did not end it.
 pub fn collectPresentIfTrue(self: *Lowering, cond: *const Node, out: *std.ArrayList(BindingId)) void {
     if (cond.data != .binary_op) return;
     const bop = cond.data.binary_op;
@@ -64,7 +65,7 @@ pub fn collectPresentIfTrue(self: *Lowering, cond: *const Node, out: *std.ArrayL
         .and_op => {
             const start = out.items.len;
             self.collectPresentIfTrue(bop.lhs, out);
-            dropEnded(self, bop.rhs, out, start);
+            dropEnded(self, cond, out, start);
             self.collectPresentIfTrue(bop.rhs, out);
         },
         else => {},
@@ -83,65 +84,85 @@ pub fn collectPresentIfFalse(self: *Lowering, cond: *const Node, out: *std.Array
         .or_op => {
             const start = out.items.len;
             self.collectPresentIfFalse(bop.lhs, out);
-            dropEnded(self, bop.rhs, out, start);
+            dropEnded(self, cond, out, start);
             self.collectPresentIfFalse(bop.rhs, out);
         },
         else => {},
     }
 }
 
-/// Drop from `proofs[start..]` every proof that running `node` ends.
-fn dropEnded(self: *Lowering, node: *const Node, proofs: *std.ArrayList(BindingId), start: usize) void {
-    if (proofs.items.len == start) return;
-    var writes = Writes{};
-    defer writes.deinit(self.alloc);
-    collectWrites(self, node, &writes);
+/// Drop from `proofs[start..]` every proof that lowering the right operand of
+/// `op` ended.
+fn dropEnded(self: *Lowering, op: *const Node, proofs: *std.ArrayList(BindingId), start: usize) void {
+    const ended = self.rhs_ended.get(op) orelse return;
     var i = start;
     while (i < proofs.items.len) {
-        if (writes.ends(self, proofs.items[i])) _ = proofs.swapRemove(i) else i += 1;
+        if (std.mem.indexOfScalar(BindingId, ended, proofs.items[i]) != null) _ = proofs.swapRemove(i) else i += 1;
     }
 }
 
-/// What running a subtree may do to the proofs standing before it.
+/// What running a subtree may do to the bindings in scope before it.
 const Writes = struct {
     /// Bindings it assigns.
     assigned: std.ArrayList(BindingId) = .empty,
     /// Bindings whose address it takes.
     addressed: std.ArrayList(lower.Binding) = .empty,
-    /// It calls, or stores to anything but a bare name.
-    memory: bool = false,
     /// It splices code that is not in the tree (`@insert`).
     unknown: bool = false,
+    /// The names it declares that are in scope where the walk stands.
+    declared: std.ArrayList([]const u8) = .empty,
 
     fn deinit(self: *Writes, alloc: std.mem.Allocator) void {
         self.assigned.deinit(alloc);
         self.addressed.deinit(alloc);
+        self.declared.deinit(alloc);
     }
 
-    /// A taken address ends a proof only together with `memory`.
-    fn ends(self: *const Writes, l: *Lowering, binding: BindingId) bool {
-        if (self.unknown) return true;
-        for (self.assigned.items) |a| if (a == binding) return true;
-        if (!self.memory) return false;
-        if (l.exposed.contains(binding)) return true;
-        for (self.addressed.items) |b| if (b.id == binding) return true;
-        return false;
+    /// The binding `name` names where the walk stands: none for a name the
+    /// subtree declares.
+    fn binding(self: *const Writes, l: *Lowering, name: []const u8) ?lower.Binding {
+        for (self.declared.items) |d| if (std.mem.eql(u8, d, name)) return null;
+        const scope = l.scope orelse return null;
+        return scope.lookup(name);
+    }
+
+    fn declare(self: *Writes, alloc: std.mem.Allocator, name: []const u8) void {
+        self.declared.append(alloc, name) catch unreachable;
     }
 };
 
 fn collectWriteTarget(self: *Lowering, target: *const Node, out: *Writes) void {
-    if (target.data == .identifier) {
-        const scope = self.scope orelse return;
-        if (scope.bindingId(target.data.identifier.name)) |id| out.assigned.append(self.alloc, id) catch unreachable;
-    } else {
-        out.memory = true;
-        collectWrites(self, target, out);
-    }
+    if (target.data != .identifier) return collectWrites(self, target, out);
+    const b = out.binding(self, target.data.identifier.name) orelse return;
+    if (b.id) |id| out.assigned.append(self.alloc, id) catch unreachable;
 }
 
-/// Gather into `out` what lowering `node` may write, naming bindings as the
-/// current scope resolves them. A lambda or nested function body reaches no
-/// enclosing binding.
+/// Walk `body` with `name`, when there is one, declared in it.
+fn collectScopedWrites(self: *Lowering, name: ?[]const u8, body: *const Node, out: *Writes) void {
+    const mark = out.declared.items.len;
+    defer out.declared.shrinkRetainingCapacity(mark);
+    if (name) |n| out.declare(self.alloc, n);
+    collectWrites(self, body, out);
+}
+
+/// Walk a closure body with its parameters and env fields declared.
+fn collectBodyWrites(self: *Lowering, params: []const ast.Param, env: []const ast.EnvField, body: *const Node, out: *Writes) void {
+    const mark = out.declared.items.len;
+    defer out.declared.shrinkRetainingCapacity(mark);
+    for (params) |p| out.declare(self.alloc, p.name);
+    for (env) |f| out.declare(self.alloc, f.name);
+    collectWrites(self, body, out);
+}
+
+fn collectArmWrites(self: *Lowering, arm: ast.MatchArm, out: *Writes) void {
+    if (arm.pattern) |p| collectWrites(self, p, out);
+    collectScopedWrites(self, arm.capture, arm.body, out);
+}
+
+/// Gather into `out` what running `node` may do to the bindings in scope. A
+/// closure body is walked too: as a build block it runs on the forming frame's
+/// locals, and as a closure it names none of them. A nested function body
+/// names none of them.
 fn collectWrites(self: *Lowering, node: *const Node, out: *Writes) void {
     const walk = collectWrites;
     switch (node.data) {
@@ -155,67 +176,76 @@ fn collectWrites(self: *Lowering, node: *const Node, out: *Writes) void {
         },
         .unary_op => |u| {
             if (u.op == .address_of and u.operand.data == .identifier) {
-                if (self.scope) |scope| if (scope.lookup(u.operand.data.identifier.name)) |b|
-                    out.addressed.append(self.alloc, b) catch unreachable;
+                if (out.binding(self, u.operand.data.identifier.name)) |b| out.addressed.append(self.alloc, b) catch unreachable;
             }
             walk(self, u.operand, out);
         },
         .call => |c| {
-            out.memory = true;
             walk(self, c.callee, out);
             for (c.args) |a| walk(self, a, out);
         },
-        .ffi_intrinsic_call => |fi| {
-            out.memory = true;
-            for (fi.args) |a| walk(self, a, out);
-        },
-        .asm_expr => |ae| {
-            out.memory = true;
-            for (ae.operands) |op| if (op.role != .out_value) walk(self, op.payload, out);
-        },
-        // Unsettled: a construction whose `name = value` items are field
-        // inits, or a call whose block is a closure.
+        .ffi_intrinsic_call => |fi| for (fi.args) |a| walk(self, a, out),
+        .asm_expr => |ae| for (ae.operands) |op| if (op.role != .out_value) walk(self, op.payload, out),
+        // Unsettled: read as `settle` will, a construction's `name = value`
+        // items as field inits and a call's block as a closure body.
         .juxtaposition => |jx| {
-            out.memory = true;
             walk(self, jx.expr, out);
-            for (jx.block.data.block.stmts) |s| switch (s.data) {
-                .assignment => |a| if (a.op == .assign and a.target.data == .identifier) walk(self, a.value, out) else walk(self, s, out),
-                else => walk(self, s, out),
-            };
-            if (jx.init_block) |ib| walk(self, ib, out);
+            for (jx.env) |f| walk(self, f.value, out);
+            if (lower_juxtaposition.constructs(self, jx.expr)) {
+                for (jx.block.data.block.stmts) |s| switch (s.data) {
+                    .assignment => |a| if (a.op == .assign and a.target.data == .identifier) walk(self, a.value, out) else walk(self, s, out),
+                    else => walk(self, s, out),
+                };
+                if (jx.init_block) |ib| collectScopedWrites(self, jx.init_block_self orelse "self", ib, out);
+            } else collectBodyWrites(self, jx.params, jx.env, jx.block, out);
         },
+        .lambda => |l| {
+            for (l.env) |f| walk(self, f.value, out);
+            collectBodyWrites(self, l.params, l.env, l.body, out);
+        },
+        .trailing_block => |tb| walk(self, tb.lambda, out),
         .insert_expr => out.unknown = true,
-        .block => |blk| for (blk.stmts) |s| walk(self, s, out),
+        .block => |blk| {
+            const mark = out.declared.items.len;
+            defer out.declared.shrinkRetainingCapacity(mark);
+            for (blk.stmts) |s| walk(self, s, out);
+        },
         .if_expr => |ie| {
             walk(self, ie.condition, out);
-            walk(self, ie.then_branch, out);
+            collectScopedWrites(self, ie.binding_name, ie.then_branch, out);
             if (ie.else_branch) |e| walk(self, e, out);
         },
         .match_expr => |me| {
             walk(self, me.subject, out);
-            for (me.arms) |arm| {
-                if (arm.pattern) |p| walk(self, p, out);
-                walk(self, arm.body, out);
-            }
+            for (me.arms) |arm| collectArmWrites(self, arm, out);
         },
-        .match_arm => |arm| {
-            if (arm.pattern) |p| walk(self, p, out);
-            walk(self, arm.body, out);
-        },
+        .match_arm => |arm| collectArmWrites(self, arm, out),
         .while_expr => |we| {
             walk(self, we.condition, out);
-            walk(self, we.body, out);
+            collectScopedWrites(self, we.binding_name, we.body, out);
         },
         .for_expr => |fe| {
             for (fe.iterables) |it| {
                 walk(self, it.expr, out);
                 if (it.range_end) |e| walk(self, e, out);
             }
+            const mark = out.declared.items.len;
+            defer out.declared.shrinkRetainingCapacity(mark);
+            for (fe.captures) |c| out.declare(self.alloc, c.name);
             walk(self, fe.body, out);
         },
-        .var_decl => |vd| if (vd.value) |v| walk(self, v, out),
-        .const_decl => |cd| walk(self, cd.value, out),
-        .destructure_decl => |dd| walk(self, dd.value, out),
+        .var_decl => |vd| {
+            if (vd.value) |v| walk(self, v, out);
+            out.declare(self.alloc, vd.name);
+        },
+        .const_decl => |cd| {
+            walk(self, cd.value, out);
+            out.declare(self.alloc, cd.name);
+        },
+        .destructure_decl => |dd| {
+            walk(self, dd.value, out);
+            for (dd.names) |n| out.declare(self.alloc, n);
+        },
         .binary_op => |o| {
             walk(self, o.lhs, out);
             walk(self, o.rhs, out);
@@ -233,13 +263,13 @@ fn collectWrites(self: *Lowering, node: *const Node, out: *Writes) void {
         },
         .struct_literal => |sl| {
             for (sl.field_inits) |fi| walk(self, fi.value, out);
-            if (sl.init_block) |ib| walk(self, ib, out);
+            if (sl.init_block) |ib| collectScopedWrites(self, sl.init_block_self orelse "self", ib, out);
         },
         .tuple_literal => |t| for (t.elements) |e| walk(self, e.value, out),
         .array_literal => |al| for (al.elements) |e| walk(self, e, out),
         .self_block => |sb| {
             walk(self, sb.operand, out);
-            walk(self, sb.block, out);
+            collectScopedWrites(self, sb.binder, sb.block, out);
         },
         .defer_stmt => |ds| walk(self, ds.expr, out),
         .push_stmt => |ps| {
@@ -256,7 +286,7 @@ fn collectWrites(self: *Lowering, node: *const Node, out: *Writes) void {
         .try_expr => |te| walk(self, te.operand, out),
         .catch_expr => |ce| {
             walk(self, ce.operand, out);
-            walk(self, ce.body, out);
+            collectScopedWrites(self, ce.binding, ce.body, out);
         },
         .force_unwrap => |fu| walk(self, fu.operand, out),
         .null_coalesce => |nc| {
@@ -268,8 +298,6 @@ fn collectWrites(self: *Lowering, node: *const Node, out: *Writes) void {
         .spread_expr => |se| walk(self, se.operand, out),
         .named_arg => |na| walk(self, na.value, out),
 
-        .lambda,
-        .trailing_block,
         .fn_decl,
         .root,
         .namespace_decl,
@@ -324,6 +352,17 @@ fn collectWrites(self: *Lowering, node: *const Node, out: *Writes) void {
     }
 }
 
+/// End what `writes` reaches: the proof of a binding it assigns, or every proof
+/// when it splices unseen code. A binding whose address it takes is exposed.
+fn endWrites(self: *Lowering, writes: *const Writes) void {
+    if (writes.unknown) {
+        self.narrowed.clearRetainingCapacity();
+        return;
+    }
+    for (writes.assigned.items) |b| _ = self.narrowed.remove(b);
+    for (writes.addressed.items) |b| self.exposeAddress(b);
+}
+
 /// Taking an optional binding's address: from here on, a call or a store to
 /// anything but a bare name may clear it.
 pub fn exposeAddress(self: *Lowering, binding: lower.Binding) void {
@@ -343,25 +382,32 @@ pub fn endExposedProofs(self: *Lowering) void {
     for (ended.items) |b| _ = self.narrowed.remove(b);
 }
 
-/// Entering a loop whose `parts` run on every iteration: what an iteration may
-/// end is ended at the header, so neither a back edge nor a `break` carries a
-/// proof the loop ends.
+/// Entering a loop whose `parts` run on every iteration: a proof the loop may
+/// end is ended at the header, so neither a back edge nor a `break` carries it.
+/// That is the proof of a binding the loop assigns, and of every binding whose
+/// address is taken.
 pub fn endLoopProofs(self: *Lowering, parts: []const *const Node) void {
     var writes = Writes{};
     defer writes.deinit(self.alloc);
     for (parts) |p| collectWrites(self, p, &writes);
-    if (writes.unknown) {
-        self.narrowed.clearRetainingCapacity();
-        return;
-    }
-    for (writes.assigned.items) |b| _ = self.narrowed.remove(b);
-    for (writes.addressed.items) |b| self.exposeAddress(b);
-    if (writes.memory) self.endExposedProofs();
+    endWrites(self, &writes);
+    self.endExposedProofs();
+}
+
+/// Forming the build block `l`: its body runs on the forming frame's locals
+/// within the call that receives it.
+pub fn endBuildBlockProofs(self: *Lowering, l: *const ast.Lambda) void {
+    var writes = Writes{};
+    defer writes.deinit(self.alloc);
+    collectBodyWrites(self, l.params, l.env, l.body, &writes);
+    endWrites(self, &writes);
 }
 
 /// Lower the right operand of `and` / `or` as a condition, under what reaching
-/// it proves: the left operand held for `and`, failed for `or`.
-pub fn lowerShortCircuitRhs(self: *Lowering, bop: *const ast.BinaryOp) Ref {
+/// it proves: the left operand held for `and`, failed for `or`. Records in
+/// `rhs_ended` which of those proofs the right operand ends.
+pub fn lowerShortCircuitRhs(self: *Lowering, node: *const Node) Ref {
+    const bop = node.data.binary_op;
     var present = std.ArrayList(BindingId).empty;
     defer present.deinit(self.alloc);
     if (bop.op == .and_op) self.collectPresentIfTrue(bop.lhs, &present) else self.collectPresentIfFalse(bop.lhs, &present);
@@ -369,6 +415,9 @@ pub fn lowerShortCircuitRhs(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     var saved = self.narrowSnapshot();
     self.applyNarrowing(present.items);
     const rhs = self.lowerBoolCondition(bop.rhs);
+    var ended = std.ArrayList(BindingId).empty;
+    for (present.items) |b| if (!self.narrowed.contains(b)) ended.append(self.alloc, b) catch unreachable;
+    self.rhs_ended.put(self.alloc, node, ended.toOwnedSlice(self.alloc) catch unreachable) catch unreachable;
     self.narrowRestore(&saved);
     return rhs;
 }

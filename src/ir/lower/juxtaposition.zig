@@ -44,7 +44,7 @@ pub fn settle(self: *Lowering, node: *const Node) void {
 /// designator shape (bare name, qualified name, type application, variant key)
 /// is a type position and reports its own unknown-type diagnostic when the name
 /// resolves to nothing.
-fn constructs(self: *Lowering, head: *const Node) bool {
+pub fn constructs(self: *Lowering, head: *const Node) bool {
     return switch (head.data) {
         .call => |c| namesTemplate(self, c.callee) or
             lower_generic.isGenericTypeConstructorCallNode(self, head) or
