@@ -1,0 +1,11 @@
+// `?!` on a narrowed binding as the initializer of a declaration without a type
+// annotation is a warning, and the declaration binds the payload.
+@import "modules/std.sx";
+
+next :: (x: ?i64) -> i64 {
+    if x == null { return 0; }
+    y := x?!;
+    y + 1
+}
+
+main :: () { print("{}\n", next(4)); }

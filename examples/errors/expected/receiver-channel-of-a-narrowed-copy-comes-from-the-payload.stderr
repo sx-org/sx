@@ -1,0 +1,5 @@
+warning: 'o' is already proven present here; write 'o' without '?!'
+  --> examples/errors/receiver-channel-of-a-narrowed-copy-comes-from-the-payload.sx:26:10
+   |
+26 |     f := o?!;
+   |          ^^^

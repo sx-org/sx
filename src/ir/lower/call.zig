@@ -354,7 +354,7 @@ fn callableBinderOf(fd: *const ast.FnDecl, name: []const u8) ?*const ast.Param {
 /// the `*` wrapper — `*Box($T)` (core `Box`, concrete) is strictly more specific
 /// than `*$T` (core `$T`, bare), so the structurally-narrower overload wins
 /// instead of tying.
-fn ufcsReceiverConcrete(fd: *const ast.FnDecl) bool {
+pub fn ufcsReceiverConcrete(fd: *const ast.FnDecl) bool {
     if (fd.params.len == 0) return false;
     var te = fd.params[0].type_expr;
     while (te.data == .pointer_type_expr) te = te.data.pointer_type_expr.pointee_type;

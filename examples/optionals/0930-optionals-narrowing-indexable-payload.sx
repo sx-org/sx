@@ -7,8 +7,7 @@
 //   and index targets of a multi-assign;
 // - subslices (`o[0..n]` is `[]T`, viewing the payload's own storage);
 // - generic binding, so a `[]$T` ufcs receiver binds `[]i64`.
-// Un-narrowed, `o[i]` stays the optional chain `?Elem`. After the guard,
-// `q := o` keeps the declared `?[]T`, and `q : []T = o` binds the payload.
+// Un-narrowed, `o[i]` stays the optional chain `?Elem`.
 @import "modules/std.sx";
 
 P :: struct { n: i64 = 0; }
@@ -74,12 +73,6 @@ lenThroughGuard :: (o: ?[]i64) -> i64 {
 stillChains :: (o: ?[]i64) -> ?i64 {
     return o[0];           // un-narrowed: the optional chain keeps `?i64`
 }
-keepsStaticType :: (o: ?[]i64) -> ?[]i64 {
-    if o == null { return null; }
-    q := o;                // `q` is `?[]i64`, not `[]i64`
-    return q;
-}
-
 main :: () {
     a: [4]i64 = .{ 1, 2, 3, 4 };
     process.assert(readElem(a[0..4]) == 1 and readElem(null) == -1, "read");
@@ -113,9 +106,6 @@ main :: () {
     c := stillChains(a[0..4]);
     process.assert(c != null and c == 100, "un-narrowed index chains");
     process.assert(stillChains(null) == null, "null receiver chains to null");
-
-    q := keepsStaticType(a[0..4]);
-    process.assert(q != null and q.len == 4, "declared type preserved");
 
     print("ok\n");
 }

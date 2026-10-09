@@ -990,10 +990,13 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
         // take their spec defaults (i64/f64) instead of adopting it.
         self.target_type = null;
         const errs_before: usize = if (self.diagnostics) |d| d.errorCount() else 0;
-        const ref = self.lowerMarkedExpr(val, true);
+        const init = if (val.data == .force_unwrap and self.diagProvenUnwrap(val, .warn)) val.data.force_unwrap.operand else val;
+        const narrowed = init.data == .identifier and self.provenPresent(init.data.identifier.name);
+        var ref = self.lowerMarkedExpr(init, true);
         self.force_block_value = saved_fbv;
         self.target_type = saved_target;
         if (bindDivergingInitializer(self, vd.name, ref)) return;
+        if (narrowed) ref = self.builder.optionalUnwrap(ref, self.resolveOptionalInner(self.builder.getRefType(ref)));
         const ty = self.builder.getRefType(ref);
         // Asked on the LOWERED type, so every shape a block can arrive through
         // is covered — a bare name, an `if` that yields one, anything.

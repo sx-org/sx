@@ -3094,7 +3094,7 @@ pub const Lowering = struct {
     /// indexable presents that payload — the guard proved presence, so `o[i]`
     /// and `o.method()` reach the container itself. `null` for every other
     /// shape, and the declared type stands: an un-narrowed `o[i]` keeps its
-    /// optional-chain result, and identifier inference (`q := o`) never peels.
+    /// optional-chain result.
     pub fn narrowedContainerChild(self: *Lowering, node: *const ast.Node) ?TypeId {
         if (node.data != .identifier) return null;
         if (!self.provenPresent(node.data.identifier.name)) return null;
@@ -4413,6 +4413,7 @@ pub const Lowering = struct {
     pub const intCastErrorSet = lower_call.intCastErrorSet;
     pub const lowerCall = lower_call.lowerCall;
     pub const ufcsGenericBindsAll = lower_call.ufcsGenericBindsAll;
+    pub const ufcsReceiverConcrete = lower_call.ufcsReceiverConcrete;
     pub const ufcsFunction = lower_call.ufcsFunction;
     pub const selectUfcsGenericByReceiver = lower_call.selectUfcsGenericByReceiver;
     pub const diagnoseMissingContext = lower_call.diagnoseMissingContext;
@@ -4625,6 +4626,7 @@ pub const Lowering = struct {
     pub const lowerSliceExpr = lower_expr.lowerSliceExpr;
     pub const lowerTupleLiteral = lower_expr.lowerTupleLiteral;
     pub const lowerDerefExpr = lower_expr.lowerDerefExpr;
+    pub const diagProvenUnwrap = lower_expr.diagProvenUnwrap;
     pub const lowerForceUnwrap = lower_expr.lowerForceUnwrap;
     pub const diagOptionalOperand = lower_expr.diagOptionalOperand;
     pub const unwrapOptionalOperand = lower_expr.unwrapOptionalOperand;
