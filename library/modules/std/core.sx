@@ -105,16 +105,6 @@
 @envOf :: (f: $F) -> F;
 @callPtr :: ($F: Type) -> *void;
 
-// Formatted write to stdout, allocation-free. `$fmt` is a comptime string in the
-// same `{}` vocabulary `print` takes — `{}` consumes the next argument, `{{`
-// and `}}` write a brace — and the compiler expands the call into one write per
-// segment and per argument, in source order.
-//
-// An argument is a `string`, a `bool`, an integer or a float; any other type is
-// a compile error, because rendering it takes the allocating formatter
-// (`print`). No path through `@printf` reads `context.allocator`.
-@printf :: ($fmt: string, ..$args);
-
 // Where the code is running: `true` under the comptime evaluator, `false` in
 // compiled code. The same lowered body serves both stages, so the answer is the
 // backend's rather than a fold.
@@ -122,8 +112,8 @@
 
 // Write `msg` to stderr and stop the program. `site` defaults to the call site,
 // so the message carries `file:line:` unless the caller passes a site with no
-// line. Allocation-free like `@printf`: it renders through the same writer, so
-// a panic reaches its message with a broken or exhausted allocator behind it.
+// line. It renders through an `FdWriter` and allocates nothing, so a panic
+// reaches its message with a broken or exhausted allocator behind it.
 //
 // A `@run` panic exits the COMPILER with code 1; a compiled panic raises
 // SIGABRT.
@@ -230,7 +220,6 @@ impl Writer for FdWriter {
     }
 }
 
-// The renderers `@printf`'s expansion calls, one per argument kind.
 writeBool :: ufcs (w: Writer, b: bool) {
     w.write(if b then "true" else "false");
 }

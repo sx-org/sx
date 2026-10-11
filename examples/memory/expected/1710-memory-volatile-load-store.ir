@@ -1,6 +1,5 @@
 
 @kDefaultContext = internal constant {} zeroinitializer
-@__Writer__FdWriter__vtable = internal constant { ptr, ptr } { ptr @__thunk_FdWriter_Writer_write, ptr @__thunk_FdWriter_Writer_flush }
 @str = private unnamed_addr constant [18 x i8] c"scalar: 41 41 42\0A\00", align 1
 @str.1 = private unnamed_addr constant [15 x i8] c"scalar: WRONG\0A\00", align 1
 @str.2 = private unnamed_addr constant [13 x i8] c"widened: -1\0A\00", align 1
@@ -30,16 +29,16 @@ entry:
   store { ptr, i64 } %2, ptr %allocaN, align 8
   %allocaN = alloca i64, align 8
   store i64 0, ptr %allocaN, align 8
-  br label %while.hdr.20
+  br label %while.hdr.7
 
-while.hdr.20:                                     ; preds = %if.merge.24, %entry
+while.hdr.7:                                      ; preds = %if.merge.11, %entry
   %load = load i64, ptr %allocaN, align 8
   %loadN = load { ptr, i64 }, ptr %allocaN, align 8
   %len = extractvalue { ptr, i64 } %loadN, 1
   %icmp = icmp slt i64 %load, %len
-  br i1 %icmp, label %while.body.21, label %while.exit.22
+  br i1 %icmp, label %while.body.8, label %while.exit.9
 
-while.body.21:                                    ; preds = %while.hdr.20
+while.body.8:                                     ; preds = %while.hdr.7
   %loadN = load ptr, ptr %alloca, align 8
   %gep = getelementptr inbounds nuw { i32 }, ptr %loadN, i32 0, i32 0
   %loadN = load i32, ptr %gep, align 4
@@ -55,28 +54,20 @@ while.body.21:                                    ; preds = %while.hdr.20
   store i64 %call, ptr %allocaN, align 8
   %loadN = load i64, ptr %allocaN, align 8
   %icmpN = icmp sle i64 %loadN, 0
-  br i1 %icmpN, label %if.then.23, label %if.merge.24
+  br i1 %icmpN, label %if.then.10, label %if.merge.11
 
-while.exit.22:                                    ; preds = %while.hdr.20
+while.exit.9:                                     ; preds = %while.hdr.7
   ret void
 
-if.then.23:                                       ; preds = %while.body.21
+if.then.10:                                       ; preds = %while.body.8
   ret void
 
-if.merge.24:                                      ; preds = %while.body.21
+if.merge.11:                                      ; preds = %while.body.8
   %loadN = load i64, ptr %allocaN, align 8
   %loadN = load i64, ptr %allocaN, align 8
   %add = add i64 %loadN, %loadN
   store i64 %add, ptr %allocaN, align 8
-  br label %while.hdr.20
-}
-
-; Function Attrs: nounwind
-define internal void @FdWriter.flush(ptr %0, ptr %1) #0 {
-entry:
-  %alloca = alloca ptr, align 8
-  store ptr %1, ptr %alloca, align 8
-  ret void
+  br label %while.hdr.7
 }
 
 declare i64 @write(i32, ptr, i64)
@@ -84,41 +75,36 @@ declare i64 @write(i32, ptr, i64)
 ; Function Attrs: nounwind
 define i32 @main() #0 {
 entry:
-  %alloca = alloca i32, align 4
-  %allocaN = alloca { i32 }, align 8
-  %allocaN = alloca { i32 }, align 8
   %allocaN = alloca i64, align 8
   %allocaN = alloca i32, align 4
-  %allocaN = alloca { i32 }, align 8
-  %allocaN = alloca { i32 }, align 8
   %allocaN = alloca i64, align 8
   %allocaN = alloca ptr, align 8
   %allocaN = alloca ptr, align 8
-  %allocaN = alloca { i32 }, align 8
-  %allocaN = alloca { i32 }, align 8
   %allocaN = alloca { i32, i32 }, align 8
   %allocaN = alloca { i32, i32 }, align 8
-  %allocaN = alloca { i32 }, align 8
-  %allocaN = alloca { i32 }, align 8
-  store i32 41, ptr %alloca, align 4
+  %call = call { i32 } @FdWriter.init(ptr @kDefaultContext, i32 1)
+  %alloca = alloca { i32 }, align 8
+  store { i32 } %call, ptr %alloca, align 4
+  %allocaN = alloca i32, align 4
+  store i32 41, ptr %allocaN, align 4
   %allocaN = alloca ptr, align 8
-  store ptr %alloca, ptr %allocaN, align 8
+  store ptr %allocaN, ptr %allocaN, align 8
   %load = load ptr, ptr %allocaN, align 8
   %volatile_load = load volatile i32, ptr %load, align 4
   %allocaN = alloca i32, align 4
   store i32 %volatile_load, ptr %allocaN, align 4
   %loadN = load ptr, ptr %allocaN, align 8
-  %volatile_load4 = load volatile i32, ptr %loadN, align 4
+  %volatile_load5 = load volatile i32, ptr %loadN, align 4
   %allocaN = alloca i32, align 4
-  store i32 %volatile_load4, ptr %allocaN, align 4
+  store i32 %volatile_load5, ptr %allocaN, align 4
   %loadN = load ptr, ptr %allocaN, align 8
   %loadN = load i32, ptr %allocaN, align 4
   %add = add i32 %loadN, 1
   store volatile i32 %add, ptr %loadN, align 4
   %loadN = load ptr, ptr %allocaN, align 8
-  %volatile_load9 = load volatile i32, ptr %loadN, align 4
+  %volatile_load10 = load volatile i32, ptr %loadN, align 4
   %allocaN = alloca i32, align 4
-  store i32 %volatile_load9, ptr %allocaN, align 4
+  store i32 %volatile_load10, ptr %allocaN, align 4
   %loadN = load i32, ptr %allocaN, align 4
   %icmp = icmp eq i32 %loadN, 41
   br i1 %icmp, label %and.rhs.0, label %and.merge.1
@@ -142,23 +128,11 @@ and.merge.3:                                      ; preds = %and.rhs.2, %and.mer
   br i1 %bpN, label %if.then.4, label %if.else.5
 
 if.then.4:                                        ; preds = %and.merge.3
-  %call = call { i32 } @FdWriter.init(ptr @kDefaultContext, i32 1)
-  store { i32 } %call, ptr %allocaN, align 4
-  %si = insertvalue { ptr, i64, ptr } undef, ptr %allocaN, 0
-  %siN = insertvalue { ptr, i64, ptr } %si, i64 100, 1
-  %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
-  call void @FdWriter.write(ptr @kDefaultContext, ptr %allocaN, { ptr, i64 } { ptr @str, i64 17 })
-  call void @FdWriter.flush(ptr @kDefaultContext, ptr %allocaN)
+  call void @FdWriter.write(ptr @kDefaultContext, ptr %alloca, { ptr, i64 } { ptr @str, i64 17 })
   br label %if.merge.6
 
 if.else.5:                                        ; preds = %and.merge.3
-  %callN = call { i32 } @FdWriter.init(ptr @kDefaultContext, i32 1)
-  store { i32 } %callN, ptr %allocaN, align 4
-  %siN = insertvalue { ptr, i64, ptr } undef, ptr %allocaN, 0
-  %siN = insertvalue { ptr, i64, ptr } %siN, i64 100, 1
-  %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
-  call void @FdWriter.write(ptr @kDefaultContext, ptr %allocaN, { ptr, i64 } { ptr @str.1, i64 14 })
-  call void @FdWriter.flush(ptr @kDefaultContext, ptr %allocaN)
+  call void @FdWriter.write(ptr @kDefaultContext, ptr %alloca, { ptr, i64 } { ptr @str.1, i64 14 })
   br label %if.merge.6
 
 if.merge.6:                                       ; preds = %if.else.5, %if.then.4
@@ -167,31 +141,19 @@ if.merge.6:                                       ; preds = %if.else.5, %if.then
   %loadN = load i32, ptr %allocaN, align 4
   %sext = sext i32 %loadN to i64
   store volatile i64 %sext, ptr %allocaN, align 8
-  %volatile_load28 = load volatile i64, ptr %allocaN, align 8
-  %icmpN = icmp eq i64 %volatile_load28, -1
-  br i1 %icmpN, label %if.then.25, label %if.else.26
+  %volatile_load21 = load volatile i64, ptr %allocaN, align 8
+  %icmpN = icmp eq i64 %volatile_load21, -1
+  br i1 %icmpN, label %if.then.12, label %if.else.13
 
-if.then.25:                                       ; preds = %if.merge.6
-  %callN = call { i32 } @FdWriter.init(ptr @kDefaultContext, i32 1)
-  store { i32 } %callN, ptr %allocaN, align 4
-  %siN = insertvalue { ptr, i64, ptr } undef, ptr %allocaN, 0
-  %siN = insertvalue { ptr, i64, ptr } %siN, i64 100, 1
-  %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
-  call void @FdWriter.write(ptr @kDefaultContext, ptr %allocaN, { ptr, i64 } { ptr @str.2, i64 12 })
-  call void @FdWriter.flush(ptr @kDefaultContext, ptr %allocaN)
-  br label %if.merge.27
+if.then.12:                                       ; preds = %if.merge.6
+  call void @FdWriter.write(ptr @kDefaultContext, ptr %alloca, { ptr, i64 } { ptr @str.2, i64 12 })
+  br label %if.merge.14
 
-if.else.26:                                       ; preds = %if.merge.6
-  %callN = call { i32 } @FdWriter.init(ptr @kDefaultContext, i32 1)
-  store { i32 } %callN, ptr %allocaN, align 4
-  %siN = insertvalue { ptr, i64, ptr } undef, ptr %allocaN, 0
-  %siN = insertvalue { ptr, i64, ptr } %siN, i64 100, 1
-  %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
-  call void @FdWriter.write(ptr @kDefaultContext, ptr %allocaN, { ptr, i64 } { ptr @str.3, i64 15 })
-  call void @FdWriter.flush(ptr @kDefaultContext, ptr %allocaN)
-  br label %if.merge.27
+if.else.13:                                       ; preds = %if.merge.6
+  call void @FdWriter.write(ptr @kDefaultContext, ptr %alloca, { ptr, i64 } { ptr @str.3, i64 15 })
+  br label %if.merge.14
 
-if.merge.27:                                      ; preds = %if.else.26, %if.then.25
+if.merge.14:                                      ; preds = %if.else.13, %if.then.12
   store i64 0, ptr %allocaN, align 8
   store ptr %allocaN, ptr %allocaN, align 8
   %loadN = load ptr, ptr %allocaN, align 8
@@ -199,90 +161,52 @@ if.merge.27:                                      ; preds = %if.else.26, %if.the
   %loadN = load ptr, ptr %allocaN, align 8
   store volatile i64 -1, ptr %loadN, align 8
   %loadN = load ptr, ptr %allocaN, align 8
-  %volatile_load46 = load volatile i64, ptr %loadN, align 8
-  %icmpN = icmp eq i64 %volatile_load46, -1
-  br i1 %icmpN, label %if.then.28, label %if.else.29
+  %volatile_load29 = load volatile i64, ptr %loadN, align 8
+  %icmpN = icmp eq i64 %volatile_load29, -1
+  br i1 %icmpN, label %if.then.15, label %if.else.16
 
-if.then.28:                                       ; preds = %if.merge.27
-  %callN = call { i32 } @FdWriter.init(ptr @kDefaultContext, i32 1)
-  store { i32 } %callN, ptr %allocaN, align 4
-  %siN = insertvalue { ptr, i64, ptr } undef, ptr %allocaN, 0
-  %siN = insertvalue { ptr, i64, ptr } %siN, i64 100, 1
-  %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
-  call void @FdWriter.write(ptr @kDefaultContext, ptr %allocaN, { ptr, i64 } { ptr @str.4, i64 11 })
-  call void @FdWriter.flush(ptr @kDefaultContext, ptr %allocaN)
-  br label %if.merge.30
+if.then.15:                                       ; preds = %if.merge.14
+  call void @FdWriter.write(ptr @kDefaultContext, ptr %alloca, { ptr, i64 } { ptr @str.4, i64 11 })
+  br label %if.merge.17
 
-if.else.29:                                       ; preds = %if.merge.27
-  %callN = call { i32 } @FdWriter.init(ptr @kDefaultContext, i32 1)
-  store { i32 } %callN, ptr %allocaN, align 4
-  %siN = insertvalue { ptr, i64, ptr } undef, ptr %allocaN, 0
-  %siN = insertvalue { ptr, i64, ptr } %siN, i64 100, 1
-  %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
-  call void @FdWriter.write(ptr @kDefaultContext, ptr %allocaN, { ptr, i64 } { ptr @str.5, i64 14 })
-  call void @FdWriter.flush(ptr @kDefaultContext, ptr %allocaN)
-  br label %if.merge.30
+if.else.16:                                       ; preds = %if.merge.14
+  call void @FdWriter.write(ptr @kDefaultContext, ptr %alloca, { ptr, i64 } { ptr @str.5, i64 14 })
+  br label %if.merge.17
 
-if.merge.30:                                      ; preds = %if.else.29, %if.then.28
+if.merge.17:                                      ; preds = %if.else.16, %if.then.15
   store { i32, i32 } { i32 3, i32 4 }, ptr %allocaN, align 4
-  %volatile_load59 = load volatile { i32, i32 }, ptr %allocaN, align 4
-  store { i32, i32 } %volatile_load59, ptr %allocaN, align 4
+  %volatile_load32 = load volatile { i32, i32 }, ptr %allocaN, align 4
+  store { i32, i32 } %volatile_load32, ptr %allocaN, align 4
   %gep = getelementptr inbounds nuw { i32, i32 }, ptr %allocaN, i32 0, i32 1
   %loadN = load i32, ptr %gep, align 4
   %gepN = getelementptr inbounds nuw { i32, i32 }, ptr %allocaN, i32 0, i32 0
   %loadN = load i32, ptr %gepN, align 4
-  %siN = insertvalue { i32, i32 } undef, i32 %loadN, 0
-  %siN = insertvalue { i32, i32 } %siN, i32 %loadN, 1
+  %si = insertvalue { i32, i32 } undef, i32 %loadN, 0
+  %siN = insertvalue { i32, i32 } %si, i32 %loadN, 1
   store volatile { i32, i32 } %siN, ptr %allocaN, align 4
   %gepN = getelementptr inbounds nuw { i32, i32 }, ptr %allocaN, i32 0, i32 0
   %loadN = load i32, ptr %gepN, align 4
   %icmpN = icmp eq i32 %loadN, 4
-  br i1 %icmpN, label %and.rhs.31, label %and.merge.32
+  br i1 %icmpN, label %and.rhs.18, label %and.merge.19
 
-and.rhs.31:                                       ; preds = %if.merge.30
+and.rhs.18:                                       ; preds = %if.merge.17
   %gepN = getelementptr inbounds nuw { i32, i32 }, ptr %allocaN, i32 0, i32 1
   %loadN = load i32, ptr %gepN, align 4
   %icmpN = icmp eq i32 %loadN, 3
-  br label %and.merge.32
+  br label %and.merge.19
 
-and.merge.32:                                     ; preds = %and.rhs.31, %if.merge.30
-  %bpN = phi i1 [ false, %if.merge.30 ], [ %icmpN, %and.rhs.31 ]
-  br i1 %bpN, label %if.then.33, label %if.else.34
+and.merge.19:                                     ; preds = %and.rhs.18, %if.merge.17
+  %bpN = phi i1 [ false, %if.merge.17 ], [ %icmpN, %and.rhs.18 ]
+  br i1 %bpN, label %if.then.20, label %if.else.21
 
-if.then.33:                                       ; preds = %and.merge.32
-  %callN = call { i32 } @FdWriter.init(ptr @kDefaultContext, i32 1)
-  store { i32 } %callN, ptr %allocaN, align 4
-  %siN = insertvalue { ptr, i64, ptr } undef, ptr %allocaN, 0
-  %siN = insertvalue { ptr, i64, ptr } %siN, i64 100, 1
-  %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
-  call void @FdWriter.write(ptr @kDefaultContext, ptr %allocaN, { ptr, i64 } { ptr @str.6, i64 15 })
-  call void @FdWriter.flush(ptr @kDefaultContext, ptr %allocaN)
-  br label %if.merge.35
+if.then.20:                                       ; preds = %and.merge.19
+  call void @FdWriter.write(ptr @kDefaultContext, ptr %alloca, { ptr, i64 } { ptr @str.6, i64 15 })
+  br label %if.merge.22
 
-if.else.34:                                       ; preds = %and.merge.32
-  %callN = call { i32 } @FdWriter.init(ptr @kDefaultContext, i32 1)
-  store { i32 } %callN, ptr %allocaN, align 4
-  %siN = insertvalue { ptr, i64, ptr } undef, ptr %allocaN, 0
-  %siN = insertvalue { ptr, i64, ptr } %siN, i64 100, 1
-  %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
-  call void @FdWriter.write(ptr @kDefaultContext, ptr %allocaN, { ptr, i64 } { ptr @str.7, i64 17 })
-  call void @FdWriter.flush(ptr @kDefaultContext, ptr %allocaN)
-  br label %if.merge.35
+if.else.21:                                       ; preds = %and.merge.19
+  call void @FdWriter.write(ptr @kDefaultContext, ptr %alloca, { ptr, i64 } { ptr @str.7, i64 17 })
+  br label %if.merge.22
 
-if.merge.35:                                      ; preds = %if.else.34, %if.then.33
+if.merge.22:                                      ; preds = %if.else.21, %if.then.20
   ret i32 0
-}
-
-; Function Attrs: nounwind
-define internal void @__thunk_FdWriter_Writer_write(ptr %0, ptr %1, { ptr, i64 } %2) #0 {
-entry:
-  call void @FdWriter.write(ptr %0, ptr %1, { ptr, i64 } %2)
-  ret void
-}
-
-; Function Attrs: nounwind
-define internal void @__thunk_FdWriter_Writer_flush(ptr %0, ptr %1) #0 {
-entry:
-  call void @FdWriter.flush(ptr %0, ptr %1)
-  ret void
 }

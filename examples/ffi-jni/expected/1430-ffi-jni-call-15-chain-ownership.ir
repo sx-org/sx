@@ -4,7 +4,6 @@
 @gName = internal global { ptr, i64 } { ptr @str.data, i64 4 }
 @str.data = private unnamed_addr constant [5 x i8] c"noop\00"
 @kDefaultContext = internal constant { ptr } zeroinitializer
-@__Writer__FdWriter__vtable = internal constant { ptr, ptr } { ptr @__thunk_FdWriter_Writer_write, ptr @__thunk_FdWriter_Writer_flush }
 @str = private unnamed_addr constant [4 x i8] c"()V\00", align 1
 @str.1 = private unnamed_addr constant [4 x i8] c"ok\0A\00", align 1
 @str.2 = private unnamed_addr constant [9 x i8] c"onCreate\00", align 1
@@ -34,16 +33,16 @@ entry:
   store { ptr, i64 } %2, ptr %allocaN, align 8
   %allocaN = alloca i64, align 8
   store i64 0, ptr %allocaN, align 8
-  br label %while.hdr.15
+  br label %while.hdr.2
 
-while.hdr.15:                                     ; preds = %if.merge.19, %entry
+while.hdr.2:                                      ; preds = %if.merge.6, %entry
   %load = load i64, ptr %allocaN, align 8
   %loadN = load { ptr, i64 }, ptr %allocaN, align 8
   %len = extractvalue { ptr, i64 } %loadN, 1
   %icmp = icmp slt i64 %load, %len
-  br i1 %icmp, label %while.body.16, label %while.exit.17
+  br i1 %icmp, label %while.body.3, label %while.exit.4
 
-while.body.16:                                    ; preds = %while.hdr.15
+while.body.3:                                     ; preds = %while.hdr.2
   %loadN = load ptr, ptr %alloca, align 8
   %gep = getelementptr inbounds nuw { i32 }, ptr %loadN, i32 0, i32 0
   %loadN = load i32, ptr %gep, align 4
@@ -59,28 +58,20 @@ while.body.16:                                    ; preds = %while.hdr.15
   store i64 %call, ptr %allocaN, align 8
   %loadN = load i64, ptr %allocaN, align 8
   %icmpN = icmp sle i64 %loadN, 0
-  br i1 %icmpN, label %if.then.18, label %if.merge.19
+  br i1 %icmpN, label %if.then.5, label %if.merge.6
 
-while.exit.17:                                    ; preds = %while.hdr.15
+while.exit.4:                                     ; preds = %while.hdr.2
   ret void
 
-if.then.18:                                       ; preds = %while.body.16
+if.then.5:                                        ; preds = %while.body.3
   ret void
 
-if.merge.19:                                      ; preds = %while.body.16
+if.merge.6:                                       ; preds = %while.body.3
   %loadN = load i64, ptr %allocaN, align 8
   %loadN = load i64, ptr %allocaN, align 8
   %add = add i64 %loadN, %loadN
   store i64 %add, ptr %allocaN, align 8
-  br label %while.hdr.15
-}
-
-; Function Attrs: nounwind
-define internal void @FdWriter.flush(ptr %0, ptr %1) #0 {
-entry:
-  %alloca = alloca ptr, align 8
-  store ptr %1, ptr %alloca, align 8
-  ret void
+  br label %while.hdr.2
 }
 
 declare i64 @write(i32, ptr, i64)
@@ -149,26 +140,8 @@ if.then.0:                                        ; preds = %entry
 if.merge.1:                                       ; preds = %if.then.0, %entry
   %call = call { i32 } @FdWriter.init(ptr @kDefaultContext, i32 1)
   store { i32 } %call, ptr %alloca, align 4
-  %si = insertvalue { ptr, i64, ptr } undef, ptr %alloca, 0
-  %siN = insertvalue { ptr, i64, ptr } %si, i64 100, 1
-  %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
   call void @FdWriter.write(ptr @kDefaultContext, ptr %alloca, { ptr, i64 } { ptr @str.1, i64 3 })
-  call void @FdWriter.flush(ptr @kDefaultContext, ptr %alloca)
   ret i32 0
-}
-
-; Function Attrs: nounwind
-define internal void @__thunk_FdWriter_Writer_write(ptr %0, ptr %1, { ptr, i64 } %2) #0 {
-entry:
-  call void @FdWriter.write(ptr %0, ptr %1, { ptr, i64 } %2)
-  ret void
-}
-
-; Function Attrs: nounwind
-define internal void @__thunk_FdWriter_Writer_flush(ptr %0, ptr %1) #0 {
-entry:
-  call void @FdWriter.flush(ptr %0, ptr %1)
-  ret void
 }
 
 ; Function Attrs: nounwind

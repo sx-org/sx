@@ -1,6 +1,6 @@
 // A payload-carrying enum's payloadless variant built under `@run` is the
 // whole `{ tag, payload }` value, so a `match` on it reads the tag.
-@import "modules/std/core.sx";
+@import "modules/std.sx";
 
 Shape :: enum { none; circle: f64; }
 
@@ -12,7 +12,7 @@ area :: (s: Shape) -> i64 {
 }
 
 report :: () -> i64 {
-    @printf("{} {}\n", area(.none), area(.circle(2.0)));
+    print("{} {}\n", area(.none), area(.circle(2.0)));
     0
 }
 

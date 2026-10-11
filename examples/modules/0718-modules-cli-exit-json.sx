@@ -13,7 +13,7 @@
 //
 // The run ends on the usage path: after the assertions it triggers an
 // `UnknownCommand`, writes the human diagnostic to STDERR, and terminates via
-// `exitUsage()`, so the process exits 64 (EX_USAGE). sx `print`/`@printf` are
+// `exitUsage()`, so the process exits 64 (EX_USAGE). sx `print` is
 // unbuffered, so the stdout assertion lines still appear despite the `_exit`.
 
 @import "modules/std.sx";
@@ -47,9 +47,7 @@ main :: () -> ! {
     // When `parsed.json`, the front-end emits ONLY the machine result on
     // stdout; `{{` and `}}` spell the JSON braces.
     if pj.json {
-        @printf("{{\"out\":\"");
-        @printf("{}", pj.valueOf("out"));
-        @printf("\"}}\n");
+        print("{{\"out\":\"{}\"}}\n", pj.valueOf("out"));
     }
     pj.deinit();
     pn.deinit();

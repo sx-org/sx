@@ -14,7 +14,7 @@ main :: () -> void {
     newCtx.allocator = arena;
     push newCtx {
         ptr := context.allocator.allocBytes(128);
-        @printf("inside push\n");
+        print("inside push\n");
     }
-    @printf("after push\n");
+    print("after push\n");
 }

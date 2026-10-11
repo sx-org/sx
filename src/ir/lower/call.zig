@@ -1068,7 +1068,6 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         // so lower them here (before generic arg lowering) like reflection calls.
         if (self.tryLowerAtomicIntrinsic(c.callee.data.identifier.name, c)) |ref| return ref;
         if (self.tryLowerVolatileIntrinsic(c.callee.data.identifier.name, c)) |ref| return ref;
-        if (self.tryLowerPrintfIntrinsic(c.callee.data.identifier.name, c)) |ref| return ref;
         if (self.tryLowerCursorIntrinsic(c.callee.data.identifier.name, c)) |ref| return ref;
     }
     // Qualified intrinsic spelling is legal too. Only dispatch a compiler
@@ -1080,7 +1079,6 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             if (self.tryLowerReflectionCall(sf.decl.name, c)) |ref| return ref;
             if (self.tryLowerAtomicIntrinsic(sf.decl.name, c)) |ref| return ref;
             if (self.tryLowerVolatileIntrinsic(sf.decl.name, c)) |ref| return ref;
-            if (self.tryLowerPrintfIntrinsic(sf.decl.name, c)) |ref| return ref;
             if (self.tryLowerCursorIntrinsic(sf.decl.name, c)) |ref| return ref;
         }
     }
@@ -2850,7 +2848,6 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .@"@atomicCmpxchgWeak",
         .@"@volatileLoad",
         .@"@volatileStore",
-        .@"@printf",
         .@"@isComptime",
         .@"@error",
         .@"@vaStart",
@@ -3100,7 +3097,6 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .@"@floor",
         .@"@volatileLoad",
         .@"@volatileStore",
-        .@"@printf",
         .@"@isComptime",
         .@"@error",
         .@"@vaStart",
@@ -3306,7 +3302,6 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .@"@volatileStore",
         => true,
 
-        .@"@printf",
         .@"@isComptime",
         .@"@error",
         .@"@vaStart",
@@ -3427,191 +3422,6 @@ pub fn tryLowerVolatileIntrinsic(self: *Lowering, name: []const u8, c: *const as
     return Ref.none; // store has a void result
 }
 
-/// The argument kinds `@printf` renders. A string goes to the sink's own
-/// `write`; every other kind goes through a core.sx renderer that takes the
-/// erased `Writer` handle.
-const PrintfKind = enum {
-    str,
-    boolean,
-    signed,
-    unsigned,
-    float,
-
-    fn binding(self: PrintfKind) []const u8 {
-        return switch (self) {
-            .str => "FdWriter.write",
-            .boolean => "writeBool",
-            .signed => "writeInt",
-            .unsigned => "writeUint",
-            .float => "writeFloat",
-        };
-    }
-
-    fn param(self: PrintfKind) TypeId {
-        return switch (self) {
-            .str => .string,
-            .boolean => .bool,
-            .signed => .i64,
-            .unsigned => .u64,
-            .float => .f64,
-        };
-    }
-};
-
-/// The kind that renders a value of `ty`, or null when nothing does. A u8
-/// slice is text.
-fn printfKind(self: *Lowering, ty: TypeId) ?PrintfKind {
-    if (self.module.types.sliceInfoOf(ty)) |sl| return if (sl.element == .u8) .str else null;
-    switch (ty) {
-        .bool => return .boolean,
-        .i8, .i16, .i32, .i64, .isize => return .signed,
-        .u8, .u16, .u32, .u64, .usize => return .unsigned,
-        .f32, .f64 => return .float,
-        else => {},
-    }
-    if (ty.isBuiltin()) return null;
-    return switch (self.module.types.get(ty)) {
-        .signed => .signed,
-        .unsigned => .unsigned,
-        .f32, .f64 => .float,
-        else => null,
-    };
-}
-
-/// One `@printf` site's sink: a stdout `FdWriter` in a frame slot, and the
-/// `Writer` handle borrowed over that slot for the renderers.
-const PrintfSink = struct {
-    slot: Ref,
-    handle: Ref,
-};
-
-/// Call runtime binding `name` with `args`, the implicit context prepended
-/// when the callee takes one.
-fn callBinding(self: *Lowering, name: []const u8, args: []Ref) ?Ref {
-    const fid = self.runtimeBinding(name) orelse return null;
-    const callee = self.module.functions.items[@intFromEnum(fid)];
-    return self.builder.call(fid, self.prependCtxIfNeeded(&callee, args), callee.ret);
-}
-
-/// `w := FdWriter.init(.stdout)` in a frame slot, erased once to the `Writer`
-/// handle. The descriptor type and the interface type are read off the bound
-/// declarations, so the expansion spells no type name.
-fn openPrintfSink(self: *Lowering) ?PrintfSink {
-    const init_fid = self.runtimeBinding("FdWriter.init") orelse return null;
-    const init_fn = self.module.functions.items[@intFromEnum(init_fid)];
-    const fd_ty = init_fn.params[init_fn.params.len - 1].ty;
-    const sink_ty = init_fn.ret;
-    const render_fid = self.runtimeBinding("writeInt") orelse return null;
-    const render_fn = self.module.functions.items[@intFromEnum(render_fid)];
-    const iface_ty = render_fn.params[render_fn.params.len - 2].ty;
-
-    var init_args = [_]Ref{self.builder.enumInit(self.resolveVariantValue(fd_ty, "stdout"), Ref.none, fd_ty)};
-    const w = callBinding(self, "FdWriter.init", &init_args) orelse return null;
-    const slot = self.builder.alloca(sink_ty);
-    self.builder.store(slot, w);
-    const iface_info = self.module.types.get(iface_ty);
-    if (iface_info != .@"struct") return null;
-    const proto_name = self.module.types.getString(iface_info.@"struct".name);
-    const concrete_name = self.resolveConcreteTypeName(sink_ty) orelse return null;
-    const handle = self.buildProtocolValue(slot, proto_name, concrete_name, iface_ty, sink_ty);
-    return .{ .slot = slot, .handle = handle };
-}
-
-/// Write one value of `kind` through the sink.
-fn emitPrintfWrite(self: *Lowering, sink: PrintfSink, kind: PrintfKind, val: Ref) void {
-    var args = [_]Ref{ if (kind == .str) sink.slot else sink.handle, val };
-    _ = callBinding(self, kind.binding(), &args);
-}
-
-/// Write one literal run of the format string.
-fn emitPrintfSegment(self: *Lowering, sink: PrintfSink, text: []const u8) void {
-    if (text.len == 0) return;
-    const owned = self.alloc.dupe(u8, text) catch @panic("out of memory");
-    emitPrintfWrite(self, sink, .str, self.builder.constString(self.module.types.internString(owned)));
-}
-
-/// Write one `{}` argument, converted to its renderer's parameter type.
-fn emitPrintfArg(self: *Lowering, sink: PrintfSink, arg: *const Node) void {
-    const raw = self.lowerExpr(@constCast(arg));
-    const arg_ty = self.builder.getRefType(raw);
-    const kind = printfKind(self, arg_ty) orelse {
-        if (self.diagnostics) |d| d.addFmt(.err, arg.span, "@printf renders a string, a bool, an integer or a float — '{s}' takes the allocating formatter, `print`", .{self.formatTypeName(arg_ty)});
-        return;
-    };
-    // A u8 slice's length word need not fit `string`'s i64.
-    const val = if (kind == .str) self.coerceExplicit(raw, arg_ty, .string) else self.coerceToType(raw, arg_ty, kind.param());
-    emitPrintfWrite(self, sink, kind, val);
-}
-
-/// Recognize `@printf($fmt, ..$args)` and expand it onto a stdout `FdWriter`:
-/// one write per literal segment and one per argument, in source order, then
-/// `flush`. Every call goes by function id through the runtime-bindings
-/// table. The format vocabulary is `print`'s — `{}` takes the next argument,
-/// `{{` and `}}` write a brace.
-///
-/// Gated on the registry: the name reaches here only because
-/// `modules/std/core.sx` declares it, and `contracts` refuses the declaration
-/// in any other module; the module is in every program.
-pub fn tryLowerPrintfIntrinsic(self: *Lowering, name: []const u8, c: *const ast.Call) ?Ref {
-    const id = intrinsics.findByName(name) orelse return null;
-    if (id != .@"@printf") return null;
-
-    const span = c.callee.span;
-    if (c.args.len == 0) {
-        if (self.diagnostics) |d| d.addFmt(.err, span, "@printf expects a format string", .{});
-        return Ref.none;
-    }
-    // The format steers the expansion, so it is read at lowering: a literal is
-    // the only spelling whose bytes are in hand here.
-    const fmt_node = c.args[0];
-    if (fmt_node.data != .string_literal) {
-        if (self.diagnostics) |d| d.addFmt(.err, fmt_node.span, "@printf's format must be a string literal", .{});
-        return Ref.none;
-    }
-    const sink = openPrintfSink(self) orelse {
-        if (self.diagnostics) |d| d.addFmt(.err, span, "@printf writes through modules/std/core.sx, which is not in the program", .{});
-        return Ref.none;
-    };
-    const fmt = self.stringLiteralBytes(fmt_node.data.string_literal);
-
-    var seg: std.ArrayList(u8) = .empty;
-    defer seg.deinit(self.alloc);
-    var next_arg: usize = 1;
-    var i: usize = 0;
-    while (i < fmt.len) {
-        const pair: ?u8 = if (i + 1 < fmt.len) fmt[i + 1] else null;
-        if (fmt[i] == '{' and pair == '}') {
-            if (next_arg >= c.args.len) {
-                if (self.diagnostics) |d| d.addFmt(.err, span, "@printf's format has more '{{}}' placeholders than arguments", .{});
-                return Ref.none;
-            }
-            emitPrintfSegment(self, sink, seg.items);
-            seg.clearRetainingCapacity();
-            emitPrintfArg(self, sink, c.args[next_arg]);
-            next_arg += 1;
-            i += 2;
-            continue;
-        }
-        if ((fmt[i] == '{' and pair == '{') or (fmt[i] == '}' and pair == '}')) {
-            seg.append(self.alloc, fmt[i]) catch @panic("out of memory");
-            i += 2;
-            continue;
-        }
-        seg.append(self.alloc, fmt[i]) catch @panic("out of memory");
-        i += 1;
-    }
-    emitPrintfSegment(self, sink, seg.items);
-    var flush_args = [_]Ref{sink.slot};
-    _ = callBinding(self, "FdWriter.flush", &flush_args);
-
-    if (next_arg != c.args.len) {
-        if (self.diagnostics) |d| d.addFmt(.err, c.args[next_arg].span, "@printf is passed {d} argument{s} the format has no '{{}}' for", .{
-            c.args.len - next_arg, if (c.args.len - next_arg == 1) @as([]const u8, "") else "s",
-        });
-    }
-    return Ref.none;
-}
-
 /// Strength rank of an atomic ordering, for the compare-exchange rule that the
 /// failure ordering may not be stronger than the success ordering.
 /// relaxed=0 < acquire=release=1 < acqRel=2 < seqCst=3.
@@ -3702,7 +3512,6 @@ fn isReflectionCall(name: []const u8) bool {
         .@"@atomicCmpxchgWeak",
         .@"@volatileLoad",
         .@"@volatileStore",
-        .@"@printf",
         .@"@vaStart",
         .@"@vaArg",
         .@"@vaCopy",

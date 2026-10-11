@@ -117,7 +117,6 @@ pub const Id = enum(u16) {
     // std/core.sx declares these two; the `@` is part of the name.
     @"@volatileLoad",
     @"@volatileStore",
-    @"@printf",
     @"@isComptime",
     @"@error",
     @"@vaStart",
@@ -258,13 +257,6 @@ pub const entries = [_]Entry{
     .{ .id = .@"@envType", .module = core, .name = "@envType", .mode = .lower, .arity = 1, .ret = .type_value },
     .{ .id = .@"@envOf", .module = core, .name = "@envOf", .mode = .lower, .arity = 1 },
     .{ .id = .@"@callPtr", .module = core, .name = "@callPtr", .mode = .lower, .arity = 1 },
-
-    // Expanded at lowering into calls to the emission primitives core.sx
-    // declares beside it — one per format segment, one per argument. The
-    // expansion is ordinary sx calls, so `@run` renders through the same
-    // primitives the runtime does. Arity 2 is the declaration's `($fmt, ..$args)`;
-    // the call site takes one argument per `{}`.
-    .{ .id = .@"@printf", .module = core, .name = "@printf", .mode = .lower, .arity = 2, .ret = .void },
 
     // Lowered to the `is_comptime` IR op, which the two backends answer
     // differently: the VM reads `true`, compiled code folds `false`. One lowered

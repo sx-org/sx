@@ -18,7 +18,7 @@ main :: () -> i32 {
     sb := StringBuilder.init();
     report(sb, "built", names);
     report(sb, "again", names);
-    @printf("{}", sb.finish());
+    print("{}", sb.finish());
 
     fd := FdWriter.init(.stdout);
     report(fd, "descriptor", names);

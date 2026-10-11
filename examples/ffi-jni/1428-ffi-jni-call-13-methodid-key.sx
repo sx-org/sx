@@ -36,5 +36,6 @@ main :: () {
     if gShouldCall {
         unusedJni(null, null, null, null, null);
     }
-    @printf("ok\n");
+    out := FdWriter.init(.stdout);
+    out.write("ok\n");
 }

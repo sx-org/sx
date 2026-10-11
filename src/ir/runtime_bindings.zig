@@ -16,15 +16,7 @@ pub const Binding = struct {
 
 const core = "modules/std/core.sx";
 
-/// The `@printf` expansion: a stdout `FdWriter` and the renderers it feeds.
 pub const entries = [_]Binding{
-    .{ .module = core, .name = "FdWriter.init" },
-    .{ .module = core, .name = "FdWriter.write" },
-    .{ .module = core, .name = "FdWriter.flush" },
-    .{ .module = core, .name = "writeBool" },
-    .{ .module = core, .name = "writeInt" },
-    .{ .module = core, .name = "writeUint" },
-    .{ .module = core, .name = "writeFloat" },
     // A boxed `@as` whose pairing has no conversion.
     .{ .module = core, .name = "asRefused" },
 };
